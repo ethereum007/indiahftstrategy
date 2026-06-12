@@ -40,6 +40,7 @@ from reports.imbalance_replay_walkforward import (
     ImbalanceReplayWalkForwardThresholds,
     write_imbalance_replay_walkforward,
 )
+from reports.instrument_metadata import InstrumentMetadataConfig, write_instrument_metadata_report
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
@@ -574,6 +575,16 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     diag_chain.add_argument("--no-filter-session", action="store_true")
+
+    instrument_metadata = sub.add_parser(
+        "instrument-metadata-report",
+        help="Parse and audit option instrument metadata coverage in a CSV file.",
+    )
+    instrument_metadata.add_argument("--input", required=True)
+    instrument_metadata.add_argument("--out", required=True)
+    instrument_metadata.add_argument("--instrument-column", default="instrument_id")
+    instrument_metadata.add_argument("--min-parse-coverage", type=float, default=1.0)
+    instrument_metadata.add_argument("--fail-on-unparsed", action="store_true")
 
     market_profile = sub.add_parser("market-profile-report", help="Export market/session/cost assumptions.")
     market_profile.add_argument("--out", required=True)
@@ -1655,6 +1666,17 @@ def main(argv: list[str] | None = None) -> int:
         result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size, market=args.market), args.out)
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "instrument-metadata-report":
+        result = write_instrument_metadata_report(
+            args.input,
+            output_dir=args.out,
+            config=InstrumentMetadataConfig(
+                instrument_column=args.instrument_column,
+                min_parse_coverage=args.min_parse_coverage,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_unparsed and not result.passed else 0
     if args.command == "market-profile-report":
         result = write_market_profile_report(
             args.out,

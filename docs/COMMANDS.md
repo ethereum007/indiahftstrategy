@@ -140,6 +140,28 @@ US rows are marked `needs_fee_model` unless explicit fees are acknowledged.
 India-specific settlement convergence remains blocked for US profiles until a
 separate US settlement/microstructure model is implemented.
 
+## Instrument Metadata Report
+
+Audit option symbol parse coverage before exposure review, upload mapping, or
+US portability work:
+
+```powershell
+python -m hft_cli instrument-metadata-report `
+  --input runs\exports\leadlag_shadow_arrow\broker_orders.csv `
+  --out runs\risk\leadlag_shadow_instruments `
+  --instrument-column instrument_id `
+  --fail-on-unparsed
+```
+
+Outputs:
+
+```text
+instrument_metadata.csv
+instrument_metadata_gaps.csv
+instrument_metadata_summary.csv
+manifest.json
+```
+
 ## Parity / Box Scan
 
 ```powershell

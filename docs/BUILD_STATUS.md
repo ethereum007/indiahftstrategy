@@ -123,6 +123,9 @@
 - Market portability report that maps each strategy workflow across India and
   US market profiles, flags explicit fee-model requirements, and keeps
   India-specific settlement mechanics blocked until a separate US model exists.
+- Instrument metadata coverage report that parses option symbols across
+  internal, settlement, NSE compact, and OCC formats, emits unparsed gaps, and
+  can fail closed before exposure, upload, or US portability work.
 - Proof-report gate for replay output folders, scoring PnL, fills, drawdown,
   OTR, regime robustness, spread capture, and markout quality against explicit
   thresholds.
@@ -230,7 +233,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 268 tests.
+Current passing suite: 272 tests.
 
 ## Next Build Targets
 
