@@ -1278,6 +1278,7 @@ python -m hft_cli plan-scaleup `
   --order-exposure runs\risk\leadlag_shadow_exposure `
   --instrument-metadata runs\risk\leadlag_shadow_instruments `
   --proof-refresh runs\proof_refresh\leadlag_shadow_latest `
+  --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
   --out runs\scaleup\leadlag_shadow `
   --target-mode shadow `
   --allowed-adapter arrow_money `
@@ -1296,6 +1297,7 @@ python -m hft_cli plan-scaleup `
   --stop-loss 5000 `
   --require-instrument-metadata `
   --require-proof-refresh `
+  --require-broker-readiness `
   --fail-on-breach
 ```
 

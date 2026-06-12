@@ -103,6 +103,26 @@ def instrument_metadata_summary(passed=True, parse_coverage=1.0, unparsed_instru
     )
 
 
+def broker_readiness_summary(ready=True, adapter="arrow_money"):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema"
+                if adapter != "normalized"
+                else "native_normalized",
+                "required_components": 3,
+                "provided_components": 3,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "dry_run_only_until_vendor_schema_review"
+                if ready and adapter != "normalized"
+                else "fix_broker_readiness_gaps",
+            }
+        ]
+    )
+
+
 def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_ready=True, exposure_passed=True):
     evidence = root / "evidence"
     shadow = root / "shadow"
@@ -186,6 +206,21 @@ def test_scaleup_plan_accepts_required_instrument_metadata():
     assert report.summary.iloc[0]["instrument_parse_coverage"] == 1.0
     assert report.config["instrument_metadata"]["required"]
     assert report.config["instrument_metadata"]["passed"]
+
+
+def test_scaleup_plan_accepts_required_broker_readiness():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(True),
+        thresholds=ScaleUpThresholds(require_broker_readiness=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["broker_readiness_ready"]
+    assert report.config["broker_readiness"]["required"]
+    assert report.config["broker_readiness"]["ready"]
 
 
 def test_scaleup_plan_fails_on_instrument_metadata_gap():
@@ -330,6 +365,33 @@ def test_cli_scaleup_plan_can_require_instrument_metadata(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "instrument_metadata_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_can_require_broker_readiness(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "broker_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
 
 
 def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
