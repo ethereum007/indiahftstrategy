@@ -214,6 +214,8 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
             max_open_order_qty=75.0,
             max_gross_position_qty=150.0,
             max_abs_net_position_qty=75.0,
+            max_lifecycle_orders=6,
+            max_replace_orders=2,
             stop_loss=500.0,
             allowed_adapters=("arrow_money",),
         ),
@@ -226,6 +228,8 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert report.summary.iloc[0]["recommendation"] == "scale_up_with_controls"
     assert report.config["kill_switches"]["max_worst_adverse_slippage"] == 0.05
     assert report.config["kill_switches"]["max_telemetry_age_ns"] == 5_000_000_000
+    assert report.config["kill_switches"]["max_lifecycle_orders"] == 6
+    assert report.config["kill_switches"]["max_replace_orders"] == 2
     assert report.config["kill_switches"]["max_open_order_count"] == 2
     assert report.config["kill_switches"]["max_gross_position_qty"] == 150.0
 
@@ -610,6 +614,10 @@ def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
             str(out_dir),
             "--max-telemetry-age-ns",
             "5000000000",
+            "--max-lifecycle-orders",
+            "6",
+            "--max-replace-orders",
+            "2",
             "--max-open-order-count",
             "2",
             "--max-open-order-qty",
@@ -624,6 +632,8 @@ def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
     config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
     assert code == 0
     assert config["kill_switches"]["max_telemetry_age_ns"] == 5_000_000_000
+    assert config["kill_switches"]["max_lifecycle_orders"] == 6
+    assert config["kill_switches"]["max_replace_orders"] == 2
     assert config["kill_switches"]["max_open_order_count"] == 2
     assert config["kill_switches"]["max_open_order_qty"] == 75.0
     assert config["kill_switches"]["max_gross_position_qty"] == 150.0

@@ -53,6 +53,21 @@ def export_summary():
     )
 
 
+def upload_summary(ready=True, failed_checks=0):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": "arrow_money",
+                "orders": 4,
+                "lifecycle_orders": 3,
+                "replace_orders": 1,
+                "failed_checks": failed_checks,
+            }
+        ]
+    )
+
+
 def reconciliation_summary():
     return pd.DataFrame(
         [
@@ -124,6 +139,7 @@ def test_runtime_telemetry_combines_operational_artifacts():
     report = evaluate_runtime_telemetry(
         scaleup_config(),
         export_summary=export_summary(),
+        upload_summary=upload_summary(),
         reconciliation_summary=reconciliation_summary(),
         reconciliation_checks=reconciliation_checks(),
         pnl_snapshot=pnl_snapshot(),
@@ -134,6 +150,8 @@ def test_runtime_telemetry_combines_operational_artifacts():
     row = report.telemetry.iloc[0]
     assert report.ready
     assert row["orders_sent"] == 4
+    assert row["lifecycle_orders"] == 3
+    assert row["replace_orders"] == 1
     assert row["session_notional"] == 40_000.0
     assert row["realized_pnl"] == -125.5
     assert row["total_failed_component_checks"] == 2
@@ -141,7 +159,22 @@ def test_runtime_telemetry_combines_operational_artifacts():
     assert row["worst_adverse_slippage"] == 0.03
     assert row["open_order_count"] == 1
     assert row["gross_position_qty"] == 100.0
+    assert bool(row["broker_upload_pack_ready"])
     assert report.summary.iloc[0]["recommendation"] == "feed_runtime_guard"
+
+
+def test_runtime_telemetry_blocks_unready_upload_pack():
+    report = evaluate_runtime_telemetry(
+        scaleup_config(),
+        export_summary=export_summary(),
+        upload_summary=upload_summary(ready=False, failed_checks=1),
+    )
+
+    row = report.telemetry.iloc[0]
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert row["total_failed_component_checks"] == 2
+    assert "broker_upload_pack_ready" in failed
 
 
 def test_runtime_telemetry_defaults_to_scaleup_config_without_optional_inputs():
@@ -183,6 +216,7 @@ def test_runtime_telemetry_fails_when_required_instrument_metadata_is_missing():
 def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
     reconciliation_dir = tmp_path / "reconciliation"
     instrument_metadata_dir = tmp_path / "instrument_metadata"
     out_dir = tmp_path / "telemetry"
@@ -191,10 +225,12 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     positions_path = tmp_path / "positions.csv"
     scaleup_dir.mkdir()
     export_dir.mkdir()
+    upload_dir.mkdir()
     reconciliation_dir.mkdir()
     instrument_metadata_dir.mkdir()
     (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
     export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
     reconciliation_summary().to_csv(reconciliation_dir / "reconciliation_summary.csv", index=False)
     reconciliation_checks().to_csv(reconciliation_dir / "reconciliation_checks.csv", index=False)
     instrument_metadata_summary().to_csv(instrument_metadata_dir / "instrument_metadata_summary.csv", index=False)
@@ -205,6 +241,7 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     report = write_runtime_telemetry_snapshot(
         scaleup_dir=scaleup_dir,
         export_dir=export_dir,
+        upload_pack_dir=upload_dir,
         reconciliation_dir=reconciliation_dir,
         instrument_metadata_dir=instrument_metadata_dir,
         pnl_path=pnl_path,
@@ -257,11 +294,14 @@ def test_cli_runtime_telemetry_reads_surface_pipeline_export(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     pipeline_dir = tmp_path / "surface_launch_pipeline"
     export_dir = pipeline_dir / "03_export"
+    upload_dir = pipeline_dir / "04_upload_pack"
     out_dir = tmp_path / "telemetry"
     scaleup_dir.mkdir()
     export_dir.mkdir(parents=True)
+    upload_dir.mkdir(parents=True)
     (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
     export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
 
     code = main(
         [
@@ -269,6 +309,8 @@ def test_cli_runtime_telemetry_reads_surface_pipeline_export(tmp_path):
             "--scaleup",
             str(scaleup_dir),
             "--export",
+            str(pipeline_dir),
+            "--upload-pack",
             str(pipeline_dir),
             "--out",
             str(out_dir),
@@ -282,7 +324,10 @@ def test_cli_runtime_telemetry_reads_surface_pipeline_export(tmp_path):
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert int(telemetry.loc[0, "orders_sent"]) == 4
+    assert int(telemetry.loc[0, "lifecycle_orders"]) == 3
+    assert int(telemetry.loc[0, "replace_orders"]) == 1
     assert bool(sources.loc[sources["source"] == "export_summary", "provided"].iloc[0])
+    assert bool(sources.loc[sources["source"] == "upload_summary", "provided"].iloc[0])
 
 
 def test_cli_runtime_telemetry_can_fail_on_missing_identity(tmp_path):

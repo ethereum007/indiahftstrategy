@@ -113,6 +113,8 @@ def _metrics(
                 "runtime_telemetry_age_ns": telemetry_age_ns,
                 "max_telemetry_age_ns": max_age_ns,
                 "orders_sent": _number(latest, "orders_sent", fallback=_number(latest, "orders")),
+                "lifecycle_orders": _number(latest, "lifecycle_orders"),
+                "replace_orders": _number(latest, "replace_orders"),
                 "session_notional": _number(latest, "session_notional", fallback=_number(latest, "total_notional")),
                 "realized_pnl": _number(latest, "realized_pnl", fallback=_number(latest, "net_pnl")),
                 "open_order_count": _number(latest, "open_order_count"),
@@ -149,6 +151,8 @@ def _metrics(
                 "max_total_unmatched_fills": _number_from(kill_switches, "max_total_unmatched_fills"),
                 "max_total_mismatched_orders": _number_from(kill_switches, "max_total_mismatched_orders"),
                 "max_total_overfilled_orders": _number_from(kill_switches, "max_total_overfilled_orders"),
+                "max_lifecycle_orders": _number_from(kill_switches, "max_lifecycle_orders"),
+                "max_replace_orders": _number_from(kill_switches, "max_replace_orders"),
                 "max_worst_adverse_slippage": _number_from(kill_switches, "max_worst_adverse_slippage"),
                 "max_open_order_count": _number_from(kill_switches, "max_open_order_count"),
                 "max_open_order_qty": _number_from(kill_switches, "max_open_order_qty"),
@@ -197,6 +201,12 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         _threshold_check("mismatched_orders", row["mismatched_orders"], "<=", row["max_total_mismatched_orders"]),
         _threshold_check("overfilled_orders", row["overfilled_orders"], "<=", row["max_total_overfilled_orders"]),
     ]
+    for value_column, threshold_column in (
+        ("lifecycle_orders", "max_lifecycle_orders"),
+        ("replace_orders", "max_replace_orders"),
+    ):
+        if not pd.isna(row[threshold_column]):
+            checks.append(_threshold_check(value_column, row[value_column], "<=", row[threshold_column]))
     if not pd.isna(row["stop_loss"]):
         checks.append(_threshold_check("realized_pnl", row["realized_pnl"], ">=", -abs(float(row["stop_loss"]))))
     if not pd.isna(row["max_worst_adverse_slippage"]):
@@ -307,6 +317,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "scenario_key": row["scenario_key"],
                 "adapter": row["adapter"],
                 "orders_sent": row["orders_sent"],
+                "lifecycle_orders": row["lifecycle_orders"],
+                "replace_orders": row["replace_orders"],
                 "session_notional": row["session_notional"],
                 "realized_pnl": row["realized_pnl"],
                 "recommendation": "stop_routing_and_investigate" if halted else "continue_with_controls",

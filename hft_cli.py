@@ -1051,6 +1051,8 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--max-total-mismatched-orders", type=int, default=0)
     scaleup.add_argument("--max-total-overfilled-orders", type=int, default=0)
     scaleup.add_argument("--max-telemetry-age-ns", type=float, default=None)
+    scaleup.add_argument("--max-lifecycle-orders", type=int, default=None)
+    scaleup.add_argument("--max-replace-orders", type=int, default=None)
     scaleup.add_argument("--max-open-order-count", type=int, default=None)
     scaleup.add_argument("--max-open-order-qty", type=float, default=None)
     scaleup.add_argument("--max-gross-position-qty", type=float, default=None)
@@ -1074,6 +1076,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime_telemetry.add_argument("--scaleup", required=True)
     runtime_telemetry.add_argument("--out", required=True)
     runtime_telemetry.add_argument("--export", default=None)
+    runtime_telemetry.add_argument("--upload-pack", default=None)
     runtime_telemetry.add_argument("--reconciliation", default=None)
     runtime_telemetry.add_argument("--instrument-metadata", default=None)
     runtime_telemetry.add_argument("--pnl", default=None)
@@ -1108,6 +1111,7 @@ def main(argv: list[str] | None = None) -> int:
     runtime_session.add_argument("--scaleup", required=True)
     runtime_session.add_argument("--out", required=True)
     runtime_session.add_argument("--export", default=None)
+    runtime_session.add_argument("--upload-pack", default=None)
     runtime_session.add_argument("--reconciliation", default=None)
     runtime_session.add_argument("--instrument-metadata", default=None)
     runtime_session.add_argument("--pnl", default=None)
@@ -2549,6 +2553,8 @@ def main(argv: list[str] | None = None) -> int:
                 max_total_mismatched_orders=args.max_total_mismatched_orders,
                 max_total_overfilled_orders=args.max_total_overfilled_orders,
                 max_telemetry_age_ns=args.max_telemetry_age_ns,
+                max_lifecycle_orders=args.max_lifecycle_orders,
+                max_replace_orders=args.max_replace_orders,
                 max_open_order_count=args.max_open_order_count,
                 max_open_order_qty=args.max_open_order_qty,
                 max_gross_position_qty=args.max_gross_position_qty,
@@ -2575,6 +2581,7 @@ def main(argv: list[str] | None = None) -> int:
             scaleup_dir=args.scaleup,
             output_dir=args.out,
             export_dir=args.export,
+            upload_pack_dir=args.upload_pack,
             reconciliation_dir=args.reconciliation,
             instrument_metadata_dir=args.instrument_metadata,
             pnl_path=args.pnl,
@@ -2614,6 +2621,7 @@ def main(argv: list[str] | None = None) -> int:
             scaleup_dir=args.scaleup,
             output_dir=args.out,
             export_dir=args.export,
+            upload_pack_dir=args.upload_pack,
             reconciliation_dir=args.reconciliation,
             instrument_metadata_dir=args.instrument_metadata,
             pnl_path=args.pnl,

@@ -15,6 +15,8 @@ GUARD_COLUMNS = [
     "scenario_key",
     "adapter",
     "orders_sent",
+    "lifecycle_orders",
+    "replace_orders",
     "session_notional",
     "realized_pnl",
     "total_failed_component_checks",
@@ -42,6 +44,7 @@ def evaluate_runtime_telemetry(
     scaleup_config: dict[str, Any],
     *,
     export_summary: pd.DataFrame | None = None,
+    upload_summary: pd.DataFrame | None = None,
     reconciliation_summary: pd.DataFrame | None = None,
     reconciliation_checks: pd.DataFrame | None = None,
     instrument_metadata_summary: pd.DataFrame | None = None,
@@ -51,6 +54,7 @@ def evaluate_runtime_telemetry(
     snapshot_ts_ns: int | float | None = None,
 ) -> RuntimeTelemetryReport:
     export_summary = _optional_frame(export_summary)
+    upload_summary = _optional_frame(upload_summary)
     reconciliation_summary = _optional_frame(reconciliation_summary)
     reconciliation_checks = _optional_frame(reconciliation_checks)
     instrument_metadata_summary = _optional_frame(instrument_metadata_summary)
@@ -61,6 +65,7 @@ def evaluate_runtime_telemetry(
     telemetry = _telemetry(
         scaleup_config,
         export_summary=export_summary,
+        upload_summary=upload_summary,
         reconciliation_summary=reconciliation_summary,
         reconciliation_checks=reconciliation_checks,
         instrument_metadata_summary=instrument_metadata_summary,
@@ -71,6 +76,7 @@ def evaluate_runtime_telemetry(
     )
     sources = _sources(
         export_summary=export_summary,
+        upload_summary=upload_summary,
         reconciliation_summary=reconciliation_summary,
         reconciliation_checks=reconciliation_checks,
         instrument_metadata_summary=instrument_metadata_summary,
@@ -88,6 +94,7 @@ def write_runtime_telemetry_snapshot(
     scaleup_dir: str | Path,
     output_dir: str | Path,
     export_dir: str | Path | None = None,
+    upload_pack_dir: str | Path | None = None,
     reconciliation_dir: str | Path | None = None,
     instrument_metadata_dir: str | Path | None = None,
     pnl_path: str | Path | None = None,
@@ -98,6 +105,11 @@ def write_runtime_telemetry_snapshot(
     scaleup_file = _scaleup_config_path(scaleup_dir)
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
     export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv", fallback_dirs=("04_export", "03_export"))
+    upload_summary = _read_optional_summary(
+        upload_pack_dir,
+        "broker_upload_summary.csv",
+        fallback_dirs=("05_upload_pack", "04_upload_pack"),
+    )
     reconciliation_summary = _read_optional_summary(reconciliation_dir, "reconciliation_summary.csv")
     reconciliation_checks = _read_optional_summary(reconciliation_dir, "reconciliation_checks.csv")
     instrument_metadata_summary = _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")
@@ -108,6 +120,7 @@ def write_runtime_telemetry_snapshot(
     report = evaluate_runtime_telemetry(
         scaleup_config,
         export_summary=export_summary,
+        upload_summary=upload_summary,
         reconciliation_summary=reconciliation_summary,
         reconciliation_checks=reconciliation_checks,
         instrument_metadata_summary=instrument_metadata_summary,
@@ -129,6 +142,7 @@ def write_runtime_telemetry_snapshot(
         inputs={
             "scaleup": scaleup_file,
             "export": export_dir,
+            "upload_pack": upload_pack_dir,
             "reconciliation": reconciliation_dir,
             "instrument_metadata": instrument_metadata_dir,
             "pnl": pnl_path,
@@ -143,6 +157,7 @@ def _telemetry(
     scaleup_config: dict[str, Any],
     *,
     export_summary: pd.DataFrame,
+    upload_summary: pd.DataFrame,
     reconciliation_summary: pd.DataFrame,
     reconciliation_checks: pd.DataFrame,
     instrument_metadata_summary: pd.DataFrame,
@@ -152,6 +167,7 @@ def _telemetry(
     snapshot_ts_ns: int | float | None,
 ) -> pd.DataFrame:
     export = _first_row(export_summary)
+    upload = _first_row(upload_summary)
     recon = _first_row(reconciliation_summary)
     metadata = _first_row(instrument_metadata_summary)
     scaleup_metadata = scaleup_config.get("instrument_metadata", {}) or {}
@@ -168,16 +184,22 @@ def _telemetry(
         _number(pnl, "total_notional"),
         0.0,
     )
-    total_failed = _first_number(_number(export, "failed_checks"), 0.0) + _failed_checks(reconciliation_checks)
+    upload_failed = _first_number(_number(upload, "failed_checks"), 0.0)
+    total_failed = _first_number(_number(export, "failed_checks"), 0.0) + upload_failed + _failed_checks(reconciliation_checks)
     row = {
         "snapshot_ts_ns": _first_number(snapshot_ts_ns, _number(pnl, "ts_ns"), _number(pnl, "timestamp_ns"), np.nan),
         "target_mode": str(scaleup_config.get("target_mode", "")),
         "scenario_key": str(_first_value(export.get("scenario_key", np.nan), scaleup_config.get("scenario_key", ""))),
         "adapter": str(_first_value(export.get("adapter", np.nan), scaleup_config.get("adapter", ""))),
         "orders_sent": int(orders_sent),
+        "lifecycle_orders": int(_first_number(_number(upload, "lifecycle_orders"), 0.0)),
+        "replace_orders": int(_first_number(_number(upload, "replace_orders"), 0.0)),
         "session_notional": float(session_notional),
         "realized_pnl": float(_first_number(_number(pnl, "realized_pnl"), _number(pnl, "net_pnl"), _number(pnl, "pnl"), 0.0)),
         "total_failed_component_checks": int(total_failed),
+        "broker_upload_pack_provided": not upload_summary.empty,
+        "broker_upload_pack_ready": _to_bool(upload.get("ready", False)) if not upload.empty else False,
+        "broker_upload_failed_checks": int(upload_failed),
         "unmatched_fills": int(_first_number(_number(recon, "unmatched_fills"), 0.0)),
         "mismatched_orders": int(_first_number(_number(recon, "mismatched_orders"), 0.0)),
         "overfilled_orders": int(_first_number(_number(recon, "overfilled_orders"), 0.0)),
@@ -225,6 +247,19 @@ def _checks(row: pd.Series) -> pd.DataFrame:
         value = row[column]
         present = not pd.isna(value) and (not isinstance(value, str) or bool(value.strip()))
         checks.append(_check(f"{column}_available", value, "present", True, present, f"{column} is unavailable"))
+    upload_provided = _to_bool(row.get("broker_upload_pack_provided", False))
+    if upload_provided:
+        upload_ready = _to_bool(row.get("broker_upload_pack_ready", False))
+        checks.append(
+            _check(
+                "broker_upload_pack_ready",
+                upload_ready,
+                "is",
+                True,
+                upload_ready,
+                "broker upload pack is not ready",
+            )
+        )
     metadata_required = _to_bool(row.get("instrument_metadata_required", False))
     metadata_provided = _to_bool(row.get("instrument_metadata_provided", False))
     if metadata_required:
@@ -286,6 +321,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "scenario_key": row["scenario_key"],
                 "adapter": row["adapter"],
                 "orders_sent": int(row["orders_sent"]),
+                "lifecycle_orders": int(row["lifecycle_orders"]),
+                "replace_orders": int(row["replace_orders"]),
                 "session_notional": float(row["session_notional"]),
                 "realized_pnl": float(row["realized_pnl"]),
                 "failed_checks": failed,

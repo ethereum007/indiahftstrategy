@@ -25,6 +25,8 @@ class ScaleUpThresholds:
     max_total_mismatched_orders: int = 0
     max_total_overfilled_orders: int = 0
     max_telemetry_age_ns: float | None = None
+    max_lifecycle_orders: int | None = None
+    max_replace_orders: int | None = None
     max_open_order_count: int | None = None
     max_open_order_qty: float | None = None
     max_gross_position_qty: float | None = None
@@ -535,6 +537,8 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "max_total_mismatched_orders": thresholds.max_total_mismatched_orders,
             "max_total_overfilled_orders": thresholds.max_total_overfilled_orders,
             "max_telemetry_age_ns": _jsonable(thresholds.max_telemetry_age_ns),
+            "max_lifecycle_orders": _jsonable(thresholds.max_lifecycle_orders),
+            "max_replace_orders": _jsonable(thresholds.max_replace_orders),
             "max_open_order_count": _jsonable(thresholds.max_open_order_count),
             "max_open_order_qty": _jsonable(thresholds.max_open_order_qty),
             "max_gross_position_qty": _jsonable(thresholds.max_gross_position_qty),
@@ -647,8 +651,11 @@ def _validate_thresholds(thresholds: ScaleUpThresholds) -> None:
         "max_total_unmatched_fills",
         "max_total_mismatched_orders",
         "max_total_overfilled_orders",
+        "max_lifecycle_orders",
+        "max_replace_orders",
     ):
-        if getattr(thresholds, name) < 0:
+        value = getattr(thresholds, name)
+        if value is not None and value < 0:
             raise ValueError(f"{name} must be non-negative")
     for name in (
         "max_telemetry_age_ns",

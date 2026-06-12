@@ -31,6 +31,7 @@ def write_runtime_session_monitor(
     scaleup_dir: str | Path,
     output_dir: str | Path,
     export_dir: str | Path | None = None,
+    upload_pack_dir: str | Path | None = None,
     reconciliation_dir: str | Path | None = None,
     instrument_metadata_dir: str | Path | None = None,
     pnl_path: str | Path | None = None,
@@ -53,6 +54,7 @@ def write_runtime_session_monitor(
         scaleup_dir=scaleup_dir,
         output_dir=telemetry_dir,
         export_dir=export_dir,
+        upload_pack_dir=upload_pack_dir,
         reconciliation_dir=reconciliation_dir,
         instrument_metadata_dir=instrument_metadata_dir,
         pnl_path=pnl_path,
@@ -94,6 +96,7 @@ def write_runtime_session_monitor(
         inputs={
             "scaleup": scaleup_dir,
             "export": export_dir,
+            "upload_pack": upload_pack_dir,
             "reconciliation": reconciliation_dir,
             "instrument_metadata": instrument_metadata_dir,
             "pnl": pnl_path,

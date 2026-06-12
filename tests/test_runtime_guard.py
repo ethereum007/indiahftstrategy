@@ -145,6 +145,17 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
     assert {"open_order_count", "open_order_qty", "gross_position_qty", "abs_net_position_qty"} <= failed
 
 
+def test_runtime_guard_halts_on_lifecycle_and_replace_breaches():
+    config = scaleup_config()
+    config["kill_switches"].update({"max_lifecycle_orders": 2, "max_replace_orders": 0})
+
+    report = evaluate_runtime_guard(config, telemetry(lifecycle_orders=3, replace_orders=1))
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"lifecycle_orders", "replace_orders"} <= failed
+
+
 def test_runtime_guard_continues_within_open_order_and_position_limits():
     config = scaleup_config()
     config["kill_switches"].update(

@@ -198,6 +198,8 @@ def _authorization(
                 "max_total_unmatched_fills": _nullable_number(kill_switches.get("max_total_unmatched_fills")),
                 "max_total_mismatched_orders": _nullable_number(kill_switches.get("max_total_mismatched_orders")),
                 "max_total_overfilled_orders": _nullable_number(kill_switches.get("max_total_overfilled_orders")),
+                "max_lifecycle_orders": _nullable_number(kill_switches.get("max_lifecycle_orders")),
+                "max_replace_orders": _nullable_number(kill_switches.get("max_replace_orders")),
             }
         ]
     )

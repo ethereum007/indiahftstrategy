@@ -1496,6 +1496,8 @@ python -m hft_cli plan-scaleup `
   --max-orders-per-session 100 `
   --max-session-notional 100000 `
   --max-telemetry-age-ns 5000000000 `
+  --max-lifecycle-orders 300 `
+  --max-replace-orders 100 `
   --max-open-order-count 10 `
   --max-open-order-qty 500 `
   --max-gross-position-qty 1000 `
@@ -1526,13 +1528,15 @@ present, so `--require-broker-readiness` can gate the pipeline folder directly.
 
 ## Runtime Telemetry Snapshot
 
-Build a guard-ready telemetry row from scale-up config, broker export,
-reconciliation, instrument metadata, PnL, open-order, and position snapshots:
+Build a guard-ready telemetry row from scale-up config, broker export, broker
+upload pack, reconciliation, instrument metadata, PnL, open-order, and position
+snapshots:
 
 ```powershell
 python -m hft_cli build-runtime-telemetry `
   --scaleup runs\scaleup\leadlag_shadow `
   --export runs\exports\leadlag_shadow_latest `
+  --upload-pack runs\uploads\leadlag_shadow_arrow `
   --reconciliation runs\reconciliation\leadlag_shadow_latest `
   --instrument-metadata runs\instrument_metadata\leadlag_shadow_latest `
   --pnl logs\leadlag_shadow_pnl.csv `
@@ -1552,9 +1556,10 @@ runtime_telemetry_summary.csv
 manifest.json
 ```
 
-For settlement convergence or surface market-making handoffs, `--export` may
-point at the launch-pipeline root; telemetry will read the nested broker export
-summary from that folder.
+For settlement convergence or surface market-making handoffs, `--export` and
+`--upload-pack` may point at the launch-pipeline root; telemetry will read the
+nested broker export and upload-pack summaries from that folder. Upload-pack
+summaries carry `lifecycle_orders` and `replace_orders` into runtime guardrails.
 
 ## Runtime Scale-Up Guard
 
@@ -1577,7 +1582,7 @@ python -m hft_cli monitor-scaleup-guard `
 Telemetry CSV columns:
 
 ```text
-scenario_key,adapter,orders_sent,session_notional,realized_pnl,total_failed_component_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments
+scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,open_order_count,open_order_qty,gross_position_qty,abs_net_position_qty
 ```
 
 Outputs:
@@ -1598,6 +1603,7 @@ when the guard asks routing to stop:
 python -m hft_cli monitor-runtime-session `
   --scaleup runs\scaleup\leadlag_shadow `
   --export runs\launch_pipelines\surface_mm_arrow `
+  --upload-pack runs\launch_pipelines\surface_mm_arrow `
   --reconciliation runs\reconciliation\leadlag_shadow_latest `
   --instrument-metadata runs\instrument_metadata\leadlag_shadow_latest `
   --pnl logs\leadlag_shadow_pnl.csv `
