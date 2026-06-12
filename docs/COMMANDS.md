@@ -1350,8 +1350,9 @@ manifest.json
 ## Broker Integration Readiness
 
 Combine adapter schema review, broker-neutral export, mapped/upload files,
-optional halt-export, and optional reconciliation evidence into one go/no-go
-record before Arrow.money/iRage paper or shadow routing:
+optional halt-export, optional reconciliation, and optional runtime-session
+evidence into one go/no-go record before Arrow.money/iRage paper or shadow
+routing:
 
 ```powershell
 python -m hft_cli review-broker-readiness `
@@ -1361,9 +1362,11 @@ python -m hft_cli review-broker-readiness `
   --mapping-draft mappings\arrow_order_upload_draft `
   --mapped-orders runs\exports\leadlag_shadow_arrow_mapped `
   --upload-pack runs\uploads\leadlag_shadow_arrow `
+  --runtime-session runs\runtime_sessions\leadlag_shadow_latest `
   --out runs\broker_readiness\leadlag_shadow_arrow `
   --require-mapping-draft `
   --require-mapped-orders `
+  --require-runtime-session `
   --fail-on-breach
 ```
 
@@ -1374,6 +1377,9 @@ normalized, Arrow.money, and iRage review templates carry `lifecycle_action`,
 `lifecycle_action_id`, `lifecycle_reason`, `lifecycle_message_count`,
 `quote_age_ns`, and `replaces_order_id` into the upload-shaped CSV for broker
 schema review.
+When `--runtime-session` is supplied, broker readiness requires the runtime
+guard to be continuing. `--require-runtime-session` makes that evidence
+mandatory before paper/shadow routing.
 
 Outputs:
 

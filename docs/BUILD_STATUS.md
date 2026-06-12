@@ -292,8 +292,9 @@
   emits a reviewed-mapping draft for market-data normalization.
 - Broker integration readiness report that combines schema audit, broker order
   export, mapping draft, mapped orders, upload pack, optional halt export, and
-  optional reconciliation evidence into one fail-closed Arrow.money/iRage
-  go/no-go artifact.
+  optional reconciliation/runtime-session evidence into one fail-closed
+  Arrow.money/iRage go/no-go artifact, blocking supplied or required runtime
+  sessions when the scale-up guard halted.
 
 ## Test Gate
 
@@ -303,7 +304,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 378 tests.
+Current passing suite: 382 tests.
 
 ## Next Build Targets
 

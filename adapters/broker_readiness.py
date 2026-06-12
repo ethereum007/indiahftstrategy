@@ -18,6 +18,7 @@ SUMMARY_FILES = {
     "upload_pack": "broker_upload_summary.csv",
     "halt_export": "halt_response_export_summary.csv",
     "reconciliation": "reconciliation_summary.csv",
+    "runtime_session": "runtime_session_summary.csv",
 }
 
 
@@ -32,6 +33,7 @@ class BrokerReadinessThresholds:
     require_upload_pack: bool = True
     require_halt_export: bool = False
     require_reconciliation: bool = False
+    require_runtime_session: bool = False
     require_adapter_match: bool = True
 
 
@@ -56,6 +58,7 @@ def evaluate_broker_readiness(
     upload_pack_summary: pd.DataFrame | None = None,
     halt_export_summary: pd.DataFrame | None = None,
     reconciliation_summary: pd.DataFrame | None = None,
+    runtime_session_summary: pd.DataFrame | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
@@ -68,6 +71,7 @@ def evaluate_broker_readiness(
         "upload_pack": _optional_frame(upload_pack_summary),
         "halt_export": _optional_frame(halt_export_summary),
         "reconciliation": _optional_frame(reconciliation_summary),
+        "runtime_session": _optional_frame(runtime_session_summary),
     }
     items = _items(summaries, thresholds)
     checks = _checks(items, thresholds)
@@ -85,6 +89,7 @@ def write_broker_readiness_report(
     upload_pack_dir: str | Path | None = None,
     halt_export_dir: str | Path | None = None,
     reconciliation_dir: str | Path | None = None,
+    runtime_session_dir: str | Path | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
@@ -97,6 +102,7 @@ def write_broker_readiness_report(
         upload_pack_summary=_read_optional_summary(upload_pack_dir, "upload_pack"),
         halt_export_summary=_read_optional_summary(halt_export_dir, "halt_export"),
         reconciliation_summary=_read_optional_summary(reconciliation_dir, "reconciliation"),
+        runtime_session_summary=_read_optional_summary(runtime_session_dir, "runtime_session"),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -116,6 +122,7 @@ def write_broker_readiness_report(
             "upload_pack": upload_pack_dir,
             "halt_export": halt_export_dir,
             "reconciliation": reconciliation_dir,
+            "runtime_session": runtime_session_dir,
         },
     )
     return BrokerReadinessReport(report.items, report.checks, report.summary, out)
@@ -144,6 +151,8 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "adapter_match": adapter_match,
         "adapter_schema_status": schema_status,
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
+        "runtime_guard_action": str(row.get("guard_action", "")).strip() if component == "runtime_session" else "",
+        "runtime_guard_halted": _guard_halted(row) if component == "runtime_session" and provided else False,
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -236,6 +245,7 @@ def _component_required(component: str, thresholds: BrokerReadinessThresholds) -
             "upload_pack": thresholds.require_upload_pack,
             "halt_export": thresholds.require_halt_export,
             "reconciliation": thresholds.require_reconciliation,
+            "runtime_session": thresholds.require_runtime_session,
         }[component]
     )
 
@@ -245,6 +255,8 @@ def _component_ready(component: str, row: pd.Series) -> bool:
         return _to_bool(row.get("all_required_present", False))
     if component == "reconciliation":
         return _to_bool(row.get("passed", False))
+    if component == "runtime_session":
+        return _to_bool(row.get("ready", False)) and not _guard_halted(row)
     return _to_bool(row.get("ready", False))
 
 
@@ -312,6 +324,10 @@ def _to_bool(value: object) -> bool:
     except (TypeError, ValueError):
         pass
     return bool(value)
+
+
+def _guard_halted(row: pd.Series) -> bool:
+    return _to_bool(row.get("halted", False)) or str(row.get("guard_action", "")).strip().lower() == "halt"
 
 
 def _check(
