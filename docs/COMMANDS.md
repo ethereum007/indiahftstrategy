@@ -85,6 +85,30 @@ strategy_evidence_summary.csv
 manifest.json
 ```
 
+## Market Profile Report
+
+Export India/US market assumptions before a run:
+
+```powershell
+python -m hft_cli market-profile-report `
+  --market india_nse_index_derivatives `
+  --market us_options_regular `
+  --out runs\market_profiles\india_us `
+  --price 100 `
+  --qty 100 `
+  --per-contract-fee 0.10 `
+  --per-order-fee 0.25
+```
+
+Outputs:
+
+```text
+market_profiles.csv
+market_cost_examples.csv
+market_profile_summary.csv
+manifest.json
+```
+
 ## Parity / Box Scan
 
 ```powershell

@@ -51,6 +51,9 @@
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.
+- Market profile report command that exports India/US session, tick, lot-size,
+  currency, and explicit generic fee assumptions as manifest-backed evidence
+  before cross-market research runs.
 - Proof-report gate for replay output folders, scoring PnL, fills, drawdown,
   OTR, regime robustness, spread capture, and markout quality against explicit
   thresholds.
@@ -131,7 +134,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 149 tests.
+Current passing suite: 153 tests.
 
 ## Next Build Targets
 

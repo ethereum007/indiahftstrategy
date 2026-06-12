@@ -15,6 +15,7 @@ from reports.catalog import write_experiment_catalog
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
+from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
@@ -133,6 +134,17 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     diag_chain.add_argument("--no-filter-session", action="store_true")
+
+    market_profile = sub.add_parser("market-profile-report", help="Export market/session/cost assumptions.")
+    market_profile.add_argument("--out", required=True)
+    market_profile.add_argument("--market", action="append", dest="markets")
+    market_profile.add_argument("--price", type=float, default=None)
+    market_profile.add_argument("--qty", type=int, default=None)
+    market_profile.add_argument("--buy-notional-rate", type=float, default=0.0)
+    market_profile.add_argument("--sell-notional-rate", type=float, default=0.0)
+    market_profile.add_argument("--per-unit-fee", type=float, default=0.0)
+    market_profile.add_argument("--per-contract-fee", type=float, default=0.0)
+    market_profile.add_argument("--per-order-fee", type=float, default=0.0)
 
     proof = sub.add_parser("proof-report", help="Evaluate replay output folders against proof thresholds.")
     proof.add_argument("--runs", nargs="+", required=True)
@@ -560,6 +572,22 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "diagnose-chain":
         chain = load_option_chain_csv(args.chain, filter_session=not args.no_filter_session, market=args.market).data
         result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size, market=args.market), args.out)
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "market-profile-report":
+        result = write_market_profile_report(
+            args.out,
+            config=MarketProfileReportConfig(
+                markets=tuple(args.markets) if args.markets else MarketProfileReportConfig().markets,
+                price=args.price,
+                qty=args.qty,
+                buy_notional_rate=args.buy_notional_rate,
+                sell_notional_rate=args.sell_notional_rate,
+                per_unit_fee=args.per_unit_fee,
+                per_contract_fee=args.per_contract_fee,
+                per_order_fee=args.per_order_fee,
+            ),
+        )
         print(result.summary.to_string(index=False))
         return 0
     if args.command == "proof-report":
