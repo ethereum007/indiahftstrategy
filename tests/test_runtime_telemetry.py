@@ -6,8 +6,8 @@ from hft_cli import main
 from reports.runtime_telemetry import evaluate_runtime_telemetry, write_runtime_telemetry_snapshot
 
 
-def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money"):
-    return {
+def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money", require_instrument_metadata=False):
+    config = {
         "schema_version": 1,
         "ready": True,
         "target_mode": "shadow",
@@ -26,6 +26,16 @@ def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money"):
             "max_worst_adverse_slippage": 0.05,
         },
     }
+    if require_instrument_metadata:
+        config["instrument_metadata"] = {
+            "required": True,
+            "provided": True,
+            "passed": True,
+            "parse_coverage": 1.0,
+            "min_parse_coverage": 1.0,
+            "unparsed_instruments": 0,
+        }
+    return config
 
 
 def export_summary():
@@ -63,6 +73,22 @@ def reconciliation_checks():
         [
             {"check": "unmatched_fills", "passed": False, "reason": "one stray fill"},
             {"check": "mismatched_orders", "passed": True, "reason": ""},
+        ]
+    )
+
+
+def instrument_metadata_summary():
+    return pd.DataFrame(
+        [
+            {
+                "passed": True,
+                "instruments": 2,
+                "parsed_instruments": 2,
+                "unparsed_instruments": 0,
+                "parse_coverage": 1.0,
+                "min_parse_coverage": 1.0,
+                "symbol_formats": "nse_compact:2",
+            }
         ]
     )
 
@@ -129,10 +155,36 @@ def test_runtime_telemetry_defaults_to_scaleup_config_without_optional_inputs():
     assert row["total_failed_component_checks"] == 0
 
 
+def test_runtime_telemetry_carries_required_instrument_metadata_summary():
+    report = evaluate_runtime_telemetry(
+        scaleup_config(require_instrument_metadata=True),
+        instrument_metadata_summary=instrument_metadata_summary(),
+    )
+
+    row = report.telemetry.iloc[0]
+    assert report.ready
+    assert bool(row["instrument_metadata_required"])
+    assert bool(row["instrument_metadata_provided"])
+    assert bool(row["instrument_metadata_passed"])
+    assert row["instrument_parse_coverage"] == 1.0
+    assert row["unparsed_instruments"] == 0.0
+    source = report.sources.loc[report.sources["source"] == "instrument_metadata_summary"].iloc[0]
+    assert bool(source["provided"])
+
+
+def test_runtime_telemetry_fails_when_required_instrument_metadata_is_missing():
+    report = evaluate_runtime_telemetry(scaleup_config(require_instrument_metadata=True))
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "instrument_metadata_provided" in failed
+
+
 def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     export_dir = tmp_path / "export"
     reconciliation_dir = tmp_path / "reconciliation"
+    instrument_metadata_dir = tmp_path / "instrument_metadata"
     out_dir = tmp_path / "telemetry"
     pnl_path = tmp_path / "pnl.csv"
     open_orders_path = tmp_path / "open_orders.csv"
@@ -140,10 +192,12 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     scaleup_dir.mkdir()
     export_dir.mkdir()
     reconciliation_dir.mkdir()
+    instrument_metadata_dir.mkdir()
     (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
     export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
     reconciliation_summary().to_csv(reconciliation_dir / "reconciliation_summary.csv", index=False)
     reconciliation_checks().to_csv(reconciliation_dir / "reconciliation_checks.csv", index=False)
+    instrument_metadata_summary().to_csv(instrument_metadata_dir / "instrument_metadata_summary.csv", index=False)
     pnl_snapshot().to_csv(pnl_path, index=False)
     open_orders().to_csv(open_orders_path, index=False)
     positions().to_csv(positions_path, index=False)
@@ -152,6 +206,7 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
         scaleup_dir=scaleup_dir,
         export_dir=export_dir,
         reconciliation_dir=reconciliation_dir,
+        instrument_metadata_dir=instrument_metadata_dir,
         pnl_path=pnl_path,
         open_orders_path=open_orders_path,
         positions_path=positions_path,

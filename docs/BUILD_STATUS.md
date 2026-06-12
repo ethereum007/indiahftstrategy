@@ -173,11 +173,12 @@
   instrument metadata coverage into explicit order, notional, adapter, and
   kill-switch limits.
 - Runtime telemetry snapshot builder that converts scale-up, export,
-  reconciliation, PnL, open-order, and position artifacts into guard-ready
-  `runtime_telemetry.csv` inputs with source/check summaries.
+  reconciliation, optional instrument metadata, PnL, open-order, and position
+  artifacts into guard-ready `runtime_telemetry.csv` inputs with source/check
+  summaries.
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
-  against `scaleup_config.json` limits and kill switches, returning explicit
-  continue/halt decisions.
+  against `scaleup_config.json` limits, kill switches, and required instrument
+  metadata continuity, returning explicit continue/halt decisions.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests.
@@ -234,7 +235,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 275 tests.
+Current passing suite: 279 tests.
 
 ## Next Build Targets
 

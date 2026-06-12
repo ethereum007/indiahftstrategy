@@ -67,6 +67,8 @@ def _metrics(scaleup_config: dict[str, Any], telemetry: pd.DataFrame) -> pd.Data
     latest = telemetry.iloc[-1]
     limits = scaleup_config.get("limits", {}) or {}
     kill_switches = scaleup_config.get("kill_switches", {}) or {}
+    instrument_metadata = scaleup_config.get("instrument_metadata", {}) or {}
+    metadata_min_coverage = _number_from(instrument_metadata, "min_parse_coverage")
     return pd.DataFrame(
         [
             {
@@ -88,6 +90,20 @@ def _metrics(scaleup_config: dict[str, Any], telemetry: pd.DataFrame) -> pd.Data
                     latest,
                     "worst_adverse_slippage",
                     fallback=_number(latest, "max_adverse_slippage"),
+                ),
+                "instrument_metadata_required": _bool_from(instrument_metadata, "required"),
+                "scaleup_instrument_metadata_provided": _bool_from(instrument_metadata, "provided"),
+                "scaleup_instrument_metadata_passed": _bool_from(instrument_metadata, "passed"),
+                "scaleup_instrument_parse_coverage": _number_from(instrument_metadata, "parse_coverage"),
+                "scaleup_unparsed_instruments": _number_from(instrument_metadata, "unparsed_instruments"),
+                "runtime_instrument_metadata_provided": _bool_value(latest, "instrument_metadata_provided", fallback=False),
+                "runtime_instrument_metadata_passed": _bool_value(latest, "instrument_metadata_passed", fallback=False),
+                "runtime_instrument_parse_coverage": _number(latest, "instrument_parse_coverage"),
+                "runtime_unparsed_instruments": _number(latest, "unparsed_instruments"),
+                "min_instrument_parse_coverage": _number(
+                    latest,
+                    "min_instrument_parse_coverage",
+                    fallback=metadata_min_coverage,
                 ),
                 "max_orders_per_session": _number_from(limits, "max_orders_per_session"),
                 "max_notional_per_session": _number_from(limits, "max_notional_per_session"),
@@ -150,6 +166,62 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 "<=",
                 row["max_worst_adverse_slippage"],
             )
+        )
+    metadata_required = bool(row["instrument_metadata_required"])
+    metadata_provided = bool(row["runtime_instrument_metadata_provided"])
+    if metadata_required:
+        checks.extend(
+            [
+                _check(
+                    "scaleup_instrument_metadata_provided",
+                    bool(row["scaleup_instrument_metadata_provided"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_instrument_metadata_provided"]),
+                    "scale-up config requires instrument metadata but does not record supplied evidence",
+                ),
+                _check(
+                    "scaleup_instrument_metadata_passed",
+                    bool(row["scaleup_instrument_metadata_passed"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_instrument_metadata_passed"]),
+                    "scale-up config requires instrument metadata but the gate did not pass",
+                ),
+                _check(
+                    "runtime_instrument_metadata_provided",
+                    metadata_provided,
+                    "is",
+                    True,
+                    metadata_provided,
+                    "runtime telemetry is missing required instrument metadata evidence",
+                ),
+            ]
+        )
+    if metadata_required or metadata_provided:
+        checks.extend(
+            [
+                _check(
+                    "runtime_instrument_metadata_passed",
+                    bool(row["runtime_instrument_metadata_passed"]),
+                    "is",
+                    True,
+                    bool(row["runtime_instrument_metadata_passed"]),
+                    "runtime instrument metadata did not pass",
+                ),
+                _threshold_check(
+                    "runtime_instrument_parse_coverage",
+                    row["runtime_instrument_parse_coverage"],
+                    ">=",
+                    row["min_instrument_parse_coverage"],
+                ),
+                _threshold_check(
+                    "runtime_unparsed_instruments",
+                    row["runtime_unparsed_instruments"],
+                    "<=",
+                    0,
+                ),
+            ]
         )
     manual_halt = _manual_halt(scaleup_config)
     if manual_halt:
@@ -248,3 +320,24 @@ def _number_from(mapping: dict[str, Any], key: str) -> float:
     if value is None or pd.isna(value):
         return np.nan
     return float(value)
+
+
+def _bool_from(mapping: dict[str, Any], key: str) -> bool:
+    return _to_bool(mapping.get(key, False))
+
+
+def _bool_value(row: pd.Series, column: str, fallback: bool = False) -> bool:
+    return _to_bool(row.get(column, fallback))
+
+
+def _to_bool(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "passed", "ready"}
+    if value is None:
+        return False
+    try:
+        if bool(pd.isna(value)):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(value)

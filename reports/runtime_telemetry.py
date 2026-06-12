@@ -44,6 +44,7 @@ def evaluate_runtime_telemetry(
     export_summary: pd.DataFrame | None = None,
     reconciliation_summary: pd.DataFrame | None = None,
     reconciliation_checks: pd.DataFrame | None = None,
+    instrument_metadata_summary: pd.DataFrame | None = None,
     pnl_snapshot: pd.DataFrame | None = None,
     open_orders: pd.DataFrame | None = None,
     positions: pd.DataFrame | None = None,
@@ -52,6 +53,7 @@ def evaluate_runtime_telemetry(
     export_summary = _optional_frame(export_summary)
     reconciliation_summary = _optional_frame(reconciliation_summary)
     reconciliation_checks = _optional_frame(reconciliation_checks)
+    instrument_metadata_summary = _optional_frame(instrument_metadata_summary)
     pnl_snapshot = _optional_frame(pnl_snapshot)
     open_orders = _optional_frame(open_orders)
     positions = _optional_frame(positions)
@@ -61,6 +63,7 @@ def evaluate_runtime_telemetry(
         export_summary=export_summary,
         reconciliation_summary=reconciliation_summary,
         reconciliation_checks=reconciliation_checks,
+        instrument_metadata_summary=instrument_metadata_summary,
         pnl_snapshot=pnl_snapshot,
         open_orders=open_orders,
         positions=positions,
@@ -70,6 +73,7 @@ def evaluate_runtime_telemetry(
         export_summary=export_summary,
         reconciliation_summary=reconciliation_summary,
         reconciliation_checks=reconciliation_checks,
+        instrument_metadata_summary=instrument_metadata_summary,
         pnl_snapshot=pnl_snapshot,
         open_orders=open_orders,
         positions=positions,
@@ -85,6 +89,7 @@ def write_runtime_telemetry_snapshot(
     output_dir: str | Path,
     export_dir: str | Path | None = None,
     reconciliation_dir: str | Path | None = None,
+    instrument_metadata_dir: str | Path | None = None,
     pnl_path: str | Path | None = None,
     open_orders_path: str | Path | None = None,
     positions_path: str | Path | None = None,
@@ -95,6 +100,7 @@ def write_runtime_telemetry_snapshot(
     export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv")
     reconciliation_summary = _read_optional_summary(reconciliation_dir, "reconciliation_summary.csv")
     reconciliation_checks = _read_optional_summary(reconciliation_dir, "reconciliation_checks.csv")
+    instrument_metadata_summary = _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")
     pnl_snapshot = _read_optional_csv(pnl_path)
     open_orders = _read_optional_csv(open_orders_path)
     positions = _read_optional_csv(positions_path)
@@ -104,6 +110,7 @@ def write_runtime_telemetry_snapshot(
         export_summary=export_summary,
         reconciliation_summary=reconciliation_summary,
         reconciliation_checks=reconciliation_checks,
+        instrument_metadata_summary=instrument_metadata_summary,
         pnl_snapshot=pnl_snapshot,
         open_orders=open_orders,
         positions=positions,
@@ -123,6 +130,7 @@ def write_runtime_telemetry_snapshot(
             "scaleup": scaleup_file,
             "export": export_dir,
             "reconciliation": reconciliation_dir,
+            "instrument_metadata": instrument_metadata_dir,
             "pnl": pnl_path,
             "open_orders": open_orders_path,
             "positions": positions_path,
@@ -137,6 +145,7 @@ def _telemetry(
     export_summary: pd.DataFrame,
     reconciliation_summary: pd.DataFrame,
     reconciliation_checks: pd.DataFrame,
+    instrument_metadata_summary: pd.DataFrame,
     pnl_snapshot: pd.DataFrame,
     open_orders: pd.DataFrame,
     positions: pd.DataFrame,
@@ -144,6 +153,8 @@ def _telemetry(
 ) -> pd.DataFrame:
     export = _first_row(export_summary)
     recon = _first_row(reconciliation_summary)
+    metadata = _first_row(instrument_metadata_summary)
+    scaleup_metadata = scaleup_config.get("instrument_metadata", {}) or {}
     pnl = _last_row(pnl_snapshot)
     orders_sent = _first_number(
         _number(export, "orders"),
@@ -171,6 +182,18 @@ def _telemetry(
         "mismatched_orders": int(_first_number(_number(recon, "mismatched_orders"), 0.0)),
         "overfilled_orders": int(_first_number(_number(recon, "overfilled_orders"), 0.0)),
         "worst_adverse_slippage": float(_first_number(_number(recon, "max_adverse_slippage"), 0.0)),
+        "instrument_metadata_required": _to_bool(scaleup_metadata.get("required", False)),
+        "instrument_metadata_provided": not instrument_metadata_summary.empty,
+        "instrument_metadata_passed": _to_bool(metadata.get("passed", False)) if not metadata.empty else False,
+        "instrument_parse_coverage": float(_first_number(_number(metadata, "parse_coverage"), np.nan)),
+        "min_instrument_parse_coverage": float(
+            _first_number(
+                _number(metadata, "min_parse_coverage"),
+                scaleup_metadata.get("min_parse_coverage", np.nan),
+                np.nan,
+            )
+        ),
+        "unparsed_instruments": float(_first_number(_number(metadata, "unparsed_instruments"), np.nan)),
         "open_order_count": int(_active_open_orders(open_orders)),
         "open_order_qty": float(_open_order_qty(open_orders)),
         "gross_position_qty": float(_gross_position_qty(positions)),
@@ -202,6 +225,54 @@ def _checks(row: pd.Series) -> pd.DataFrame:
         value = row[column]
         present = not pd.isna(value) and (not isinstance(value, str) or bool(value.strip()))
         checks.append(_check(f"{column}_available", value, "present", True, present, f"{column} is unavailable"))
+    metadata_required = _to_bool(row.get("instrument_metadata_required", False))
+    metadata_provided = _to_bool(row.get("instrument_metadata_provided", False))
+    if metadata_required:
+        checks.append(
+            _check(
+                "instrument_metadata_provided",
+                metadata_provided,
+                "is",
+                True,
+                metadata_provided,
+                "instrument metadata summary is required but was not supplied",
+            )
+        )
+    if metadata_required or metadata_provided:
+        metadata_passed = _to_bool(row.get("instrument_metadata_passed", False))
+        parse_coverage = _number(row, "instrument_parse_coverage")
+        min_coverage = _number(row, "min_instrument_parse_coverage")
+        unparsed = _number(row, "unparsed_instruments")
+        coverage_ready = not np.isnan(parse_coverage) and not np.isnan(min_coverage) and parse_coverage + 1e-12 >= min_coverage
+        unparsed_ready = not np.isnan(unparsed) and unparsed <= 0
+        checks.extend(
+            [
+                _check(
+                    "instrument_metadata_passed",
+                    metadata_passed,
+                    "is",
+                    True,
+                    metadata_passed,
+                    "instrument metadata summary did not pass",
+                ),
+                _check(
+                    "instrument_parse_coverage",
+                    parse_coverage,
+                    ">=",
+                    min_coverage,
+                    coverage_ready,
+                    "instrument parse coverage is below the required threshold",
+                ),
+                _check(
+                    "unparsed_instruments",
+                    unparsed,
+                    "<=",
+                    0,
+                    unparsed_ready,
+                    "instrument metadata contains unparsed instruments",
+                ),
+            ]
+        )
     return pd.DataFrame(checks)
 
 
@@ -343,6 +414,13 @@ def _position_quantities(positions: pd.DataFrame) -> pd.Series:
 def _to_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
+    if value is None:
+        return False
+    try:
+        if bool(pd.isna(value)):
+            return False
+    except (TypeError, ValueError):
+        pass
     return bool(value)
 
 

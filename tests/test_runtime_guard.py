@@ -31,6 +31,17 @@ def scaleup_config(**overrides):
     return config
 
 
+def instrument_metadata_config():
+    return {
+        "required": True,
+        "provided": True,
+        "passed": True,
+        "parse_coverage": 1.0,
+        "min_parse_coverage": 1.0,
+        "unparsed_instruments": 0,
+    }
+
+
 def telemetry(**overrides):
     row = {
         "scenario_key": "trigger_ticks=2",
@@ -79,6 +90,34 @@ def test_runtime_guard_halts_on_manual_halt_flag():
     assert report.halted
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "manual_halt" in failed
+
+
+def test_runtime_guard_halts_when_required_instrument_metadata_is_missing_from_telemetry():
+    report = evaluate_runtime_guard(
+        scaleup_config(instrument_metadata=instrument_metadata_config()),
+        telemetry(),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "runtime_instrument_metadata_provided" in failed
+
+
+def test_runtime_guard_continues_when_required_instrument_metadata_is_present():
+    report = evaluate_runtime_guard(
+        scaleup_config(instrument_metadata=instrument_metadata_config()),
+        telemetry(
+            instrument_metadata_provided=True,
+            instrument_metadata_passed=True,
+            instrument_parse_coverage=1.0,
+            min_instrument_parse_coverage=1.0,
+            unparsed_instruments=0,
+        ),
+    )
+
+    assert not report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert failed == set()
 
 
 def test_write_runtime_guard_outputs_artifacts(tmp_path):

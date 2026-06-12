@@ -1275,13 +1275,14 @@ manifest.json
 ## Runtime Telemetry Snapshot
 
 Build a guard-ready telemetry row from scale-up config, broker export,
-reconciliation, PnL, open-order, and position snapshots:
+reconciliation, instrument metadata, PnL, open-order, and position snapshots:
 
 ```powershell
 python -m hft_cli build-runtime-telemetry `
   --scaleup runs\scaleup\leadlag_shadow `
   --export runs\exports\leadlag_shadow_latest `
   --reconciliation runs\reconciliation\leadlag_shadow_latest `
+  --instrument-metadata runs\instrument_metadata\leadlag_shadow_latest `
   --pnl logs\leadlag_shadow_pnl.csv `
   --open-orders logs\open_orders.csv `
   --positions logs\positions.csv `
@@ -1315,7 +1316,7 @@ python -m hft_cli monitor-scaleup-guard `
 Telemetry CSV columns:
 
 ```text
-scenario_key,adapter,orders_sent,session_notional,realized_pnl,total_failed_component_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage
+scenario_key,adapter,orders_sent,session_notional,realized_pnl,total_failed_component_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments
 ```
 
 Outputs:
