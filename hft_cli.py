@@ -19,6 +19,7 @@ from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
+from reports.imbalance_edge import ImbalanceEdgeThresholds, write_imbalance_edge_audit
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
@@ -110,6 +111,23 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_edge.add_argument("--min-best-latency-fills", type=int, default=1)
     leadlag_edge.add_argument("--min-profitable-latency-ns", type=int, default=0)
     leadlag_edge.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_edge = sub.add_parser("audit-imbalance-edge", help="Gate microprice imbalance evidence before replay.")
+    imbalance_edge.add_argument("--ticks", required=True)
+    imbalance_edge.add_argument("--out", required=True)
+    imbalance_edge.add_argument("--no-filter-session", action="store_true")
+    imbalance_edge.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_edge.add_argument("--entry-imbalance", type=float, default=0.6)
+    imbalance_edge.add_argument("--min-microprice-edge-ticks", type=float, default=0.25)
+    imbalance_edge.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_edge.add_argument("--min-depth", type=int, default=1)
+    imbalance_edge.add_argument("--forward-horizon-ns", type=int, default=100_000_000)
+    imbalance_edge.add_argument("--min-signals", type=int, default=1)
+    imbalance_edge.add_argument("--min-direction-count", type=int, default=1)
+    imbalance_edge.add_argument("--min-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge.add_argument("--min-win-rate", type=float, default=0.0)
+    imbalance_edge.add_argument("--min-median-forward-edge-ticks", type=float, default=None)
+    imbalance_edge.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_replay = sub.add_parser("replay-leadlag", help="Replay lead-lag taker strategy.")
     leadlag_replay.add_argument("--leader", required=True)
@@ -728,6 +746,27 @@ def main(argv: list[str] | None = None) -> int:
                 min_best_latency_net_pnl=args.min_best_latency_net_pnl,
                 min_best_latency_fills=args.min_best_latency_fills,
                 min_profitable_latency_ns=args.min_profitable_latency_ns,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "audit-imbalance-edge":
+        result = write_imbalance_edge_audit(
+            args.ticks,
+            output_dir=args.out,
+            tick_size=args.tick_size,
+            filter_session=not args.no_filter_session,
+            thresholds=ImbalanceEdgeThresholds(
+                entry_imbalance=args.entry_imbalance,
+                min_microprice_edge_ticks=args.min_microprice_edge_ticks,
+                max_spread_ticks=args.max_spread_ticks,
+                min_depth=args.min_depth,
+                forward_horizon_ns=args.forward_horizon_ns,
+                min_signals=args.min_signals,
+                min_direction_count=args.min_direction_count,
+                min_mean_forward_edge_ticks=args.min_mean_forward_edge_ticks,
+                min_win_rate=args.min_win_rate,
+                min_median_forward_edge_ticks=args.min_median_forward_edge_ticks,
             ),
         )
         print(result.summary.to_string(index=False))

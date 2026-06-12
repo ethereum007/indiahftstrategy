@@ -261,6 +261,35 @@ python -m hft_cli replay-leadlag `
   --fill-model runs\fill_model\leadlag_shadow_latest
 ```
 
+## Microprice Imbalance Edge Audit
+
+Scan normalized top-of-book ticks for imbalance/microprice signals and measure
+forward-mid response before spending time on replay grids:
+
+```powershell
+python -m hft_cli audit-imbalance-edge `
+  --ticks data\atm_option_ticks.csv `
+  --out runs\imbalance_edge_2026_06_10 `
+  --entry-imbalance 0.6 `
+  --min-microprice-edge-ticks 0.25 `
+  --forward-horizon-ns 100000000 `
+  --min-signals 100 `
+  --min-direction-count 2 `
+  --min-mean-forward-edge-ticks 0.25 `
+  --min-win-rate 0.52 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_signals.csv
+imbalance_edge_metrics.csv
+imbalance_edge_checks.csv
+imbalance_edge_summary.csv
+manifest.json
+```
+
 ## Microprice Imbalance Replay
 
 Replay a single-instrument top-of-book imbalance strategy that enters when

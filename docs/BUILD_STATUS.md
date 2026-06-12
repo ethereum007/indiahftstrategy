@@ -20,6 +20,9 @@
 - Lead-lag edge audit that gates measured relationships on events,
   correlation, laggard update rate, update latency, and latency-curve PnL
   before replay/sweep promotion.
+- Microprice/order-book imbalance edge audit that scans top-of-book ticks for
+  imbalance/microprice signals and gates forward-mid response, direction
+  coverage, and win rate before replay/sweep work.
 - Replay strategies: parity taker and lead-lag taker.
 - Replay CLIs for parity taker and lead-lag taker, writing fills, equity,
   summary, signals/legging, and markout artifacts.
@@ -170,7 +173,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 202 tests.
+Current passing suite: 206 tests.
 
 ## Next Build Targets
 

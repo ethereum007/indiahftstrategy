@@ -83,6 +83,29 @@ def test_catalog_experiment_runs_recognizes_proof_refresh_status(tmp_path):
     assert row["summary_proof_source"] == "latest"
 
 
+def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "imbalance_edge",
+        run_type="imbalance_edge_audit",
+        summary_name="imbalance_edge_summary.csv",
+        summary_row={
+            "passed": True,
+            "failed_checks": 0,
+            "signal_count": 12,
+            "mean_forward_edge_ticks": 1.25,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["summary_file"] == "imbalance_edge_summary.csv"
+    assert row["summary_status_column"] == "passed"
+    assert row["summary_signal_count"] == 12
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"
