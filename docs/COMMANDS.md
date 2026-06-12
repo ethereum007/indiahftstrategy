@@ -1766,6 +1766,34 @@ vendor_market_data_pipeline_summary.csv
 manifest.json
 ```
 
+For multi-day onboarding, run each raw file through the same pipeline and
+compare data-readiness evidence before walk-forward research:
+
+```powershell
+python -m hft_cli pipeline-vendor-market-data-batch `
+  --input vendor\arrow_ticks_2026_06_10.csv vendor\arrow_ticks_2026_06_11.csv `
+  --label day1 `
+  --label day2 `
+  --out runs\vendor_data\arrow_ticks_batch `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --min-datasets 2 `
+  --min-ready-rate 1 `
+  --fail-on-breach
+```
+
+Batch outputs:
+
+```text
+datasets\<label>\vendor_market_data_pipeline_summary.csv
+comparison\data_readiness_comparison_summary.csv
+vendor_market_data_batch_datasets.csv
+vendor_market_data_batch_summary.csv
+manifest.json
+```
+
 ## Order Staging
 
 Stage generated quote or order candidates into a broker-neutral pre-trade file

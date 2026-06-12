@@ -24,6 +24,7 @@ SUMMARY_FILES = [
     "settlement_convergence_summary.csv",
     "proof_summary.csv",
     "proof_refresh_summary.csv",
+    "vendor_market_data_batch_summary.csv",
     "vendor_market_data_pipeline_summary.csv",
     "data_readiness_summary.csv",
     "data_readiness_comparison_summary.csv",

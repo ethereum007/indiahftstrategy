@@ -11,6 +11,11 @@ from adapters.vendor_intake import VendorCsvIntakeConfig, VendorCsvIntakeReport,
 from data.diagnostics import DiagnosticResult, chain_diagnostics, tick_diagnostics, write_diagnostics
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.data_readiness import DataReadinessReport, DataReadinessThresholds, write_data_readiness_report
+from reports.data_readiness_comparison import (
+    DataReadinessComparisonReport,
+    DataReadinessComparisonThresholds,
+    write_data_readiness_comparison,
+)
 from reports.manifest import write_experiment_manifest
 
 
@@ -44,6 +49,20 @@ class VendorMarketDataPipelineReport:
     mapped_data: MappedDataReport
     diagnostics: DiagnosticResult
     readiness: DataReadinessReport
+    output_dir: Path | None = None
+
+    @property
+    def ready(self) -> bool:
+        if self.summary.empty:
+            return False
+        return bool(self.summary.iloc[0]["ready"])
+
+
+@dataclass(frozen=True)
+class VendorMarketDataBatchReport:
+    datasets: pd.DataFrame
+    summary: pd.DataFrame
+    comparison: DataReadinessComparisonReport
     output_dir: Path | None = None
 
     @property
@@ -129,6 +148,92 @@ def write_vendor_market_data_pipeline(
         },
     )
     return VendorMarketDataPipelineReport(components, summary, intake, mapped, diagnostics, readiness, out)
+
+
+def write_vendor_market_data_batch_pipeline(
+    input_paths: list[str | Path],
+    *,
+    output_dir: str | Path,
+    labels: list[str] | None = None,
+    mapping_path: str | Path | None = None,
+    config: VendorMarketDataPipelineConfig | None = None,
+    readiness_thresholds: DataReadinessThresholds | None = None,
+    comparison_thresholds: DataReadinessComparisonThresholds | None = None,
+) -> VendorMarketDataBatchReport:
+    config = config or VendorMarketDataPipelineConfig()
+    _validate_config(config)
+    paths = [Path(path) for path in input_paths]
+    if not paths:
+        raise ValueError("at least one vendor market-data input is required")
+    if labels is not None and len(labels) != len(paths):
+        raise ValueError("labels must match input paths")
+    for path in paths:
+        if not path.exists():
+            raise FileNotFoundError(f"vendor market-data input not found: {path}")
+
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    dataset_rows = []
+    readiness_dirs = []
+    comparison_labels = []
+    for idx, path in enumerate(paths):
+        label = labels[idx] if labels is not None else path.stem
+        dataset_dir = out / "datasets" / _safe_label(label, idx)
+        report = write_vendor_market_data_pipeline(
+            path,
+            output_dir=dataset_dir,
+            mapping_path=mapping_path,
+            config=config,
+            readiness_thresholds=readiness_thresholds,
+        )
+        readiness_dir = dataset_dir / "04_data_readiness"
+        readiness_dirs.append(readiness_dir)
+        comparison_labels.append(label)
+        row = report.summary.iloc[0] if not report.summary.empty else pd.Series(dtype=object)
+        dataset_rows.append(
+            {
+                "dataset": label,
+                "input_path": str(path),
+                "pipeline_dir": str(dataset_dir),
+                "data_readiness_dir": str(readiness_dir),
+                "ready": bool(report.ready),
+                "normalized_rows": int(_number(row, "normalized_rows", fallback=0.0)),
+                "failed_components": int(_number(row, "failed_components", fallback=1.0)),
+                "recommendation": str(row.get("recommendation", "")),
+            }
+        )
+
+    thresholds = comparison_thresholds or DataReadinessComparisonThresholds(
+        min_datasets=len(paths),
+        min_ready_datasets=len(paths),
+        min_ready_rate=1.0,
+        max_total_failed_checks=0,
+    )
+    comparison = write_data_readiness_comparison(
+        readiness_dirs,
+        output_dir=out / "comparison",
+        labels=comparison_labels,
+        thresholds=thresholds,
+    )
+    datasets = pd.DataFrame(dataset_rows)
+    summary = _batch_summary(datasets, comparison, config)
+    datasets.to_csv(out / "vendor_market_data_batch_datasets.csv", index=False)
+    summary.to_csv(out / "vendor_market_data_batch_summary.csv", index=False)
+    write_experiment_manifest(
+        out,
+        run_type="vendor_market_data_batch_pipeline",
+        parameters={
+            "config": asdict(config),
+            "readiness_thresholds": asdict(readiness_thresholds)
+            if readiness_thresholds is not None
+            else asdict(_readiness_thresholds(config)),
+            "comparison_thresholds": asdict(thresholds),
+            "labels": labels,
+            "mapping_source": "provided" if mapping_path is not None else "per_dataset_vendor_intake_draft",
+        },
+        inputs={"inputs": paths, "mapping": mapping_path},
+    )
+    return VendorMarketDataBatchReport(datasets, summary, comparison, out)
 
 
 def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarketDataPipelineConfig) -> DiagnosticResult:
@@ -230,6 +335,35 @@ def _summary(
     )
 
 
+def _batch_summary(
+    datasets: pd.DataFrame,
+    comparison: DataReadinessComparisonReport,
+    config: VendorMarketDataPipelineConfig,
+) -> pd.DataFrame:
+    comparison_row = comparison.summary.iloc[0] if not comparison.summary.empty else pd.Series(dtype=object)
+    dataset_count = int(len(datasets))
+    ready_datasets = int(datasets["ready"].astype(bool).sum()) if dataset_count else 0
+    failed_datasets = dataset_count - ready_datasets
+    accepted = bool(comparison.accepted)
+    return pd.DataFrame(
+        [
+            {
+                "ready": bool(accepted and failed_datasets == 0),
+                "adapter": config.adapter,
+                "kind": config.kind,
+                "dataset_count": dataset_count,
+                "ready_datasets": ready_datasets,
+                "failed_datasets": failed_datasets,
+                "ready_rate": float(ready_datasets / dataset_count) if dataset_count else 0.0,
+                "comparison_accepted": accepted,
+                "comparison_ready_rate": _number(comparison_row, "ready_rate", fallback=0.0),
+                "comparison_failed_checks": int(_number(comparison_row, "total_failed_checks", fallback=0.0)),
+                "recommendation": "feed_walkforward_research" if accepted and failed_datasets == 0 else "fix_vendor_market_data_batch",
+            }
+        ]
+    )
+
+
 def _diagnostics_ready(diagnostics: DiagnosticResult) -> bool:
     row = _diagnostic_overall(diagnostics)
     return int(_number(row, "rows", fallback=0.0)) > 0
@@ -260,6 +394,11 @@ def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _safe_label(label: str, idx: int) -> str:
+    safe = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in str(label).strip())
+    return safe or f"dataset_{idx + 1}"
 
 
 def _validate_config(config: VendorMarketDataPipelineConfig) -> None:

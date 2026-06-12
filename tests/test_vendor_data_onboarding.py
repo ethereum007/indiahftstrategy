@@ -3,14 +3,18 @@ import json
 import pandas as pd
 
 from hft_cli import main
-from reports.vendor_data_onboarding import VendorMarketDataPipelineConfig, write_vendor_market_data_pipeline
+from reports.vendor_data_onboarding import (
+    VendorMarketDataPipelineConfig,
+    write_vendor_market_data_batch_pipeline,
+    write_vendor_market_data_pipeline,
+)
 
 
-def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
-    raw = pd.DataFrame(
+def vendor_ticks(day: str) -> pd.DataFrame:
+    return pd.DataFrame(
         [
             {
-                "exchange_ts": "2026-06-10 09:15:00",
+                "exchange_ts": f"{day} 09:15:00",
                 "best_bid": 100.0,
                 "best_ask": 100.05,
                 "bid_size": 75,
@@ -19,7 +23,7 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
                 "last_size": 75,
             },
             {
-                "exchange_ts": "2026-06-10 09:15:01",
+                "exchange_ts": f"{day} 09:15:01",
                 "best_bid": 100.05,
                 "best_ask": 100.10,
                 "bid_size": 150,
@@ -29,6 +33,10 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
             },
         ]
     )
+
+
+def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
+    raw = vendor_ticks("2026-06-10")
     raw_path = tmp_path / "arrow_ticks.csv"
     out_dir = tmp_path / "pipeline"
     raw.to_csv(raw_path, index=False)
@@ -58,6 +66,37 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert (out_dir / "03_diagnostics" / "diagnostic_summary.csv").exists()
     assert (out_dir / "04_data_readiness" / "data_readiness_summary.csv").exists()
     assert manifest["run_type"] == "vendor_market_data_pipeline"
+
+
+def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
+    day1 = tmp_path / "arrow_ticks_day1.csv"
+    day2 = tmp_path / "arrow_ticks_day2.csv"
+    out_dir = tmp_path / "batch"
+    vendor_ticks("2026-06-10").to_csv(day1, index=False)
+    vendor_ticks("2026-06-11").to_csv(day2, index=False)
+
+    report = write_vendor_market_data_batch_pipeline(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=2,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert summary["dataset_count"] == 2
+    assert summary["comparison_accepted"]
+    assert set(report.datasets["dataset"]) == {"day1", "day2"}
+    assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
+    assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
+    assert manifest["run_type"] == "vendor_market_data_batch_pipeline"
 
 
 def test_vendor_market_data_pipeline_onboards_option_chain_file(tmp_path):
@@ -136,3 +175,36 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     assert not bool(summary.loc[0, "ready"])
     assert "not_ready" in set(components["status"])
     assert (out_dir / "04_data_readiness" / "data_readiness_summary.csv").exists()
+
+
+def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_misses(tmp_path):
+    day1 = tmp_path / "arrow_ticks_day1.csv"
+    out_dir = tmp_path / "batch"
+    vendor_ticks("2026-06-10").to_csv(day1, index=False)
+
+    code = main(
+        [
+            "pipeline-vendor-market-data-batch",
+            "--input",
+            str(day1),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-datasets",
+            "2",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "vendor_market_data_batch_summary.csv")
+    checks = pd.read_csv(out_dir / "comparison" / "data_readiness_comparison_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "dataset_count" in set(checks.loc[~checks["passed"].astype(bool), "check"])

@@ -84,7 +84,11 @@ from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_s
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
-from reports.vendor_data_onboarding import VendorMarketDataPipelineConfig, write_vendor_market_data_pipeline
+from reports.vendor_data_onboarding import (
+    VendorMarketDataPipelineConfig,
+    write_vendor_market_data_batch_pipeline,
+    write_vendor_market_data_pipeline,
+)
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
@@ -596,6 +600,38 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data.add_argument("--max-p99-gap-ns", type=float, default=None)
     vendor_market_data.add_argument("--max-median-spread-ticks", type=float, default=None)
     vendor_market_data.add_argument("--fail-on-breach", action="store_true")
+
+    vendor_market_data_batch = sub.add_parser(
+        "pipeline-vendor-market-data-batch",
+        help="Onboard multiple vendor CSV days and compare data readiness before walk-forward research.",
+    )
+    vendor_market_data_batch.add_argument("--input", nargs="+", required=True)
+    vendor_market_data_batch.add_argument("--out", required=True)
+    vendor_market_data_batch.add_argument("--label", action="append", dest="labels")
+    vendor_market_data_batch.add_argument("--mapping", default=None)
+    vendor_market_data_batch.add_argument("--adapter", default="arrow_money")
+    vendor_market_data_batch.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
+    vendor_market_data_batch.add_argument("--output-file", default=None)
+    vendor_market_data_batch.add_argument("--sample-rows", type=int, default=1000)
+    vendor_market_data_batch.add_argument("--min-mapping-coverage", type=float, default=1.0)
+    vendor_market_data_batch.add_argument("--timestamp-unit", default="ns")
+    vendor_market_data_batch.add_argument("--timestamp-tz", default=None)
+    vendor_market_data_batch.add_argument("--market", default="india_nse_index_derivatives")
+    vendor_market_data_batch.add_argument("--no-filter-session", action="store_true")
+    vendor_market_data_batch.add_argument("--tick-size", type=float, default=None)
+    vendor_market_data_batch.add_argument("--allow-missing-required", action="store_true")
+    vendor_market_data_batch.add_argument("--min-rows", type=int, default=1)
+    vendor_market_data_batch.add_argument("--max-crossed-quote-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-out-of-session-rows", type=int, default=0)
+    vendor_market_data_batch.add_argument("--max-p99-gap-ns", type=float, default=None)
+    vendor_market_data_batch.add_argument("--max-median-spread-ticks", type=float, default=None)
+    vendor_market_data_batch.add_argument("--min-datasets", type=int, default=None)
+    vendor_market_data_batch.add_argument("--min-ready-datasets", type=int, default=None)
+    vendor_market_data_batch.add_argument("--min-ready-rate", type=float, default=1.0)
+    vendor_market_data_batch.add_argument("--max-total-failed-checks", type=int, default=0)
+    vendor_market_data_batch.add_argument("--fail-on-breach", action="store_true")
 
     diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
     diag_ticks.add_argument("--ticks", required=True)
@@ -1810,6 +1846,44 @@ def main(argv: list[str] | None = None) -> int:
                 max_out_of_session_rows=args.max_out_of_session_rows,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-vendor-market-data-batch":
+        input_count = len(args.input)
+        result = write_vendor_market_data_batch_pipeline(
+            args.input,
+            output_dir=args.out,
+            labels=args.labels,
+            mapping_path=args.mapping,
+            config=VendorMarketDataPipelineConfig(
+                adapter=args.adapter,
+                kind=args.kind,
+                sample_rows=args.sample_rows,
+                min_mapping_coverage=args.min_mapping_coverage,
+                output_filename=args.output_file,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                filter_session=not args.no_filter_session,
+                market=args.market,
+                tick_size=args.tick_size,
+                require_all_mapped=not args.allow_missing_required,
+                min_rows=args.min_rows,
+                max_crossed_quote_rows=args.max_crossed_quote_rows,
+                max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_out_of_session_rows=args.max_out_of_session_rows,
+                max_p99_gap_ns=args.max_p99_gap_ns,
+                max_median_spread_ticks=args.max_median_spread_ticks,
+            ),
+            comparison_thresholds=DataReadinessComparisonThresholds(
+                min_datasets=args.min_datasets if args.min_datasets is not None else input_count,
+                min_ready_datasets=args.min_ready_datasets
+                if args.min_ready_datasets is not None
+                else input_count,
+                min_ready_rate=args.min_ready_rate,
+                max_total_failed_checks=args.max_total_failed_checks,
             ),
         )
         print(result.summary.to_string(index=False))
