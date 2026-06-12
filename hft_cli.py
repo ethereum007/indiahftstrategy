@@ -13,6 +13,7 @@ from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnost
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
+from reports.halt_response import HaltResponseConfig, write_halt_response_plan
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
@@ -372,6 +373,17 @@ def main(argv: list[str] | None = None) -> int:
     runtime_guard.add_argument("--telemetry", required=True)
     runtime_guard.add_argument("--out", required=True)
     runtime_guard.add_argument("--fail-on-halt", action="store_true")
+
+    halt_response = sub.add_parser("plan-halt-response", help="Create cancel/flatten actions after a guard halt.")
+    halt_response.add_argument("--guard", required=True)
+    halt_response.add_argument("--out", required=True)
+    halt_response.add_argument("--open-orders", default=None)
+    halt_response.add_argument("--positions", default=None)
+    halt_response.add_argument("--allow-continue-guard", action="store_true")
+    halt_response.add_argument("--allow-missing-flatten-prices", action="store_true")
+    halt_response.add_argument("--default-order-type", default="LIMIT")
+    halt_response.add_argument("--default-time-in-force", default="DAY")
+    halt_response.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -875,6 +887,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_halt and result.halted else 0
+    if args.command == "plan-halt-response":
+        result = write_halt_response_plan(
+            guard_dir=args.guard,
+            output_dir=args.out,
+            open_orders_path=args.open_orders,
+            positions_path=args.positions,
+            config=HaltResponseConfig(
+                require_guard_halt=not args.allow_continue_guard,
+                require_flatten_prices=not args.allow_missing_flatten_prices,
+                default_order_type=args.default_order_type,
+                default_time_in_force=args.default_time_in_force,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,

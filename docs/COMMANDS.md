@@ -721,6 +721,36 @@ runtime_guard_summary.csv
 manifest.json
 ```
 
+## Halt Response Plan
+
+Convert a runtime guard halt into broker-neutral cancel and flatten action files:
+
+```powershell
+python -m hft_cli plan-halt-response `
+  --guard runs\guards\leadlag_shadow_latest `
+  --open-orders logs\open_orders.csv `
+  --positions logs\positions.csv `
+  --out runs\halt_response\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Open-order CSV inputs may include `client_order_id`, `broker_order_id`,
+`instrument_id`, `side`, `qty`, `filled_qty`, `open_qty`, and `status`.
+Position CSV inputs should include `instrument_id`, `net_qty`, and executable
+flatten prices such as `market_bid`/`market_ask`, `bid`/`ask`, `last`, or
+`price`.
+
+Outputs:
+
+```text
+halt_cancel_orders.csv
+halt_flatten_orders.csv
+halt_response_checks.csv
+halt_response_summary.csv
+halt_response_config.json
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

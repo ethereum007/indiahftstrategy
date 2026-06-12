@@ -98,6 +98,9 @@
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
   against `scaleup_config.json` limits and kill switches, returning explicit
   continue/halt decisions.
+- Halt response planner that converts runtime guard halts into broker-neutral
+  cancel-order and flatten-position action files with fail-closed price checks
+  and manifests.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -134,7 +137,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 153 tests.
+Current passing suite: 157 tests.
 
 ## Next Build Targets
 
