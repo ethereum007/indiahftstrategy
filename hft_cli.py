@@ -4,6 +4,7 @@ import argparse
 
 from adapters.broker import run_calibration_report
 from adapters.order_export import OrderExportConfig, write_order_export
+from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
 from adapters.orders import OrderStagingLimits, write_staged_orders
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
@@ -213,6 +214,20 @@ def main(argv: list[str] | None = None) -> int:
     export_orders.add_argument("--allow-non-limit", action="store_true")
     export_orders.add_argument("--max-orders", type=int, default=None)
     export_orders.add_argument("--fail-on-breach", action="store_true")
+
+    reconcile = sub.add_parser("reconcile-broker-fills", help="Reconcile exported orders against broker/drop-copy fills.")
+    reconcile.add_argument("--export", required=True)
+    reconcile.add_argument("--fills", required=True)
+    reconcile.add_argument("--out", required=True)
+    reconcile.add_argument("--adapter", default="normalized")
+    reconcile.add_argument("--min-order-fill-rate", type=float, default=0.0)
+    reconcile.add_argument("--max-unfilled-orders", type=int, default=None)
+    reconcile.add_argument("--max-partial-orders", type=int, default=None)
+    reconcile.add_argument("--max-overfilled-orders", type=int, default=0)
+    reconcile.add_argument("--max-mismatched-orders", type=int, default=0)
+    reconcile.add_argument("--max-unmatched-fills", type=int, default=0)
+    reconcile.add_argument("--max-adverse-slippage", type=float, default=None)
+    reconcile.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -511,6 +526,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "reconcile-broker-fills":
+        result = write_order_reconciliation(
+            export_dir=args.export,
+            fills_path=args.fills,
+            output_dir=args.out,
+            adapter=args.adapter,
+            thresholds=ReconciliationThresholds(
+                min_order_fill_rate=args.min_order_fill_rate,
+                max_unfilled_orders=args.max_unfilled_orders,
+                max_partial_orders=args.max_partial_orders,
+                max_overfilled_orders=args.max_overfilled_orders,
+                max_mismatched_orders=args.max_mismatched_orders,
+                max_unmatched_fills=args.max_unmatched_fills,
+                max_adverse_slippage=args.max_adverse_slippage,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,

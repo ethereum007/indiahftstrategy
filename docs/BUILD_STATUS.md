@@ -65,6 +65,9 @@
   adapter-labelled broker/paper order files, schema metadata, checks, and
   manifests, with Arrow.money/iRage marked as normalized placeholders until
   real vendor upload samples are mapped.
+- Broker/drop-copy fill reconciliation for exported orders, including
+  order-level fill status, unmatched fills, side/instrument mismatches,
+  adverse slippage, latency, pass/fail checks, and manifests.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -95,7 +98,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 105 tests.
+Current passing suite: 108 tests.
 
 ## Next Build Targets
 

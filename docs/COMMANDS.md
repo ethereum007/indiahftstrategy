@@ -382,6 +382,35 @@ broker_order_schema.csv
 manifest.json
 ```
 
+## Broker Fill Reconciliation
+
+Reconcile exported paper/shadow orders against normalized broker or drop-copy
+fills:
+
+```powershell
+python -m hft_cli reconcile-broker-fills `
+  --export runs\exports\leadlag_shadow_arrow `
+  --fills logs\arrow_shadow_fills.csv `
+  --out runs\reconciliation\leadlag_shadow_arrow `
+  --adapter arrow_money `
+  --min-order-fill-rate 0.8 `
+  --max-overfilled-orders 0 `
+  --max-mismatched-orders 0 `
+  --max-unmatched-fills 0 `
+  --max-adverse-slippage 0.05 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+order_reconciliation.csv
+unmatched_fills.csv
+reconciliation_checks.csv
+reconciliation_summary.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell
