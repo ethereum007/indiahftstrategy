@@ -122,6 +122,7 @@ def _arrow_money_rows(config: OrderUploadPackConfig) -> list[dict[str, Any]]:
         _row("validity", source="time_in_force", transform="uppercase"),
         _row("client_order_id", source="client_order_id", transform="string"),
         _row("tag", source="route_tag", transform="string", required=False),
+        *_lifecycle_rows(),
     ]
 
 
@@ -137,6 +138,7 @@ def _irage_rows(config: OrderUploadPackConfig) -> list[dict[str, Any]]:
         _row("validity", source="time_in_force", transform="uppercase"),
         _row("client_tag", source="client_order_id", transform="string"),
         _row("strategy_tag", source="route_tag", transform="string", required=False),
+        *_lifecycle_rows(),
     ]
 
 
@@ -150,6 +152,18 @@ def _normalized_rows() -> list[dict[str, Any]]:
         _row("price", source="price", transform="float"),
         _row("order_type", source="order_type", transform="uppercase"),
         _row("time_in_force", source="time_in_force", transform="uppercase"),
+        *_lifecycle_rows(),
+    ]
+
+
+def _lifecycle_rows() -> list[dict[str, Any]]:
+    return [
+        _row("lifecycle_action", source="lifecycle_action", transform="lowercase", required=False),
+        _row("lifecycle_action_id", source="lifecycle_action_id", transform="string", required=False),
+        _row("lifecycle_reason", source="lifecycle_reason", transform="string", required=False),
+        _row("lifecycle_message_count", source="lifecycle_message_count", transform="int", required=False),
+        _row("quote_age_ns", source="quote_age_ns", transform="int", required=False),
+        _row("replaces_order_id", source="replaces_order_id", transform="string", required=False),
     ]
 
 
@@ -227,6 +241,8 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPack
                 "adapter_schema_status": schema_status,
                 "orders": int(len(orders)),
                 "target_columns": int(len(orders.columns)),
+                "lifecycle_orders": _lifecycle_order_count(orders),
+                "replace_orders": _replace_order_count(orders),
                 "failed_checks": failed,
                 "output_file": config.output_filename,
                 "mapping_file": config.mapping_filename,
@@ -255,6 +271,20 @@ def _validate_config(config: OrderUploadPackConfig) -> None:
         value = str(getattr(config, attr))
         if not value or Path(value).name != value:
             raise ValueError(f"{attr} must be a file name without directories")
+
+
+def _lifecycle_order_count(orders: pd.DataFrame) -> int:
+    if "lifecycle_action" not in orders.columns:
+        return 0
+    values = orders["lifecycle_action"].astype("string").str.strip()
+    return int(values.ne("").fillna(False).sum())
+
+
+def _replace_order_count(orders: pd.DataFrame) -> int:
+    if "lifecycle_action" not in orders.columns:
+        return 0
+    values = orders["lifecycle_action"].astype("string").str.strip().str.lower()
+    return int(values.eq("replace").fillna(False).sum())
 
 
 def _check(

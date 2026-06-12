@@ -22,6 +22,12 @@ def broker_orders():
                 "order_type": "LIMIT",
                 "time_in_force": "DAY",
                 "route_tag": "shadow_nse",
+                "lifecycle_action": "submit",
+                "lifecycle_action_id": "ACT-000001",
+                "lifecycle_reason": "new_quote",
+                "lifecycle_message_count": 1,
+                "quote_age_ns": 0,
+                "replaces_order_id": "",
             },
             {
                 "broker_order_id": "ARROW_MONEY-000001-STG-2",
@@ -34,6 +40,12 @@ def broker_orders():
                 "order_type": "LIMIT",
                 "time_in_force": "DAY",
                 "route_tag": "shadow_nse",
+                "lifecycle_action": "replace",
+                "lifecycle_action_id": "ACT-000002",
+                "lifecycle_reason": "price_or_qty_change",
+                "lifecycle_message_count": 2,
+                "quote_age_ns": 100,
+                "replaces_order_id": "QLF-000001",
             },
         ]
     )
@@ -62,11 +74,20 @@ def test_build_order_upload_pack_maps_arrow_money_template_for_dry_run():
         "validity",
         "client_order_id",
         "tag",
+        "lifecycle_action",
+        "lifecycle_action_id",
+        "lifecycle_reason",
+        "lifecycle_message_count",
+        "quote_age_ns",
+        "replaces_order_id",
     ]
     assert report.orders["exchange"].tolist() == ["NFO", "NFO"]
     assert report.orders["transaction_type"].tolist() == ["BUY", "SELL"]
     assert report.orders["product"].tolist() == ["MIS", "MIS"]
     assert str(report.orders["quantity"].dtype) == "Int64"
+    assert report.orders["lifecycle_action"].tolist() == ["submit", "replace"]
+    assert report.orders.loc[1, "replaces_order_id"] == "QLF-000001"
+    assert int(report.summary.loc[0, "replace_orders"]) == 1
     assert report.summary.iloc[0]["recommendation"] == "dry_run_or_paper_review"
 
 

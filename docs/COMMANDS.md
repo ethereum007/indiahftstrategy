@@ -907,9 +907,9 @@ quotes only when price or quantity changes, expires stale quotes when
 used. The `quote_lifecycle_route_orders.csv` file contains only submit/replace
 orders for staging, while cancel actions stay in the full lifecycle action log.
 Lifecycle action id, reason, message count, quote age, and replace-order ids
-are preserved through staged, launch, and broker-neutral export files. This
-makes OTR and quote-churn limits explicit before Arrow.money/iRage upload
-preparation.
+are preserved through staged, launch, broker-neutral export, and built-in
+upload-pack files. This makes OTR and quote-churn limits explicit before
+Arrow.money/iRage upload preparation.
 
 ## Surface Market-Making Research Pipeline
 
@@ -1369,6 +1369,11 @@ python -m hft_cli review-broker-readiness `
 
 Use `--allow-placeholder-schema` only for dry-run review while Arrow.money/iRage
 schemas are still placeholders. Without it, placeholder schemas fail closed.
+When broker-neutral exports contain quote lifecycle fields, the built-in
+normalized, Arrow.money, and iRage review templates carry `lifecycle_action`,
+`lifecycle_action_id`, `lifecycle_reason`, `lifecycle_message_count`,
+`quote_age_ns`, and `replaces_order_id` into the upload-shaped CSV for broker
+schema review.
 
 Outputs:
 
