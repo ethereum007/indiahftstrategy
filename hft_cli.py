@@ -13,6 +13,7 @@ from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
+from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
@@ -246,6 +247,22 @@ def main(argv: list[str] | None = None) -> int:
     shadow_session.add_argument("--max-unfilled-orders", type=int, default=None)
     shadow_session.add_argument("--max-adverse-slippage", type=float, default=None)
     shadow_session.add_argument("--fail-on-breach", action="store_true")
+
+    shadow_compare = sub.add_parser("compare-shadow-sessions", help="Compare multiple paper/shadow session reports.")
+    shadow_compare.add_argument("--sessions", nargs="+", required=True)
+    shadow_compare.add_argument("--out", required=True)
+    shadow_compare.add_argument("--label", action="append", dest="labels")
+    shadow_compare.add_argument("--min-sessions", type=int, default=1)
+    shadow_compare.add_argument("--min-acceptance-rate", type=float, default=1.0)
+    shadow_compare.add_argument("--allow-mixed-scenarios", action="store_true")
+    shadow_compare.add_argument("--min-median-order-fill-rate", type=float, default=0.0)
+    shadow_compare.add_argument("--min-worst-order-fill-rate", type=float, default=None)
+    shadow_compare.add_argument("--max-total-failed-component-checks", type=int, default=0)
+    shadow_compare.add_argument("--max-total-unmatched-fills", type=int, default=0)
+    shadow_compare.add_argument("--max-total-mismatched-orders", type=int, default=0)
+    shadow_compare.add_argument("--max-total-overfilled-orders", type=int, default=0)
+    shadow_compare.add_argument("--max-worst-adverse-slippage", type=float, default=None)
+    shadow_compare.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -579,6 +596,26 @@ def main(argv: list[str] | None = None) -> int:
                 max_overfilled_orders=args.max_overfilled_orders,
                 max_unfilled_orders=args.max_unfilled_orders,
                 max_adverse_slippage=args.max_adverse_slippage,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.accepted else 0
+    if args.command == "compare-shadow-sessions":
+        result = write_shadow_session_comparison(
+            args.sessions,
+            output_dir=args.out,
+            labels=args.labels,
+            thresholds=ShadowComparisonThresholds(
+                min_sessions=args.min_sessions,
+                min_acceptance_rate=args.min_acceptance_rate,
+                require_same_scenario=not args.allow_mixed_scenarios,
+                min_median_order_fill_rate=args.min_median_order_fill_rate,
+                min_worst_order_fill_rate=args.min_worst_order_fill_rate,
+                max_total_failed_component_checks=args.max_total_failed_component_checks,
+                max_total_unmatched_fills=args.max_total_unmatched_fills,
+                max_total_mismatched_orders=args.max_total_mismatched_orders,
+                max_total_overfilled_orders=args.max_total_overfilled_orders,
+                max_worst_adverse_slippage=args.max_worst_adverse_slippage,
             ),
         )
         print(result.summary.to_string(index=False))

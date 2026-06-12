@@ -439,6 +439,34 @@ shadow_session_summary.csv
 manifest.json
 ```
 
+## Shadow Session Comparison
+
+Compare multiple paper/shadow session reports before allowing the workflow to
+scale up:
+
+```powershell
+python -m hft_cli compare-shadow-sessions `
+  --sessions runs\sessions\leadlag_shadow_2026_06_10 runs\sessions\leadlag_shadow_2026_06_11 `
+  --out runs\sessions\leadlag_shadow_comparison `
+  --label 2026-06-10 `
+  --label 2026-06-11 `
+  --min-sessions 2 `
+  --min-acceptance-rate 1 `
+  --min-median-order-fill-rate 0.8 `
+  --min-worst-order-fill-rate 0.7 `
+  --max-worst-adverse-slippage 0.05 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+shadow_session_runs.csv
+shadow_session_comparison_checks.csv
+shadow_session_comparison_summary.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell
