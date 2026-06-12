@@ -693,6 +693,33 @@ scaleup_config.json
 manifest.json
 ```
 
+## Runtime Telemetry Snapshot
+
+Build a guard-ready telemetry row from scale-up config, broker export,
+reconciliation, PnL, open-order, and position snapshots:
+
+```powershell
+python -m hft_cli build-runtime-telemetry `
+  --scaleup runs\scaleup\leadlag_shadow `
+  --export runs\exports\leadlag_shadow_latest `
+  --reconciliation runs\reconciliation\leadlag_shadow_latest `
+  --pnl logs\leadlag_shadow_pnl.csv `
+  --open-orders logs\open_orders.csv `
+  --positions logs\positions.csv `
+  --out runs\telemetry\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+runtime_telemetry.csv
+runtime_telemetry_sources.csv
+runtime_telemetry_checks.csv
+runtime_telemetry_summary.csv
+manifest.json
+```
+
 ## Runtime Scale-Up Guard
 
 Evaluate live or paper telemetry snapshots against the scale-up limits and kill
@@ -701,7 +728,7 @@ switches:
 ```powershell
 python -m hft_cli monitor-scaleup-guard `
   --scaleup runs\scaleup\leadlag_shadow `
-  --telemetry logs\leadlag_shadow_telemetry.csv `
+  --telemetry runs\telemetry\leadlag_shadow_latest\runtime_telemetry.csv `
   --out runs\guards\leadlag_shadow_latest `
   --fail-on-halt
 ```

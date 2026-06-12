@@ -23,6 +23,7 @@ from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.runtime_guard import write_runtime_guard_report
+from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
@@ -367,6 +368,17 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--stop-loss", type=float, default=None)
     scaleup.add_argument("--allowed-adapter", action="append", dest="allowed_adapters")
     scaleup.add_argument("--fail-on-breach", action="store_true")
+
+    runtime_telemetry = sub.add_parser("build-runtime-telemetry", help="Build a guard-ready runtime telemetry snapshot.")
+    runtime_telemetry.add_argument("--scaleup", required=True)
+    runtime_telemetry.add_argument("--out", required=True)
+    runtime_telemetry.add_argument("--export", default=None)
+    runtime_telemetry.add_argument("--reconciliation", default=None)
+    runtime_telemetry.add_argument("--pnl", default=None)
+    runtime_telemetry.add_argument("--open-orders", default=None)
+    runtime_telemetry.add_argument("--positions", default=None)
+    runtime_telemetry.add_argument("--snapshot-ts-ns", type=float, default=None)
+    runtime_telemetry.add_argument("--fail-on-breach", action="store_true")
 
     runtime_guard = sub.add_parser("monitor-scaleup-guard", help="Evaluate runtime telemetry against scale-up guardrails.")
     runtime_guard.add_argument("--scaleup", required=True)
@@ -876,6 +888,19 @@ def main(argv: list[str] | None = None) -> int:
                 stop_loss=args.stop_loss,
                 allowed_adapters=tuple(args.allowed_adapters or ()),
             ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "build-runtime-telemetry":
+        result = write_runtime_telemetry_snapshot(
+            scaleup_dir=args.scaleup,
+            output_dir=args.out,
+            export_dir=args.export,
+            reconciliation_dir=args.reconciliation,
+            pnl_path=args.pnl,
+            open_orders_path=args.open_orders,
+            positions_path=args.positions,
+            snapshot_ts_ns=args.snapshot_ts_ns,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
