@@ -15,6 +15,7 @@ from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
+from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
@@ -145,6 +146,19 @@ def main(argv: list[str] | None = None) -> int:
     fill_model.add_argument("--max-queue-conservatism", type=float, default=10.0)
     fill_model.add_argument("--base-edge-ticks", type=float, default=0.0)
     fill_model.add_argument("--fail-on-breach", action="store_true")
+
+    fill_model_drift = sub.add_parser("compare-fill-models", help="Gate drift between two fill-model configs.")
+    fill_model_drift.add_argument("--baseline", required=True)
+    fill_model_drift.add_argument("--latest", required=True)
+    fill_model_drift.add_argument("--out", required=True)
+    fill_model_drift.add_argument("--allow-unready-baseline", action="store_true")
+    fill_model_drift.add_argument("--allow-unready-latest", action="store_true")
+    fill_model_drift.add_argument("--require-same-instruments", action="store_true")
+    fill_model_drift.add_argument("--max-queue-conservatism-increase-pct", type=float, default=0.25)
+    fill_model_drift.add_argument("--max-order-latency-increase-us", type=float, default=100.0)
+    fill_model_drift.add_argument("--max-slippage-tick-increase", type=float, default=1.0)
+    fill_model_drift.add_argument("--max-min-edge-tick-increase", type=float, default=1.0)
+    fill_model_drift.add_argument("--fail-on-breach", action="store_true")
 
     calibrated_replay = sub.add_parser("plan-calibrated-replay", help="Apply fill-model config to replay parameters.")
     calibrated_replay.add_argument("--fill-model", required=True)
@@ -709,6 +723,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "compare-fill-models":
+        result = write_fill_model_drift_report(
+            baseline_path=args.baseline,
+            latest_path=args.latest,
+            output_dir=args.out,
+            thresholds=FillModelDriftThresholds(
+                require_baseline_ready=not args.allow_unready_baseline,
+                require_latest_ready=not args.allow_unready_latest,
+                require_same_instruments=args.require_same_instruments,
+                max_queue_conservatism_increase_pct=args.max_queue_conservatism_increase_pct,
+                max_order_latency_increase_us=args.max_order_latency_increase_us,
+                max_slippage_tick_increase=args.max_slippage_tick_increase,
+                max_min_edge_tick_increase=args.max_min_edge_tick_increase,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "plan-calibrated-replay":
         base_params = {
             key: value

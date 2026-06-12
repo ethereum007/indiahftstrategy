@@ -940,6 +940,31 @@ fill_model_config.json
 manifest.json
 ```
 
+## Fill-Model Drift
+
+Compare a baseline fill-model config against the latest shadow/live calibration
+before reusing old proof runs:
+
+```powershell
+python -m hft_cli compare-fill-models `
+  --baseline runs\fill_model\leadlag_shadow_baseline `
+  --latest runs\fill_model\leadlag_shadow_latest `
+  --out runs\fill_model_drift\leadlag_shadow_latest `
+  --max-queue-conservatism-increase-pct 0.25 `
+  --max-order-latency-increase-us 100 `
+  --require-same-instruments `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+fill_model_drift.csv
+fill_model_drift_checks.csv
+fill_model_drift_summary.csv
+manifest.json
+```
+
 ## Calibrated Replay Plan
 
 Apply `fill_model_config.json` to strategy replay parameters without running the
