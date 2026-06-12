@@ -203,6 +203,30 @@ def test_catalog_experiment_runs_recognizes_imbalance_replay_walkforward_status(
     assert row["summary_proof_passed_folds"] == 2
 
 
+def test_catalog_experiment_runs_recognizes_imbalance_candidate_promotion_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "imbalance_candidate_promotion",
+        run_type="promotion_report",
+        summary_name="promotion_summary.csv",
+        summary_row={
+            "ready": True,
+            "candidate_scenario_key": "strategy=imbalance|entry_imbalance=0.6|min_microprice_edge_ticks=0.25|hold_ns=1000000",
+            "checks": 5,
+            "failed_checks": 0,
+            "recommendation": "paper_or_shadow_candidate",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "promotion_report"
+    assert row["summary_file"] == "promotion_summary.csv"
+    assert row["summary_status_column"] == "ready"
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

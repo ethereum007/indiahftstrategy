@@ -44,6 +44,9 @@
 - Imbalance replay walk-forward runner that takes a selected candidate, replays
   it across multiple tick folds, runs proof gates, and emits aggregate
   paper/shadow readiness evidence.
+- Imbalance candidate promotion bridge that converts passed replay
+  walk-forward evidence into launch-compatible promotion reports and candidate
+  configs for paper/shadow order staging.
 - Microprice/order-book imbalance robustness sweep across entry threshold,
   microprice edge, hold timer, feed latency, and order latency, with per-run
   replay artifacts, proof gate, pass rate, and robust score summary.
@@ -188,7 +191,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 222 tests.
+Current passing suite: 226 tests.
 
 ## Next Build Targets
 

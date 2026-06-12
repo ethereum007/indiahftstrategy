@@ -452,6 +452,32 @@ proof\...
 runs\<fold>\...
 ```
 
+## Microprice Imbalance Candidate Promotion
+
+Convert a passed replay walk-forward folder into the promotion-report shape
+used by paper/shadow launch tooling:
+
+```powershell
+python -m hft_cli promote-imbalance-candidate `
+  --walkforward runs\imbalance_replay_walkforward `
+  --out runs\imbalance_promotion `
+  --min-proof-pass-rate 1 `
+  --min-total-fills 20 `
+  --min-total-net-pnl 0 `
+  --max-worst-drawdown 5000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+promotion_candidate.csv
+promotion_checks.csv
+promotion_summary.csv
+candidate_config.json
+manifest.json
+```
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge

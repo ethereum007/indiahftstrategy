@@ -21,6 +21,10 @@ from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
+from reports.imbalance_candidate_promotion import (
+    ImbalanceCandidatePromotionThresholds,
+    write_imbalance_candidate_promotion,
+)
 from reports.imbalance_edge import ImbalanceEdgeThresholds, write_imbalance_edge_audit
 from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds, write_imbalance_edge_selection
 from reports.imbalance_edge_sweep import ImbalanceEdgeSweepThresholds, write_imbalance_edge_sweep
@@ -276,6 +280,18 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay_walkforward.add_argument("--max-worst-drawdown", type=float, default=None)
     imbalance_replay_walkforward.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_replay_walkforward.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_promotion = sub.add_parser("promote-imbalance-candidate", help="Promote a proven imbalance replay walk-forward candidate for paper/shadow launch.")
+    imbalance_promotion.add_argument("--walkforward", required=True)
+    imbalance_promotion.add_argument("--out", required=True)
+    imbalance_promotion.add_argument("--allow-unpassed-walkforward", action="store_true")
+    imbalance_promotion.add_argument("--allow-unready-candidate", action="store_true")
+    imbalance_promotion.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    imbalance_promotion.add_argument("--min-total-fills", type=int, default=1)
+    imbalance_promotion.add_argument("--min-total-net-pnl", type=float, default=0.0)
+    imbalance_promotion.add_argument("--max-worst-drawdown", type=float, default=None)
+    imbalance_promotion.add_argument("--min-median-markout-mean", type=float, default=None)
+    imbalance_promotion.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1068,6 +1084,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "promote-imbalance-candidate":
+        result = write_imbalance_candidate_promotion(
+            args.walkforward,
+            output_dir=args.out,
+            thresholds=ImbalanceCandidatePromotionThresholds(
+                require_walkforward_passed=not args.allow_unpassed_walkforward,
+                require_candidate_ready=not args.allow_unready_candidate,
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "calibrate":
         _, summary = run_calibration_report(
             simulated_orders_path=args.simulated_orders,
