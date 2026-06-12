@@ -350,8 +350,48 @@ candidate_config.json
 manifest.json
 ```
 
-The `candidate_config.json` from either the edge sweep or edge selection can be
-passed directly into replay or replay-sweep commands with `--candidate-config`.
+## Microprice Imbalance Edge Walk-Forward
+
+Run edge sweeps across multiple tick files, compare the fold results, and emit
+a stable replay-ready candidate in one command:
+
+```powershell
+python -m hft_cli walkforward-imbalance-edge `
+  --ticks data\atm_option_ticks_2026_06_10.csv data\atm_option_ticks_2026_06_11.csv `
+  --label day1 `
+  --label day2 `
+  --out runs\imbalance_edge_walkforward `
+  --entry-imbalance 0.55 0.60 0.70 `
+  --min-microprice-edge-ticks 0.25 0.50 1.00 `
+  --forward-horizon-ns 100000000 500000000 `
+  --min-signals 100 `
+  --min-direction-count 2 `
+  --min-mean-forward-edge-ticks 0.25 `
+  --min-win-rate 0.52 `
+  --min-best-usable-signals 100 `
+  --min-selection-sweeps 2 `
+  --min-selection-pass-rate 1 `
+  --min-selection-median-usable-signals 100 `
+  --min-selection-median-mean-forward-edge-ticks 0.25 `
+  --min-selection-min-win-rate 0.52 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_edge_walkforward_folds.csv
+imbalance_edge_walkforward_checks.csv
+imbalance_edge_walkforward_summary.csv
+candidate_config.json
+manifest.json
+sweeps\<fold>\...
+selection\...
+```
+
+The `candidate_config.json` from the edge sweep, edge selection, or
+walk-forward command can be passed directly into replay or replay-sweep
+commands with `--candidate-config`.
 
 ## Microprice Imbalance Replay
 

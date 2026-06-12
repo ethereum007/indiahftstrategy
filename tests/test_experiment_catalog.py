@@ -153,6 +153,31 @@ def test_catalog_experiment_runs_recognizes_imbalance_edge_selection_status(tmp_
     assert row["summary_selectable_scenarios"] == 1
 
 
+def test_catalog_experiment_runs_recognizes_imbalance_edge_walkforward_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "imbalance_edge_walkforward",
+        run_type="imbalance_edge_walkforward",
+        summary_name="imbalance_edge_walkforward_summary.csv",
+        summary_row={
+            "passed": True,
+            "failed_checks": 0,
+            "fold_count": 2,
+            "passed_sweeps": 2,
+            "selectable_scenarios": 1,
+            "best_scenario_key": "entry_imbalance=0.6|min_microprice_edge_ticks=0.25|forward_horizon_ns=100000",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["summary_file"] == "imbalance_edge_walkforward_summary.csv"
+    assert row["summary_status_column"] == "passed"
+    assert row["summary_fold_count"] == 2
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

@@ -29,6 +29,9 @@
 - Cross-day/fold imbalance edge selection that compares edge sweep outputs,
   requires stable pass rate, signal count, forward edge, and win rate, and
   emits a replay-ready candidate config.
+- Imbalance edge walk-forward runner that sweeps multiple tick files, compares
+  fold scenarios, emits aggregate evidence, and writes a replay-ready candidate
+  config in one manifest-backed run.
 - Microprice imbalance replay and replay-sweep CLIs can consume the edge
   sweep `candidate_config.json` directly, while explicit CLI parameters remain
   available for overrides.
@@ -182,7 +185,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 216 tests.
+Current passing suite: 219 tests.
 
 ## Next Build Targets
 

@@ -24,6 +24,10 @@ from reports.halt_response import HaltResponseConfig, write_halt_response_plan
 from reports.imbalance_edge import ImbalanceEdgeThresholds, write_imbalance_edge_audit
 from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds, write_imbalance_edge_selection
 from reports.imbalance_edge_sweep import ImbalanceEdgeSweepThresholds, write_imbalance_edge_sweep
+from reports.imbalance_edge_walkforward import (
+    ImbalanceEdgeWalkForwardThresholds,
+    write_imbalance_edge_walkforward,
+)
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
@@ -165,6 +169,37 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_edge_compare.add_argument("--min-min-win-rate", type=float, default=0.0)
     imbalance_edge_compare.add_argument("--min-median-robust-score", type=float, default=None)
     imbalance_edge_compare.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_edge_walkforward = sub.add_parser("walkforward-imbalance-edge", help="Run imbalance edge sweeps across tick folds and select stable parameters.")
+    imbalance_edge_walkforward.add_argument("--ticks", nargs="+", required=True)
+    imbalance_edge_walkforward.add_argument("--out", required=True)
+    imbalance_edge_walkforward.add_argument("--label", action="append", dest="labels")
+    imbalance_edge_walkforward.add_argument("--no-filter-session", action="store_true")
+    imbalance_edge_walkforward.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_edge_walkforward.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
+    imbalance_edge_walkforward.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
+    imbalance_edge_walkforward.add_argument("--forward-horizon-ns", nargs="+", required=True, type=int)
+    imbalance_edge_walkforward.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_edge_walkforward.add_argument("--min-depth", type=int, default=1)
+    imbalance_edge_walkforward.add_argument("--min-signals", type=int, default=1)
+    imbalance_edge_walkforward.add_argument("--min-direction-count", type=int, default=1)
+    imbalance_edge_walkforward.add_argument("--min-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge_walkforward.add_argument("--min-win-rate", type=float, default=0.0)
+    imbalance_edge_walkforward.add_argument("--min-median-forward-edge-ticks", type=float, default=None)
+    imbalance_edge_walkforward.add_argument("--min-passed-configs", type=int, default=1)
+    imbalance_edge_walkforward.add_argument("--min-best-usable-signals", type=int, default=1)
+    imbalance_edge_walkforward.add_argument("--min-best-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge_walkforward.add_argument("--min-best-win-rate", type=float, default=0.0)
+    imbalance_edge_walkforward.add_argument("--min-selection-sweeps", type=int, default=None)
+    imbalance_edge_walkforward.add_argument("--min-selection-pass-rate", type=float, default=1.0)
+    imbalance_edge_walkforward.add_argument("--min-selection-median-usable-signals", type=float, default=1.0)
+    imbalance_edge_walkforward.add_argument("--min-selection-median-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge_walkforward.add_argument("--min-selection-min-win-rate", type=float, default=0.0)
+    imbalance_edge_walkforward.add_argument("--min-selection-median-robust-score", type=float, default=None)
+    imbalance_edge_walkforward.add_argument("--min-folds", type=int, default=None)
+    imbalance_edge_walkforward.add_argument("--min-passed-sweeps", type=int, default=None)
+    imbalance_edge_walkforward.add_argument("--allow-unselected", action="store_true")
+    imbalance_edge_walkforward.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_replay = sub.add_parser("replay-leadlag", help="Replay lead-lag taker strategy.")
     leadlag_replay.add_argument("--leader", required=True)
@@ -852,6 +887,46 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.has_selection else 0
+    if args.command == "walkforward-imbalance-edge":
+        fold_count = len(args.ticks)
+        result = write_imbalance_edge_walkforward(
+            args.ticks,
+            output_dir=args.out,
+            labels=args.labels,
+            tick_size=args.tick_size,
+            filter_session=not args.no_filter_session,
+            entry_imbalance_values=args.entry_imbalance,
+            min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
+            forward_horizon_ns_values=args.forward_horizon_ns,
+            max_spread_ticks=args.max_spread_ticks,
+            min_depth=args.min_depth,
+            min_signals=args.min_signals,
+            min_direction_count=args.min_direction_count,
+            min_mean_forward_edge_ticks=args.min_mean_forward_edge_ticks,
+            min_win_rate=args.min_win_rate,
+            min_median_forward_edge_ticks=args.min_median_forward_edge_ticks,
+            sweep_thresholds=ImbalanceEdgeSweepThresholds(
+                min_passed_configs=args.min_passed_configs,
+                min_best_usable_signals=args.min_best_usable_signals,
+                min_best_mean_forward_edge_ticks=args.min_best_mean_forward_edge_ticks,
+                min_best_win_rate=args.min_best_win_rate,
+            ),
+            selection_thresholds=ImbalanceEdgeSelectionThresholds(
+                min_sweeps=args.min_selection_sweeps if args.min_selection_sweeps is not None else fold_count,
+                min_pass_rate=args.min_selection_pass_rate,
+                min_median_usable_signals=args.min_selection_median_usable_signals,
+                min_median_mean_forward_edge_ticks=args.min_selection_median_mean_forward_edge_ticks,
+                min_min_win_rate=args.min_selection_min_win_rate,
+                min_median_robust_score=args.min_selection_median_robust_score,
+            ),
+            walkforward_thresholds=ImbalanceEdgeWalkForwardThresholds(
+                min_folds=args.min_folds if args.min_folds is not None else fold_count,
+                min_passed_sweeps=args.min_passed_sweeps if args.min_passed_sweeps is not None else fold_count,
+                require_selection=not args.allow_unselected,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "replay-leadlag":
         replay_params = calibrated_replay_params_from_path(
             "leadlag",
