@@ -227,6 +227,10 @@
 - Vendor order-mapping draft command that reads a broker-neutral export plus
   an Arrow.money/iRage sample upload header, suggests reviewable mappings, and
   fails closed on unmapped required vendor fields.
+- Broker integration readiness report that combines schema audit, broker order
+  export, mapping draft, mapped orders, upload pack, optional halt export, and
+  optional reconciliation evidence into one fail-closed Arrow.money/iRage
+  go/no-go artifact.
 
 ## Test Gate
 
@@ -236,7 +240,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 286 tests.
+Current passing suite: 291 tests.
 
 ## Next Build Targets
 

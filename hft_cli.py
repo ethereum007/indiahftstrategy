@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from adapters.broker_readiness import BrokerReadinessThresholds, write_broker_readiness_report
 from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
@@ -821,6 +822,27 @@ def main(argv: list[str] | None = None) -> int:
     reconcile.add_argument("--max-unmatched-fills", type=int, default=0)
     reconcile.add_argument("--max-adverse-slippage", type=float, default=None)
     reconcile.add_argument("--fail-on-breach", action="store_true")
+
+    broker_readiness = sub.add_parser("review-broker-readiness", help="Gate broker integration evidence before paper/shadow routing.")
+    broker_readiness.add_argument("--out", required=True)
+    broker_readiness.add_argument("--adapter", default="arrow_money")
+    broker_readiness.add_argument("--schema-audit", default=None)
+    broker_readiness.add_argument("--order-export", default=None)
+    broker_readiness.add_argument("--mapping-draft", default=None)
+    broker_readiness.add_argument("--mapped-orders", default=None)
+    broker_readiness.add_argument("--upload-pack", default=None)
+    broker_readiness.add_argument("--halt-export", default=None)
+    broker_readiness.add_argument("--reconciliation", default=None)
+    broker_readiness.add_argument("--allow-placeholder-schema", action="store_true")
+    broker_readiness.add_argument("--allow-adapter-mismatch", action="store_true")
+    broker_readiness.add_argument("--skip-schema-audit", action="store_true")
+    broker_readiness.add_argument("--skip-order-export", action="store_true")
+    broker_readiness.add_argument("--skip-upload-pack", action="store_true")
+    broker_readiness.add_argument("--require-mapping-draft", action="store_true")
+    broker_readiness.add_argument("--require-mapped-orders", action="store_true")
+    broker_readiness.add_argument("--require-halt-export", action="store_true")
+    broker_readiness.add_argument("--require-reconciliation", action="store_true")
+    broker_readiness.add_argument("--fail-on-breach", action="store_true")
 
     shadow_session = sub.add_parser("shadow-session-report", help="Gate a full paper/shadow session after reconciliation.")
     shadow_session.add_argument("--launch", required=True)
@@ -2001,6 +2023,31 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "review-broker-readiness":
+        result = write_broker_readiness_report(
+            output_dir=args.out,
+            schema_audit_dir=args.schema_audit,
+            order_export_dir=args.order_export,
+            mapping_draft_dir=args.mapping_draft,
+            mapped_orders_dir=args.mapped_orders,
+            upload_pack_dir=args.upload_pack,
+            halt_export_dir=args.halt_export,
+            reconciliation_dir=args.reconciliation,
+            thresholds=BrokerReadinessThresholds(
+                adapter=args.adapter,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                require_schema_audit=not args.skip_schema_audit,
+                require_order_export=not args.skip_order_export,
+                require_mapping_draft=args.require_mapping_draft,
+                require_mapped_orders=args.require_mapped_orders,
+                require_upload_pack=not args.skip_upload_pack,
+                require_halt_export=args.require_halt_export,
+                require_reconciliation=args.require_reconciliation,
+                require_adapter_match=not args.allow_adapter_mismatch,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "shadow-session-report":
         result = write_shadow_session_report(
             launch_dir=args.launch,

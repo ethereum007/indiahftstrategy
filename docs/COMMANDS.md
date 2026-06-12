@@ -1148,6 +1148,38 @@ mapped_order_schema.csv
 manifest.json
 ```
 
+## Broker Integration Readiness
+
+Combine adapter schema review, broker-neutral export, mapped/upload files,
+optional halt-export, and optional reconciliation evidence into one go/no-go
+record before Arrow.money/iRage paper or shadow routing:
+
+```powershell
+python -m hft_cli review-broker-readiness `
+  --adapter arrow_money `
+  --schema-audit runs\schema_audit\arrow_orders `
+  --order-export runs\exports\leadlag_shadow_arrow `
+  --mapping-draft mappings\arrow_order_upload_draft `
+  --mapped-orders runs\exports\leadlag_shadow_arrow_mapped `
+  --upload-pack runs\uploads\leadlag_shadow_arrow `
+  --out runs\broker_readiness\leadlag_shadow_arrow `
+  --require-mapping-draft `
+  --require-mapped-orders `
+  --fail-on-breach
+```
+
+Use `--allow-placeholder-schema` only for dry-run review while Arrow.money/iRage
+schemas are still placeholders. Without it, placeholder schemas fail closed.
+
+Outputs:
+
+```text
+broker_readiness_items.csv
+broker_readiness_checks.csv
+broker_readiness_summary.csv
+manifest.json
+```
+
 ## Broker Fill Reconciliation
 
 Reconcile exported paper/shadow orders against normalized broker or drop-copy
