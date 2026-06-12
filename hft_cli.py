@@ -10,6 +10,7 @@ from reports.proof import ProofThresholds, write_proof_report
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_leadlag_replay import run_leadlag_replay
+from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
 
 
@@ -89,6 +90,28 @@ def main(argv: list[str] | None = None) -> int:
     proof.add_argument("--min-markout-mean", type=float, default=None)
     proof.add_argument("--min-spread-net", type=float, default=None)
     proof.add_argument("--fail-on-breach", action="store_true")
+
+    leadlag_sweep = sub.add_parser("sweep-leadlag", help="Run lead-lag replay robustness sweep.")
+    leadlag_sweep.add_argument("--leader", required=True)
+    leadlag_sweep.add_argument("--laggard", required=True)
+    leadlag_sweep.add_argument("--out", required=True)
+    leadlag_sweep.add_argument("--no-filter-session", action="store_true")
+    leadlag_sweep.add_argument("--leader-tick", type=float, default=0.05)
+    leadlag_sweep.add_argument("--laggard-tick", type=float, default=0.05)
+    leadlag_sweep.add_argument("--delta", type=float, default=1.0)
+    leadlag_sweep.add_argument("--trigger-ticks", nargs="+", required=True, type=float)
+    leadlag_sweep.add_argument("--feed-latency-us", nargs="+", default=[0.0], type=float)
+    leadlag_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
+    leadlag_sweep.add_argument("--qty", type=int, default=75)
+    leadlag_sweep.add_argument("--flat-after-ns", type=int, default=500_000_000)
+    leadlag_sweep.add_argument("--cooloff-ns", type=int, default=0)
+    leadlag_sweep.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
+    leadlag_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
+    leadlag_sweep.add_argument("--min-fills", type=int, default=1)
+    leadlag_sweep.add_argument("--max-drawdown", type=float, default=None)
+    leadlag_sweep.add_argument("--max-otr", type=float, default=None)
+    leadlag_sweep.add_argument("--min-markout-mean", type=float, default=None)
+    leadlag_sweep.add_argument("--fail-on-breach", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -179,6 +202,32 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "sweep-leadlag":
+        result = run_leadlag_sweep(
+            leader_path=args.leader,
+            laggard_path=args.laggard,
+            output_dir=args.out,
+            trigger_ticks_values=args.trigger_ticks,
+            feed_latency_us_values=args.feed_latency_us,
+            order_latency_us_values=args.order_latency_us,
+            filter_session=not args.no_filter_session,
+            leader_tick=args.leader_tick,
+            laggard_tick=args.laggard_tick,
+            delta=args.delta,
+            qty=args.qty,
+            flat_after_ns=args.flat_after_ns,
+            cooloff_ns=args.cooloff_ns,
+            markout_horizons_ns=args.markout_horizons_ns,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_markout_mean=args.min_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.proof.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 

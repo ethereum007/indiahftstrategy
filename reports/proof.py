@@ -224,7 +224,12 @@ def _read_required(path: Path) -> pd.DataFrame:
 
 
 def _read_optional(path: Path) -> pd.DataFrame:
-    return pd.read_csv(path) if path.exists() else pd.DataFrame()
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        return pd.DataFrame()
 
 
 def _float(row: pd.Series, column: str) -> float:

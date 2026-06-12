@@ -102,6 +102,34 @@ python -m hft_cli replay-leadlag `
   --qty 75
 ```
 
+## Lead-Lag Sweep
+
+Run replay robustness scenarios across trigger and latency settings:
+
+```powershell
+python -m hft_cli sweep-leadlag `
+  --leader data\futures.csv `
+  --laggard data\atm_call.csv `
+  --out runs\leadlag_sweep_2026_06_10 `
+  --trigger-ticks 2 3 4 `
+  --feed-latency-us 0 50 100 `
+  --order-latency-us 100 250 500 `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --max-drawdown 5000 `
+  --fail-on-breach
+```
+
+Outputs include per-scenario replay folders plus:
+
+```text
+sweep_runs.csv
+sweep_summary.csv
+proof/proof_metrics.csv
+proof/proof_checks.csv
+proof/proof_summary.csv
+```
+
 ## Calibration
 
 ```powershell

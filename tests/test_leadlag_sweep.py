@@ -1,0 +1,111 @@
+import pandas as pd
+
+from hft_cli import main
+from reports.proof import ProofThresholds
+from strategies.run_leadlag_sweep import run_leadlag_sweep
+
+
+def ns_ist(value: str) -> int:
+    return pd.Timestamp(value, tz="Asia/Kolkata").value
+
+
+def write_books(tmp_path):
+    ts0 = ns_ist("2026-06-10 09:15:00")
+    ts1 = ns_ist("2026-06-10 09:15:00.000100")
+    ts2 = ns_ist("2026-06-10 09:15:00.000200")
+    ts3 = ns_ist("2026-06-10 09:15:00.000300")
+    ts4 = ns_ist("2026-06-10 09:15:00.000400")
+    leader = pd.DataFrame(
+        [
+            {"ts": ts0, "bid": 100.00, "ask": 100.10, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts1, "bid": 101.00, "ask": 101.10, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts2, "bid": 101.00, "ask": 101.10, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts3, "bid": 101.00, "ask": 101.10, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts4, "bid": 101.00, "ask": 101.10, "bid_qty": 300, "ask_qty": 300},
+        ]
+    )
+    laggard = pd.DataFrame(
+        [
+            {"ts": ts0, "bid": 50.00, "ask": 50.05, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts1, "bid": 50.00, "ask": 50.05, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts2, "bid": 50.00, "ask": 50.05, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts3, "bid": 50.50, "ask": 50.55, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts4, "bid": 50.50, "ask": 50.55, "bid_qty": 300, "ask_qty": 300},
+        ]
+    )
+    leader_path = tmp_path / "leader.csv"
+    laggard_path = tmp_path / "laggard.csv"
+    leader.to_csv(leader_path, index=False)
+    laggard.to_csv(laggard_path, index=False)
+    return leader_path, laggard_path
+
+
+def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
+    leader_path, laggard_path = write_books(tmp_path)
+    out_dir = tmp_path / "sweep"
+
+    result = run_leadlag_sweep(
+        leader_path=leader_path,
+        laggard_path=laggard_path,
+        output_dir=out_dir,
+        trigger_ticks_values=[10.0, 1000.0],
+        feed_latency_us_values=[0.0],
+        order_latency_us_values=[0.0],
+        leader_tick=0.05,
+        laggard_tick=0.05,
+        delta=1.0,
+        qty=75,
+        flat_after_ns=200_000,
+        markout_horizons_ns=[100_000],
+        proof_thresholds=ProofThresholds(min_net_pnl=-1000.0, min_fills=1),
+    )
+
+    assert len(result.runs) == 2
+    assert result.summary.iloc[0]["scenario_count"] == 2
+    assert result.summary.iloc[0]["passed_scenarios"] == 1
+    assert result.summary.iloc[0]["pass_rate"] == 0.5
+    assert (out_dir / "sweep_runs.csv").exists()
+    assert (out_dir / "sweep_summary.csv").exists()
+    assert (out_dir / "proof" / "proof_checks.csv").exists()
+    assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "summary.csv").exists()
+
+
+def test_unified_cli_sweep_leadlag_dispatches_and_can_fail_on_breach(tmp_path):
+    leader_path, laggard_path = write_books(tmp_path)
+    out_dir = tmp_path / "cli_sweep"
+
+    code = main(
+        [
+            "sweep-leadlag",
+            "--leader",
+            str(leader_path),
+            "--laggard",
+            str(laggard_path),
+            "--out",
+            str(out_dir),
+            "--trigger-ticks",
+            "10",
+            "1000",
+            "--leader-tick",
+            "0.05",
+            "--laggard-tick",
+            "0.05",
+            "--delta",
+            "1",
+            "--qty",
+            "75",
+            "--flat-after-ns",
+            "200000",
+            "--markout-horizons-ns",
+            "100000",
+            "--min-net-pnl",
+            "-1000",
+            "--min-fills",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 2
+    assert (out_dir / "sweep_runs.csv").exists()
+    assert (out_dir / "proof" / "proof_summary.csv").exists()

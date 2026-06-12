@@ -48,6 +48,8 @@
 - Proof-report gate for replay output folders, scoring PnL, fills, drawdown,
   OTR, regime robustness, spread capture, and markout quality against explicit
   thresholds.
+- Lead-lag robustness sweep runner that replays trigger/latency grids, writes
+  per-scenario artifacts, and aggregates proof pass rates plus robust scores.
 
 ## Test Gate
 
@@ -57,7 +59,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 70 tests.
+Current passing suite: 72 tests.
 
 ## Next Build Targets
 
