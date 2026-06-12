@@ -32,6 +32,7 @@ from reports.imbalance_edge_walkforward import (
     ImbalanceEdgeWalkForwardThresholds,
     write_imbalance_edge_walkforward,
 )
+from reports.imbalance_pipeline import write_imbalance_research_pipeline
 from reports.imbalance_replay_walkforward import (
     ImbalanceReplayWalkForwardThresholds,
     write_imbalance_replay_walkforward,
@@ -292,6 +293,56 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_promotion.add_argument("--max-worst-drawdown", type=float, default=None)
     imbalance_promotion.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_promotion.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_pipeline = sub.add_parser("pipeline-imbalance-research", help="Run edge, replay-proof, and promotion gates for imbalance research.")
+    imbalance_pipeline.add_argument("--ticks", nargs="+", required=True)
+    imbalance_pipeline.add_argument("--out", required=True)
+    imbalance_pipeline.add_argument("--label", action="append", dest="labels")
+    imbalance_pipeline.add_argument("--no-filter-session", action="store_true")
+    imbalance_pipeline.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_pipeline.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
+    imbalance_pipeline.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
+    imbalance_pipeline.add_argument("--forward-horizon-ns", nargs="+", required=True, type=int)
+    imbalance_pipeline.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_pipeline.add_argument("--min-depth", type=int, default=1)
+    imbalance_pipeline.add_argument("--min-signals", type=int, default=1)
+    imbalance_pipeline.add_argument("--min-direction-count", type=int, default=1)
+    imbalance_pipeline.add_argument("--min-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-win-rate", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-median-forward-edge-ticks", type=float, default=None)
+    imbalance_pipeline.add_argument("--min-passed-configs", type=int, default=1)
+    imbalance_pipeline.add_argument("--min-best-usable-signals", type=int, default=1)
+    imbalance_pipeline.add_argument("--min-best-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-best-win-rate", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-selection-sweeps", type=int, default=None)
+    imbalance_pipeline.add_argument("--min-selection-pass-rate", type=float, default=1.0)
+    imbalance_pipeline.add_argument("--min-selection-median-usable-signals", type=float, default=1.0)
+    imbalance_pipeline.add_argument("--min-selection-median-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-selection-min-win-rate", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-selection-median-robust-score", type=float, default=None)
+    imbalance_pipeline.add_argument("--min-edge-folds", type=int, default=None)
+    imbalance_pipeline.add_argument("--min-passed-edge-sweeps", type=int, default=None)
+    imbalance_pipeline.add_argument("--allow-unselected", action="store_true")
+    imbalance_pipeline.add_argument("--instrument-id", default="BOOK")
+    imbalance_pipeline.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
+    imbalance_pipeline.add_argument("--lot-size", type=int, default=75)
+    imbalance_pipeline.add_argument("--qty", type=int, default=75)
+    imbalance_pipeline.add_argument("--exit-imbalance", type=float, default=0.15)
+    imbalance_pipeline.add_argument("--cooloff-ns", type=int, default=0)
+    imbalance_pipeline.add_argument("--feed-latency-us", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--order-latency-us", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-net-pnl", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--min-fills", type=int, default=1)
+    imbalance_pipeline.add_argument("--max-drawdown", type=float, default=None)
+    imbalance_pipeline.add_argument("--max-otr", type=float, default=None)
+    imbalance_pipeline.add_argument("--min-markout-mean", type=float, default=None)
+    imbalance_pipeline.add_argument("--min-replay-folds", type=int, default=None)
+    imbalance_pipeline.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    imbalance_pipeline.add_argument("--min-total-fills", type=int, default=1)
+    imbalance_pipeline.add_argument("--min-total-net-pnl", type=float, default=0.0)
+    imbalance_pipeline.add_argument("--max-worst-drawdown", type=float, default=None)
+    imbalance_pipeline.add_argument("--min-median-markout-mean", type=float, default=None)
+    imbalance_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1091,6 +1142,78 @@ def main(argv: list[str] | None = None) -> int:
             thresholds=ImbalanceCandidatePromotionThresholds(
                 require_walkforward_passed=not args.allow_unpassed_walkforward,
                 require_candidate_ready=not args.allow_unready_candidate,
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-imbalance-research":
+        fold_count = len(args.ticks)
+        result = write_imbalance_research_pipeline(
+            args.ticks,
+            output_dir=args.out,
+            labels=args.labels,
+            tick_size=args.tick_size,
+            filter_session=not args.no_filter_session,
+            entry_imbalance_values=args.entry_imbalance,
+            min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
+            forward_horizon_ns_values=args.forward_horizon_ns,
+            max_spread_ticks=args.max_spread_ticks,
+            min_depth=args.min_depth,
+            min_signals=args.min_signals,
+            min_direction_count=args.min_direction_count,
+            min_mean_forward_edge_ticks=args.min_mean_forward_edge_ticks,
+            min_win_rate=args.min_win_rate,
+            min_median_forward_edge_ticks=args.min_median_forward_edge_ticks,
+            instrument_id=args.instrument_id,
+            instrument_kind=args.instrument_kind,
+            lot_size=args.lot_size,
+            qty=args.qty,
+            exit_imbalance=args.exit_imbalance,
+            cooloff_ns=args.cooloff_ns,
+            feed_latency_us=args.feed_latency_us,
+            order_latency_us=args.order_latency_us,
+            sweep_thresholds=ImbalanceEdgeSweepThresholds(
+                min_passed_configs=args.min_passed_configs,
+                min_best_usable_signals=args.min_best_usable_signals,
+                min_best_mean_forward_edge_ticks=args.min_best_mean_forward_edge_ticks,
+                min_best_win_rate=args.min_best_win_rate,
+            ),
+            selection_thresholds=ImbalanceEdgeSelectionThresholds(
+                min_sweeps=args.min_selection_sweeps if args.min_selection_sweeps is not None else fold_count,
+                min_pass_rate=args.min_selection_pass_rate,
+                min_median_usable_signals=args.min_selection_median_usable_signals,
+                min_median_mean_forward_edge_ticks=args.min_selection_median_mean_forward_edge_ticks,
+                min_min_win_rate=args.min_selection_min_win_rate,
+                min_median_robust_score=args.min_selection_median_robust_score,
+            ),
+            edge_walkforward_thresholds=ImbalanceEdgeWalkForwardThresholds(
+                min_folds=args.min_edge_folds if args.min_edge_folds is not None else fold_count,
+                min_passed_sweeps=args.min_passed_edge_sweeps
+                if args.min_passed_edge_sweeps is not None
+                else fold_count,
+                require_selection=not args.allow_unselected,
+            ),
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_markout_mean=args.min_markout_mean,
+            ),
+            replay_walkforward_thresholds=ImbalanceReplayWalkForwardThresholds(
+                min_folds=args.min_replay_folds if args.min_replay_folds is not None else fold_count,
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+            ),
+            promotion_thresholds=ImbalanceCandidatePromotionThresholds(
                 min_proof_pass_rate=args.min_proof_pass_rate,
                 min_total_fills=args.min_total_fills,
                 min_total_net_pnl=args.min_total_net_pnl,

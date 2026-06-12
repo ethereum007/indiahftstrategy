@@ -227,6 +227,32 @@ def test_catalog_experiment_runs_recognizes_imbalance_candidate_promotion_status
     assert row["summary_status_column"] == "ready"
 
 
+def test_catalog_experiment_runs_recognizes_imbalance_pipeline_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "imbalance_pipeline",
+        run_type="imbalance_research_pipeline",
+        summary_name="imbalance_pipeline_summary.csv",
+        summary_row={
+            "ready": True,
+            "failed_stages": 0,
+            "recommendation": "paper_or_shadow_candidate",
+            "edge_passed": True,
+            "replay_passed": True,
+            "promotion_ready": True,
+            "candidate_scenario_key": "strategy=imbalance|entry_imbalance=0.6|min_microprice_edge_ticks=0.25|hold_ns=1000000",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "imbalance_research_pipeline"
+    assert row["summary_file"] == "imbalance_pipeline_summary.csv"
+    assert row["summary_status_column"] == "ready"
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

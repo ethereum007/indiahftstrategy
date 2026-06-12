@@ -47,6 +47,9 @@
 - Imbalance candidate promotion bridge that converts passed replay
   walk-forward evidence into launch-compatible promotion reports and candidate
   configs for paper/shadow order staging.
+- End-to-end imbalance research pipeline that runs edge walk-forward,
+  replay-proof walk-forward, and candidate promotion in one manifest-backed
+  command with stage-level readiness evidence.
 - Microprice/order-book imbalance robustness sweep across entry threshold,
   microprice edge, hold timer, feed latency, and order latency, with per-run
   replay artifacts, proof gate, pass rate, and robust score summary.
@@ -191,7 +194,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 226 tests.
+Current passing suite: 229 tests.
 
 ## Next Build Targets
 

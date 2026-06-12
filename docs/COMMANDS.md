@@ -478,6 +478,44 @@ candidate_config.json
 manifest.json
 ```
 
+## Microprice Imbalance Research Pipeline
+
+Run the full imbalance research proof path in one command: edge walk-forward,
+replay-proof walk-forward, and promotion into launch-compatible candidate
+artifacts.
+
+```powershell
+python -m hft_cli pipeline-imbalance-research `
+  --ticks data\atm_option_ticks_2026_06_10.csv data\atm_option_ticks_2026_06_11.csv `
+  --label day1 `
+  --label day2 `
+  --out runs\imbalance_pipeline `
+  --entry-imbalance 0.55 0.60 0.70 `
+  --min-microprice-edge-ticks 0.25 0.50 `
+  --forward-horizon-ns 100000000 500000000 `
+  --min-signals 100 `
+  --min-direction-count 2 `
+  --min-mean-forward-edge-ticks 0.25 `
+  --min-win-rate 0.52 `
+  --min-selection-sweeps 2 `
+  --min-proof-pass-rate 1 `
+  --min-total-fills 20 `
+  --min-total-net-pnl 0 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_pipeline_stages.csv
+imbalance_pipeline_summary.csv
+candidate_config.json
+manifest.json
+edge_walkforward\...
+replay_walkforward\...
+promotion\...
+```
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge
