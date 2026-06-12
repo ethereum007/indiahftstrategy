@@ -1793,12 +1793,13 @@ diagnostic_issues.csv
 
 ## Data Readiness Gate
 
-Combine adapter schema audit, mapped-data normalization, tick/chain
-diagnostics, market profile fees, and instrument metadata into one go/no-go
-record before edge scans, walk-forwards, or replay pipelines:
+Combine vendor sample intake, adapter schema audit, mapped-data normalization,
+tick/chain diagnostics, market profile fees, and instrument metadata into one
+go/no-go record before edge scans, walk-forwards, or replay pipelines:
 
 ```powershell
 python -m hft_cli review-data-readiness `
+  --vendor-intake mappings\arrow_ticks_intake `
   --schema-audit runs\schema_audit\arrow_ticks `
   --mapped-data data\normalized\arrow_ticks_2026_06_10 `
   --tick-diagnostics runs\diagnostics\futures `
@@ -1806,6 +1807,7 @@ python -m hft_cli review-data-readiness `
   --market-profile runs\market_profiles\india_us `
   --instrument-metadata runs\risk\leadlag_shadow_instruments `
   --out runs\data_readiness\india_nse_2026_06_10 `
+  --require-vendor-intake `
   --require-schema-audit `
   --require-mapped-data `
   --require-chain-diagnostics `

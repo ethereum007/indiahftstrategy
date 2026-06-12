@@ -11,6 +11,7 @@ from reports.manifest import write_experiment_manifest
 
 
 SUMMARY_FILES = {
+    "vendor_intake": "vendor_intake_summary.csv",
     "schema_audit": "adapter_schema_summary.csv",
     "mapped_data": "mapped_data_summary.csv",
     "tick_diagnostics": "diagnostic_summary.csv",
@@ -22,6 +23,7 @@ SUMMARY_FILES = {
 
 @dataclass(frozen=True)
 class DataReadinessThresholds:
+    require_vendor_intake: bool = False
     require_schema_audit: bool = False
     require_mapped_data: bool = False
     require_tick_diagnostics: bool = True
@@ -57,6 +59,7 @@ class DataReadinessReport:
 
 def evaluate_data_readiness(
     *,
+    vendor_intake_summary: pd.DataFrame | None = None,
     schema_audit_summary: pd.DataFrame | None = None,
     mapped_data_summary: pd.DataFrame | None = None,
     tick_diagnostic_summary: pd.DataFrame | None = None,
@@ -68,6 +71,7 @@ def evaluate_data_readiness(
     thresholds = thresholds or DataReadinessThresholds()
     _validate_thresholds(thresholds)
     summaries = {
+        "vendor_intake": _optional_frame(vendor_intake_summary),
         "schema_audit": _optional_frame(schema_audit_summary),
         "mapped_data": _optional_frame(mapped_data_summary),
         "tick_diagnostics": _optional_frame(tick_diagnostic_summary),
@@ -84,6 +88,7 @@ def evaluate_data_readiness(
 def write_data_readiness_report(
     *,
     output_dir: str | Path,
+    vendor_intake_dir: str | Path | None = None,
     schema_audit_dir: str | Path | None = None,
     mapped_data_dir: str | Path | None = None,
     tick_diagnostics_dir: str | Path | None = None,
@@ -95,6 +100,7 @@ def write_data_readiness_report(
     thresholds = thresholds or DataReadinessThresholds()
     _validate_thresholds(thresholds)
     report = evaluate_data_readiness(
+        vendor_intake_summary=_read_optional_summary(vendor_intake_dir, "vendor_intake"),
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         mapped_data_summary=_read_optional_summary(mapped_data_dir, "mapped_data"),
         tick_diagnostic_summary=_read_optional_summary(tick_diagnostics_dir, "tick_diagnostics"),
@@ -113,6 +119,7 @@ def write_data_readiness_report(
         run_type="data_readiness",
         parameters={"thresholds": asdict(thresholds)},
         inputs={
+            "vendor_intake": vendor_intake_dir,
             "schema_audit": schema_audit_dir,
             "mapped_data": mapped_data_dir,
             "tick_diagnostics": tick_diagnostics_dir,
@@ -133,13 +140,23 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
     required = _component_required(component, thresholds)
     ready = _component_ready(component, frame) if provided else False
     row = _overall_row(frame) if provided else pd.Series(dtype=object)
+    row_count = _number(
+        row,
+        "rows",
+        fallback=_number(row, "output_rows", fallback=_number(row, "sampled_rows", fallback=0.0)),
+    )
+    failed_checks = _number(
+        row,
+        "failed_mappings",
+        fallback=_number(row, "unmapped_required_columns", fallback=0.0),
+    )
     return {
         "component": component,
         "required": required,
         "provided": provided,
         "ready": ready,
-        "rows": int(_number(row, "rows", fallback=_number(row, "output_rows", fallback=0.0))),
-        "failed_checks": int(_number(row, "failed_mappings", fallback=0.0)),
+        "rows": int(row_count),
+        "failed_checks": int(failed_checks),
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -292,6 +309,7 @@ def _summary(
 def _component_required(component: str, thresholds: DataReadinessThresholds) -> bool:
     return bool(
         {
+            "vendor_intake": thresholds.require_vendor_intake,
             "schema_audit": thresholds.require_schema_audit,
             "mapped_data": thresholds.require_mapped_data,
             "tick_diagnostics": thresholds.require_tick_diagnostics,
@@ -304,6 +322,8 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
 
 def _component_ready(component: str, frame: pd.DataFrame) -> bool:
     row = _overall_row(frame)
+    if component == "vendor_intake":
+        return _to_bool(row.get("ready", False))
     if component == "schema_audit":
         return _to_bool(row.get("all_required_present", False))
     if component == "mapped_data":

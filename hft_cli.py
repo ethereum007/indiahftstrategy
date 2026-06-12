@@ -585,12 +585,14 @@ def main(argv: list[str] | None = None) -> int:
 
     data_readiness = sub.add_parser("review-data-readiness", help="Gate vendor/normalized market data before research runs.")
     data_readiness.add_argument("--out", required=True)
+    data_readiness.add_argument("--vendor-intake", default=None)
     data_readiness.add_argument("--schema-audit", default=None)
     data_readiness.add_argument("--mapped-data", default=None)
     data_readiness.add_argument("--tick-diagnostics", default=None)
     data_readiness.add_argument("--chain-diagnostics", default=None)
     data_readiness.add_argument("--market-profile", default=None)
     data_readiness.add_argument("--instrument-metadata", default=None)
+    data_readiness.add_argument("--require-vendor-intake", action="store_true")
     data_readiness.add_argument("--require-schema-audit", action="store_true")
     data_readiness.add_argument("--require-mapped-data", action="store_true")
     data_readiness.add_argument("--skip-tick-diagnostics", action="store_true")
@@ -1769,6 +1771,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "review-data-readiness":
         result = write_data_readiness_report(
             output_dir=args.out,
+            vendor_intake_dir=args.vendor_intake,
             schema_audit_dir=args.schema_audit,
             mapped_data_dir=args.mapped_data,
             tick_diagnostics_dir=args.tick_diagnostics,
@@ -1776,6 +1779,7 @@ def main(argv: list[str] | None = None) -> int:
             market_profile_dir=args.market_profile,
             instrument_metadata_dir=args.instrument_metadata,
             thresholds=DataReadinessThresholds(
+                require_vendor_intake=args.require_vendor_intake,
                 require_schema_audit=args.require_schema_audit,
                 require_mapped_data=args.require_mapped_data,
                 require_tick_diagnostics=not args.skip_tick_diagnostics,

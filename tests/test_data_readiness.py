@@ -77,6 +77,25 @@ def mapped_data_summary(ready=True):
     )
 
 
+def vendor_intake_summary(ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": "arrow_money",
+                "best_kind": "ticks",
+                "sampled_rows": 100,
+                "source_columns": 7,
+                "required_columns": 7,
+                "mapped_columns": 7 if ready else 6,
+                "unmapped_required_columns": 0 if ready else 1,
+                "mapping_coverage": 1.0 if ready else 6 / 7,
+                "recommendation": "review_mapping_then_normalize" if ready else "complete_vendor_mapping_before_research",
+            }
+        ]
+    )
+
+
 def market_profile_summary(explicit_fee_model=True):
     return pd.DataFrame(
         [
@@ -126,6 +145,7 @@ def test_data_readiness_fails_on_bad_tick_diagnostics():
 
 def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
     report = evaluate_data_readiness(
+        vendor_intake_summary=vendor_intake_summary(True),
         schema_audit_summary=schema_summary(True),
         mapped_data_summary=mapped_data_summary(True),
         tick_diagnostic_summary=tick_summary(),
@@ -133,6 +153,7 @@ def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
         market_profile_summary=market_profile_summary(True),
         instrument_metadata_summary=instrument_metadata_summary(True),
         thresholds=DataReadinessThresholds(
+            require_vendor_intake=True,
             require_schema_audit=True,
             require_mapped_data=True,
             require_chain_diagnostics=True,
@@ -144,7 +165,22 @@ def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
     )
 
     assert report.ready
-    assert int(report.summary.iloc[0]["required_components"]) == 6
+    assert int(report.summary.iloc[0]["required_components"]) == 7
+    assert report.items.set_index("component").loc["vendor_intake", "ready"]
+
+
+def test_data_readiness_fails_on_unready_vendor_intake():
+    report = evaluate_data_readiness(
+        vendor_intake_summary=vendor_intake_summary(False),
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(require_vendor_intake=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    item = report.items.set_index("component").loc["vendor_intake"]
+    assert "vendor_intake_ready" in failed
+    assert int(item["failed_checks"]) == 1
 
 
 def test_data_readiness_fails_on_chain_coverage_and_spread_gaps():
@@ -190,3 +226,28 @@ def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_pa
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "tick_diagnostics_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_data_readiness_can_require_vendor_intake(tmp_path):
+    tick_dir = tmp_path / "tick_diag"
+    out_dir = tmp_path / "data_readiness"
+    tick_dir.mkdir()
+    tick_summary().to_csv(tick_dir / "diagnostic_summary.csv", index=False)
+
+    code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(out_dir),
+            "--tick-diagnostics",
+            str(tick_dir),
+            "--require-vendor-intake",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "data_readiness_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "vendor_intake_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
