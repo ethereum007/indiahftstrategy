@@ -26,6 +26,9 @@
 - Microprice/order-book imbalance edge sweep that ranks entry thresholds,
   microprice-edge hurdles, and forward horizons before expensive replay grids,
   emitting replay defaults in a candidate config.
+- Cross-day/fold imbalance edge selection that compares edge sweep outputs,
+  requires stable pass rate, signal count, forward edge, and win rate, and
+  emits a replay-ready candidate config.
 - Microprice imbalance replay and replay-sweep CLIs can consume the edge
   sweep `candidate_config.json` directly, while explicit CLI parameters remain
   available for overrides.
@@ -179,7 +182,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 212 tests.
+Current passing suite: 216 tests.
 
 ## Next Build Targets
 

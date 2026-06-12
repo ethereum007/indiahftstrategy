@@ -22,6 +22,7 @@ from reports.halt_execution import HaltExecutionThresholds, write_halt_execution
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
 from reports.imbalance_edge import ImbalanceEdgeThresholds, write_imbalance_edge_audit
+from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds, write_imbalance_edge_selection
 from reports.imbalance_edge_sweep import ImbalanceEdgeSweepThresholds, write_imbalance_edge_sweep
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
@@ -152,6 +153,18 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_edge_sweep.add_argument("--min-best-mean-forward-edge-ticks", type=float, default=0.0)
     imbalance_edge_sweep.add_argument("--min-best-win-rate", type=float, default=0.0)
     imbalance_edge_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_edge_compare = sub.add_parser("compare-imbalance-edge-sweeps", help="Select stable imbalance edge parameters across sweeps.")
+    imbalance_edge_compare.add_argument("--sweeps", nargs="+", required=True)
+    imbalance_edge_compare.add_argument("--out", required=True)
+    imbalance_edge_compare.add_argument("--label", action="append", dest="labels")
+    imbalance_edge_compare.add_argument("--min-sweeps", type=int, default=1)
+    imbalance_edge_compare.add_argument("--min-pass-rate", type=float, default=1.0)
+    imbalance_edge_compare.add_argument("--min-median-usable-signals", type=float, default=1.0)
+    imbalance_edge_compare.add_argument("--min-median-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge_compare.add_argument("--min-min-win-rate", type=float, default=0.0)
+    imbalance_edge_compare.add_argument("--min-median-robust-score", type=float, default=None)
+    imbalance_edge_compare.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_replay = sub.add_parser("replay-leadlag", help="Replay lead-lag taker strategy.")
     leadlag_replay.add_argument("--leader", required=True)
@@ -823,6 +836,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "compare-imbalance-edge-sweeps":
+        result = write_imbalance_edge_selection(
+            args.sweeps,
+            output_dir=args.out,
+            labels=args.labels,
+            thresholds=ImbalanceEdgeSelectionThresholds(
+                min_sweeps=args.min_sweeps,
+                min_pass_rate=args.min_pass_rate,
+                min_median_usable_signals=args.min_median_usable_signals,
+                min_median_mean_forward_edge_ticks=args.min_median_mean_forward_edge_ticks,
+                min_min_win_rate=args.min_min_win_rate,
+                min_median_robust_score=args.min_median_robust_score,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.has_selection else 0
     if args.command == "replay-leadlag":
         replay_params = calibrated_replay_params_from_path(
             "leadlag",

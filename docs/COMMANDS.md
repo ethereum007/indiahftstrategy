@@ -320,8 +320,38 @@ candidate_config.json
 manifest.json
 ```
 
-The `candidate_config.json` can be passed directly into replay or replay-sweep
-commands with `--candidate-config`.
+## Microprice Imbalance Edge Selection
+
+Compare edge sweeps across days or folds and select only stable threshold
+configs before replay work:
+
+```powershell
+python -m hft_cli compare-imbalance-edge-sweeps `
+  --sweeps runs\imbalance_edge_sweep_2026_06_10 runs\imbalance_edge_sweep_2026_06_11 `
+  --label day1 `
+  --label day2 `
+  --out runs\imbalance_edge_selection `
+  --min-sweeps 2 `
+  --min-pass-rate 1 `
+  --min-median-usable-signals 100 `
+  --min-median-mean-forward-edge-ticks 0.25 `
+  --min-min-win-rate 0.52 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_edge_scenario_runs.csv
+imbalance_edge_scenario_scores.csv
+imbalance_edge_selection_checks.csv
+imbalance_edge_selection_summary.csv
+candidate_config.json
+manifest.json
+```
+
+The `candidate_config.json` from either the edge sweep or edge selection can be
+passed directly into replay or replay-sweep commands with `--candidate-config`.
 
 ## Microprice Imbalance Replay
 
