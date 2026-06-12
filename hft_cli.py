@@ -875,6 +875,10 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--max-total-mismatched-orders", type=int, default=0)
     scaleup.add_argument("--max-total-overfilled-orders", type=int, default=0)
     scaleup.add_argument("--max-telemetry-age-ns", type=float, default=None)
+    scaleup.add_argument("--max-open-order-count", type=int, default=None)
+    scaleup.add_argument("--max-open-order-qty", type=float, default=None)
+    scaleup.add_argument("--max-gross-position-qty", type=float, default=None)
+    scaleup.add_argument("--max-abs-net-position-qty", type=float, default=None)
     scaleup.add_argument("--max-orders-per-session", type=int, default=None)
     scaleup.add_argument("--max-session-notional", type=float, default=None)
     scaleup.add_argument("--max-gross-notional", type=float, default=None)
@@ -2060,6 +2064,10 @@ def main(argv: list[str] | None = None) -> int:
                 max_total_mismatched_orders=args.max_total_mismatched_orders,
                 max_total_overfilled_orders=args.max_total_overfilled_orders,
                 max_telemetry_age_ns=args.max_telemetry_age_ns,
+                max_open_order_count=args.max_open_order_count,
+                max_open_order_qty=args.max_open_order_qty,
+                max_gross_position_qty=args.max_gross_position_qty,
+                max_abs_net_position_qty=args.max_abs_net_position_qty,
                 max_orders_per_session=args.max_orders_per_session,
                 max_session_notional=args.max_session_notional,
                 max_gross_notional=args.max_gross_notional,

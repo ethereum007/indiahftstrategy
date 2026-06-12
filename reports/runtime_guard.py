@@ -115,6 +115,10 @@ def _metrics(
                 "orders_sent": _number(latest, "orders_sent", fallback=_number(latest, "orders")),
                 "session_notional": _number(latest, "session_notional", fallback=_number(latest, "total_notional")),
                 "realized_pnl": _number(latest, "realized_pnl", fallback=_number(latest, "net_pnl")),
+                "open_order_count": _number(latest, "open_order_count"),
+                "open_order_qty": _number(latest, "open_order_qty"),
+                "gross_position_qty": _number(latest, "gross_position_qty"),
+                "abs_net_position_qty": _number(latest, "abs_net_position_qty"),
                 "total_failed_component_checks": _number(latest, "total_failed_component_checks"),
                 "unmatched_fills": _number(latest, "unmatched_fills"),
                 "mismatched_orders": _number(latest, "mismatched_orders"),
@@ -146,6 +150,10 @@ def _metrics(
                 "max_total_mismatched_orders": _number_from(kill_switches, "max_total_mismatched_orders"),
                 "max_total_overfilled_orders": _number_from(kill_switches, "max_total_overfilled_orders"),
                 "max_worst_adverse_slippage": _number_from(kill_switches, "max_worst_adverse_slippage"),
+                "max_open_order_count": _number_from(kill_switches, "max_open_order_count"),
+                "max_open_order_qty": _number_from(kill_switches, "max_open_order_qty"),
+                "max_gross_position_qty": _number_from(kill_switches, "max_gross_position_qty"),
+                "max_abs_net_position_qty": _number_from(kill_switches, "max_abs_net_position_qty"),
             }
         ]
     )
@@ -200,6 +208,14 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 row["max_worst_adverse_slippage"],
             )
         )
+    for value_column, threshold_column in (
+        ("open_order_count", "max_open_order_count"),
+        ("open_order_qty", "max_open_order_qty"),
+        ("gross_position_qty", "max_gross_position_qty"),
+        ("abs_net_position_qty", "max_abs_net_position_qty"),
+    ):
+        if not pd.isna(row[threshold_column]):
+            checks.append(_threshold_check(value_column, row[value_column], "<=", row[threshold_column]))
     if not pd.isna(row["max_telemetry_age_ns"]):
         checks.extend(
             [

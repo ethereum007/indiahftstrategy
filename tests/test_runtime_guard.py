@@ -119,6 +119,57 @@ def test_runtime_guard_halts_when_telemetry_is_stale():
     assert "runtime_telemetry_age_ns" in failed
 
 
+def test_runtime_guard_halts_on_open_order_and_position_breaches():
+    config = scaleup_config()
+    config["kill_switches"].update(
+        {
+            "max_open_order_count": 1,
+            "max_open_order_qty": 50,
+            "max_gross_position_qty": 100,
+            "max_abs_net_position_qty": 25,
+        }
+    )
+
+    report = evaluate_runtime_guard(
+        config,
+        telemetry(
+            open_order_count=2,
+            open_order_qty=75,
+            gross_position_qty=150,
+            abs_net_position_qty=50,
+        ),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"open_order_count", "open_order_qty", "gross_position_qty", "abs_net_position_qty"} <= failed
+
+
+def test_runtime_guard_continues_within_open_order_and_position_limits():
+    config = scaleup_config()
+    config["kill_switches"].update(
+        {
+            "max_open_order_count": 2,
+            "max_open_order_qty": 100,
+            "max_gross_position_qty": 200,
+            "max_abs_net_position_qty": 75,
+        }
+    )
+
+    report = evaluate_runtime_guard(
+        config,
+        telemetry(
+            open_order_count=1,
+            open_order_qty=50,
+            gross_position_qty=100,
+            abs_net_position_qty=25,
+        ),
+    )
+
+    assert not report.halted
+    assert set(report.checks["passed"]) == {True}
+
+
 def test_runtime_guard_uses_scaleup_config_telemetry_age_limit():
     config = scaleup_config()
     config["kill_switches"]["max_telemetry_age_ns"] = 1_000
