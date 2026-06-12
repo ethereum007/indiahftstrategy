@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES, get_market_profile, session_mask
+
 
 ENGINE_COLUMNS = ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
 REQUIRED_COLUMNS = ["ts", "bid", "ask", "bid_qty", "ask_qty"]
@@ -42,6 +44,7 @@ def load_tick_csv(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     add_regime: bool = True,
 ) -> NormalizedTicks:
     raw = pd.read_csv(path)
@@ -51,6 +54,7 @@ def load_tick_csv(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
         add_regime=add_regime,
     )
 
@@ -62,6 +66,7 @@ def normalize_ticks(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     add_regime: bool = True,
 ) -> NormalizedTicks:
     """Normalize vendor ticks into the engine schema.
@@ -94,12 +99,12 @@ def normalize_ticks(
 
     session_count = 0
     if filter_session and not out.empty:
-        session_mask = trading_session_mask(out["ts"])
-        session_count = int((~session_mask).sum())
-        out = out.loc[session_mask].copy()
+        session = trading_session_mask(out["ts"], market=market)
+        session_count = int((~session).sum())
+        out = out.loc[session].copy()
 
     if add_regime:
-        out["regime"] = tag_regime(out["ts"])
+        out["regime"] = tag_regime(out["ts"], market=market)
 
     for col in ("bid_qty", "ask_qty"):
         out[col] = out[col].astype("int64")
@@ -173,16 +178,23 @@ def _unit_multiplier(unit: str) -> int:
         raise ValueError(f"unsupported timestamp_unit {unit!r}") from exc
 
 
-def trading_session_mask(ts_ns: pd.Series) -> pd.Series:
-    dt = pd.to_datetime(ts_ns, unit="ns", utc=True).dt.tz_convert(IST)
-    seconds = dt.dt.hour * 3600 + dt.dt.minute * 60 + dt.dt.second
-    start = 9 * 3600 + 15 * 60
-    end = 15 * 3600 + 30 * 60
-    return (seconds >= start) & (seconds <= end)
+def trading_session_mask(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+) -> pd.Series:
+    return session_mask(ts_ns, market=market)
 
 
-def tag_regime(ts_ns: pd.Series) -> pd.Series:
-    dt = pd.to_datetime(ts_ns, unit="ns", utc=True).dt.tz_convert(IST)
+def tag_regime(
+    ts_ns: pd.Series,
+    *,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+) -> pd.Series:
+    profile = get_market_profile(market)
+    dt = pd.to_datetime(ts_ns, unit="ns", utc=True).dt.tz_convert(ZoneInfo(profile.session.timezone))
+    if profile.name != INDIA_NSE_INDEX_DERIVATIVES.name:
+        return pd.Series(np.full(len(dt), "baseline_market_structure", dtype=object), index=ts_ns.index)
     dates = dt.dt.date.astype(str)
     labels = np.full(len(dt), "pre_weekly_consolidation", dtype=object)
     labels[dates >= "2024-11-20"] = "weekly_consolidated"

@@ -121,14 +121,16 @@ schema until real export samples are mapped.
 python -m hft_cli diagnose-ticks `
   --ticks data\futures.csv `
   --out runs\diagnostics\futures `
-  --tick-size 0.05
+  --tick-size 0.05 `
+  --market india_nse_index_derivatives
 ```
 
 ```powershell
 python -m hft_cli diagnose-chain `
   --chain data\chain.csv `
   --out runs\diagnostics\chain `
-  --tick-size 0.05
+  --tick-size 0.05 `
+  --market india_nse_index_derivatives
 ```
 
 Outputs:

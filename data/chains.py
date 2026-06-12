@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from data.loaders import _apply_column_map, _to_ns, tag_regime, trading_session_mask
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 
 
 CHAIN_COLUMNS = [
@@ -55,6 +56,7 @@ def load_option_chain_csv(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     add_regime: bool = True,
 ) -> NormalizedOptionChain:
     raw = pd.read_csv(path)
@@ -64,6 +66,7 @@ def load_option_chain_csv(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
         add_regime=add_regime,
     )
 
@@ -75,6 +78,7 @@ def normalize_option_chain(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     add_regime: bool = True,
 ) -> NormalizedOptionChain:
     source = _apply_column_map(df, column_map)
@@ -107,12 +111,12 @@ def normalize_option_chain(
 
     session_count = 0
     if filter_session and not out.empty:
-        session_mask = trading_session_mask(out["ts"])
+        session_mask = trading_session_mask(out["ts"], market=market)
         session_count = int((~session_mask).sum())
         out = out.loc[session_mask].copy()
 
     if add_regime:
-        out["regime"] = tag_regime(out["ts"])
+        out["regime"] = tag_regime(out["ts"], market=market)
 
     for col in depth_cols:
         out[col] = out[col].astype("int64")

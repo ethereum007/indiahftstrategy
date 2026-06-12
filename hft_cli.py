@@ -65,12 +65,14 @@ def main(argv: list[str] | None = None) -> int:
     diag_ticks.add_argument("--ticks", required=True)
     diag_ticks.add_argument("--out", required=True)
     diag_ticks.add_argument("--tick-size", type=float, default=None)
+    diag_ticks.add_argument("--market", default="india_nse_index_derivatives")
     diag_ticks.add_argument("--no-filter-session", action="store_true")
 
     diag_chain = sub.add_parser("diagnose-chain", help="Run data-quality diagnostics for option-chain snapshots.")
     diag_chain.add_argument("--chain", required=True)
     diag_chain.add_argument("--out", required=True)
     diag_chain.add_argument("--tick-size", type=float, default=None)
+    diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     diag_chain.add_argument("--no-filter-session", action="store_true")
 
     args = parser.parse_args(argv)
@@ -135,13 +137,13 @@ def main(argv: list[str] | None = None) -> int:
         print(summary.to_string(index=False))
         return 0
     if args.command == "diagnose-ticks":
-        ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session).data
-        result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size), args.out)
+        ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session, market=args.market).data
+        result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size, market=args.market), args.out)
         print(result.summary.to_string(index=False))
         return 0
     if args.command == "diagnose-chain":
-        chain = load_option_chain_csv(args.chain, filter_session=not args.no_filter_session).data
-        result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size), args.out)
+        chain = load_option_chain_csv(args.chain, filter_session=not args.no_filter_session, market=args.market).data
+        result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size, market=args.market), args.out)
         print(result.summary.to_string(index=False))
         return 0
     raise RuntimeError(f"unhandled command {args.command}")
