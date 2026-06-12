@@ -60,6 +60,31 @@ experiment_catalog_summary.csv
 manifest.json
 ```
 
+## Strategy Evidence Review
+
+Gate a strategy from the experiment catalog before shadow scale-up:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\leadlag_shadow `
+  --required-run-type proof_report `
+  --required-run-type stress_report `
+  --required-run-type promotion_report `
+  --required-run-type shadow_session_comparison `
+  --require-same-git-commit `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+strategy_evidence_items.csv
+strategy_evidence_checks.csv
+strategy_evidence_summary.csv
+manifest.json
+```
+
 ## Parity / Box Scan
 
 ```powershell

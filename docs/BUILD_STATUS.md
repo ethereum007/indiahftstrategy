@@ -86,6 +86,9 @@
 - Experiment catalog command that scans manifest-bearing run folders into a
   searchable evidence ledger with inferred pass/ready status and summary
   metrics.
+- Strategy evidence review gate that consumes the experiment catalog and
+  requires successful proof, stress, promotion, shadow, or user-selected run
+  types before scale-up decisions.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -122,7 +125,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 136 tests.
+Current passing suite: 140 tests.
 
 ## Next Build Targets
 

@@ -12,6 +12,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
+from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
@@ -148,6 +149,15 @@ def main(argv: list[str] | None = None) -> int:
     catalog = sub.add_parser("catalog-runs", help="Build an experiment catalog from manifest-bearing run folders.")
     catalog.add_argument("--roots", nargs="+", required=True)
     catalog.add_argument("--out", required=True)
+
+    evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
+    evidence.add_argument("--catalog", required=True)
+    evidence.add_argument("--out", required=True)
+    evidence.add_argument("--required-run-type", action="append", dest="required_run_types")
+    evidence.add_argument("--min-passed-per-type", type=int, default=1)
+    evidence.add_argument("--allow-dirty-git", action="store_true")
+    evidence.add_argument("--require-same-git-commit", action="store_true")
+    evidence.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_sweep = sub.add_parser("sweep-leadlag", help="Run lead-lag replay robustness sweep.")
     leadlag_sweep.add_argument("--leader", required=True)
@@ -540,6 +550,21 @@ def main(argv: list[str] | None = None) -> int:
         result = write_experiment_catalog(args.roots, output_dir=args.out)
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "review-strategy-evidence":
+        result = write_strategy_evidence_review(
+            args.catalog,
+            output_dir=args.out,
+            thresholds=EvidenceThresholds(
+                required_run_types=tuple(args.required_run_types)
+                if args.required_run_types
+                else EvidenceThresholds().required_run_types,
+                min_passed_per_type=args.min_passed_per_type,
+                allow_dirty_git=args.allow_dirty_git,
+                require_same_git_commit=args.require_same_git_commit,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "sweep-leadlag":
         result = run_leadlag_sweep(
             leader_path=args.leader,
