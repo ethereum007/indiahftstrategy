@@ -40,6 +40,7 @@ from reports.sweeps import write_sweep_comparison
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_imbalance_replay import run_imbalance_replay
+from strategies.run_imbalance_sweep import run_imbalance_sweep
 from strategies.run_leadlag_replay import run_leadlag_replay
 from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
@@ -285,6 +286,32 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_sweep.add_argument("--max-otr", type=float, default=None)
     leadlag_sweep.add_argument("--min-markout-mean", type=float, default=None)
     leadlag_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_sweep = sub.add_parser("sweep-imbalance", help="Run microprice imbalance replay robustness sweep.")
+    imbalance_sweep.add_argument("--ticks", required=True)
+    imbalance_sweep.add_argument("--out", required=True)
+    imbalance_sweep.add_argument("--no-filter-session", action="store_true")
+    imbalance_sweep.add_argument("--instrument-id", default="BOOK")
+    imbalance_sweep.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
+    imbalance_sweep.add_argument("--lot-size", type=int, default=75)
+    imbalance_sweep.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_sweep.add_argument("--qty", type=int, default=75)
+    imbalance_sweep.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
+    imbalance_sweep.add_argument("--exit-imbalance", type=float, default=0.15)
+    imbalance_sweep.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
+    imbalance_sweep.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_sweep.add_argument("--min-depth", type=int, default=1)
+    imbalance_sweep.add_argument("--hold-ns", nargs="+", required=True, type=int)
+    imbalance_sweep.add_argument("--cooloff-ns", type=int, default=0)
+    imbalance_sweep.add_argument("--feed-latency-us", nargs="+", default=[0.0], type=float)
+    imbalance_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
+    imbalance_sweep.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
+    imbalance_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
+    imbalance_sweep.add_argument("--min-fills", type=int, default=1)
+    imbalance_sweep.add_argument("--max-drawdown", type=float, default=None)
+    imbalance_sweep.add_argument("--max-otr", type=float, default=None)
+    imbalance_sweep.add_argument("--min-markout-mean", type=float, default=None)
+    imbalance_sweep.add_argument("--fail-on-breach", action="store_true")
 
     parity_sweep = sub.add_parser("sweep-parity", help="Run parity replay robustness sweep.")
     parity_sweep.add_argument("--chain", required=True)
@@ -927,6 +954,36 @@ def main(argv: list[str] | None = None) -> int:
             delta=args.delta,
             qty=args.qty,
             flat_after_ns=args.flat_after_ns,
+            cooloff_ns=args.cooloff_ns,
+            markout_horizons_ns=args.markout_horizons_ns,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_markout_mean=args.min_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "sweep-imbalance":
+        result = run_imbalance_sweep(
+            ticks_path=args.ticks,
+            output_dir=args.out,
+            entry_imbalance_values=args.entry_imbalance,
+            min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
+            hold_ns_values=args.hold_ns,
+            feed_latency_us_values=args.feed_latency_us,
+            order_latency_us_values=args.order_latency_us,
+            filter_session=not args.no_filter_session,
+            instrument_id=args.instrument_id,
+            instrument_kind=args.instrument_kind,
+            lot_size=args.lot_size,
+            tick_size=args.tick_size,
+            qty=args.qty,
+            exit_imbalance=args.exit_imbalance,
+            max_spread_ticks=args.max_spread_ticks,
+            min_depth=args.min_depth,
             cooloff_ns=args.cooloff_ns,
             markout_horizons_ns=args.markout_horizons_ns,
             proof_thresholds=ProofThresholds(

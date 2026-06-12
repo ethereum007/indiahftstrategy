@@ -285,6 +285,37 @@ Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, markouts, and a
 manifest.
 
+## Microprice Imbalance Sweep
+
+Run replay robustness scenarios across imbalance thresholds, microprice edge
+hurdles, hold timers, and latency assumptions:
+
+```powershell
+python -m hft_cli sweep-imbalance `
+  --ticks data\atm_option_ticks.csv `
+  --out runs\imbalance_sweep_2026_06_10 `
+  --entry-imbalance 0.6 0.7 0.8 `
+  --min-microprice-edge-ticks 0.25 0.5 1.0 `
+  --hold-ns 100000000 500000000 `
+  --feed-latency-us 0 50 `
+  --order-latency-us 100 250 500 `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --max-drawdown 5000 `
+  --fail-on-breach
+```
+
+Outputs include per-scenario replay folders plus:
+
+```text
+sweep_runs.csv
+sweep_summary.csv
+proof/proof_metrics.csv
+proof/proof_checks.csv
+proof/proof_summary.csv
+manifest.json
+```
+
 ## Lead-Lag Sweep
 
 Run replay robustness scenarios across trigger and latency settings:
