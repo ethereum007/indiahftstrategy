@@ -223,6 +223,12 @@ def _telemetry(
         "open_order_count": int(_active_open_orders(open_orders)),
         "open_order_qty": float(_open_order_qty(open_orders)),
         "open_order_notional": float(_open_order_notional(open_orders)),
+        "oldest_open_order_age_ns": float(
+            _oldest_open_order_age_ns(
+                open_orders,
+                _first_number(snapshot_ts_ns, _number(pnl, "ts_ns"), _number(pnl, "timestamp_ns"), np.nan),
+            )
+        ),
         "gross_position_qty": float(_gross_position_qty(positions)),
         "abs_net_position_qty": float(_abs_net_position_qty(positions)),
         "gross_position_notional": float(_gross_position_notional(positions)),
@@ -338,6 +344,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "session_notional": float(row["session_notional"]),
                 "realized_pnl": float(row["realized_pnl"]),
                 "open_order_notional": float(row["open_order_notional"]),
+                "oldest_open_order_age_ns": float(row["oldest_open_order_age_ns"]),
                 "gross_position_notional": float(row["gross_position_notional"]),
                 "abs_net_delta": float(row["abs_net_delta"]),
                 "abs_net_vega": float(row["abs_net_vega"]),
@@ -458,6 +465,27 @@ def _open_order_notional(open_orders: pd.DataFrame) -> float:
         notional = pd.to_numeric(open_orders["notional"], errors="coerce").fillna(0.0).abs()
         return float((notional * (qty / total_qty).fillna(0.0)).loc[active].sum())
     return float((_open_quantities(open_orders).abs() * _open_order_prices(open_orders).abs()).loc[active].sum())
+
+
+def _oldest_open_order_age_ns(open_orders: pd.DataFrame, snapshot_ts_ns: float) -> float:
+    if open_orders.empty:
+        return 0.0
+    active = _active_open_order_mask(open_orders)
+    if not active.any():
+        return 0.0
+    for column in ("open_order_age_ns", "order_age_ns", "age_ns"):
+        if column in open_orders.columns:
+            ages = pd.to_numeric(open_orders.loc[active, column], errors="coerce")
+            return float(ages.max(skipna=True)) if ages.notna().any() else np.nan
+    if np.isnan(snapshot_ts_ns):
+        return np.nan
+    for column in ("created_ts_ns", "order_ts_ns", "submitted_ts_ns", "ts_ns", "timestamp_ns"):
+        if column in open_orders.columns:
+            timestamps = pd.to_numeric(open_orders.loc[active, column], errors="coerce")
+            if timestamps.notna().any():
+                ages = (float(snapshot_ts_ns) - timestamps).clip(lower=0.0)
+                return float(ages.max(skipna=True))
+    return np.nan
 
 
 def _active_open_order_mask(open_orders: pd.DataFrame) -> pd.Series:

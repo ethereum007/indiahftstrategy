@@ -30,6 +30,7 @@ class ScaleUpThresholds:
     max_open_order_count: int | None = None
     max_open_order_qty: float | None = None
     max_open_order_notional: float | None = None
+    max_open_order_age_ns: float | None = None
     max_gross_position_qty: float | None = None
     max_abs_net_position_qty: float | None = None
     max_orders_per_session: int | None = None
@@ -543,6 +544,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "max_open_order_count": _jsonable(thresholds.max_open_order_count),
             "max_open_order_qty": _jsonable(thresholds.max_open_order_qty),
             "max_open_order_notional": _jsonable(thresholds.max_open_order_notional),
+            "max_open_order_age_ns": _jsonable(thresholds.max_open_order_age_ns),
             "max_gross_position_qty": _jsonable(thresholds.max_gross_position_qty),
             "max_abs_net_position_qty": _jsonable(thresholds.max_abs_net_position_qty),
             "max_gross_notional": _jsonable(thresholds.max_gross_notional),
@@ -667,6 +669,7 @@ def _validate_thresholds(thresholds: ScaleUpThresholds) -> None:
         "max_open_order_count",
         "max_open_order_qty",
         "max_open_order_notional",
+        "max_open_order_age_ns",
         "max_gross_position_qty",
         "max_abs_net_position_qty",
         "max_orders_per_session",

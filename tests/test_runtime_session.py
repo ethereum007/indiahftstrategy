@@ -53,6 +53,7 @@ def open_orders():
                 "qty": 75,
                 "filled_qty": 25,
                 "limit_price": 10.0,
+                "created_ts_ns": 1_000,
                 "status": "PARTIAL",
             }
         ]
@@ -176,6 +177,37 @@ def test_cli_runtime_session_monitor_halts_on_open_order_notional_limit(tmp_path
     assert code == 2
     assert telemetry.loc[0, "open_order_notional"] == 500.0
     assert "open_order_notional" in failed
+
+
+def test_cli_runtime_session_monitor_halts_on_stale_open_order(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    open_orders_path = tmp_path / "open_orders.csv"
+    write_scaleup_dir(scaleup_dir, scaleup_config(max_open_order_age_ns=500))
+    open_orders().to_csv(open_orders_path, index=False)
+
+    code = main(
+        [
+            "monitor-runtime-session",
+            "--scaleup",
+            str(scaleup_dir),
+            "--open-orders",
+            str(open_orders_path),
+            "--snapshot-ts-ns",
+            "2000",
+            "--out",
+            str(out_dir),
+            "--skip-halt-response",
+            "--fail-on-breach",
+        ]
+    )
+
+    telemetry = pd.read_csv(out_dir / "01_telemetry" / "runtime_telemetry.csv")
+    checks = pd.read_csv(out_dir / "02_guard" / "runtime_guard_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert telemetry.loc[0, "oldest_open_order_age_ns"] == 1_000.0
+    assert "oldest_open_order_age_ns" in failed
 
 
 def test_cli_runtime_session_monitor_halts_on_upload_pack_replace_limit(tmp_path):

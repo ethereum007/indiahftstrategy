@@ -1060,6 +1060,7 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--max-open-order-count", type=int, default=None)
     scaleup.add_argument("--max-open-order-qty", type=float, default=None)
     scaleup.add_argument("--max-open-order-notional", type=float, default=None)
+    scaleup.add_argument("--max-open-order-age-ns", type=float, default=None)
     scaleup.add_argument("--max-gross-position-qty", type=float, default=None)
     scaleup.add_argument("--max-abs-net-position-qty", type=float, default=None)
     scaleup.add_argument("--max-orders-per-session", type=int, default=None)
@@ -2567,6 +2568,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_open_order_count=args.max_open_order_count,
                 max_open_order_qty=args.max_open_order_qty,
                 max_open_order_notional=args.max_open_order_notional,
+                max_open_order_age_ns=args.max_open_order_age_ns,
                 max_gross_position_qty=args.max_gross_position_qty,
                 max_abs_net_position_qty=args.max_abs_net_position_qty,
                 max_orders_per_session=args.max_orders_per_session,

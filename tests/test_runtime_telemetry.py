@@ -120,7 +120,14 @@ def pnl_snapshot():
 def open_orders():
     return pd.DataFrame(
         [
-            {"client_order_id": "A", "qty": 75, "filled_qty": 25, "status": "partial", "limit_price": 10.0},
+            {
+                "client_order_id": "A",
+                "qty": 75,
+                "filled_qty": 25,
+                "status": "partial",
+                "limit_price": 10.0,
+                "created_ts_ns": 100,
+            },
             {"client_order_id": "B", "qty": 75, "filled_qty": 75, "status": "filled", "limit_price": 11.0},
         ]
     )
@@ -159,6 +166,7 @@ def test_runtime_telemetry_combines_operational_artifacts():
         pnl_snapshot=pnl_snapshot(),
         open_orders=open_orders(),
         positions=positions(),
+        snapshot_ts_ns=1_100,
     )
 
     row = report.telemetry.iloc[0]
@@ -174,6 +182,7 @@ def test_runtime_telemetry_combines_operational_artifacts():
     assert row["open_order_count"] == 1
     assert row["gross_position_qty"] == 100.0
     assert row["open_order_notional"] == 500.0
+    assert row["oldest_open_order_age_ns"] == 1_000.0
     assert row["gross_position_notional"] == 1250.0
     assert row["net_position_notional"] == 250.0
     assert row["abs_net_position_notional"] == 250.0
@@ -260,6 +269,23 @@ def test_runtime_telemetry_uses_side_aware_open_order_prices():
     assert row["open_order_count"] == 2
     assert row["open_order_qty"] == 75.0
     assert row["open_order_notional"] == 997.5
+
+
+def test_runtime_telemetry_uses_broker_supplied_open_order_age():
+    report = evaluate_runtime_telemetry(
+        scaleup_config(),
+        open_orders=pd.DataFrame(
+            [
+                {"client_order_id": "A", "open_qty": 50, "status": "OPEN", "open_order_age_ns": 900},
+                {"client_order_id": "B", "open_qty": 25, "status": "OPEN", "open_order_age_ns": 1_200},
+                {"client_order_id": "DONE", "open_qty": 25, "status": "FILLED", "open_order_age_ns": 9_999},
+            ]
+        ),
+    )
+
+    row = report.telemetry.iloc[0]
+    assert report.ready
+    assert row["oldest_open_order_age_ns"] == 1_200.0
 
 
 def test_runtime_telemetry_blocks_unready_upload_pack():

@@ -59,6 +59,7 @@ def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money"):
             "max_lifecycle_orders": 20,
             "max_replace_orders": 5,
             "max_open_order_notional": 1_000.0,
+            "max_open_order_age_ns": 5_000_000_000.0,
             "max_gross_notional": 2_000.0,
             "max_abs_net_delta": 100.0,
             "max_abs_net_vega": 250.0,
@@ -100,6 +101,7 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.authorization.iloc[0]["max_lifecycle_orders"] == 20
     assert report.authorization.iloc[0]["max_replace_orders"] == 5
     assert report.authorization.iloc[0]["max_open_order_notional"] == 1_000.0
+    assert report.authorization.iloc[0]["max_open_order_age_ns"] == 5_000_000_000.0
     assert report.authorization.iloc[0]["max_gross_notional"] == 2_000.0
     assert report.authorization.iloc[0]["max_abs_net_delta"] == 100.0
     assert report.authorization.iloc[0]["max_abs_net_vega"] == 250.0

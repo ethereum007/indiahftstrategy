@@ -1509,6 +1509,7 @@ python -m hft_cli plan-scaleup `
   --max-open-order-count 10 `
   --max-open-order-qty 500 `
   --max-open-order-notional 100000 `
+  --max-open-order-age-ns 5000000000 `
   --max-gross-position-qty 1000 `
   --max-abs-net-position-qty 250 `
   --max-abs-net-delta 100 `
@@ -1579,7 +1580,9 @@ as `signed_notional`, `net_notional`, or `gross_notional`, or from quantities
 with mark columns such as `mark_price`, `last`, `price`, or bid/ask midpoint.
 Open-order notional is derived from remaining/open notional fields when present,
 or from active remaining quantity and `limit_price`/`price`/side-aware bid/ask
-marks.
+marks. Stale-order age uses `open_order_age_ns`/`order_age_ns` when provided,
+or active order timestamps such as `created_ts_ns`, `order_ts_ns`, or `ts_ns`
+with `--snapshot-ts-ns`.
 
 ## Runtime Scale-Up Guard
 
@@ -1602,7 +1605,7 @@ python -m hft_cli monitor-scaleup-guard `
 Telemetry CSV columns:
 
 ```text
-scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,open_order_count,open_order_qty,open_order_notional,gross_position_qty,abs_net_position_qty,gross_position_notional,net_position_notional,abs_net_position_notional,net_delta,abs_net_delta,net_vega,abs_net_vega
+scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,open_order_count,open_order_qty,open_order_notional,oldest_open_order_age_ns,gross_position_qty,abs_net_position_qty,gross_position_notional,net_position_notional,abs_net_position_notional,net_delta,abs_net_delta,net_vega,abs_net_vega
 ```
 
 Outputs:

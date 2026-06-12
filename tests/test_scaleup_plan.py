@@ -213,6 +213,7 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
             max_open_order_count=2,
             max_open_order_qty=75.0,
             max_open_order_notional=1_000.0,
+            max_open_order_age_ns=5_000_000_000.0,
             max_gross_position_qty=150.0,
             max_abs_net_position_qty=75.0,
             max_lifecycle_orders=6,
@@ -233,6 +234,7 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert report.config["kill_switches"]["max_replace_orders"] == 2
     assert report.config["kill_switches"]["max_open_order_count"] == 2
     assert report.config["kill_switches"]["max_open_order_notional"] == 1000.0
+    assert report.config["kill_switches"]["max_open_order_age_ns"] == 5_000_000_000.0
     assert report.config["kill_switches"]["max_gross_position_qty"] == 150.0
     assert report.config["kill_switches"]["max_gross_notional"] == 2000.0
     assert report.config["kill_switches"]["max_abs_net_delta"] == 100.0
@@ -629,6 +631,8 @@ def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
             "75",
             "--max-open-order-notional",
             "1000",
+            "--max-open-order-age-ns",
+            "5000000000",
             "--max-gross-position-qty",
             "150",
             "--max-abs-net-position-qty",
@@ -650,6 +654,7 @@ def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
     assert config["kill_switches"]["max_open_order_count"] == 2
     assert config["kill_switches"]["max_open_order_qty"] == 75.0
     assert config["kill_switches"]["max_open_order_notional"] == 1000.0
+    assert config["kill_switches"]["max_open_order_age_ns"] == 5_000_000_000.0
     assert config["kill_switches"]["max_gross_position_qty"] == 150.0
     assert config["kill_switches"]["max_abs_net_position_qty"] == 75.0
     assert config["kill_switches"]["max_gross_notional"] == 2000.0

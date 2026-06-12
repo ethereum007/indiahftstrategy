@@ -201,6 +201,7 @@ def _authorization(
                 "max_lifecycle_orders": _nullable_number(kill_switches.get("max_lifecycle_orders")),
                 "max_replace_orders": _nullable_number(kill_switches.get("max_replace_orders")),
                 "max_open_order_notional": _nullable_number(kill_switches.get("max_open_order_notional")),
+                "max_open_order_age_ns": _nullable_number(kill_switches.get("max_open_order_age_ns")),
                 "max_gross_notional": _nullable_number(kill_switches.get("max_gross_notional")),
                 "max_abs_net_delta": _nullable_number(kill_switches.get("max_abs_net_delta")),
                 "max_abs_net_vega": _nullable_number(kill_switches.get("max_abs_net_vega")),
