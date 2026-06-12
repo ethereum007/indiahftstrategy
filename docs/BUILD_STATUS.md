@@ -117,6 +117,8 @@
 - Data readiness gate that combines schema audit, mapped-data normalization,
   tick/chain diagnostics, market-profile fee assumptions, and instrument
   metadata before strategy research or promotion.
+- Multi-dataset data-readiness comparison gate that requires repeated clean
+  market-data days before walk-forward research or strategy evidence review.
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.
@@ -244,7 +246,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 301 tests.
+Current passing suite: 305 tests.
 
 ## Next Build Targets
 

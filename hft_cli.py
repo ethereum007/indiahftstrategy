@@ -19,6 +19,10 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
+from reports.data_readiness_comparison import (
+    DataReadinessComparisonThresholds,
+    write_data_readiness_comparison,
+)
 from reports.data_readiness import DataReadinessThresholds, write_data_readiness_report
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
@@ -606,6 +610,19 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-tick-median-spread-ticks", type=float, default=None)
     data_readiness.add_argument("--max-chain-median-spread-ticks", type=float, default=None)
     data_readiness.add_argument("--fail-on-breach", action="store_true")
+
+    data_readiness_compare = sub.add_parser(
+        "compare-data-readiness",
+        help="Compare multiple data-readiness runs before walk-forward research.",
+    )
+    data_readiness_compare.add_argument("--readiness", nargs="+", required=True)
+    data_readiness_compare.add_argument("--out", required=True)
+    data_readiness_compare.add_argument("--label", action="append", dest="labels")
+    data_readiness_compare.add_argument("--min-datasets", type=int, default=1)
+    data_readiness_compare.add_argument("--min-ready-datasets", type=int, default=None)
+    data_readiness_compare.add_argument("--min-ready-rate", type=float, default=1.0)
+    data_readiness_compare.add_argument("--max-total-failed-checks", type=int, default=0)
+    data_readiness_compare.add_argument("--fail-on-breach", action="store_true")
 
     instrument_metadata = sub.add_parser(
         "instrument-metadata-report",
@@ -1766,6 +1783,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "compare-data-readiness":
+        result = write_data_readiness_comparison(
+            args.readiness,
+            output_dir=args.out,
+            labels=args.labels,
+            thresholds=DataReadinessComparisonThresholds(
+                min_datasets=args.min_datasets,
+                min_ready_datasets=args.min_ready_datasets,
+                min_ready_rate=args.min_ready_rate,
+                max_total_failed_checks=args.max_total_failed_checks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.accepted else 0
     if args.command == "instrument-metadata-report":
         result = write_instrument_metadata_report(
             args.input,

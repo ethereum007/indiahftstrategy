@@ -1795,6 +1795,28 @@ data_readiness_summary.csv
 manifest.json
 ```
 
+Compare multiple data-readiness runs before walk-forward research:
+
+```powershell
+python -m hft_cli compare-data-readiness `
+  --readiness runs\data_readiness\india_nse_2026_06_10 runs\data_readiness\india_nse_2026_06_11 `
+  --label 2026-06-10 `
+  --label 2026-06-11 `
+  --out runs\data_readiness\india_nse_comparison `
+  --min-datasets 2 `
+  --min-ready-rate 1 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+data_readiness_runs.csv
+data_readiness_comparison_checks.csv
+data_readiness_comparison_summary.csv
+manifest.json
+```
+
 ## Proof Report
 
 Evaluate one or more replay output folders against explicit proof thresholds:
