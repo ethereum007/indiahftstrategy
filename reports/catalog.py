@@ -53,6 +53,7 @@ SUMMARY_FILES = [
     "shadow_session_comparison_summary.csv",
     "runtime_telemetry_summary.csv",
     "runtime_guard_summary.csv",
+    "runtime_session_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",

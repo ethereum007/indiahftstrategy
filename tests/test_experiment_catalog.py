@@ -370,6 +370,19 @@ def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_
         },
     )
     write_run(
+        root / "runtime_session",
+        run_type="runtime_session_monitor",
+        summary_name="runtime_session_summary.csv",
+        summary_row={
+            "ready": True,
+            "guard_action": "continue",
+            "halted": False,
+            "scenario_key": "trigger_ticks=2",
+            "adapter": "arrow_money",
+            "failed_checks": 0,
+        },
+    )
+    write_run(
         root / "halt_response",
         run_type="halt_response_plan",
         summary_name="halt_response_summary.csv",
@@ -432,10 +445,12 @@ def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_
     report = catalog_experiment_runs([root])
 
     rows = report.catalog.set_index("run_type")
-    assert int(report.summary.iloc[0]["status_true_runs"]) == 7
+    assert int(report.summary.iloc[0]["status_true_runs"]) == 8
     assert rows.loc["runtime_telemetry_snapshot", "summary_file"] == "runtime_telemetry_summary.csv"
     assert rows.loc["runtime_guard", "summary_file"] == "runtime_guard_summary.csv"
     assert rows.loc["runtime_guard", "summary_status_column"] == "failed_checks"
+    assert rows.loc["runtime_session_monitor", "summary_file"] == "runtime_session_summary.csv"
+    assert rows.loc["runtime_session_monitor", "summary_status_column"] == "ready"
     assert rows.loc["halt_response_plan", "summary_status_column"] == "ready"
     assert rows.loc["halt_execution_reconciliation", "summary_status_column"] == "passed"
     assert rows.loc["halt_incident_review", "summary_file"] == "halt_incident_summary.csv"

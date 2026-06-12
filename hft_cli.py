@@ -60,6 +60,7 @@ from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
 from reports.runtime_guard import write_runtime_guard_report
+from reports.runtime_session import write_runtime_session_monitor
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 from reports.replay_calibration import calibrated_replay_params_from_path, write_calibrated_replay_plan
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
@@ -1098,6 +1099,27 @@ def main(argv: list[str] | None = None) -> int:
     halt_response.add_argument("--default-order-type", default="LIMIT")
     halt_response.add_argument("--default-time-in-force", default="DAY")
     halt_response.add_argument("--fail-on-breach", action="store_true")
+
+    runtime_session = sub.add_parser(
+        "monitor-runtime-session",
+        help="Build telemetry, evaluate the scale-up guard, and prepare halt response when needed.",
+    )
+    runtime_session.add_argument("--scaleup", required=True)
+    runtime_session.add_argument("--out", required=True)
+    runtime_session.add_argument("--export", default=None)
+    runtime_session.add_argument("--reconciliation", default=None)
+    runtime_session.add_argument("--instrument-metadata", default=None)
+    runtime_session.add_argument("--pnl", default=None)
+    runtime_session.add_argument("--open-orders", default=None)
+    runtime_session.add_argument("--positions", default=None)
+    runtime_session.add_argument("--snapshot-ts-ns", type=float, default=None)
+    runtime_session.add_argument("--as-of-ts-ns", type=float, default=None)
+    runtime_session.add_argument("--max-telemetry-age-ns", type=float, default=None)
+    runtime_session.add_argument("--skip-halt-response", action="store_true")
+    runtime_session.add_argument("--allow-missing-flatten-prices", action="store_true")
+    runtime_session.add_argument("--default-order-type", default="LIMIT")
+    runtime_session.add_argument("--default-time-in-force", default="DAY")
+    runtime_session.add_argument("--fail-on-breach", action="store_true")
 
     halt_export = sub.add_parser("export-halt-response", help="Map halt response actions into broker files.")
     halt_export.add_argument("--halt-response", required=True)
@@ -2552,6 +2574,29 @@ def main(argv: list[str] | None = None) -> int:
             positions_path=args.positions,
             config=HaltResponseConfig(
                 require_guard_halt=not args.allow_continue_guard,
+                require_flatten_prices=not args.allow_missing_flatten_prices,
+                default_order_type=args.default_order_type,
+                default_time_in_force=args.default_time_in_force,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "monitor-runtime-session":
+        result = write_runtime_session_monitor(
+            scaleup_dir=args.scaleup,
+            output_dir=args.out,
+            export_dir=args.export,
+            reconciliation_dir=args.reconciliation,
+            instrument_metadata_dir=args.instrument_metadata,
+            pnl_path=args.pnl,
+            open_orders_path=args.open_orders,
+            positions_path=args.positions,
+            snapshot_ts_ns=args.snapshot_ts_ns,
+            as_of_ts_ns=args.as_of_ts_ns,
+            max_telemetry_age_ns=args.max_telemetry_age_ns,
+            plan_halt_response=not args.skip_halt_response,
+            halt_response_config=HaltResponseConfig(
+                require_guard_halt=True,
                 require_flatten_prices=not args.allow_missing_flatten_prices,
                 default_order_type=args.default_order_type,
                 default_time_in_force=args.default_time_in_force,

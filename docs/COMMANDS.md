@@ -89,7 +89,7 @@ manifest.json
 
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
-shadow-session, scale-up, runtime guard, halt-response, and resume summaries,
+shadow-session, scale-up, runtime guard, runtime-session, halt-response, and resume summaries,
 so those run types can be promoted into explicit `--required-run-type`
 evidence gates.
 
@@ -1530,6 +1530,42 @@ runtime_guard_checks.csv
 runtime_guard_summary.csv
 manifest.json
 ```
+
+## Runtime Session Monitor
+
+Build telemetry, evaluate the scale-up guard, and write a halt-response packet
+when the guard asks routing to stop:
+
+```powershell
+python -m hft_cli monitor-runtime-session `
+  --scaleup runs\scaleup\leadlag_shadow `
+  --export runs\launch_pipelines\surface_mm_arrow `
+  --reconciliation runs\reconciliation\leadlag_shadow_latest `
+  --instrument-metadata runs\instrument_metadata\leadlag_shadow_latest `
+  --pnl logs\leadlag_shadow_pnl.csv `
+  --open-orders logs\open_orders.csv `
+  --positions logs\positions.csv `
+  --out runs\runtime_sessions\leadlag_shadow_latest `
+  --as-of-ts-ns 1781248200000000000 `
+  --max-telemetry-age-ns 5000000000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+01_telemetry\runtime_telemetry.csv
+02_guard\runtime_guard_summary.csv
+03_halt_response\halt_response_summary.csv
+runtime_session_steps.csv
+runtime_session_summary.csv
+manifest.json
+```
+
+`03_halt_response` is created only when the guard halts and
+`--skip-halt-response` is not set. This gives paper/shadow automation one
+top-level go/no-go artifact while preserving the detailed telemetry, guard, and
+halt-response evidence folders.
 
 ## Halt Response Plan
 

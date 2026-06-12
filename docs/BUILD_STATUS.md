@@ -216,6 +216,9 @@
   open-order/position inventory limits, and required instrument metadata
   continuity, accepts telemetry output folders directly, and returns explicit
   continue/halt decisions.
+- Runtime session monitor that chains telemetry building, scale-up guard
+  evaluation, and automatic halt-response planning into one manifest-backed
+  paper/shadow go/no-go artifact.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests.
@@ -279,7 +282,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 350 tests.
+Current passing suite: 353 tests.
 
 ## Next Build Targets
 
