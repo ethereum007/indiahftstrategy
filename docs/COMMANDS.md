@@ -328,6 +328,34 @@ candidate_config.json
 manifest.json
 ```
 
+## Launch Bundle
+
+Package a promoted scenario and staged broker-neutral orders into a fail-closed
+paper/shadow launch bundle:
+
+```powershell
+python -m hft_cli launch-bundle `
+  --promotion runs\promotion\leadlag `
+  --staged-orders runs\surface_quotes_2026_06_10\staged_orders `
+  --out runs\launch\leadlag_shadow `
+  --mode shadow `
+  --adapter arrow_money `
+  --min-accepted-orders 10 `
+  --min-acceptance-rate 1 `
+  --max-total-notional 1000000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+launch_orders.csv
+launch_checks.csv
+launch_summary.csv
+launch_config.json
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

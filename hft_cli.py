@@ -7,6 +7,7 @@ from adapters.orders import OrderStagingLimits, write_staged_orders
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
+from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
@@ -187,6 +188,20 @@ def main(argv: list[str] | None = None) -> int:
     promote.add_argument("--min-maker-share", type=float, default=None)
     promote.add_argument("--min-markout-mean", type=float, default=None)
     promote.add_argument("--fail-on-breach", action="store_true")
+
+    launch = sub.add_parser("launch-bundle", help="Package promoted strategy and staged orders for paper/shadow launch.")
+    launch.add_argument("--promotion", required=True)
+    launch.add_argument("--staged-orders", required=True)
+    launch.add_argument("--out", required=True)
+    launch.add_argument("--mode", default="paper", choices=["paper", "shadow"])
+    launch.add_argument("--adapter", default="normalized")
+    launch.add_argument("--min-accepted-orders", type=int, default=1)
+    launch.add_argument("--min-acceptance-rate", type=float, default=1.0)
+    launch.add_argument("--allow-unready-promotion", action="store_true")
+    launch.add_argument("--allow-rejections", action="store_true")
+    launch.add_argument("--max-total-notional", type=float, default=None)
+    launch.add_argument("--max-order-notional", type=float, default=None)
+    launch.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -449,6 +464,24 @@ def main(argv: list[str] | None = None) -> int:
                 max_otr=args.max_otr,
                 min_maker_share=args.min_maker_share,
                 min_markout_mean=args.min_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "launch-bundle":
+        result = write_launch_bundle(
+            promotion_dir=args.promotion,
+            staged_orders_dir=args.staged_orders,
+            output_dir=args.out,
+            mode=args.mode,
+            adapter=args.adapter,
+            thresholds=LaunchThresholds(
+                min_accepted_orders=args.min_accepted_orders,
+                min_acceptance_rate=args.min_acceptance_rate,
+                require_promotion_ready=not args.allow_unready_promotion,
+                require_no_rejections=not args.allow_rejections,
+                max_total_notional=args.max_total_notional,
+                max_order_notional=args.max_order_notional,
             ),
         )
         print(result.summary.to_string(index=False))

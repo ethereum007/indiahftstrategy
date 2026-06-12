@@ -58,6 +58,9 @@
 - Scenario promotion gate that converts cross-sweep selections into explicit
   paper/shadow readiness decisions, threshold checks, and machine-readable
   candidate configs.
+- Paper/shadow launch bundle that joins a promoted scenario with staged
+  broker-neutral orders, checks promotion and pre-trade cleanliness, and emits
+  launch orders/configs for later Arrow.money/iRage-specific mapping.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -88,7 +91,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 99 tests.
+Current passing suite: 102 tests.
 
 ## Next Build Targets
 
