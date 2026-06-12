@@ -29,6 +29,12 @@ EXPORT_COLUMNS = [
     "route_tag",
     "adapter",
     "adapter_schema_status",
+    "lifecycle_action",
+    "lifecycle_action_id",
+    "lifecycle_reason",
+    "lifecycle_message_count",
+    "quote_age_ns",
+    "replaces_order_id",
 ]
 
 

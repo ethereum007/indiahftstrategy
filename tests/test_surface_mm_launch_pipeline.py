@@ -186,12 +186,20 @@ def test_surface_mm_launch_pipeline_stages_lifecycle_route_orders_not_raw_quotes
 
     route_orders = pd.read_csv(out_dir / "00_quote_lifecycle" / "quote_lifecycle_route_orders.csv")
     staged = pd.read_csv(out_dir / "01_staged_orders" / "staged_orders.csv")
+    launch = pd.read_csv(out_dir / "02_launch" / "launch_orders.csv")
+    broker_orders = pd.read_csv(out_dir / "03_export" / "broker_orders.csv")
     assert report.ready
     assert len(raw_quotes) == 4
     assert len(route_orders) == 3
     assert len(staged) == 3
     assert set(staged["client_order_id"]) == set(route_orders["client_order_id"])
     assert "replace" in set(route_orders["lifecycle_action"])
+    assert "replace" in set(staged["lifecycle_action"])
+    assert "replace" in set(launch["lifecycle_action"])
+    assert "replace" in set(broker_orders["lifecycle_action"])
+    replace = broker_orders.loc[broker_orders["lifecycle_action"] == "replace"].iloc[0]
+    assert str(replace["replaces_order_id"]).startswith("QLF-")
+    assert str(replace["lifecycle_action_id"]).startswith("ACT-")
 
 
 def test_cli_surface_mm_launch_pipeline_can_fail_on_breach(tmp_path):

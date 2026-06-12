@@ -82,6 +82,24 @@ def test_stage_surface_quotes_accepts_safe_limit_orders():
     assert report.summary.iloc[0]["all_passed"]
 
 
+def test_stage_orders_preserves_quote_lifecycle_metadata():
+    orders = safe_surface_quotes()
+    orders["client_order_id"] = ["QLF-000001", "QLF-000002"]
+    orders["lifecycle_action"] = ["submit", "replace"]
+    orders["lifecycle_action_id"] = ["ACT-000001", "ACT-000002"]
+    orders["lifecycle_reason"] = ["new_quote", "price_or_qty_change"]
+    orders["lifecycle_message_count"] = [1, 2]
+    orders["quote_age_ns"] = [0, 100]
+    orders["replaces_order_id"] = ["", "QLF-000001"]
+
+    report = stage_orders(orders, source="surface_quotes")
+
+    assert report.passed
+    assert report.accepted["lifecycle_action"].tolist() == ["submit", "replace"]
+    assert report.accepted["lifecycle_reason"].tolist() == ["new_quote", "price_or_qty_change"]
+    assert report.accepted.loc[1, "replaces_order_id"] == "QLF-000001"
+
+
 def test_stage_orders_rejects_unsafe_candidates():
     orders = safe_surface_quotes()
     bad = pd.DataFrame(

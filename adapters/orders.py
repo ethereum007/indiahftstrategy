@@ -69,6 +69,12 @@ ORDER_COLUMNS = [
     "market_spread_ticks",
     "forward",
     "futures_ts",
+    "lifecycle_action",
+    "lifecycle_action_id",
+    "lifecycle_reason",
+    "lifecycle_message_count",
+    "quote_age_ns",
+    "replaces_order_id",
 ]
 
 

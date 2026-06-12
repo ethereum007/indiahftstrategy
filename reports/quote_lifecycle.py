@@ -441,6 +441,10 @@ def _route_orders(actions: pd.DataFrame) -> pd.DataFrame:
         "forward",
         "futures_ts",
         "lifecycle_action",
+        "lifecycle_action_id",
+        "lifecycle_reason",
+        "lifecycle_message_count",
+        "quote_age_ns",
         "replaces_order_id",
     ]
     if actions.empty:
@@ -450,6 +454,9 @@ def _route_orders(actions: pd.DataFrame) -> pd.DataFrame:
         return pd.DataFrame(columns=columns)
     route["ts_signal_ns"] = route["ts_ns"]
     route["source_row"] = route.index
+    route["lifecycle_action_id"] = route["action_id"]
+    route["lifecycle_reason"] = route["reason"]
+    route["lifecycle_message_count"] = route["message_count"]
     for column in columns:
         if column not in route.columns:
             route[column] = np.nan

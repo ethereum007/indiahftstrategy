@@ -23,6 +23,12 @@ def launch_orders():
                 "order_type": "LIMIT",
                 "time_in_force": "DAY",
                 "ts_signal_ns": 100,
+                "lifecycle_action": "submit",
+                "lifecycle_action_id": "ACT-000001",
+                "lifecycle_reason": "new_quote",
+                "lifecycle_message_count": 1,
+                "quote_age_ns": 0,
+                "replaces_order_id": "",
             },
             {
                 "launch_order_id": "LCH-000002-STG-2",
@@ -38,6 +44,12 @@ def launch_orders():
                 "order_type": "LIMIT",
                 "time_in_force": "DAY",
                 "ts_signal_ns": 100,
+                "lifecycle_action": "replace",
+                "lifecycle_action_id": "ACT-000002",
+                "lifecycle_reason": "price_or_qty_change",
+                "lifecycle_message_count": 2,
+                "quote_age_ns": 100,
+                "replaces_order_id": "QLF-000001",
             },
         ]
     )
@@ -92,6 +104,8 @@ def test_evaluate_order_export_labels_placeholder_adapter_schema():
     assert report.summary.iloc[0]["adapter"] == "arrow_money"
     assert report.summary.iloc[0]["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert set(report.orders["route_tag"]) == {"shadow_nse"}
+    assert report.orders["lifecycle_action"].tolist() == ["submit", "replace"]
+    assert report.orders.loc[1, "replaces_order_id"] == "QLF-000001"
     assert report.schema["column"].tolist() == list(report.orders.columns)
 
 

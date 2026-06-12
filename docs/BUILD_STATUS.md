@@ -244,7 +244,8 @@
 - Surface quote lifecycle planner that converts reviewed quote snapshots into
   submit/replace/cancel actions plus routeable submit/replace order files with
   TTL, OTR, message-budget, and active-quote controls before Arrow.money/iRage
-  paper-routing preparation.
+  paper-routing preparation, preserving replace lineage through staging,
+  launch, and broker-neutral export artifacts.
 - Option order exposure review for staged, launch, or exported order batches,
   including Black-76 delta/vega, gross notional, side imbalance, and
   instrument concentration checks, with cross-market option metadata inference
@@ -287,7 +288,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 358 tests.
+Current passing suite: 359 tests.
 
 ## Next Build Targets
 
