@@ -70,6 +70,37 @@ python -m hft_cli replay-parity `
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, and legging report.
 
+## Parity Sweep
+
+Run replay robustness scenarios across executable depth, as-of latency, and
+routing latency assumptions:
+
+```powershell
+python -m hft_cli sweep-parity `
+  --chain data\chain.csv `
+  --futures data\futures.csv `
+  --out runs\parity_sweep_2026_06_10 `
+  --depth-fraction 0.10 0.25 0.50 `
+  --asof-latency-ns 0 50000 100000 `
+  --feed-latency-us 0 50 `
+  --order-latency-us 100 250 500 `
+  --signal-limit 100 `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --max-drawdown 5000 `
+  --fail-on-breach
+```
+
+Outputs include per-scenario replay folders plus:
+
+```text
+sweep_runs.csv
+sweep_summary.csv
+proof/proof_metrics.csv
+proof/proof_checks.csv
+proof/proof_summary.csv
+```
+
 ## Lead-Lag Measurement
 
 ```powershell

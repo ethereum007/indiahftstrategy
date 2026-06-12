@@ -50,6 +50,9 @@
   thresholds.
 - Lead-lag robustness sweep runner that replays trigger/latency grids, writes
   per-scenario artifacts, and aggregates proof pass rates plus robust scores.
+- Parity robustness sweep runner that replays depth/as-of/latency grids,
+  tracks signal and legging health, and aggregates proof pass rates plus robust
+  scores.
 
 ## Test Gate
 
@@ -59,7 +62,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 72 tests.
+Current passing suite: 74 tests.
 
 ## Next Build Targets
 

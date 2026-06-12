@@ -12,6 +12,7 @@ from scanners.run_parity_box import run_scan
 from strategies.run_leadlag_replay import run_leadlag_replay
 from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
+from strategies.run_parity_sweep import run_parity_sweep
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -112,6 +113,25 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_sweep.add_argument("--max-otr", type=float, default=None)
     leadlag_sweep.add_argument("--min-markout-mean", type=float, default=None)
     leadlag_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    parity_sweep = sub.add_parser("sweep-parity", help="Run parity replay robustness sweep.")
+    parity_sweep.add_argument("--chain", required=True)
+    parity_sweep.add_argument("--futures", required=True)
+    parity_sweep.add_argument("--out", required=True)
+    parity_sweep.add_argument("--no-filter-session", action="store_true")
+    parity_sweep.add_argument("--depth-fraction", nargs="+", required=True, type=float)
+    parity_sweep.add_argument("--asof-latency-ns", nargs="+", default=[0], type=int)
+    parity_sweep.add_argument("--feed-latency-us", nargs="+", default=[0.0], type=float)
+    parity_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
+    parity_sweep.add_argument("--signal-limit", type=int, default=None)
+    parity_sweep.add_argument("--max-signal-age-ns", type=int, default=1_000_000)
+    parity_sweep.add_argument("--max-qty", type=int, default=None)
+    parity_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
+    parity_sweep.add_argument("--min-fills", type=int, default=1)
+    parity_sweep.add_argument("--max-drawdown", type=float, default=None)
+    parity_sweep.add_argument("--max-otr", type=float, default=None)
+    parity_sweep.add_argument("--min-spread-net", type=float, default=None)
+    parity_sweep.add_argument("--fail-on-breach", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -224,6 +244,29 @@ def main(argv: list[str] | None = None) -> int:
                 max_drawdown=args.max_drawdown,
                 max_otr=args.max_otr,
                 min_markout_mean=args.min_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "sweep-parity":
+        result = run_parity_sweep(
+            chain_path=args.chain,
+            futures_path=args.futures,
+            output_dir=args.out,
+            depth_fraction_values=args.depth_fraction,
+            asof_latency_ns_values=args.asof_latency_ns,
+            feed_latency_us_values=args.feed_latency_us,
+            order_latency_us_values=args.order_latency_us,
+            filter_session=not args.no_filter_session,
+            signal_limit=args.signal_limit,
+            max_signal_age_ns=args.max_signal_age_ns,
+            max_qty=args.max_qty,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_spread_net=args.min_spread_net,
             ),
         )
         print(result.summary.to_string(index=False))
