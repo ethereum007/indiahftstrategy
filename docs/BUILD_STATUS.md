@@ -192,6 +192,9 @@
 - Configurable mapped broker-order export that converts broker-neutral launch
   orders into a vendor CSV shape from a reviewed mapping file, with required
   field checks, simple transforms, and manifests.
+- Vendor order-mapping draft command that reads a broker-neutral export plus
+  an Arrow.money/iRage sample upload header, suggests reviewable mappings, and
+  fails closed on unmapped required vendor fields.
 
 ## Test Gate
 
@@ -201,7 +204,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 233 tests.
+Current passing suite: 237 tests.
 
 ## Next Build Targets
 

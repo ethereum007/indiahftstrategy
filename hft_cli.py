@@ -8,6 +8,7 @@ from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_export import OrderExportConfig, write_order_export
+from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
 from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
 from adapters.orders import OrderStagingLimits, write_staged_orders
 from adapters.schema_audit import write_adapter_schema_audit
@@ -620,6 +621,17 @@ def main(argv: list[str] | None = None) -> int:
     export_orders.add_argument("--allow-non-limit", action="store_true")
     export_orders.add_argument("--max-orders", type=int, default=None)
     export_orders.add_argument("--fail-on-breach", action="store_true")
+
+    mapping_draft = sub.add_parser("draft-order-mapping", help="Draft a vendor order mapping from broker orders and a sample upload header.")
+    mapping_draft.add_argument("--export", required=True)
+    mapping_draft.add_argument("--sample", required=True)
+    mapping_draft.add_argument("--out", required=True)
+    mapping_draft.add_argument("--adapter", default="normalized")
+    mapping_draft.add_argument("--output-file", default="order_mapping_draft.csv")
+    mapping_draft.add_argument("--required-column", action="append", dest="required_columns")
+    mapping_draft.add_argument("--optional-column", action="append", dest="optional_columns")
+    mapping_draft.add_argument("--default", action="append", dest="defaults")
+    mapping_draft.add_argument("--fail-on-unmapped", action="store_true")
 
     mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
     mapped_export.add_argument("--export", required=True)
@@ -1597,6 +1609,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "draft-order-mapping":
+        result = write_order_mapping_draft(
+            args.export,
+            args.sample,
+            output_dir=args.out,
+            config=OrderMappingDraftConfig(
+                adapter=args.adapter,
+                output_filename=args.output_file,
+                required_columns=tuple(args.required_columns or ()),
+                optional_columns=tuple(args.optional_columns or ()),
+                default_values=_parse_key_value_args(args.defaults or (), "--default"),
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_unmapped and not result.ready else 0
     if args.command == "map-broker-orders":
         result = write_mapped_order_export(
             args.export,
@@ -1973,6 +2000,19 @@ def _generic_cost_override_kwargs(args: argparse.Namespace) -> dict:
         "generic_per_contract_fee": args.generic_per_contract_fee,
         "generic_per_order_fee": args.generic_per_order_fee,
     }
+
+
+def _parse_key_value_args(values: tuple[str, ...] | list[str], flag: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for value in values:
+        if "=" not in value:
+            raise ValueError(f"{flag} expects target=value, got {value!r}")
+        key, raw = value.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError(f"{flag} target must not be blank")
+        parsed[key] = raw.strip()
+    return parsed
 
 
 def _generic_cost_kwargs(args: argparse.Namespace, candidate_defaults: dict | None = None) -> dict:

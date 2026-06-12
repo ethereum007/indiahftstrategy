@@ -831,6 +831,35 @@ broker_order_schema.csv
 manifest.json
 ```
 
+## Vendor Order Mapping Draft
+
+Draft a reviewable mapping from the broker-neutral `broker_orders.csv` export
+to a vendor upload/sample header. The draft can be edited and passed directly
+to `map-broker-orders` after Arrow.money/iRage column semantics are reviewed:
+
+```powershell
+python -m hft_cli draft-order-mapping `
+  --export runs\exports\leadlag_shadow_arrow `
+  --sample vendor\arrow_order_upload_sample.csv `
+  --out mappings\arrow_order_upload_draft `
+  --adapter arrow_money `
+  --default product=MIS `
+  --fail-on-unmapped
+```
+
+Outputs:
+
+```text
+order_mapping_draft.csv
+order_mapping_draft_checks.csv
+order_mapping_draft_summary.csv
+manifest.json
+```
+
+The draft marks suggested mappings, manual defaults, optional gaps, and
+unmapped required vendor columns before any broker-specific upload file is
+generated.
+
 ## Mapped Broker Order Export
 
 Convert `broker_orders.csv` into a vendor-specific CSV shape using a mapping
