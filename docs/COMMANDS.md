@@ -114,3 +114,26 @@ python -m hft_cli calibrate `
 
 `arrow_money` and `irage` adapter names exist, but currently use the normalized
 schema until real export samples are mapped.
+
+## Data Diagnostics
+
+```powershell
+python -m hft_cli diagnose-ticks `
+  --ticks data\futures.csv `
+  --out runs\diagnostics\futures `
+  --tick-size 0.05
+```
+
+```powershell
+python -m hft_cli diagnose-chain `
+  --chain data\chain.csv `
+  --out runs\diagnostics\chain `
+  --tick-size 0.05
+```
+
+Outputs:
+
+```text
+diagnostic_summary.csv
+diagnostic_issues.csv
+```

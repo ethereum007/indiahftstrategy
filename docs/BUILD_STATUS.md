@@ -40,6 +40,8 @@
   and calibration reports.
 - Spread-capture decomposition for paired round-trip fills, plus residual
   inventory reports in replay outputs.
+- Data-quality diagnostics for tick and option-chain files, including spread,
+  depth, timestamp, session, crossed quote, and strike coverage reports.
 
 ## Test Gate
 
@@ -49,7 +51,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 60 tests.
+Current passing suite: 63 tests.
 
 ## Next Build Targets
 

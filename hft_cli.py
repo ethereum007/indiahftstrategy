@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 
 from adapters.broker import run_calibration_report
+from data.chains import load_option_chain_csv
+from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
+from data.loaders import load_tick_csv
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_leadlag_replay import run_leadlag_replay
@@ -57,6 +60,18 @@ def main(argv: list[str] | None = None) -> int:
     calibration.add_argument("--live-fills", required=True)
     calibration.add_argument("--out", required=True)
     calibration.add_argument("--adapter", default="normalized")
+
+    diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
+    diag_ticks.add_argument("--ticks", required=True)
+    diag_ticks.add_argument("--out", required=True)
+    diag_ticks.add_argument("--tick-size", type=float, default=None)
+    diag_ticks.add_argument("--no-filter-session", action="store_true")
+
+    diag_chain = sub.add_parser("diagnose-chain", help="Run data-quality diagnostics for option-chain snapshots.")
+    diag_chain.add_argument("--chain", required=True)
+    diag_chain.add_argument("--out", required=True)
+    diag_chain.add_argument("--tick-size", type=float, default=None)
+    diag_chain.add_argument("--no-filter-session", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -118,6 +133,16 @@ def main(argv: list[str] | None = None) -> int:
             adapter=args.adapter,
         )
         print(summary.to_string(index=False))
+        return 0
+    if args.command == "diagnose-ticks":
+        ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session).data
+        result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size), args.out)
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "diagnose-chain":
+        chain = load_option_chain_csv(args.chain, filter_session=not args.no_filter_session).data
+        result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size), args.out)
+        print(result.summary.to_string(index=False))
         return 0
     raise RuntimeError(f"unhandled command {args.command}")
 
