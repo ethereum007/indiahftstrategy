@@ -137,6 +137,10 @@
   adapter-labelled broker/paper order files, schema metadata, checks, and
   manifests, with Arrow.money/iRage marked as normalized placeholders until
   real vendor upload samples are mapped.
+- Broker upload pack command that applies built-in Arrow.money/iRage review
+  templates to broker-neutral exports, emits the upload-shaped CSV plus the
+  mapping used, and fails closed unless placeholder schemas are explicitly
+  allowed for dry-run review.
 - Broker/drop-copy fill reconciliation for exported orders, including
   order-level fill status, unmatched fills, side/instrument mismatches,
   adverse slippage, latency, pass/fail checks, and manifests.
@@ -219,12 +223,12 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 252 tests.
+Current passing suite: 256 tests.
 
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.
 2. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-3. Add broker-specific order-file/export mappings once Arrow.money/iRage sample
-   order schemas are available.
+3. Replace the built-in upload review templates with broker-signed
+   Arrow.money/iRage order schemas once sample files are available.

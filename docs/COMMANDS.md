@@ -957,6 +957,39 @@ broker_order_schema.csv
 manifest.json
 ```
 
+## Broker Upload Pack
+
+Create a reviewable broker-upload pack from `broker_orders.csv` using the
+built-in Arrow.money/iRage placeholder templates. By default this command
+fails closed while the adapter schema is still marked as a placeholder; use
+`--allow-placeholder-schema` only for dry-run or paper-review artifacts:
+
+```powershell
+python -m hft_cli pack-broker-upload `
+  --export runs\exports\leadlag_shadow_arrow `
+  --out runs\uploads\leadlag_shadow_arrow `
+  --adapter arrow_money `
+  --product MIS `
+  --exchange NFO `
+  --allow-placeholder-schema `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+broker_upload_orders.csv
+broker_upload_mapping.csv
+broker_upload_checks.csv
+broker_upload_summary.csv
+broker_upload_schema.csv
+manifest.json
+```
+
+The mapping file is emitted beside the upload-shaped orders so the final
+Arrow.money/iRage column semantics can be reviewed before any live route is
+enabled.
+
 ## Vendor Order Mapping Draft
 
 Draft a reviewable mapping from the broker-neutral `broker_orders.csv` export

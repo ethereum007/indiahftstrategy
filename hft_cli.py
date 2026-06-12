@@ -11,6 +11,7 @@ from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_o
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
 from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
+from adapters.order_upload_pack import OrderUploadPackConfig, write_order_upload_pack
 from adapters.orders import OrderStagingLimits, write_staged_orders
 from adapters.schema_audit import write_adapter_schema_audit
 from data.chains import load_option_chain_csv
@@ -724,6 +725,20 @@ def main(argv: list[str] | None = None) -> int:
     export_orders.add_argument("--allow-non-limit", action="store_true")
     export_orders.add_argument("--max-orders", type=int, default=None)
     export_orders.add_argument("--fail-on-breach", action="store_true")
+
+    upload_pack = sub.add_parser(
+        "pack-broker-upload",
+        help="Create a broker upload review pack from exported broker-neutral orders.",
+    )
+    upload_pack.add_argument("--export", required=True)
+    upload_pack.add_argument("--out", required=True)
+    upload_pack.add_argument("--adapter", default="arrow_money")
+    upload_pack.add_argument("--product", default="MIS")
+    upload_pack.add_argument("--exchange", default="NFO")
+    upload_pack.add_argument("--output-file", default="broker_upload_orders.csv")
+    upload_pack.add_argument("--mapping-file", default="broker_upload_mapping.csv")
+    upload_pack.add_argument("--allow-placeholder-schema", action="store_true")
+    upload_pack.add_argument("--fail-on-breach", action="store_true")
 
     mapping_draft = sub.add_parser("draft-order-mapping", help="Draft a vendor order mapping from broker orders and a sample upload header.")
     mapping_draft.add_argument("--export", required=True)
@@ -1816,6 +1831,21 @@ def main(argv: list[str] | None = None) -> int:
                 require_launch_ready=not args.allow_unready_launch,
                 require_limit_orders=not args.allow_non_limit,
                 max_orders=args.max_orders,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pack-broker-upload":
+        result = write_order_upload_pack(
+            args.export,
+            output_dir=args.out,
+            config=OrderUploadPackConfig(
+                adapter=args.adapter,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                output_filename=args.output_file,
+                mapping_filename=args.mapping_file,
             ),
         )
         print(result.summary.to_string(index=False))
