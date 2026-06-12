@@ -634,6 +634,41 @@ shadow_session_comparison_summary.csv
 manifest.json
 ```
 
+## Controlled Scale-Up Plan
+
+Convert accepted evidence and shadow sessions into explicit size limits and
+kill switches:
+
+```powershell
+python -m hft_cli plan-scaleup `
+  --evidence runs\evidence\leadlag_shadow `
+  --shadow-comparison runs\sessions\leadlag_shadow_comparison `
+  --launch runs\launch\leadlag_shadow `
+  --order-exposure runs\risk\leadlag_shadow_exposure `
+  --out runs\scaleup\leadlag_shadow `
+  --target-mode shadow `
+  --allowed-adapter arrow_money `
+  --min-shadow-sessions 2 `
+  --min-shadow-acceptance-rate 1 `
+  --min-worst-order-fill-rate 0.8 `
+  --max-worst-adverse-slippage 0.05 `
+  --max-scale-multiplier 1 `
+  --max-orders-per-session 100 `
+  --max-session-notional 100000 `
+  --stop-loss 5000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+scaleup_plan.csv
+scaleup_checks.csv
+scaleup_summary.csv
+scaleup_config.json
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

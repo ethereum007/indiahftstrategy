@@ -20,6 +20,7 @@ from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
+from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
@@ -326,6 +327,32 @@ def main(argv: list[str] | None = None) -> int:
     shadow_compare.add_argument("--max-total-overfilled-orders", type=int, default=0)
     shadow_compare.add_argument("--max-worst-adverse-slippage", type=float, default=None)
     shadow_compare.add_argument("--fail-on-breach", action="store_true")
+
+    scaleup = sub.add_parser("plan-scaleup", help="Create a controlled paper/shadow scale-up plan.")
+    scaleup.add_argument("--evidence", required=True)
+    scaleup.add_argument("--shadow-comparison", required=True)
+    scaleup.add_argument("--launch", required=True)
+    scaleup.add_argument("--out", required=True)
+    scaleup.add_argument("--order-exposure", default=None)
+    scaleup.add_argument("--target-mode", default="shadow", choices=["paper", "shadow", "live_dryrun"])
+    scaleup.add_argument("--max-scale-multiplier", type=float, default=1.0)
+    scaleup.add_argument("--min-shadow-sessions", type=int, default=1)
+    scaleup.add_argument("--min-shadow-acceptance-rate", type=float, default=1.0)
+    scaleup.add_argument("--min-median-order-fill-rate", type=float, default=0.0)
+    scaleup.add_argument("--min-worst-order-fill-rate", type=float, default=None)
+    scaleup.add_argument("--max-worst-adverse-slippage", type=float, default=None)
+    scaleup.add_argument("--max-total-failed-component-checks", type=int, default=0)
+    scaleup.add_argument("--max-total-unmatched-fills", type=int, default=0)
+    scaleup.add_argument("--max-total-mismatched-orders", type=int, default=0)
+    scaleup.add_argument("--max-total-overfilled-orders", type=int, default=0)
+    scaleup.add_argument("--max-orders-per-session", type=int, default=None)
+    scaleup.add_argument("--max-session-notional", type=float, default=None)
+    scaleup.add_argument("--max-gross-notional", type=float, default=None)
+    scaleup.add_argument("--max-abs-net-delta", type=float, default=None)
+    scaleup.add_argument("--max-abs-net-vega", type=float, default=None)
+    scaleup.add_argument("--stop-loss", type=float, default=None)
+    scaleup.add_argument("--allowed-adapter", action="append", dest="allowed_adapters")
+    scaleup.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -775,6 +802,36 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.accepted else 0
+    if args.command == "plan-scaleup":
+        result = write_scaleup_plan(
+            evidence_dir=args.evidence,
+            shadow_comparison_dir=args.shadow_comparison,
+            launch_dir=args.launch,
+            output_dir=args.out,
+            order_exposure_dir=args.order_exposure,
+            thresholds=ScaleUpThresholds(
+                target_mode=args.target_mode,
+                max_scale_multiplier=args.max_scale_multiplier,
+                min_shadow_sessions=args.min_shadow_sessions,
+                min_shadow_acceptance_rate=args.min_shadow_acceptance_rate,
+                min_median_order_fill_rate=args.min_median_order_fill_rate,
+                min_worst_order_fill_rate=args.min_worst_order_fill_rate,
+                max_worst_adverse_slippage=args.max_worst_adverse_slippage,
+                max_total_failed_component_checks=args.max_total_failed_component_checks,
+                max_total_unmatched_fills=args.max_total_unmatched_fills,
+                max_total_mismatched_orders=args.max_total_mismatched_orders,
+                max_total_overfilled_orders=args.max_total_overfilled_orders,
+                max_orders_per_session=args.max_orders_per_session,
+                max_session_notional=args.max_session_notional,
+                max_gross_notional=args.max_gross_notional,
+                max_abs_net_delta=args.max_abs_net_delta,
+                max_abs_net_vega=args.max_abs_net_vega,
+                stop_loss=args.stop_loss,
+                allowed_adapters=tuple(args.allowed_adapters or ()),
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,
