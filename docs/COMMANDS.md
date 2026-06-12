@@ -909,6 +909,34 @@ python -m hft_cli calibrate `
 `arrow_money` and `irage` adapter names exist, but currently use the normalized
 schema until real export samples are mapped.
 
+## Fill-Model Calibration
+
+Convert broker/drop-copy reconciliation evidence into conservative replay
+assumptions for queue, latency, slippage, and edge buffers:
+
+```powershell
+python -m hft_cli calibrate-fill-model `
+  --reconciliation runs\reconciliation\leadlag_shadow_latest `
+  --out runs\fill_model\leadlag_shadow_latest `
+  --tick-size 0.05 `
+  --min-orders 25 `
+  --min-live-fill-rate 0.5 `
+  --max-adverse-slippage-ticks 2 `
+  --base-edge-ticks 1 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+fill_model_metrics.csv
+fill_model_recommendations.csv
+fill_model_checks.csv
+fill_model_summary.csv
+fill_model_config.json
+manifest.json
+```
+
 ## Adapter Schema Audit
 
 Audit a vendor sample CSV header before wiring a real adapter map:

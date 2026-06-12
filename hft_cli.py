@@ -14,6 +14,7 @@ from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnost
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
+from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
@@ -119,6 +120,24 @@ def main(argv: list[str] | None = None) -> int:
     calibration.add_argument("--live-fills", required=True)
     calibration.add_argument("--out", required=True)
     calibration.add_argument("--adapter", default="normalized")
+
+    fill_model = sub.add_parser("calibrate-fill-model", help="Recommend fill-model assumptions from reconciliation evidence.")
+    fill_model.add_argument("--reconciliation", required=True)
+    fill_model.add_argument("--out", required=True)
+    fill_model.add_argument("--tick-size", type=float, default=0.05)
+    fill_model.add_argument("--min-orders", type=int, default=1)
+    fill_model.add_argument("--min-live-fill-rate", type=float, default=0.0)
+    fill_model.add_argument("--max-mismatch-rate", type=float, default=0.0)
+    fill_model.add_argument("--max-overfill-rate", type=float, default=0.0)
+    fill_model.add_argument("--max-unmatched-fills", type=int, default=0)
+    fill_model.add_argument("--max-adverse-slippage-ticks", type=float, default=None)
+    fill_model.add_argument("--latency-quantile", type=float, default=0.95)
+    fill_model.add_argument("--fill-ratio-quantile", type=float, default=0.25)
+    fill_model.add_argument("--slippage-quantile", type=float, default=0.95)
+    fill_model.add_argument("--min-queue-conservatism", type=float, default=1.0)
+    fill_model.add_argument("--max-queue-conservatism", type=float, default=10.0)
+    fill_model.add_argument("--base-edge-ticks", type=float, default=0.0)
+    fill_model.add_argument("--fail-on-breach", action="store_true")
 
     schema_audit = sub.add_parser("audit-adapter-schema", help="Audit a vendor sample CSV against an adapter schema.")
     schema_audit.add_argument("--sample", required=True)
@@ -633,6 +652,28 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(summary.to_string(index=False))
         return 0
+    if args.command == "calibrate-fill-model":
+        result = write_fill_model_calibration(
+            reconciliation_dir=args.reconciliation,
+            output_dir=args.out,
+            thresholds=FillModelCalibrationThresholds(
+                tick_size=args.tick_size,
+                min_orders=args.min_orders,
+                min_live_fill_rate=args.min_live_fill_rate,
+                max_mismatch_rate=args.max_mismatch_rate,
+                max_overfill_rate=args.max_overfill_rate,
+                max_unmatched_fills=args.max_unmatched_fills,
+                max_adverse_slippage_ticks=args.max_adverse_slippage_ticks,
+                latency_quantile=args.latency_quantile,
+                fill_ratio_quantile=args.fill_ratio_quantile,
+                slippage_quantile=args.slippage_quantile,
+                min_queue_conservatism=args.min_queue_conservatism,
+                max_queue_conservatism=args.max_queue_conservatism,
+                base_edge_ticks=args.base_edge_ticks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "audit-adapter-schema":
         result = write_adapter_schema_audit(
             args.sample,

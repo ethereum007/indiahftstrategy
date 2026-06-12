@@ -40,6 +40,9 @@
   versus terminal flattening.
 - Shadow/live calibration comparison for broker/exchange fills versus simulated
   order expectations.
+- Fill-model calibration report that converts broker/drop-copy reconciliation
+  into replay-ready queue conservatism, order latency, slippage, and edge
+  buffer recommendations.
 - Broker/vendor adapter scaffolding for normalized, Arrow.money-style, and
   iRage-style CSV exports.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
@@ -150,7 +153,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 177 tests.
+Current passing suite: 181 tests.
 
 ## Next Build Targets
 
