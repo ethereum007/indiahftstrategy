@@ -96,6 +96,9 @@
 - Broker-neutral staging for surface quotes can require a passed quote-risk
   review, blocking all orders before Arrow.money/iRage preparation when quote
   hygiene evidence is missing or failed.
+- Surface market-making robustness sweeps can require a passed quote-risk
+  review and fail closed with manifest-backed proof artifacts before replay
+  grids are run.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -266,7 +269,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 336 tests.
+Current passing suite: 338 tests.
 
 ## Next Build Targets
 

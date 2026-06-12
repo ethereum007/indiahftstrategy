@@ -91,9 +91,33 @@ def write_surface_mm_inputs(tmp_path):
     return quotes_path, chain_path
 
 
+def write_quote_risk_review(path, *, passed=True):
+    path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "snapshots": 1,
+                "quotes": 2,
+                "instruments": 2,
+                "bid_quotes": 1,
+                "ask_quotes": 1,
+                "bid_share": 0.5,
+                "marketable_quotes": 0 if passed else 1,
+                "min_quote_edge": 0.2 if passed else -0.1,
+                "avg_quote_edge": 0.2,
+                "max_market_spread_ticks": 5.0,
+                "max_quotes_per_instrument": 1,
+                "all_passed": passed,
+            }
+        ]
+    ).to_csv(path / "quote_risk_summary.csv", index=False)
+
+
 def test_run_surface_mm_sweep_writes_runs_proof_and_summary(tmp_path):
     quotes_path, chain_path = write_surface_mm_inputs(tmp_path)
+    quote_risk_dir = tmp_path / "quote_review"
     out_dir = tmp_path / "surface_mm_sweep"
+    write_quote_risk_review(quote_risk_dir, passed=True)
 
     result = run_surface_mm_sweep(
         quotes_path=quotes_path,
@@ -103,6 +127,8 @@ def test_run_surface_mm_sweep_writes_runs_proof_and_summary(tmp_path):
         order_latency_us_values=[0.0],
         fill_depth_fraction_values=[1.0],
         markout_horizon_ns_values=[1_000_000_000],
+        quote_risk_review_dir=quote_risk_dir,
+        require_quote_risk_review=True,
         proof_thresholds=ProofThresholds(min_net_pnl=-1_000_000.0, min_fills=1, min_maker_share=1.0),
     )
 
@@ -110,6 +136,7 @@ def test_run_surface_mm_sweep_writes_runs_proof_and_summary(tmp_path):
     assert result.summary.iloc[0]["scenario_count"] == 2
     assert result.summary.iloc[0]["passed_scenarios"] == 1
     assert result.summary.iloc[0]["pass_rate"] == 0.5
+    assert bool(result.summary.iloc[0]["quote_risk_review_passed"])
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "sweep_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
@@ -121,6 +148,31 @@ def test_run_surface_mm_sweep_writes_runs_proof_and_summary(tmp_path):
         / "ttl_2000000000ns__order_0us__depth_1__markout_1000000000ns"
         / "summary.csv"
     ).exists()
+
+
+def test_run_surface_mm_sweep_blocks_without_required_quote_risk_review(tmp_path):
+    quotes_path, chain_path = write_surface_mm_inputs(tmp_path)
+    out_dir = tmp_path / "surface_mm_sweep_blocked"
+
+    result = run_surface_mm_sweep(
+        quotes_path=quotes_path,
+        chain_path=chain_path,
+        output_dir=out_dir,
+        quote_ttl_ns_values=[2_000_000_000],
+        order_latency_us_values=[0.0],
+        fill_depth_fraction_values=[1.0],
+        markout_horizon_ns_values=[1_000_000_000],
+        require_quote_risk_review=True,
+    )
+
+    checks = pd.read_csv(out_dir / "proof" / "proof_checks.csv")
+    assert result.runs.empty
+    assert not result.proof.passed
+    assert int(result.summary.iloc[0]["scenario_count"]) == 0
+    assert result.summary.iloc[0]["quote_risk_review_reason"] == "quote_risk_review_missing"
+    assert checks.loc[0, "check"] == "quote_risk_review"
+    assert checks.loc[0, "reason"] == "quote_risk_review_missing"
+    assert not (out_dir / "runs" / "ttl_2000000000ns__order_0us__depth_1__markout_1000000000ns").exists()
 
 
 def test_unified_cli_sweep_surface_mm_dispatches_and_can_fail_on_breach(tmp_path):
@@ -152,3 +204,32 @@ def test_unified_cli_sweep_surface_mm_dispatches_and_can_fail_on_breach(tmp_path
     assert code == 2
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "proof" / "proof_summary.csv").exists()
+
+
+def test_unified_cli_sweep_surface_mm_requires_quote_risk_review(tmp_path):
+    quotes_path, chain_path = write_surface_mm_inputs(tmp_path)
+    out_dir = tmp_path / "cli_surface_mm_sweep_quote_review"
+
+    code = main(
+        [
+            "sweep-surface-mm",
+            "--quotes",
+            str(quotes_path),
+            "--chain",
+            str(chain_path),
+            "--out",
+            str(out_dir),
+            "--quote-ttl-ns",
+            "2000000000",
+            "--fill-depth-fraction",
+            "1",
+            "--require-quote-risk-review",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "sweep_summary.csv")
+    proof = pd.read_csv(out_dir / "proof" / "proof_summary.csv")
+    assert code == 2
+    assert int(summary.loc[0, "scenario_count"]) == 0
+    assert summary.loc[0, "quote_risk_review_reason"] == "quote_risk_review_missing"
+    assert not bool(proof.loc[0, "all_passed"])

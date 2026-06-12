@@ -946,6 +946,8 @@ python -m hft_cli sweep-surface-mm `
   --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
   --chain data\chain.csv `
   --out runs\surface_mm_sweep_2026_06_10 `
+  --quote-risk-review runs\surface_quotes_2026_06_10\quote_review `
+  --require-quote-risk-review `
   --quote-ttl-ns 500000000 1000000000 2000000000 `
   --order-latency-us 0 100 250 `
   --fill-depth-fraction 0.10 0.25 0.50 `
@@ -966,6 +968,11 @@ proof/proof_checks.csv
 proof/proof_summary.csv
 manifest.json
 ```
+
+When `--require-quote-risk-review` is set, the sweep writes failed proof and
+sweep artifacts and skips replay scenarios unless the supplied quote-risk
+summary passed. This keeps proof grids focused on quote sets that already
+cleared pre-trade hygiene.
 
 ## Sweep Comparison
 

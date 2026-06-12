@@ -851,6 +851,8 @@ def main(argv: list[str] | None = None) -> int:
     surface_mm_sweep.add_argument("--max-otr", type=float, default=None)
     surface_mm_sweep.add_argument("--min-maker-share", type=float, default=1.0)
     surface_mm_sweep.add_argument("--min-markout-mean", type=float, default=None)
+    surface_mm_sweep.add_argument("--quote-risk-review", default=None)
+    surface_mm_sweep.add_argument("--require-quote-risk-review", action="store_true")
     surface_mm_sweep.add_argument("--fail-on-breach", action="store_true")
 
     compare_sweeps = sub.add_parser("compare-sweeps", help="Rank scenarios across multiple sweep outputs.")
@@ -2167,6 +2169,8 @@ def main(argv: list[str] | None = None) -> int:
             option_tick=args.option_tick,
             contract_multiplier=args.contract_multiplier,
             max_quotes=args.max_quotes,
+            quote_risk_review_dir=args.quote_risk_review,
+            require_quote_risk_review=args.require_quote_risk_review,
             proof_thresholds=ProofThresholds(
                 min_net_pnl=args.min_net_pnl,
                 min_fills=args.min_fills,
@@ -2177,7 +2181,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.proof.passed else 0
+        return 2 if (args.fail_on_breach or args.require_quote_risk_review) and not result.proof.passed else 0
     if args.command == "compare-sweeps":
         result = write_sweep_comparison(
             args.sweeps,

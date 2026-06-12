@@ -9,6 +9,11 @@ import pandas as pd
 
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
+from reports.quote_risk import (
+    quote_risk_review_check,
+    quote_risk_review_parameters,
+    read_quote_risk_summary,
+)
 from strategies.run_surface_mm_replay import SurfaceMMReplayConfig, run_surface_mm_replay
 
 
@@ -37,6 +42,8 @@ def run_surface_mm_sweep(
     contract_multiplier: float = 1.0,
     max_quotes: int | None = None,
     proof_thresholds: ProofThresholds | None = None,
+    quote_risk_review_dir: str | Path | None = None,
+    require_quote_risk_review: bool = False,
 ) -> SurfaceMMSweepResult:
     if not quote_ttl_ns_values:
         raise ValueError("quote_ttl_ns_values must not be empty")
@@ -50,6 +57,43 @@ def run_surface_mm_sweep(
     out = Path(output_dir)
     runs_root = out / "runs"
     runs_root.mkdir(parents=True, exist_ok=True)
+    quote_risk_summary = read_quote_risk_summary(quote_risk_review_dir)
+    quote_risk_check = quote_risk_review_check(
+        quote_risk_summary,
+        required=require_quote_risk_review,
+        input_dir=quote_risk_review_dir,
+    )
+    parameters = {
+        "quote_ttl_ns_values": quote_ttl_ns_values,
+        "order_latency_us_values": order_latency_us_values,
+        "fill_depth_fraction_values": fill_depth_fraction_values,
+        "markout_horizon_ns_values": markout_horizon_ns_values,
+        "timestamp_unit": timestamp_unit,
+        "timestamp_tz": timestamp_tz,
+        "filter_session": filter_session,
+        "lot_size": lot_size,
+        "option_tick": option_tick,
+        "contract_multiplier": contract_multiplier,
+        "max_quotes": max_quotes,
+        "proof_thresholds": asdict(proof_thresholds) if proof_thresholds is not None else None,
+        "require_quote_risk_review": bool(require_quote_risk_review),
+        "quote_risk_review": quote_risk_review_parameters(quote_risk_summary, quote_risk_review_dir),
+    }
+    inputs = _manifest_inputs(quotes_path, chain_path, quote_risk_review_dir)
+
+    if quote_risk_check is not None and not bool(quote_risk_check["passed"]):
+        runs = _empty_sweep_runs()
+        proof = _write_blocked_proof(out / "proof", quote_risk_check)
+        summary = _blocked_sweep_summary(quote_risk_check, required=require_quote_risk_review)
+        runs.to_csv(out / "sweep_runs.csv", index=False)
+        summary.to_csv(out / "sweep_summary.csv", index=False)
+        write_experiment_manifest(
+            out,
+            run_type="surface_mm_sweep",
+            inputs=inputs,
+            parameters=parameters,
+        )
+        return SurfaceMMSweepResult(runs=runs, summary=summary, proof=proof, output_dir=out)
 
     rows = []
     run_dirs: list[Path] = []
@@ -105,26 +149,18 @@ def run_surface_mm_sweep(
     )
     runs = _merge_proof_metrics(pd.DataFrame(rows), proof)
     summary = _sweep_summary(runs)
+    summary = _attach_quote_risk_summary(
+        summary,
+        quote_risk_check=quote_risk_check,
+        required=require_quote_risk_review,
+    )
     runs.to_csv(out / "sweep_runs.csv", index=False)
     summary.to_csv(out / "sweep_summary.csv", index=False)
     write_experiment_manifest(
         out,
         run_type="surface_mm_sweep",
-        inputs={"quotes": quotes_path, "chain": chain_path},
-        parameters={
-            "quote_ttl_ns_values": quote_ttl_ns_values,
-            "order_latency_us_values": order_latency_us_values,
-            "fill_depth_fraction_values": fill_depth_fraction_values,
-            "markout_horizon_ns_values": markout_horizon_ns_values,
-            "timestamp_unit": timestamp_unit,
-            "timestamp_tz": timestamp_tz,
-            "filter_session": filter_session,
-            "lot_size": lot_size,
-            "option_tick": option_tick,
-            "contract_multiplier": contract_multiplier,
-            "max_quotes": max_quotes,
-            "proof_thresholds": asdict(proof_thresholds) if proof_thresholds is not None else None,
-        },
+        inputs=inputs,
+        parameters=parameters,
     )
     return SurfaceMMSweepResult(runs=runs, summary=summary, proof=proof, output_dir=out)
 
@@ -182,6 +218,126 @@ def _sweep_summary(runs: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _empty_sweep_runs() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "run",
+            "run_dir",
+            "quote_ttl_ns",
+            "order_latency_us",
+            "fill_depth_fraction",
+            "markout_horizon_ns",
+            "quote_count",
+            "unfilled_reason_count",
+            "net_pnl",
+            "fills",
+            "proof_passed",
+            "robust_score",
+        ]
+    )
+
+
+def _blocked_sweep_summary(check: dict, *, required: bool) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "scenario_count": 0,
+                "passed_scenarios": 0,
+                "pass_rate": 0.0,
+                "best_run": "",
+                "best_robust_score": 0.0,
+                "median_net_pnl": 0.0,
+                "min_net_pnl": 0.0,
+                "worst_drawdown": 0.0,
+                "median_fill_rate": 0.0,
+                "min_fill_rate": 0.0,
+                "quote_risk_review_required": bool(required),
+                "quote_risk_review_provided": bool(check.get("input_dir", "")),
+                "quote_risk_review_passed": False,
+                "quote_risk_review_reason": str(check.get("reason", "")),
+            }
+        ]
+    )
+
+
+def _attach_quote_risk_summary(
+    summary: pd.DataFrame,
+    *,
+    quote_risk_check: dict | None,
+    required: bool,
+) -> pd.DataFrame:
+    out = summary.copy()
+    passed = True if quote_risk_check is None else bool(quote_risk_check["passed"])
+    out["quote_risk_review_required"] = bool(required)
+    out["quote_risk_review_provided"] = bool(quote_risk_check is not None and quote_risk_check["input_dir"])
+    out["quote_risk_review_passed"] = bool(passed)
+    out["quote_risk_review_reason"] = "" if quote_risk_check is None else str(quote_risk_check["reason"])
+    return out
+
+
+def _write_blocked_proof(output_dir: Path, check: dict) -> ProofReport:
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    metrics = pd.DataFrame(
+        columns=[
+            "run",
+            "net_pnl",
+            "fills",
+            "turnover",
+            "total_costs",
+            "cost_bps",
+            "pnl_per_fill",
+            "maker_share",
+            "order_to_trade_ratio",
+            "otr_breached",
+            "max_drawdown",
+            "regime_count",
+            "losing_regimes",
+            "worst_regime_equity_change",
+            "spread_net",
+            "markout_mean",
+            "markout_win_rate",
+        ]
+    )
+    checks = pd.DataFrame([{**check, "run": "preflight"}])
+    summary = pd.DataFrame(
+        [
+            {
+                "run_count": 0,
+                "passed_runs": 0,
+                "failed_runs": 1,
+                "all_passed": False,
+                "total_net_pnl": 0.0,
+                "total_fills": 0,
+                "worst_drawdown": 0.0,
+                "worst_regime_equity_change": 0.0,
+                "recommendation": "fix_quote_risk_review",
+            }
+        ]
+    )
+    metrics.to_csv(out / "proof_metrics.csv", index=False)
+    checks.to_csv(out / "proof_checks.csv", index=False)
+    summary.to_csv(out / "proof_summary.csv", index=False)
+    write_experiment_manifest(
+        out,
+        run_type="proof_report",
+        parameters={"preflight": "quote_risk_review"},
+        inputs={},
+    )
+    return ProofReport(metrics=metrics, checks=checks, summary=summary, output_dir=out)
+
+
+def _manifest_inputs(
+    quotes_path: str | Path,
+    chain_path: str | Path,
+    quote_risk_review_dir: str | Path | None,
+) -> dict[str, str | Path]:
+    inputs: dict[str, str | Path] = {"quotes": quotes_path, "chain": chain_path}
+    if quote_risk_review_dir is not None:
+        inputs["quote_risk_review"] = Path(quote_risk_review_dir)
+    return inputs
+
+
 def _run_name(
     quote_ttl_ns: int,
     order_latency_us: float,
@@ -231,6 +387,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-otr", type=float, default=None)
     parser.add_argument("--min-maker-share", type=float, default=1.0)
     parser.add_argument("--min-markout-mean", type=float, default=None)
+    parser.add_argument("--quote-risk-review", default=None)
+    parser.add_argument("--require-quote-risk-review", action="store_true")
     parser.add_argument("--fail-on-breach", action="store_true")
     args = parser.parse_args(argv)
 
@@ -249,6 +407,8 @@ def main(argv: list[str] | None = None) -> int:
         option_tick=args.option_tick,
         contract_multiplier=args.contract_multiplier,
         max_quotes=args.max_quotes,
+        quote_risk_review_dir=args.quote_risk_review,
+        require_quote_risk_review=args.require_quote_risk_review,
         proof_thresholds=ProofThresholds(
             min_net_pnl=args.min_net_pnl,
             min_fills=args.min_fills,
@@ -259,7 +419,7 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     print(result.summary.to_string(index=False))
-    return 2 if args.fail_on_breach and not bool(result.proof.passed) else 0
+    return 2 if (args.fail_on_breach or args.require_quote_risk_review) and not bool(result.proof.passed) else 0
 
 
 if __name__ == "__main__":
