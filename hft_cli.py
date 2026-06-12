@@ -6,6 +6,7 @@ from adapters.broker import run_calibration_report
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
 from adapters.orders import OrderStagingLimits, write_staged_orders
+from adapters.schema_audit import write_adapter_schema_audit
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
@@ -77,6 +78,13 @@ def main(argv: list[str] | None = None) -> int:
     calibration.add_argument("--live-fills", required=True)
     calibration.add_argument("--out", required=True)
     calibration.add_argument("--adapter", default="normalized")
+
+    schema_audit = sub.add_parser("audit-adapter-schema", help="Audit a vendor sample CSV against an adapter schema.")
+    schema_audit.add_argument("--sample", required=True)
+    schema_audit.add_argument("--out", required=True)
+    schema_audit.add_argument("--adapter", default="normalized")
+    schema_audit.add_argument("--kind", default="ticks")
+    schema_audit.add_argument("--fail-on-missing", action="store_true")
 
     diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
     diag_ticks.add_argument("--ticks", required=True)
@@ -412,6 +420,15 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(summary.to_string(index=False))
         return 0
+    if args.command == "audit-adapter-schema":
+        result = write_adapter_schema_audit(
+            args.sample,
+            output_dir=args.out,
+            adapter=args.adapter,
+            kind=args.kind,
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_missing and not result.passed else 0
     if args.command == "diagnose-ticks":
         ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session, market=args.market).data
         result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size, market=args.market), args.out)

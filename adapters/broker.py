@@ -96,6 +96,13 @@ def get_adapter(name: str) -> AdapterSpec:
         raise ValueError(f"unknown adapter {name!r}; known adapters: {sorted(ADAPTERS)}") from exc
 
 
+def adapter_schema_status(name: str) -> str:
+    adapter = get_adapter(name)
+    if adapter.name == "normalized":
+        return "native_normalized"
+    return "placeholder_normalized_pending_vendor_schema"
+
+
 def load_adapter_ticks(
     path: str | Path,
     *,

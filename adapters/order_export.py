@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from adapters.broker import get_adapter
+from adapters.broker import adapter_schema_status, get_adapter
 from reports.manifest import write_experiment_manifest
 
 
@@ -66,15 +66,16 @@ def evaluate_order_export(
     adapter = get_adapter(config.adapter)
     _require(launch_orders, ["client_order_id", "instrument_id", "side", "qty", "price"], "launch_orders")
     _require(launch_summary, ["ready", "mode", "scenario_key"], "launch_summary")
+    schema_status = adapter_schema_status(adapter.name)
     orders = _export_orders(
         launch_orders,
         adapter_name=adapter.name,
-        schema_status=_adapter_schema_status(adapter.name),
+        schema_status=schema_status,
         route_tag=config.route_tag,
     )
     checks = _checks(orders, launch_summary, launch_config, config)
-    summary = _summary(orders, launch_summary, checks, adapter.name, _adapter_schema_status(adapter.name))
-    schema = _schema_frame(orders, adapter.name, _adapter_schema_status(adapter.name))
+    summary = _summary(orders, launch_summary, checks, adapter.name, schema_status)
+    schema = _schema_frame(orders, adapter.name, schema_status)
     return OrderExportReport(orders=orders, checks=checks, summary=summary, schema=schema)
 
 
@@ -265,12 +266,6 @@ def _schema_frame(orders: pd.DataFrame, adapter: str, schema_status: str) -> pd.
             for col in orders.columns
         ]
     )
-
-
-def _adapter_schema_status(adapter: str) -> str:
-    if adapter == "normalized":
-        return "native_normalized"
-    return "placeholder_normalized_pending_vendor_schema"
 
 
 def _validate_config(config: OrderExportConfig) -> None:

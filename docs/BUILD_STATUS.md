@@ -98,6 +98,9 @@
   candidates, including pre-trade quantity/notional/marketability/price-band
   checks, accepted/rejected order artifacts, and manifests for later
   Arrow.money/iRage routing adapters.
+- Adapter schema audit for vendor sample CSV headers, including required,
+  missing, and extra source columns plus a mapping template and manifest before
+  real Arrow.money/iRage column maps are finalized.
 
 ## Test Gate
 
@@ -107,7 +110,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 117 tests.
+Current passing suite: 121 tests.
 
 ## Next Build Targets
 

@@ -510,6 +510,33 @@ python -m hft_cli calibrate `
 `arrow_money` and `irage` adapter names exist, but currently use the normalized
 schema until real export samples are mapped.
 
+## Adapter Schema Audit
+
+Audit a vendor sample CSV header before wiring a real adapter map:
+
+```powershell
+python -m hft_cli audit-adapter-schema `
+  --sample vendor\arrow_ticks_sample.csv `
+  --adapter arrow_money `
+  --kind ticks `
+  --out runs\schema_audit\arrow_ticks_sample `
+  --fail-on-missing
+```
+
+Supported `--kind` values include `ticks`, `chain`, `orders`, and `fills`.
+The command reads only the CSV header and writes:
+
+```text
+adapter_schema_summary.csv
+adapter_schema_columns.csv
+adapter_mapping_template.csv
+manifest.json
+```
+
+For `arrow_money` and `irage`, the summary is marked
+`placeholder_normalized_pending_vendor_schema` until real vendor source columns
+replace the normalized placeholders.
+
 ## Order Staging
 
 Stage generated quote or order candidates into a broker-neutral pre-trade file
