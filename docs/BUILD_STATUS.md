@@ -85,6 +85,9 @@
 - Surface quote risk review for market-making quote sets, gating marketable
   quotes, quote edge, side balance, market spread, instrument coverage, and
   concentration before replay or live routing.
+- Option order exposure review for staged, launch, or exported order batches,
+  including Black-76 delta/vega, gross notional, side imbalance, and
+  instrument concentration checks.
 - Passive surface market-making replay that tests generated quotes against
   later option-chain snapshots, writes fills/unfilled quotes/equity/markout
   artifacts, and produces proof-report-compatible `summary.csv` runs.
@@ -104,7 +107,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 114 tests.
+Current passing suite: 117 tests.
 
 ## Next Build Targets
 

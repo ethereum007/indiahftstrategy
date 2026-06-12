@@ -10,6 +10,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.launch import LaunchThresholds, write_launch_bundle
+from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
@@ -306,6 +307,22 @@ def main(argv: list[str] | None = None) -> int:
     quote_review.add_argument("--max-market-spread-ticks", type=float, default=None)
     quote_review.add_argument("--max-quotes-per-instrument", type=int, default=None)
     quote_review.add_argument("--fail-on-breach", action="store_true")
+
+    exposure = sub.add_parser("review-order-exposure", help="Review option order-batch delta/vega/notional exposure.")
+    exposure.add_argument("--orders", required=True)
+    exposure.add_argument("--out", required=True)
+    exposure.add_argument("--forward", type=float, default=None)
+    exposure.add_argument("--tte-years", type=float, default=30 / 365)
+    exposure.add_argument("--vol", type=float, default=None)
+    exposure.add_argument("--contract-multiplier", type=float, default=1.0)
+    exposure.add_argument("--allow-missing-greeks", action="store_true")
+    exposure.add_argument("--max-abs-net-delta", type=float, default=None)
+    exposure.add_argument("--max-abs-net-vega", type=float, default=None)
+    exposure.add_argument("--max-gross-notional", type=float, default=None)
+    exposure.add_argument("--max-side-imbalance", type=float, default=None)
+    exposure.add_argument("--max-instrument-concentration", type=float, default=None)
+    exposure.add_argument("--min-orders", type=int, default=1)
+    exposure.add_argument("--fail-on-breach", action="store_true")
 
     surface_mm = sub.add_parser("replay-surface-mm", help="Replay passive surface market-making quotes.")
     surface_mm.add_argument("--quotes", required=True)
@@ -670,6 +687,26 @@ def main(argv: list[str] | None = None) -> int:
                 max_bid_share=args.max_bid_share,
                 max_market_spread_ticks=args.max_market_spread_ticks,
                 max_quotes_per_instrument=args.max_quotes_per_instrument,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "review-order-exposure":
+        result = write_order_exposure_report(
+            args.orders,
+            output_dir=args.out,
+            config=OrderExposureConfig(
+                forward=args.forward,
+                tte_years=args.tte_years,
+                vol=args.vol,
+                contract_multiplier=args.contract_multiplier,
+                require_greeks=not args.allow_missing_greeks,
+                max_abs_net_delta=args.max_abs_net_delta,
+                max_abs_net_vega=args.max_abs_net_vega,
+                max_gross_notional=args.max_gross_notional,
+                max_side_imbalance=args.max_side_imbalance,
+                max_instrument_concentration=args.max_instrument_concentration,
+                min_orders=args.min_orders,
             ),
         )
         print(result.summary.to_string(index=False))

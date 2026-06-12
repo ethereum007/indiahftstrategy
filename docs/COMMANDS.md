@@ -213,6 +213,36 @@ quote_risk_by_instrument.csv
 manifest.json
 ```
 
+## Order Exposure Review
+
+Review staged, launch, or exported option order batches for notional, side
+imbalance, instrument concentration, and Black-76 delta/vega exposure:
+
+```powershell
+python -m hft_cli review-order-exposure `
+  --orders runs\launch\leadlag_shadow\launch_orders.csv `
+  --out runs\risk\leadlag_shadow_exposure `
+  --forward 1000 `
+  --tte-years 0.08219 `
+  --vol 0.20 `
+  --max-abs-net-delta 1000 `
+  --max-abs-net-vega 50000 `
+  --max-gross-notional 1000000 `
+  --max-side-imbalance 0.25 `
+  --max-instrument-concentration 0.50 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+order_exposure.csv
+order_exposure_by_instrument.csv
+order_exposure_checks.csv
+order_exposure_summary.csv
+manifest.json
+```
+
 ## Surface Market-Making Replay
 
 Replay passive surface quotes against later option-chain snapshots. A bid quote
