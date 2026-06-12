@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -52,6 +53,8 @@ def write_quote_risk_report(
     *,
     output_dir: str | Path,
     thresholds: QuoteRiskThresholds | None = None,
+    data_readiness_comparison_dir: str | Path | None = None,
+    require_data_readiness_comparison: bool = False,
 ) -> QuoteRiskReport:
     quotes_file = Path(quotes_path)
     if not quotes_file.exists():
@@ -59,18 +62,39 @@ def write_quote_risk_report(
     quotes = pd.read_csv(quotes_file)
     thresholds = thresholds or QuoteRiskThresholds()
     report = evaluate_quote_risk(quotes, thresholds=thresholds)
+    summary = report.summary.copy()
+    checks = report.checks.copy()
+    comparison_summary = _read_data_readiness_comparison_summary(data_readiness_comparison_dir)
+    comparison_check = _data_readiness_comparison_check(
+        comparison_summary,
+        required=require_data_readiness_comparison,
+        input_dir=data_readiness_comparison_dir,
+    )
+    if comparison_check is not None:
+        checks = pd.concat([pd.DataFrame([comparison_check]), checks], ignore_index=True)
+        summary["all_passed"] = bool(checks["passed"].all())
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    report.summary.to_csv(out / "quote_risk_summary.csv", index=False)
-    report.checks.to_csv(out / "quote_risk_checks.csv", index=False)
+    summary.to_csv(out / "quote_risk_summary.csv", index=False)
+    checks.to_csv(out / "quote_risk_checks.csv", index=False)
     report.by_instrument.to_csv(out / "quote_risk_by_instrument.csv", index=False)
+    inputs: dict[str, Any] = {"quotes": quotes_file}
+    if data_readiness_comparison_dir is not None:
+        inputs["data_readiness_comparison"] = Path(data_readiness_comparison_dir)
     write_experiment_manifest(
         out,
         run_type="quote_risk_report",
-        parameters={"thresholds": asdict(thresholds)},
-        inputs={"quotes": quotes_file},
+        parameters={
+            "thresholds": asdict(thresholds),
+            "require_data_readiness_comparison": bool(require_data_readiness_comparison),
+            "data_readiness_comparison": _comparison_parameters(
+                comparison_summary,
+                data_readiness_comparison_dir,
+            ),
+        },
+        inputs=inputs,
     )
-    return QuoteRiskReport(report.summary, report.checks, report.by_instrument, out)
+    return QuoteRiskReport(summary, checks, report.by_instrument, out)
 
 
 def _normalize_quotes(quotes: pd.DataFrame) -> pd.DataFrame:
@@ -198,6 +222,71 @@ def _checks(row: pd.Series, thresholds: QuoteRiskThresholds) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def _read_data_readiness_comparison_summary(path: str | Path | None) -> pd.DataFrame:
+    if path is None:
+        return pd.DataFrame()
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "data_readiness_comparison_summary.csv"
+    if not candidate.exists():
+        raise FileNotFoundError(f"data readiness comparison summary not found: {candidate}")
+    frame = pd.read_csv(candidate)
+    if frame.empty:
+        raise ValueError(f"data readiness comparison summary is empty: {candidate}")
+    return frame
+
+
+def _data_readiness_comparison_check(
+    summary: pd.DataFrame,
+    *,
+    required: bool,
+    input_dir: str | Path | None,
+) -> dict[str, Any] | None:
+    if summary.empty and not required:
+        return None
+    provided = not summary.empty
+    row = summary.iloc[0] if provided else pd.Series(dtype=object)
+    accepted = _to_bool(row.get("accepted", False)) if provided else False
+    passed = provided and accepted
+    reason = "accepted" if passed else "data_readiness_comparison_missing"
+    if provided and not accepted:
+        reason = "data_readiness_comparison_not_accepted"
+    return {
+        "check": "data_readiness_comparison",
+        "value": bool(accepted),
+        "operator": "accepted",
+        "threshold": True,
+        "passed": bool(passed),
+        "reason": reason,
+        "input_dir": str(input_dir or ""),
+        "failed_checks": _int(row, "total_failed_checks") if provided else 1,
+        "recommendation": str(row.get("recommendation", reason)) if provided else reason,
+    }
+
+
+def _comparison_parameters(summary: pd.DataFrame, input_dir: str | Path | None) -> dict[str, Any]:
+    if summary.empty:
+        return {
+            "provided": False,
+            "input_dir": str(input_dir or ""),
+            "accepted": False,
+            "dataset_count": 0,
+            "ready_rate": 0.0,
+            "failed_checks": 0,
+            "recommendation": "",
+        }
+    row = summary.iloc[0]
+    return {
+        "provided": True,
+        "input_dir": str(input_dir or ""),
+        "accepted": _to_bool(row.get("accepted", False)),
+        "dataset_count": _int(row, "dataset_count"),
+        "ready_rate": _float(row, "ready_rate"),
+        "failed_checks": _int(row, "total_failed_checks"),
+        "recommendation": str(row.get("recommendation", "")),
+    }
+
+
 def _check(
     row: pd.Series,
     name: str,
@@ -230,6 +319,22 @@ def _check(
 
 
 def _to_bool(value: object) -> bool:
+    if value is None or pd.isna(value):
+        return False
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _float(row: pd.Series, column: str) -> float:
+    try:
+        return float(row.get(column, 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _int(row: pd.Series, column: str) -> int:
+    try:
+        return int(float(row.get(column, 0)))
+    except (TypeError, ValueError):
+        return 0

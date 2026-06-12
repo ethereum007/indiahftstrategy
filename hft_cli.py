@@ -1182,6 +1182,8 @@ def main(argv: list[str] | None = None) -> int:
     quote_review.add_argument("--max-bid-share", type=float, default=0.75)
     quote_review.add_argument("--max-market-spread-ticks", type=float, default=None)
     quote_review.add_argument("--max-quotes-per-instrument", type=int, default=None)
+    quote_review.add_argument("--data-readiness-comparison", default=None)
+    quote_review.add_argument("--require-data-readiness-comparison", action="store_true")
     quote_review.add_argument("--fail-on-breach", action="store_true")
 
     exposure = sub.add_parser("review-order-exposure", help="Review option order-batch delta/vega/notional exposure.")
@@ -2581,6 +2583,8 @@ def main(argv: list[str] | None = None) -> int:
                 max_market_spread_ticks=args.max_market_spread_ticks,
                 max_quotes_per_instrument=args.max_quotes_per_instrument,
             ),
+            data_readiness_comparison_dir=args.data_readiness_comparison,
+            require_data_readiness_comparison=args.require_data_readiness_comparison,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0

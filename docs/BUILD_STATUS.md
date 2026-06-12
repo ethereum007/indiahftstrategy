@@ -90,6 +90,9 @@
   options surface work.
 - Surface-driven market-making quote generation with inventory skew and quote
   budget controls.
+- Surface quote-risk review can require accepted multi-day vendor
+  data-readiness comparison evidence before quotes move into replay or
+  paper-routing workflows.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -260,7 +263,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 331 tests.
+Current passing suite: 333 tests.
 
 ## Next Build Targets
 

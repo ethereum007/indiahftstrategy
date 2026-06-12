@@ -846,6 +846,8 @@ Gate generated market-making quotes before replay or live routing:
 python -m hft_cli review-quotes `
   --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
   --out runs\surface_quotes_2026_06_10\quote_review `
+  --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
+  --require-data-readiness-comparison `
   --min-quotes 20 `
   --min-instruments 10 `
   --max-marketable-quotes 0 `
@@ -862,6 +864,11 @@ quote_risk_checks.csv
 quote_risk_by_instrument.csv
 manifest.json
 ```
+
+When `--require-data-readiness-comparison` is set, quote review fails closed
+unless the supplied comparison summary is present and accepted. This keeps
+surface market-making quotes from moving into replay or paper routing on
+unproven vendor market data.
 
 ## Order Exposure Review
 
