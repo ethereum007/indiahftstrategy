@@ -12,6 +12,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.launch import LaunchThresholds, write_launch_bundle
+from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
@@ -62,6 +63,19 @@ def main(argv: list[str] | None = None) -> int:
     leadlag.add_argument("--laggard-tick-size", type=float, default=0.05)
     leadlag.add_argument("--delta", type=float, default=1.0)
     leadlag.add_argument("--innovation-ticks", type=float, default=2.0)
+
+    leadlag_edge = sub.add_parser("audit-leadlag-edge", help="Gate lead-lag measurement evidence before replay.")
+    leadlag_edge.add_argument("--measure", required=True)
+    leadlag_edge.add_argument("--out", required=True)
+    leadlag_edge.add_argument("--min-events", type=int, default=1)
+    leadlag_edge.add_argument("--min-abs-correlation", type=float, default=0.0)
+    leadlag_edge.add_argument("--min-correlation-samples", type=int, default=2)
+    leadlag_edge.add_argument("--min-update-rate", type=float, default=0.0)
+    leadlag_edge.add_argument("--max-median-update-ns", type=int, default=None)
+    leadlag_edge.add_argument("--min-best-latency-net-pnl", type=float, default=0.0)
+    leadlag_edge.add_argument("--min-best-latency-fills", type=int, default=1)
+    leadlag_edge.add_argument("--min-profitable-latency-ns", type=int, default=0)
+    leadlag_edge.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_replay = sub.add_parser("replay-leadlag", help="Replay lead-lag taker strategy.")
     leadlag_replay.add_argument("--leader", required=True)
@@ -407,6 +421,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.latency_curve.to_string(index=False))
         return 0
+    if args.command == "audit-leadlag-edge":
+        result = write_leadlag_edge_audit(
+            args.measure,
+            output_dir=args.out,
+            thresholds=LeadLagEdgeThresholds(
+                min_events=args.min_events,
+                min_abs_correlation=args.min_abs_correlation,
+                min_correlation_samples=args.min_correlation_samples,
+                min_update_rate=args.min_update_rate,
+                max_median_update_ns=args.max_median_update_ns,
+                min_best_latency_net_pnl=args.min_best_latency_net_pnl,
+                min_best_latency_fills=args.min_best_latency_fills,
+                min_profitable_latency_ns=args.min_profitable_latency_ns,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "replay-leadlag":
         result = run_leadlag_replay(
             leader_path=args.leader,

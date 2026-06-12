@@ -125,6 +125,33 @@ lag_profile.csv
 latency_curve.csv
 ```
 
+## Lead-Lag Edge Audit
+
+Gate a measured lead-lag relationship before spending replay/sweep cycles:
+
+```powershell
+python -m hft_cli audit-leadlag-edge `
+  --measure runs\leadlag_measure_2026_06_10 `
+  --out runs\leadlag_edge\2026_06_10 `
+  --min-events 20 `
+  --min-abs-correlation 0.15 `
+  --min-update-rate 0.6 `
+  --max-median-update-ns 1000000 `
+  --min-best-latency-net-pnl 0 `
+  --min-best-latency-fills 5 `
+  --min-profitable-latency-ns 250000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+leadlag_edge_metrics.csv
+leadlag_edge_checks.csv
+leadlag_edge_summary.csv
+manifest.json
+```
+
 ## Lead-Lag Replay
 
 ```powershell

@@ -14,6 +14,9 @@
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
+- Lead-lag edge audit that gates measured relationships on events,
+  correlation, laggard update rate, update latency, and latency-curve PnL
+  before replay/sweep promotion.
 - Replay strategies: parity taker and lead-lag taker.
 - Replay CLIs for parity taker and lead-lag taker, writing fills, equity,
   summary, signals/legging, and markout artifacts.
@@ -113,7 +116,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 125 tests.
+Current passing suite: 129 tests.
 
 ## Next Build Targets
 
