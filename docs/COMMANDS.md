@@ -161,6 +161,31 @@ proof/proof_checks.csv
 proof/proof_summary.csv
 ```
 
+## Sweep Comparison
+
+Rank parameter scenarios across multiple sweep output folders:
+
+```powershell
+python -m hft_cli compare-sweeps `
+  --sweeps runs\leadlag_sweep_2026_06_10 runs\leadlag_sweep_2026_06_11 `
+  --label 2026-06-10 `
+  --label 2026-06-11 `
+  --out runs\selection\leadlag `
+  --min-pass-rate 1 `
+  --min-sweeps 2 `
+  --min-median-net-pnl 1 `
+  --max-worst-drawdown 5000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+scenario_runs.csv
+scenario_scores.csv
+selection_summary.csv
+```
+
 ## Calibration
 
 ```powershell

@@ -7,6 +7,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.proof import ProofThresholds, write_proof_report
+from reports.sweeps import write_sweep_comparison
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_leadlag_replay import run_leadlag_replay
@@ -132,6 +133,17 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--max-otr", type=float, default=None)
     parity_sweep.add_argument("--min-spread-net", type=float, default=None)
     parity_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    compare_sweeps = sub.add_parser("compare-sweeps", help="Rank scenarios across multiple sweep outputs.")
+    compare_sweeps.add_argument("--sweeps", nargs="+", required=True)
+    compare_sweeps.add_argument("--out", required=True)
+    compare_sweeps.add_argument("--label", action="append", dest="labels")
+    compare_sweeps.add_argument("--group-cols", nargs="+", default=None)
+    compare_sweeps.add_argument("--min-pass-rate", type=float, default=1.0)
+    compare_sweeps.add_argument("--min-sweeps", type=int, default=1)
+    compare_sweeps.add_argument("--min-median-net-pnl", type=float, default=0.0)
+    compare_sweeps.add_argument("--max-worst-drawdown", type=float, default=None)
+    compare_sweeps.add_argument("--fail-on-breach", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -271,6 +283,19 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "compare-sweeps":
+        result = write_sweep_comparison(
+            args.sweeps,
+            output_dir=args.out,
+            labels=args.labels,
+            group_cols=args.group_cols,
+            min_pass_rate=args.min_pass_rate,
+            min_sweeps=args.min_sweeps,
+            min_median_net_pnl=args.min_median_net_pnl,
+            max_worst_drawdown=args.max_worst_drawdown,
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.has_selection else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 

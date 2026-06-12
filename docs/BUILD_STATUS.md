@@ -53,6 +53,8 @@
 - Parity robustness sweep runner that replays depth/as-of/latency grids,
   tracks signal and legging health, and aggregates proof pass rates plus robust
   scores.
+- Cross-sweep scenario comparison for ranking parameter settings across days
+  or folds by pass rate, median PnL, drawdown, regime losses, and robust score.
 
 ## Test Gate
 
@@ -62,7 +64,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 74 tests.
+Current passing suite: 77 tests.
 
 ## Next Build Targets
 
