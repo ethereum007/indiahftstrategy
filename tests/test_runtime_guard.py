@@ -119,6 +119,22 @@ def test_runtime_guard_halts_when_telemetry_is_stale():
     assert "runtime_telemetry_age_ns" in failed
 
 
+def test_runtime_guard_uses_scaleup_config_telemetry_age_limit():
+    config = scaleup_config()
+    config["kill_switches"]["max_telemetry_age_ns"] = 1_000
+
+    report = evaluate_runtime_guard(
+        config,
+        telemetry(snapshot_ts_ns=1_000),
+        as_of_ts_ns=2_500,
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "runtime_telemetry_age_ns" in failed
+    assert report.metrics.iloc[0]["max_telemetry_age_ns"] == 1_000.0
+
+
 def test_runtime_guard_halts_when_required_instrument_metadata_is_missing_from_telemetry():
     report = evaluate_runtime_guard(
         scaleup_config(instrument_metadata=instrument_metadata_config()),

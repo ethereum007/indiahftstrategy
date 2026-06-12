@@ -1256,6 +1256,7 @@ python -m hft_cli plan-scaleup `
   --max-scale-multiplier 1 `
   --max-orders-per-session 100 `
   --max-session-notional 100000 `
+  --max-telemetry-age-ns 5000000000 `
   --stop-loss 5000 `
   --require-instrument-metadata `
   --require-proof-refresh `

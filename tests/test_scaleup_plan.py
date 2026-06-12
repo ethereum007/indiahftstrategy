@@ -134,6 +134,7 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
             max_gross_notional=2000.0,
             max_abs_net_delta=100.0,
             max_abs_net_vega=250.0,
+            max_telemetry_age_ns=5_000_000_000,
             stop_loss=500.0,
             allowed_adapters=("arrow_money",),
         ),
@@ -145,6 +146,7 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert plan["max_notional_per_session"] == 2000.0
     assert report.summary.iloc[0]["recommendation"] == "scale_up_with_controls"
     assert report.config["kill_switches"]["max_worst_adverse_slippage"] == 0.05
+    assert report.config["kill_switches"]["max_telemetry_age_ns"] == 5_000_000_000
 
 
 def test_scaleup_plan_accepts_required_ready_proof_refresh():
@@ -322,3 +324,28 @@ def test_cli_scaleup_plan_can_require_instrument_metadata(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "instrument_metadata_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--max-telemetry-age-ns",
+            "5000000000",
+        ]
+    )
+
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert config["kill_switches"]["max_telemetry_age_ns"] == 5_000_000_000

@@ -24,6 +24,7 @@ class ScaleUpThresholds:
     max_total_unmatched_fills: int = 0
     max_total_mismatched_orders: int = 0
     max_total_overfilled_orders: int = 0
+    max_telemetry_age_ns: float | None = None
     max_orders_per_session: int | None = None
     max_session_notional: float | None = None
     max_gross_notional: float | None = None
@@ -348,6 +349,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "max_total_unmatched_fills": thresholds.max_total_unmatched_fills,
             "max_total_mismatched_orders": thresholds.max_total_mismatched_orders,
             "max_total_overfilled_orders": thresholds.max_total_overfilled_orders,
+            "max_telemetry_age_ns": _jsonable(thresholds.max_telemetry_age_ns),
             "max_worst_adverse_slippage": _jsonable(thresholds.max_worst_adverse_slippage),
         },
         "proof_freshness": {
@@ -418,7 +420,15 @@ def _validate_thresholds(thresholds: ScaleUpThresholds) -> None:
     ):
         if getattr(thresholds, name) < 0:
             raise ValueError(f"{name} must be non-negative")
-    for name in ("max_orders_per_session", "max_session_notional", "max_gross_notional", "max_abs_net_delta", "max_abs_net_vega", "stop_loss"):
+    for name in (
+        "max_telemetry_age_ns",
+        "max_orders_per_session",
+        "max_session_notional",
+        "max_gross_notional",
+        "max_abs_net_delta",
+        "max_abs_net_vega",
+        "stop_loss",
+    ):
         value = getattr(thresholds, name)
         if value is not None and value <= 0:
             raise ValueError(f"{name} must be positive")
