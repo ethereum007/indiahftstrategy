@@ -1244,6 +1244,7 @@ python -m hft_cli plan-scaleup `
   --shadow-comparison runs\sessions\leadlag_shadow_comparison `
   --launch runs\launch\leadlag_shadow `
   --order-exposure runs\risk\leadlag_shadow_exposure `
+  --instrument-metadata runs\risk\leadlag_shadow_instruments `
   --proof-refresh runs\proof_refresh\leadlag_shadow_latest `
   --out runs\scaleup\leadlag_shadow `
   --target-mode shadow `
@@ -1256,6 +1257,7 @@ python -m hft_cli plan-scaleup `
   --max-orders-per-session 100 `
   --max-session-notional 100000 `
   --stop-loss 5000 `
+  --require-instrument-metadata `
   --require-proof-refresh `
   --fail-on-breach
 ```

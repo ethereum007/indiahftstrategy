@@ -87,6 +87,22 @@ def proof_refresh_summary(ready=True, proof_source="latest"):
     )
 
 
+def instrument_metadata_summary(passed=True, parse_coverage=1.0, unparsed_instruments=0):
+    return pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "instruments": 2,
+                "parsed_instruments": 2 - unparsed_instruments,
+                "unparsed_instruments": unparsed_instruments,
+                "parse_coverage": parse_coverage,
+                "min_parse_coverage": 1.0,
+                "symbol_formats": "nse_compact_option:1|occ_option:1",
+            }
+        ]
+    )
+
+
 def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_ready=True, exposure_passed=True):
     evidence = root / "evidence"
     shadow = root / "shadow"
@@ -148,6 +164,37 @@ def test_scaleup_plan_accepts_required_ready_proof_refresh():
     assert report.config["proof_freshness"]["proof_source"] == "latest"
 
 
+def test_scaleup_plan_accepts_required_instrument_metadata():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        instrument_metadata_summary=instrument_metadata_summary(True, parse_coverage=1.0),
+        thresholds=ScaleUpThresholds(require_instrument_metadata=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["instrument_metadata_passed"]
+    assert report.summary.iloc[0]["instrument_parse_coverage"] == 1.0
+    assert report.config["instrument_metadata"]["required"]
+    assert report.config["instrument_metadata"]["passed"]
+
+
+def test_scaleup_plan_fails_on_instrument_metadata_gap():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        instrument_metadata_summary=instrument_metadata_summary(False, parse_coverage=0.5, unparsed_instruments=1),
+        thresholds=ScaleUpThresholds(min_instrument_parse_coverage=1.0),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"instrument_metadata_passed", "instrument_parse_coverage"}.issubset(failed)
+    assert report.config["instrument_metadata"]["unparsed_instruments"] == 1
+
+
 def test_scaleup_plan_fails_on_incomplete_evidence_and_adapter_gap():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(False),
@@ -170,6 +217,9 @@ def test_scaleup_plan_fails_on_incomplete_evidence_and_adapter_gap():
 
 def test_write_scaleup_plan_outputs_artifacts(tmp_path):
     evidence, shadow, launch, exposure = write_inputs(tmp_path)
+    metadata = tmp_path / "metadata"
+    metadata.mkdir()
+    instrument_metadata_summary(True).to_csv(metadata / "instrument_metadata_summary.csv", index=False)
     out_dir = tmp_path / "scaleup"
 
     report = write_scaleup_plan(
@@ -177,6 +227,7 @@ def test_write_scaleup_plan_outputs_artifacts(tmp_path):
         shadow_comparison_dir=shadow,
         launch_dir=launch,
         order_exposure_dir=exposure,
+        instrument_metadata_dir=metadata,
         output_dir=out_dir,
         thresholds=ScaleUpThresholds(allowed_adapters=("arrow_money",), stop_loss=500.0),
     )
@@ -185,6 +236,7 @@ def test_write_scaleup_plan_outputs_artifacts(tmp_path):
     assert report.output_dir == out_dir
     assert config["ready"]
     assert config["limits"]["stop_loss"] == 500.0
+    assert config["instrument_metadata"]["provided"]
     assert (out_dir / "scaleup_plan.csv").exists()
     assert (out_dir / "scaleup_checks.csv").exists()
     assert (out_dir / "scaleup_summary.csv").exists()
@@ -243,3 +295,30 @@ def test_cli_scaleup_plan_can_require_proof_refresh(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "proof_refresh_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_can_require_instrument_metadata(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-instrument-metadata",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "instrument_metadata_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])

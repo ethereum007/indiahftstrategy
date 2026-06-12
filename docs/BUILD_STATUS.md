@@ -169,8 +169,9 @@
   requires successful proof, stress, promotion, shadow, or user-selected run
   types before scale-up decisions.
 - Controlled scale-up plan report that combines strategy evidence, shadow
-  comparison, launch, and optional exposure summaries into explicit order,
-  notional, adapter, and kill-switch limits.
+  comparison, launch, optional exposure summaries, proof freshness, and
+  instrument metadata coverage into explicit order, notional, adapter, and
+  kill-switch limits.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   reconciliation, PnL, open-order, and position artifacts into guard-ready
   `runtime_telemetry.csv` inputs with source/check summaries.
@@ -233,7 +234,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 272 tests.
+Current passing suite: 275 tests.
 
 ## Next Build Targets
 

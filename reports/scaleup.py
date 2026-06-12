@@ -32,6 +32,8 @@ class ScaleUpThresholds:
     stop_loss: float | None = None
     allowed_adapters: tuple[str, ...] = ()
     require_proof_refresh: bool = False
+    require_instrument_metadata: bool = False
+    min_instrument_parse_coverage: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -56,6 +58,7 @@ def evaluate_scaleup_plan(
     launch_summary: pd.DataFrame,
     order_exposure_summary: pd.DataFrame | None = None,
     proof_refresh_summary: pd.DataFrame | None = None,
+    instrument_metadata_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
     thresholds = thresholds or ScaleUpThresholds()
@@ -65,6 +68,7 @@ def evaluate_scaleup_plan(
     _require(launch_summary, ["ready", "mode", "adapter", "scenario_key", "accepted_orders"], "launch_summary")
     exposure = order_exposure_summary if order_exposure_summary is not None else pd.DataFrame()
     proof_refresh = proof_refresh_summary if proof_refresh_summary is not None else pd.DataFrame()
+    instrument_metadata = instrument_metadata_summary if instrument_metadata_summary is not None else pd.DataFrame()
 
     rows = {
         "evidence": evidence_summary.iloc[0],
@@ -72,6 +76,7 @@ def evaluate_scaleup_plan(
         "launch": launch_summary.iloc[0],
         "exposure": exposure.iloc[0] if not exposure.empty else pd.Series(dtype=object),
         "proof_refresh": proof_refresh.iloc[0] if not proof_refresh.empty else pd.Series(dtype=object),
+        "instrument_metadata": instrument_metadata.iloc[0] if not instrument_metadata.empty else pd.Series(dtype=object),
     }
     checks = _checks(rows, thresholds)
     ready = bool(checks["passed"].all()) if not checks.empty else False
@@ -89,6 +94,7 @@ def write_scaleup_plan(
     output_dir: str | Path,
     order_exposure_dir: str | Path | None = None,
     proof_refresh_dir: str | Path | None = None,
+    instrument_metadata_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
     evidence = _read_summary(evidence_dir, "strategy_evidence_summary.csv")
@@ -98,6 +104,11 @@ def write_scaleup_plan(
     proof_refresh = (
         _read_optional_summary(proof_refresh_dir, "proof_refresh_summary.csv") if proof_refresh_dir else None
     )
+    instrument_metadata = (
+        _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")
+        if instrument_metadata_dir
+        else None
+    )
     thresholds = thresholds or ScaleUpThresholds()
     report = evaluate_scaleup_plan(
         evidence_summary=evidence,
@@ -105,6 +116,7 @@ def write_scaleup_plan(
         launch_summary=launch,
         order_exposure_summary=exposure,
         proof_refresh_summary=proof_refresh,
+        instrument_metadata_summary=instrument_metadata,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -122,6 +134,8 @@ def write_scaleup_plan(
         inputs["order_exposure"] = Path(order_exposure_dir)
     if proof_refresh_dir is not None:
         inputs["proof_refresh"] = Path(proof_refresh_dir)
+    if instrument_metadata_dir is not None:
+        inputs["instrument_metadata"] = Path(instrument_metadata_dir)
     write_experiment_manifest(
         out,
         run_type="scaleup_plan",
@@ -137,6 +151,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     launch = rows["launch"]
     exposure = rows["exposure"]
     proof_refresh = rows["proof_refresh"]
+    instrument_metadata = rows["instrument_metadata"]
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
     checks = [
@@ -202,6 +217,38 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "proof refresh gate is not ready",
             )
         )
+    if thresholds.require_instrument_metadata:
+        checks.append(
+            _check(
+                "instrument_metadata_available",
+                not instrument_metadata.empty,
+                "is",
+                True,
+                not instrument_metadata.empty,
+                "instrument metadata report is required but no summary was supplied",
+            )
+        )
+    if not instrument_metadata.empty:
+        metadata_passed = _to_bool(instrument_metadata.get("passed", False))
+        parse_coverage = _number(instrument_metadata, "parse_coverage", fallback=0.0)
+        checks.append(
+            _check(
+                "instrument_metadata_passed",
+                metadata_passed,
+                "is",
+                True,
+                metadata_passed,
+                "instrument metadata report did not pass",
+            )
+        )
+        checks.append(
+            _threshold_check(
+                "instrument_parse_coverage",
+                parse_coverage,
+                ">=",
+                thresholds.min_instrument_parse_coverage,
+            )
+        )
     return pd.DataFrame(checks)
 
 
@@ -209,6 +256,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
     launch = rows["launch"]
     shadow = rows["shadow"]
     proof_refresh = rows["proof_refresh"]
+    instrument_metadata = rows["instrument_metadata"]
     accepted_orders = int(_number(launch, "accepted_orders", fallback=0.0))
     launch_notional = _number(launch, "total_notional", fallback=0.0)
     scaled_orders = int(np.floor(accepted_orders * thresholds.max_scale_multiplier))
@@ -244,6 +292,16 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "proof_refresh_recommendation": str(proof_refresh.get("recommendation", ""))
                 if not proof_refresh.empty
                 else "",
+                "instrument_metadata_provided": not instrument_metadata.empty,
+                "instrument_metadata_passed": _to_bool(instrument_metadata.get("passed", False))
+                if not instrument_metadata.empty
+                else False,
+                "instrument_parse_coverage": _number(instrument_metadata, "parse_coverage", fallback=np.nan)
+                if not instrument_metadata.empty
+                else np.nan,
+                "unparsed_instruments": int(_number(instrument_metadata, "unparsed_instruments", fallback=0.0))
+                if not instrument_metadata.empty
+                else 0,
             }
         ]
     )
@@ -263,6 +321,8 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "max_notional_per_session": float(plan_row["max_notional_per_session"]),
                 "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
                 "proof_source": str(plan_row["proof_source"]),
+                "instrument_metadata_passed": _to_bool(plan_row["instrument_metadata_passed"]),
+                "instrument_parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -297,6 +357,14 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "proof_source": str(plan_row["proof_source"]),
             "fresh_proof_required": _to_bool(plan_row["fresh_proof_required"]),
             "recommendation": str(plan_row["proof_refresh_recommendation"]),
+        },
+        "instrument_metadata": {
+            "required": bool(thresholds.require_instrument_metadata),
+            "provided": _to_bool(plan_row["instrument_metadata_provided"]),
+            "passed": _to_bool(plan_row["instrument_metadata_passed"]),
+            "parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
+            "min_parse_coverage": float(thresholds.min_instrument_parse_coverage),
+            "unparsed_instruments": int(plan_row["unparsed_instruments"]),
         },
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
         "thresholds": asdict(thresholds),
@@ -340,6 +408,8 @@ def _validate_thresholds(thresholds: ScaleUpThresholds) -> None:
             raise ValueError(f"{name} must be between 0 and 1")
     if thresholds.min_worst_order_fill_rate is not None and not 0 <= thresholds.min_worst_order_fill_rate <= 1:
         raise ValueError("min_worst_order_fill_rate must be between 0 and 1")
+    if not 0 <= thresholds.min_instrument_parse_coverage <= 1:
+        raise ValueError("min_instrument_parse_coverage must be between 0 and 1")
     for name in (
         "max_total_failed_component_checks",
         "max_total_unmatched_fills",
