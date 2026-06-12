@@ -11,6 +11,9 @@
 - Synthetic futures/options generator with planted lag relationships.
 - Executable put-call parity and box scanner using touch prices, depth
   fractions, explicit as-of latency, and full leg costs.
+- Parity/box edge audit that gates scan outputs on opportunity count, net edge,
+  persistence, direction coverage, and futures staleness before replay/sweep
+  work.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
@@ -116,7 +119,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 129 tests.
+Current passing suite: 133 tests.
 
 ## Next Build Targets
 

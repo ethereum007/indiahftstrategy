@@ -59,6 +59,33 @@ box_opportunities.csv
 opportunity_report.csv
 ```
 
+## Parity / Box Edge Audit
+
+Gate a parity/box scan before replaying or sweeping it:
+
+```powershell
+python -m hft_cli audit-parity-edge `
+  --scan runs\scan_2026_06_10 `
+  --out runs\parity_edge\2026_06_10 `
+  --min-total-opportunities 5 `
+  --min-total-net-edge 1000 `
+  --min-median-net-edge 100 `
+  --min-best-net-edge 250 `
+  --min-median-persistence-ticks 1 `
+  --min-direction-count 1 `
+  --max-future-staleness-ns 100000 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+parity_edge_metrics.csv
+parity_edge_checks.csv
+parity_edge_summary.csv
+manifest.json
+```
+
 ## Parity Replay
 
 ```powershell

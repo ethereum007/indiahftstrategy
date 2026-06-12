@@ -14,6 +14,7 @@ from data.loaders import load_tick_csv
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
+from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
@@ -43,6 +44,20 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--no-filter-session", action="store_true")
     scan.add_argument("--asof-latency-ns", type=int, default=0)
     scan.add_argument("--depth-fraction", type=float, default=0.25)
+
+    parity_edge = sub.add_parser("audit-parity-edge", help="Gate parity/box scan opportunities before replay.")
+    parity_edge.add_argument("--scan", required=True)
+    parity_edge.add_argument("--out", required=True)
+    parity_edge.add_argument("--min-total-opportunities", type=int, default=1)
+    parity_edge.add_argument("--min-parity-opportunities", type=int, default=0)
+    parity_edge.add_argument("--min-box-opportunities", type=int, default=0)
+    parity_edge.add_argument("--min-total-net-edge", type=float, default=0.0)
+    parity_edge.add_argument("--min-median-net-edge", type=float, default=0.0)
+    parity_edge.add_argument("--min-best-net-edge", type=float, default=0.0)
+    parity_edge.add_argument("--min-median-persistence-ticks", type=float, default=0.0)
+    parity_edge.add_argument("--min-direction-count", type=int, default=1)
+    parity_edge.add_argument("--max-future-staleness-ns", type=int, default=None)
+    parity_edge.add_argument("--fail-on-breach", action="store_true")
 
     parity = sub.add_parser("replay-parity", help="Replay parity taker strategy.")
     parity.add_argument("--chain", required=True)
@@ -395,6 +410,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.report.to_string(index=False))
         return 0
+    if args.command == "audit-parity-edge":
+        result = write_parity_edge_audit(
+            args.scan,
+            output_dir=args.out,
+            thresholds=ParityEdgeThresholds(
+                min_total_opportunities=args.min_total_opportunities,
+                min_parity_opportunities=args.min_parity_opportunities,
+                min_box_opportunities=args.min_box_opportunities,
+                min_total_net_edge=args.min_total_net_edge,
+                min_median_net_edge=args.min_median_net_edge,
+                min_best_net_edge=args.min_best_net_edge,
+                min_median_persistence_ticks=args.min_median_persistence_ticks,
+                min_direction_count=args.min_direction_count,
+                max_future_staleness_ns=args.max_future_staleness_ns,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "replay-parity":
         result = run_parity_replay(
             chain_path=args.chain,
