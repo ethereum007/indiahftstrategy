@@ -17,6 +17,7 @@ class LaunchThresholds:
     min_acceptance_rate: float = 1.0
     require_promotion_ready: bool = True
     require_no_rejections: bool = True
+    require_quote_risk_review: bool = False
     max_total_notional: float | None = None
     max_order_notional: float | None = None
 
@@ -214,6 +215,19 @@ def _checks(
                 thresholds.max_order_notional,
             )
         )
+    if thresholds.require_quote_risk_review:
+        surface_orders = _surface_quote_orders(staged_orders)
+        quote_review_passed = _to_bool(stage_row.get("quote_risk_review_passed", False))
+        checks.append(
+            _check(
+                "surface_quote_risk_review",
+                quote_review_passed,
+                "is",
+                True,
+                (not surface_orders) or quote_review_passed,
+                "surface quote orders require a passed quote-risk review",
+            )
+        )
     checks.append(
         _check(
             "launch_orders_nonempty",
@@ -252,6 +266,8 @@ def _summary(
                 "rejected_orders": int(stage_row["rejected_orders"]),
                 "acceptance_rate": float(stage_row["acceptance_rate"]),
                 "total_notional": float(stage_row.get("total_notional", np.nan)),
+                "quote_risk_review_required": any(checks["check"] == "surface_quote_risk_review"),
+                "quote_risk_review_passed": _to_bool(stage_row.get("quote_risk_review_passed", False)),
                 "failed_checks": failed,
                 "recommendation": "paper_or_shadow_launch" if ready else "do_not_launch",
             }
@@ -278,6 +294,8 @@ def _launch_config(
             "rejected_orders": int(row["rejected_orders"]),
             "acceptance_rate": float(row["acceptance_rate"]),
             "total_notional": _jsonable(row["total_notional"]),
+            "quote_risk_review_required": _jsonable(row.get("quote_risk_review_required", False)),
+            "quote_risk_review_passed": _jsonable(row.get("quote_risk_review_passed", False)),
         },
         "thresholds": asdict(thresholds),
         "recommendation": str(row["recommendation"]),
@@ -311,6 +329,12 @@ def _validate_thresholds(thresholds: LaunchThresholds) -> None:
         raise ValueError("max_total_notional must be positive")
     if thresholds.max_order_notional is not None and thresholds.max_order_notional <= 0:
         raise ValueError("max_order_notional must be positive")
+
+
+def _surface_quote_orders(staged_orders: pd.DataFrame) -> bool:
+    if "source" not in staged_orders.columns:
+        return False
+    return bool(staged_orders["source"].astype(str).str.lower().eq("surface_quotes").any())
 
 
 def _threshold_check(name: str, value: float | int, operator: str, threshold: float | int) -> dict[str, Any]:

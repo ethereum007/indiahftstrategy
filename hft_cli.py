@@ -892,6 +892,7 @@ def main(argv: list[str] | None = None) -> int:
     launch.add_argument("--min-acceptance-rate", type=float, default=1.0)
     launch.add_argument("--allow-unready-promotion", action="store_true")
     launch.add_argument("--allow-rejections", action="store_true")
+    launch.add_argument("--require-quote-risk-review", action="store_true")
     launch.add_argument("--max-total-notional", type=float, default=None)
     launch.add_argument("--max-order-notional", type=float, default=None)
     launch.add_argument("--fail-on-breach", action="store_true")
@@ -2278,6 +2279,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_acceptance_rate=args.min_acceptance_rate,
                 require_promotion_ready=not args.allow_unready_promotion,
                 require_no_rejections=not args.allow_rejections,
+                require_quote_risk_review=args.require_quote_risk_review,
                 max_total_notional=args.max_total_notional,
                 max_order_notional=args.max_order_notional,
             ),

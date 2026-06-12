@@ -1084,6 +1084,7 @@ python -m hft_cli launch-bundle `
   --out runs\launch\leadlag_shadow `
   --mode shadow `
   --adapter arrow_money `
+  --require-quote-risk-review `
   --min-accepted-orders 10 `
   --min-acceptance-rate 1 `
   --max-total-notional 1000000 `
@@ -1099,6 +1100,10 @@ launch_summary.csv
 launch_config.json
 manifest.json
 ```
+
+For surface market-making orders staged from `surface_quotes`,
+`--require-quote-risk-review` rejects launch bundles unless staging carries a
+passed quote-risk review from `review-quotes`.
 
 ## Launch Order Export
 

@@ -167,6 +167,8 @@
 - Paper/shadow launch bundle that joins a promoted scenario with staged
   broker-neutral orders, checks promotion and pre-trade cleanliness, and emits
   launch orders/configs for later Arrow.money/iRage-specific mapping.
+- Launch bundles can require passed quote-risk review evidence for staged
+  surface market-making orders before paper/shadow packaging.
 - Launch-order export writer that validates launch bundles and emits
   adapter-labelled broker/paper order files, schema metadata, checks, and
   manifests, with Arrow.money/iRage marked as normalized placeholders until
@@ -274,7 +276,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 342 tests.
+Current passing suite: 345 tests.
 
 ## Next Build Targets
 

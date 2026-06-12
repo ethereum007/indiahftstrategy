@@ -31,24 +31,30 @@ def candidate_config(ready=True):
     }
 
 
-def staged_summary(rejected_orders=0):
-    return pd.DataFrame(
-        [
+def staged_summary(rejected_orders=0, *, quote_risk_review_passed=None):
+    row = {
+        "total_orders": 2 + rejected_orders,
+        "accepted_orders": 2,
+        "rejected_orders": rejected_orders,
+        "acceptance_rate": 2 / (2 + rejected_orders),
+        "buy_orders": 1,
+        "sell_orders": 1,
+        "accepted_notional": 1500.0,
+        "rejected_notional": 100.0 if rejected_orders else 0.0,
+        "total_notional": 1600.0 if rejected_orders else 1500.0,
+        "max_order_notional": 800.0,
+        "all_passed": rejected_orders == 0,
+    }
+    if quote_risk_review_passed is not None:
+        row.update(
             {
-                "total_orders": 2 + rejected_orders,
-                "accepted_orders": 2,
-                "rejected_orders": rejected_orders,
-                "acceptance_rate": 2 / (2 + rejected_orders),
-                "buy_orders": 1,
-                "sell_orders": 1,
-                "accepted_notional": 1500.0,
-                "rejected_notional": 100.0 if rejected_orders else 0.0,
-                "total_notional": 1600.0 if rejected_orders else 1500.0,
-                "max_order_notional": 800.0,
-                "all_passed": rejected_orders == 0,
+                "quote_risk_review_required": True,
+                "quote_risk_review_provided": True,
+                "quote_risk_review_passed": quote_risk_review_passed,
+                "quote_risk_review_reason": "accepted" if quote_risk_review_passed else "quote_risk_review_not_passed",
             }
-        ]
-    )
+        )
+    return pd.DataFrame([row])
 
 
 def staged_orders():
@@ -103,7 +109,7 @@ def staged_rejections():
     )
 
 
-def write_inputs(tmp_path, *, promotion_ready=True, rejected_orders=0):
+def write_inputs(tmp_path, *, promotion_ready=True, rejected_orders=0, quote_risk_review_passed=None):
     promotion_dir = tmp_path / "promotion"
     staged_dir = tmp_path / "staged"
     promotion_dir.mkdir()
@@ -113,7 +119,10 @@ def write_inputs(tmp_path, *, promotion_ready=True, rejected_orders=0):
         json.dumps(candidate_config(promotion_ready), indent=2) + "\n",
         encoding="utf-8",
     )
-    staged_summary(rejected_orders).to_csv(staged_dir / "staged_order_summary.csv", index=False)
+    staged_summary(rejected_orders, quote_risk_review_passed=quote_risk_review_passed).to_csv(
+        staged_dir / "staged_order_summary.csv",
+        index=False,
+    )
     staged_orders().to_csv(staged_dir / "staged_orders.csv", index=False)
     rejections = staged_rejections() if rejected_orders else pd.DataFrame()
     rejections.to_csv(staged_dir / "staged_order_rejections.csv", index=False)
@@ -162,6 +171,42 @@ def test_write_launch_bundle_outputs_orders_config_and_manifest(tmp_path):
     assert (out_dir / "manifest.json").exists()
 
 
+def test_launch_bundle_can_require_quote_risk_review_for_surface_orders():
+    report = evaluate_launch_bundle(
+        promotion_summary=promotion_summary(True),
+        candidate_config=candidate_config(True),
+        staged_summary=staged_summary(0, quote_risk_review_passed=True),
+        staged_orders=staged_orders(),
+        staged_rejections=pd.DataFrame(),
+        thresholds=LaunchThresholds(require_quote_risk_review=True),
+        mode="paper",
+        adapter="normalized",
+    )
+
+    checks = report.checks.set_index("check")
+    assert report.ready
+    assert bool(checks.loc["surface_quote_risk_review", "passed"])
+    assert bool(report.summary.loc[0, "quote_risk_review_required"])
+    assert bool(report.summary.loc[0, "quote_risk_review_passed"])
+
+
+def test_launch_bundle_fails_surface_orders_without_quote_risk_review():
+    report = evaluate_launch_bundle(
+        promotion_summary=promotion_summary(True),
+        candidate_config=candidate_config(True),
+        staged_summary=staged_summary(0),
+        staged_orders=staged_orders(),
+        staged_rejections=pd.DataFrame(),
+        thresholds=LaunchThresholds(require_quote_risk_review=True),
+        mode="shadow",
+        adapter="arrow_money",
+    )
+
+    failed = report.checks.loc[~report.checks["passed"]]
+    assert not report.ready
+    assert set(failed["check"]) == {"surface_quote_risk_review"}
+
+
 def test_unified_cli_launch_bundle_fails_closed_on_rejections(tmp_path):
     promotion_dir, staged_dir = write_inputs(tmp_path, rejected_orders=1)
     out_dir = tmp_path / "cli_launch"
@@ -182,3 +227,26 @@ def test_unified_cli_launch_bundle_fails_closed_on_rejections(tmp_path):
     assert code == 2
     assert (out_dir / "launch_checks.csv").exists()
     assert (out_dir / "launch_config.json").exists()
+
+
+def test_unified_cli_launch_bundle_requires_quote_risk_review(tmp_path):
+    promotion_dir, staged_dir = write_inputs(tmp_path)
+    out_dir = tmp_path / "cli_launch_quote_review"
+
+    code = main(
+        [
+            "launch-bundle",
+            "--promotion",
+            str(promotion_dir),
+            "--staged-orders",
+            str(staged_dir),
+            "--out",
+            str(out_dir),
+            "--require-quote-risk-review",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "launch_checks.csv")
+    assert code == 2
+    assert "surface_quote_risk_review" in set(checks.loc[~checks["passed"], "check"])
