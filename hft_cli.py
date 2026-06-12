@@ -423,6 +423,8 @@ def main(argv: list[str] | None = None) -> int:
     settlement_walkforward.add_argument("--index-ticks", nargs="+", required=True)
     settlement_walkforward.add_argument("--chains", nargs="+", required=True)
     settlement_walkforward.add_argument("--out", required=True)
+    settlement_walkforward.add_argument("--data-readiness-comparison", default=None)
+    settlement_walkforward.add_argument("--require-data-readiness-comparison", action="store_true")
     settlement_walkforward.add_argument("--label", action="append", dest="labels")
     settlement_walkforward.add_argument("--window-start-ns", nargs="+", type=int, required=True)
     settlement_walkforward.add_argument("--window-end-ns", nargs="+", type=int, required=True)
@@ -1632,6 +1634,8 @@ def main(argv: list[str] | None = None) -> int:
             args.index_ticks,
             args.chains,
             output_dir=args.out,
+            data_readiness_comparison_dir=args.data_readiness_comparison,
+            require_data_readiness_comparison=args.require_data_readiness_comparison,
             labels=args.labels,
             window_start_ns=args.window_start_ns,
             window_end_ns=args.window_end_ns,

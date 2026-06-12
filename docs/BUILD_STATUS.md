@@ -71,9 +71,10 @@
 - Settlement convergence audit command that compares expiring option touch
   prices with projected settlement intrinsic value, applies explicit
   edge/cost gates, and emits candidate configs for later replay work.
-- Settlement convergence walk-forward runner that repeats the expiry-window
-  audit across folds, requires stable pass rate and edge, and emits aggregate
-  evidence plus a replay-candidate config.
+- Settlement convergence walk-forward runner that can require accepted
+  multi-day vendor data-readiness comparison evidence before repeating the
+  expiry-window audit across folds, then requires stable pass rate and edge and
+  emits aggregate evidence plus a replay-candidate config.
 - Settlement candidate promotion bridge that converts passed settlement
   walk-forward evidence into launch-compatible promotion reports and
   candidate configs for paper/shadow staging.

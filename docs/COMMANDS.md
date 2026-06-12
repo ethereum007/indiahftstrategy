@@ -625,6 +625,8 @@ python -m hft_cli walkforward-settlement-convergence `
   --label nifty_tue_1 `
   --label nifty_tue_2 `
   --out runs\settlement_convergence_walkforward `
+  --data-readiness-comparison runs\vendor_data\batch\comparison `
+  --require-data-readiness-comparison `
   --window-start-ns 1786536600000000000 1787141400000000000 `
   --window-end-ns 1786538400000000000 1787143200000000000 `
   --min-known-fraction 0.50 `
@@ -646,6 +648,11 @@ candidate_config.json
 manifest.json
 runs\<fold>\...
 ```
+
+When `--require-data-readiness-comparison` is set, the run first checks the
+multi-day vendor data-readiness comparison. If the comparison is missing or not
+accepted, the walk-forward fails closed, writes the normal summary/check/config
+artifacts, and skips fold audits.
 
 Promote a passed settlement walk-forward candidate into the same
 paper/shadow-ready promotion shape used by launch bundles:
