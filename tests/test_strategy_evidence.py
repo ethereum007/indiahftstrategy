@@ -68,6 +68,38 @@ def test_strategy_evidence_fails_missing_failed_and_dirty_artifacts():
     assert "clean_git_artifacts" in failed
 
 
+def test_strategy_evidence_can_require_proof_refresh_gate():
+    catalog = pd.concat(
+        [
+            catalog_rows(),
+            pd.DataFrame(
+                [
+                    {
+                        "run_dir": "runs/proof_refresh",
+                        "run_type": "proof_refresh_gate",
+                        "generated_at_utc": "2026-06-10T09:45:00Z",
+                        "git_commit": "abc123",
+                        "git_dirty": False,
+                        "summary_status": True,
+                        "summary_file": "proof_refresh_summary.csv",
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=("proof_report", "stress_report", "promotion_report", "proof_refresh_gate")
+        ),
+    )
+
+    assert review.ready
+    assert "proof_refresh_gate" in set(review.evidence["required_run_type"])
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"

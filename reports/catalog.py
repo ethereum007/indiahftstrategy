@@ -15,6 +15,7 @@ SUMMARY_FILES = [
     "parity_edge_summary.csv",
     "leadlag_edge_summary.csv",
     "proof_summary.csv",
+    "proof_refresh_summary.csv",
     "stress_summary.csv",
     "selection_summary.csv",
     "promotion_summary.csv",

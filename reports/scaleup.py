@@ -31,6 +31,7 @@ class ScaleUpThresholds:
     max_abs_net_vega: float | None = None
     stop_loss: float | None = None
     allowed_adapters: tuple[str, ...] = ()
+    require_proof_refresh: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ def evaluate_scaleup_plan(
     shadow_comparison_summary: pd.DataFrame,
     launch_summary: pd.DataFrame,
     order_exposure_summary: pd.DataFrame | None = None,
+    proof_refresh_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
     thresholds = thresholds or ScaleUpThresholds()
@@ -62,12 +64,14 @@ def evaluate_scaleup_plan(
     _require(shadow_comparison_summary, ["accepted", "session_count", "acceptance_rate"], "shadow_comparison_summary")
     _require(launch_summary, ["ready", "mode", "adapter", "scenario_key", "accepted_orders"], "launch_summary")
     exposure = order_exposure_summary if order_exposure_summary is not None else pd.DataFrame()
+    proof_refresh = proof_refresh_summary if proof_refresh_summary is not None else pd.DataFrame()
 
     rows = {
         "evidence": evidence_summary.iloc[0],
         "shadow": shadow_comparison_summary.iloc[0],
         "launch": launch_summary.iloc[0],
         "exposure": exposure.iloc[0] if not exposure.empty else pd.Series(dtype=object),
+        "proof_refresh": proof_refresh.iloc[0] if not proof_refresh.empty else pd.Series(dtype=object),
     }
     checks = _checks(rows, thresholds)
     ready = bool(checks["passed"].all()) if not checks.empty else False
@@ -84,18 +88,23 @@ def write_scaleup_plan(
     launch_dir: str | Path,
     output_dir: str | Path,
     order_exposure_dir: str | Path | None = None,
+    proof_refresh_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
     evidence = _read_summary(evidence_dir, "strategy_evidence_summary.csv")
     shadow = _read_summary(shadow_comparison_dir, "shadow_session_comparison_summary.csv")
     launch = _read_summary(launch_dir, "launch_summary.csv")
     exposure = _read_optional_summary(order_exposure_dir, "order_exposure_summary.csv") if order_exposure_dir else None
+    proof_refresh = (
+        _read_optional_summary(proof_refresh_dir, "proof_refresh_summary.csv") if proof_refresh_dir else None
+    )
     thresholds = thresholds or ScaleUpThresholds()
     report = evaluate_scaleup_plan(
         evidence_summary=evidence,
         shadow_comparison_summary=shadow,
         launch_summary=launch,
         order_exposure_summary=exposure,
+        proof_refresh_summary=proof_refresh,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -111,6 +120,8 @@ def write_scaleup_plan(
     }
     if order_exposure_dir is not None:
         inputs["order_exposure"] = Path(order_exposure_dir)
+    if proof_refresh_dir is not None:
+        inputs["proof_refresh"] = Path(proof_refresh_dir)
     write_experiment_manifest(
         out,
         run_type="scaleup_plan",
@@ -125,6 +136,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     shadow = rows["shadow"]
     launch = rows["launch"]
     exposure = rows["exposure"]
+    proof_refresh = rows["proof_refresh"]
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
     checks = [
@@ -167,12 +179,36 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
             checks.append(_threshold_check("abs_net_delta", abs(_number(exposure, "net_delta")), "<=", thresholds.max_abs_net_delta))
         if thresholds.max_abs_net_vega is not None:
             checks.append(_threshold_check("abs_net_vega", abs(_number(exposure, "net_vega")), "<=", thresholds.max_abs_net_vega))
+    if thresholds.require_proof_refresh:
+        checks.append(
+            _check(
+                "proof_refresh_available",
+                not proof_refresh.empty,
+                "is",
+                True,
+                not proof_refresh.empty,
+                "proof refresh gate is required but no proof refresh summary was supplied",
+            )
+        )
+    if not proof_refresh.empty:
+        proof_refresh_ready = _to_bool(proof_refresh.get("ready", False))
+        checks.append(
+            _check(
+                "proof_refresh_ready",
+                proof_refresh_ready,
+                "is",
+                True,
+                proof_refresh_ready,
+                "proof refresh gate is not ready",
+            )
+        )
     return pd.DataFrame(checks)
 
 
 def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool) -> pd.DataFrame:
     launch = rows["launch"]
     shadow = rows["shadow"]
+    proof_refresh = rows["proof_refresh"]
     accepted_orders = int(_number(launch, "accepted_orders", fallback=0.0))
     launch_notional = _number(launch, "total_notional", fallback=0.0)
     scaled_orders = int(np.floor(accepted_orders * thresholds.max_scale_multiplier))
@@ -199,6 +235,15 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "observed_median_fill_rate": _number(shadow, "median_order_fill_rate"),
                 "observed_worst_fill_rate": _number(shadow, "worst_order_fill_rate"),
                 "observed_worst_adverse_slippage": _number(shadow, "worst_adverse_slippage"),
+                "proof_refresh_provided": not proof_refresh.empty,
+                "proof_refresh_ready": _to_bool(proof_refresh.get("ready", False)) if not proof_refresh.empty else False,
+                "proof_source": str(proof_refresh.get("proof_source", "")) if not proof_refresh.empty else "",
+                "fresh_proof_required": _to_bool(proof_refresh.get("fresh_proof_required", False))
+                if not proof_refresh.empty
+                else False,
+                "proof_refresh_recommendation": str(proof_refresh.get("recommendation", ""))
+                if not proof_refresh.empty
+                else "",
             }
         ]
     )
@@ -216,6 +261,8 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "adapter": str(plan_row["adapter"]),
                 "max_orders_per_session": int(plan_row["max_orders_per_session"]),
                 "max_notional_per_session": float(plan_row["max_notional_per_session"]),
+                "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
+                "proof_source": str(plan_row["proof_source"]),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -242,6 +289,14 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "max_total_mismatched_orders": thresholds.max_total_mismatched_orders,
             "max_total_overfilled_orders": thresholds.max_total_overfilled_orders,
             "max_worst_adverse_slippage": _jsonable(thresholds.max_worst_adverse_slippage),
+        },
+        "proof_freshness": {
+            "required": bool(thresholds.require_proof_refresh),
+            "provided": _to_bool(plan_row["proof_refresh_provided"]),
+            "ready": _to_bool(plan_row["proof_refresh_ready"]),
+            "proof_source": str(plan_row["proof_source"]),
+            "fresh_proof_required": _to_bool(plan_row["fresh_proof_required"]),
+            "recommendation": str(plan_row["proof_refresh_recommendation"]),
         },
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
         "thresholds": asdict(thresholds),

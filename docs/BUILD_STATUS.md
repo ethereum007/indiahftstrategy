@@ -52,6 +52,8 @@
 - Calibration-aware proof refresh gate that consumes fill-model drift, baseline
   proof, latest proof, and calibrated replay evidence to decide whether proof
   can be reused or must be rerun before promotion/scale-up.
+- Experiment catalog, strategy evidence review, and controlled scale-up planning
+  can now require proof-refresh evidence before size increases.
 - Broker/vendor adapter scaffolding for normalized, Arrow.money-style, and
   iRage-style CSV exports.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
@@ -162,7 +164,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 193 tests.
+Current passing suite: 197 tests.
 
 ## Next Build Targets
 

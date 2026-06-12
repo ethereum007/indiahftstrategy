@@ -69,6 +69,7 @@ python -m hft_cli review-strategy-evidence `
   --catalog runs\catalog\latest `
   --out runs\evidence\leadlag_shadow `
   --required-run-type proof_report `
+  --required-run-type proof_refresh_gate `
   --required-run-type stress_report `
   --required-run-type promotion_report `
   --required-run-type shadow_session_comparison `
@@ -672,6 +673,7 @@ python -m hft_cli plan-scaleup `
   --shadow-comparison runs\sessions\leadlag_shadow_comparison `
   --launch runs\launch\leadlag_shadow `
   --order-exposure runs\risk\leadlag_shadow_exposure `
+  --proof-refresh runs\proof_refresh\leadlag_shadow_latest `
   --out runs\scaleup\leadlag_shadow `
   --target-mode shadow `
   --allowed-adapter arrow_money `
@@ -683,6 +685,7 @@ python -m hft_cli plan-scaleup `
   --max-orders-per-session 100 `
   --max-session-notional 100000 `
   --stop-loss 5000 `
+  --require-proof-refresh `
   --fail-on-breach
 ```
 

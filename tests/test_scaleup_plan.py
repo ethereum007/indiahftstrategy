@@ -72,6 +72,21 @@ def exposure_summary(passed=True):
     )
 
 
+def proof_refresh_summary(ready=True, proof_source="latest"):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "drift_passed": proof_source == "baseline",
+                "fresh_proof_required": proof_source != "baseline",
+                "proof_source": proof_source if ready else "none",
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "use_latest_calibrated_proof" if ready else "rerun_calibrated_proof_before_promotion",
+            }
+        ]
+    )
+
+
 def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_ready=True, exposure_passed=True):
     evidence = root / "evidence"
     shadow = root / "shadow"
@@ -114,6 +129,23 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert plan["max_notional_per_session"] == 2000.0
     assert report.summary.iloc[0]["recommendation"] == "scale_up_with_controls"
     assert report.config["kill_switches"]["max_worst_adverse_slippage"] == 0.05
+
+
+def test_scaleup_plan_accepts_required_ready_proof_refresh():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        proof_refresh_summary=proof_refresh_summary(True, proof_source="latest"),
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["proof_refresh_ready"]
+    assert report.summary.iloc[0]["proof_source"] == "latest"
+    assert report.config["proof_freshness"]["required"]
+    assert report.config["proof_freshness"]["ready"]
+    assert report.config["proof_freshness"]["proof_source"] == "latest"
 
 
 def test_scaleup_plan_fails_on_incomplete_evidence_and_adapter_gap():
@@ -184,3 +216,30 @@ def test_cli_scaleup_plan_can_fail_on_breach(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "failed_checks"]) == 1
+
+
+def test_cli_scaleup_plan_can_require_proof_refresh(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-proof-refresh",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "proof_refresh_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])

@@ -416,6 +416,7 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--launch", required=True)
     scaleup.add_argument("--out", required=True)
     scaleup.add_argument("--order-exposure", default=None)
+    scaleup.add_argument("--proof-refresh", default=None)
     scaleup.add_argument("--target-mode", default="shadow", choices=["paper", "shadow", "live_dryrun"])
     scaleup.add_argument("--max-scale-multiplier", type=float, default=1.0)
     scaleup.add_argument("--min-shadow-sessions", type=int, default=1)
@@ -434,6 +435,7 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--max-abs-net-vega", type=float, default=None)
     scaleup.add_argument("--stop-loss", type=float, default=None)
     scaleup.add_argument("--allowed-adapter", action="append", dest="allowed_adapters")
+    scaleup.add_argument("--require-proof-refresh", action="store_true")
     scaleup.add_argument("--fail-on-breach", action="store_true")
 
     runtime_telemetry = sub.add_parser("build-runtime-telemetry", help="Build a guard-ready runtime telemetry snapshot.")
@@ -1075,6 +1077,7 @@ def main(argv: list[str] | None = None) -> int:
             launch_dir=args.launch,
             output_dir=args.out,
             order_exposure_dir=args.order_exposure,
+            proof_refresh_dir=args.proof_refresh,
             thresholds=ScaleUpThresholds(
                 target_mode=args.target_mode,
                 max_scale_multiplier=args.max_scale_multiplier,
@@ -1094,6 +1097,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_abs_net_vega=args.max_abs_net_vega,
                 stop_loss=args.stop_loss,
                 allowed_adapters=tuple(args.allowed_adapters or ()),
+                require_proof_refresh=args.require_proof_refresh,
             ),
         )
         print(result.summary.to_string(index=False))

@@ -60,6 +60,29 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert report.summary.iloc[0]["run_count"] == 1
 
 
+def test_catalog_experiment_runs_recognizes_proof_refresh_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "proof_refresh",
+        run_type="proof_refresh_gate",
+        summary_name="proof_refresh_summary.csv",
+        summary_row={
+            "ready": True,
+            "proof_source": "latest",
+            "fresh_proof_required": True,
+            "failed_checks": 0,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["summary_file"] == "proof_refresh_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_proof_source"] == "latest"
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"
