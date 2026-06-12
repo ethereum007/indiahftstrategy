@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from adapters.broker import run_calibration_report
+from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.orders import OrderStagingLimits, write_staged_orders
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
@@ -202,6 +203,16 @@ def main(argv: list[str] | None = None) -> int:
     launch.add_argument("--max-total-notional", type=float, default=None)
     launch.add_argument("--max-order-notional", type=float, default=None)
     launch.add_argument("--fail-on-breach", action="store_true")
+
+    export_orders = sub.add_parser("export-launch-orders", help="Export launch orders for broker/paper adapters.")
+    export_orders.add_argument("--launch", required=True)
+    export_orders.add_argument("--out", required=True)
+    export_orders.add_argument("--adapter", default="normalized")
+    export_orders.add_argument("--route-tag", default=None)
+    export_orders.add_argument("--allow-unready-launch", action="store_true")
+    export_orders.add_argument("--allow-non-limit", action="store_true")
+    export_orders.add_argument("--max-orders", type=int, default=None)
+    export_orders.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -482,6 +493,20 @@ def main(argv: list[str] | None = None) -> int:
                 require_no_rejections=not args.allow_rejections,
                 max_total_notional=args.max_total_notional,
                 max_order_notional=args.max_order_notional,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "export-launch-orders":
+        result = write_order_export(
+            args.launch,
+            output_dir=args.out,
+            config=OrderExportConfig(
+                adapter=args.adapter,
+                route_tag=args.route_tag,
+                require_launch_ready=not args.allow_unready_launch,
+                require_limit_orders=not args.allow_non_limit,
+                max_orders=args.max_orders,
             ),
         )
         print(result.summary.to_string(index=False))

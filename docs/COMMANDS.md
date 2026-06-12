@@ -356,6 +356,32 @@ launch_config.json
 manifest.json
 ```
 
+## Launch Order Export
+
+Export a launch bundle into an adapter-labelled broker/paper order file. The
+`arrow_money` and `irage` exports currently use the normalized schema with an
+explicit placeholder status until real vendor upload samples are mapped:
+
+```powershell
+python -m hft_cli export-launch-orders `
+  --launch runs\launch\leadlag_shadow `
+  --out runs\exports\leadlag_shadow_arrow `
+  --adapter arrow_money `
+  --route-tag shadow_nse `
+  --max-orders 100 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+broker_orders.csv
+broker_order_checks.csv
+broker_order_summary.csv
+broker_order_schema.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell
