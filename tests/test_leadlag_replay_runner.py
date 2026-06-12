@@ -63,3 +63,4 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert (out_dir / "fills_by_regime.csv").exists()
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "markouts.csv").exists()
+    assert (out_dir / "manifest.json").exists()

@@ -89,6 +89,7 @@ def test_write_sweep_comparison_outputs_selection_artifacts(tmp_path):
     assert (out_dir / "scenario_runs.csv").exists()
     assert (out_dir / "scenario_scores.csv").exists()
     assert (out_dir / "selection_summary.csv").exists()
+    assert (out_dir / "manifest.json").exists()
 
 
 def test_unified_cli_compare_sweeps_can_fail_on_no_selection(tmp_path):

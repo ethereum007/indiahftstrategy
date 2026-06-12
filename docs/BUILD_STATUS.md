@@ -55,6 +55,9 @@
   scores.
 - Cross-sweep scenario comparison for ranking parameter settings across days
   or folds by pass rate, median PnL, drawdown, regime losses, and robust score.
+- Experiment manifests for replay, sweep, proof, and selection outputs,
+  capturing parameters, input hashes, artifact hashes, git state, and runtime
+  package versions.
 
 ## Test Gate
 
@@ -64,7 +67,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 77 tests.
+Current passing suite: 78 tests.
 
 ## Next Build Targets
 

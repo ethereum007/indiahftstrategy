@@ -115,6 +115,24 @@ def run_parity_replay(
             summary=summary,
             strategy_order_ids=strategy_order_ids,
             extra_frames={"signals": signals, "legging": legging},
+            manifest_run_type="parity_replay",
+            manifest_inputs={"chain": chain_path, "futures": futures_path},
+            manifest_parameters={
+                "timestamp_unit": timestamp_unit,
+                "timestamp_tz": timestamp_tz,
+                "filter_session": filter_session,
+                "lot_size": lot_size,
+                "option_tick": option_tick,
+                "future_tick": future_tick,
+                "asof_latency_ns": asof_latency_ns,
+                "depth_fraction": depth_fraction,
+                "feed_latency_us": feed_latency_us,
+                "order_latency_us": order_latency_us,
+                "max_signal_age_ns": max_signal_age_ns,
+                "max_qty": max_qty,
+                "max_position_lots": max_position_lots,
+                "signal_limit": signal_limit,
+            },
         )
     return ParityReplayResult(result, signals, summary, legging, out_dir)
 

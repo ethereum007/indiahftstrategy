@@ -93,6 +93,7 @@ def test_write_proof_report_outputs_metrics_checks_and_summary(tmp_path):
     assert (out_dir / "proof_metrics.csv").exists()
     assert (out_dir / "proof_checks.csv").exists()
     assert (out_dir / "proof_summary.csv").exists()
+    assert (out_dir / "manifest.json").exists()
 
 
 def test_proof_report_fails_with_actionable_reasons(tmp_path):

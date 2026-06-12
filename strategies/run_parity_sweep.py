@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_parity_replay import run_parity_replay
 
@@ -111,6 +112,28 @@ def run_parity_sweep(
     summary = _sweep_summary(runs)
     runs.to_csv(out / "sweep_runs.csv", index=False)
     summary.to_csv(out / "sweep_summary.csv", index=False)
+    write_experiment_manifest(
+        out,
+        run_type="parity_sweep",
+        inputs={"chain": chain_path, "futures": futures_path},
+        parameters={
+            "depth_fraction_values": depth_fraction_values,
+            "asof_latency_ns_values": asof_latency_ns_values,
+            "feed_latency_us_values": feed_latency_us_values,
+            "order_latency_us_values": order_latency_us_values,
+            "timestamp_unit": timestamp_unit,
+            "timestamp_tz": timestamp_tz,
+            "filter_session": filter_session,
+            "lot_size": lot_size,
+            "option_tick": option_tick,
+            "future_tick": future_tick,
+            "max_signal_age_ns": max_signal_age_ns,
+            "max_qty": max_qty,
+            "max_position_lots": max_position_lots,
+            "signal_limit": signal_limit,
+            "proof_thresholds": getattr(proof_thresholds, "__dict__", None),
+        },
+    )
     return ParitySweepResult(runs=runs, summary=summary, proof=proof, output_dir=out)
 
 

@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from engine.multi_engine import MultiBacktestResult
+from reports.manifest import write_experiment_manifest
 from reports.pnl import pnl_decomposition
 from reports.regime import equity_change_by_regime, fill_summary_by_regime
 from reports.spread import pair_round_trips, residual_inventory, spread_capture_summary
@@ -61,6 +62,9 @@ def write_replay_outputs(
     extra_frames: dict[str, pd.DataFrame] | None = None,
     include_regime: bool = True,
     strategy_order_ids: list[int] | None = None,
+    manifest_run_type: str | None = None,
+    manifest_parameters: dict | None = None,
+    manifest_inputs: dict | None = None,
 ) -> Path:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -81,4 +85,11 @@ def write_replay_outputs(
         equity_change_by_regime(result.equity).to_csv(out / "equity_by_regime.csv", index=False)
     for name, frame in (extra_frames or {}).items():
         frame.to_csv(out / f"{name}.csv", index=False)
+    if manifest_run_type is not None:
+        write_experiment_manifest(
+            out,
+            run_type=manifest_run_type,
+            parameters=manifest_parameters,
+            inputs=manifest_inputs,
+        )
     return out

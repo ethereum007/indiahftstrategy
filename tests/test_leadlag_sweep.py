@@ -66,8 +66,11 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert result.summary.iloc[0]["pass_rate"] == 0.5
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "sweep_summary.csv").exists()
+    assert (out_dir / "manifest.json").exists()
     assert (out_dir / "proof" / "proof_checks.csv").exists()
+    assert (out_dir / "proof" / "manifest.json").exists()
     assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "summary.csv").exists()
+    assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "manifest.json").exists()
 
 
 def test_unified_cli_sweep_leadlag_dispatches_and_can_fail_on_breach(tmp_path):

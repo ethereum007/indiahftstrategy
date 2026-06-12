@@ -66,8 +66,11 @@ def test_run_parity_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert result.runs["signal_count"].sum() == 1
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "sweep_summary.csv").exists()
+    assert (out_dir / "manifest.json").exists()
     assert (out_dir / "proof" / "proof_checks.csv").exists()
+    assert (out_dir / "proof" / "manifest.json").exists()
     assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "summary.csv").exists()
+    assert (out_dir / "runs" / "depth_0p25__asof_0ns__feed_0us__order_0us" / "manifest.json").exists()
 
 
 def test_unified_cli_sweep_parity_dispatches_and_can_fail_on_breach(tmp_path):

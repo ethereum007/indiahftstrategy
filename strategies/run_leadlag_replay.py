@@ -117,6 +117,25 @@ def run_leadlag_replay(
             summary=summary,
             strategy_order_ids=strategy_orders,
             extra_frames={"markouts": markouts},
+            manifest_run_type="leadlag_replay",
+            manifest_inputs={"leader": leader_path, "laggard": laggard_path},
+            manifest_parameters={
+                "timestamp_unit": timestamp_unit,
+                "timestamp_tz": timestamp_tz,
+                "filter_session": filter_session,
+                "lot_size": lot_size,
+                "leader_tick": leader_tick,
+                "laggard_tick": laggard_tick,
+                "delta": delta,
+                "trigger_ticks": trigger_ticks,
+                "qty": qty,
+                "flat_after_ns": flat_after_ns,
+                "cooloff_ns": cooloff_ns,
+                "feed_latency_us": feed_latency_us,
+                "order_latency_us": order_latency_us,
+                "max_position_lots": max_position_lots,
+                "markout_horizons_ns": markout_horizons_ns or [100_000_000, 1_000_000_000],
+            },
         )
     return LeadLagReplayResult(result, summary, markouts, out_dir)
 

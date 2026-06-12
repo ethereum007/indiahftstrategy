@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+from reports.manifest import write_experiment_manifest
 
 
 @dataclass(frozen=True)
@@ -84,6 +86,12 @@ def write_proof_report(
     report.metrics.to_csv(out / "proof_metrics.csv", index=False)
     report.checks.to_csv(out / "proof_checks.csv", index=False)
     report.summary.to_csv(out / "proof_summary.csv", index=False)
+    write_experiment_manifest(
+        out,
+        run_type="proof_report",
+        parameters={"thresholds": asdict(thresholds or ProofThresholds())},
+        inputs={"run_dirs": run_dirs},
+    )
     return ProofReport(report.metrics, report.checks, report.summary, out)
 
 

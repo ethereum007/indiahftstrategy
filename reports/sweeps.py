@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from reports.manifest import write_experiment_manifest
+
 
 KNOWN_NON_PARAM_COLUMNS = {
     "run",
@@ -112,6 +114,19 @@ def write_sweep_comparison(
     comparison.scenario_runs.to_csv(out / "scenario_runs.csv", index=False)
     comparison.scenario_scores.to_csv(out / "scenario_scores.csv", index=False)
     comparison.summary.to_csv(out / "selection_summary.csv", index=False)
+    write_experiment_manifest(
+        out,
+        run_type="sweep_comparison",
+        parameters={
+            "labels": labels,
+            "group_cols": group_cols,
+            "min_pass_rate": min_pass_rate,
+            "min_sweeps": min_sweeps,
+            "min_median_net_pnl": min_median_net_pnl,
+            "max_worst_drawdown": max_worst_drawdown,
+        },
+        inputs={"sweeps": sweep_paths},
+    )
     return SweepComparison(comparison.scenario_scores, comparison.scenario_runs, comparison.summary, out)
 
 

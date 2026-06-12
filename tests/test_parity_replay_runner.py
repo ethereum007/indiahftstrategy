@@ -63,3 +63,4 @@ def test_run_parity_replay_writes_outputs_and_executes_signal(tmp_path):
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "signals.csv").exists()
     assert (out_dir / "legging.csv").exists()
+    assert (out_dir / "manifest.json").exists()

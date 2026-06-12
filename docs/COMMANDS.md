@@ -38,6 +38,10 @@ client_order_id,instrument_id,ts_fill_ns,side,qty,price
 Timestamps are nanoseconds by default. Use `--no-filter-session` for synthetic
 fixtures outside regular NSE session hours.
 
+Replay, sweep, proof, and selection output folders include `manifest.json` with
+run parameters, input hashes, output artifact hashes, git state, and runtime
+package versions.
+
 ## Parity / Box Scan
 
 ```powershell

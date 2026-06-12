@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_leadlag_replay import run_leadlag_replay
 
@@ -106,6 +107,29 @@ def run_leadlag_sweep(
     summary = _sweep_summary(runs)
     runs.to_csv(out / "sweep_runs.csv", index=False)
     summary.to_csv(out / "sweep_summary.csv", index=False)
+    write_experiment_manifest(
+        out,
+        run_type="leadlag_sweep",
+        inputs={"leader": leader_path, "laggard": laggard_path},
+        parameters={
+            "trigger_ticks_values": trigger_ticks_values,
+            "feed_latency_us_values": feed_latency_us_values,
+            "order_latency_us_values": order_latency_us_values,
+            "timestamp_unit": timestamp_unit,
+            "timestamp_tz": timestamp_tz,
+            "filter_session": filter_session,
+            "lot_size": lot_size,
+            "leader_tick": leader_tick,
+            "laggard_tick": laggard_tick,
+            "delta": delta,
+            "qty": qty,
+            "flat_after_ns": flat_after_ns,
+            "cooloff_ns": cooloff_ns,
+            "max_position_lots": max_position_lots,
+            "markout_horizons_ns": markout_horizons_ns,
+            "proof_thresholds": getattr(proof_thresholds, "__dict__", None),
+        },
+    )
     return LeadLagSweepResult(runs=runs, summary=summary, proof=proof, output_dir=out)
 
 
