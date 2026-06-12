@@ -397,6 +397,11 @@ For US research, pass a market profile such as `--market us_equities_regular`
 or `--market us_options_regular` on edge, walk-forward, replay, sweep, or
 pipeline commands. Candidate configs preserve `market` and `tick_size`, so
 replay commands can inherit those settings from `--candidate-config`.
+For non-India replay costs, provide explicit generic assumptions with
+`--generic-buy-notional-rate`, `--generic-sell-notional-rate`,
+`--generic-per-unit-fee`, `--generic-per-contract-fee`, and
+`--generic-per-order-fee`; replay candidate configs preserve these
+`generic_costs` for later replay, sweep, walk-forward, and pipeline runs.
 
 ## Microprice Imbalance Replay
 

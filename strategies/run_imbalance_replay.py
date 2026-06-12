@@ -48,6 +48,11 @@ def run_imbalance_replay(
     cooloff_ns: int = 0,
     feed_latency_us: float = 0.0,
     order_latency_us: float = 0.0,
+    generic_buy_notional_rate: float = 0.0,
+    generic_sell_notional_rate: float = 0.0,
+    generic_per_unit_fee: float = 0.0,
+    generic_per_contract_fee: float = 0.0,
+    generic_per_order_fee: float = 0.0,
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
 ) -> ImbalanceReplayResult:
@@ -80,7 +85,15 @@ def run_imbalance_replay(
                 Instrument(instrument_id, kind, lot_size=lot_size, tick=tick_size),
                 venue,
                 ticks,
-                costs=_costs(kind, market=market),
+                costs=_costs(
+                    kind,
+                    market=market,
+                    generic_buy_notional_rate=generic_buy_notional_rate,
+                    generic_sell_notional_rate=generic_sell_notional_rate,
+                    generic_per_unit_fee=generic_per_unit_fee,
+                    generic_per_contract_fee=generic_per_contract_fee,
+                    generic_per_order_fee=generic_per_order_fee,
+                ),
                 max_position_lots=max_position_lots,
             )
         },
@@ -141,6 +154,13 @@ def run_imbalance_replay(
                 "cooloff_ns": cooloff_ns,
                 "feed_latency_us": feed_latency_us,
                 "order_latency_us": order_latency_us,
+                "generic_costs": {
+                    "buy_notional_rate": generic_buy_notional_rate,
+                    "sell_notional_rate": generic_sell_notional_rate,
+                    "per_unit_fee": generic_per_unit_fee,
+                    "per_contract_fee": generic_per_contract_fee,
+                    "per_order_fee": generic_per_order_fee,
+                },
                 "max_position_lots": max_position_lots,
                 "markout_horizons_ns": markout_horizons_ns or [100_000_000, 1_000_000_000],
             },
@@ -156,9 +176,24 @@ def _kind(value: str) -> Kind:
         raise ValueError("instrument_kind must be one of FUT, OPT, or EQ") from exc
 
 
-def _costs(kind: Kind, *, market: str):
+def _costs(
+    kind: Kind,
+    *,
+    market: str,
+    generic_buy_notional_rate: float,
+    generic_sell_notional_rate: float,
+    generic_per_unit_fee: float,
+    generic_per_contract_fee: float,
+    generic_per_order_fee: float,
+):
     if market != INDIA_NSE_INDEX_DERIVATIVES.name:
-        return GenericCostModel()
+        return GenericCostModel(
+            buy_notional_rate=generic_buy_notional_rate,
+            sell_notional_rate=generic_sell_notional_rate,
+            per_unit_fee=generic_per_unit_fee,
+            per_contract_fee=generic_per_contract_fee,
+            per_order_fee=generic_per_order_fee,
+        )
     if kind == Kind.FUT:
         return IndianCostModel.nse_index_futures()
     return IndianCostModel.nse_index_options()
@@ -190,6 +225,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cooloff-ns", type=int, default=0)
     parser.add_argument("--feed-latency-us", type=float, default=0.0)
     parser.add_argument("--order-latency-us", type=float, default=0.0)
+    parser.add_argument("--generic-buy-notional-rate", type=float, default=0.0)
+    parser.add_argument("--generic-sell-notional-rate", type=float, default=0.0)
+    parser.add_argument("--generic-per-unit-fee", type=float, default=0.0)
+    parser.add_argument("--generic-per-contract-fee", type=float, default=0.0)
+    parser.add_argument("--generic-per-order-fee", type=float, default=0.0)
     args = parser.parse_args(argv)
     replay = run_imbalance_replay(
         ticks_path=args.ticks,
@@ -212,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         cooloff_ns=args.cooloff_ns,
         feed_latency_us=args.feed_latency_us,
         order_latency_us=args.order_latency_us,
+        generic_buy_notional_rate=args.generic_buy_notional_rate,
+        generic_sell_notional_rate=args.generic_sell_notional_rate,
+        generic_per_unit_fee=args.generic_per_unit_fee,
+        generic_per_contract_fee=args.generic_per_contract_fee,
+        generic_per_order_fee=args.generic_per_order_fee,
     )
     print(replay.summary.to_string(index=False))
     return 0

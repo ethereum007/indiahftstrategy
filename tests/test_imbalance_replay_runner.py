@@ -67,6 +67,13 @@ def write_us_candidate(path):
                     "min_microprice_edge_ticks": 0.25,
                     "hold_ns": 1_000_000,
                     "markout_horizons_ns": [100_000],
+                    "generic_costs": {
+                        "buy_notional_rate": 0.0,
+                        "sell_notional_rate": 0.0,
+                        "per_unit_fee": 0.0,
+                        "per_contract_fee": 0.0,
+                        "per_order_fee": 0.01,
+                    },
                 },
             }
         )
@@ -218,6 +225,8 @@ def test_cli_imbalance_replay_inherits_us_market_and_tick_size_from_candidate(tm
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert code == 0
     assert int(summary.loc[0, "fills"]) == 2
+    assert float(summary.loc[0, "total_costs"]) == 0.02
     assert len(signals) == 2
     assert manifest["parameters"]["market"] == "us_equities_regular"
     assert manifest["parameters"]["tick_size"] == 0.01
+    assert manifest["parameters"]["generic_costs"]["per_order_fee"] == 0.01

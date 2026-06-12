@@ -69,6 +69,14 @@ from strategies.run_surface_mm_sweep import run_surface_mm_sweep
 from strategies.run_surface_quotes import run_surface_quote_generation
 
 
+def _add_generic_cost_args(parser: argparse.ArgumentParser, *, default: float | None = None) -> None:
+    parser.add_argument("--generic-buy-notional-rate", type=float, default=default)
+    parser.add_argument("--generic-sell-notional-rate", type=float, default=default)
+    parser.add_argument("--generic-per-unit-fee", type=float, default=default)
+    parser.add_argument("--generic-per-contract-fee", type=float, default=default)
+    parser.add_argument("--generic-per-order-fee", type=float, default=default)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hft", description="India HFT research command runner.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -252,6 +260,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay.add_argument("--candidate-config", default=None)
     imbalance_replay.add_argument("--fill-model", default=None)
     imbalance_replay.add_argument("--allow-unready-fill-model", action="store_true")
+    _add_generic_cost_args(imbalance_replay)
 
     imbalance_replay_walkforward = sub.add_parser("walkforward-imbalance-replay", help="Replay one imbalance candidate across tick folds and aggregate proof.")
     imbalance_replay_walkforward.add_argument("--ticks", nargs="+", required=True)
@@ -287,6 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay_walkforward.add_argument("--max-worst-drawdown", type=float, default=None)
     imbalance_replay_walkforward.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_replay_walkforward.add_argument("--fail-on-breach", action="store_true")
+    _add_generic_cost_args(imbalance_replay_walkforward)
 
     imbalance_promotion = sub.add_parser("promote-imbalance-candidate", help="Promote a proven imbalance replay walk-forward candidate for paper/shadow launch.")
     imbalance_promotion.add_argument("--walkforward", required=True)
@@ -350,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_pipeline.add_argument("--max-worst-drawdown", type=float, default=None)
     imbalance_pipeline.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_pipeline.add_argument("--fail-on-breach", action="store_true")
+    _add_generic_cost_args(imbalance_pipeline)
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -518,6 +529,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_sweep.add_argument("--max-otr", type=float, default=None)
     imbalance_sweep.add_argument("--min-markout-mean", type=float, default=None)
     imbalance_sweep.add_argument("--fail-on-breach", action="store_true")
+    _add_generic_cost_args(imbalance_sweep)
 
     parity_sweep = sub.add_parser("sweep-parity", help="Run parity replay robustness sweep.")
     parity_sweep.add_argument("--chain", required=True)
@@ -1105,6 +1117,7 @@ def main(argv: list[str] | None = None) -> int:
             cooloff_ns=args.cooloff_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
+            **_generic_cost_kwargs(args, candidate_defaults),
             markout_horizons_ns=markout_horizons_ns,
         )
         print(result.summary.to_string(index=False))
@@ -1131,6 +1144,7 @@ def main(argv: list[str] | None = None) -> int:
             cooloff_ns=args.cooloff_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=args.order_latency_us,
+            **_generic_cost_override_kwargs(args),
             markout_horizons_ns=args.markout_horizons_ns,
             proof_thresholds=ProofThresholds(
                 min_net_pnl=args.min_net_pnl,
@@ -1193,6 +1207,7 @@ def main(argv: list[str] | None = None) -> int:
             cooloff_ns=args.cooloff_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=args.order_latency_us,
+            **_generic_cost_override_kwargs(args),
             sweep_thresholds=ImbalanceEdgeSweepThresholds(
                 min_passed_configs=args.min_passed_configs,
                 min_best_usable_signals=args.min_best_usable_signals,
@@ -1458,6 +1473,7 @@ def main(argv: list[str] | None = None) -> int:
             max_spread_ticks=args.max_spread_ticks,
             min_depth=args.min_depth,
             cooloff_ns=args.cooloff_ns,
+            **_generic_cost_kwargs(args, candidate_defaults),
             markout_horizons_ns=markout_horizons_ns,
             proof_thresholds=ProofThresholds(
                 min_net_pnl=args.min_net_pnl,
@@ -1947,6 +1963,43 @@ def _coalesce_list(cli_values: list | None, candidate_value: object, name: str) 
     if candidate_value is not None:
         return [candidate_value]
     raise ValueError(f"{name} is required unless --candidate-config supplies it")
+
+
+def _generic_cost_override_kwargs(args: argparse.Namespace) -> dict:
+    return {
+        "generic_buy_notional_rate": args.generic_buy_notional_rate,
+        "generic_sell_notional_rate": args.generic_sell_notional_rate,
+        "generic_per_unit_fee": args.generic_per_unit_fee,
+        "generic_per_contract_fee": args.generic_per_contract_fee,
+        "generic_per_order_fee": args.generic_per_order_fee,
+    }
+
+
+def _generic_cost_kwargs(args: argparse.Namespace, candidate_defaults: dict | None = None) -> dict:
+    defaults = {}
+    if candidate_defaults is not None:
+        maybe_defaults = candidate_defaults.get("generic_costs", {})
+        if isinstance(maybe_defaults, dict):
+            defaults = maybe_defaults
+    return {
+        "generic_buy_notional_rate": _coalesce_number(
+            args.generic_buy_notional_rate,
+            defaults.get("buy_notional_rate"),
+            0.0,
+        ),
+        "generic_sell_notional_rate": _coalesce_number(
+            args.generic_sell_notional_rate,
+            defaults.get("sell_notional_rate"),
+            0.0,
+        ),
+        "generic_per_unit_fee": _coalesce_number(args.generic_per_unit_fee, defaults.get("per_unit_fee"), 0.0),
+        "generic_per_contract_fee": _coalesce_number(
+            args.generic_per_contract_fee,
+            defaults.get("per_contract_fee"),
+            0.0,
+        ),
+        "generic_per_order_fee": _coalesce_number(args.generic_per_order_fee, defaults.get("per_order_fee"), 0.0),
+    }
 
 
 def _truthy(value: object) -> bool:

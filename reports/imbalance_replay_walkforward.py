@@ -67,6 +67,11 @@ def write_imbalance_replay_walkforward(
     cooloff_ns: int = 0,
     feed_latency_us: float = 0.0,
     order_latency_us: float = 0.0,
+    generic_buy_notional_rate: float | None = None,
+    generic_sell_notional_rate: float | None = None,
+    generic_per_unit_fee: float | None = None,
+    generic_per_contract_fee: float | None = None,
+    generic_per_order_fee: float | None = None,
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
     proof_thresholds: ProofThresholds | None = None,
@@ -81,6 +86,11 @@ def write_imbalance_replay_walkforward(
     replay_defaults = candidate.get("replay_defaults", {}) if candidate else {}
     if not isinstance(replay_defaults, dict):
         raise ValueError("candidate config replay_defaults must be an object")
+    generic_defaults = replay_defaults.get("generic_costs", {})
+    if generic_defaults is None:
+        generic_defaults = {}
+    if not isinstance(generic_defaults, dict):
+        raise ValueError("candidate config replay_defaults.generic_costs must be an object")
 
     replay_params = {
         "market": str(_coalesce(market, replay_defaults.get("market"), INDIA_NSE_INDEX_DERIVATIVES.name)),
@@ -95,6 +105,13 @@ def write_imbalance_replay_walkforward(
             replay_defaults.get("markout_horizons_ns"),
             [100_000_000, 1_000_000_000],
         ),
+        "generic_costs": {
+            "buy_notional_rate": float(_coalesce(generic_buy_notional_rate, generic_defaults.get("buy_notional_rate"), 0.0)),
+            "sell_notional_rate": float(_coalesce(generic_sell_notional_rate, generic_defaults.get("sell_notional_rate"), 0.0)),
+            "per_unit_fee": float(_coalesce(generic_per_unit_fee, generic_defaults.get("per_unit_fee"), 0.0)),
+            "per_contract_fee": float(_coalesce(generic_per_contract_fee, generic_defaults.get("per_contract_fee"), 0.0)),
+            "per_order_fee": float(_coalesce(generic_per_order_fee, generic_defaults.get("per_order_fee"), 0.0)),
+        },
     }
 
     out = Path(output_dir)
@@ -127,6 +144,11 @@ def write_imbalance_replay_walkforward(
             cooloff_ns=cooloff_ns,
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
+            generic_buy_notional_rate=replay_params["generic_costs"]["buy_notional_rate"],
+            generic_sell_notional_rate=replay_params["generic_costs"]["sell_notional_rate"],
+            generic_per_unit_fee=replay_params["generic_costs"]["per_unit_fee"],
+            generic_per_contract_fee=replay_params["generic_costs"]["per_contract_fee"],
+            generic_per_order_fee=replay_params["generic_costs"]["per_order_fee"],
             max_position_lots=max_position_lots,
             markout_horizons_ns=replay_params["markout_horizons_ns"],
         )
@@ -182,6 +204,7 @@ def write_imbalance_replay_walkforward(
             "cooloff_ns": cooloff_ns,
             "feed_latency_us": feed_latency_us,
             "order_latency_us": order_latency_us,
+            "generic_costs": replay_params["generic_costs"],
             "max_position_lots": max_position_lots,
             "markout_horizons_ns": replay_params["markout_horizons_ns"],
             "proof_thresholds": asdict(proof_thresholds),
@@ -351,6 +374,7 @@ def _candidate_config(
         "min_microprice_edge_ticks": _jsonable(replay_params["min_microprice_edge_ticks"]),
         "hold_ns": _jsonable(replay_params["hold_ns"]),
         "markout_horizons_ns": _jsonable(replay_params["markout_horizons_ns"]),
+        "generic_costs": _jsonable(replay_params["generic_costs"]),
     }
     config["replay_walkforward"] = {
         "fold_count": _jsonable(summary.get("fold_count")),

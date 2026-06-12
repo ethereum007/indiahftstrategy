@@ -43,6 +43,11 @@ def run_imbalance_sweep(
     max_spread_ticks: float = 2.0,
     min_depth: int = 1,
     cooloff_ns: int = 0,
+    generic_buy_notional_rate: float = 0.0,
+    generic_sell_notional_rate: float = 0.0,
+    generic_per_unit_fee: float = 0.0,
+    generic_per_contract_fee: float = 0.0,
+    generic_per_order_fee: float = 0.0,
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
     proof_thresholds: ProofThresholds | None = None,
@@ -95,6 +100,11 @@ def run_imbalance_sweep(
             cooloff_ns=cooloff_ns,
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
+            generic_buy_notional_rate=generic_buy_notional_rate,
+            generic_sell_notional_rate=generic_sell_notional_rate,
+            generic_per_unit_fee=generic_per_unit_fee,
+            generic_per_contract_fee=generic_per_contract_fee,
+            generic_per_order_fee=generic_per_order_fee,
             max_position_lots=max_position_lots,
             markout_horizons_ns=markout_horizons_ns,
         )
@@ -148,6 +158,13 @@ def run_imbalance_sweep(
             "max_spread_ticks": max_spread_ticks,
             "min_depth": min_depth,
             "cooloff_ns": cooloff_ns,
+            "generic_costs": {
+                "buy_notional_rate": generic_buy_notional_rate,
+                "sell_notional_rate": generic_sell_notional_rate,
+                "per_unit_fee": generic_per_unit_fee,
+                "per_contract_fee": generic_per_contract_fee,
+                "per_order_fee": generic_per_order_fee,
+            },
             "max_position_lots": max_position_lots,
             "markout_horizons_ns": markout_horizons_ns,
             "proof_thresholds": asdict(proof_thresholds) if proof_thresholds is not None else None,
@@ -266,6 +283,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--cooloff-ns", type=int, default=0)
     parser.add_argument("--feed-latency-us", nargs="+", default=["0"])
     parser.add_argument("--order-latency-us", nargs="+", default=["0"])
+    parser.add_argument("--generic-buy-notional-rate", type=float, default=0.0)
+    parser.add_argument("--generic-sell-notional-rate", type=float, default=0.0)
+    parser.add_argument("--generic-per-unit-fee", type=float, default=0.0)
+    parser.add_argument("--generic-per-contract-fee", type=float, default=0.0)
+    parser.add_argument("--generic-per-order-fee", type=float, default=0.0)
     parser.add_argument("--markout-horizons-ns", nargs="+", default=None)
     parser.add_argument("--min-net-pnl", type=float, default=0.0)
     parser.add_argument("--min-fills", type=int, default=1)
@@ -296,6 +318,11 @@ def main(argv: list[str] | None = None) -> int:
         max_spread_ticks=args.max_spread_ticks,
         min_depth=args.min_depth,
         cooloff_ns=args.cooloff_ns,
+        generic_buy_notional_rate=args.generic_buy_notional_rate,
+        generic_sell_notional_rate=args.generic_sell_notional_rate,
+        generic_per_unit_fee=args.generic_per_unit_fee,
+        generic_per_contract_fee=args.generic_per_contract_fee,
+        generic_per_order_fee=args.generic_per_order_fee,
         markout_horizons_ns=_int_list(args.markout_horizons_ns),
         proof_thresholds=ProofThresholds(
             min_net_pnl=args.min_net_pnl,

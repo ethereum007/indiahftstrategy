@@ -45,6 +45,9 @@
   explicit market profiles, preserve market/tick-size defaults in candidate
   configs, and can run US regular-hours equity/options research without
   applying India session filters or costs.
+- Non-India imbalance replay, replay sweeps, replay walk-forward, and pipeline
+  runs accept explicit generic fee assumptions, preserve them in manifests and
+  candidate configs, and apply them to US research PnL.
 - Imbalance replay walk-forward runner that takes a selected candidate, replays
   it across multiple tick folds, runs proof gates, and emits aggregate
   paper/shadow readiness evidence.
@@ -198,7 +201,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 231 tests.
+Current passing suite: 233 tests.
 
 ## Next Build Targets
 
