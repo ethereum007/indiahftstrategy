@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+from pathlib import Path
 
 from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
@@ -175,15 +177,17 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay.add_argument("--lot-size", type=int, default=75)
     imbalance_replay.add_argument("--tick-size", type=float, default=0.05)
     imbalance_replay.add_argument("--qty", type=int, default=75)
-    imbalance_replay.add_argument("--entry-imbalance", type=float, default=0.6)
+    imbalance_replay.add_argument("--entry-imbalance", type=float, default=None)
     imbalance_replay.add_argument("--exit-imbalance", type=float, default=0.15)
-    imbalance_replay.add_argument("--min-microprice-edge-ticks", type=float, default=0.25)
+    imbalance_replay.add_argument("--min-microprice-edge-ticks", type=float, default=None)
     imbalance_replay.add_argument("--max-spread-ticks", type=float, default=2.0)
     imbalance_replay.add_argument("--min-depth", type=int, default=1)
-    imbalance_replay.add_argument("--hold-ns", type=int, default=500_000_000)
+    imbalance_replay.add_argument("--hold-ns", type=int, default=None)
     imbalance_replay.add_argument("--cooloff-ns", type=int, default=0)
     imbalance_replay.add_argument("--feed-latency-us", type=float, default=0.0)
     imbalance_replay.add_argument("--order-latency-us", type=float, default=0.0)
+    imbalance_replay.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
+    imbalance_replay.add_argument("--candidate-config", default=None)
     imbalance_replay.add_argument("--fill-model", default=None)
     imbalance_replay.add_argument("--allow-unready-fill-model", action="store_true")
 
@@ -336,16 +340,17 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_sweep.add_argument("--lot-size", type=int, default=75)
     imbalance_sweep.add_argument("--tick-size", type=float, default=0.05)
     imbalance_sweep.add_argument("--qty", type=int, default=75)
-    imbalance_sweep.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
+    imbalance_sweep.add_argument("--entry-imbalance", nargs="+", default=None, type=float)
     imbalance_sweep.add_argument("--exit-imbalance", type=float, default=0.15)
-    imbalance_sweep.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
+    imbalance_sweep.add_argument("--min-microprice-edge-ticks", nargs="+", default=None, type=float)
     imbalance_sweep.add_argument("--max-spread-ticks", type=float, default=2.0)
     imbalance_sweep.add_argument("--min-depth", type=int, default=1)
-    imbalance_sweep.add_argument("--hold-ns", nargs="+", required=True, type=int)
+    imbalance_sweep.add_argument("--hold-ns", nargs="+", default=None, type=int)
     imbalance_sweep.add_argument("--cooloff-ns", type=int, default=0)
     imbalance_sweep.add_argument("--feed-latency-us", nargs="+", default=[0.0], type=float)
     imbalance_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
     imbalance_sweep.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
+    imbalance_sweep.add_argument("--candidate-config", default=None)
     imbalance_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
     imbalance_sweep.add_argument("--min-fills", type=int, default=1)
     imbalance_sweep.add_argument("--max-drawdown", type=float, default=None)
@@ -841,11 +846,20 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 0
     if args.command == "replay-imbalance":
+        candidate_defaults = _imbalance_candidate_replay_defaults(args.candidate_config)
+        entry_imbalance = _coalesce_number(args.entry_imbalance, candidate_defaults.get("entry_imbalance"), 0.6)
+        min_edge_ticks = _coalesce_number(
+            args.min_microprice_edge_ticks,
+            candidate_defaults.get("min_microprice_edge_ticks"),
+            0.25,
+        )
+        hold_ns = int(_coalesce_number(args.hold_ns, candidate_defaults.get("hold_ns"), 500_000_000))
+        markout_horizons_ns = args.markout_horizons_ns or candidate_defaults.get("markout_horizons_ns")
         replay_params = calibrated_replay_params_from_path(
             "imbalance",
             {
                 "order_latency_us": args.order_latency_us,
-                "min_microprice_edge_ticks": args.min_microprice_edge_ticks,
+                "min_microprice_edge_ticks": min_edge_ticks,
             },
             args.fill_model,
             require_ready=not args.allow_unready_fill_model,
@@ -859,15 +873,16 @@ def main(argv: list[str] | None = None) -> int:
             lot_size=args.lot_size,
             tick_size=args.tick_size,
             qty=args.qty,
-            entry_imbalance=args.entry_imbalance,
+            entry_imbalance=entry_imbalance,
             exit_imbalance=args.exit_imbalance,
             min_microprice_edge_ticks=replay_params["min_microprice_edge_ticks"],
             max_spread_ticks=args.max_spread_ticks,
             min_depth=args.min_depth,
-            hold_ns=args.hold_ns,
+            hold_ns=hold_ns,
             cooloff_ns=args.cooloff_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
+            markout_horizons_ns=markout_horizons_ns,
         )
         print(result.summary.to_string(index=False))
         return 0
@@ -1053,12 +1068,28 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.proof.passed else 0
     if args.command == "sweep-imbalance":
+        candidate_defaults = _imbalance_candidate_replay_defaults(args.candidate_config)
+        entry_imbalance_values = _coalesce_list(
+            args.entry_imbalance,
+            candidate_defaults.get("entry_imbalance"),
+            "entry_imbalance",
+        )
+        min_edge_values = _coalesce_list(
+            args.min_microprice_edge_ticks,
+            candidate_defaults.get("min_microprice_edge_ticks"),
+            "min_microprice_edge_ticks",
+        )
+        hold_ns_values = [
+            int(value)
+            for value in _coalesce_list(args.hold_ns, candidate_defaults.get("hold_ns"), "hold_ns")
+        ]
+        markout_horizons_ns = args.markout_horizons_ns or candidate_defaults.get("markout_horizons_ns")
         result = run_imbalance_sweep(
             ticks_path=args.ticks,
             output_dir=args.out,
-            entry_imbalance_values=args.entry_imbalance,
-            min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
-            hold_ns_values=args.hold_ns,
+            entry_imbalance_values=entry_imbalance_values,
+            min_microprice_edge_ticks_values=min_edge_values,
+            hold_ns_values=hold_ns_values,
             feed_latency_us_values=args.feed_latency_us,
             order_latency_us_values=args.order_latency_us,
             filter_session=not args.no_filter_session,
@@ -1071,7 +1102,7 @@ def main(argv: list[str] | None = None) -> int:
             max_spread_ticks=args.max_spread_ticks,
             min_depth=args.min_depth,
             cooloff_ns=args.cooloff_ns,
-            markout_horizons_ns=args.markout_horizons_ns,
+            markout_horizons_ns=markout_horizons_ns,
             proof_thresholds=ProofThresholds(
                 min_net_pnl=args.min_net_pnl,
                 min_fills=args.min_fills,
@@ -1517,6 +1548,55 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_reject and not result.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
+
+
+def _imbalance_candidate_replay_defaults(path: str | None) -> dict:
+    if path is None:
+        return {}
+    candidate = _candidate_config_path(path)
+    config = json.loads(candidate.read_text(encoding="utf-8"))
+    if str(config.get("strategy", "")).strip().lower() != "imbalance":
+        raise ValueError(f"candidate config is not for imbalance strategy: {candidate}")
+    if not _truthy(config.get("ready", False)):
+        failed = config.get("failed_checks", []) or []
+        raise ValueError(f"imbalance candidate config is not ready: {failed}")
+    defaults = config.get("replay_defaults", {}) or {}
+    if not isinstance(defaults, dict):
+        raise ValueError(f"candidate config replay_defaults must be an object: {candidate}")
+    return defaults
+
+
+def _candidate_config_path(path: str) -> Path:
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "candidate_config.json"
+    if not candidate.exists():
+        raise FileNotFoundError(f"candidate_config.json not found: {candidate}")
+    return candidate
+
+
+def _coalesce_number(*values: object) -> float:
+    for value in values:
+        if value is None:
+            continue
+        return float(value)
+    raise ValueError("at least one numeric value is required")
+
+
+def _coalesce_list(cli_values: list | None, candidate_value: object, name: str) -> list:
+    if cli_values:
+        return list(cli_values)
+    if isinstance(candidate_value, list) and candidate_value:
+        return list(candidate_value)
+    if candidate_value is not None:
+        return [candidate_value]
+    raise ValueError(f"{name} is required unless --candidate-config supplies it")
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "ready", "passed"}
+    return bool(value)
 
 
 if __name__ == "__main__":

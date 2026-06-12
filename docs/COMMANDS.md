@@ -320,6 +320,9 @@ candidate_config.json
 manifest.json
 ```
 
+The `candidate_config.json` can be passed directly into replay or replay-sweep
+commands with `--candidate-config`.
+
 ## Microprice Imbalance Replay
 
 Replay a single-instrument top-of-book imbalance strategy that enters when
@@ -330,10 +333,9 @@ or a hold timer:
 python -m hft_cli replay-imbalance `
   --ticks data\atm_option_ticks.csv `
   --out runs\imbalance_replay_2026_06_10 `
+  --candidate-config runs\imbalance_edge_sweep_2026_06_10 `
   --instrument-kind OPT `
-  --entry-imbalance 0.6 `
   --exit-imbalance 0.15 `
-  --min-microprice-edge-ticks 0.25 `
   --max-spread-ticks 2 `
   --qty 75 `
   --order-latency-us 250 `
@@ -353,9 +355,7 @@ hurdles, hold timers, and latency assumptions:
 python -m hft_cli sweep-imbalance `
   --ticks data\atm_option_ticks.csv `
   --out runs\imbalance_sweep_2026_06_10 `
-  --entry-imbalance 0.6 0.7 0.8 `
-  --min-microprice-edge-ticks 0.25 0.5 1.0 `
-  --hold-ns 100000000 500000000 `
+  --candidate-config runs\imbalance_edge_sweep_2026_06_10 `
   --feed-latency-us 0 50 `
   --order-latency-us 100 250 500 `
   --min-net-pnl 1 `

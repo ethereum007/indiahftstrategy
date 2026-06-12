@@ -26,6 +26,9 @@
 - Microprice/order-book imbalance edge sweep that ranks entry thresholds,
   microprice-edge hurdles, and forward horizons before expensive replay grids,
   emitting replay defaults in a candidate config.
+- Microprice imbalance replay and replay-sweep CLIs can consume the edge
+  sweep `candidate_config.json` directly, while explicit CLI parameters remain
+  available for overrides.
 - Replay strategies: parity taker and lead-lag taker.
 - Replay CLIs for parity taker and lead-lag taker, writing fills, equity,
   summary, signals/legging, and markout artifacts.
@@ -176,7 +179,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 210 tests.
+Current passing suite: 212 tests.
 
 ## Next Build Targets
 

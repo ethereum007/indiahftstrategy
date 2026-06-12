@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -20,6 +22,28 @@ def imbalance_ticks():
             {"ts": ts2, "bid": 100.30, "ask": 100.35, "bid_qty": 100, "ask_qty": 900},
             {"ts": ts3, "bid": 100.30, "ask": 100.35, "bid_qty": 100, "ask_qty": 900},
         ]
+    )
+
+
+def write_candidate(path):
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "candidate_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ready": True,
+                "strategy": "imbalance",
+                "failed_checks": [],
+                "replay_defaults": {
+                    "entry_imbalance": 0.6,
+                    "min_microprice_edge_ticks": 0.25,
+                    "hold_ns": 1_000_000,
+                    "markout_horizons_ns": [100_000],
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
 
@@ -87,3 +111,31 @@ def test_cli_imbalance_replay_writes_summary(tmp_path):
     summary = pd.read_csv(out_dir / "summary.csv")
     assert code == 0
     assert int(summary.loc[0, "fills"]) == 2
+
+
+def test_cli_imbalance_replay_uses_candidate_config(tmp_path):
+    ticks_path = tmp_path / "ticks.csv"
+    candidate_dir = tmp_path / "edge_sweep"
+    out_dir = tmp_path / "imbalance_replay"
+    imbalance_ticks().to_csv(ticks_path, index=False)
+    write_candidate(candidate_dir)
+
+    code = main(
+        [
+            "replay-imbalance",
+            "--ticks",
+            str(ticks_path),
+            "--out",
+            str(out_dir),
+            "--candidate-config",
+            str(candidate_dir),
+            "--cooloff-ns",
+            "1000000",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "summary.csv")
+    markouts = pd.read_csv(out_dir / "markouts.csv")
+    assert code == 0
+    assert int(summary.loc[0, "fills"]) == 2
+    assert set(markouts["horizon_ns"]) == {100_000}
