@@ -67,6 +67,9 @@
   triple-barrier labels.
 - Purged walk-forward validation utility for overlapping labels.
 - Expiry settlement running-average and convergence helpers.
+- Settlement convergence audit command that compares expiring option touch
+  prices with projected settlement intrinsic value, applies explicit
+  edge/cost gates, and emits candidate configs for later replay work.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -207,7 +210,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 240 tests.
+Current passing suite: 243 tests.
 
 ## Next Build Targets
 

@@ -53,6 +53,10 @@ from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 from reports.replay_calibration import calibrated_replay_params_from_path, write_calibrated_replay_plan
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
+from reports.settlement_convergence import (
+    SettlementConvergenceThresholds,
+    write_settlement_convergence_audit,
+)
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
@@ -363,6 +367,27 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_pipeline.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_pipeline.add_argument("--fail-on-breach", action="store_true")
     _add_generic_cost_args(imbalance_pipeline)
+
+    settlement = sub.add_parser("audit-settlement-convergence", help="Audit expiry settlement-window option convergence opportunities.")
+    settlement.add_argument("--index-ticks", required=True)
+    settlement.add_argument("--chain", required=True)
+    settlement.add_argument("--out", required=True)
+    settlement.add_argument("--window-start-ns", type=int, required=True)
+    settlement.add_argument("--window-end-ns", type=int, required=True)
+    settlement.add_argument("--index-price-col", default=None)
+    settlement.add_argument("--lot-size", type=int, default=75)
+    settlement.add_argument("--tick-size", type=float, default=0.05)
+    settlement.add_argument("--qty", type=int, default=75)
+    settlement.add_argument("--depth-fraction", type=float, default=1.0)
+    settlement.add_argument("--min-known-fraction", type=float, default=0.0)
+    settlement.add_argument("--min-gross-edge-ticks", type=float, default=0.0)
+    settlement.add_argument("--min-net-edge", type=float, default=0.0)
+    settlement.add_argument("--min-opportunities", type=int, default=1)
+    settlement.add_argument("--min-total-net-edge", type=float, default=0.0)
+    settlement.add_argument("--min-best-net-edge", type=float, default=0.0)
+    settlement.add_argument("--min-median-known-fraction", type=float, default=0.0)
+    settlement.add_argument("--min-direction-count", type=int, default=1)
+    settlement.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1281,6 +1306,31 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "audit-settlement-convergence":
+        result = write_settlement_convergence_audit(
+            args.index_ticks,
+            args.chain,
+            output_dir=args.out,
+            window_start_ns=args.window_start_ns,
+            window_end_ns=args.window_end_ns,
+            index_price_col=args.index_price_col,
+            lot_size=args.lot_size,
+            tick_size=args.tick_size,
+            qty=args.qty,
+            depth_fraction=args.depth_fraction,
+            min_known_fraction=args.min_known_fraction,
+            min_gross_edge_ticks=args.min_gross_edge_ticks,
+            min_net_edge=args.min_net_edge,
+            thresholds=SettlementConvergenceThresholds(
+                min_opportunities=args.min_opportunities,
+                min_total_net_edge=args.min_total_net_edge,
+                min_best_net_edge=args.min_best_net_edge,
+                min_median_known_fraction=args.min_median_known_fraction,
+                min_direction_count=args.min_direction_count,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "calibrate":
         _, summary = run_calibration_report(
             simulated_orders_path=args.simulated_orders,

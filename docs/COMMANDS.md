@@ -526,6 +526,42 @@ replay_walkforward\...
 promotion\...
 ```
 
+## Settlement Convergence Audit
+
+Audit expiry-window option convergence against the running settlement average.
+This is a Layer-1 gate for legitimate settlement arithmetic: it compares
+expiring option touch prices with projected intrinsic value using only the
+settlement window observed so far plus the current index level.
+
+```powershell
+python -m hft_cli audit-settlement-convergence `
+  --index-ticks data\nifty_index_ticks.csv `
+  --chain data\nifty_expiry_chain.csv `
+  --out runs\settlement_convergence_2026_06_10 `
+  --window-start-ns 1786536600000000000 `
+  --window-end-ns 1786538400000000000 `
+  --min-known-fraction 0.50 `
+  --min-gross-edge-ticks 10 `
+  --min-net-edge 100 `
+  --min-best-net-edge 100 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+settlement_running_average.csv
+settlement_convergence_opportunities.csv
+settlement_convergence_checks.csv
+settlement_convergence_summary.csv
+candidate_config.json
+manifest.json
+```
+
+This command is intentionally an audit, not a market-impact strategy: it finds
+touch-price dislocations that clear explicit edge/cost thresholds and records
+whether they are ready for later replay work.
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge
