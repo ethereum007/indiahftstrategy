@@ -1079,6 +1079,36 @@ The mapping file is emitted beside the upload-shaped orders so the final
 Arrow.money/iRage column semantics can be reviewed before any live route is
 enabled.
 
+## Vendor CSV Intake
+
+Profile the first Arrow.money/iRage sample CSV, infer whether it is tick,
+option-chain, order, or fill data, and emit a normalized mapping draft for
+review:
+
+```powershell
+python -m hft_cli intake-vendor-csv `
+  --sample vendor\arrow_ticks_sample.csv `
+  --out mappings\arrow_ticks_intake `
+  --adapter arrow_money `
+  --kind auto `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+vendor_intake_columns.csv
+vendor_intake_kind_scores.csv
+vendor_intake_mapping_candidates.csv
+vendor_mapping_draft.csv
+vendor_intake_summary.csv
+manifest.json
+```
+
+The generated `vendor_mapping_draft.csv` uses `normalized_column`,
+`source_column`, `default_value`, `required`, and `transform` columns so it can
+be reviewed and then passed to `normalize-mapped-data`.
+
 ## Vendor Order Mapping Draft
 
 Draft a reviewable mapping from the broker-neutral `broker_orders.csv` export

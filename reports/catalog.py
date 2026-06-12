@@ -39,6 +39,7 @@ SUMMARY_FILES = [
     "order_exposure_summary.csv",
     "staged_order_summary.csv",
     "adapter_schema_summary.csv",
+    "vendor_intake_summary.csv",
     "surface_quote_summary.csv",
     "sweep_summary.csv",
     "summary.csv",

@@ -15,6 +15,7 @@ from adapters.order_reconciliation import ReconciliationThresholds, write_order_
 from adapters.order_upload_pack import OrderUploadPackConfig, write_order_upload_pack
 from adapters.orders import OrderStagingLimits, write_staged_orders
 from adapters.schema_audit import write_adapter_schema_audit
+from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
@@ -846,6 +847,19 @@ def main(argv: list[str] | None = None) -> int:
     mapping_draft.add_argument("--optional-column", action="append", dest="optional_columns")
     mapping_draft.add_argument("--default", action="append", dest="defaults")
     mapping_draft.add_argument("--fail-on-unmapped", action="store_true")
+
+    vendor_intake = sub.add_parser(
+        "intake-vendor-csv",
+        help="Profile an unknown vendor CSV and draft a normalized data mapping.",
+    )
+    vendor_intake.add_argument("--sample", required=True)
+    vendor_intake.add_argument("--out", required=True)
+    vendor_intake.add_argument("--adapter", default="arrow_money")
+    vendor_intake.add_argument("--kind", default="auto")
+    vendor_intake.add_argument("--sample-rows", type=int, default=1000)
+    vendor_intake.add_argument("--min-mapping-coverage", type=float, default=1.0)
+    vendor_intake.add_argument("--output-mapping-file", default="vendor_mapping_draft.csv")
+    vendor_intake.add_argument("--fail-on-breach", action="store_true")
 
     mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
     mapped_export.add_argument("--export", required=True)
@@ -2092,6 +2106,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_unmapped and not result.ready else 0
+    if args.command == "intake-vendor-csv":
+        result = write_vendor_csv_intake_report(
+            args.sample,
+            output_dir=args.out,
+            config=VendorCsvIntakeConfig(
+                adapter=args.adapter,
+                kind=args.kind,
+                sample_rows=args.sample_rows,
+                min_mapping_coverage=args.min_mapping_coverage,
+                output_mapping_file=args.output_mapping_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "map-broker-orders":
         result = write_mapped_order_export(
             args.export,
