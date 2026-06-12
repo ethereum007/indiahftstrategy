@@ -58,6 +58,8 @@
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
+- Replay stress reports for extra fee multipliers, tick slippage, and adverse
+  bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 
 ## Test Gate
 
@@ -67,7 +69,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 78 tests.
+Current passing suite: 81 tests.
 
 ## Next Build Targets
 

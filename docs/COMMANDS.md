@@ -251,3 +251,27 @@ proof_metrics.csv
 proof_checks.csv
 proof_summary.csv
 ```
+
+## Stress Replay
+
+Apply extra fee, slippage, and adverse-fill shocks to replay output folders:
+
+```powershell
+python -m hft_cli stress-replay `
+  --runs runs\leadlag_replay_2026_06_10 runs\leadlag_replay_2026_06_11 `
+  --out runs\stress\leadlag `
+  --cost-multiplier 1 1.25 1.50 `
+  --slippage-ticks 0 1 2 `
+  --adverse-bps 0 1 2 `
+  --tick-size 0.05 `
+  --min-net-pnl 1 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+stress_results.csv
+stress_summary.csv
+manifest.json
+```

@@ -7,6 +7,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.proof import ProofThresholds, write_proof_report
+from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
@@ -144,6 +145,20 @@ def main(argv: list[str] | None = None) -> int:
     compare_sweeps.add_argument("--min-median-net-pnl", type=float, default=0.0)
     compare_sweeps.add_argument("--max-worst-drawdown", type=float, default=None)
     compare_sweeps.add_argument("--fail-on-breach", action="store_true")
+
+    stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
+    stress.add_argument("--runs", nargs="+", required=True)
+    stress.add_argument("--out", required=True)
+    stress.add_argument("--run-name", action="append", dest="run_names")
+    stress.add_argument("--cost-multiplier", nargs="+", default=[1.0], type=float)
+    stress.add_argument("--slippage-ticks", nargs="+", default=[0.0], type=float)
+    stress.add_argument("--adverse-bps", nargs="+", default=[0.0], type=float)
+    stress.add_argument("--tick-size", type=float, default=0.05)
+    stress.add_argument("--contract-multiplier", type=float, default=1.0)
+    stress.add_argument("--min-net-pnl", type=float, default=0.0)
+    stress.add_argument("--min-fills", type=int, default=1)
+    stress.add_argument("--max-drawdown", type=float, default=None)
+    stress.add_argument("--fail-on-breach", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -296,6 +311,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.has_selection else 0
+    if args.command == "stress-replay":
+        result = write_stress_report(
+            args.runs,
+            output_dir=args.out,
+            run_names=args.run_names,
+            config=StressConfig(
+                cost_multipliers=args.cost_multiplier,
+                slippage_ticks=args.slippage_ticks,
+                adverse_bps=args.adverse_bps,
+                tick_size=args.tick_size,
+                contract_multiplier=args.contract_multiplier,
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 
