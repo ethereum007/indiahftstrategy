@@ -13,6 +13,7 @@ from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
+from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
 from research.run_leadlag import run_leadlag
@@ -228,6 +229,23 @@ def main(argv: list[str] | None = None) -> int:
     reconcile.add_argument("--max-unmatched-fills", type=int, default=0)
     reconcile.add_argument("--max-adverse-slippage", type=float, default=None)
     reconcile.add_argument("--fail-on-breach", action="store_true")
+
+    shadow_session = sub.add_parser("shadow-session-report", help="Gate a full paper/shadow session after reconciliation.")
+    shadow_session.add_argument("--launch", required=True)
+    shadow_session.add_argument("--export", required=True)
+    shadow_session.add_argument("--reconciliation", required=True)
+    shadow_session.add_argument("--out", required=True)
+    shadow_session.add_argument("--allow-unready-launch", action="store_true")
+    shadow_session.add_argument("--allow-unready-export", action="store_true")
+    shadow_session.add_argument("--allow-failed-reconciliation", action="store_true")
+    shadow_session.add_argument("--max-failed-component-checks", type=int, default=0)
+    shadow_session.add_argument("--min-order-fill-rate", type=float, default=0.0)
+    shadow_session.add_argument("--max-unmatched-fills", type=int, default=0)
+    shadow_session.add_argument("--max-mismatched-orders", type=int, default=0)
+    shadow_session.add_argument("--max-overfilled-orders", type=int, default=0)
+    shadow_session.add_argument("--max-unfilled-orders", type=int, default=None)
+    shadow_session.add_argument("--max-adverse-slippage", type=float, default=None)
+    shadow_session.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -544,6 +562,27 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "shadow-session-report":
+        result = write_shadow_session_report(
+            launch_dir=args.launch,
+            export_dir=args.export,
+            reconciliation_dir=args.reconciliation,
+            output_dir=args.out,
+            thresholds=ShadowSessionThresholds(
+                require_launch_ready=not args.allow_unready_launch,
+                require_export_ready=not args.allow_unready_export,
+                require_reconciliation_passed=not args.allow_failed_reconciliation,
+                max_failed_component_checks=args.max_failed_component_checks,
+                min_order_fill_rate=args.min_order_fill_rate,
+                max_unmatched_fills=args.max_unmatched_fills,
+                max_mismatched_orders=args.max_mismatched_orders,
+                max_overfilled_orders=args.max_overfilled_orders,
+                max_unfilled_orders=args.max_unfilled_orders,
+                max_adverse_slippage=args.max_adverse_slippage,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.accepted else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,

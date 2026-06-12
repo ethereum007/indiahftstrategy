@@ -68,6 +68,9 @@
 - Broker/drop-copy fill reconciliation for exported orders, including
   order-level fill status, unmatched fills, side/instrument mismatches,
   adverse slippage, latency, pass/fail checks, and manifests.
+- Shadow-session acceptance report that combines launch, export, and
+  reconciliation artifacts into one go/no-go record for paper/shadow promotion
+  decisions.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -98,7 +101,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 108 tests.
+Current passing suite: 111 tests.
 
 ## Next Build Targets
 

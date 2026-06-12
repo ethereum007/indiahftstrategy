@@ -411,6 +411,34 @@ reconciliation_summary.csv
 manifest.json
 ```
 
+## Shadow Session Report
+
+Gate a full paper/shadow loop by combining launch, export, and reconciliation
+artifacts:
+
+```powershell
+python -m hft_cli shadow-session-report `
+  --launch runs\launch\leadlag_shadow `
+  --export runs\exports\leadlag_shadow_arrow `
+  --reconciliation runs\reconciliation\leadlag_shadow_arrow `
+  --out runs\sessions\leadlag_shadow_2026_06_10 `
+  --min-order-fill-rate 0.8 `
+  --max-unmatched-fills 0 `
+  --max-mismatched-orders 0 `
+  --max-overfilled-orders 0 `
+  --max-adverse-slippage 0.05 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+shadow_session_metrics.csv
+shadow_session_checks.csv
+shadow_session_summary.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell
