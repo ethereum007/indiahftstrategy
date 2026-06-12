@@ -618,6 +618,40 @@ candidate_config.json
 manifest.json
 ```
 
+Convert a promoted settlement candidate into broker-neutral limit-order
+candidates for the standard staging path:
+
+```powershell
+python -m hft_cli plan-settlement-orders `
+  --promotion runs\promotion\settlement_convergence `
+  --out runs\orders\settlement_convergence `
+  --symbol-prefix NIFTY `
+  --price-offset-ticks 1 `
+  --fail-on-breach
+```
+
+Order-plan outputs:
+
+```text
+settlement_order_candidates.csv
+settlement_order_checks.csv
+settlement_order_summary.csv
+manifest.json
+```
+
+The generated `settlement_order_candidates.csv` uses the broker-neutral
+`orders` schema, so it can be passed directly into:
+
+```powershell
+python -m hft_cli stage-orders `
+  --orders runs\orders\settlement_convergence\settlement_order_candidates.csv `
+  --out runs\stage\settlement_convergence `
+  --source orders `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --fail-on-reject
+```
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge

@@ -171,6 +171,11 @@ def _fold_row(
     audit: SettlementConvergenceReport,
 ) -> dict[str, Any]:
     row = audit.summary.iloc[0] if not audit.summary.empty else pd.Series(dtype=object)
+    best = (
+        audit.candidate_config.get("best_opportunity", {})
+        if isinstance(audit.candidate_config.get("best_opportunity", {}), dict)
+        else {}
+    )
     return {
         "fold_index": int(index),
         "fold": label,
@@ -193,6 +198,14 @@ def _fold_row(
         "best_strike": _jsonable(row.get("best_strike")),
         "best_option_type": _jsonable(row.get("best_option_type")),
         "best_direction": _jsonable(row.get("best_direction")),
+        "best_side": _jsonable(best.get("side")),
+        "best_touch_price": _jsonable(best.get("touch_price")),
+        "best_trade_qty": _jsonable(best.get("trade_qty")),
+        "best_projected_settlement": _jsonable(best.get("projected_settlement")),
+        "best_projected_intrinsic": _jsonable(best.get("projected_intrinsic")),
+        "best_gross_edge": _jsonable(best.get("gross_edge")),
+        "best_gross_edge_ticks": _jsonable(best.get("gross_edge_ticks")),
+        "best_cost": _jsonable(best.get("cost")),
     }
 
 
@@ -289,6 +302,14 @@ def _candidate_config(
             "strike": _jsonable(best.get("best_strike")),
             "option_type": _jsonable(best.get("best_option_type")),
             "direction": _jsonable(best.get("best_direction")),
+            "side": _jsonable(best.get("best_side")),
+            "touch_price": _jsonable(best.get("best_touch_price")),
+            "trade_qty": _jsonable(best.get("best_trade_qty")),
+            "projected_settlement": _jsonable(best.get("best_projected_settlement")),
+            "projected_intrinsic": _jsonable(best.get("best_projected_intrinsic")),
+            "gross_edge": _jsonable(best.get("best_gross_edge")),
+            "gross_edge_ticks": _jsonable(best.get("best_gross_edge_ticks")),
+            "cost": _jsonable(best.get("best_cost")),
             "best_net_edge": _jsonable(best.get("best_net_edge")),
         },
     }

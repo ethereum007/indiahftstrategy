@@ -76,6 +76,9 @@
 - Settlement candidate promotion bridge that converts passed settlement
   walk-forward evidence into launch-compatible promotion reports and
   candidate configs for paper/shadow staging.
+- Settlement order planner that turns promoted settlement candidates into
+  broker-neutral limit-order candidates for the standard staging, launch,
+  export, and reconciliation path.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -216,7 +219,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 249 tests.
+Current passing suite: 252 tests.
 
 ## Next Build Targets
 

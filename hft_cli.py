@@ -65,6 +65,7 @@ from reports.settlement_convergence_walkforward import (
     SettlementConvergenceWalkForwardThresholds,
     write_settlement_convergence_walkforward,
 )
+from reports.settlement_order_plan import SettlementOrderPlanConfig, write_settlement_order_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
@@ -436,6 +437,20 @@ def main(argv: list[str] | None = None) -> int:
     settlement_promotion.add_argument("--min-median-best-net-edge", type=float, default=0.0)
     settlement_promotion.add_argument("--min-median-known-fraction", type=float, default=0.0)
     settlement_promotion.add_argument("--fail-on-breach", action="store_true")
+
+    settlement_orders = sub.add_parser(
+        "plan-settlement-orders",
+        help="Create broker-neutral order candidates from a promoted settlement convergence candidate.",
+    )
+    settlement_orders.add_argument("--promotion", required=True)
+    settlement_orders.add_argument("--out", required=True)
+    settlement_orders.add_argument("--symbol-prefix", default="NIFTY")
+    settlement_orders.add_argument("--qty", type=int, default=None)
+    settlement_orders.add_argument("--price-offset-ticks", type=float, default=0.0)
+    settlement_orders.add_argument("--tick-size", type=float, default=0.05)
+    settlement_orders.add_argument("--output-file", default="settlement_order_candidates.csv")
+    settlement_orders.add_argument("--allow-unready-promotion", action="store_true")
+    settlement_orders.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1425,6 +1440,21 @@ def main(argv: list[str] | None = None) -> int:
                 min_total_net_edge=args.min_total_net_edge,
                 min_median_best_net_edge=args.min_median_best_net_edge,
                 min_median_known_fraction=args.min_median_known_fraction,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "plan-settlement-orders":
+        result = write_settlement_order_plan(
+            args.promotion,
+            output_dir=args.out,
+            config=SettlementOrderPlanConfig(
+                symbol_prefix=args.symbol_prefix,
+                require_promotion_ready=not args.allow_unready_promotion,
+                qty=args.qty,
+                price_offset_ticks=args.price_offset_ticks,
+                tick_size=args.tick_size,
+                output_filename=args.output_file,
             ),
         )
         print(result.summary.to_string(index=False))
