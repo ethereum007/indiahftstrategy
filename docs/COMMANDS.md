@@ -165,6 +165,29 @@ proof/proof_checks.csv
 proof/proof_summary.csv
 ```
 
+## Surface Quotes
+
+Fit per-snapshot option surfaces and generate market-making quotes:
+
+```powershell
+python -m hft_cli quote-surface `
+  --chain data\chain.csv `
+  --futures data\futures.csv `
+  --out runs\surface_quotes_2026_06_10 `
+  --tte-years 0.08219 `
+  --edge-ticks 2 `
+  --max-market-spread-ticks 20 `
+  --max-quotes-per-snapshot 50
+```
+
+Outputs:
+
+```text
+surface_quotes.csv
+surface_quote_summary.csv
+manifest.json
+```
+
 ## Sweep Comparison
 
 Rank parameter scenarios across multiple sweep output folders:

@@ -15,6 +15,7 @@ from strategies.run_leadlag_replay import run_leadlag_replay
 from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
 from strategies.run_parity_sweep import run_parity_sweep
+from strategies.run_surface_quotes import run_surface_quote_generation
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -159,6 +160,22 @@ def main(argv: list[str] | None = None) -> int:
     stress.add_argument("--min-fills", type=int, default=1)
     stress.add_argument("--max-drawdown", type=float, default=None)
     stress.add_argument("--fail-on-breach", action="store_true")
+
+    surface_quote = sub.add_parser("quote-surface", help="Generate surface-driven market-making quotes.")
+    surface_quote.add_argument("--chain", required=True)
+    surface_quote.add_argument("--futures", required=True)
+    surface_quote.add_argument("--out", required=True)
+    surface_quote.add_argument("--no-filter-session", action="store_true")
+    surface_quote.add_argument("--asof-latency-ns", type=int, default=0)
+    surface_quote.add_argument("--tte-years", type=float, default=30 / 365)
+    surface_quote.add_argument("--tick-size", type=float, default=0.05)
+    surface_quote.add_argument("--lot-size", type=int, default=75)
+    surface_quote.add_argument("--quote-lots", type=int, default=1)
+    surface_quote.add_argument("--edge-ticks", type=float, default=2.0)
+    surface_quote.add_argument("--inventory-skew-ticks-per-lot", type=float, default=0.5)
+    surface_quote.add_argument("--max-market-spread-ticks", type=float, default=None)
+    surface_quote.add_argument("--max-quotes-per-snapshot", type=int, default=None)
+    surface_quote.add_argument("--max-snapshots", type=int, default=None)
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -329,6 +346,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "quote-surface":
+        result = run_surface_quote_generation(
+            chain_path=args.chain,
+            futures_path=args.futures,
+            output_dir=args.out,
+            filter_session=not args.no_filter_session,
+            asof_latency_ns=args.asof_latency_ns,
+            tte_years=args.tte_years,
+            tick_size=args.tick_size,
+            lot_size=args.lot_size,
+            quote_lots=args.quote_lots,
+            edge_ticks=args.edge_ticks,
+            inventory_skew_ticks_per_lot=args.inventory_skew_ticks_per_lot,
+            max_market_spread_ticks=args.max_market_spread_ticks,
+            max_quotes_per_snapshot=args.max_quotes_per_snapshot,
+            max_snapshots=args.max_snapshots,
+        )
+        print(result.summary.to_string(index=False))
+        return 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 

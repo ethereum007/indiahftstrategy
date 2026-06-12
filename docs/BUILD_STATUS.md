@@ -60,6 +60,9 @@
   package versions.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
+- Surface quote runner that fits per-snapshot option smiles from chain/futures
+  data and emits budgeted market-making quotes with marketability checks and
+  manifests.
 
 ## Test Gate
 
@@ -69,7 +72,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 81 tests.
+Current passing suite: 83 tests.
 
 ## Next Build Targets
 
