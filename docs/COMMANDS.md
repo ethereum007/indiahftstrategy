@@ -652,6 +652,38 @@ python -m hft_cli stage-orders `
   --fail-on-reject
 ```
 
+Run the promoted settlement candidate through the full paper/shadow handoff
+chain in one command:
+
+```powershell
+python -m hft_cli pipeline-settlement-launch `
+  --promotion runs\promotion\settlement_convergence `
+  --out runs\pipelines\settlement_convergence_shadow `
+  --adapter arrow_money `
+  --mode shadow `
+  --route-tag settlement_shadow `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --allow-placeholder-schema `
+  --fail-on-breach
+```
+
+Pipeline outputs:
+
+```text
+01_order_plan\...
+02_staged_orders\...
+03_launch\...
+04_export\...
+05_upload_pack\...
+settlement_launch_pipeline_components.csv
+settlement_launch_pipeline_summary.csv
+manifest.json
+```
+
+Without `--allow-placeholder-schema`, Arrow.money/iRage upload-pack readiness
+fails closed until real broker upload schemas are reviewed.
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge

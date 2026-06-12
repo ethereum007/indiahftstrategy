@@ -66,6 +66,10 @@ from reports.settlement_convergence_walkforward import (
     SettlementConvergenceWalkForwardThresholds,
     write_settlement_convergence_walkforward,
 )
+from reports.settlement_launch_pipeline import (
+    SettlementLaunchPipelineConfig,
+    write_settlement_launch_pipeline,
+)
 from reports.settlement_order_plan import SettlementOrderPlanConfig, write_settlement_order_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
@@ -452,6 +456,29 @@ def main(argv: list[str] | None = None) -> int:
     settlement_orders.add_argument("--output-file", default="settlement_order_candidates.csv")
     settlement_orders.add_argument("--allow-unready-promotion", action="store_true")
     settlement_orders.add_argument("--fail-on-breach", action="store_true")
+
+    settlement_pipeline = sub.add_parser(
+        "pipeline-settlement-launch",
+        help="Run promoted settlement candidate through order plan, staging, launch, export, and upload pack.",
+    )
+    settlement_pipeline.add_argument("--promotion", required=True)
+    settlement_pipeline.add_argument("--out", required=True)
+    settlement_pipeline.add_argument("--adapter", default="arrow_money")
+    settlement_pipeline.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
+    settlement_pipeline.add_argument("--route-tag", default=None)
+    settlement_pipeline.add_argument("--symbol-prefix", default="NIFTY")
+    settlement_pipeline.add_argument("--qty", type=int, default=None)
+    settlement_pipeline.add_argument("--price-offset-ticks", type=float, default=0.0)
+    settlement_pipeline.add_argument("--tick-size", type=float, default=0.05)
+    settlement_pipeline.add_argument("--max-order-qty", type=int, default=None)
+    settlement_pipeline.add_argument("--max-notional", type=float, default=None)
+    settlement_pipeline.add_argument("--price-band-pct", type=float, default=None)
+    settlement_pipeline.add_argument("--max-orders", type=int, default=None)
+    settlement_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    settlement_pipeline.add_argument("--product", default="MIS")
+    settlement_pipeline.add_argument("--exchange", default="NFO")
+    settlement_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
+    settlement_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1470,6 +1497,30 @@ def main(argv: list[str] | None = None) -> int:
                 price_offset_ticks=args.price_offset_ticks,
                 tick_size=args.tick_size,
                 output_filename=args.output_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-settlement-launch":
+        result = write_settlement_launch_pipeline(
+            args.promotion,
+            output_dir=args.out,
+            config=SettlementLaunchPipelineConfig(
+                adapter=args.adapter,
+                mode=args.mode,
+                route_tag=args.route_tag,
+                symbol_prefix=args.symbol_prefix,
+                qty=args.qty,
+                price_offset_ticks=args.price_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
             ),
         )
         print(result.summary.to_string(index=False))
