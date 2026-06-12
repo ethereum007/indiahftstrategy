@@ -543,6 +543,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "max_open_order_qty": _jsonable(thresholds.max_open_order_qty),
             "max_gross_position_qty": _jsonable(thresholds.max_gross_position_qty),
             "max_abs_net_position_qty": _jsonable(thresholds.max_abs_net_position_qty),
+            "max_gross_notional": _jsonable(thresholds.max_gross_notional),
             "max_abs_net_delta": _jsonable(thresholds.max_abs_net_delta),
             "max_abs_net_vega": _jsonable(thresholds.max_abs_net_vega),
             "max_worst_adverse_slippage": _jsonable(thresholds.max_worst_adverse_slippage),

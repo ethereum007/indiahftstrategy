@@ -184,7 +184,10 @@ def test_cli_runtime_session_monitor_halts_on_live_greek_limit(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     out_dir = tmp_path / "session"
     positions_path = tmp_path / "positions.csv"
-    write_scaleup_dir(scaleup_dir, scaleup_config(max_abs_net_delta=40, max_abs_net_vega=500))
+    write_scaleup_dir(
+        scaleup_dir,
+        scaleup_config(max_gross_notional=500, max_abs_net_delta=40, max_abs_net_vega=500),
+    )
     positions().to_csv(positions_path, index=False)
 
     code = main(
@@ -205,6 +208,7 @@ def test_cli_runtime_session_monitor_halts_on_live_greek_limit(tmp_path):
     checks = pd.read_csv(out_dir / "02_guard" / "runtime_guard_checks.csv")
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
+    assert telemetry.loc[0, "gross_position_notional"] == 851.25
     assert telemetry.loc[0, "abs_net_delta"] == 56.25
     assert telemetry.loc[0, "abs_net_vega"] == 900.0
-    assert {"abs_net_delta", "abs_net_vega"} <= failed
+    assert {"gross_position_notional", "abs_net_delta", "abs_net_vega"} <= failed

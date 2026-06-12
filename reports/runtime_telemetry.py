@@ -20,6 +20,7 @@ GUARD_COLUMNS = [
     "session_notional",
     "realized_pnl",
     "total_failed_component_checks",
+    "gross_position_notional",
     "abs_net_delta",
     "abs_net_vega",
     "unmatched_fills",
@@ -222,6 +223,9 @@ def _telemetry(
         "open_order_qty": float(_open_order_qty(open_orders)),
         "gross_position_qty": float(_gross_position_qty(positions)),
         "abs_net_position_qty": float(_abs_net_position_qty(positions)),
+        "gross_position_notional": float(_gross_position_notional(positions)),
+        "net_position_notional": float(_net_position_notional(positions)),
+        "abs_net_position_notional": float(abs(_net_position_notional(positions))),
         "net_delta": float(_net_greek_exposure(positions, "delta")),
         "abs_net_delta": float(abs(_net_greek_exposure(positions, "delta"))),
         "net_vega": float(_net_greek_exposure(positions, "vega")),
@@ -331,6 +335,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "replace_orders": int(row["replace_orders"]),
                 "session_notional": float(row["session_notional"]),
                 "realized_pnl": float(row["realized_pnl"]),
+                "gross_position_notional": float(row["gross_position_notional"]),
                 "abs_net_delta": float(row["abs_net_delta"]),
                 "abs_net_vega": float(row["abs_net_vega"]),
                 "failed_checks": failed,
@@ -461,6 +466,29 @@ def _abs_net_position_qty(positions: pd.DataFrame) -> float:
     return float(abs(_position_quantities(positions).sum()))
 
 
+def _gross_position_notional(positions: pd.DataFrame) -> float:
+    if positions.empty:
+        return 0.0
+    for column in ("gross_notional", "gross_position_notional"):
+        if column in positions.columns:
+            return float(pd.to_numeric(positions[column], errors="coerce").fillna(0.0).abs().sum())
+    for column in ("signed_notional", "net_notional", "position_notional", "notional"):
+        if column in positions.columns:
+            return float(pd.to_numeric(positions[column], errors="coerce").fillna(0.0).abs().sum())
+    prices = _position_prices(positions)
+    return float((_position_quantities(positions).abs() * prices.abs()).sum())
+
+
+def _net_position_notional(positions: pd.DataFrame) -> float:
+    if positions.empty:
+        return 0.0
+    for column in ("signed_notional", "net_notional", "position_notional"):
+        if column in positions.columns:
+            return float(pd.to_numeric(positions[column], errors="coerce").fillna(0.0).sum())
+    prices = _position_prices(positions)
+    return float((_position_quantities(positions) * prices).sum())
+
+
 def _position_quantities(positions: pd.DataFrame) -> pd.Series:
     for column in ("net_qty", "position", "qty"):
         if column in positions.columns:
@@ -488,6 +516,22 @@ def _net_greek_exposure(positions: pd.DataFrame, greek: str) -> float:
 
 def _first_existing_column(frame: pd.DataFrame, columns: tuple[str, ...]) -> str | None:
     return next((column for column in columns if column in frame.columns), None)
+
+
+def _position_prices(positions: pd.DataFrame) -> pd.Series:
+    for column in ("mark_price", "mid_price", "mid", "last", "ltp", "price"):
+        if column in positions.columns:
+            return pd.to_numeric(positions[column], errors="coerce").fillna(0.0)
+    for bid_col, ask_col in (
+        ("market_bid", "market_ask"),
+        ("bid", "ask"),
+        ("best_bid", "best_ask"),
+    ):
+        if bid_col in positions.columns and ask_col in positions.columns:
+            bid = pd.to_numeric(positions[bid_col], errors="coerce")
+            ask = pd.to_numeric(positions[ask_col], errors="coerce")
+            return ((bid + ask) / 2.0).fillna(0.0)
+    return pd.Series([0.0] * len(positions))
 
 
 def _to_bool(value: object) -> bool:

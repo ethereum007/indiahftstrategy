@@ -208,20 +208,21 @@
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness
   evidence, and broker-readiness evidence into explicit order, notional,
-  adapter, telemetry-freshness, lifecycle-order, replace-order, delta, and vega
-  kill-switch limits, and can consume a settlement or surface-MM launch
-  pipeline root directly.
+  adapter, telemetry-freshness, lifecycle-order, replace-order, gross-notional,
+  delta, and vega kill-switch limits, and can consume a settlement or
+  surface-MM launch pipeline root directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
-  source/check summaries, derives live net delta/vega from total or unit Greek
+  source/check summaries, derives live gross/net position notional from marks
+  or total notional columns, derives net delta/vega from total or unit Greek
   position columns, and can consume settlement or surface-MM launch pipeline
   roots for broker export and upload-pack evidence.
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
   against `scaleup_config.json` limits, kill switches, telemetry freshness,
   lifecycle/replace message controls, open-order/position inventory and
-  delta/vega limits, and required instrument metadata continuity, accepts
-  telemetry output folders directly, and returns explicit continue/halt
+  notional/delta/vega limits, and required instrument metadata continuity,
+  accepts telemetry output folders directly, and returns explicit continue/halt
   decisions.
 - Runtime session monitor that chains telemetry building, scale-up guard
   evaluation, and automatic halt-response planning into one manifest-backed
@@ -294,7 +295,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 370 tests.
+Current passing suite: 372 tests.
 
 ## Next Build Targets
 

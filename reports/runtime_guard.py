@@ -121,6 +121,9 @@ def _metrics(
                 "open_order_qty": _number(latest, "open_order_qty"),
                 "gross_position_qty": _number(latest, "gross_position_qty"),
                 "abs_net_position_qty": _number(latest, "abs_net_position_qty"),
+                "gross_position_notional": _number(latest, "gross_position_notional"),
+                "net_position_notional": _number(latest, "net_position_notional"),
+                "abs_net_position_notional": _number(latest, "abs_net_position_notional"),
                 "net_delta": _number(latest, "net_delta"),
                 "abs_net_delta": _number(latest, "abs_net_delta"),
                 "net_vega": _number(latest, "net_vega"),
@@ -162,6 +165,11 @@ def _metrics(
                 "max_open_order_qty": _number_from(kill_switches, "max_open_order_qty"),
                 "max_gross_position_qty": _number_from(kill_switches, "max_gross_position_qty"),
                 "max_abs_net_position_qty": _number_from(kill_switches, "max_abs_net_position_qty"),
+                "max_gross_notional": _first_number(
+                    _number_from(kill_switches, "max_gross_notional"),
+                    _number_from(limits, "max_gross_notional"),
+                    np.nan,
+                ),
                 "max_abs_net_delta": _first_number(
                     _number_from(kill_switches, "max_abs_net_delta"),
                     _number_from(limits, "max_abs_net_delta"),
@@ -237,6 +245,7 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         ("open_order_qty", "max_open_order_qty"),
         ("gross_position_qty", "max_gross_position_qty"),
         ("abs_net_position_qty", "max_abs_net_position_qty"),
+        ("gross_position_notional", "max_gross_notional"),
         ("abs_net_delta", "max_abs_net_delta"),
         ("abs_net_vega", "max_abs_net_vega"),
     ):
@@ -335,6 +344,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "orders_sent": row["orders_sent"],
                 "lifecycle_orders": row["lifecycle_orders"],
                 "replace_orders": row["replace_orders"],
+                "gross_position_notional": row["gross_position_notional"],
                 "abs_net_delta": row["abs_net_delta"],
                 "abs_net_vega": row["abs_net_vega"],
                 "session_notional": row["session_notional"],

@@ -127,6 +127,7 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
             "max_open_order_qty": 50,
             "max_gross_position_qty": 100,
             "max_abs_net_position_qty": 25,
+            "max_gross_notional": 1_000,
             "max_abs_net_delta": 40,
             "max_abs_net_vega": 600,
         }
@@ -139,6 +140,7 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
             open_order_qty=75,
             gross_position_qty=150,
             abs_net_position_qty=50,
+            gross_position_notional=1_250,
             abs_net_delta=50,
             abs_net_vega=700,
         ),
@@ -151,6 +153,7 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
         "open_order_qty",
         "gross_position_qty",
         "abs_net_position_qty",
+        "gross_position_notional",
         "abs_net_delta",
         "abs_net_vega",
     } <= failed
@@ -175,6 +178,7 @@ def test_runtime_guard_continues_within_open_order_and_position_limits():
             "max_open_order_qty": 100,
             "max_gross_position_qty": 200,
             "max_abs_net_position_qty": 75,
+            "max_gross_notional": 2_000,
             "max_abs_net_delta": 75,
             "max_abs_net_vega": 800,
         }
@@ -187,6 +191,7 @@ def test_runtime_guard_continues_within_open_order_and_position_limits():
             open_order_qty=50,
             gross_position_qty=100,
             abs_net_position_qty=25,
+            gross_position_notional=1_250,
             abs_net_delta=50,
             abs_net_vega=700,
         ),
@@ -205,6 +210,17 @@ def test_runtime_guard_uses_legacy_limits_for_delta_and_vega():
     assert report.halted
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {"abs_net_delta", "abs_net_vega"} <= failed
+
+
+def test_runtime_guard_uses_legacy_limit_for_gross_notional():
+    config = scaleup_config()
+    config["limits"]["max_gross_notional"] = 1_000
+
+    report = evaluate_runtime_guard(config, telemetry(gross_position_notional=1_250))
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "gross_position_notional" in failed
 
 
 def test_runtime_guard_uses_scaleup_config_telemetry_age_limit():
