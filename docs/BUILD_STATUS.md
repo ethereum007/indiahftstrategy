@@ -120,6 +120,9 @@
 - Market profile report command that exports India/US session, tick, lot-size,
   currency, and explicit generic fee assumptions as manifest-backed evidence
   before cross-market research runs.
+- Market portability report that maps each strategy workflow across India and
+  US market profiles, flags explicit fee-model requirements, and keeps
+  India-specific settlement mechanics blocked until a separate US model exists.
 - Proof-report gate for replay output folders, scoring PnL, fills, drawdown,
   OTR, regime robustness, spread capture, and markout quality against explicit
   thresholds.
@@ -226,7 +229,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 259 tests.
+Current passing suite: 263 tests.
 
 ## Next Build Targets
 

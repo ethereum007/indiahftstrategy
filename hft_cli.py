@@ -43,6 +43,7 @@ from reports.imbalance_replay_walkforward import (
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
+from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
@@ -584,6 +585,15 @@ def main(argv: list[str] | None = None) -> int:
     market_profile.add_argument("--per-unit-fee", type=float, default=0.0)
     market_profile.add_argument("--per-contract-fee", type=float, default=0.0)
     market_profile.add_argument("--per-order-fee", type=float, default=0.0)
+
+    portability = sub.add_parser(
+        "market-portability-report",
+        help="Export strategy portability across market profiles.",
+    )
+    portability.add_argument("--out", required=True)
+    portability.add_argument("--market", action="append", dest="markets")
+    portability.add_argument("--strategy", action="append", dest="strategies")
+    portability.add_argument("--explicit-fee-model", action="store_true")
 
     proof = sub.add_parser("proof-report", help="Evaluate replay output folders against proof thresholds.")
     proof.add_argument("--runs", nargs="+", required=True)
@@ -1657,6 +1667,17 @@ def main(argv: list[str] | None = None) -> int:
                 per_unit_fee=args.per_unit_fee,
                 per_contract_fee=args.per_contract_fee,
                 per_order_fee=args.per_order_fee,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "market-portability-report":
+        result = write_market_portability_report(
+            args.out,
+            config=MarketPortabilityReportConfig(
+                markets=tuple(args.markets) if args.markets else MarketPortabilityReportConfig().markets,
+                strategies=tuple(args.strategies or ()),
+                explicit_fee_model=args.explicit_fee_model,
             ),
         )
         print(result.summary.to_string(index=False))

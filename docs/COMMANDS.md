@@ -110,6 +110,36 @@ market_profile_summary.csv
 manifest.json
 ```
 
+## Market Portability Report
+
+Export the strategy-by-market readiness matrix before expanding an India-first
+workflow into US equities or options:
+
+```powershell
+python -m hft_cli market-portability-report `
+  --market india_nse_index_derivatives `
+  --market us_equities_regular `
+  --market us_options_regular `
+  --strategy microprice_imbalance `
+  --strategy parity_box `
+  --strategy surface_market_making `
+  --explicit-fee-model `
+  --out runs\market_profiles\portability
+```
+
+Outputs:
+
+```text
+market_portability_matrix.csv
+market_portability_gaps.csv
+market_portability_summary.csv
+manifest.json
+```
+
+US rows are marked `needs_fee_model` unless explicit fees are acknowledged.
+India-specific settlement convergence remains blocked for US profiles until a
+separate US settlement/microstructure model is implemented.
+
 ## Parity / Box Scan
 
 ```powershell
