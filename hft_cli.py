@@ -29,6 +29,7 @@ from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
+from reports.replay_calibration import calibrated_replay_params_from_path, write_calibrated_replay_plan
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
@@ -80,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
     parity.add_argument("--depth-fraction", type=float, default=0.25)
     parity.add_argument("--feed-latency-us", type=float, default=0.0)
     parity.add_argument("--order-latency-us", type=float, default=0.0)
+    parity.add_argument("--fill-model", default=None)
+    parity.add_argument("--allow-unready-fill-model", action="store_true")
 
     leadlag = sub.add_parser("measure-leadlag", help="Measure lead-lag relationship.")
     leadlag.add_argument("--leader", required=True)
@@ -114,6 +117,10 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_replay.add_argument("--delta", type=float, default=1.0)
     leadlag_replay.add_argument("--trigger-ticks", type=float, default=3.0)
     leadlag_replay.add_argument("--qty", type=int, default=75)
+    leadlag_replay.add_argument("--feed-latency-us", type=float, default=0.0)
+    leadlag_replay.add_argument("--order-latency-us", type=float, default=0.0)
+    leadlag_replay.add_argument("--fill-model", default=None)
+    leadlag_replay.add_argument("--allow-unready-fill-model", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -138,6 +145,18 @@ def main(argv: list[str] | None = None) -> int:
     fill_model.add_argument("--max-queue-conservatism", type=float, default=10.0)
     fill_model.add_argument("--base-edge-ticks", type=float, default=0.0)
     fill_model.add_argument("--fail-on-breach", action="store_true")
+
+    calibrated_replay = sub.add_parser("plan-calibrated-replay", help="Apply fill-model config to replay parameters.")
+    calibrated_replay.add_argument("--fill-model", required=True)
+    calibrated_replay.add_argument("--strategy", required=True, choices=["leadlag", "parity", "surface_mm", "surface_quotes"])
+    calibrated_replay.add_argument("--out", required=True)
+    calibrated_replay.add_argument("--order-latency-us", type=float, default=None)
+    calibrated_replay.add_argument("--trigger-ticks", type=float, default=None)
+    calibrated_replay.add_argument("--depth-fraction", type=float, default=None)
+    calibrated_replay.add_argument("--fill-depth-fraction", type=float, default=None)
+    calibrated_replay.add_argument("--edge-ticks", type=float, default=None)
+    calibrated_replay.add_argument("--allow-unready-fill-model", action="store_true")
+    calibrated_replay.add_argument("--fail-on-breach", action="store_true")
 
     schema_audit = sub.add_parser("audit-adapter-schema", help="Audit a vendor sample CSV against an adapter schema.")
     schema_audit.add_argument("--sample", required=True)
@@ -542,6 +561,8 @@ def main(argv: list[str] | None = None) -> int:
     surface_mm.add_argument("--option-tick", type=float, default=0.05)
     surface_mm.add_argument("--contract-multiplier", type=float, default=1.0)
     surface_mm.add_argument("--max-quotes", type=int, default=None)
+    surface_mm.add_argument("--fill-model", default=None)
+    surface_mm.add_argument("--allow-unready-fill-model", action="store_true")
 
     order_stage = sub.add_parser("stage-orders", help="Stage broker-neutral orders after pre-trade checks.")
     order_stage.add_argument("--orders", required=True)
@@ -587,15 +608,21 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "replay-parity":
+        replay_params = calibrated_replay_params_from_path(
+            "parity",
+            {"order_latency_us": args.order_latency_us, "depth_fraction": args.depth_fraction},
+            args.fill_model,
+            require_ready=not args.allow_unready_fill_model,
+        )
         result = run_parity_replay(
             chain_path=args.chain,
             futures_path=args.futures,
             output_dir=args.out,
             filter_session=not args.no_filter_session,
             signal_limit=args.signal_limit,
-            depth_fraction=args.depth_fraction,
+            depth_fraction=replay_params["depth_fraction"],
             feed_latency_us=args.feed_latency_us,
-            order_latency_us=args.order_latency_us,
+            order_latency_us=replay_params["order_latency_us"],
         )
         print(result.summary.to_string(index=False))
         return 0
@@ -630,6 +657,12 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "replay-leadlag":
+        replay_params = calibrated_replay_params_from_path(
+            "leadlag",
+            {"order_latency_us": args.order_latency_us, "trigger_ticks": args.trigger_ticks},
+            args.fill_model,
+            require_ready=not args.allow_unready_fill_model,
+        )
         result = run_leadlag_replay(
             leader_path=args.leader,
             laggard_path=args.laggard,
@@ -638,8 +671,10 @@ def main(argv: list[str] | None = None) -> int:
             leader_tick=args.leader_tick,
             laggard_tick=args.laggard_tick,
             delta=args.delta,
-            trigger_ticks=args.trigger_ticks,
+            trigger_ticks=replay_params["trigger_ticks"],
             qty=args.qty,
+            feed_latency_us=args.feed_latency_us,
+            order_latency_us=replay_params["order_latency_us"],
         )
         print(result.summary.to_string(index=False))
         return 0
@@ -671,6 +706,27 @@ def main(argv: list[str] | None = None) -> int:
                 max_queue_conservatism=args.max_queue_conservatism,
                 base_edge_ticks=args.base_edge_ticks,
             ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "plan-calibrated-replay":
+        base_params = {
+            key: value
+            for key, value in {
+                "order_latency_us": args.order_latency_us,
+                "trigger_ticks": args.trigger_ticks,
+                "depth_fraction": args.depth_fraction,
+                "fill_depth_fraction": args.fill_depth_fraction,
+                "edge_ticks": args.edge_ticks,
+            }.items()
+            if value is not None
+        }
+        result = write_calibrated_replay_plan(
+            strategy=args.strategy,
+            fill_model_path=args.fill_model,
+            output_dir=args.out,
+            base_params=base_params,
+            require_ready=not args.allow_unready_fill_model,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
@@ -1163,16 +1219,22 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "replay-surface-mm":
+        replay_params = calibrated_replay_params_from_path(
+            "surface_mm",
+            {"order_latency_us": args.order_latency_us, "fill_depth_fraction": args.fill_depth_fraction},
+            args.fill_model,
+            require_ready=not args.allow_unready_fill_model,
+        )
         result = run_surface_mm_replay(
             quotes_path=args.quotes,
             chain_path=args.chain,
             output_dir=args.out,
             filter_session=not args.no_filter_session,
             config=SurfaceMMReplayConfig(
-                order_latency_us=args.order_latency_us,
+                order_latency_us=replay_params["order_latency_us"],
                 quote_ttl_ns=args.quote_ttl_ns,
                 markout_horizon_ns=args.markout_horizon_ns,
-                fill_depth_fraction=args.fill_depth_fraction,
+                fill_depth_fraction=replay_params["fill_depth_fraction"],
                 lot_size=args.lot_size,
                 option_tick=args.option_tick,
                 contract_multiplier=args.contract_multiplier,

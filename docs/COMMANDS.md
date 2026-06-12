@@ -162,7 +162,8 @@ python -m hft_cli replay-parity `
   --out runs\parity_replay_2026_06_10 `
   --signal-limit 100 `
   --feed-latency-us 50 `
-  --order-latency-us 250
+  --order-latency-us 250 `
+  --fill-model runs\fill_model\leadlag_shadow_latest
 ```
 
 Outputs include fills, equity, summary, PnL decomposition, regime summaries,
@@ -255,7 +256,8 @@ python -m hft_cli replay-leadlag `
   --out runs\leadlag_replay_2026_06_10 `
   --delta 0.5 `
   --trigger-ticks 3 `
-  --qty 75
+  --qty 75 `
+  --fill-model runs\fill_model\leadlag_shadow_latest
 ```
 
 ## Lead-Lag Sweep
@@ -378,7 +380,8 @@ python -m hft_cli replay-surface-mm `
   --quote-ttl-ns 1000000000 `
   --markout-horizon-ns 1000000000 `
   --fill-depth-fraction 0.25 `
-  --order-latency-us 250
+  --order-latency-us 250 `
+  --fill-model runs\fill_model\leadlag_shadow_latest
 ```
 
 Outputs:
@@ -934,6 +937,30 @@ fill_model_recommendations.csv
 fill_model_checks.csv
 fill_model_summary.csv
 fill_model_config.json
+manifest.json
+```
+
+## Calibrated Replay Plan
+
+Apply `fill_model_config.json` to strategy replay parameters without running the
+replay yet:
+
+```powershell
+python -m hft_cli plan-calibrated-replay `
+  --strategy leadlag `
+  --fill-model runs\fill_model\leadlag_shadow_latest `
+  --order-latency-us 100 `
+  --trigger-ticks 2 `
+  --out runs\calibrated_replay\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+calibrated_replay_params.json
+calibrated_replay_checks.csv
+calibrated_replay_summary.csv
 manifest.json
 ```
 

@@ -43,6 +43,9 @@
 - Fill-model calibration report that converts broker/drop-copy reconciliation
   into replay-ready queue conservatism, order latency, slippage, and edge
   buffer recommendations.
+- Calibrated replay planning and replay CLI hooks that apply fill-model
+  recommendations to lead-lag, parity, and surface-MM replay latency/depth/edge
+  assumptions without loosening explicit conservative inputs.
 - Broker/vendor adapter scaffolding for normalized, Arrow.money-style, and
   iRage-style CSV exports.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
@@ -153,7 +156,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 181 tests.
+Current passing suite: 185 tests.
 
 ## Next Build Targets
 
