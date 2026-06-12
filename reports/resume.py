@@ -55,10 +55,11 @@ def evaluate_resume_gate(
         incident_summary.iloc[0],
         scaleup_summary.iloc[0],
         scaleup_checks,
+        scaleup_config,
         operator_review,
         thresholds,
     )
-    authorization = _authorization(incident_summary.iloc[0], scaleup_summary.iloc[0], scaleup_config, checks)
+    authorization = _authorization(incident_summary.iloc[0], scaleup_summary.iloc[0], scaleup_config, thresholds, checks)
     summary = _summary(authorization.iloc[0], checks)
     config = _config(authorization.iloc[0], scaleup_config, thresholds, checks)
     return ResumeGateReport(authorization=authorization, checks=checks, summary=summary, config=config)
@@ -110,6 +111,7 @@ def _checks(
     incident: pd.Series,
     scaleup: pd.Series,
     scaleup_checks: pd.DataFrame,
+    scaleup_config: dict[str, Any],
     operator_review: pd.DataFrame,
     thresholds: ResumeGateThresholds,
 ) -> pd.DataFrame:
@@ -123,6 +125,8 @@ def _checks(
     operator_approved = _operator_approved(operator_review)
     incident_guard_trigger = _text(incident, "guard_failed_check_names")
     operator_trigger_ack = _operator_guard_trigger_ack(operator_review, incident_guard_trigger)
+    operator_approval_required = _operator_approval_required(scaleup, scaleup_config, thresholds)
+    operator_trigger_ack_required = _operator_trigger_ack_required(scaleup, scaleup_config, thresholds)
     return pd.DataFrame(
         [
             _check(
@@ -170,7 +174,7 @@ def _checks(
                 operator_approved if not operator_review.empty else "missing",
                 "is",
                 True,
-                operator_approved or not thresholds.require_operator_approval,
+                operator_approved or not operator_approval_required,
                 "operator approval is missing or false",
             ),
             _check(
@@ -178,7 +182,7 @@ def _checks(
                 operator_trigger_ack if operator_review.empty else _operator_guard_trigger_value(operator_review),
                 "==",
                 incident_guard_trigger,
-                operator_trigger_ack or not thresholds.require_operator_guard_trigger_ack,
+                operator_trigger_ack or not operator_trigger_ack_required,
                 "operator review did not acknowledge the incident guard trigger",
             ),
         ]
@@ -189,11 +193,14 @@ def _authorization(
     incident: pd.Series,
     scaleup: pd.Series,
     scaleup_config: dict[str, Any],
+    thresholds: ResumeGateThresholds,
     checks: pd.DataFrame,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     limits = scaleup_config.get("limits", {}) or {}
     kill_switches = scaleup_config.get("kill_switches", {}) or {}
+    operator_approval_required = _operator_approval_required(scaleup, scaleup_config, thresholds)
+    operator_trigger_ack_required = _operator_trigger_ack_required(scaleup, scaleup_config, thresholds)
     return pd.DataFrame(
         [
             {
@@ -204,6 +211,8 @@ def _authorization(
                 "incident_status": str(incident.get("incident_status", "")),
                 "incident_guard_failed_check_names": _text(incident, "guard_failed_check_names"),
                 "incident_guard_first_failed_reason": _text(incident, "guard_first_failed_reason"),
+                "operator_approval_required": operator_approval_required,
+                "operator_guard_trigger_ack_required": operator_trigger_ack_required,
                 "max_orders_per_session": int(_number_from(limits, "max_orders_per_session", _number(scaleup, "max_orders_per_session", 0.0))),
                 "max_notional_per_session": float(_number_from(limits, "max_notional_per_session", _number(scaleup, "max_notional_per_session", 0.0))),
                 "stop_loss": _nullable_number(limits.get("stop_loss")),
@@ -235,6 +244,10 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "adapter": str(authorization.get("adapter", "")),
                 "incident_guard_failed_check_names": _text(authorization, "incident_guard_failed_check_names"),
                 "incident_guard_first_failed_reason": _text(authorization, "incident_guard_first_failed_reason"),
+                "operator_approval_required": _to_bool(authorization.get("operator_approval_required", False)),
+                "operator_guard_trigger_ack_required": _to_bool(
+                    authorization.get("operator_guard_trigger_ack_required", False)
+                ),
                 "failed_checks": failed,
                 "recommendation": "resume_with_scaleup_controls" if ready else "keep_trading_disabled",
             }
@@ -260,6 +273,12 @@ def _config(
             "status": str(authorization.get("incident_status", "")),
             "guard_failed_check_names": _text(authorization, "incident_guard_failed_check_names"),
             "guard_first_failed_reason": _text(authorization, "incident_guard_first_failed_reason"),
+        },
+        "operator_review": {
+            "approval_required": _to_bool(authorization.get("operator_approval_required", False)),
+            "guard_trigger_ack_required": _to_bool(
+                authorization.get("operator_guard_trigger_ack_required", False)
+            ),
         },
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
@@ -328,6 +347,30 @@ def _operator_guard_trigger_value(operator_review: pd.DataFrame) -> str:
         if column in row.index:
             return _text(row, column)
     return "missing"
+
+
+def _operator_approval_required(
+    scaleup: pd.Series,
+    scaleup_config: dict[str, Any],
+    thresholds: ResumeGateThresholds,
+) -> bool:
+    return bool(thresholds.require_operator_approval or _target_mode(scaleup, scaleup_config) == "live_dryrun")
+
+
+def _operator_trigger_ack_required(
+    scaleup: pd.Series,
+    scaleup_config: dict[str, Any],
+    thresholds: ResumeGateThresholds,
+) -> bool:
+    return bool(thresholds.require_operator_guard_trigger_ack or _target_mode(scaleup, scaleup_config) == "live_dryrun")
+
+
+def _target_mode(scaleup: pd.Series, scaleup_config: dict[str, Any]) -> str:
+    summary_mode = str(scaleup.get("target_mode", "")).strip().lower()
+    config_mode = str(scaleup_config.get("target_mode", "")).strip().lower()
+    if "live_dryrun" in {summary_mode, config_mode}:
+        return "live_dryrun"
+    return summary_mode or config_mode
 
 
 def _validate_thresholds(thresholds: ResumeGateThresholds) -> None:

@@ -23,12 +23,12 @@ def incident_summary(passed=True, scenario_key="trigger_ticks=2", adapter="arrow
     )
 
 
-def scaleup_summary(ready=True, scenario_key="trigger_ticks=2", adapter="arrow_money"):
+def scaleup_summary(ready=True, scenario_key="trigger_ticks=2", adapter="arrow_money", target_mode="shadow"):
     return pd.DataFrame(
         [
             {
                 "ready": ready,
-                "target_mode": "shadow",
+                "target_mode": target_mode,
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "max_orders_per_session": 10,
@@ -40,11 +40,11 @@ def scaleup_summary(ready=True, scenario_key="trigger_ticks=2", adapter="arrow_m
     )
 
 
-def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money"):
+def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money", target_mode="shadow"):
     return {
         "schema_version": 1,
         "ready": True,
-        "target_mode": "shadow",
+        "target_mode": target_mode,
         "scenario_key": scenario_key,
         "adapter": adapter,
         "limits": {
@@ -81,15 +81,18 @@ def operator_review(approved=True, guard_failed_check_names="open_order_count"):
     return pd.DataFrame([row])
 
 
-def write_inputs(root, *, incident_passed=True, scaleup_ready=True):
+def write_inputs(root, *, incident_passed=True, scaleup_ready=True, target_mode="shadow"):
     incident = root / "incident"
     scaleup = root / "scaleup"
     incident.mkdir(parents=True, exist_ok=True)
     scaleup.mkdir(parents=True, exist_ok=True)
     incident_summary(incident_passed).to_csv(incident / "halt_incident_summary.csv", index=False)
-    scaleup_summary(scaleup_ready).to_csv(scaleup / "scaleup_summary.csv", index=False)
+    scaleup_summary(scaleup_ready, target_mode=target_mode).to_csv(scaleup / "scaleup_summary.csv", index=False)
     scaleup_checks().to_csv(scaleup / "scaleup_checks.csv", index=False)
-    (scaleup / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    (scaleup / "scaleup_config.json").write_text(
+        json.dumps(scaleup_config(target_mode=target_mode), indent=2) + "\n",
+        encoding="utf-8",
+    )
     return incident, scaleup
 
 
@@ -152,6 +155,50 @@ def test_resume_gate_can_require_operator_trigger_acknowledgment():
     assert not blocked.ready
     failed = set(blocked.checks.loc[~blocked.checks["passed"].astype(bool), "check"])
     assert "operator_guard_trigger_ack" in failed
+
+
+def test_resume_gate_live_dryrun_requires_operator_review_and_trigger_ack():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(target_mode="live_dryrun"),
+        scaleup_config=scaleup_config(target_mode="live_dryrun"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"operator_approved", "operator_guard_trigger_ack"} <= failed
+    assert report.summary.iloc[0]["operator_approval_required"]
+    assert report.summary.iloc[0]["operator_guard_trigger_ack_required"]
+    assert report.config["operator_review"]["approval_required"]
+    assert report.config["operator_review"]["guard_trigger_ack_required"]
+
+
+def test_resume_gate_live_dryrun_config_fails_closed_when_summary_omits_mode():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary().drop(columns=["target_mode"]),
+        scaleup_config=scaleup_config(target_mode="live_dryrun"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"operator_approved", "operator_guard_trigger_ack"} <= failed
+    assert report.summary.iloc[0]["operator_approval_required"]
+    assert report.summary.iloc[0]["operator_guard_trigger_ack_required"]
+
+
+def test_resume_gate_live_dryrun_accepts_operator_trigger_ack():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(target_mode="live_dryrun"),
+        scaleup_config=scaleup_config(target_mode="live_dryrun"),
+        operator_review=operator_review(approved=True, guard_failed_check_names="open_order_count"),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["target_mode"] == "live_dryrun"
+    assert report.summary.iloc[0]["operator_approval_required"]
+    assert report.summary.iloc[0]["operator_guard_trigger_ack_required"]
 
 
 def test_write_resume_gate_outputs_artifacts(tmp_path):
@@ -228,3 +275,28 @@ def test_cli_resume_gate_fails_when_operator_trigger_ack_missing(tmp_path):
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert "operator_guard_trigger_ack" in failed
+
+
+def test_cli_resume_gate_live_dryrun_requires_operator_review(tmp_path):
+    incident, scaleup = write_inputs(tmp_path, target_mode="live_dryrun")
+    out_dir = tmp_path / "resume"
+
+    code = main(
+        [
+            "review-resume-gate",
+            "--incident",
+            str(incident),
+            "--scaleup",
+            str(scaleup),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "resume_summary.csv")
+    checks = pd.read_csv(out_dir / "resume_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {"operator_approved", "operator_guard_trigger_ack"} <= failed

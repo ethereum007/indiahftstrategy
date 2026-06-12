@@ -1835,6 +1835,11 @@ manifest.json
 retain the prior incident's guard-trigger fields so resume approval is tied
 back to the halt that was closed.
 
+When the scale-up target mode is `live_dryrun`, the resume gate automatically
+requires both operator approval and acknowledgement of the prior guard trigger,
+even if the explicit `--require-operator-approval` or
+`--require-operator-trigger-ack` flags are omitted.
+
 When `--require-operator-trigger-ack` is set, the latest operator review row
 must include a matching `guard_failed_check_names`,
 `incident_guard_failed_check_names`, `ack_guard_failed_check_names`, or
