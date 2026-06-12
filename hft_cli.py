@@ -11,6 +11,7 @@ from adapters.schema_audit import write_adapter_schema_audit
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
+from reports.catalog import write_experiment_catalog
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
@@ -143,6 +144,10 @@ def main(argv: list[str] | None = None) -> int:
     proof.add_argument("--min-markout-mean", type=float, default=None)
     proof.add_argument("--min-spread-net", type=float, default=None)
     proof.add_argument("--fail-on-breach", action="store_true")
+
+    catalog = sub.add_parser("catalog-runs", help="Build an experiment catalog from manifest-bearing run folders.")
+    catalog.add_argument("--roots", nargs="+", required=True)
+    catalog.add_argument("--out", required=True)
 
     leadlag_sweep = sub.add_parser("sweep-leadlag", help="Run lead-lag replay robustness sweep.")
     leadlag_sweep.add_argument("--leader", required=True)
@@ -531,6 +536,10 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "catalog-runs":
+        result = write_experiment_catalog(args.roots, output_dir=args.out)
+        print(result.summary.to_string(index=False))
+        return 0
     if args.command == "sweep-leadlag":
         result = run_leadlag_sweep(
             leader_path=args.leader,

@@ -42,6 +42,24 @@ Replay, sweep, proof, and selection output folders include `manifest.json` with
 run parameters, input hashes, output artifact hashes, git state, and runtime
 package versions.
 
+## Experiment Catalog
+
+Collect manifest-bearing run folders into one evidence ledger:
+
+```powershell
+python -m hft_cli catalog-runs `
+  --roots runs `
+  --out runs\catalog\latest
+```
+
+Outputs:
+
+```text
+experiment_catalog.csv
+experiment_catalog_summary.csv
+manifest.json
+```
+
 ## Parity / Box Scan
 
 ```powershell
