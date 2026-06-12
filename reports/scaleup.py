@@ -38,6 +38,7 @@ class ScaleUpThresholds:
     allowed_adapters: tuple[str, ...] = ()
     require_proof_refresh: bool = False
     require_instrument_metadata: bool = False
+    require_data_readiness: bool = False
     require_broker_readiness: bool = False
     min_instrument_parse_coverage: float = 1.0
 
@@ -65,6 +66,7 @@ def evaluate_scaleup_plan(
     order_exposure_summary: pd.DataFrame | None = None,
     proof_refresh_summary: pd.DataFrame | None = None,
     instrument_metadata_summary: pd.DataFrame | None = None,
+    data_readiness_summary: pd.DataFrame | None = None,
     broker_readiness_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
@@ -76,6 +78,7 @@ def evaluate_scaleup_plan(
     exposure = order_exposure_summary if order_exposure_summary is not None else pd.DataFrame()
     proof_refresh = proof_refresh_summary if proof_refresh_summary is not None else pd.DataFrame()
     instrument_metadata = instrument_metadata_summary if instrument_metadata_summary is not None else pd.DataFrame()
+    data_readiness = data_readiness_summary if data_readiness_summary is not None else pd.DataFrame()
     broker_readiness = broker_readiness_summary if broker_readiness_summary is not None else pd.DataFrame()
 
     rows = {
@@ -85,6 +88,7 @@ def evaluate_scaleup_plan(
         "exposure": exposure.iloc[0] if not exposure.empty else pd.Series(dtype=object),
         "proof_refresh": proof_refresh.iloc[0] if not proof_refresh.empty else pd.Series(dtype=object),
         "instrument_metadata": instrument_metadata.iloc[0] if not instrument_metadata.empty else pd.Series(dtype=object),
+        "data_readiness": data_readiness.iloc[0] if not data_readiness.empty else pd.Series(dtype=object),
         "broker_readiness": broker_readiness.iloc[0] if not broker_readiness.empty else pd.Series(dtype=object),
     }
     checks = _checks(rows, thresholds)
@@ -104,6 +108,7 @@ def write_scaleup_plan(
     order_exposure_dir: str | Path | None = None,
     proof_refresh_dir: str | Path | None = None,
     instrument_metadata_dir: str | Path | None = None,
+    data_readiness_dir: str | Path | None = None,
     broker_readiness_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
@@ -124,6 +129,11 @@ def write_scaleup_plan(
         if broker_readiness_dir
         else None
     )
+    data_readiness = (
+        _read_optional_summary(data_readiness_dir, "data_readiness_summary.csv")
+        if data_readiness_dir
+        else None
+    )
     thresholds = thresholds or ScaleUpThresholds()
     report = evaluate_scaleup_plan(
         evidence_summary=evidence,
@@ -132,6 +142,7 @@ def write_scaleup_plan(
         order_exposure_summary=exposure,
         proof_refresh_summary=proof_refresh,
         instrument_metadata_summary=instrument_metadata,
+        data_readiness_summary=data_readiness,
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
     )
@@ -152,6 +163,8 @@ def write_scaleup_plan(
         inputs["proof_refresh"] = Path(proof_refresh_dir)
     if instrument_metadata_dir is not None:
         inputs["instrument_metadata"] = Path(instrument_metadata_dir)
+    if data_readiness_dir is not None:
+        inputs["data_readiness"] = Path(data_readiness_dir)
     if broker_readiness_dir is not None:
         inputs["broker_readiness"] = Path(broker_readiness_dir)
     write_experiment_manifest(
@@ -170,6 +183,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     exposure = rows["exposure"]
     proof_refresh = rows["proof_refresh"]
     instrument_metadata = rows["instrument_metadata"]
+    data_readiness = rows["data_readiness"]
     broker_readiness = rows["broker_readiness"]
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
@@ -268,6 +282,29 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 thresholds.min_instrument_parse_coverage,
             )
         )
+    if thresholds.require_data_readiness:
+        checks.append(
+            _check(
+                "data_readiness_available",
+                not data_readiness.empty,
+                "is",
+                True,
+                not data_readiness.empty,
+                "data readiness review is required but no summary was supplied",
+            )
+        )
+    if not data_readiness.empty:
+        data_ready = _to_bool(data_readiness.get("ready", False))
+        checks.append(
+            _check(
+                "data_readiness_ready",
+                data_ready,
+                "is",
+                True,
+                data_ready,
+                "data readiness review is not ready",
+            )
+        )
     if thresholds.require_broker_readiness:
         checks.append(
             _check(
@@ -299,6 +336,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
     shadow = rows["shadow"]
     proof_refresh = rows["proof_refresh"]
     instrument_metadata = rows["instrument_metadata"]
+    data_readiness = rows["data_readiness"]
     broker_readiness = rows["broker_readiness"]
     accepted_orders = int(_number(launch, "accepted_orders", fallback=0.0))
     launch_notional = _number(launch, "total_notional", fallback=0.0)
@@ -345,6 +383,16 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "unparsed_instruments": int(_number(instrument_metadata, "unparsed_instruments", fallback=0.0))
                 if not instrument_metadata.empty
                 else 0,
+                "data_readiness_provided": not data_readiness.empty,
+                "data_readiness_ready": _to_bool(data_readiness.get("ready", False))
+                if not data_readiness.empty
+                else False,
+                "data_readiness_failed_checks": int(_number(data_readiness, "failed_checks", fallback=0.0))
+                if not data_readiness.empty
+                else 0,
+                "data_readiness_recommendation": str(data_readiness.get("recommendation", ""))
+                if not data_readiness.empty
+                else "",
                 "broker_readiness_provided": not broker_readiness.empty,
                 "broker_readiness_ready": _to_bool(broker_readiness.get("ready", False))
                 if not broker_readiness.empty
@@ -376,6 +424,7 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "proof_source": str(plan_row["proof_source"]),
                 "instrument_metadata_passed": _to_bool(plan_row["instrument_metadata_passed"]),
                 "instrument_parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
+                "data_readiness_ready": _to_bool(plan_row["data_readiness_ready"]),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "failed_checks": failed,
@@ -425,6 +474,13 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
             "min_parse_coverage": float(thresholds.min_instrument_parse_coverage),
             "unparsed_instruments": int(plan_row["unparsed_instruments"]),
+        },
+        "data_readiness": {
+            "required": bool(thresholds.require_data_readiness),
+            "provided": _to_bool(plan_row["data_readiness_provided"]),
+            "ready": _to_bool(plan_row["data_readiness_ready"]),
+            "failed_checks": int(plan_row["data_readiness_failed_checks"]),
+            "recommendation": str(plan_row["data_readiness_recommendation"]),
         },
         "broker_readiness": {
             "required": bool(thresholds.require_broker_readiness),

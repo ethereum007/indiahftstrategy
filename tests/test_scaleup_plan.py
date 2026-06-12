@@ -123,6 +123,22 @@ def broker_readiness_summary(ready=True, adapter="arrow_money"):
     )
 
 
+def data_readiness_summary(ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "components": 6,
+                "required_components": 3,
+                "provided_components": 6,
+                "ready_components": 6 if ready else 5,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
+            }
+        ]
+    )
+
+
 def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_ready=True, exposure_passed=True):
     evidence = root / "evidence"
     shadow = root / "shadow"
@@ -221,6 +237,21 @@ def test_scaleup_plan_accepts_required_broker_readiness():
     assert report.summary.iloc[0]["broker_readiness_ready"]
     assert report.config["broker_readiness"]["required"]
     assert report.config["broker_readiness"]["ready"]
+
+
+def test_scaleup_plan_accepts_required_data_readiness():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        data_readiness_summary=data_readiness_summary(True),
+        thresholds=ScaleUpThresholds(require_data_readiness=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["data_readiness_ready"]
+    assert report.config["data_readiness"]["required"]
+    assert report.config["data_readiness"]["ready"]
 
 
 def test_scaleup_plan_fails_on_instrument_metadata_gap():
@@ -392,6 +423,33 @@ def test_cli_scaleup_plan_can_require_broker_readiness(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "broker_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_can_require_data_readiness(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-data-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "data_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
 
 
 def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
