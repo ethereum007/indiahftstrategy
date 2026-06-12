@@ -669,6 +669,34 @@ scaleup_config.json
 manifest.json
 ```
 
+## Runtime Scale-Up Guard
+
+Evaluate live or paper telemetry snapshots against the scale-up limits and kill
+switches:
+
+```powershell
+python -m hft_cli monitor-scaleup-guard `
+  --scaleup runs\scaleup\leadlag_shadow `
+  --telemetry logs\leadlag_shadow_telemetry.csv `
+  --out runs\guards\leadlag_shadow_latest `
+  --fail-on-halt
+```
+
+Telemetry CSV columns:
+
+```text
+scenario_key,adapter,orders_sent,session_notional,realized_pnl,total_failed_component_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage
+```
+
+Outputs:
+
+```text
+runtime_guard_metrics.csv
+runtime_guard_checks.csv
+runtime_guard_summary.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

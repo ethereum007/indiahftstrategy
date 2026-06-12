@@ -92,6 +92,9 @@
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, and optional exposure summaries into explicit order,
   notional, adapter, and kill-switch limits.
+- Runtime scale-up guard that evaluates live or paper telemetry snapshots
+  against `scaleup_config.json` limits and kill switches, returning explicit
+  continue/halt decisions.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -128,7 +131,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 144 tests.
+Current passing suite: 149 tests.
 
 ## Next Build Targets
 

@@ -1,0 +1,128 @@
+import json
+
+import pandas as pd
+
+from hft_cli import main
+from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
+
+
+def scaleup_config(**overrides):
+    config = {
+        "schema_version": 1,
+        "ready": True,
+        "target_mode": "shadow",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "limits": {
+            "max_orders_per_session": 10,
+            "max_notional_per_session": 100_000.0,
+            "max_scale_multiplier": 1.0,
+            "stop_loss": 5_000.0,
+        },
+        "kill_switches": {
+            "max_total_failed_component_checks": 0,
+            "max_total_unmatched_fills": 0,
+            "max_total_mismatched_orders": 0,
+            "max_total_overfilled_orders": 0,
+            "max_worst_adverse_slippage": 0.05,
+        },
+    }
+    config.update(overrides)
+    return config
+
+
+def telemetry(**overrides):
+    row = {
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "orders_sent": 4,
+        "session_notional": 40_000.0,
+        "realized_pnl": -500.0,
+        "total_failed_component_checks": 0,
+        "unmatched_fills": 0,
+        "mismatched_orders": 0,
+        "overfilled_orders": 0,
+        "worst_adverse_slippage": 0.02,
+    }
+    row.update(overrides)
+    return pd.DataFrame([row])
+
+
+def test_runtime_guard_continues_when_telemetry_is_inside_limits():
+    report = evaluate_runtime_guard(scaleup_config(), telemetry())
+
+    assert not report.halted
+    assert report.summary.iloc[0]["guard_action"] == "continue"
+    assert set(report.checks["passed"]) == {True}
+    assert report.metrics.iloc[0]["max_orders_per_session"] == 10
+
+
+def test_runtime_guard_halts_on_limit_and_kill_switch_breaches():
+    report = evaluate_runtime_guard(
+        scaleup_config(),
+        telemetry(
+            orders_sent=11,
+            realized_pnl=-5_500.0,
+            unmatched_fills=1,
+            worst_adverse_slippage=0.08,
+        ),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"orders_sent", "realized_pnl", "unmatched_fills", "worst_adverse_slippage"} <= failed
+
+
+def test_runtime_guard_halts_on_manual_halt_flag():
+    report = evaluate_runtime_guard(scaleup_config(manual_halt=True), telemetry())
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "manual_halt" in failed
+
+
+def test_write_runtime_guard_outputs_artifacts(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "guard"
+    telemetry_path = tmp_path / "telemetry.csv"
+    scaleup_dir.mkdir()
+    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    telemetry().to_csv(telemetry_path, index=False)
+
+    report = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry_path,
+        output_dir=out_dir,
+    )
+
+    assert report.output_dir == out_dir
+    assert (out_dir / "runtime_guard_metrics.csv").exists()
+    assert (out_dir / "runtime_guard_checks.csv").exists()
+    assert (out_dir / "runtime_guard_summary.csv").exists()
+    assert (out_dir / "manifest.json").exists()
+
+
+def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "guard"
+    telemetry_path = tmp_path / "telemetry.csv"
+    scaleup_dir.mkdir()
+    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    telemetry(orders_sent=12).to_csv(telemetry_path, index=False)
+
+    code = main(
+        [
+            "monitor-scaleup-guard",
+            "--scaleup",
+            str(scaleup_dir),
+            "--telemetry",
+            str(telemetry_path),
+            "--out",
+            str(out_dir),
+            "--fail-on-halt",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "runtime_guard_summary.csv")
+    assert code == 2
+    assert summary.loc[0, "guard_action"] == "halt"

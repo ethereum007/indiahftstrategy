@@ -20,6 +20,7 @@ from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
+from reports.runtime_guard import write_runtime_guard_report
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
@@ -353,6 +354,12 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--stop-loss", type=float, default=None)
     scaleup.add_argument("--allowed-adapter", action="append", dest="allowed_adapters")
     scaleup.add_argument("--fail-on-breach", action="store_true")
+
+    runtime_guard = sub.add_parser("monitor-scaleup-guard", help="Evaluate runtime telemetry against scale-up guardrails.")
+    runtime_guard.add_argument("--scaleup", required=True)
+    runtime_guard.add_argument("--telemetry", required=True)
+    runtime_guard.add_argument("--out", required=True)
+    runtime_guard.add_argument("--fail-on-halt", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -832,6 +839,14 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "monitor-scaleup-guard":
+        result = write_runtime_guard_report(
+            scaleup_dir=args.scaleup,
+            telemetry_path=args.telemetry,
+            output_dir=args.out,
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_halt and result.halted else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,
