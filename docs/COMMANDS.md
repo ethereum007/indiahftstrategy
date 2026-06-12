@@ -562,6 +562,37 @@ This command is intentionally an audit, not a market-impact strategy: it finds
 touch-price dislocations that clear explicit edge/cost thresholds and records
 whether they are ready for later replay work.
 
+Run the same audit across expiry folds before trusting a candidate:
+
+```powershell
+python -m hft_cli walkforward-settlement-convergence `
+  --index-ticks data\nifty_index_2026_06_10.csv data\nifty_index_2026_06_17.csv `
+  --chains data\nifty_chain_2026_06_10.csv data\nifty_chain_2026_06_17.csv `
+  --label nifty_tue_1 `
+  --label nifty_tue_2 `
+  --out runs\settlement_convergence_walkforward `
+  --window-start-ns 1786536600000000000 1787141400000000000 `
+  --window-end-ns 1786538400000000000 1787143200000000000 `
+  --min-known-fraction 0.50 `
+  --min-gross-edge-ticks 10 `
+  --min-net-edge 100 `
+  --min-fold-best-net-edge 100 `
+  --min-pass-rate 1 `
+  --min-total-opportunities 2 `
+  --fail-on-breach
+```
+
+Walk-forward outputs:
+
+```text
+settlement_convergence_walkforward_folds.csv
+settlement_convergence_walkforward_checks.csv
+settlement_convergence_walkforward_summary.csv
+candidate_config.json
+manifest.json
+runs\<fold>\...
+```
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge

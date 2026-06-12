@@ -253,6 +253,32 @@ def test_catalog_experiment_runs_recognizes_imbalance_pipeline_status(tmp_path):
     assert row["summary_status_column"] == "ready"
 
 
+def test_catalog_experiment_runs_recognizes_settlement_walkforward_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "settlement_convergence_walkforward",
+        run_type="settlement_convergence_walkforward",
+        summary_name="settlement_convergence_walkforward_summary.csv",
+        summary_row={
+            "passed": True,
+            "failed_checks": 0,
+            "fold_count": 2,
+            "passed_folds": 2,
+            "total_net_edge": 250.0,
+            "best_direction": "buy_underpriced",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "settlement_convergence_walkforward"
+    assert row["summary_file"] == "settlement_convergence_walkforward_summary.csv"
+    assert row["summary_status_column"] == "passed"
+    assert row["summary_passed_folds"] == 2
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

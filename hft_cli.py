@@ -57,6 +57,10 @@ from reports.settlement_convergence import (
     SettlementConvergenceThresholds,
     write_settlement_convergence_audit,
 )
+from reports.settlement_convergence_walkforward import (
+    SettlementConvergenceWalkForwardThresholds,
+    write_settlement_convergence_walkforward,
+)
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
@@ -388,6 +392,34 @@ def main(argv: list[str] | None = None) -> int:
     settlement.add_argument("--min-median-known-fraction", type=float, default=0.0)
     settlement.add_argument("--min-direction-count", type=int, default=1)
     settlement.add_argument("--fail-on-breach", action="store_true")
+
+    settlement_walkforward = sub.add_parser("walkforward-settlement-convergence", help="Run settlement convergence audits across expiry folds.")
+    settlement_walkforward.add_argument("--index-ticks", nargs="+", required=True)
+    settlement_walkforward.add_argument("--chains", nargs="+", required=True)
+    settlement_walkforward.add_argument("--out", required=True)
+    settlement_walkforward.add_argument("--label", action="append", dest="labels")
+    settlement_walkforward.add_argument("--window-start-ns", nargs="+", type=int, required=True)
+    settlement_walkforward.add_argument("--window-end-ns", nargs="+", type=int, required=True)
+    settlement_walkforward.add_argument("--index-price-col", default=None)
+    settlement_walkforward.add_argument("--lot-size", type=int, default=75)
+    settlement_walkforward.add_argument("--tick-size", type=float, default=0.05)
+    settlement_walkforward.add_argument("--qty", type=int, default=75)
+    settlement_walkforward.add_argument("--depth-fraction", type=float, default=1.0)
+    settlement_walkforward.add_argument("--min-known-fraction", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-gross-edge-ticks", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-net-edge", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-fold-opportunities", type=int, default=1)
+    settlement_walkforward.add_argument("--min-fold-total-net-edge", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-fold-best-net-edge", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-fold-median-known-fraction", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-fold-direction-count", type=int, default=1)
+    settlement_walkforward.add_argument("--min-folds", type=int, default=None)
+    settlement_walkforward.add_argument("--min-pass-rate", type=float, default=1.0)
+    settlement_walkforward.add_argument("--min-total-opportunities", type=int, default=1)
+    settlement_walkforward.add_argument("--min-total-net-edge", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-median-best-net-edge", type=float, default=0.0)
+    settlement_walkforward.add_argument("--min-median-known-fraction", type=float, default=0.0)
+    settlement_walkforward.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1327,6 +1359,40 @@ def main(argv: list[str] | None = None) -> int:
                 min_best_net_edge=args.min_best_net_edge,
                 min_median_known_fraction=args.min_median_known_fraction,
                 min_direction_count=args.min_direction_count,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "walkforward-settlement-convergence":
+        result = write_settlement_convergence_walkforward(
+            args.index_ticks,
+            args.chains,
+            output_dir=args.out,
+            labels=args.labels,
+            window_start_ns=args.window_start_ns,
+            window_end_ns=args.window_end_ns,
+            index_price_col=args.index_price_col,
+            lot_size=args.lot_size,
+            tick_size=args.tick_size,
+            qty=args.qty,
+            depth_fraction=args.depth_fraction,
+            min_known_fraction=args.min_known_fraction,
+            min_gross_edge_ticks=args.min_gross_edge_ticks,
+            min_net_edge=args.min_net_edge,
+            audit_thresholds=SettlementConvergenceThresholds(
+                min_opportunities=args.min_fold_opportunities,
+                min_total_net_edge=args.min_fold_total_net_edge,
+                min_best_net_edge=args.min_fold_best_net_edge,
+                min_median_known_fraction=args.min_fold_median_known_fraction,
+                min_direction_count=args.min_fold_direction_count,
+            ),
+            thresholds=SettlementConvergenceWalkForwardThresholds(
+                min_folds=args.min_folds if args.min_folds is not None else len(args.index_ticks),
+                min_pass_rate=args.min_pass_rate,
+                min_total_opportunities=args.min_total_opportunities,
+                min_total_net_edge=args.min_total_net_edge,
+                min_median_best_net_edge=args.min_median_best_net_edge,
+                min_median_known_fraction=args.min_median_known_fraction,
             ),
         )
         print(result.summary.to_string(index=False))

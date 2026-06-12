@@ -70,6 +70,9 @@
 - Settlement convergence audit command that compares expiring option touch
   prices with projected settlement intrinsic value, applies explicit
   edge/cost gates, and emits candidate configs for later replay work.
+- Settlement convergence walk-forward runner that repeats the expiry-window
+  audit across folds, requires stable pass rate and edge, and emits aggregate
+  evidence plus a replay-candidate config.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -210,7 +213,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 243 tests.
+Current passing suite: 246 tests.
 
 ## Next Build Targets
 
