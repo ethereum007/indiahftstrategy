@@ -732,6 +732,8 @@ python -m hft_cli pipeline-settlement-launch `
   --route-tag settlement_shadow `
   --max-order-qty 75 `
   --max-notional 10000 `
+  --broker-runtime-session runs\runtime_sessions\settlement_shadow_latest `
+  --require-broker-runtime-session `
   --allow-placeholder-schema `
   --fail-on-breach
 ```
@@ -753,10 +755,10 @@ manifest.json
 Without `--allow-placeholder-schema`, Arrow.money/iRage upload-pack readiness
 and broker-readiness checks fail closed until real broker upload schemas are
 reviewed. Add `--broker-schema-audit`, `--broker-mapping-draft`,
-`--broker-mapped-orders`, `--broker-halt-export`, or `--broker-reconciliation`
-when those broker evidence folders exist; pair them with the matching
-`--require-broker-*` flag to make that evidence mandatory in the final
-`06_broker_readiness` gate.
+`--broker-mapped-orders`, `--broker-halt-export`,
+`--broker-reconciliation`, or `--broker-runtime-session` when those broker
+evidence folders exist; pair them with the matching `--require-broker-*` flag
+to make that evidence mandatory in the final `06_broker_readiness` gate.
 
 ## Microprice Imbalance Sweep
 
@@ -968,6 +970,8 @@ python -m hft_cli pipeline-surface-mm-launch `
   --max-quote-messages-per-snapshot 40 `
   --expected-quote-fills 25 `
   --max-quote-otr 20 `
+  --broker-runtime-session runs\runtime_sessions\surface_mm_shadow_latest `
+  --require-broker-runtime-session `
   --allow-placeholder-schema `
   --fail-on-breach
 ```
@@ -991,6 +995,9 @@ handoff when the generated quotes would exceed message, active-quote, churn, or
 OTR limits. Staging uses `00_quote_lifecycle\quote_lifecycle_route_orders.csv`
 so stale raw quote rows and unchanged repeated quotes are not routed, while
 replace metadata survives into `03_export\broker_orders.csv`.
+Use `--broker-runtime-session` and `--require-broker-runtime-session` to make
+the nested `05_broker_readiness` gate require a continuing runtime guard before
+surface-MM paper/shadow handoff.
 
 ## Order Exposure Review
 

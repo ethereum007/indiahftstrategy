@@ -507,11 +507,13 @@ def main(argv: list[str] | None = None) -> int:
     settlement_pipeline.add_argument("--broker-mapped-orders", default=None)
     settlement_pipeline.add_argument("--broker-halt-export", default=None)
     settlement_pipeline.add_argument("--broker-reconciliation", default=None)
+    settlement_pipeline.add_argument("--broker-runtime-session", default=None)
     settlement_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
     settlement_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
     settlement_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
     settlement_pipeline.add_argument("--require-broker-halt-export", action="store_true")
     settlement_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
+    settlement_pipeline.add_argument("--require-broker-runtime-session", action="store_true")
     settlement_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
     settlement_pipeline.add_argument("--fail-on-breach", action="store_true")
 
@@ -1293,11 +1295,13 @@ def main(argv: list[str] | None = None) -> int:
     surface_launch_pipeline.add_argument("--broker-mapped-orders", default=None)
     surface_launch_pipeline.add_argument("--broker-halt-export", default=None)
     surface_launch_pipeline.add_argument("--broker-reconciliation", default=None)
+    surface_launch_pipeline.add_argument("--broker-runtime-session", default=None)
     surface_launch_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
     surface_launch_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
     surface_launch_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
     surface_launch_pipeline.add_argument("--require-broker-halt-export", action="store_true")
     surface_launch_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
+    surface_launch_pipeline.add_argument("--require-broker-runtime-session", action="store_true")
     surface_launch_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
     surface_launch_pipeline.add_argument("--fail-on-breach", action="store_true")
 
@@ -1886,11 +1890,13 @@ def main(argv: list[str] | None = None) -> int:
                 broker_mapped_orders_dir=args.broker_mapped_orders,
                 broker_halt_export_dir=args.broker_halt_export,
                 broker_reconciliation_dir=args.broker_reconciliation,
+                broker_runtime_session_dir=args.broker_runtime_session,
                 require_broker_schema_audit=args.require_broker_schema_audit,
                 require_broker_mapping_draft=args.require_broker_mapping_draft,
                 require_broker_mapped_orders=args.require_broker_mapped_orders,
                 require_broker_halt_export=args.require_broker_halt_export,
                 require_broker_reconciliation=args.require_broker_reconciliation,
+                require_broker_runtime_session=args.require_broker_runtime_session,
             ),
         )
         print(result.summary.to_string(index=False))
@@ -2845,11 +2851,13 @@ def main(argv: list[str] | None = None) -> int:
                 broker_mapped_orders_dir=args.broker_mapped_orders,
                 broker_halt_export_dir=args.broker_halt_export,
                 broker_reconciliation_dir=args.broker_reconciliation,
+                broker_runtime_session_dir=args.broker_runtime_session,
                 require_broker_schema_audit=args.require_broker_schema_audit,
                 require_broker_mapping_draft=args.require_broker_mapping_draft,
                 require_broker_mapped_orders=args.require_broker_mapped_orders,
                 require_broker_halt_export=args.require_broker_halt_export,
                 require_broker_reconciliation=args.require_broker_reconciliation,
+                require_broker_runtime_session=args.require_broker_runtime_session,
             ),
         )
         print(result.summary.to_string(index=False))

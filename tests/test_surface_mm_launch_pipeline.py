@@ -101,18 +101,43 @@ def write_surface_pipeline(path, *, quote_review_passed=True, promotion_ready=Tr
     )
 
 
+def write_runtime_session(path, *, adapter="normalized", ready=True, halted=False):
+    path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "guard_action": "halt" if halted else "continue",
+                "halted": halted,
+                "failed_checks": 1 if halted else 0,
+                "recommendation": "stop_routing_and_execute_halt_response" if halted else "continue_with_controls",
+            }
+        ]
+    ).to_csv(path / "runtime_session_summary.csv", index=False)
+
+
 def test_surface_mm_launch_pipeline_runs_to_broker_readiness(tmp_path):
     surface_pipeline = tmp_path / "surface_pipeline"
+    runtime_dir = tmp_path / "runtime_session"
     out_dir = tmp_path / "launch_pipeline"
     write_surface_pipeline(surface_pipeline)
+    write_runtime_session(runtime_dir)
 
     report = write_surface_mm_launch_pipeline(
         surface_pipeline,
         output_dir=out_dir,
-        config=SurfaceMMLaunchPipelineConfig(adapter="normalized", mode="paper", require_reviewed_schema=True),
+        config=SurfaceMMLaunchPipelineConfig(
+            adapter="normalized",
+            mode="paper",
+            require_reviewed_schema=True,
+            broker_runtime_session_dir=runtime_dir,
+            require_broker_runtime_session=True,
+        ),
     )
 
     components = report.components.set_index("component")
+    broker_summary = pd.read_csv(out_dir / "05_broker_readiness" / "broker_readiness_summary.csv")
     assert report.ready
     assert bool(components.loc["quote_lifecycle", "ready"])
     assert bool(components.loc["staged_orders", "ready"])
@@ -120,6 +145,8 @@ def test_surface_mm_launch_pipeline_runs_to_broker_readiness(tmp_path):
     assert bool(components.loc["export", "ready"])
     assert bool(components.loc["upload_pack", "ready"])
     assert bool(components.loc["broker_readiness", "ready"])
+    assert bool(broker_summary.loc[0, "runtime_session_ready"])
+    assert broker_summary.loc[0, "runtime_guard_action"] == "continue"
     assert (out_dir / "00_quote_lifecycle" / "quote_lifecycle_summary.csv").exists()
     assert (out_dir / "01_staged_orders" / "staged_orders.csv").exists()
     assert (out_dir / "02_launch" / "launch_config.json").exists()
@@ -228,3 +255,30 @@ def test_cli_surface_mm_launch_pipeline_can_fail_on_breach(tmp_path):
     summary = pd.read_csv(out_dir / "surface_mm_launch_pipeline_summary.csv")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+
+
+def test_cli_surface_mm_launch_pipeline_can_require_runtime_session(tmp_path):
+    surface_pipeline = tmp_path / "surface_pipeline"
+    out_dir = tmp_path / "cli_launch_pipeline_runtime"
+    write_surface_pipeline(surface_pipeline)
+
+    code = main(
+        [
+            "pipeline-surface-mm-launch",
+            "--surface-pipeline",
+            str(surface_pipeline),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "normalized",
+            "--mode",
+            "paper",
+            "--require-broker-runtime-session",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "05_broker_readiness" / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "runtime_session_provided" in failed

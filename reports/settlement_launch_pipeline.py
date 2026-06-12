@@ -48,11 +48,13 @@ class SettlementLaunchPipelineConfig:
     broker_mapped_orders_dir: str | Path | None = None
     broker_halt_export_dir: str | Path | None = None
     broker_reconciliation_dir: str | Path | None = None
+    broker_runtime_session_dir: str | Path | None = None
     require_broker_schema_audit: bool = False
     require_broker_mapping_draft: bool = False
     require_broker_mapped_orders: bool = False
     require_broker_halt_export: bool = False
     require_broker_reconciliation: bool = False
+    require_broker_runtime_session: bool = False
 
 
 @dataclass(frozen=True)
@@ -184,6 +186,7 @@ def write_settlement_launch_pipeline(
             upload_pack_dir=out / "05_upload_pack",
             halt_export_dir=config.broker_halt_export_dir,
             reconciliation_dir=config.broker_reconciliation_dir,
+            runtime_session_dir=config.broker_runtime_session_dir,
             thresholds=BrokerReadinessThresholds(
                 adapter=config.adapter,
                 require_reviewed_schema=config.require_reviewed_schema,
@@ -194,6 +197,7 @@ def write_settlement_launch_pipeline(
                 require_upload_pack=True,
                 require_halt_export=config.require_broker_halt_export,
                 require_reconciliation=config.require_broker_reconciliation,
+                require_runtime_session=config.require_broker_runtime_session,
             ),
         )
         components.append(

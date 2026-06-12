@@ -65,10 +65,28 @@ def write_promotion(path, *, ready=True):
     )
 
 
+def write_runtime_session(path, *, adapter="arrow_money", ready=True, halted=False):
+    path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "guard_action": "halt" if halted else "continue",
+                "halted": halted,
+                "failed_checks": 1 if halted else 0,
+                "recommendation": "stop_routing_and_execute_halt_response" if halted else "continue_with_controls",
+            }
+        ]
+    ).to_csv(path / "runtime_session_summary.csv", index=False)
+
+
 def test_write_settlement_launch_pipeline_runs_full_paper_handoff(tmp_path):
     promotion_dir = tmp_path / "promotion"
+    runtime_dir = tmp_path / "runtime_session"
     out_dir = tmp_path / "pipeline"
     write_promotion(promotion_dir)
+    write_runtime_session(runtime_dir)
 
     report = write_settlement_launch_pipeline(
         promotion_dir,
@@ -80,12 +98,17 @@ def test_write_settlement_launch_pipeline_runs_full_paper_handoff(tmp_path):
             max_order_qty=75,
             max_notional=10_000,
             max_orders=1,
+            broker_runtime_session_dir=runtime_dir,
+            require_broker_runtime_session=True,
         ),
     )
 
+    broker_summary = pd.read_csv(out_dir / "06_broker_readiness" / "broker_readiness_summary.csv")
     assert report.ready
     assert report.output_dir == out_dir
     assert report.broker_readiness is not None
+    assert bool(broker_summary.loc[0, "runtime_session_ready"])
+    assert broker_summary.loc[0, "runtime_guard_action"] == "continue"
     assert report.components["status"].tolist() == ["ready", "ready", "ready", "ready", "ready", "ready"]
     assert (out_dir / "01_order_plan" / "settlement_order_candidates.csv").exists()
     assert (out_dir / "02_staged_orders" / "staged_orders.csv").exists()
@@ -180,3 +203,33 @@ def test_cli_pipeline_settlement_launch_can_require_broker_reconciliation(tmp_pa
     assert not bool(summary.loc[0, "ready"])
     assert components.set_index("component").loc["broker_readiness", "status"] == "not_ready"
     assert "reconciliation_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_pipeline_settlement_launch_can_require_runtime_session(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+
+    code = main(
+        [
+            "pipeline-settlement-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "10000",
+            "--allow-placeholder-schema",
+            "--require-broker-runtime-session",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "06_broker_readiness" / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "runtime_session_provided" in failed

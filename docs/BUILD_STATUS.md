@@ -83,8 +83,8 @@
   export, and reconciliation path.
 - Settlement launch pipeline that chains a promoted settlement candidate
   through order planning, staging, launch bundling, broker export,
-  Arrow.money/iRage upload-pack generation, and broker-readiness gating with
-  component-level readiness.
+  Arrow.money/iRage upload-pack generation, and broker-readiness/runtime-session
+  gating with component-level readiness.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -106,8 +106,8 @@
   selection, and promotion into one manifest-backed candidate run.
 - Surface market-making launch pipeline that consumes a promoted surface
   research pipeline and runs quote-risk-enforced lifecycle planning, staging,
-  launch bundling, broker export, upload-pack generation, and broker-readiness
-  checks.
+  launch bundling, broker export, upload-pack generation, and
+  broker-readiness/runtime-session checks.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -305,7 +305,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 382 tests.
+Current passing suite: 386 tests.
 
 ## Next Build Targets
 
