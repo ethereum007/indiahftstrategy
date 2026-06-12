@@ -19,6 +19,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
+from reports.data_readiness import DataReadinessThresholds, write_data_readiness_report
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
@@ -576,6 +577,35 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     diag_chain.add_argument("--no-filter-session", action="store_true")
+
+    data_readiness = sub.add_parser("review-data-readiness", help="Gate vendor/normalized market data before research runs.")
+    data_readiness.add_argument("--out", required=True)
+    data_readiness.add_argument("--schema-audit", default=None)
+    data_readiness.add_argument("--mapped-data", default=None)
+    data_readiness.add_argument("--tick-diagnostics", default=None)
+    data_readiness.add_argument("--chain-diagnostics", default=None)
+    data_readiness.add_argument("--market-profile", default=None)
+    data_readiness.add_argument("--instrument-metadata", default=None)
+    data_readiness.add_argument("--require-schema-audit", action="store_true")
+    data_readiness.add_argument("--require-mapped-data", action="store_true")
+    data_readiness.add_argument("--skip-tick-diagnostics", action="store_true")
+    data_readiness.add_argument("--require-chain-diagnostics", action="store_true")
+    data_readiness.add_argument("--require-market-profile", action="store_true")
+    data_readiness.add_argument("--require-explicit-fee-model", action="store_true")
+    data_readiness.add_argument("--require-instrument-metadata", action="store_true")
+    data_readiness.add_argument("--min-tick-rows", type=int, default=1)
+    data_readiness.add_argument("--min-chain-rows", type=int, default=1)
+    data_readiness.add_argument("--min-chain-expiries", type=int, default=1)
+    data_readiness.add_argument("--min-chain-strikes", type=int, default=1)
+    data_readiness.add_argument("--max-nonmonotonic-rows", type=int, default=0)
+    data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
+    data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
+    data_readiness.add_argument("--max-tick-p99-gap-ns", type=float, default=None)
+    data_readiness.add_argument("--max-tick-median-spread-ticks", type=float, default=None)
+    data_readiness.add_argument("--max-chain-median-spread-ticks", type=float, default=None)
+    data_readiness.add_argument("--fail-on-breach", action="store_true")
 
     instrument_metadata = sub.add_parser(
         "instrument-metadata-report",
@@ -1701,6 +1731,39 @@ def main(argv: list[str] | None = None) -> int:
         result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size, market=args.market), args.out)
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "review-data-readiness":
+        result = write_data_readiness_report(
+            output_dir=args.out,
+            schema_audit_dir=args.schema_audit,
+            mapped_data_dir=args.mapped_data,
+            tick_diagnostics_dir=args.tick_diagnostics,
+            chain_diagnostics_dir=args.chain_diagnostics,
+            market_profile_dir=args.market_profile,
+            instrument_metadata_dir=args.instrument_metadata,
+            thresholds=DataReadinessThresholds(
+                require_schema_audit=args.require_schema_audit,
+                require_mapped_data=args.require_mapped_data,
+                require_tick_diagnostics=not args.skip_tick_diagnostics,
+                require_chain_diagnostics=args.require_chain_diagnostics,
+                require_market_profile=args.require_market_profile,
+                require_explicit_fee_model=args.require_explicit_fee_model,
+                require_instrument_metadata=args.require_instrument_metadata,
+                min_tick_rows=args.min_tick_rows,
+                min_chain_rows=args.min_chain_rows,
+                min_chain_expiries=args.min_chain_expiries,
+                min_chain_strikes=args.min_chain_strikes,
+                max_nonmonotonic_rows=args.max_nonmonotonic_rows,
+                max_crossed_quote_rows=args.max_crossed_quote_rows,
+                max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_out_of_session_rows=args.max_out_of_session_rows,
+                max_tick_p99_gap_ns=args.max_tick_p99_gap_ns,
+                max_tick_median_spread_ticks=args.max_tick_median_spread_ticks,
+                max_chain_median_spread_ticks=args.max_chain_median_spread_ticks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "instrument-metadata-report":
         result = write_instrument_metadata_report(
             args.input,

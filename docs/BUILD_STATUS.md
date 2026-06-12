@@ -114,6 +114,9 @@
   inventory reports in replay outputs.
 - Data-quality diagnostics for tick and option-chain files, including spread,
   depth, timestamp, session, crossed quote, and strike coverage reports.
+- Data readiness gate that combines schema audit, mapped-data normalization,
+  tick/chain diagnostics, market-profile fee assumptions, and instrument
+  metadata before strategy research or promotion.
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.
@@ -240,7 +243,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 293 tests.
+Current passing suite: 299 tests.
 
 ## Next Build Targets
 

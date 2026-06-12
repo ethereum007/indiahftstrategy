@@ -1757,6 +1757,42 @@ diagnostic_summary.csv
 diagnostic_issues.csv
 ```
 
+## Data Readiness Gate
+
+Combine adapter schema audit, mapped-data normalization, tick/chain
+diagnostics, market profile fees, and instrument metadata into one go/no-go
+record before edge scans, walk-forwards, or replay pipelines:
+
+```powershell
+python -m hft_cli review-data-readiness `
+  --schema-audit runs\schema_audit\arrow_ticks `
+  --mapped-data data\normalized\arrow_ticks_2026_06_10 `
+  --tick-diagnostics runs\diagnostics\futures `
+  --chain-diagnostics runs\diagnostics\chain `
+  --market-profile runs\market_profiles\india_us `
+  --instrument-metadata runs\risk\leadlag_shadow_instruments `
+  --out runs\data_readiness\india_nse_2026_06_10 `
+  --require-schema-audit `
+  --require-mapped-data `
+  --require-chain-diagnostics `
+  --require-market-profile `
+  --require-explicit-fee-model `
+  --require-instrument-metadata `
+  --max-tick-p99-gap-ns 1000000000 `
+  --max-tick-median-spread-ticks 2 `
+  --max-chain-median-spread-ticks 20 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+data_readiness_items.csv
+data_readiness_checks.csv
+data_readiness_summary.csv
+manifest.json
+```
+
 ## Proof Report
 
 Evaluate one or more replay output folders against explicit proof thresholds:
