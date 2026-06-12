@@ -200,6 +200,8 @@ def _authorization(
                 "max_total_overfilled_orders": _nullable_number(kill_switches.get("max_total_overfilled_orders")),
                 "max_lifecycle_orders": _nullable_number(kill_switches.get("max_lifecycle_orders")),
                 "max_replace_orders": _nullable_number(kill_switches.get("max_replace_orders")),
+                "max_abs_net_delta": _nullable_number(kill_switches.get("max_abs_net_delta")),
+                "max_abs_net_vega": _nullable_number(kill_switches.get("max_abs_net_vega")),
             }
         ]
     )

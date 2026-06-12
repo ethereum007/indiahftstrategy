@@ -61,7 +61,14 @@ def open_orders():
 def positions():
     return pd.DataFrame(
         [
-            {"instrument_id": "NIFTY_C_22000", "net_qty": 75, "market_bid": 11.2, "market_ask": 11.5},
+            {
+                "instrument_id": "NIFTY_C_22000",
+                "net_qty": 75,
+                "unit_delta": 0.75,
+                "unit_vega": 12.0,
+                "market_bid": 11.2,
+                "market_ask": 11.5,
+            },
         ]
     )
 
@@ -171,3 +178,33 @@ def test_cli_runtime_session_monitor_halts_on_upload_pack_replace_limit(tmp_path
     assert not bool(summary.loc[0, "ready"])
     assert int(telemetry.loc[0, "replace_orders"]) == 2
     assert "replace_orders" in failed
+
+
+def test_cli_runtime_session_monitor_halts_on_live_greek_limit(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    positions_path = tmp_path / "positions.csv"
+    write_scaleup_dir(scaleup_dir, scaleup_config(max_abs_net_delta=40, max_abs_net_vega=500))
+    positions().to_csv(positions_path, index=False)
+
+    code = main(
+        [
+            "monitor-runtime-session",
+            "--scaleup",
+            str(scaleup_dir),
+            "--positions",
+            str(positions_path),
+            "--out",
+            str(out_dir),
+            "--skip-halt-response",
+            "--fail-on-breach",
+        ]
+    )
+
+    telemetry = pd.read_csv(out_dir / "01_telemetry" / "runtime_telemetry.csv")
+    checks = pd.read_csv(out_dir / "02_guard" / "runtime_guard_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert telemetry.loc[0, "abs_net_delta"] == 56.25
+    assert telemetry.loc[0, "abs_net_vega"] == 900.0
+    assert {"abs_net_delta", "abs_net_vega"} <= failed

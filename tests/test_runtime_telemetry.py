@@ -129,8 +129,8 @@ def open_orders():
 def positions():
     return pd.DataFrame(
         [
-            {"instrument_id": "NIFTY_C_22000", "net_qty": 75},
-            {"instrument_id": "NIFTY_P_22000", "net_qty": -25},
+            {"instrument_id": "NIFTY_C_22000", "net_qty": 75, "unit_delta": 0.45, "unit_vega": 12.0},
+            {"instrument_id": "NIFTY_P_22000", "net_qty": -25, "unit_delta": -0.30, "unit_vega": 8.0},
         ]
     )
 
@@ -159,8 +159,31 @@ def test_runtime_telemetry_combines_operational_artifacts():
     assert row["worst_adverse_slippage"] == 0.03
     assert row["open_order_count"] == 1
     assert row["gross_position_qty"] == 100.0
+    assert row["net_delta"] == 41.25
+    assert row["abs_net_delta"] == 41.25
+    assert row["net_vega"] == 700.0
+    assert row["abs_net_vega"] == 700.0
     assert bool(row["broker_upload_pack_ready"])
     assert report.summary.iloc[0]["recommendation"] == "feed_runtime_guard"
+
+
+def test_runtime_telemetry_uses_total_position_greek_columns():
+    report = evaluate_runtime_telemetry(
+        scaleup_config(),
+        positions=pd.DataFrame(
+            [
+                {"instrument_id": "NIFTY_C_22000", "net_delta": 15.0, "net_vega": 25.0},
+                {"instrument_id": "NIFTY_P_22000", "net_delta": -5.0, "net_vega": -10.0},
+            ]
+        ),
+    )
+
+    row = report.telemetry.iloc[0]
+    assert report.ready
+    assert row["net_delta"] == 10.0
+    assert row["abs_net_delta"] == 10.0
+    assert row["net_vega"] == 15.0
+    assert row["abs_net_vega"] == 15.0
 
 
 def test_runtime_telemetry_blocks_unready_upload_pack():

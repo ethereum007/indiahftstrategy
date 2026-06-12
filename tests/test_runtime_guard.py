@@ -127,6 +127,8 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
             "max_open_order_qty": 50,
             "max_gross_position_qty": 100,
             "max_abs_net_position_qty": 25,
+            "max_abs_net_delta": 40,
+            "max_abs_net_vega": 600,
         }
     )
 
@@ -137,12 +139,21 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
             open_order_qty=75,
             gross_position_qty=150,
             abs_net_position_qty=50,
+            abs_net_delta=50,
+            abs_net_vega=700,
         ),
     )
 
     assert report.halted
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
-    assert {"open_order_count", "open_order_qty", "gross_position_qty", "abs_net_position_qty"} <= failed
+    assert {
+        "open_order_count",
+        "open_order_qty",
+        "gross_position_qty",
+        "abs_net_position_qty",
+        "abs_net_delta",
+        "abs_net_vega",
+    } <= failed
 
 
 def test_runtime_guard_halts_on_lifecycle_and_replace_breaches():
@@ -164,6 +175,8 @@ def test_runtime_guard_continues_within_open_order_and_position_limits():
             "max_open_order_qty": 100,
             "max_gross_position_qty": 200,
             "max_abs_net_position_qty": 75,
+            "max_abs_net_delta": 75,
+            "max_abs_net_vega": 800,
         }
     )
 
@@ -174,11 +187,24 @@ def test_runtime_guard_continues_within_open_order_and_position_limits():
             open_order_qty=50,
             gross_position_qty=100,
             abs_net_position_qty=25,
+            abs_net_delta=50,
+            abs_net_vega=700,
         ),
     )
 
     assert not report.halted
     assert set(report.checks["passed"]) == {True}
+
+
+def test_runtime_guard_uses_legacy_limits_for_delta_and_vega():
+    config = scaleup_config()
+    config["limits"].update({"max_abs_net_delta": 40, "max_abs_net_vega": 600})
+
+    report = evaluate_runtime_guard(config, telemetry(abs_net_delta=50, abs_net_vega=700))
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"abs_net_delta", "abs_net_vega"} <= failed
 
 
 def test_runtime_guard_uses_scaleup_config_telemetry_age_limit():

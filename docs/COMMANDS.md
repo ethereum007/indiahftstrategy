@@ -1509,6 +1509,8 @@ python -m hft_cli plan-scaleup `
   --max-open-order-qty 500 `
   --max-gross-position-qty 1000 `
   --max-abs-net-position-qty 250 `
+  --max-abs-net-delta 100 `
+  --max-abs-net-vega 250 `
   --stop-loss 5000 `
   --require-instrument-metadata `
   --require-proof-refresh `
@@ -1567,6 +1569,10 @@ For settlement convergence or surface market-making handoffs, `--export` and
 `--upload-pack` may point at the launch-pipeline root; telemetry will read the
 nested broker export and upload-pack summaries from that folder. Upload-pack
 summaries carry `lifecycle_orders` and `replace_orders` into runtime guardrails.
+Position snapshots can provide total Greek columns such as `net_delta` and
+`net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
+`net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
+for runtime guard checks.
 
 ## Runtime Scale-Up Guard
 
@@ -1589,7 +1595,7 @@ python -m hft_cli monitor-scaleup-guard `
 Telemetry CSV columns:
 
 ```text
-scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,open_order_count,open_order_qty,gross_position_qty,abs_net_position_qty
+scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,open_order_count,open_order_qty,gross_position_qty,abs_net_position_qty,net_delta,abs_net_delta,net_vega,abs_net_vega
 ```
 
 Outputs:

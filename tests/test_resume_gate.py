@@ -58,6 +58,8 @@ def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money"):
             "max_total_overfilled_orders": 0,
             "max_lifecycle_orders": 20,
             "max_replace_orders": 5,
+            "max_abs_net_delta": 100.0,
+            "max_abs_net_vega": 250.0,
             "max_worst_adverse_slippage": 0.05,
         },
     }
@@ -95,6 +97,8 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.authorization.iloc[0]["max_orders_per_session"] == 10
     assert report.authorization.iloc[0]["max_lifecycle_orders"] == 20
     assert report.authorization.iloc[0]["max_replace_orders"] == 5
+    assert report.authorization.iloc[0]["max_abs_net_delta"] == 100.0
+    assert report.authorization.iloc[0]["max_abs_net_vega"] == 250.0
     assert report.summary.iloc[0]["recommendation"] == "resume_with_scaleup_controls"
     assert report.config["ready"]
 

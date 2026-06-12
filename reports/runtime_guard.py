@@ -121,6 +121,10 @@ def _metrics(
                 "open_order_qty": _number(latest, "open_order_qty"),
                 "gross_position_qty": _number(latest, "gross_position_qty"),
                 "abs_net_position_qty": _number(latest, "abs_net_position_qty"),
+                "net_delta": _number(latest, "net_delta"),
+                "abs_net_delta": _number(latest, "abs_net_delta"),
+                "net_vega": _number(latest, "net_vega"),
+                "abs_net_vega": _number(latest, "abs_net_vega"),
                 "total_failed_component_checks": _number(latest, "total_failed_component_checks"),
                 "unmatched_fills": _number(latest, "unmatched_fills"),
                 "mismatched_orders": _number(latest, "mismatched_orders"),
@@ -158,6 +162,16 @@ def _metrics(
                 "max_open_order_qty": _number_from(kill_switches, "max_open_order_qty"),
                 "max_gross_position_qty": _number_from(kill_switches, "max_gross_position_qty"),
                 "max_abs_net_position_qty": _number_from(kill_switches, "max_abs_net_position_qty"),
+                "max_abs_net_delta": _first_number(
+                    _number_from(kill_switches, "max_abs_net_delta"),
+                    _number_from(limits, "max_abs_net_delta"),
+                    np.nan,
+                ),
+                "max_abs_net_vega": _first_number(
+                    _number_from(kill_switches, "max_abs_net_vega"),
+                    _number_from(limits, "max_abs_net_vega"),
+                    np.nan,
+                ),
             }
         ]
     )
@@ -223,6 +237,8 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         ("open_order_qty", "max_open_order_qty"),
         ("gross_position_qty", "max_gross_position_qty"),
         ("abs_net_position_qty", "max_abs_net_position_qty"),
+        ("abs_net_delta", "max_abs_net_delta"),
+        ("abs_net_vega", "max_abs_net_vega"),
     ):
         if not pd.isna(row[threshold_column]):
             checks.append(_threshold_check(value_column, row[value_column], "<=", row[threshold_column]))
@@ -319,6 +335,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "orders_sent": row["orders_sent"],
                 "lifecycle_orders": row["lifecycle_orders"],
                 "replace_orders": row["replace_orders"],
+                "abs_net_delta": row["abs_net_delta"],
+                "abs_net_vega": row["abs_net_vega"],
                 "session_notional": row["session_notional"],
                 "realized_pnl": row["realized_pnl"],
                 "recommendation": "stop_routing_and_investigate" if halted else "continue_with_controls",

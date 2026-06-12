@@ -20,6 +20,8 @@ GUARD_COLUMNS = [
     "session_notional",
     "realized_pnl",
     "total_failed_component_checks",
+    "abs_net_delta",
+    "abs_net_vega",
     "unmatched_fills",
     "mismatched_orders",
     "overfilled_orders",
@@ -220,6 +222,10 @@ def _telemetry(
         "open_order_qty": float(_open_order_qty(open_orders)),
         "gross_position_qty": float(_gross_position_qty(positions)),
         "abs_net_position_qty": float(_abs_net_position_qty(positions)),
+        "net_delta": float(_net_greek_exposure(positions, "delta")),
+        "abs_net_delta": float(abs(_net_greek_exposure(positions, "delta"))),
+        "net_vega": float(_net_greek_exposure(positions, "vega")),
+        "abs_net_vega": float(abs(_net_greek_exposure(positions, "vega"))),
     }
     return pd.DataFrame([row])
 
@@ -325,6 +331,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "replace_orders": int(row["replace_orders"]),
                 "session_notional": float(row["session_notional"]),
                 "realized_pnl": float(row["realized_pnl"]),
+                "abs_net_delta": float(row["abs_net_delta"]),
+                "abs_net_vega": float(row["abs_net_vega"]),
                 "failed_checks": failed,
                 "recommendation": "feed_runtime_guard" if ready else "fix_telemetry_before_guard",
             }
@@ -458,6 +466,28 @@ def _position_quantities(positions: pd.DataFrame) -> pd.Series:
         if column in positions.columns:
             return pd.to_numeric(positions[column], errors="coerce").fillna(0.0)
     return pd.Series([0.0] * len(positions))
+
+
+def _net_greek_exposure(positions: pd.DataFrame, greek: str) -> float:
+    if positions.empty:
+        return 0.0
+    total_columns = (
+        f"signed_{greek}",
+        f"net_{greek}",
+        f"position_{greek}",
+        f"{greek}_exposure",
+    )
+    for column in total_columns:
+        if column in positions.columns:
+            return float(pd.to_numeric(positions[column], errors="coerce").fillna(0.0).sum())
+    unit_column = _first_existing_column(positions, (f"unit_{greek}", greek))
+    if unit_column is None:
+        return 0.0
+    return float((_position_quantities(positions) * pd.to_numeric(positions[unit_column], errors="coerce").fillna(0.0)).sum())
+
+
+def _first_existing_column(frame: pd.DataFrame, columns: tuple[str, ...]) -> str | None:
+    return next((column for column in columns if column in frame.columns), None)
 
 
 def _to_bool(value: object) -> bool:
