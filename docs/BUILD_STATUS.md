@@ -73,6 +73,9 @@
 - Settlement convergence walk-forward runner that repeats the expiry-window
   audit across folds, requires stable pass rate and edge, and emits aggregate
   evidence plus a replay-candidate config.
+- Settlement candidate promotion bridge that converts passed settlement
+  walk-forward evidence into launch-compatible promotion reports and
+  candidate configs for paper/shadow staging.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -213,7 +216,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 246 tests.
+Current passing suite: 249 tests.
 
 ## Next Build Targets
 

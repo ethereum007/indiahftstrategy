@@ -53,6 +53,10 @@ from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 from reports.replay_calibration import calibrated_replay_params_from_path, write_calibrated_replay_plan
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
+from reports.settlement_candidate_promotion import (
+    SettlementCandidatePromotionThresholds,
+    write_settlement_candidate_promotion,
+)
 from reports.settlement_convergence import (
     SettlementConvergenceThresholds,
     write_settlement_convergence_audit,
@@ -420,6 +424,18 @@ def main(argv: list[str] | None = None) -> int:
     settlement_walkforward.add_argument("--min-median-best-net-edge", type=float, default=0.0)
     settlement_walkforward.add_argument("--min-median-known-fraction", type=float, default=0.0)
     settlement_walkforward.add_argument("--fail-on-breach", action="store_true")
+
+    settlement_promotion = sub.add_parser("promote-settlement-candidate", help="Promote a proven settlement convergence walk-forward candidate.")
+    settlement_promotion.add_argument("--walkforward", required=True)
+    settlement_promotion.add_argument("--out", required=True)
+    settlement_promotion.add_argument("--allow-unpassed-walkforward", action="store_true")
+    settlement_promotion.add_argument("--allow-unready-candidate", action="store_true")
+    settlement_promotion.add_argument("--min-pass-rate", type=float, default=1.0)
+    settlement_promotion.add_argument("--min-total-opportunities", type=int, default=1)
+    settlement_promotion.add_argument("--min-total-net-edge", type=float, default=0.0)
+    settlement_promotion.add_argument("--min-median-best-net-edge", type=float, default=0.0)
+    settlement_promotion.add_argument("--min-median-known-fraction", type=float, default=0.0)
+    settlement_promotion.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -1397,6 +1413,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "promote-settlement-candidate":
+        result = write_settlement_candidate_promotion(
+            args.walkforward,
+            output_dir=args.out,
+            thresholds=SettlementCandidatePromotionThresholds(
+                require_walkforward_passed=not args.allow_unpassed_walkforward,
+                require_candidate_ready=not args.allow_unready_candidate,
+                min_pass_rate=args.min_pass_rate,
+                min_total_opportunities=args.min_total_opportunities,
+                min_total_net_edge=args.min_total_net_edge,
+                min_median_best_net_edge=args.min_median_best_net_edge,
+                min_median_known_fraction=args.min_median_known_fraction,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "calibrate":
         _, summary = run_calibration_report(
             simulated_orders_path=args.simulated_orders,

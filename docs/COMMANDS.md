@@ -593,6 +593,31 @@ manifest.json
 runs\<fold>\...
 ```
 
+Promote a passed settlement walk-forward candidate into the same
+paper/shadow-ready promotion shape used by launch bundles:
+
+```powershell
+python -m hft_cli promote-settlement-candidate `
+  --walkforward runs\settlement_convergence_walkforward `
+  --out runs\promotion\settlement_convergence `
+  --min-pass-rate 1 `
+  --min-total-opportunities 2 `
+  --min-total-net-edge 200 `
+  --min-median-best-net-edge 100 `
+  --min-median-known-fraction 0.50 `
+  --fail-on-breach
+```
+
+Promotion outputs:
+
+```text
+promotion_candidate.csv
+promotion_checks.csv
+promotion_summary.csv
+candidate_config.json
+manifest.json
+```
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge
