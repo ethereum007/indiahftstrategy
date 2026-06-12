@@ -351,7 +351,8 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "data readiness comparison is not accepted",
             )
         )
-    if thresholds.require_broker_readiness:
+    broker_readiness_required = _broker_readiness_required(thresholds)
+    if broker_readiness_required:
         checks.append(
             _check(
                 "broker_readiness_available",
@@ -373,6 +374,39 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 broker_ready,
                 "broker readiness review is not ready",
             )
+        )
+    if thresholds.target_mode == "live_dryrun":
+        runtime_session_provided = _to_bool(broker_readiness.get("runtime_session_provided", False))
+        runtime_session_ready = _to_bool(broker_readiness.get("runtime_session_ready", False))
+        runtime_guard_action = str(broker_readiness.get("runtime_guard_action", "")).strip().lower()
+        runtime_guard_halted = _to_bool(broker_readiness.get("runtime_guard_halted", False))
+        checks.extend(
+            [
+                _check(
+                    "broker_runtime_session_provided",
+                    runtime_session_provided,
+                    "is",
+                    True,
+                    runtime_session_provided,
+                    "live_dryrun scale-up requires broker readiness with runtime-session evidence",
+                ),
+                _check(
+                    "broker_runtime_session_ready",
+                    runtime_session_ready,
+                    "is",
+                    True,
+                    runtime_session_ready,
+                    "broker runtime session is not ready",
+                ),
+                _check(
+                    "broker_runtime_guard_continue",
+                    runtime_guard_action or ("halt" if runtime_guard_halted else ""),
+                    "==",
+                    "continue",
+                    runtime_guard_action == "continue" and not runtime_guard_halted,
+                    "broker runtime session guard is not continuing",
+                ),
+            ]
         )
     return pd.DataFrame(checks)
 
@@ -480,6 +514,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_readiness_recommendation": str(broker_readiness.get("recommendation", ""))
                 if not broker_readiness.empty
                 else "",
+                "broker_runtime_session_required": thresholds.target_mode == "live_dryrun",
                 "broker_runtime_session_provided": _to_bool(broker_readiness.get("runtime_session_provided", False))
                 if not broker_readiness.empty
                 else False,
@@ -525,6 +560,7 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
+                "broker_runtime_session_required": _to_bool(plan_row["broker_runtime_session_required"]),
                 "broker_runtime_session_provided": _to_bool(plan_row["broker_runtime_session_provided"]),
                 "broker_runtime_session_ready": _to_bool(plan_row["broker_runtime_session_ready"]),
                 "broker_runtime_guard_action": str(plan_row["broker_runtime_guard_action"]),
@@ -601,12 +637,13 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "recommendation": str(plan_row["data_readiness_comparison_recommendation"]),
         },
         "broker_readiness": {
-            "required": bool(thresholds.require_broker_readiness),
+            "required": _broker_readiness_required(thresholds),
             "provided": _to_bool(plan_row["broker_readiness_provided"]),
             "ready": _to_bool(plan_row["broker_readiness_ready"]),
             "adapter_schema_status": str(plan_row["broker_schema_status"]),
             "recommendation": str(plan_row["broker_readiness_recommendation"]),
             "runtime_session": {
+                "required": _to_bool(plan_row["broker_runtime_session_required"]),
                 "provided": _to_bool(plan_row["broker_runtime_session_provided"]),
                 "ready": _to_bool(plan_row["broker_runtime_session_ready"]),
                 "guard_action": str(plan_row["broker_runtime_guard_action"]),
@@ -616,6 +653,10 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
         "thresholds": asdict(thresholds),
     }
+
+
+def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
+    return bool(thresholds.require_broker_readiness or thresholds.target_mode == "live_dryrun")
 
 
 def _read_summary(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> pd.DataFrame:

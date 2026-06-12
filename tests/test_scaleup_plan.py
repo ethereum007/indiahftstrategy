@@ -310,6 +310,64 @@ def test_scaleup_plan_accepts_required_broker_readiness():
     assert report.config["broker_readiness"]["runtime_session"]["ready"]
 
 
+def test_scaleup_plan_live_dryrun_requires_broker_readiness():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"broker_readiness_available", "broker_runtime_session_provided"} <= failed
+    assert report.config["broker_readiness"]["required"]
+    assert report.config["broker_readiness"]["runtime_session"]["required"]
+
+
+def test_scaleup_plan_live_dryrun_blocks_halted_broker_runtime_session():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            False,
+            runtime_session_provided=True,
+            runtime_session_ready=False,
+            runtime_guard_action="halt",
+            runtime_guard_halted=True,
+        ),
+        thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"broker_readiness_ready", "broker_runtime_session_ready", "broker_runtime_guard_continue"} <= failed
+
+
+def test_scaleup_plan_live_dryrun_accepts_broker_runtime_guard_continue():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            runtime_session_provided=True,
+            runtime_session_ready=True,
+            runtime_guard_action="continue",
+            runtime_guard_halted=False,
+        ),
+        thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["target_mode"] == "live_dryrun"
+    assert report.summary.iloc[0]["broker_runtime_session_required"]
+    assert report.config["broker_readiness"]["required"]
+    assert report.config["broker_readiness"]["runtime_session"]["required"]
+    assert report.config["broker_readiness"]["runtime_session"]["guard_action"] == "continue"
+
+
 def test_scaleup_plan_accepts_required_data_readiness():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(True),
@@ -511,6 +569,35 @@ def test_cli_scaleup_plan_can_require_broker_readiness(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "broker_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_live_dryrun_auto_requires_broker_runtime_evidence(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--target-mode",
+            "live_dryrun",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {"broker_readiness_available", "broker_runtime_session_provided"} <= failed
 
 
 def test_cli_scaleup_plan_reads_settlement_launch_pipeline_outputs(tmp_path):

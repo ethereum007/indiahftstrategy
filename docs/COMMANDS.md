@@ -1553,6 +1553,9 @@ present, so `--require-broker-readiness` can gate the pipeline folder directly.
 If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status for the
 session that fed the broker gate.
+When `--target-mode live_dryrun` is used, scale-up automatically requires
+broker readiness plus broker runtime-session evidence with a continuing runtime
+guard.
 
 ## Runtime Telemetry Snapshot
 
