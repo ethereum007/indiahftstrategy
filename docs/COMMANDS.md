@@ -846,6 +846,31 @@ halt_execution_summary.csv
 manifest.json
 ```
 
+## Halt Incident Review
+
+Combine runtime guard, halt response, optional halt export, and halt execution
+evidence into one incident-closure record:
+
+```powershell
+python -m hft_cli review-halt-incident `
+  --guard runs\guards\leadlag_shadow_latest `
+  --halt-response runs\halt_response\leadlag_shadow_latest `
+  --halt-export runs\halt_exports\leadlag_shadow_latest `
+  --halt-execution runs\halt_execution\leadlag_shadow_latest `
+  --out runs\halt_incidents\leadlag_shadow_latest `
+  --require-export `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+halt_incident_timeline.csv
+halt_incident_checks.csv
+halt_incident_summary.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

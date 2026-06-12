@@ -15,6 +15,7 @@ from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
+from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
@@ -423,6 +424,18 @@ def main(argv: list[str] | None = None) -> int:
     halt_execution.add_argument("--allow-missing-final-positions", action="store_true")
     halt_execution.add_argument("--position-tolerance", type=float, default=0.0)
     halt_execution.add_argument("--fail-on-breach", action="store_true")
+
+    halt_incident = sub.add_parser("review-halt-incident", help="Summarize guard, response, export, and execution evidence.")
+    halt_incident.add_argument("--guard", required=True)
+    halt_incident.add_argument("--halt-response", required=True)
+    halt_incident.add_argument("--halt-execution", required=True)
+    halt_incident.add_argument("--out", required=True)
+    halt_incident.add_argument("--halt-export", default=None)
+    halt_incident.add_argument("--allow-continue-guard", action="store_true")
+    halt_incident.add_argument("--allow-unready-response", action="store_true")
+    halt_incident.add_argument("--require-export", action="store_true")
+    halt_incident.add_argument("--allow-incomplete-execution", action="store_true")
+    halt_incident.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -983,6 +996,22 @@ def main(argv: list[str] | None = None) -> int:
                 require_all_flatten_fills=not args.allow_incomplete_flatten_fills,
                 require_final_positions=not args.allow_missing_final_positions,
                 position_tolerance=args.position_tolerance,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "review-halt-incident":
+        result = write_halt_incident_report(
+            guard_dir=args.guard,
+            halt_response_dir=args.halt_response,
+            halt_export_dir=args.halt_export,
+            halt_execution_dir=args.halt_execution,
+            output_dir=args.out,
+            thresholds=HaltIncidentThresholds(
+                require_guard_halt=not args.allow_continue_guard,
+                require_response_ready=not args.allow_unready_response,
+                require_export_ready=args.require_export,
+                require_execution_passed=not args.allow_incomplete_execution,
             ),
         )
         print(result.summary.to_string(index=False))
