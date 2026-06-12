@@ -66,6 +66,10 @@
 - Surface quote risk review for market-making quote sets, gating marketable
   quotes, quote edge, side balance, market spread, instrument coverage, and
   concentration before replay or live routing.
+- Broker-neutral order staging for generated quotes or generic order
+  candidates, including pre-trade quantity/notional/marketability/price-band
+  checks, accepted/rejected order artifacts, and manifests for later
+  Arrow.money/iRage routing adapters.
 
 ## Test Gate
 
@@ -75,11 +79,12 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 87 tests.
+Current passing suite: 91 tests.
 
 ## Next Build Targets
 
 1. Add data adapters for the first real vendor export once files are available.
 2. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-3. Add richer real-data diagnostics once the first vendor sample lands.
+3. Add broker-specific order-file/export mappings once Arrow.money/iRage sample
+   order schemas are available.

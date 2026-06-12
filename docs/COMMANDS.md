@@ -251,6 +251,42 @@ python -m hft_cli calibrate `
 `arrow_money` and `irage` adapter names exist, but currently use the normalized
 schema until real export samples are mapped.
 
+## Order Staging
+
+Stage generated quote or order candidates into a broker-neutral pre-trade file
+before any Arrow.money/iRage-specific routing adapter is wired in:
+
+```powershell
+python -m hft_cli stage-orders `
+  --orders runs\surface_quotes_2026_06_10\surface_quotes.csv `
+  --source surface_quotes `
+  --out runs\surface_quotes_2026_06_10\staged_orders `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --price-band-pct 0.02 `
+  --max-orders 100 `
+  --fail-on-reject
+```
+
+For `--source orders`, the input CSV must include:
+
+```text
+instrument_id,side,qty,price
+```
+
+Optional columns include `client_order_id`, `ts`/`ts_signal_ns`,
+`market_bid`, `market_ask`, `marketable`, `strategy`, `order_type`, and
+`time_in_force`.
+
+Outputs:
+
+```text
+staged_orders.csv
+staged_order_rejections.csv
+staged_order_summary.csv
+manifest.json
+```
+
 ## Data Diagnostics
 
 ```powershell

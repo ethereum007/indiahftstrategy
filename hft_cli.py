@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from adapters.broker import run_calibration_report
+from adapters.orders import OrderStagingLimits, write_staged_orders
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
@@ -190,6 +191,19 @@ def main(argv: list[str] | None = None) -> int:
     quote_review.add_argument("--max-market-spread-ticks", type=float, default=None)
     quote_review.add_argument("--max-quotes-per-instrument", type=int, default=None)
     quote_review.add_argument("--fail-on-breach", action="store_true")
+
+    order_stage = sub.add_parser("stage-orders", help="Stage broker-neutral orders after pre-trade checks.")
+    order_stage.add_argument("--orders", required=True)
+    order_stage.add_argument("--out", required=True)
+    order_stage.add_argument("--source", default="orders", choices=["orders", "surface_quotes"])
+    order_stage.add_argument("--adapter", default="normalized")
+    order_stage.add_argument("--max-order-qty", type=int, default=None)
+    order_stage.add_argument("--max-notional", type=float, default=None)
+    order_stage.add_argument("--price-band-pct", type=float, default=None)
+    order_stage.add_argument("--max-orders", type=int, default=None)
+    order_stage.add_argument("--contract-multiplier", type=float, default=1.0)
+    order_stage.add_argument("--allow-marketable", action="store_true")
+    order_stage.add_argument("--fail-on-reject", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -396,6 +410,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "stage-orders":
+        result = write_staged_orders(
+            args.orders,
+            output_dir=args.out,
+            source=args.source,
+            adapter=args.adapter,
+            limits=OrderStagingLimits(
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                require_nonmarketable=not args.allow_marketable,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_reject and not result.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 
