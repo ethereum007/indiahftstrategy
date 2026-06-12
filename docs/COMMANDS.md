@@ -213,6 +213,36 @@ quote_risk_by_instrument.csv
 manifest.json
 ```
 
+## Surface Market-Making Replay
+
+Replay passive surface quotes against later option-chain snapshots. A bid quote
+fills when a later best ask is at or below the quote; an ask quote fills when a
+later best bid is at or above the quote.
+
+```powershell
+python -m hft_cli replay-surface-mm `
+  --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
+  --chain data\chain.csv `
+  --out runs\surface_mm_replay_2026_06_10 `
+  --quote-ttl-ns 1000000000 `
+  --markout-horizon-ns 1000000000 `
+  --fill-depth-fraction 0.25 `
+  --order-latency-us 250
+```
+
+Outputs:
+
+```text
+quotes.csv
+fills.csv
+unfilled_quotes.csv
+equity.csv
+summary.csv
+markouts.csv
+markout_summary.csv
+manifest.json
+```
+
 ## Sweep Comparison
 
 Rank parameter scenarios across multiple sweep output folders:

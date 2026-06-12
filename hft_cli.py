@@ -17,6 +17,7 @@ from strategies.run_leadlag_replay import run_leadlag_replay
 from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
 from strategies.run_parity_sweep import run_parity_sweep
+from strategies.run_surface_mm_replay import SurfaceMMReplayConfig, run_surface_mm_replay
 from strategies.run_surface_quotes import run_surface_quote_generation
 
 
@@ -191,6 +192,20 @@ def main(argv: list[str] | None = None) -> int:
     quote_review.add_argument("--max-market-spread-ticks", type=float, default=None)
     quote_review.add_argument("--max-quotes-per-instrument", type=int, default=None)
     quote_review.add_argument("--fail-on-breach", action="store_true")
+
+    surface_mm = sub.add_parser("replay-surface-mm", help="Replay passive surface market-making quotes.")
+    surface_mm.add_argument("--quotes", required=True)
+    surface_mm.add_argument("--chain", required=True)
+    surface_mm.add_argument("--out", required=True)
+    surface_mm.add_argument("--no-filter-session", action="store_true")
+    surface_mm.add_argument("--order-latency-us", type=float, default=0.0)
+    surface_mm.add_argument("--quote-ttl-ns", type=int, default=1_000_000_000)
+    surface_mm.add_argument("--markout-horizon-ns", type=int, default=1_000_000_000)
+    surface_mm.add_argument("--fill-depth-fraction", type=float, default=1.0)
+    surface_mm.add_argument("--lot-size", type=int, default=75)
+    surface_mm.add_argument("--option-tick", type=float, default=0.05)
+    surface_mm.add_argument("--contract-multiplier", type=float, default=1.0)
+    surface_mm.add_argument("--max-quotes", type=int, default=None)
 
     order_stage = sub.add_parser("stage-orders", help="Stage broker-neutral orders after pre-trade checks.")
     order_stage.add_argument("--orders", required=True)
@@ -410,6 +425,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "replay-surface-mm":
+        result = run_surface_mm_replay(
+            quotes_path=args.quotes,
+            chain_path=args.chain,
+            output_dir=args.out,
+            filter_session=not args.no_filter_session,
+            config=SurfaceMMReplayConfig(
+                order_latency_us=args.order_latency_us,
+                quote_ttl_ns=args.quote_ttl_ns,
+                markout_horizon_ns=args.markout_horizon_ns,
+                fill_depth_fraction=args.fill_depth_fraction,
+                lot_size=args.lot_size,
+                option_tick=args.option_tick,
+                contract_multiplier=args.contract_multiplier,
+                max_quotes=args.max_quotes,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 0
     if args.command == "stage-orders":
         result = write_staged_orders(
             args.orders,
