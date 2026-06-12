@@ -35,7 +35,7 @@ class ImbalanceResearchPipelineReport:
     stages: pd.DataFrame
     summary: pd.DataFrame
     candidate_config: dict[str, Any]
-    edge: ImbalanceEdgeWalkForwardReport
+    edge: ImbalanceEdgeWalkForwardReport | None = None
     replay: ImbalanceReplayWalkForwardReport | None = None
     promotion: ImbalanceCandidatePromotionReport | None = None
     output_dir: Path | None = None
@@ -52,6 +52,8 @@ def write_imbalance_research_pipeline(
     *,
     output_dir: str | Path,
     labels: list[str] | None = None,
+    data_readiness_comparison_dir: str | Path | None = None,
+    require_data_readiness_comparison: bool = False,
     entry_imbalance_values: list[float],
     min_microprice_edge_ticks_values: list[float],
     forward_horizon_ns_values: list[int],
@@ -109,6 +111,65 @@ def write_imbalance_research_pipeline(
         min_folds=len(paths),
     )
     promotion_thresholds = promotion_thresholds or ImbalanceCandidatePromotionThresholds()
+    comparison_summary = _read_data_readiness_comparison_summary(data_readiness_comparison_dir)
+    comparison_stage = _data_readiness_comparison_stage(
+        comparison_summary,
+        required=require_data_readiness_comparison,
+        input_dir=data_readiness_comparison_dir,
+    )
+    parameters = _parameters(
+        entry_imbalance_values=entry_imbalance_values,
+        min_microprice_edge_ticks_values=min_microprice_edge_ticks_values,
+        forward_horizon_ns_values=forward_horizon_ns_values,
+        tick_size=tick_size,
+        max_spread_ticks=max_spread_ticks,
+        min_depth=min_depth,
+        min_signals=min_signals,
+        min_direction_count=min_direction_count,
+        min_mean_forward_edge_ticks=min_mean_forward_edge_ticks,
+        min_win_rate=min_win_rate,
+        min_median_forward_edge_ticks=min_median_forward_edge_ticks,
+        timestamp_unit=timestamp_unit,
+        timestamp_tz=timestamp_tz,
+        filter_session=filter_session,
+        market=market,
+        instrument_id=instrument_id,
+        instrument_kind=instrument_kind,
+        lot_size=lot_size,
+        qty=qty,
+        exit_imbalance=exit_imbalance,
+        cooloff_ns=cooloff_ns,
+        feed_latency_us=feed_latency_us,
+        order_latency_us=order_latency_us,
+        generic_buy_notional_rate=generic_buy_notional_rate,
+        generic_sell_notional_rate=generic_sell_notional_rate,
+        generic_per_unit_fee=generic_per_unit_fee,
+        generic_per_contract_fee=generic_per_contract_fee,
+        generic_per_order_fee=generic_per_order_fee,
+        max_position_lots=max_position_lots,
+        require_data_readiness_comparison=require_data_readiness_comparison,
+        sweep_thresholds=sweep_thresholds,
+        selection_thresholds=selection_thresholds,
+        edge_walkforward_thresholds=edge_walkforward_thresholds,
+        proof_thresholds=proof_thresholds,
+        replay_walkforward_thresholds=replay_walkforward_thresholds,
+        promotion_thresholds=promotion_thresholds,
+    )
+    if comparison_stage is not None and not bool(comparison_stage["status"]):
+        return _write_pipeline_outputs(
+            output_dir=out,
+            edge=None,
+            replay=None,
+            promotion=None,
+            candidate_config=_blocked_candidate_config("data_readiness_comparison"),
+            labels=labels,
+            tick_paths=paths,
+            parameters=parameters,
+            comparison_stage=comparison_stage,
+            data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+            if data_readiness_comparison_dir is not None
+            else None,
+        )
 
     edge = write_imbalance_edge_walkforward(
         paths,
@@ -142,43 +203,11 @@ def write_imbalance_research_pipeline(
             candidate_config=edge.candidate_config,
             labels=labels,
             tick_paths=paths,
-            parameters=_parameters(
-                entry_imbalance_values=entry_imbalance_values,
-                min_microprice_edge_ticks_values=min_microprice_edge_ticks_values,
-                forward_horizon_ns_values=forward_horizon_ns_values,
-                tick_size=tick_size,
-                max_spread_ticks=max_spread_ticks,
-                min_depth=min_depth,
-                min_signals=min_signals,
-                min_direction_count=min_direction_count,
-                min_mean_forward_edge_ticks=min_mean_forward_edge_ticks,
-                min_win_rate=min_win_rate,
-                min_median_forward_edge_ticks=min_median_forward_edge_ticks,
-                timestamp_unit=timestamp_unit,
-                timestamp_tz=timestamp_tz,
-                filter_session=filter_session,
-                market=market,
-                instrument_id=instrument_id,
-                instrument_kind=instrument_kind,
-                lot_size=lot_size,
-                qty=qty,
-                exit_imbalance=exit_imbalance,
-                cooloff_ns=cooloff_ns,
-                feed_latency_us=feed_latency_us,
-                order_latency_us=order_latency_us,
-                generic_buy_notional_rate=generic_buy_notional_rate,
-                generic_sell_notional_rate=generic_sell_notional_rate,
-                generic_per_unit_fee=generic_per_unit_fee,
-                generic_per_contract_fee=generic_per_contract_fee,
-                generic_per_order_fee=generic_per_order_fee,
-                max_position_lots=max_position_lots,
-                sweep_thresholds=sweep_thresholds,
-                selection_thresholds=selection_thresholds,
-                edge_walkforward_thresholds=edge_walkforward_thresholds,
-                proof_thresholds=proof_thresholds,
-                replay_walkforward_thresholds=replay_walkforward_thresholds,
-                promotion_thresholds=promotion_thresholds,
-            ),
+            parameters=parameters,
+            comparison_stage=comparison_stage,
+            data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+            if data_readiness_comparison_dir is not None
+            else None,
         )
 
     replay = write_imbalance_replay_walkforward(
@@ -219,43 +248,11 @@ def write_imbalance_research_pipeline(
             candidate_config=replay.candidate_config,
             labels=labels,
             tick_paths=paths,
-            parameters=_parameters(
-                entry_imbalance_values=entry_imbalance_values,
-                min_microprice_edge_ticks_values=min_microprice_edge_ticks_values,
-                forward_horizon_ns_values=forward_horizon_ns_values,
-                tick_size=tick_size,
-                max_spread_ticks=max_spread_ticks,
-                min_depth=min_depth,
-                min_signals=min_signals,
-                min_direction_count=min_direction_count,
-                min_mean_forward_edge_ticks=min_mean_forward_edge_ticks,
-                min_win_rate=min_win_rate,
-                min_median_forward_edge_ticks=min_median_forward_edge_ticks,
-                timestamp_unit=timestamp_unit,
-                timestamp_tz=timestamp_tz,
-                filter_session=filter_session,
-                market=market,
-                instrument_id=instrument_id,
-                instrument_kind=instrument_kind,
-                lot_size=lot_size,
-                qty=qty,
-                exit_imbalance=exit_imbalance,
-                cooloff_ns=cooloff_ns,
-                feed_latency_us=feed_latency_us,
-                order_latency_us=order_latency_us,
-                generic_buy_notional_rate=generic_buy_notional_rate,
-                generic_sell_notional_rate=generic_sell_notional_rate,
-                generic_per_unit_fee=generic_per_unit_fee,
-                generic_per_contract_fee=generic_per_contract_fee,
-                generic_per_order_fee=generic_per_order_fee,
-                max_position_lots=max_position_lots,
-                sweep_thresholds=sweep_thresholds,
-                selection_thresholds=selection_thresholds,
-                edge_walkforward_thresholds=edge_walkforward_thresholds,
-                proof_thresholds=proof_thresholds,
-                replay_walkforward_thresholds=replay_walkforward_thresholds,
-                promotion_thresholds=promotion_thresholds,
-            ),
+            parameters=parameters,
+            comparison_stage=comparison_stage,
+            data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+            if data_readiness_comparison_dir is not None
+            else None,
         )
 
     promotion = write_imbalance_candidate_promotion(
@@ -271,58 +268,28 @@ def write_imbalance_research_pipeline(
         candidate_config=promotion.candidate_config,
         labels=labels,
         tick_paths=paths,
-        parameters=_parameters(
-            entry_imbalance_values=entry_imbalance_values,
-            min_microprice_edge_ticks_values=min_microprice_edge_ticks_values,
-            forward_horizon_ns_values=forward_horizon_ns_values,
-            tick_size=tick_size,
-            max_spread_ticks=max_spread_ticks,
-            min_depth=min_depth,
-            min_signals=min_signals,
-            min_direction_count=min_direction_count,
-            min_mean_forward_edge_ticks=min_mean_forward_edge_ticks,
-            min_win_rate=min_win_rate,
-            min_median_forward_edge_ticks=min_median_forward_edge_ticks,
-            timestamp_unit=timestamp_unit,
-            timestamp_tz=timestamp_tz,
-            filter_session=filter_session,
-            market=market,
-            instrument_id=instrument_id,
-            instrument_kind=instrument_kind,
-            lot_size=lot_size,
-            qty=qty,
-            exit_imbalance=exit_imbalance,
-            cooloff_ns=cooloff_ns,
-            feed_latency_us=feed_latency_us,
-            order_latency_us=order_latency_us,
-            generic_buy_notional_rate=generic_buy_notional_rate,
-            generic_sell_notional_rate=generic_sell_notional_rate,
-            generic_per_unit_fee=generic_per_unit_fee,
-            generic_per_contract_fee=generic_per_contract_fee,
-            generic_per_order_fee=generic_per_order_fee,
-            max_position_lots=max_position_lots,
-            sweep_thresholds=sweep_thresholds,
-            selection_thresholds=selection_thresholds,
-            edge_walkforward_thresholds=edge_walkforward_thresholds,
-            proof_thresholds=proof_thresholds,
-            replay_walkforward_thresholds=replay_walkforward_thresholds,
-            promotion_thresholds=promotion_thresholds,
-        ),
+        parameters=parameters,
+        comparison_stage=comparison_stage,
+        data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+        if data_readiness_comparison_dir is not None
+        else None,
     )
 
 
 def _write_pipeline_outputs(
     *,
     output_dir: Path,
-    edge: ImbalanceEdgeWalkForwardReport,
+    edge: ImbalanceEdgeWalkForwardReport | None,
     replay: ImbalanceReplayWalkForwardReport | None,
     promotion: ImbalanceCandidatePromotionReport | None,
     candidate_config: dict[str, Any],
     labels: list[str] | None,
     tick_paths: list[Path],
     parameters: dict[str, Any],
+    comparison_stage: dict[str, Any] | None = None,
+    data_readiness_comparison_dir: Path | None = None,
 ) -> ImbalanceResearchPipelineReport:
-    stages = _stages(edge, replay, promotion)
+    stages = _stages(edge, replay, promotion, comparison_stage=comparison_stage)
     summary = _summary(stages, edge, replay, promotion)
     config = _candidate_config(candidate_config, summary.iloc[0], stages)
 
@@ -341,6 +308,7 @@ def _write_pipeline_outputs(
             "edge_walkforward": output_dir / "edge_walkforward",
             "replay_walkforward": output_dir / "replay_walkforward",
             "promotion": output_dir / "promotion",
+            "data_readiness_comparison": data_readiness_comparison_dir,
         },
     )
     return ImbalanceResearchPipelineReport(
@@ -355,11 +323,20 @@ def _write_pipeline_outputs(
 
 
 def _stages(
-    edge: ImbalanceEdgeWalkForwardReport,
+    edge: ImbalanceEdgeWalkForwardReport | None,
     replay: ImbalanceReplayWalkForwardReport | None,
     promotion: ImbalanceCandidatePromotionReport | None,
+    *,
+    comparison_stage: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
-    rows = [_stage_row("edge_walkforward", edge.output_dir, edge.summary, "passed")]
+    rows = []
+    if comparison_stage is not None:
+        rows.append(comparison_stage)
+    rows.append(
+        _stage_row("edge_walkforward", edge.output_dir, edge.summary, "passed")
+        if edge is not None
+        else _skipped_stage("edge_walkforward", "data_readiness_comparison_not_ready")
+    )
     rows.append(
         _stage_row("replay_walkforward", replay.output_dir, replay.summary, "passed")
         if replay is not None
@@ -401,13 +378,13 @@ def _skipped_stage(stage: str, reason: str) -> dict[str, Any]:
 
 def _summary(
     stages: pd.DataFrame,
-    edge: ImbalanceEdgeWalkForwardReport,
+    edge: ImbalanceEdgeWalkForwardReport | None,
     replay: ImbalanceReplayWalkForwardReport | None,
     promotion: ImbalanceCandidatePromotionReport | None,
 ) -> pd.DataFrame:
     ready = bool(stages["status"].map(_to_bool).all()) if not stages.empty else False
     failed = int((~stages["status"].map(_to_bool)).sum()) if not stages.empty else 0
-    edge_row = edge.summary.iloc[0] if not edge.summary.empty else pd.Series(dtype=object)
+    edge_row = edge.summary.iloc[0] if edge is not None and not edge.summary.empty else pd.Series(dtype=object)
     replay_row = replay.summary.iloc[0] if replay is not None and not replay.summary.empty else pd.Series(dtype=object)
     promotion_row = promotion.summary.iloc[0] if promotion is not None and not promotion.summary.empty else pd.Series(dtype=object)
     return pd.DataFrame(
@@ -416,7 +393,7 @@ def _summary(
                 "ready": ready,
                 "failed_stages": failed,
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_researching",
-                "edge_passed": bool(edge.passed),
+                "edge_passed": bool(edge.passed) if edge is not None else False,
                 "replay_passed": bool(replay.passed) if replay is not None else False,
                 "promotion_ready": bool(promotion.ready) if promotion is not None else False,
                 "candidate_scenario_key": str(promotion_row.get("candidate_scenario_key", "")),
@@ -451,6 +428,57 @@ def _candidate_config(source: dict[str, Any], summary: pd.Series, stages: pd.Dat
         ],
     }
     return config
+
+
+def _read_data_readiness_comparison_summary(path: str | Path | None) -> pd.DataFrame:
+    if path is None:
+        return pd.DataFrame()
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "data_readiness_comparison_summary.csv"
+    if not candidate.exists():
+        raise FileNotFoundError(f"data readiness comparison summary not found: {candidate}")
+    frame = pd.read_csv(candidate)
+    if frame.empty:
+        raise ValueError(f"data readiness comparison summary is empty: {candidate}")
+    return frame
+
+
+def _data_readiness_comparison_stage(
+    summary: pd.DataFrame,
+    *,
+    required: bool,
+    input_dir: str | Path | None,
+) -> dict[str, Any] | None:
+    if summary.empty and not required:
+        return None
+    provided = not summary.empty
+    row = summary.iloc[0] if provided else pd.Series(dtype=object)
+    accepted = _to_bool(row.get("accepted", False)) if provided else False
+    status = provided and accepted
+    reason = "accepted" if status else "data_readiness_comparison_missing"
+    if provided and not accepted:
+        reason = "data_readiness_comparison_not_accepted"
+    return {
+        "stage": "data_readiness_comparison",
+        "status": bool(status),
+        "status_column": "accepted",
+        "skipped": False,
+        "output_dir": str(input_dir or ""),
+        "failed_checks": _int(row, "total_failed_checks") if provided else 1,
+        "recommendation": str(row.get("recommendation", reason)) if provided else reason,
+    }
+
+
+def _blocked_candidate_config(reason: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "ready": False,
+        "strategy": "imbalance",
+        "failed_checks": [reason],
+        "parameters": {},
+        "metrics": {},
+    }
 
 
 def _parameters(**values: Any) -> dict[str, Any]:

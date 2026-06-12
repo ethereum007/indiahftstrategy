@@ -551,6 +551,7 @@ python -m hft_cli pipeline-imbalance-research `
   --ticks data\atm_option_ticks_2026_06_10.csv data\atm_option_ticks_2026_06_11.csv `
   --label day1 `
   --label day2 `
+  --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
   --out runs\imbalance_pipeline `
   --entry-imbalance 0.55 0.60 0.70 `
   --min-microprice-edge-ticks 0.25 0.50 `
@@ -563,6 +564,7 @@ python -m hft_cli pipeline-imbalance-research `
   --min-proof-pass-rate 1 `
   --min-total-fills 20 `
   --min-total-net-pnl 0 `
+  --require-data-readiness-comparison `
   --fail-on-breach
 ```
 

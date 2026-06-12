@@ -348,6 +348,8 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_pipeline.add_argument("--ticks", nargs="+", required=True)
     imbalance_pipeline.add_argument("--out", required=True)
     imbalance_pipeline.add_argument("--label", action="append", dest="labels")
+    imbalance_pipeline.add_argument("--data-readiness-comparison", default=None)
+    imbalance_pipeline.add_argument("--require-data-readiness-comparison", action="store_true")
     imbalance_pipeline.add_argument("--no-filter-session", action="store_true")
     imbalance_pipeline.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     imbalance_pipeline.add_argument("--tick-size", type=float, default=0.05)
@@ -1530,6 +1532,8 @@ def main(argv: list[str] | None = None) -> int:
             args.ticks,
             output_dir=args.out,
             labels=args.labels,
+            data_readiness_comparison_dir=args.data_readiness_comparison,
+            require_data_readiness_comparison=args.require_data_readiness_comparison,
             tick_size=args.tick_size,
             filter_session=not args.no_filter_session,
             market=args.market,
