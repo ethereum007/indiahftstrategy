@@ -190,6 +190,12 @@ def _timeline_row(
         "status": status,
         "passed": bool(passed),
         "failed_checks": _component_failed_checks(summary, checks),
+        "failed_check_names": _component_failed_check_names(summary, checks),
+        "first_failed_reason": _component_first_failed_reason(summary, checks),
+        "guard_failed_check_names": _summary_text(summary, "guard_failed_check_names")
+        or _summary_text(summary, "failed_check_names"),
+        "guard_first_failed_reason": _summary_text(summary, "guard_first_failed_reason")
+        or _summary_text(summary, "first_failed_reason"),
         "scenario_key": str(summary.get("scenario_key", "")),
         "adapter": str(summary.get("adapter", "")),
         "recommendation": str(summary.get("recommendation", "")),
@@ -260,6 +266,14 @@ def _summary(
     status = "halt_completed" if passed and guard_halted else "halt_incomplete"
     if not guard_halted:
         status = "no_halt_review"
+    guard_failed_names = _summary_text(guard, "failed_check_names") or _summary_text(
+        response,
+        "guard_failed_check_names",
+    )
+    guard_first_reason = _summary_text(guard, "first_failed_reason") or _summary_text(
+        response,
+        "guard_first_failed_reason",
+    )
     return pd.DataFrame(
         [
             {
@@ -268,6 +282,8 @@ def _summary(
                 "scenario_key": str(guard.get("scenario_key", response.get("scenario_key", ""))),
                 "adapter": str(guard.get("adapter", response.get("adapter", ""))),
                 "guard_action": str(guard.get("guard_action", "")),
+                "guard_failed_check_names": guard_failed_names,
+                "guard_first_failed_reason": guard_first_reason,
                 "response_ready": _to_bool(response.get("ready", False)),
                 "export_ready": _to_bool(export.get("ready", False)) if not export.empty else False,
                 "execution_passed": _to_bool(execution.get("passed", False)),
@@ -286,6 +302,27 @@ def _component_failed_checks(summary: pd.Series, checks: pd.DataFrame) -> int:
     if checks.empty or "passed" not in checks.columns:
         return 0
     return int((~checks["passed"].map(_to_bool)).sum())
+
+
+def _component_failed_check_names(summary: pd.Series, checks: pd.DataFrame) -> str:
+    names = _summary_text(summary, "failed_check_names")
+    if names:
+        return names
+    if checks.empty or "passed" not in checks.columns or "check" not in checks.columns:
+        return ""
+    failed = checks.loc[~checks["passed"].map(_to_bool), "check"]
+    return ";".join(str(value) for value in failed.tolist())
+
+
+def _component_first_failed_reason(summary: pd.Series, checks: pd.DataFrame) -> str:
+    reason = _summary_text(summary, "first_failed_reason")
+    if reason:
+        return reason
+    if checks.empty or "passed" not in checks.columns or "reason" not in checks.columns:
+        return ""
+    failed = checks.loc[~checks["passed"].map(_to_bool), "reason"]
+    reasons = [_clean(value) for value in failed.tolist()]
+    return next((value for value in reasons if value), "")
 
 
 def _guard_halted(row: pd.Series) -> bool:
@@ -324,12 +361,24 @@ def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
     return float(value) if not pd.isna(value) else float(fallback)
 
 
+def _summary_text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row[column])
+
+
 def _to_bool(value: object) -> bool:
     if pd.isna(value):
         return False
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "halt", "passed", "ready"}
     return bool(value)
+
+
+def _clean(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _check(

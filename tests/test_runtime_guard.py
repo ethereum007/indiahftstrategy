@@ -82,6 +82,10 @@ def test_runtime_guard_halts_on_limit_and_kill_switch_breaches():
     assert report.halted
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {"orders_sent", "realized_pnl", "unmatched_fills", "worst_adverse_slippage"} <= failed
+    summary = report.summary.iloc[0]
+    assert "orders_sent" in summary["failed_check_names"].split(";")
+    assert summary["first_failed_reason"].startswith("orders_sent:")
+    assert "worst_adverse_slippage:" in summary["failed_check_reasons"]
 
 
 def test_runtime_guard_halts_on_manual_halt_flag():

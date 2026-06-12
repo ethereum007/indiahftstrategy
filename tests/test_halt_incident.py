@@ -15,6 +15,9 @@ def guard_summary(action="halt"):
                 "guard_action": action,
                 "halted": action == "halt",
                 "failed_checks": 1 if action == "halt" else 0,
+                "failed_check_names": "orders_sent" if action == "halt" else "",
+                "first_failed_reason": "orders_sent: limit breached" if action == "halt" else "",
+                "failed_check_reasons": "orders_sent: limit breached" if action == "halt" else "",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "orders_sent": 12,
@@ -38,6 +41,9 @@ def response_summary(ready=True):
                 "flatten_orders": 1,
                 "open_risk_items": 2,
                 "failed_checks": 0 if ready else 1,
+                "guard_failed_check_names": "orders_sent",
+                "guard_first_failed_reason": "orders_sent: limit breached",
+                "guard_failed_check_reasons": "orders_sent: limit breached",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "recommendation": "submit_cancel_and_flatten" if ready else "do_not_execute_response_until_inputs_fixed",
@@ -121,6 +127,10 @@ def test_halt_incident_accepts_completed_halt_with_export():
 
     assert report.passed
     assert report.summary.iloc[0]["incident_status"] == "halt_completed"
+    assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
+    assert report.summary.iloc[0]["guard_first_failed_reason"] == "orders_sent: limit breached"
+    assert report.timeline.loc[0, "failed_check_names"] == "orders_sent"
+    assert report.timeline.loc[1, "guard_failed_check_names"] == "orders_sent"
     assert report.timeline["component"].tolist() == [
         "runtime_guard",
         "halt_response",

@@ -128,6 +128,8 @@ def _steps(
             "status": "ready" if telemetry.ready else "blocked",
             "output_dir": str(telemetry.output_dir or ""),
             "failed_checks": int(telemetry_row.get("failed_checks", 0)),
+            "failed_check_names": _text(telemetry_row, "failed_check_names"),
+            "first_failed_reason": _text(telemetry_row, "first_failed_reason"),
             "recommendation": str(telemetry_row.get("recommendation", "")),
         },
         {
@@ -135,6 +137,8 @@ def _steps(
             "status": "halt" if guard.halted else "continue",
             "output_dir": str(guard.output_dir or ""),
             "failed_checks": int(guard_row.get("failed_checks", 0)),
+            "failed_check_names": _text(guard_row, "failed_check_names"),
+            "first_failed_reason": _text(guard_row, "first_failed_reason"),
             "recommendation": str(guard_row.get("recommendation", "")),
         },
     ]
@@ -146,6 +150,8 @@ def _steps(
                 "status": "ready" if halt_response.ready else "blocked",
                 "output_dir": str(halt_response.output_dir or ""),
                 "failed_checks": int(response_row.get("failed_checks", 0)),
+                "failed_check_names": _text(response_row, "guard_failed_check_names"),
+                "first_failed_reason": _text(response_row, "guard_first_failed_reason"),
                 "recommendation": str(response_row.get("recommendation", "")),
             }
         )
@@ -156,6 +162,8 @@ def _steps(
                 "status": "skipped",
                 "output_dir": "",
                 "failed_checks": 0,
+                "failed_check_names": _text(guard_row, "failed_check_names"),
+                "first_failed_reason": _text(guard_row, "first_failed_reason"),
                 "recommendation": "manual_halt_response_required" if not plan_halt_response else "not_created",
             }
         )
@@ -195,6 +203,8 @@ def _summary(
                 "orders_sent": int(float(guard_row.get("orders_sent", telemetry_row.get("orders_sent", 0)))),
                 "session_notional": float(guard_row.get("session_notional", telemetry_row.get("session_notional", 0.0))),
                 "realized_pnl": float(guard_row.get("realized_pnl", telemetry_row.get("realized_pnl", 0.0))),
+                "guard_failed_check_names": _text(guard_row, "failed_check_names"),
+                "guard_first_failed_reason": _text(guard_row, "first_failed_reason"),
                 "telemetry_ready": bool(telemetry.ready),
                 "halt_response_created": halt_response is not None,
                 "halt_response_ready": response_ready,
@@ -204,3 +214,10 @@ def _summary(
             }
         ]
     )
+
+
+def _text(row: pd.Series, column: str) -> str:
+    value = row.get(column, "")
+    if pd.isna(value):
+        return ""
+    return str(value)

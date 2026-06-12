@@ -339,12 +339,17 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
 def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     halted = bool((~checks["passed"].astype(bool)).any()) if not checks.empty else True
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    failed_names = _failed_check_names(checks)
+    failed_reasons = _failed_check_reasons(checks)
     return pd.DataFrame(
         [
             {
                 "guard_action": "halt" if halted else "continue",
                 "halted": halted,
                 "failed_checks": failed,
+                "failed_check_names": ";".join(failed_names),
+                "first_failed_reason": failed_reasons[0] if failed_reasons else "",
+                "failed_check_reasons": ";".join(failed_reasons),
                 "scenario_key": row["scenario_key"],
                 "adapter": row["adapter"],
                 "orders_sent": row["orders_sent"],
@@ -395,6 +400,28 @@ def _threshold_check(name: str, value: float | int, operator: str, threshold: fl
     elif not passed:
         reason = f"{name} {value_float:.6g} failed {operator} {threshold_float:.6g}"
     return _check(name, value_float, operator, threshold_float, passed, reason)
+
+
+def _failed_check_names(checks: pd.DataFrame) -> list[str]:
+    if checks.empty or "passed" not in checks.columns or "check" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool), "check"]
+    return [str(value) for value in failed.tolist()]
+
+
+def _failed_check_reasons(checks: pd.DataFrame) -> list[str]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)].copy()
+    if failed.empty:
+        return []
+    names = failed["check"].astype(str) if "check" in failed.columns else pd.Series(["check"] * len(failed))
+    reasons = failed["reason"].astype(str) if "reason" in failed.columns else pd.Series([""] * len(failed))
+    out: list[str] = []
+    for name, reason in zip(names.tolist(), reasons.tolist(), strict=False):
+        clean_reason = reason.strip()
+        out.append(f"{name}: {clean_reason}" if clean_reason else str(name))
+    return out
 
 
 def _check(

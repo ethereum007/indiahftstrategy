@@ -145,6 +145,9 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     assert not bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "halt_response_created"])
     assert bool(summary.loc[0, "halt_response_ready"])
+    assert summary.loc[0, "guard_failed_check_names"] == "open_order_count"
+    assert steps.loc[1, "failed_check_names"] == "open_order_count"
+    assert response.loc[0, "guard_failed_check_names"] == "open_order_count"
     assert summary.loc[0, "recommendation"] == "stop_routing_and_execute_halt_response"
     assert steps["step"].tolist() == ["telemetry", "runtime_guard", "halt_response"]
     assert response.loc[0, "recommendation"] == "submit_cancel_and_flatten"

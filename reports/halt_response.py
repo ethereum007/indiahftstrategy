@@ -21,6 +21,8 @@ CANCEL_COLUMNS = [
     "side_text",
     "open_qty",
     "reason",
+    "guard_failed_check_names",
+    "guard_first_failed_reason",
 ]
 
 FLATTEN_COLUMNS = [
@@ -34,6 +36,8 @@ FLATTEN_COLUMNS = [
     "order_type",
     "time_in_force",
     "reason",
+    "guard_failed_check_names",
+    "guard_first_failed_reason",
 ]
 
 TERMINAL_STATUSES = {"filled", "cancelled", "canceled", "rejected", "expired", "complete", "closed"}
@@ -76,13 +80,15 @@ def evaluate_halt_response(
     positions = pd.DataFrame() if positions is None else positions.copy()
 
     guard_row = guard_summary.iloc[0]
-    cancel_orders = _cancel_actions(open_orders)
-    flatten_orders = _flatten_actions(positions, config)
+    guard_context = _guard_halt_context(guard_row, guard_checks)
+    cancel_orders = _cancel_actions(open_orders, guard_context)
+    flatten_orders = _flatten_actions(positions, config, guard_context)
     checks = _checks(guard_row, cancel_orders, flatten_orders, config)
-    summary = _summary(guard_row, cancel_orders, flatten_orders, checks)
+    summary = _summary(guard_row, cancel_orders, flatten_orders, checks, guard_context)
     response_config = {
         **asdict(config),
-        "guard_failed_checks": _failed_guard_checks(guard_checks),
+        "guard_failed_checks": guard_context["failed_check_names"],
+        "guard_failed_check_reasons": guard_context["failed_check_reasons"],
     }
     return HaltResponseReport(
         cancel_orders=cancel_orders,
@@ -147,7 +153,7 @@ def write_halt_response_plan(
     )
 
 
-def _cancel_actions(open_orders: pd.DataFrame) -> pd.DataFrame:
+def _cancel_actions(open_orders: pd.DataFrame, guard_context: dict[str, object]) -> pd.DataFrame:
     if open_orders.empty:
         return pd.DataFrame(columns=CANCEL_COLUMNS)
     frame = open_orders.copy().reset_index(drop=True)
@@ -162,10 +168,16 @@ def _cancel_actions(open_orders: pd.DataFrame) -> pd.DataFrame:
     active["action_id"] = [f"CXL-{idx:06d}" for idx in range(len(active))]
     active["action"] = "cancel_order"
     active["reason"] = "guard_halt_open_order"
+    active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
+    active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
     return active[CANCEL_COLUMNS].reset_index(drop=True)
 
 
-def _flatten_actions(positions: pd.DataFrame, config: HaltResponseConfig) -> pd.DataFrame:
+def _flatten_actions(
+    positions: pd.DataFrame,
+    config: HaltResponseConfig,
+    guard_context: dict[str, object],
+) -> pd.DataFrame:
     if positions.empty:
         return pd.DataFrame(columns=FLATTEN_COLUMNS)
     frame = positions.copy().reset_index(drop=True)
@@ -181,6 +193,8 @@ def _flatten_actions(positions: pd.DataFrame, config: HaltResponseConfig) -> pd.
     active["order_type"] = str(config.default_order_type)
     active["time_in_force"] = str(config.default_time_in_force)
     active["reason"] = "flatten_residual_position"
+    active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
+    active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
     active["action"] = "flatten_position"
     active["action_id"] = [f"FLT-{idx:06d}" for idx in range(len(active))]
     return active[FLATTEN_COLUMNS].reset_index(drop=True)
@@ -240,6 +254,7 @@ def _summary(
     cancel_orders: pd.DataFrame,
     flatten_orders: pd.DataFrame,
     checks: pd.DataFrame,
+    guard_context: dict[str, object],
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -258,6 +273,9 @@ def _summary(
                 "flatten_orders": int(len(flatten_orders)),
                 "open_risk_items": action_count,
                 "failed_checks": failed,
+                "guard_failed_check_names": guard_context["failed_check_names_text"],
+                "guard_first_failed_reason": guard_context["first_failed_reason"],
+                "guard_failed_check_reasons": guard_context["failed_check_reasons_text"],
                 "scenario_key": str(guard_row.get("scenario_key", "")),
                 "adapter": str(guard_row.get("adapter", "")),
                 "recommendation": recommendation,
@@ -348,6 +366,53 @@ def _failed_guard_checks(guard_checks: pd.DataFrame) -> list[str]:
         return []
     failed = guard_checks.loc[~guard_checks["passed"].map(_to_bool), "check"]
     return [str(item) for item in failed.tolist()]
+
+
+def _guard_halt_context(guard_row: pd.Series, guard_checks: pd.DataFrame) -> dict[str, object]:
+    names = _failed_guard_checks(guard_checks)
+    if not names:
+        names = _split_text_cell(guard_row.get("failed_check_names", ""))
+    reasons = _failed_guard_reasons(guard_checks)
+    if not reasons:
+        reasons = _split_text_cell(guard_row.get("failed_check_reasons", ""))
+    first_reason = _clean(guard_row.get("first_failed_reason", ""))
+    if not first_reason and reasons:
+        first_reason = reasons[0]
+    return {
+        "failed_check_names": names,
+        "failed_check_names_text": ";".join(names),
+        "first_failed_reason": first_reason,
+        "failed_check_reasons": reasons,
+        "failed_check_reasons_text": ";".join(reasons),
+    }
+
+
+def _failed_guard_reasons(guard_checks: pd.DataFrame) -> list[str]:
+    if guard_checks.empty or "passed" not in guard_checks.columns:
+        return []
+    failed = guard_checks.loc[~guard_checks["passed"].map(_to_bool)].copy()
+    if failed.empty:
+        return []
+    names = failed["check"].astype(str) if "check" in failed.columns else pd.Series(["check"] * len(failed))
+    reasons = failed["reason"].astype(str) if "reason" in failed.columns else pd.Series([""] * len(failed))
+    out: list[str] = []
+    for name, reason in zip(names.tolist(), reasons.tolist(), strict=False):
+        clean_reason = _clean(reason)
+        out.append(f"{name}: {clean_reason}" if clean_reason else str(name))
+    return out
+
+
+def _split_text_cell(value: object) -> list[str]:
+    text = _clean(value)
+    if not text:
+        return []
+    return [item.strip() for item in text.split(";") if item.strip()]
+
+
+def _clean(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _to_bool(value: object) -> bool:

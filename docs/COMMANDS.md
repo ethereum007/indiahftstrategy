@@ -1652,7 +1652,9 @@ manifest.json
 `03_halt_response` is created only when the guard halts and
 `--skip-halt-response` is not set. This gives paper/shadow automation one
 top-level go/no-go artifact while preserving the detailed telemetry, guard, and
-halt-response evidence folders.
+halt-response evidence folders. The session summary carries
+`guard_failed_check_names` and `guard_first_failed_reason` when the runtime
+guard blocks routing.
 
 ## Halt Response Plan
 
@@ -1683,6 +1685,10 @@ halt_response_summary.csv
 halt_response_config.json
 manifest.json
 ```
+
+`halt_response_summary.csv`, `halt_cancel_orders.csv`, and
+`halt_flatten_orders.csv` include the guard failed check names and first halt
+reason so emergency action files show why the cancel/flatten packet exists.
 
 ## Halt Response Export
 
@@ -1776,6 +1782,9 @@ halt_incident_checks.csv
 halt_incident_summary.csv
 manifest.json
 ```
+
+The timeline and summary retain guard-trigger fields so the incident closure
+record shows the failed guard checks that caused the halt.
 
 ## Resume Gate
 

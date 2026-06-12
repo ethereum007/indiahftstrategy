@@ -225,20 +225,24 @@
   lifecycle/replace message controls, open-order quantity/notional/age,
   position-inventory notional/delta/vega limits, and required instrument
   metadata continuity, accepts telemetry output folders directly, and returns
-  explicit continue/halt decisions.
+  explicit continue/halt decisions with failed check names and first halt
+  reasons.
 - Runtime session monitor that chains telemetry building, scale-up guard
   evaluation, and automatic halt-response planning into one manifest-backed
-  paper/shadow go/no-go artifact.
+  paper/shadow go/no-go artifact, preserving the guard halt trigger in the
+  top-level session summary.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
-  and manifests.
+  and manifests, stamping guard failed check names and first halt reasons onto
+  the summary and action CSVs for operator review.
 - Halt response export mapper that turns emergency cancel and flatten actions
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
   Arrow.money/iRage emergency schemas are finalized.
 - Halt execution reconciliation gate that verifies emergency cancel
   acknowledgements, flatten fills, and final flat positions after a guard halt.
 - Halt incident review that combines guard, response, export, and execution
-  evidence into one incident-closure timeline, check set, and summary.
+  evidence into one incident-closure timeline, check set, and summary with
+  guard trigger context carried through the review.
 - Post-halt resume gate that requires a closed incident, ready scale-up plan,
   scenario/adapter continuity, optional operator approval, and emits
   resume authorization/config artifacts.
