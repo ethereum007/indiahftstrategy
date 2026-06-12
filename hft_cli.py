@@ -8,6 +8,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.proof import ProofThresholds, write_proof_report
+from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
@@ -171,6 +172,21 @@ def main(argv: list[str] | None = None) -> int:
     compare_sweeps.add_argument("--min-median-net-pnl", type=float, default=0.0)
     compare_sweeps.add_argument("--max-worst-drawdown", type=float, default=None)
     compare_sweeps.add_argument("--fail-on-breach", action="store_true")
+
+    promote = sub.add_parser("promote-scenario", help="Gate a sweep selection for paper/shadow promotion.")
+    promote.add_argument("--selection", required=True)
+    promote.add_argument("--out", required=True)
+    promote.add_argument("--min-pass-rate", type=float, default=1.0)
+    promote.add_argument("--min-sweeps", type=int, default=1)
+    promote.add_argument("--min-median-net-pnl", type=float, default=0.0)
+    promote.add_argument("--min-min-net-pnl", type=float, default=None)
+    promote.add_argument("--max-worst-drawdown", type=float, default=None)
+    promote.add_argument("--min-median-fills", type=float, default=1.0)
+    promote.add_argument("--max-runs-with-losing-regimes", type=int, default=None)
+    promote.add_argument("--max-otr", type=float, default=None)
+    promote.add_argument("--min-maker-share", type=float, default=None)
+    promote.add_argument("--min-markout-mean", type=float, default=None)
+    promote.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -418,6 +434,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.has_selection else 0
+    if args.command == "promote-scenario":
+        result = write_promotion_report(
+            args.selection,
+            output_dir=args.out,
+            thresholds=PromotionThresholds(
+                min_pass_rate=args.min_pass_rate,
+                min_sweeps=args.min_sweeps,
+                min_median_net_pnl=args.min_median_net_pnl,
+                min_min_net_pnl=args.min_min_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_fills=args.min_median_fills,
+                max_runs_with_losing_regimes=args.max_runs_with_losing_regimes,
+                max_otr=args.max_otr,
+                min_maker_share=args.min_maker_share,
+                min_markout_mean=args.min_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,

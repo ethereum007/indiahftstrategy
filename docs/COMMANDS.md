@@ -299,6 +299,35 @@ scenario_scores.csv
 selection_summary.csv
 ```
 
+## Scenario Promotion Gate
+
+Convert a `compare-sweeps` selection folder into a paper/shadow promotion
+decision and candidate config:
+
+```powershell
+python -m hft_cli promote-scenario `
+  --selection runs\selection\leadlag `
+  --out runs\promotion\leadlag `
+  --min-pass-rate 1 `
+  --min-sweeps 2 `
+  --min-median-net-pnl 1 `
+  --min-min-net-pnl 0 `
+  --max-worst-drawdown 5000 `
+  --min-median-fills 10 `
+  --max-otr 50 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+promotion_candidate.csv
+promotion_checks.csv
+promotion_summary.csv
+candidate_config.json
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

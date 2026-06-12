@@ -55,6 +55,9 @@
   scores.
 - Cross-sweep scenario comparison for ranking parameter settings across days
   or folds by pass rate, median PnL, drawdown, regime losses, and robust score.
+- Scenario promotion gate that converts cross-sweep selections into explicit
+  paper/shadow readiness decisions, threshold checks, and machine-readable
+  candidate configs.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -85,7 +88,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 96 tests.
+Current passing suite: 99 tests.
 
 ## Next Build Targets
 
