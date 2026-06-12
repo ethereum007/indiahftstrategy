@@ -85,6 +85,10 @@ from reports.shadow_session import ShadowSessionThresholds, write_shadow_session
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
 from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
+from reports.surface_mm_launch_pipeline import (
+    SurfaceMMLaunchPipelineConfig,
+    write_surface_mm_launch_pipeline,
+)
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
@@ -1223,6 +1227,35 @@ def main(argv: list[str] | None = None) -> int:
     surface_pipeline.add_argument("--min-promotion-median-net-pnl", type=float, default=0.0)
     surface_pipeline.add_argument("--min-promotion-median-fills", type=float, default=1.0)
     surface_pipeline.add_argument("--fail-on-breach", action="store_true")
+
+    surface_launch_pipeline = sub.add_parser(
+        "pipeline-surface-mm-launch",
+        help="Run a promoted surface-MM pipeline through staging, launch, export, upload, and broker readiness.",
+    )
+    surface_launch_pipeline.add_argument("--surface-pipeline", required=True)
+    surface_launch_pipeline.add_argument("--out", required=True)
+    surface_launch_pipeline.add_argument("--adapter", default="arrow_money")
+    surface_launch_pipeline.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
+    surface_launch_pipeline.add_argument("--route-tag", default=None)
+    surface_launch_pipeline.add_argument("--max-order-qty", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-notional", type=float, default=None)
+    surface_launch_pipeline.add_argument("--price-band-pct", type=float, default=None)
+    surface_launch_pipeline.add_argument("--max-orders", type=int, default=None)
+    surface_launch_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    surface_launch_pipeline.add_argument("--product", default="MIS")
+    surface_launch_pipeline.add_argument("--exchange", default="NFO")
+    surface_launch_pipeline.add_argument("--broker-schema-audit", default=None)
+    surface_launch_pipeline.add_argument("--broker-mapping-draft", default=None)
+    surface_launch_pipeline.add_argument("--broker-mapped-orders", default=None)
+    surface_launch_pipeline.add_argument("--broker-halt-export", default=None)
+    surface_launch_pipeline.add_argument("--broker-reconciliation", default=None)
+    surface_launch_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
+    surface_launch_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
+    surface_launch_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
+    surface_launch_pipeline.add_argument("--require-broker-halt-export", action="store_true")
+    surface_launch_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
+    surface_launch_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
+    surface_launch_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     quote_review = sub.add_parser("review-quotes", help="Review generated surface quotes for MM risk hygiene.")
     quote_review.add_argument("--quotes", required=True)
@@ -2680,6 +2713,36 @@ def main(argv: list[str] | None = None) -> int:
                 min_sweeps=args.min_promotion_sweeps,
                 min_median_net_pnl=args.min_promotion_median_net_pnl,
                 min_median_fills=args.min_promotion_median_fills,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-surface-mm-launch":
+        result = write_surface_mm_launch_pipeline(
+            args.surface_pipeline,
+            output_dir=args.out,
+            config=SurfaceMMLaunchPipelineConfig(
+                adapter=args.adapter,
+                mode=args.mode,
+                route_tag=args.route_tag,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                broker_schema_audit_dir=args.broker_schema_audit,
+                broker_mapping_draft_dir=args.broker_mapping_draft,
+                broker_mapped_orders_dir=args.broker_mapped_orders,
+                broker_halt_export_dir=args.broker_halt_export,
+                broker_reconciliation_dir=args.broker_reconciliation,
+                require_broker_schema_audit=args.require_broker_schema_audit,
+                require_broker_mapping_draft=args.require_broker_mapping_draft,
+                require_broker_mapped_orders=args.require_broker_mapped_orders,
+                require_broker_halt_export=args.require_broker_halt_export,
+                require_broker_reconciliation=args.require_broker_reconciliation,
             ),
         )
         print(result.summary.to_string(index=False))

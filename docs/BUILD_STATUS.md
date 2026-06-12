@@ -104,6 +104,9 @@
 - End-to-end surface market-making research pipeline that chains quote
   generation, quote-risk/data-readiness review, replay sweep proof, scenario
   selection, and promotion into one manifest-backed candidate run.
+- Surface market-making launch pipeline that consumes a promoted surface
+  research pipeline and runs quote-risk-enforced staging, launch bundling,
+  broker export, upload-pack generation, and broker-readiness checks.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -276,7 +279,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 345 tests.
+Current passing suite: 348 tests.
 
 ## Next Build Targets
 

@@ -908,6 +908,37 @@ candidate_config.json
 manifest.json
 ```
 
+## Surface Market-Making Launch Pipeline
+
+Turn a passed surface market-making research pipeline into broker-prep artifacts
+for paper or shadow trading:
+
+```powershell
+python -m hft_cli pipeline-surface-mm-launch `
+  --surface-pipeline runs\surface_mm_pipeline_2026_06_10 `
+  --out runs\surface_mm_launch_2026_06_10 `
+  --mode shadow `
+  --adapter arrow_money `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --price-band-pct 0.02 `
+  --allow-placeholder-schema `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+01_staged_orders\staged_orders.csv
+02_launch\launch_orders.csv
+03_export\broker_orders.csv
+04_upload_pack\broker_upload_summary.csv
+05_broker_readiness\broker_readiness_summary.csv
+surface_mm_launch_pipeline_components.csv
+surface_mm_launch_pipeline_summary.csv
+manifest.json
+```
+
 ## Order Exposure Review
 
 Review staged, launch, or exported option order batches for notional, side
