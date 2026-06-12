@@ -49,6 +49,9 @@
 - Calibrated replay planning and replay CLI hooks that apply fill-model
   recommendations to lead-lag, parity, and surface-MM replay latency/depth/edge
   assumptions without loosening explicit conservative inputs.
+- Calibration-aware proof refresh gate that consumes fill-model drift, baseline
+  proof, latest proof, and calibrated replay evidence to decide whether proof
+  can be reused or must be rerun before promotion/scale-up.
 - Broker/vendor adapter scaffolding for normalized, Arrow.money-style, and
   iRage-style CSV exports.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
@@ -159,7 +162,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 189 tests.
+Current passing suite: 193 tests.
 
 ## Next Build Targets
 

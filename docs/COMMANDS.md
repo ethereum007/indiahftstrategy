@@ -989,6 +989,32 @@ calibrated_replay_summary.csv
 manifest.json
 ```
 
+## Proof Refresh Gate
+
+Decide whether an old proof report can be reused after fill-model drift, or
+whether a fresh calibrated proof run is required before promotion/scale-up:
+
+```powershell
+python -m hft_cli review-proof-refresh `
+  --drift runs\fill_model_drift\leadlag_shadow_latest `
+  --baseline-proof runs\proof\leadlag_shadow_baseline `
+  --latest-proof runs\proof\leadlag_shadow_calibrated `
+  --calibrated-replay runs\calibrated_replay\leadlag_shadow_latest `
+  --strategy leadlag `
+  --require-calibrated-replay `
+  --out runs\proof_refresh\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+proof_refresh_decision.csv
+proof_refresh_checks.csv
+proof_refresh_summary.csv
+manifest.json
+```
+
 ## Adapter Schema Audit
 
 Audit a vendor sample CSV header before wiring a real adapter map:

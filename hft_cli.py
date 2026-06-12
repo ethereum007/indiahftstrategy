@@ -25,6 +25,7 @@ from reports.market_profile import MarketProfileReportConfig, write_market_profi
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
+from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
@@ -171,6 +172,16 @@ def main(argv: list[str] | None = None) -> int:
     calibrated_replay.add_argument("--edge-ticks", type=float, default=None)
     calibrated_replay.add_argument("--allow-unready-fill-model", action="store_true")
     calibrated_replay.add_argument("--fail-on-breach", action="store_true")
+
+    proof_refresh = sub.add_parser("review-proof-refresh", help="Gate whether proof can be reused after fill-model drift.")
+    proof_refresh.add_argument("--drift", required=True)
+    proof_refresh.add_argument("--baseline-proof", required=True)
+    proof_refresh.add_argument("--latest-proof", default=None)
+    proof_refresh.add_argument("--calibrated-replay", default=None)
+    proof_refresh.add_argument("--out", required=True)
+    proof_refresh.add_argument("--strategy", default=None)
+    proof_refresh.add_argument("--require-calibrated-replay", action="store_true")
+    proof_refresh.add_argument("--fail-on-breach", action="store_true")
 
     schema_audit = sub.add_parser("audit-adapter-schema", help="Audit a vendor sample CSV against an adapter schema.")
     schema_audit.add_argument("--sample", required=True)
@@ -758,6 +769,20 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             base_params=base_params,
             require_ready=not args.allow_unready_fill_model,
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "review-proof-refresh":
+        result = write_proof_refresh_report(
+            drift_path=args.drift,
+            baseline_proof_path=args.baseline_proof,
+            latest_proof_path=args.latest_proof,
+            calibrated_replay_path=args.calibrated_replay,
+            output_dir=args.out,
+            thresholds=ProofRefreshThresholds(
+                require_calibrated_replay_when_drift_fails=args.require_calibrated_replay,
+                expected_strategy=args.strategy,
+            ),
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
