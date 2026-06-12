@@ -98,6 +98,11 @@ def test_broker_readiness_accepts_required_runtime_session():
     runtime_item = report.items.loc[report.items["component"] == "runtime_session"].iloc[0]
     assert bool(runtime_item["ready"])
     assert runtime_item["runtime_guard_action"] == "continue"
+    summary = report.summary.iloc[0]
+    assert bool(summary["runtime_session_provided"])
+    assert bool(summary["runtime_session_ready"])
+    assert summary["runtime_guard_action"] == "continue"
+    assert not bool(summary["runtime_guard_halted"])
 
 
 def test_broker_readiness_blocks_halted_runtime_session():
@@ -112,6 +117,11 @@ def test_broker_readiness_blocks_halted_runtime_session():
     assert not report.ready
     runtime_item = report.items.loc[report.items["component"] == "runtime_session"].iloc[0]
     assert bool(runtime_item["runtime_guard_halted"])
+    summary = report.summary.iloc[0]
+    assert bool(summary["runtime_session_provided"])
+    assert not bool(summary["runtime_session_ready"])
+    assert summary["runtime_guard_action"] == "halt"
+    assert bool(summary["runtime_guard_halted"])
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "runtime_session_ready" in failed
 

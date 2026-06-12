@@ -480,6 +480,18 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_readiness_recommendation": str(broker_readiness.get("recommendation", ""))
                 if not broker_readiness.empty
                 else "",
+                "broker_runtime_session_provided": _to_bool(broker_readiness.get("runtime_session_provided", False))
+                if not broker_readiness.empty
+                else False,
+                "broker_runtime_session_ready": _to_bool(broker_readiness.get("runtime_session_ready", False))
+                if not broker_readiness.empty
+                else False,
+                "broker_runtime_guard_action": str(broker_readiness.get("runtime_guard_action", ""))
+                if not broker_readiness.empty
+                else "",
+                "broker_runtime_guard_halted": _to_bool(broker_readiness.get("runtime_guard_halted", False))
+                if not broker_readiness.empty
+                else False,
             }
         ]
     )
@@ -513,6 +525,10 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
+                "broker_runtime_session_provided": _to_bool(plan_row["broker_runtime_session_provided"]),
+                "broker_runtime_session_ready": _to_bool(plan_row["broker_runtime_session_ready"]),
+                "broker_runtime_guard_action": str(plan_row["broker_runtime_guard_action"]),
+                "broker_runtime_guard_halted": _to_bool(plan_row["broker_runtime_guard_halted"]),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -590,6 +606,12 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "ready": _to_bool(plan_row["broker_readiness_ready"]),
             "adapter_schema_status": str(plan_row["broker_schema_status"]),
             "recommendation": str(plan_row["broker_readiness_recommendation"]),
+            "runtime_session": {
+                "provided": _to_bool(plan_row["broker_runtime_session_provided"]),
+                "ready": _to_bool(plan_row["broker_runtime_session_ready"]),
+                "guard_action": str(plan_row["broker_runtime_guard_action"]),
+                "guard_halted": _to_bool(plan_row["broker_runtime_guard_halted"]),
+            },
         },
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
         "thresholds": asdict(thresholds),

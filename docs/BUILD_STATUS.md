@@ -209,8 +209,9 @@
   instrument metadata coverage, single-day and multi-day data-readiness
   evidence, and broker-readiness evidence into explicit order, open-order
   notional and age, position notional, adapter, telemetry-freshness,
-  lifecycle-order, replace-order, delta, and vega kill-switch limits, and can
-  consume a settlement or surface-MM launch pipeline root directly.
+  lifecycle-order, replace-order, delta, and vega kill-switch limits, carries
+  broker runtime-session guard evidence into scale-up configs, and can consume
+  a settlement or surface-MM launch pipeline root directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with

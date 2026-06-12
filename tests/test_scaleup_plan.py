@@ -103,7 +103,14 @@ def instrument_metadata_summary(passed=True, parse_coverage=1.0, unparsed_instru
     )
 
 
-def broker_readiness_summary(ready=True, adapter="arrow_money"):
+def broker_readiness_summary(
+    ready=True,
+    adapter="arrow_money",
+    runtime_session_provided=False,
+    runtime_session_ready=False,
+    runtime_guard_action="",
+    runtime_guard_halted=False,
+):
     return pd.DataFrame(
         [
             {
@@ -115,6 +122,10 @@ def broker_readiness_summary(ready=True, adapter="arrow_money"):
                 "required_components": 3,
                 "provided_components": 3,
                 "failed_checks": 0 if ready else 1,
+                "runtime_session_provided": runtime_session_provided,
+                "runtime_session_ready": runtime_session_ready,
+                "runtime_guard_action": runtime_guard_action,
+                "runtime_guard_halted": runtime_guard_halted,
                 "recommendation": "dry_run_only_until_vendor_schema_review"
                 if ready and adapter != "normalized"
                 else "fix_broker_readiness_gaps",
@@ -279,7 +290,13 @@ def test_scaleup_plan_accepts_required_broker_readiness():
         evidence_summary=evidence_summary(True),
         shadow_comparison_summary=shadow_summary(True),
         launch_summary=launch_summary(True),
-        broker_readiness_summary=broker_readiness_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            runtime_session_provided=True,
+            runtime_session_ready=True,
+            runtime_guard_action="continue",
+            runtime_guard_halted=False,
+        ),
         thresholds=ScaleUpThresholds(require_broker_readiness=True),
     )
 
@@ -287,6 +304,10 @@ def test_scaleup_plan_accepts_required_broker_readiness():
     assert report.summary.iloc[0]["broker_readiness_ready"]
     assert report.config["broker_readiness"]["required"]
     assert report.config["broker_readiness"]["ready"]
+    assert report.summary.iloc[0]["broker_runtime_session_ready"]
+    assert report.summary.iloc[0]["broker_runtime_guard_action"] == "continue"
+    assert report.config["broker_readiness"]["runtime_session"]["provided"]
+    assert report.config["broker_readiness"]["runtime_session"]["ready"]
 
 
 def test_scaleup_plan_accepts_required_data_readiness():

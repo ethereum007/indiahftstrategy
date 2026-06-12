@@ -218,6 +218,7 @@ def _summary(
     ready_items = int(items["ready"].astype(bool).sum()) if not items.empty else 0
     schema_status = adapter_schema_status(thresholds.adapter)
     ready = failed == 0
+    runtime_item = _component_item(items, "runtime_session")
     return pd.DataFrame(
         [
             {
@@ -229,6 +230,10 @@ def _summary(
                 "ready_components": ready_items,
                 "missing_required_components": missing_required,
                 "failed_checks": failed,
+                "runtime_session_provided": _item_bool(runtime_item, "provided"),
+                "runtime_session_ready": _item_bool(runtime_item, "ready"),
+                "runtime_guard_action": _item_text(runtime_item, "runtime_guard_action"),
+                "runtime_guard_halted": _item_bool(runtime_item, "runtime_guard_halted"),
                 "recommendation": _summary_recommendation(ready, schema_status, thresholds),
             }
         ]
@@ -282,6 +287,25 @@ def _summary_recommendation(
     if thresholds.require_reviewed_schema and schema_status == "placeholder_normalized_pending_vendor_schema":
         return "obtain_vendor_schema_samples"
     return "fix_broker_readiness_gaps"
+
+
+def _component_item(items: pd.DataFrame, component: str) -> pd.Series:
+    if items.empty or "component" not in items.columns:
+        return pd.Series(dtype=object)
+    matches = items.loc[items["component"] == component]
+    return matches.iloc[0] if not matches.empty else pd.Series(dtype=object)
+
+
+def _item_bool(item: pd.Series, column: str) -> bool:
+    if item.empty or column not in item.index:
+        return False
+    return _to_bool(item[column])
+
+
+def _item_text(item: pd.Series, column: str) -> str:
+    if item.empty or column not in item.index or pd.isna(item[column]):
+        return ""
+    return str(item[column])
 
 
 def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFrame | None:
