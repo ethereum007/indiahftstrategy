@@ -97,20 +97,47 @@ def write_inputs(tmp_path, quotes=None):
     return quotes_path, chain_path
 
 
+def write_quote_risk_review(path, *, passed=True):
+    path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "snapshots": 1,
+                "quotes": 2,
+                "instruments": 2,
+                "bid_quotes": 1,
+                "ask_quotes": 1,
+                "bid_share": 0.5,
+                "marketable_quotes": 0 if passed else 1,
+                "min_quote_edge": 0.2 if passed else -0.1,
+                "avg_quote_edge": 0.2,
+                "max_market_spread_ticks": 5.0,
+                "max_quotes_per_instrument": 1,
+                "all_passed": passed,
+            }
+        ]
+    ).to_csv(path / "quote_risk_summary.csv", index=False)
+
+
 def test_surface_mm_replay_fills_passive_touches_and_writes_proof_artifacts(tmp_path):
     quotes_path, chain_path = write_inputs(tmp_path)
+    quote_risk_dir = tmp_path / "quote_review"
     out_dir = tmp_path / "surface_mm_replay"
+    write_quote_risk_review(quote_risk_dir, passed=True)
 
     result = run_surface_mm_replay(
         quotes_path=quotes_path,
         chain_path=chain_path,
         output_dir=out_dir,
         config=SurfaceMMReplayConfig(quote_ttl_ns=2_000_000_000, markout_horizon_ns=1_000_000_000),
+        quote_risk_review_dir=quote_risk_dir,
+        require_quote_risk_review=True,
     )
 
     assert len(result.fills) == 2
     assert result.summary.iloc[0]["fills"] == 2
     assert result.summary.iloc[0]["net_pnl"] > 0
+    assert bool(result.summary.iloc[0]["quote_risk_review_passed"])
     assert result.markouts["markout"].mean() > 0
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "fills.csv").exists()
@@ -136,6 +163,27 @@ def test_surface_mm_replay_reports_unfilled_quotes_when_not_touched(tmp_path):
     assert result.summary.iloc[0]["fills"] == 0
 
 
+def test_surface_mm_replay_blocks_without_required_quote_risk_review(tmp_path):
+    quotes_path, chain_path = write_inputs(tmp_path)
+    out_dir = tmp_path / "surface_mm_replay_blocked"
+
+    result = run_surface_mm_replay(
+        quotes_path=quotes_path,
+        chain_path=chain_path,
+        output_dir=out_dir,
+        config=SurfaceMMReplayConfig(quote_ttl_ns=2_000_000_000),
+        require_quote_risk_review=True,
+    )
+
+    summary = pd.read_csv(out_dir / "summary.csv")
+    assert result.fills.empty
+    assert result.markouts.empty
+    assert int(result.summary.loc[0, "orders_sent"]) == 0
+    assert bool(result.summary.loc[0, "preflight_blocked"])
+    assert summary.loc[0, "quote_risk_review_reason"] == "quote_risk_review_missing"
+    assert (out_dir / "manifest.json").exists()
+
+
 def test_unified_cli_replay_surface_mm_dispatches(tmp_path):
     quotes_path, chain_path = write_inputs(tmp_path)
     out_dir = tmp_path / "cli_surface_mm"
@@ -159,3 +207,28 @@ def test_unified_cli_replay_surface_mm_dispatches(tmp_path):
     assert code == 0
     assert (out_dir / "summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_unified_cli_replay_surface_mm_requires_quote_risk_review(tmp_path):
+    quotes_path, chain_path = write_inputs(tmp_path)
+    out_dir = tmp_path / "cli_surface_mm_quote_review"
+
+    code = main(
+        [
+            "replay-surface-mm",
+            "--quotes",
+            str(quotes_path),
+            "--chain",
+            str(chain_path),
+            "--out",
+            str(out_dir),
+            "--quote-ttl-ns",
+            "2000000000",
+            "--require-quote-risk-review",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "summary.csv")
+    assert code == 2
+    assert bool(summary.loc[0, "preflight_blocked"])
+    assert summary.loc[0, "quote_risk_review_reason"] == "quote_risk_review_missing"

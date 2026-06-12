@@ -99,6 +99,8 @@
 - Surface market-making robustness sweeps can require a passed quote-risk
   review and fail closed with manifest-backed proof artifacts before replay
   grids are run.
+- Direct surface market-making replay can require the same quote-risk review
+  and emits blocked replay artifacts instead of simulating unreviewed quotes.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -269,7 +271,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 338 tests.
+Current passing suite: 340 tests.
 
 ## Next Build Targets
 

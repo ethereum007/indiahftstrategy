@@ -1219,6 +1219,8 @@ def main(argv: list[str] | None = None) -> int:
     surface_mm.add_argument("--max-quotes", type=int, default=None)
     surface_mm.add_argument("--fill-model", default=None)
     surface_mm.add_argument("--allow-unready-fill-model", action="store_true")
+    surface_mm.add_argument("--quote-risk-review", default=None)
+    surface_mm.add_argument("--require-quote-risk-review", action="store_true")
 
     order_stage = sub.add_parser("stage-orders", help="Stage broker-neutral orders after pre-trade checks.")
     order_stage.add_argument("--orders", required=True)
@@ -2636,9 +2638,12 @@ def main(argv: list[str] | None = None) -> int:
                 contract_multiplier=args.contract_multiplier,
                 max_quotes=args.max_quotes,
             ),
+            quote_risk_review_dir=args.quote_risk_review,
+            require_quote_risk_review=args.require_quote_risk_review,
         )
         print(result.summary.to_string(index=False))
-        return 0
+        preflight_blocked = bool(result.summary.iloc[0].get("preflight_blocked", False)) if not result.summary.empty else False
+        return 2 if preflight_blocked else 0
     if args.command == "stage-orders":
         result = write_staged_orders(
             args.orders,

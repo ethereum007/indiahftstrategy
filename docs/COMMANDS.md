@@ -916,6 +916,8 @@ python -m hft_cli replay-surface-mm `
   --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
   --chain data\chain.csv `
   --out runs\surface_mm_replay_2026_06_10 `
+  --quote-risk-review runs\surface_quotes_2026_06_10\quote_review `
+  --require-quote-risk-review `
   --quote-ttl-ns 1000000000 `
   --markout-horizon-ns 1000000000 `
   --fill-depth-fraction 0.25 `
@@ -935,6 +937,10 @@ markouts.csv
 markout_summary.csv
 manifest.json
 ```
+
+When the quote-risk review is required, replay writes empty replay artifacts
+and a blocked `summary.csv` instead of simulating quotes that have not cleared
+the hygiene gate.
 
 ## Surface Market-Making Sweep
 

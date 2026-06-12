@@ -10,6 +10,11 @@ import pandas as pd
 from data.chains import load_option_chain_csv
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
 from reports.manifest import write_experiment_manifest
+from reports.quote_risk import (
+    quote_risk_review_check,
+    quote_risk_review_parameters,
+    read_quote_risk_summary,
+)
 from research.surface_markouts import compute_surface_markouts, surface_markout_summary
 
 
@@ -46,6 +51,8 @@ def run_surface_mm_replay(
     timestamp_tz: str | None = None,
     filter_session: bool = True,
     config: SurfaceMMReplayConfig | None = None,
+    quote_risk_review_dir: str | Path | None = None,
+    require_quote_risk_review: bool = False,
 ) -> SurfaceMMReplayResult:
     config = config or SurfaceMMReplayConfig()
     _validate_config(config)
@@ -55,6 +62,42 @@ def run_surface_mm_replay(
         raise FileNotFoundError(f"quotes file not found: {quotes_file}")
     if not chain_file.exists():
         raise FileNotFoundError(f"chain file not found: {chain_file}")
+
+    quote_risk_summary = read_quote_risk_summary(quote_risk_review_dir)
+    quote_risk_check = quote_risk_review_check(
+        quote_risk_summary,
+        required=require_quote_risk_review,
+        input_dir=quote_risk_review_dir,
+    )
+    if quote_risk_check is not None and not bool(quote_risk_check["passed"]):
+        result = _blocked_replay_result(quote_risk_check, config, required=require_quote_risk_review)
+        out_dir = Path(output_dir) if output_dir else None
+        if out_dir:
+            out_dir.mkdir(parents=True, exist_ok=True)
+            _write_outputs(
+                out_dir,
+                quotes=_empty_quotes(),
+                result=result,
+                quotes_file=quotes_file,
+                chain_file=chain_file,
+                timestamp_unit=timestamp_unit,
+                timestamp_tz=timestamp_tz,
+                filter_session=filter_session,
+                config=config,
+                quote_risk_summary=quote_risk_summary,
+                quote_risk_review_dir=quote_risk_review_dir,
+                require_quote_risk_review=require_quote_risk_review,
+            )
+            return SurfaceMMReplayResult(
+                result.fills,
+                result.unfilled,
+                result.equity,
+                result.summary,
+                result.markouts,
+                result.markout_summary,
+                out_dir,
+            )
+        return result
 
     quotes = _normalize_quotes(pd.read_csv(quotes_file), max_quotes=config.max_quotes)
     chain = load_option_chain_csv(
@@ -69,28 +112,29 @@ def run_surface_mm_replay(
     fills = _attach_markouts_and_costs(fills, markouts, config)
     equity = _equity_curve(fills)
     summary = _summary(quotes, fills, unfilled, config)
+    summary = _attach_quote_risk_summary(
+        summary,
+        quote_risk_check=quote_risk_check,
+        required=require_quote_risk_review,
+    )
     markout_summary = surface_markout_summary(markouts) if not markouts.empty else _empty_markout_summary()
 
     out_dir = Path(output_dir) if output_dir else None
     if out_dir:
         out_dir.mkdir(parents=True, exist_ok=True)
-        quotes.to_csv(out_dir / "quotes.csv", index=False)
-        fills.to_csv(out_dir / "fills.csv", index=False)
-        unfilled.to_csv(out_dir / "unfilled_quotes.csv", index=False)
-        equity.to_csv(out_dir / "equity.csv", index=False)
-        summary.to_csv(out_dir / "summary.csv", index=False)
-        markouts.to_csv(out_dir / "markouts.csv", index=False)
-        markout_summary.to_csv(out_dir / "markout_summary.csv", index=False)
-        write_experiment_manifest(
+        _write_outputs(
             out_dir,
-            run_type="surface_mm_replay",
-            inputs={"quotes": quotes_file, "chain": chain_file},
-            parameters={
-                "timestamp_unit": timestamp_unit,
-                "timestamp_tz": timestamp_tz,
-                "filter_session": filter_session,
-                "config": asdict(config),
-            },
+            quotes=quotes,
+            result=SurfaceMMReplayResult(fills, unfilled, equity, summary, markouts, markout_summary),
+            quotes_file=quotes_file,
+            chain_file=chain_file,
+            timestamp_unit=timestamp_unit,
+            timestamp_tz=timestamp_tz,
+            filter_session=filter_session,
+            config=config,
+            quote_risk_summary=quote_risk_summary,
+            quote_risk_review_dir=quote_risk_review_dir,
+            require_quote_risk_review=require_quote_risk_review,
         )
     return SurfaceMMReplayResult(fills, unfilled, equity, summary, markouts, markout_summary, out_dir)
 
@@ -358,6 +402,78 @@ def _summary(
     )
 
 
+def _attach_quote_risk_summary(
+    summary: pd.DataFrame,
+    *,
+    quote_risk_check: dict | None,
+    required: bool,
+) -> pd.DataFrame:
+    out = summary.copy()
+    passed = True if quote_risk_check is None else bool(quote_risk_check["passed"])
+    out["quote_risk_review_required"] = bool(required)
+    out["quote_risk_review_provided"] = bool(quote_risk_check is not None and quote_risk_check["input_dir"])
+    out["quote_risk_review_passed"] = bool(passed)
+    out["quote_risk_review_reason"] = "" if quote_risk_check is None else str(quote_risk_check["reason"])
+    out["preflight_blocked"] = bool(quote_risk_check is not None and not passed)
+    return out
+
+
+def _blocked_replay_result(
+    check: dict,
+    config: SurfaceMMReplayConfig,
+    *,
+    required: bool,
+) -> SurfaceMMReplayResult:
+    fills = _empty_fills()
+    unfilled = _empty_unfilled()
+    equity = pd.DataFrame(columns=["ts", "equity"])
+    markouts = _empty_markouts()
+    markout_summary = _empty_markout_summary()
+    summary = _summary(_empty_quotes(), fills, unfilled, config)
+    summary = _attach_quote_risk_summary(summary, quote_risk_check=check, required=required)
+    return SurfaceMMReplayResult(fills, unfilled, equity, summary, markouts, markout_summary)
+
+
+def _write_outputs(
+    out_dir: Path,
+    *,
+    quotes: pd.DataFrame,
+    result: SurfaceMMReplayResult,
+    quotes_file: Path,
+    chain_file: Path,
+    timestamp_unit: str,
+    timestamp_tz: str | None,
+    filter_session: bool,
+    config: SurfaceMMReplayConfig,
+    quote_risk_summary: pd.DataFrame,
+    quote_risk_review_dir: str | Path | None,
+    require_quote_risk_review: bool,
+) -> None:
+    quotes.to_csv(out_dir / "quotes.csv", index=False)
+    result.fills.to_csv(out_dir / "fills.csv", index=False)
+    result.unfilled.to_csv(out_dir / "unfilled_quotes.csv", index=False)
+    result.equity.to_csv(out_dir / "equity.csv", index=False)
+    result.summary.to_csv(out_dir / "summary.csv", index=False)
+    result.markouts.to_csv(out_dir / "markouts.csv", index=False)
+    result.markout_summary.to_csv(out_dir / "markout_summary.csv", index=False)
+    inputs: dict[str, str | Path] = {"quotes": quotes_file, "chain": chain_file}
+    if quote_risk_review_dir is not None:
+        inputs["quote_risk_review"] = Path(quote_risk_review_dir)
+    write_experiment_manifest(
+        out_dir,
+        run_type="surface_mm_replay",
+        inputs=inputs,
+        parameters={
+            "timestamp_unit": timestamp_unit,
+            "timestamp_tz": timestamp_tz,
+            "filter_session": filter_session,
+            "config": asdict(config),
+            "require_quote_risk_review": bool(require_quote_risk_review),
+            "quote_risk_review": quote_risk_review_parameters(quote_risk_summary, quote_risk_review_dir),
+        },
+    )
+
+
 def _unfilled_row(quote: object, reason: str) -> dict[str, object]:
     return {
         "quote_id": quote.quote_id,
@@ -439,6 +555,25 @@ def _strike_label(strike: float) -> str:
     return str(float(strike)).replace(".", "_")
 
 
+def _empty_quotes() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "quote_id",
+            "client_order_id",
+            "ts",
+            "instrument_id",
+            "expiry",
+            "strike",
+            "option_type",
+            "side",
+            "qty",
+            "price",
+            "theo",
+            "quote_edge",
+        ]
+    )
+
+
 def _empty_fills() -> pd.DataFrame:
     return pd.DataFrame(
         columns=[
@@ -511,6 +646,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--option-tick", type=float, default=0.05)
     parser.add_argument("--contract-multiplier", type=float, default=1.0)
     parser.add_argument("--max-quotes", type=int, default=None)
+    parser.add_argument("--quote-risk-review", default=None)
+    parser.add_argument("--require-quote-risk-review", action="store_true")
     args = parser.parse_args(argv)
     result = run_surface_mm_replay(
         quotes_path=args.quotes,
@@ -529,9 +666,12 @@ def main(argv: list[str] | None = None) -> int:
             contract_multiplier=args.contract_multiplier,
             max_quotes=args.max_quotes,
         ),
+        quote_risk_review_dir=args.quote_risk_review,
+        require_quote_risk_review=args.require_quote_risk_review,
     )
     print(result.summary.to_string(index=False))
-    return 0
+    preflight_blocked = bool(result.summary.iloc[0].get("preflight_blocked", False)) if not result.summary.empty else False
+    return 2 if preflight_blocked else 0
 
 
 if __name__ == "__main__":
