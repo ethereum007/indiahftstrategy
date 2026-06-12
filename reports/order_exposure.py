@@ -7,6 +7,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from data.instruments import parse_option_instrument_id
 from engine.surface import normal_cdf
 from reports.manifest import write_experiment_manifest
 
@@ -88,11 +89,17 @@ def _normalize_orders(orders: pd.DataFrame, config: OrderExposureConfig) -> pd.D
     frame["side"] = frame["side"].map(_normalize_side).astype("int64")
     frame["qty"] = pd.to_numeric(frame["qty"], errors="coerce")
     frame["price"] = pd.to_numeric(frame["price"], errors="coerce")
-    parsed = frame["instrument_id"].map(_parse_instrument_id)
+    parsed = frame["instrument_id"].map(parse_option_instrument_id)
     if "option_type" not in frame.columns:
-        frame["option_type"] = [item[0] for item in parsed]
+        frame["option_type"] = [item.option_type if item is not None else np.nan for item in parsed]
     if "strike" not in frame.columns:
-        frame["strike"] = [item[1] for item in parsed]
+        frame["strike"] = [item.strike if item is not None else np.nan for item in parsed]
+    if "expiry" not in frame.columns:
+        frame["expiry"] = [item.expiry if item is not None else np.nan for item in parsed]
+    if "underlying" not in frame.columns:
+        frame["underlying"] = [item.underlying if item is not None else np.nan for item in parsed]
+    if "symbol_format" not in frame.columns:
+        frame["symbol_format"] = [item.symbol_format if item is not None else "unknown" for item in parsed]
     frame["option_type"] = frame["option_type"].astype(str).str.upper().replace({"CALL": "C", "PUT": "P"})
     frame["strike"] = pd.to_numeric(frame["strike"], errors="coerce")
     frame["forward"] = _numeric_with_fallback(frame, "forward", config.forward)
@@ -315,15 +322,6 @@ def _numeric_with_fallback(frame: pd.DataFrame, column: str, fallback: float | N
     if fallback is not None:
         values = values.fillna(float(fallback))
     return values
-
-
-def _parse_instrument_id(instrument_id: str) -> tuple[str | float, float]:
-    text = str(instrument_id).upper()
-    if text.startswith("CALL_"):
-        return "C", float(text.replace("CALL_", "").replace("_", "."))
-    if text.startswith("PUT_"):
-        return "P", float(text.replace("PUT_", "").replace("_", "."))
-    return np.nan, np.nan
 
 
 def _normalize_side(value: object) -> int:

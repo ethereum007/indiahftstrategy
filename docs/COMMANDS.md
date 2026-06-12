@@ -849,6 +849,11 @@ order_exposure_summary.csv
 manifest.json
 ```
 
+If `option_type` and `strike` are absent, the review attempts to infer them
+from supported `instrument_id` formats, including internal `CALL_1000_0`,
+settlement `NIFTY_20260610_100C`, NSE compact `NIFTY24JUN22500CE`, and OCC
+`SPY250620C00500000` symbols.
+
 ## Surface Market-Making Replay
 
 Replay passive surface quotes against later option-chain snapshots. A bid quote

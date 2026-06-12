@@ -197,7 +197,8 @@
   concentration before replay or live routing.
 - Option order exposure review for staged, launch, or exported order batches,
   including Black-76 delta/vega, gross notional, side imbalance, and
-  instrument concentration checks.
+  instrument concentration checks, with cross-market option metadata inference
+  for internal, settlement, NSE compact, and OCC symbols.
 - Passive surface market-making replay that tests generated quotes against
   later option-chain snapshots, writes fills/unfilled quotes/equity/markout
   artifacts, and produces proof-report-compatible `summary.csv` runs.
@@ -229,7 +230,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 263 tests.
+Current passing suite: 268 tests.
 
 ## Next Build Targets
 
