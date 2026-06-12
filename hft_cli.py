@@ -20,6 +20,7 @@ from reports.halt_execution import HaltExecutionThresholds, write_halt_execution
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
 from reports.imbalance_edge import ImbalanceEdgeThresholds, write_imbalance_edge_audit
+from reports.imbalance_edge_sweep import ImbalanceEdgeSweepThresholds, write_imbalance_edge_sweep
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
@@ -128,6 +129,27 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_edge.add_argument("--min-win-rate", type=float, default=0.0)
     imbalance_edge.add_argument("--min-median-forward-edge-ticks", type=float, default=None)
     imbalance_edge.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_edge_sweep = sub.add_parser("sweep-imbalance-edge", help="Sweep microprice imbalance edge thresholds before replay.")
+    imbalance_edge_sweep.add_argument("--ticks", required=True)
+    imbalance_edge_sweep.add_argument("--out", required=True)
+    imbalance_edge_sweep.add_argument("--no-filter-session", action="store_true")
+    imbalance_edge_sweep.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_edge_sweep.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
+    imbalance_edge_sweep.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
+    imbalance_edge_sweep.add_argument("--forward-horizon-ns", nargs="+", required=True, type=int)
+    imbalance_edge_sweep.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_edge_sweep.add_argument("--min-depth", type=int, default=1)
+    imbalance_edge_sweep.add_argument("--min-signals", type=int, default=1)
+    imbalance_edge_sweep.add_argument("--min-direction-count", type=int, default=1)
+    imbalance_edge_sweep.add_argument("--min-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge_sweep.add_argument("--min-win-rate", type=float, default=0.0)
+    imbalance_edge_sweep.add_argument("--min-median-forward-edge-ticks", type=float, default=None)
+    imbalance_edge_sweep.add_argument("--min-passed-configs", type=int, default=1)
+    imbalance_edge_sweep.add_argument("--min-best-usable-signals", type=int, default=1)
+    imbalance_edge_sweep.add_argument("--min-best-mean-forward-edge-ticks", type=float, default=0.0)
+    imbalance_edge_sweep.add_argument("--min-best-win-rate", type=float, default=0.0)
+    imbalance_edge_sweep.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_replay = sub.add_parser("replay-leadlag", help="Replay lead-lag taker strategy.")
     leadlag_replay.add_argument("--leader", required=True)
@@ -767,6 +789,31 @@ def main(argv: list[str] | None = None) -> int:
                 min_mean_forward_edge_ticks=args.min_mean_forward_edge_ticks,
                 min_win_rate=args.min_win_rate,
                 min_median_forward_edge_ticks=args.min_median_forward_edge_ticks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "sweep-imbalance-edge":
+        result = write_imbalance_edge_sweep(
+            args.ticks,
+            output_dir=args.out,
+            tick_size=args.tick_size,
+            filter_session=not args.no_filter_session,
+            entry_imbalance_values=args.entry_imbalance,
+            min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
+            forward_horizon_ns_values=args.forward_horizon_ns,
+            max_spread_ticks=args.max_spread_ticks,
+            min_depth=args.min_depth,
+            min_signals=args.min_signals,
+            min_direction_count=args.min_direction_count,
+            min_mean_forward_edge_ticks=args.min_mean_forward_edge_ticks,
+            min_win_rate=args.min_win_rate,
+            min_median_forward_edge_ticks=args.min_median_forward_edge_ticks,
+            thresholds=ImbalanceEdgeSweepThresholds(
+                min_passed_configs=args.min_passed_configs,
+                min_best_usable_signals=args.min_best_usable_signals,
+                min_best_mean_forward_edge_ticks=args.min_best_mean_forward_edge_ticks,
+                min_best_win_rate=args.min_best_win_rate,
             ),
         )
         print(result.summary.to_string(index=False))

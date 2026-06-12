@@ -290,6 +290,36 @@ imbalance_edge_summary.csv
 manifest.json
 ```
 
+## Microprice Imbalance Edge Sweep
+
+Search imbalance edge thresholds and forward horizons on raw top-of-book data
+before launching replay grids:
+
+```powershell
+python -m hft_cli sweep-imbalance-edge `
+  --ticks data\atm_option_ticks.csv `
+  --out runs\imbalance_edge_sweep_2026_06_10 `
+  --entry-imbalance 0.55 0.60 0.70 `
+  --min-microprice-edge-ticks 0.25 0.50 1.00 `
+  --forward-horizon-ns 100000000 500000000 `
+  --min-signals 100 `
+  --min-direction-count 2 `
+  --min-mean-forward-edge-ticks 0.25 `
+  --min-win-rate 0.52 `
+  --min-best-usable-signals 100 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_edge_sweep_runs.csv
+imbalance_edge_sweep_checks.csv
+imbalance_edge_sweep_summary.csv
+candidate_config.json
+manifest.json
+```
+
 ## Microprice Imbalance Replay
 
 Replay a single-instrument top-of-book imbalance strategy that enters when

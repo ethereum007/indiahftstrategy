@@ -23,6 +23,9 @@
 - Microprice/order-book imbalance edge audit that scans top-of-book ticks for
   imbalance/microprice signals and gates forward-mid response, direction
   coverage, and win rate before replay/sweep work.
+- Microprice/order-book imbalance edge sweep that ranks entry thresholds,
+  microprice-edge hurdles, and forward horizons before expensive replay grids,
+  emitting replay defaults in a candidate config.
 - Replay strategies: parity taker and lead-lag taker.
 - Replay CLIs for parity taker and lead-lag taker, writing fills, equity,
   summary, signals/legging, and markout artifacts.
@@ -173,7 +176,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 206 tests.
+Current passing suite: 210 tests.
 
 ## Next Build Targets
 

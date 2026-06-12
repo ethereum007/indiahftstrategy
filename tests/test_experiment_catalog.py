@@ -106,6 +106,30 @@ def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):
     assert row["summary_signal_count"] == 12
 
 
+def test_catalog_experiment_runs_recognizes_imbalance_edge_sweep_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "imbalance_edge_sweep",
+        run_type="imbalance_edge_sweep",
+        summary_name="imbalance_edge_sweep_summary.csv",
+        summary_row={
+            "passed": True,
+            "failed_checks": 0,
+            "scenario_count": 6,
+            "passed_configs": 3,
+            "best_run": "imb_0p6__edge_0p25__horizon_100000ns",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["summary_file"] == "imbalance_edge_sweep_summary.csv"
+    assert row["summary_status_column"] == "passed"
+    assert row["summary_passed_configs"] == 3
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"
