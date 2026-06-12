@@ -1846,12 +1846,19 @@ python -m hft_cli stage-orders `
   --orders runs\surface_quotes_2026_06_10\surface_quotes.csv `
   --source surface_quotes `
   --out runs\surface_quotes_2026_06_10\staged_orders `
+  --quote-risk-review runs\surface_quotes_2026_06_10\quote_review `
+  --require-quote-risk-review `
   --max-order-qty 75 `
   --max-notional 10000 `
   --price-band-pct 0.02 `
   --max-orders 100 `
   --fail-on-reject
 ```
+
+For `--source surface_quotes`, requiring the quote-risk review blocks all
+orders unless the supplied `quote_risk_summary.csv` passed. This keeps market
+making quotes from moving into broker-neutral staging before the data and quote
+hygiene gates are accepted.
 
 For `--source orders`, the input CSV must include:
 

@@ -1229,6 +1229,8 @@ def main(argv: list[str] | None = None) -> int:
     order_stage.add_argument("--max-orders", type=int, default=None)
     order_stage.add_argument("--contract-multiplier", type=float, default=1.0)
     order_stage.add_argument("--allow-marketable", action="store_true")
+    order_stage.add_argument("--quote-risk-review", default=None)
+    order_stage.add_argument("--require-quote-risk-review", action="store_true")
     order_stage.add_argument("--fail-on-reject", action="store_true")
 
     args = parser.parse_args(argv)
@@ -2647,9 +2649,11 @@ def main(argv: list[str] | None = None) -> int:
                 contract_multiplier=args.contract_multiplier,
                 require_nonmarketable=not args.allow_marketable,
             ),
+            quote_risk_review_dir=args.quote_risk_review,
+            require_quote_risk_review=args.require_quote_risk_review,
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_reject and not result.passed else 0
+        return 2 if (args.fail_on_reject or args.require_quote_risk_review) and not result.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 

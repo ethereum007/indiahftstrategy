@@ -3,12 +3,18 @@ from __future__ import annotations
 import hashlib
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from adapters.broker import get_adapter
 from reports.manifest import write_experiment_manifest
+from reports.quote_risk import (
+    quote_risk_review_check,
+    quote_risk_review_parameters,
+    read_quote_risk_summary,
+)
 
 
 @dataclass(frozen=True)
@@ -33,6 +39,8 @@ class OrderStagingReport:
 
     @property
     def passed(self) -> bool:
+        if not self.summary.empty and "all_passed" in self.summary.columns:
+            return bool(self.summary.iloc[0]["all_passed"])
         return self.rejected.empty
 
 
@@ -108,6 +116,8 @@ def write_staged_orders(
     source: str = "orders",
     limits: OrderStagingLimits | None = None,
     adapter: str = "normalized",
+    quote_risk_review_dir: str | Path | None = None,
+    require_quote_risk_review: bool = False,
 ) -> OrderStagingReport:
     get_adapter(adapter)
     orders_file = Path(orders_path)
@@ -115,11 +125,27 @@ def write_staged_orders(
         raise FileNotFoundError(f"orders file not found: {orders_file}")
     limits = limits or OrderStagingLimits()
     report = stage_orders(pd.read_csv(orders_file), source=source, limits=limits)
+    quote_risk_summary = read_quote_risk_summary(quote_risk_review_dir)
+    quote_risk_check = quote_risk_review_check(
+        quote_risk_summary,
+        required=require_quote_risk_review,
+        input_dir=quote_risk_review_dir,
+    )
+    if quote_risk_check is not None and not bool(quote_risk_check["passed"]):
+        report = _block_staged_orders(report, str(quote_risk_check["reason"]))
+    report = _attach_quote_risk_summary(
+        report,
+        quote_risk_check=quote_risk_check,
+        required=require_quote_risk_review,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.accepted.to_csv(out / "staged_orders.csv", index=False)
     report.rejected.to_csv(out / "staged_order_rejections.csv", index=False)
     report.summary.to_csv(out / "staged_order_summary.csv", index=False)
+    inputs: dict[str, Any] = {"orders": orders_file}
+    if quote_risk_review_dir is not None:
+        inputs["quote_risk_review"] = Path(quote_risk_review_dir)
     write_experiment_manifest(
         out,
         run_type="order_staging",
@@ -127,8 +153,10 @@ def write_staged_orders(
             "adapter": adapter,
             "source": source,
             "limits": asdict(limits),
+            "require_quote_risk_review": bool(require_quote_risk_review),
+            "quote_risk_review": quote_risk_review_parameters(quote_risk_summary, quote_risk_review_dir),
         },
-        inputs={"orders": orders_file},
+        inputs=inputs,
     )
     return OrderStagingReport(report.accepted, report.rejected, report.summary, out)
 
@@ -213,6 +241,46 @@ def _summary(accepted: pd.DataFrame, rejected: pd.DataFrame, total_orders: int) 
                 "all_passed": bool(rejected.empty),
             }
         ]
+    )
+
+
+def _block_staged_orders(report: OrderStagingReport, reason: str) -> OrderStagingReport:
+    accepted = report.accepted.iloc[0:0].copy()
+    rejected = report.rejected.copy()
+    if not report.accepted.empty:
+        blocked = report.accepted.copy()
+        blocked["rejection_reason"] = reason
+        rejected = pd.concat(
+            [rejected, blocked[[*ORDER_COLUMNS, "rejection_reason"]]],
+            ignore_index=True,
+            sort=False,
+        )
+    total_orders = int(report.summary.iloc[0]["total_orders"]) if not report.summary.empty else len(rejected)
+    return OrderStagingReport(
+        accepted=accepted,
+        rejected=rejected.reset_index(drop=True),
+        summary=_summary(accepted, rejected, total_orders),
+    )
+
+
+def _attach_quote_risk_summary(
+    report: OrderStagingReport,
+    *,
+    quote_risk_check: dict[str, Any] | None,
+    required: bool,
+) -> OrderStagingReport:
+    summary = report.summary.copy()
+    passed = True if quote_risk_check is None else bool(quote_risk_check["passed"])
+    summary["quote_risk_review_required"] = bool(required)
+    summary["quote_risk_review_provided"] = bool(quote_risk_check is not None and quote_risk_check["input_dir"])
+    summary["quote_risk_review_passed"] = bool(passed)
+    summary["quote_risk_review_reason"] = "" if quote_risk_check is None else str(quote_risk_check["reason"])
+    summary["all_passed"] = summary["all_passed"].astype(bool) & bool(passed)
+    return OrderStagingReport(
+        accepted=report.accepted,
+        rejected=report.rejected,
+        summary=summary,
+        output_dir=report.output_dir,
     )
 
 

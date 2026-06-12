@@ -34,6 +34,70 @@ class QuoteRiskReport:
         return bool(self.summary.iloc[0]["all_passed"]) if not self.summary.empty else False
 
 
+def read_quote_risk_summary(path: str | Path | None) -> pd.DataFrame:
+    if path is None:
+        return pd.DataFrame()
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "quote_risk_summary.csv"
+    if not candidate.exists():
+        raise FileNotFoundError(f"quote risk summary not found: {candidate}")
+    frame = pd.read_csv(candidate)
+    if frame.empty:
+        raise ValueError(f"quote risk summary is empty: {candidate}")
+    return frame
+
+
+def quote_risk_review_check(
+    summary: pd.DataFrame,
+    *,
+    required: bool,
+    input_dir: str | Path | None,
+) -> dict[str, Any] | None:
+    if summary.empty and not required:
+        return None
+    provided = not summary.empty
+    row = summary.iloc[0] if provided else pd.Series(dtype=object)
+    accepted = _to_bool(row.get("all_passed", False)) if provided else False
+    passed = provided and accepted
+    reason = "accepted" if passed else "quote_risk_review_missing"
+    if provided and not accepted:
+        reason = "quote_risk_review_not_passed"
+    return {
+        "check": "quote_risk_review",
+        "value": bool(accepted),
+        "operator": "all_passed",
+        "threshold": True,
+        "passed": bool(passed),
+        "reason": reason,
+        "input_dir": str(input_dir or ""),
+        "quotes": _int(row, "quotes") if provided else 0,
+        "marketable_quotes": _int(row, "marketable_quotes") if provided else 0,
+        "min_quote_edge": _float(row, "min_quote_edge") if provided else 0.0,
+    }
+
+
+def quote_risk_review_parameters(summary: pd.DataFrame, input_dir: str | Path | None) -> dict[str, Any]:
+    if summary.empty:
+        return {
+            "provided": False,
+            "input_dir": str(input_dir or ""),
+            "accepted": False,
+            "quotes": 0,
+            "marketable_quotes": 0,
+            "min_quote_edge": 0.0,
+        }
+    row = summary.iloc[0]
+    return {
+        "provided": True,
+        "input_dir": str(input_dir or ""),
+        "accepted": _to_bool(row.get("all_passed", False)),
+        "quotes": _int(row, "quotes"),
+        "marketable_quotes": _int(row, "marketable_quotes"),
+        "min_quote_edge": _float(row, "min_quote_edge"),
+    }
+
+
 def evaluate_quote_risk(
     quotes: pd.DataFrame,
     *,
