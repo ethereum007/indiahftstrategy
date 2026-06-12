@@ -104,6 +104,9 @@
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests.
+- Halt response export mapper that turns emergency cancel and flatten actions
+  into reviewed broker/vendor CSV shapes, with normalized passthrough until
+  Arrow.money/iRage emergency schemas are finalized.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -140,7 +143,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 161 tests.
+Current passing suite: 165 tests.
 
 ## Next Build Targets
 

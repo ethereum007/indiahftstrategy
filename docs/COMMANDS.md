@@ -778,6 +778,44 @@ halt_response_config.json
 manifest.json
 ```
 
+## Halt Response Export
+
+Map halt-response cancel and flatten actions into broker/vendor file shapes
+using reviewed CSV mappings:
+
+```powershell
+python -m hft_cli export-halt-response `
+  --halt-response runs\halt_response\leadlag_shadow_latest `
+  --cancel-mapping mappings\arrow_cancel_orders.csv `
+  --flatten-mapping mappings\arrow_flatten_orders.csv `
+  --adapter arrow_money `
+  --cancel-output-file arrow_cancel_orders.csv `
+  --flatten-output-file arrow_flatten_orders.csv `
+  --out runs\halt_exports\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Both mapping files use:
+
+```text
+target_column,source_column,default_value,required,transform
+```
+
+If no mapping is supplied for an action type, the broker-neutral action file is
+passed through unchanged. This keeps the halt workflow usable before the real
+Arrow.money/iRage emergency action schemas arrive.
+
+Outputs:
+
+```text
+broker_cancel_orders.csv
+broker_flatten_orders.csv
+halt_response_export_checks.csv
+halt_response_export_summary.csv
+halt_response_export_schema.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

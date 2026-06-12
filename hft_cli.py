@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from adapters.broker import run_calibration_report
+from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
@@ -396,6 +397,18 @@ def main(argv: list[str] | None = None) -> int:
     halt_response.add_argument("--default-order-type", default="LIMIT")
     halt_response.add_argument("--default-time-in-force", default="DAY")
     halt_response.add_argument("--fail-on-breach", action="store_true")
+
+    halt_export = sub.add_parser("export-halt-response", help="Map halt response actions into broker files.")
+    halt_export.add_argument("--halt-response", required=True)
+    halt_export.add_argument("--out", required=True)
+    halt_export.add_argument("--adapter", default="normalized")
+    halt_export.add_argument("--cancel-mapping", default=None)
+    halt_export.add_argument("--flatten-mapping", default=None)
+    halt_export.add_argument("--cancel-output-file", default="broker_cancel_orders.csv")
+    halt_export.add_argument("--flatten-output-file", default="broker_flatten_orders.csv")
+    halt_export.add_argument("--allow-unready-response", action="store_true")
+    halt_export.add_argument("--allow-missing-required", action="store_true")
+    halt_export.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -923,6 +936,22 @@ def main(argv: list[str] | None = None) -> int:
                 require_flatten_prices=not args.allow_missing_flatten_prices,
                 default_order_type=args.default_order_type,
                 default_time_in_force=args.default_time_in_force,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "export-halt-response":
+        result = write_halt_response_export(
+            halt_response_dir=args.halt_response,
+            output_dir=args.out,
+            cancel_mapping_path=args.cancel_mapping,
+            flatten_mapping_path=args.flatten_mapping,
+            config=HaltResponseExportConfig(
+                adapter=args.adapter,
+                cancel_output_filename=args.cancel_output_file,
+                flatten_output_filename=args.flatten_output_file,
+                require_response_ready=not args.allow_unready_response,
+                require_all_mapped=not args.allow_missing_required,
             ),
         )
         print(result.summary.to_string(index=False))
