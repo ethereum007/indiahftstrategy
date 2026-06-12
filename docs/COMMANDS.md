@@ -188,6 +188,31 @@ surface_quote_summary.csv
 manifest.json
 ```
 
+## Surface Quote Review
+
+Gate generated market-making quotes before replay or live routing:
+
+```powershell
+python -m hft_cli review-quotes `
+  --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
+  --out runs\surface_quotes_2026_06_10\quote_review `
+  --min-quotes 20 `
+  --min-instruments 10 `
+  --max-marketable-quotes 0 `
+  --min-quote-edge 0 `
+  --max-market-spread-ticks 20 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+quote_risk_summary.csv
+quote_risk_checks.csv
+quote_risk_by_instrument.csv
+manifest.json
+```
+
 ## Sweep Comparison
 
 Rank parameter scenarios across multiple sweep output folders:

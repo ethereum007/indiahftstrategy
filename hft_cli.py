@@ -7,6 +7,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.proof import ProofThresholds, write_proof_report
+from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
 from research.run_leadlag import run_leadlag
@@ -176,6 +177,19 @@ def main(argv: list[str] | None = None) -> int:
     surface_quote.add_argument("--max-market-spread-ticks", type=float, default=None)
     surface_quote.add_argument("--max-quotes-per-snapshot", type=int, default=None)
     surface_quote.add_argument("--max-snapshots", type=int, default=None)
+
+    quote_review = sub.add_parser("review-quotes", help="Review generated surface quotes for MM risk hygiene.")
+    quote_review.add_argument("--quotes", required=True)
+    quote_review.add_argument("--out", required=True)
+    quote_review.add_argument("--min-quotes", type=int, default=1)
+    quote_review.add_argument("--min-instruments", type=int, default=1)
+    quote_review.add_argument("--max-marketable-quotes", type=int, default=0)
+    quote_review.add_argument("--min-quote-edge", type=float, default=0.0)
+    quote_review.add_argument("--min-bid-share", type=float, default=0.25)
+    quote_review.add_argument("--max-bid-share", type=float, default=0.75)
+    quote_review.add_argument("--max-market-spread-ticks", type=float, default=None)
+    quote_review.add_argument("--max-quotes-per-instrument", type=int, default=None)
+    quote_review.add_argument("--fail-on-breach", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -365,6 +379,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "review-quotes":
+        result = write_quote_risk_report(
+            args.quotes,
+            output_dir=args.out,
+            thresholds=QuoteRiskThresholds(
+                min_quotes=args.min_quotes,
+                min_instruments=args.min_instruments,
+                max_marketable_quotes=args.max_marketable_quotes,
+                min_quote_edge=args.min_quote_edge,
+                min_bid_share=args.min_bid_share,
+                max_bid_share=args.max_bid_share,
+                max_market_spread_ticks=args.max_market_spread_ticks,
+                max_quotes_per_instrument=args.max_quotes_per_instrument,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 

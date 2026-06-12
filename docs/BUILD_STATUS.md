@@ -63,6 +63,9 @@
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
   data and emits budgeted market-making quotes with marketability checks and
   manifests.
+- Surface quote risk review for market-making quote sets, gating marketable
+  quotes, quote edge, side balance, market spread, instrument coverage, and
+  concentration before replay or live routing.
 
 ## Test Gate
 
@@ -72,7 +75,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 83 tests.
+Current passing suite: 87 tests.
 
 ## Next Build Targets
 
