@@ -261,6 +261,33 @@ def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
     assert summary.loc[0, "guard_action"] == "halt"
 
 
+def test_cli_runtime_guard_reads_runtime_telemetry_output_dir(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    telemetry_dir = tmp_path / "telemetry"
+    out_dir = tmp_path / "guard"
+    scaleup_dir.mkdir()
+    telemetry_dir.mkdir()
+    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    telemetry().to_csv(telemetry_dir / "runtime_telemetry.csv", index=False)
+
+    code = main(
+        [
+            "monitor-scaleup-guard",
+            "--scaleup",
+            str(scaleup_dir),
+            "--telemetry",
+            str(telemetry_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-halt",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "runtime_guard_summary.csv")
+    assert code == 0
+    assert summary.loc[0, "guard_action"] == "continue"
+
+
 def test_cli_runtime_guard_can_fail_on_stale_telemetry(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     out_dir = tmp_path / "guard"

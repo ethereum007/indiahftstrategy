@@ -1411,12 +1411,15 @@ switches, and optional telemetry freshness window:
 ```powershell
 python -m hft_cli monitor-scaleup-guard `
   --scaleup runs\scaleup\leadlag_shadow `
-  --telemetry runs\telemetry\leadlag_shadow_latest\runtime_telemetry.csv `
+  --telemetry runs\telemetry\leadlag_shadow_latest `
   --out runs\guards\leadlag_shadow_latest `
   --as-of-ts-ns 1781248200000000000 `
   --max-telemetry-age-ns 5000000000 `
   --fail-on-halt
 ```
+
+`--telemetry` accepts either the telemetry output folder or the
+`runtime_telemetry.csv` file directly.
 
 Telemetry CSV columns:
 

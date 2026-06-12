@@ -54,7 +54,7 @@ def write_runtime_guard_report(
     max_telemetry_age_ns: int | float | None = None,
 ) -> RuntimeGuardReport:
     scaleup_file = _scaleup_config_path(scaleup_dir)
-    telemetry_file = Path(telemetry_path)
+    telemetry_file = _telemetry_path(telemetry_path)
     if not telemetry_file.exists():
         raise FileNotFoundError(f"runtime telemetry file not found: {telemetry_file}")
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
@@ -321,6 +321,13 @@ def _scaleup_config_path(path: str | Path) -> Path:
         candidate = candidate / "scaleup_config.json"
     if not candidate.exists():
         raise FileNotFoundError(f"scale-up config not found: {candidate}")
+    return candidate
+
+
+def _telemetry_path(path: str | Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "runtime_telemetry.csv"
     return candidate
 
 
