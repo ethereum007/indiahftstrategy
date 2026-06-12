@@ -72,6 +72,7 @@ python -m hft_cli review-strategy-evidence `
   --required-run-type proof_refresh_gate `
   --required-run-type stress_report `
   --required-run-type promotion_report `
+  --required-run-type broker_readiness `
   --required-run-type shadow_session_comparison `
   --require-same-git-commit `
   --fail-on-breach
@@ -85,6 +86,10 @@ strategy_evidence_checks.csv
 strategy_evidence_summary.csv
 manifest.json
 ```
+
+The catalog recognizes launch, broker export/upload, broker-readiness, data
+readiness, proof, promotion, and shadow-session summaries, so those run types
+can be promoted into explicit `--required-run-type` evidence gates.
 
 ## Market Profile Report
 

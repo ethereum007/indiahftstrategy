@@ -100,6 +100,38 @@ def test_strategy_evidence_can_require_proof_refresh_gate():
     assert "proof_refresh_gate" in set(review.evidence["required_run_type"])
 
 
+def test_strategy_evidence_can_require_broker_readiness_gate():
+    catalog = pd.concat(
+        [
+            catalog_rows(),
+            pd.DataFrame(
+                [
+                    {
+                        "run_dir": "runs/broker_readiness",
+                        "run_type": "broker_readiness",
+                        "generated_at_utc": "2026-06-10T09:50:00Z",
+                        "git_commit": "abc123",
+                        "git_dirty": False,
+                        "summary_status": True,
+                        "summary_file": "broker_readiness_summary.csv",
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=("proof_report", "stress_report", "promotion_report", "broker_readiness")
+        ),
+    )
+
+    assert review.ready
+    assert "broker_readiness" in set(review.evidence["required_run_type"])
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"

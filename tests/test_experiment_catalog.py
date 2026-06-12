@@ -279,6 +279,70 @@ def test_catalog_experiment_runs_recognizes_settlement_walkforward_status(tmp_pa
     assert row["summary_passed_folds"] == 2
 
 
+def test_catalog_experiment_runs_recognizes_settlement_launch_pipeline_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "settlement_launch_pipeline",
+        run_type="settlement_launch_pipeline",
+        summary_name="settlement_launch_pipeline_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "mode": "shadow",
+            "components": 6,
+            "failed_components": 0,
+            "recommendation": "paper_or_shadow_handoff",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "settlement_launch_pipeline"
+    assert row["summary_file"] == "settlement_launch_pipeline_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_components"] == 6
+
+
+def test_catalog_experiment_runs_recognizes_broker_upload_and_readiness_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "upload_pack",
+        run_type="order_upload_pack",
+        summary_name="broker_upload_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "orders": 2,
+            "failed_checks": 0,
+            "recommendation": "dry_run_or_paper_review",
+        },
+    )
+    write_run(
+        root / "broker_readiness",
+        run_type="broker_readiness",
+        summary_name="broker_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "adapter": "arrow_money",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "failed_checks": 1,
+            "recommendation": "obtain_vendor_schema_samples",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    rows = report.catalog.set_index("run_type")
+    assert int(report.summary.iloc[0]["status_true_runs"]) == 1
+    assert int(report.summary.iloc[0]["status_false_runs"]) == 1
+    assert rows.loc["order_upload_pack", "summary_file"] == "broker_upload_summary.csv"
+    assert rows.loc["broker_readiness", "summary_file"] == "broker_readiness_summary.csv"
+    assert rows.loc["broker_readiness", "summary_status_column"] == "ready"
+    assert rows.loc["broker_readiness", "summary_adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

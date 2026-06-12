@@ -175,10 +175,11 @@
   package versions.
 - Experiment catalog command that scans manifest-bearing run folders into a
   searchable evidence ledger with inferred pass/ready status and summary
-  metrics.
+  metrics for research, launch, broker upload, broker readiness, and
+  shadow-session artifacts.
 - Strategy evidence review gate that consumes the experiment catalog and
-  requires successful proof, stress, promotion, shadow, or user-selected run
-  types before scale-up decisions.
+  requires successful proof, stress, promotion, broker-readiness, shadow, or
+  user-selected run types before scale-up decisions.
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness
@@ -255,7 +256,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 323 tests.
+Current passing suite: 326 tests.
 
 ## Next Build Targets
 
