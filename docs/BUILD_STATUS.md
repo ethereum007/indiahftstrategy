@@ -41,6 +41,9 @@
 - Microprice/order-book imbalance replay strategy for single-instrument
   top-of-book pressure, including latency, depth, spread, hold-time, signal
   decay exits, signals, markouts, and proof-compatible outputs.
+- Imbalance replay walk-forward runner that takes a selected candidate, replays
+  it across multiple tick folds, runs proof gates, and emits aggregate
+  paper/shadow readiness evidence.
 - Microprice/order-book imbalance robustness sweep across entry threshold,
   microprice edge, hold timer, feed latency, and order latency, with per-run
   replay artifacts, proof gate, pass rate, and robust score summary.
@@ -185,7 +188,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 219 tests.
+Current passing suite: 222 tests.
 
 ## Next Build Targets
 

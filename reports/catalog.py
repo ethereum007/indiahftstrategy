@@ -18,6 +18,7 @@ SUMMARY_FILES = [
     "imbalance_edge_sweep_summary.csv",
     "imbalance_edge_selection_summary.csv",
     "imbalance_edge_walkforward_summary.csv",
+    "imbalance_replay_walkforward_summary.csv",
     "proof_summary.csv",
     "proof_refresh_summary.csv",
     "stress_summary.csv",

@@ -178,6 +178,31 @@ def test_catalog_experiment_runs_recognizes_imbalance_edge_walkforward_status(tm
     assert row["summary_fold_count"] == 2
 
 
+def test_catalog_experiment_runs_recognizes_imbalance_replay_walkforward_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "imbalance_replay_walkforward",
+        run_type="imbalance_replay_walkforward",
+        summary_name="imbalance_replay_walkforward_summary.csv",
+        summary_row={
+            "passed": True,
+            "failed_checks": 0,
+            "fold_count": 2,
+            "proof_passed_folds": 2,
+            "proof_pass_rate": 1.0,
+            "total_net_pnl": 42.0,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["summary_file"] == "imbalance_replay_walkforward_summary.csv"
+    assert row["summary_status_column"] == "passed"
+    assert row["summary_proof_passed_folds"] == 2
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

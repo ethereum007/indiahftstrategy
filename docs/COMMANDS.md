@@ -416,6 +416,42 @@ Outputs include fills, equity, summary, PnL decomposition, regime summaries,
 spread pairs, spread summary, residual inventory, signals, markouts, and a
 manifest.
 
+## Microprice Imbalance Replay Walk-Forward
+
+Replay one selected imbalance candidate across multiple tick folds, run proof
+checks for each fold, and gate the aggregate result before paper/shadow work:
+
+```powershell
+python -m hft_cli walkforward-imbalance-replay `
+  --ticks data\atm_option_ticks_2026_06_12.csv data\atm_option_ticks_2026_06_13.csv `
+  --label day1 `
+  --label day2 `
+  --out runs\imbalance_replay_walkforward `
+  --candidate-config runs\imbalance_edge_walkforward `
+  --cooloff-ns 1000000 `
+  --order-latency-us 250 `
+  --min-net-pnl 0 `
+  --min-fills 10 `
+  --max-drawdown 5000 `
+  --min-folds 2 `
+  --min-proof-pass-rate 1 `
+  --min-total-fills 20 `
+  --min-total-net-pnl 0 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_replay_walkforward_folds.csv
+imbalance_replay_walkforward_checks.csv
+imbalance_replay_walkforward_summary.csv
+candidate_config.json
+manifest.json
+proof\...
+runs\<fold>\...
+```
+
 ## Microprice Imbalance Sweep
 
 Run replay robustness scenarios across imbalance thresholds, microprice edge

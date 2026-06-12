@@ -28,6 +28,10 @@ from reports.imbalance_edge_walkforward import (
     ImbalanceEdgeWalkForwardThresholds,
     write_imbalance_edge_walkforward,
 )
+from reports.imbalance_replay_walkforward import (
+    ImbalanceReplayWalkForwardThresholds,
+    write_imbalance_replay_walkforward,
+)
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
@@ -238,6 +242,40 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay.add_argument("--candidate-config", default=None)
     imbalance_replay.add_argument("--fill-model", default=None)
     imbalance_replay.add_argument("--allow-unready-fill-model", action="store_true")
+
+    imbalance_replay_walkforward = sub.add_parser("walkforward-imbalance-replay", help="Replay one imbalance candidate across tick folds and aggregate proof.")
+    imbalance_replay_walkforward.add_argument("--ticks", nargs="+", required=True)
+    imbalance_replay_walkforward.add_argument("--out", required=True)
+    imbalance_replay_walkforward.add_argument("--label", action="append", dest="labels")
+    imbalance_replay_walkforward.add_argument("--candidate-config", default=None)
+    imbalance_replay_walkforward.add_argument("--no-filter-session", action="store_true")
+    imbalance_replay_walkforward.add_argument("--instrument-id", default="BOOK")
+    imbalance_replay_walkforward.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
+    imbalance_replay_walkforward.add_argument("--lot-size", type=int, default=75)
+    imbalance_replay_walkforward.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_replay_walkforward.add_argument("--qty", type=int, default=75)
+    imbalance_replay_walkforward.add_argument("--entry-imbalance", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--exit-imbalance", type=float, default=0.15)
+    imbalance_replay_walkforward.add_argument("--min-microprice-edge-ticks", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_replay_walkforward.add_argument("--min-depth", type=int, default=1)
+    imbalance_replay_walkforward.add_argument("--hold-ns", type=int, default=None)
+    imbalance_replay_walkforward.add_argument("--cooloff-ns", type=int, default=0)
+    imbalance_replay_walkforward.add_argument("--feed-latency-us", type=float, default=0.0)
+    imbalance_replay_walkforward.add_argument("--order-latency-us", type=float, default=0.0)
+    imbalance_replay_walkforward.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
+    imbalance_replay_walkforward.add_argument("--min-net-pnl", type=float, default=0.0)
+    imbalance_replay_walkforward.add_argument("--min-fills", type=int, default=1)
+    imbalance_replay_walkforward.add_argument("--max-drawdown", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--max-otr", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--min-markout-mean", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--min-folds", type=int, default=None)
+    imbalance_replay_walkforward.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    imbalance_replay_walkforward.add_argument("--min-total-fills", type=int, default=1)
+    imbalance_replay_walkforward.add_argument("--min-total-net-pnl", type=float, default=0.0)
+    imbalance_replay_walkforward.add_argument("--max-worst-drawdown", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--min-median-markout-mean", type=float, default=None)
+    imbalance_replay_walkforward.add_argument("--fail-on-breach", action="store_true")
 
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
@@ -990,6 +1028,46 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "walkforward-imbalance-replay":
+        result = write_imbalance_replay_walkforward(
+            args.ticks,
+            output_dir=args.out,
+            labels=args.labels,
+            candidate_config=args.candidate_config,
+            filter_session=not args.no_filter_session,
+            instrument_id=args.instrument_id,
+            instrument_kind=args.instrument_kind,
+            lot_size=args.lot_size,
+            tick_size=args.tick_size,
+            qty=args.qty,
+            entry_imbalance=args.entry_imbalance,
+            exit_imbalance=args.exit_imbalance,
+            min_microprice_edge_ticks=args.min_microprice_edge_ticks,
+            max_spread_ticks=args.max_spread_ticks,
+            min_depth=args.min_depth,
+            hold_ns=args.hold_ns,
+            cooloff_ns=args.cooloff_ns,
+            feed_latency_us=args.feed_latency_us,
+            order_latency_us=args.order_latency_us,
+            markout_horizons_ns=args.markout_horizons_ns,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_markout_mean=args.min_markout_mean,
+            ),
+            thresholds=ImbalanceReplayWalkForwardThresholds(
+                min_folds=args.min_folds if args.min_folds is not None else len(args.ticks),
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "calibrate":
         _, summary = run_calibration_report(
             simulated_orders_path=args.simulated_orders,
