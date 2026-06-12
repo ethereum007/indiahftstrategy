@@ -69,6 +69,9 @@
 - Passive surface market-making replay that tests generated quotes against
   later option-chain snapshots, writes fills/unfilled quotes/equity/markout
   artifacts, and produces proof-report-compatible `summary.csv` runs.
+- Surface market-making robustness sweep across TTL, routing latency,
+  fill-depth, and markout horizons, with per-scenario replays, proof gates,
+  robust scores, and manifests.
 - Broker-neutral order staging for generated quotes or generic order
   candidates, including pre-trade quantity/notional/marketability/price-band
   checks, accepted/rejected order artifacts, and manifests for later
@@ -82,7 +85,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 94 tests.
+Current passing suite: 96 tests.
 
 ## Next Build Targets
 

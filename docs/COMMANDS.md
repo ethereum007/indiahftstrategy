@@ -243,6 +243,37 @@ markout_summary.csv
 manifest.json
 ```
 
+## Surface Market-Making Sweep
+
+Run passive surface quote replay across TTL, latency, fill-depth, and markout
+horizon assumptions, then evaluate every replay folder with the proof gate:
+
+```powershell
+python -m hft_cli sweep-surface-mm `
+  --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
+  --chain data\chain.csv `
+  --out runs\surface_mm_sweep_2026_06_10 `
+  --quote-ttl-ns 500000000 1000000000 2000000000 `
+  --order-latency-us 0 100 250 `
+  --fill-depth-fraction 0.10 0.25 0.50 `
+  --markout-horizon-ns 500000000 1000000000 `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --max-otr 50 `
+  --fail-on-breach
+```
+
+Outputs include per-scenario replay folders plus:
+
+```text
+sweep_runs.csv
+sweep_summary.csv
+proof/proof_metrics.csv
+proof/proof_checks.csv
+proof/proof_summary.csv
+manifest.json
+```
+
 ## Sweep Comparison
 
 Rank parameter scenarios across multiple sweep output folders:

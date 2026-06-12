@@ -18,6 +18,7 @@ from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
 from strategies.run_parity_sweep import run_parity_sweep
 from strategies.run_surface_mm_replay import SurfaceMMReplayConfig, run_surface_mm_replay
+from strategies.run_surface_mm_sweep import run_surface_mm_sweep
 from strategies.run_surface_quotes import run_surface_quote_generation
 
 
@@ -138,6 +139,27 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--max-otr", type=float, default=None)
     parity_sweep.add_argument("--min-spread-net", type=float, default=None)
     parity_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    surface_mm_sweep = sub.add_parser("sweep-surface-mm", help="Run surface MM replay robustness sweep.")
+    surface_mm_sweep.add_argument("--quotes", required=True)
+    surface_mm_sweep.add_argument("--chain", required=True)
+    surface_mm_sweep.add_argument("--out", required=True)
+    surface_mm_sweep.add_argument("--no-filter-session", action="store_true")
+    surface_mm_sweep.add_argument("--quote-ttl-ns", nargs="+", required=True, type=int)
+    surface_mm_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
+    surface_mm_sweep.add_argument("--fill-depth-fraction", nargs="+", required=True, type=float)
+    surface_mm_sweep.add_argument("--markout-horizon-ns", nargs="+", default=[1_000_000_000], type=int)
+    surface_mm_sweep.add_argument("--lot-size", type=int, default=75)
+    surface_mm_sweep.add_argument("--option-tick", type=float, default=0.05)
+    surface_mm_sweep.add_argument("--contract-multiplier", type=float, default=1.0)
+    surface_mm_sweep.add_argument("--max-quotes", type=int, default=None)
+    surface_mm_sweep.add_argument("--min-net-pnl", type=float, default=0.0)
+    surface_mm_sweep.add_argument("--min-fills", type=int, default=1)
+    surface_mm_sweep.add_argument("--max-drawdown", type=float, default=None)
+    surface_mm_sweep.add_argument("--max-otr", type=float, default=None)
+    surface_mm_sweep.add_argument("--min-maker-share", type=float, default=1.0)
+    surface_mm_sweep.add_argument("--min-markout-mean", type=float, default=None)
+    surface_mm_sweep.add_argument("--fail-on-breach", action="store_true")
 
     compare_sweeps = sub.add_parser("compare-sweeps", help="Rank scenarios across multiple sweep outputs.")
     compare_sweeps.add_argument("--sweeps", nargs="+", required=True)
@@ -354,6 +376,31 @@ def main(argv: list[str] | None = None) -> int:
                 max_drawdown=args.max_drawdown,
                 max_otr=args.max_otr,
                 min_spread_net=args.min_spread_net,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "sweep-surface-mm":
+        result = run_surface_mm_sweep(
+            quotes_path=args.quotes,
+            chain_path=args.chain,
+            output_dir=args.out,
+            quote_ttl_ns_values=args.quote_ttl_ns,
+            order_latency_us_values=args.order_latency_us,
+            fill_depth_fraction_values=args.fill_depth_fraction,
+            markout_horizon_ns_values=args.markout_horizon_ns,
+            filter_session=not args.no_filter_session,
+            lot_size=args.lot_size,
+            option_tick=args.option_tick,
+            contract_multiplier=args.contract_multiplier,
+            max_quotes=args.max_quotes,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_maker_share=args.min_maker_share,
+                min_markout_mean=args.min_markout_mean,
             ),
         )
         print(result.summary.to_string(index=False))
