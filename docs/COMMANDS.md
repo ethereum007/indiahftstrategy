@@ -958,6 +958,11 @@ python -m hft_cli pipeline-surface-mm-launch `
   --max-order-qty 75 `
   --max-notional 10000 `
   --price-band-pct 0.02 `
+  --max-quote-order-messages 500 `
+  --max-active-quotes 60 `
+  --max-quote-messages-per-snapshot 40 `
+  --expected-quote-fills 25 `
+  --max-quote-otr 20 `
   --allow-placeholder-schema `
   --fail-on-breach
 ```
@@ -965,6 +970,7 @@ python -m hft_cli pipeline-surface-mm-launch `
 Outputs:
 
 ```text
+00_quote_lifecycle\quote_lifecycle_summary.csv
 01_staged_orders\staged_orders.csv
 02_launch\launch_orders.csv
 03_export\broker_orders.csv
@@ -974,6 +980,10 @@ surface_mm_launch_pipeline_components.csv
 surface_mm_launch_pipeline_summary.csv
 manifest.json
 ```
+
+The launch pipeline runs quote lifecycle planning before staging and blocks the
+handoff when the generated quotes would exceed message, active-quote, churn, or
+OTR limits.
 
 ## Order Exposure Review
 

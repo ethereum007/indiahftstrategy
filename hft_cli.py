@@ -1265,6 +1265,14 @@ def main(argv: list[str] | None = None) -> int:
     surface_launch_pipeline.add_argument("--price-band-pct", type=float, default=None)
     surface_launch_pipeline.add_argument("--max-orders", type=int, default=None)
     surface_launch_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    surface_launch_pipeline.add_argument("--quote-ttl-ns", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-quote-order-messages", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-active-quotes", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-quote-replaces", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-quote-cancels", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-quote-messages-per-snapshot", type=int, default=None)
+    surface_launch_pipeline.add_argument("--expected-quote-fills", type=int, default=None)
+    surface_launch_pipeline.add_argument("--max-quote-otr", type=float, default=None)
     surface_launch_pipeline.add_argument("--product", default="MIS")
     surface_launch_pipeline.add_argument("--exchange", default="NFO")
     surface_launch_pipeline.add_argument("--broker-schema-audit", default=None)
@@ -2795,6 +2803,14 @@ def main(argv: list[str] | None = None) -> int:
                 price_band_pct=args.price_band_pct,
                 max_orders=args.max_orders,
                 contract_multiplier=args.contract_multiplier,
+                quote_ttl_ns=args.quote_ttl_ns,
+                max_quote_order_messages=args.max_quote_order_messages,
+                max_active_quotes=args.max_active_quotes,
+                max_quote_replaces=args.max_quote_replaces,
+                max_quote_cancels=args.max_quote_cancels,
+                max_quote_messages_per_snapshot=args.max_quote_messages_per_snapshot,
+                expected_quote_fills=args.expected_quote_fills,
+                max_quote_otr=args.max_quote_otr,
                 product=args.product,
                 exchange=args.exchange,
                 require_reviewed_schema=not args.allow_placeholder_schema,

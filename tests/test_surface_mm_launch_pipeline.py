@@ -105,11 +105,13 @@ def test_surface_mm_launch_pipeline_runs_to_broker_readiness(tmp_path):
 
     components = report.components.set_index("component")
     assert report.ready
+    assert bool(components.loc["quote_lifecycle", "ready"])
     assert bool(components.loc["staged_orders", "ready"])
     assert bool(components.loc["launch", "ready"])
     assert bool(components.loc["export", "ready"])
     assert bool(components.loc["upload_pack", "ready"])
     assert bool(components.loc["broker_readiness", "ready"])
+    assert (out_dir / "00_quote_lifecycle" / "quote_lifecycle_summary.csv").exists()
     assert (out_dir / "01_staged_orders" / "staged_orders.csv").exists()
     assert (out_dir / "02_launch" / "launch_config.json").exists()
     assert (out_dir / "03_export" / "broker_orders.csv").exists()
@@ -132,9 +134,32 @@ def test_surface_mm_launch_pipeline_blocks_failed_quote_review(tmp_path):
 
     components = report.components.set_index("component")
     assert not report.ready
+    assert not bool(components.loc["quote_lifecycle", "ready"])
     assert not bool(components.loc["staged_orders", "ready"])
     assert components.loc["launch", "status"] == "skipped"
     assert int(report.summary.loc[0, "skipped_components"]) >= 1
+
+
+def test_surface_mm_launch_pipeline_blocks_quote_lifecycle_message_breach(tmp_path):
+    surface_pipeline = tmp_path / "surface_pipeline"
+    out_dir = tmp_path / "launch_pipeline_lifecycle_blocked"
+    write_surface_pipeline(surface_pipeline)
+
+    report = write_surface_mm_launch_pipeline(
+        surface_pipeline,
+        output_dir=out_dir,
+        config=SurfaceMMLaunchPipelineConfig(
+            adapter="normalized",
+            mode="paper",
+            max_quote_order_messages=1,
+        ),
+    )
+
+    components = report.components.set_index("component")
+    assert not report.ready
+    assert not bool(components.loc["quote_lifecycle", "ready"])
+    assert components.loc["staged_orders", "status"] == "skipped"
+    assert components.loc["staged_orders", "reason"] == "quote_lifecycle_not_ready"
 
 
 def test_cli_surface_mm_launch_pipeline_can_fail_on_breach(tmp_path):

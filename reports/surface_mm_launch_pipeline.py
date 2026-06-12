@@ -15,6 +15,7 @@ from adapters.order_upload_pack import OrderUploadPackConfig, OrderUploadPackRep
 from adapters.orders import OrderStagingLimits, OrderStagingReport, write_staged_orders
 from reports.launch import LaunchBundleReport, LaunchThresholds, write_launch_bundle
 from reports.manifest import write_experiment_manifest
+from reports.quote_lifecycle import QuoteLifecycleReport, QuoteLifecycleThresholds, write_quote_lifecycle_plan
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,14 @@ class SurfaceMMLaunchPipelineConfig:
     contract_multiplier: float = 1.0
     product: str = "MIS"
     exchange: str = "NFO"
+    quote_ttl_ns: int | None = None
+    max_quote_order_messages: int | None = None
+    max_active_quotes: int | None = None
+    max_quote_replaces: int | None = None
+    max_quote_cancels: int | None = None
+    max_quote_messages_per_snapshot: int | None = None
+    expected_quote_fills: int | None = None
+    max_quote_otr: float | None = None
     require_reviewed_schema: bool = True
     broker_schema_audit_dir: str | Path | None = None
     broker_mapping_draft_dir: str | Path | None = None
@@ -44,6 +53,7 @@ class SurfaceMMLaunchPipelineConfig:
 
 @dataclass(frozen=True)
 class SurfaceMMLaunchPipelineReport:
+    quote_lifecycle: QuoteLifecycleReport | None
     staging: OrderStagingReport | None
     launch: LaunchBundleReport | None
     export: OrderExportReport | None
@@ -81,30 +91,54 @@ def write_surface_mm_launch_pipeline(
         raise FileNotFoundError(f"surface promotion summary not found: {promotion_dir / 'promotion_summary.csv'}")
 
     components: list[dict[str, object]] = []
+    quote_lifecycle = None
+    staging = None
     launch = None
     export = None
     upload = None
     broker_readiness = None
 
-    staging_dir = out / "01_staged_orders"
-    staging = write_staged_orders(
+    quote_lifecycle_dir = out / "00_quote_lifecycle"
+    quote_lifecycle = write_quote_lifecycle_plan(
         quotes_path,
-        output_dir=staging_dir,
-        source="surface_quotes",
-        adapter=config.adapter,
-        limits=OrderStagingLimits(
-            max_order_qty=config.max_order_qty,
-            max_notional=config.max_notional,
-            price_band_pct=config.price_band_pct,
-            max_orders=config.max_orders,
-            contract_multiplier=config.contract_multiplier,
+        output_dir=quote_lifecycle_dir,
+        thresholds=QuoteLifecycleThresholds(
+            quote_ttl_ns=config.quote_ttl_ns,
+            max_order_messages=config.max_quote_order_messages,
+            max_active_quotes=config.max_active_quotes,
+            max_replaces=config.max_quote_replaces,
+            max_cancels=config.max_quote_cancels,
+            max_messages_per_snapshot=config.max_quote_messages_per_snapshot,
+            expected_fills=config.expected_quote_fills,
+            max_order_to_trade_ratio=config.max_quote_otr,
         ),
         quote_risk_review_dir=quote_review_dir,
         require_quote_risk_review=True,
     )
-    components.append(_component("staged_orders", _staging_ready(staging), staging_dir, staging.summary))
+    components.append(_component("quote_lifecycle", quote_lifecycle.ready, quote_lifecycle_dir, quote_lifecycle.summary))
 
-    if _staging_ready(staging):
+    staging_dir = out / "01_staged_orders"
+    if quote_lifecycle.ready:
+        staging = write_staged_orders(
+            quotes_path,
+            output_dir=staging_dir,
+            source="surface_quotes",
+            adapter=config.adapter,
+            limits=OrderStagingLimits(
+                max_order_qty=config.max_order_qty,
+                max_notional=config.max_notional,
+                price_band_pct=config.price_band_pct,
+                max_orders=config.max_orders,
+                contract_multiplier=config.contract_multiplier,
+            ),
+            quote_risk_review_dir=quote_review_dir,
+            require_quote_risk_review=True,
+        )
+        components.append(_component("staged_orders", _staging_ready(staging), staging_dir, staging.summary))
+    else:
+        components.append(_skipped_component("staged_orders", staging_dir, "quote_lifecycle_not_ready"))
+
+    if staging is not None and _staging_ready(staging):
         launch_dir = out / "02_launch"
         launch = write_launch_bundle(
             promotion_dir=promotion_dir,
@@ -191,7 +225,7 @@ def write_surface_mm_launch_pipeline(
         parameters={"config": asdict(config)},
         inputs={"surface_pipeline": surface_pipeline},
     )
-    return SurfaceMMLaunchPipelineReport(staging, launch, export, upload, broker_readiness, component_frame, summary, out)
+    return SurfaceMMLaunchPipelineReport(quote_lifecycle, staging, launch, export, upload, broker_readiness, component_frame, summary, out)
 
 
 def _staging_ready(report: OrderStagingReport) -> bool:
@@ -207,7 +241,7 @@ def _component(name: str, ready: bool, artifact_dir: Path, summary: pd.DataFrame
         "status": "ready" if ready else "not_ready",
         "ready": bool(ready),
         "artifact_dir": str(artifact_dir),
-        "orders": _int(row.get("orders", row.get("accepted_orders", 0))),
+        "orders": _int(row.get("orders", row.get("accepted_orders", row.get("order_messages", 0)))),
         "failed_checks": _int(row.get("failed_checks", row.get("rejected_orders", 0))),
         "recommendation": str(row.get("recommendation", "")),
         "reason": "",
@@ -258,6 +292,20 @@ def _validate_config(config: SurfaceMMLaunchPipelineConfig) -> None:
         raise ValueError("max_orders must be positive")
     if config.contract_multiplier <= 0:
         raise ValueError("contract_multiplier must be positive")
+    for attr in (
+        "quote_ttl_ns",
+        "max_quote_order_messages",
+        "max_active_quotes",
+        "max_quote_replaces",
+        "max_quote_cancels",
+        "max_quote_messages_per_snapshot",
+        "expected_quote_fills",
+    ):
+        value = getattr(config, attr)
+        if value is not None and value < 0:
+            raise ValueError(f"{attr} must be non-negative")
+    if config.max_quote_otr is not None and config.max_quote_otr <= 0:
+        raise ValueError("max_quote_otr must be positive")
 
 
 def _int(value: object) -> int:
