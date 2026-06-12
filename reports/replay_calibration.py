@@ -10,7 +10,7 @@ import pandas as pd
 from reports.manifest import write_experiment_manifest
 
 
-SUPPORTED_STRATEGIES = {"leadlag", "parity", "surface_mm", "surface_quotes"}
+SUPPORTED_STRATEGIES = {"leadlag", "parity", "surface_mm", "surface_quotes", "imbalance"}
 
 
 @dataclass(frozen=True)
@@ -63,6 +63,14 @@ def apply_fill_model_to_replay_params(
         )
     elif strategy == "surface_quotes":
         _apply_max(calibrated, "edge_ticks", _number(global_model, "min_edge_ticks"), applied_fields)
+    elif strategy == "imbalance":
+        _apply_max(calibrated, "order_latency_us", _number(global_model, "order_latency_us"), applied_fields)
+        _apply_max(
+            calibrated,
+            "min_microprice_edge_ticks",
+            _number(global_model, "min_edge_ticks"),
+            applied_fields,
+        )
     else:
         raise ValueError(f"unsupported calibrated replay strategy {strategy!r}")
 
@@ -202,6 +210,10 @@ def _strategy_key(strategy: str) -> str:
         "surface": "surface_mm",
         "surface_market_making": "surface_mm",
         "surface_quotes": "surface_quotes",
+        "microprice": "imbalance",
+        "microprice_imbalance": "imbalance",
+        "order_book_imbalance": "imbalance",
+        "obi": "imbalance",
     }
     key = aliases.get(key, key)
     if key not in SUPPORTED_STRATEGIES:

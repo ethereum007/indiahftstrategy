@@ -61,6 +61,22 @@ def test_fill_model_calibrates_depth_without_loosening_existing_conservatism():
     assert surface.params["fill_depth_fraction"] == 0.1
 
 
+def test_fill_model_calibrates_imbalance_latency_and_edge():
+    report = apply_fill_model_to_replay_params(
+        "microprice_imbalance",
+        {"order_latency_us": 100.0, "min_microprice_edge_ticks": 1.0},
+        fill_model_config(),
+    )
+
+    assert report.ready
+    assert report.params["order_latency_us"] == 250.0
+    assert report.params["min_microprice_edge_ticks"] == 3.0
+    assert set(report.summary.iloc[0]["applied_fields"].split(";")) == {
+        "order_latency_us",
+        "min_microprice_edge_ticks",
+    }
+
+
 def test_write_calibrated_replay_plan_outputs_artifacts(tmp_path):
     fill_model_dir = tmp_path / "fill_model"
     out_dir = tmp_path / "calibrated"

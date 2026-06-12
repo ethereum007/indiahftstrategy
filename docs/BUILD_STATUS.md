@@ -23,6 +23,9 @@
 - Replay strategies: parity taker and lead-lag taker.
 - Replay CLIs for parity taker and lead-lag taker, writing fills, equity,
   summary, signals/legging, and markout artifacts.
+- Microprice/order-book imbalance replay strategy for single-instrument
+  top-of-book pressure, including latency, depth, spread, hold-time, signal
+  decay exits, signals, markouts, and proof-compatible outputs.
 - Replay outputs automatically include fills-by-regime and equity-by-regime
   summaries to avoid cross-regime averaging.
 - Markout tooling for fill quality/adverse selection analysis.
@@ -164,7 +167,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 197 tests.
+Current passing suite: 200 tests.
 
 ## Next Build Targets
 

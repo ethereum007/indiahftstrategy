@@ -261,6 +261,30 @@ python -m hft_cli replay-leadlag `
   --fill-model runs\fill_model\leadlag_shadow_latest
 ```
 
+## Microprice Imbalance Replay
+
+Replay a single-instrument top-of-book imbalance strategy that enters when
+depth imbalance and microprice displacement agree, then exits on signal decay
+or a hold timer:
+
+```powershell
+python -m hft_cli replay-imbalance `
+  --ticks data\atm_option_ticks.csv `
+  --out runs\imbalance_replay_2026_06_10 `
+  --instrument-kind OPT `
+  --entry-imbalance 0.6 `
+  --exit-imbalance 0.15 `
+  --min-microprice-edge-ticks 0.25 `
+  --max-spread-ticks 2 `
+  --qty 75 `
+  --order-latency-us 250 `
+  --fill-model runs\fill_model\leadlag_shadow_latest
+```
+
+Outputs include fills, equity, summary, PnL decomposition, regime summaries,
+spread pairs, spread summary, residual inventory, signals, markouts, and a
+manifest.
+
 ## Lead-Lag Sweep
 
 Run replay robustness scenarios across trigger and latency settings:

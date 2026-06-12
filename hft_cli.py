@@ -39,6 +39,7 @@ from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
+from strategies.run_imbalance_replay import run_imbalance_replay
 from strategies.run_leadlag_replay import run_leadlag_replay
 from strategies.run_leadlag_sweep import run_leadlag_sweep
 from strategies.run_parity_replay import run_parity_replay
@@ -124,6 +125,27 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_replay.add_argument("--fill-model", default=None)
     leadlag_replay.add_argument("--allow-unready-fill-model", action="store_true")
 
+    imbalance_replay = sub.add_parser("replay-imbalance", help="Replay microprice/order-book imbalance strategy.")
+    imbalance_replay.add_argument("--ticks", required=True)
+    imbalance_replay.add_argument("--out", required=True)
+    imbalance_replay.add_argument("--no-filter-session", action="store_true")
+    imbalance_replay.add_argument("--instrument-id", default="BOOK")
+    imbalance_replay.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
+    imbalance_replay.add_argument("--lot-size", type=int, default=75)
+    imbalance_replay.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_replay.add_argument("--qty", type=int, default=75)
+    imbalance_replay.add_argument("--entry-imbalance", type=float, default=0.6)
+    imbalance_replay.add_argument("--exit-imbalance", type=float, default=0.15)
+    imbalance_replay.add_argument("--min-microprice-edge-ticks", type=float, default=0.25)
+    imbalance_replay.add_argument("--max-spread-ticks", type=float, default=2.0)
+    imbalance_replay.add_argument("--min-depth", type=int, default=1)
+    imbalance_replay.add_argument("--hold-ns", type=int, default=500_000_000)
+    imbalance_replay.add_argument("--cooloff-ns", type=int, default=0)
+    imbalance_replay.add_argument("--feed-latency-us", type=float, default=0.0)
+    imbalance_replay.add_argument("--order-latency-us", type=float, default=0.0)
+    imbalance_replay.add_argument("--fill-model", default=None)
+    imbalance_replay.add_argument("--allow-unready-fill-model", action="store_true")
+
     calibration = sub.add_parser("calibrate", help="Compare simulated orders to live fills.")
     calibration.add_argument("--simulated-orders", required=True)
     calibration.add_argument("--live-fills", required=True)
@@ -163,7 +185,7 @@ def main(argv: list[str] | None = None) -> int:
 
     calibrated_replay = sub.add_parser("plan-calibrated-replay", help="Apply fill-model config to replay parameters.")
     calibrated_replay.add_argument("--fill-model", required=True)
-    calibrated_replay.add_argument("--strategy", required=True, choices=["leadlag", "parity", "surface_mm", "surface_quotes"])
+    calibrated_replay.add_argument("--strategy", required=True, choices=["leadlag", "parity", "surface_mm", "surface_quotes", "imbalance"])
     calibrated_replay.add_argument("--out", required=True)
     calibrated_replay.add_argument("--order-latency-us", type=float, default=None)
     calibrated_replay.add_argument("--trigger-ticks", type=float, default=None)
@@ -700,6 +722,37 @@ def main(argv: list[str] | None = None) -> int:
             delta=args.delta,
             trigger_ticks=replay_params["trigger_ticks"],
             qty=args.qty,
+            feed_latency_us=args.feed_latency_us,
+            order_latency_us=replay_params["order_latency_us"],
+        )
+        print(result.summary.to_string(index=False))
+        return 0
+    if args.command == "replay-imbalance":
+        replay_params = calibrated_replay_params_from_path(
+            "imbalance",
+            {
+                "order_latency_us": args.order_latency_us,
+                "min_microprice_edge_ticks": args.min_microprice_edge_ticks,
+            },
+            args.fill_model,
+            require_ready=not args.allow_unready_fill_model,
+        )
+        result = run_imbalance_replay(
+            ticks_path=args.ticks,
+            output_dir=args.out,
+            filter_session=not args.no_filter_session,
+            instrument_id=args.instrument_id,
+            instrument_kind=args.instrument_kind,
+            lot_size=args.lot_size,
+            tick_size=args.tick_size,
+            qty=args.qty,
+            entry_imbalance=args.entry_imbalance,
+            exit_imbalance=args.exit_imbalance,
+            min_microprice_edge_ticks=replay_params["min_microprice_edge_ticks"],
+            max_spread_ticks=args.max_spread_ticks,
+            min_depth=args.min_depth,
+            hold_ns=args.hold_ns,
+            cooloff_ns=args.cooloff_ns,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
         )
