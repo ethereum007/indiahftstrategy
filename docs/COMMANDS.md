@@ -737,13 +737,19 @@ Pipeline outputs:
 03_launch\...
 04_export\...
 05_upload_pack\...
+06_broker_readiness\...
 settlement_launch_pipeline_components.csv
 settlement_launch_pipeline_summary.csv
 manifest.json
 ```
 
 Without `--allow-placeholder-schema`, Arrow.money/iRage upload-pack readiness
-fails closed until real broker upload schemas are reviewed.
+and broker-readiness checks fail closed until real broker upload schemas are
+reviewed. Add `--broker-schema-audit`, `--broker-mapping-draft`,
+`--broker-mapped-orders`, `--broker-halt-export`, or `--broker-reconciliation`
+when those broker evidence folders exist; pair them with the matching
+`--require-broker-*` flag to make that evidence mandatory in the final
+`06_broker_readiness` gate.
 
 ## Microprice Imbalance Sweep
 

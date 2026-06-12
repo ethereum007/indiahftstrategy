@@ -5,6 +5,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from adapters.broker_readiness import (
+    BrokerReadinessReport,
+    BrokerReadinessThresholds,
+    write_broker_readiness_report,
+)
 from adapters.order_export import OrderExportConfig, OrderExportReport, write_order_export
 from adapters.order_upload_pack import (
     OrderUploadPackConfig,
@@ -38,6 +43,16 @@ class SettlementLaunchPipelineConfig:
     product: str = "MIS"
     exchange: str = "NFO"
     require_reviewed_schema: bool = True
+    broker_schema_audit_dir: str | Path | None = None
+    broker_mapping_draft_dir: str | Path | None = None
+    broker_mapped_orders_dir: str | Path | None = None
+    broker_halt_export_dir: str | Path | None = None
+    broker_reconciliation_dir: str | Path | None = None
+    require_broker_schema_audit: bool = False
+    require_broker_mapping_draft: bool = False
+    require_broker_mapped_orders: bool = False
+    require_broker_halt_export: bool = False
+    require_broker_reconciliation: bool = False
 
 
 @dataclass(frozen=True)
@@ -47,6 +62,7 @@ class SettlementLaunchPipelineReport:
     launch: LaunchBundleReport | None
     export: OrderExportReport | None
     upload: OrderUploadPackReport | None
+    broker_readiness: BrokerReadinessReport | None
     components: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
@@ -89,6 +105,7 @@ def write_settlement_launch_pipeline(
     launch = None
     export = None
     upload = None
+    broker_readiness = None
 
     if _order_plan_ready(order_plan):
         staging_dir = out / "02_staged_orders"
@@ -156,6 +173,37 @@ def write_settlement_launch_pipeline(
     else:
         components.append(_skipped_component("upload_pack", out / "05_upload_pack", "export_not_ready"))
 
+    if export is not None and upload is not None:
+        broker_readiness_dir = out / "06_broker_readiness"
+        broker_readiness = write_broker_readiness_report(
+            output_dir=broker_readiness_dir,
+            schema_audit_dir=config.broker_schema_audit_dir,
+            order_export_dir=out / "04_export",
+            mapping_draft_dir=config.broker_mapping_draft_dir,
+            mapped_orders_dir=config.broker_mapped_orders_dir,
+            upload_pack_dir=out / "05_upload_pack",
+            halt_export_dir=config.broker_halt_export_dir,
+            reconciliation_dir=config.broker_reconciliation_dir,
+            thresholds=BrokerReadinessThresholds(
+                adapter=config.adapter,
+                require_reviewed_schema=config.require_reviewed_schema,
+                require_schema_audit=config.require_broker_schema_audit,
+                require_order_export=True,
+                require_mapping_draft=config.require_broker_mapping_draft,
+                require_mapped_orders=config.require_broker_mapped_orders,
+                require_upload_pack=True,
+                require_halt_export=config.require_broker_halt_export,
+                require_reconciliation=config.require_broker_reconciliation,
+            ),
+        )
+        components.append(
+            _component("broker_readiness", broker_readiness.ready, broker_readiness_dir, broker_readiness.summary)
+        )
+    else:
+        components.append(
+            _skipped_component("broker_readiness", out / "06_broker_readiness", "upload_pack_not_available")
+        )
+
     component_frame = pd.DataFrame(components)
     summary = _summary(component_frame, config)
     component_frame.to_csv(out / "settlement_launch_pipeline_components.csv", index=False)
@@ -166,7 +214,17 @@ def write_settlement_launch_pipeline(
         parameters={"config": asdict(config)},
         inputs={"promotion": promotion},
     )
-    return SettlementLaunchPipelineReport(order_plan, staging, launch, export, upload, component_frame, summary, out)
+    return SettlementLaunchPipelineReport(
+        order_plan,
+        staging,
+        launch,
+        export,
+        upload,
+        broker_readiness,
+        component_frame,
+        summary,
+        out,
+    )
 
 
 def _order_plan_ready(report: SettlementOrderPlanReport) -> bool:

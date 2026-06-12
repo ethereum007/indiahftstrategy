@@ -85,12 +85,14 @@ def test_write_settlement_launch_pipeline_runs_full_paper_handoff(tmp_path):
 
     assert report.ready
     assert report.output_dir == out_dir
-    assert report.components["status"].tolist() == ["ready", "ready", "ready", "ready", "ready"]
+    assert report.broker_readiness is not None
+    assert report.components["status"].tolist() == ["ready", "ready", "ready", "ready", "ready", "ready"]
     assert (out_dir / "01_order_plan" / "settlement_order_candidates.csv").exists()
     assert (out_dir / "02_staged_orders" / "staged_orders.csv").exists()
     assert (out_dir / "03_launch" / "launch_orders.csv").exists()
     assert (out_dir / "04_export" / "broker_orders.csv").exists()
     assert (out_dir / "05_upload_pack" / "broker_upload_orders.csv").exists()
+    assert (out_dir / "06_broker_readiness" / "broker_readiness_summary.csv").exists()
     assert (out_dir / "settlement_launch_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
 
@@ -112,6 +114,7 @@ def test_settlement_launch_pipeline_skips_downstream_when_promotion_unready(tmp_
     assert components.loc["order_plan", "status"] == "not_ready"
     assert components.loc["staged_orders", "status"] == "skipped"
     assert components.loc["upload_pack", "reason"] == "export_not_ready"
+    assert components.loc["broker_readiness", "reason"] == "upload_pack_not_available"
 
 
 def test_cli_pipeline_settlement_launch_fails_until_placeholder_schema_allowed(tmp_path):
@@ -141,4 +144,39 @@ def test_cli_pipeline_settlement_launch_fails_until_placeholder_schema_allowed(t
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert components.set_index("component").loc["upload_pack", "status"] == "not_ready"
+    assert components.set_index("component").loc["broker_readiness", "status"] == "not_ready"
     assert (out_dir / "05_upload_pack" / "broker_upload_orders.csv").exists()
+    assert (out_dir / "06_broker_readiness" / "broker_readiness_summary.csv").exists()
+
+
+def test_cli_pipeline_settlement_launch_can_require_broker_reconciliation(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+
+    code = main(
+        [
+            "pipeline-settlement-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "10000",
+            "--allow-placeholder-schema",
+            "--require-broker-reconciliation",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "settlement_launch_pipeline_summary.csv")
+    components = pd.read_csv(out_dir / "settlement_launch_pipeline_components.csv")
+    checks = pd.read_csv(out_dir / "06_broker_readiness" / "broker_readiness_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert components.set_index("component").loc["broker_readiness", "status"] == "not_ready"
+    assert "reconciliation_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])

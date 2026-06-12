@@ -495,6 +495,16 @@ def main(argv: list[str] | None = None) -> int:
     settlement_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
     settlement_pipeline.add_argument("--product", default="MIS")
     settlement_pipeline.add_argument("--exchange", default="NFO")
+    settlement_pipeline.add_argument("--broker-schema-audit", default=None)
+    settlement_pipeline.add_argument("--broker-mapping-draft", default=None)
+    settlement_pipeline.add_argument("--broker-mapped-orders", default=None)
+    settlement_pipeline.add_argument("--broker-halt-export", default=None)
+    settlement_pipeline.add_argument("--broker-reconciliation", default=None)
+    settlement_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
+    settlement_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
+    settlement_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
+    settlement_pipeline.add_argument("--require-broker-halt-export", action="store_true")
+    settlement_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
     settlement_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
     settlement_pipeline.add_argument("--fail-on-breach", action="store_true")
 
@@ -1716,6 +1726,16 @@ def main(argv: list[str] | None = None) -> int:
                 product=args.product,
                 exchange=args.exchange,
                 require_reviewed_schema=not args.allow_placeholder_schema,
+                broker_schema_audit_dir=args.broker_schema_audit,
+                broker_mapping_draft_dir=args.broker_mapping_draft,
+                broker_mapped_orders_dir=args.broker_mapped_orders,
+                broker_halt_export_dir=args.broker_halt_export,
+                broker_reconciliation_dir=args.broker_reconciliation,
+                require_broker_schema_audit=args.require_broker_schema_audit,
+                require_broker_mapping_draft=args.require_broker_mapping_draft,
+                require_broker_mapped_orders=args.require_broker_mapped_orders,
+                require_broker_halt_export=args.require_broker_halt_export,
+                require_broker_reconciliation=args.require_broker_reconciliation,
             ),
         )
         print(result.summary.to_string(index=False))

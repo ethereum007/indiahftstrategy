@@ -82,8 +82,9 @@
   broker-neutral limit-order candidates for the standard staging, launch,
   export, and reconciliation path.
 - Settlement launch pipeline that chains a promoted settlement candidate
-  through order planning, staging, launch bundling, broker export, and
-  Arrow.money/iRage upload-pack generation with component-level readiness.
+  through order planning, staging, launch bundling, broker export,
+  Arrow.money/iRage upload-pack generation, and broker-readiness gating with
+  component-level readiness.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -254,7 +255,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 320 tests.
+Current passing suite: 323 tests.
 
 ## Next Build Targets
 
