@@ -1279,6 +1279,7 @@ python -m hft_cli plan-scaleup `
   --instrument-metadata runs\risk\leadlag_shadow_instruments `
   --proof-refresh runs\proof_refresh\leadlag_shadow_latest `
   --data-readiness runs\data_readiness\india_nse_2026_06_10 `
+  --data-readiness-comparison runs\data_readiness\india_nse_comparison `
   --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
   --out runs\scaleup\leadlag_shadow `
   --target-mode shadow `
@@ -1299,6 +1300,7 @@ python -m hft_cli plan-scaleup `
   --require-instrument-metadata `
   --require-proof-refresh `
   --require-data-readiness `
+  --require-data-readiness-comparison `
   --require-broker-readiness `
   --fail-on-breach
 ```

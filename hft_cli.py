@@ -933,6 +933,7 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--proof-refresh", default=None)
     scaleup.add_argument("--instrument-metadata", default=None)
     scaleup.add_argument("--data-readiness", default=None)
+    scaleup.add_argument("--data-readiness-comparison", default=None)
     scaleup.add_argument("--broker-readiness", default=None)
     scaleup.add_argument("--target-mode", default="shadow", choices=["paper", "shadow", "live_dryrun"])
     scaleup.add_argument("--max-scale-multiplier", type=float, default=1.0)
@@ -960,6 +961,7 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--require-proof-refresh", action="store_true")
     scaleup.add_argument("--require-instrument-metadata", action="store_true")
     scaleup.add_argument("--require-data-readiness", action="store_true")
+    scaleup.add_argument("--require-data-readiness-comparison", action="store_true")
     scaleup.add_argument("--require-broker-readiness", action="store_true")
     scaleup.add_argument("--min-instrument-parse-coverage", type=float, default=1.0)
     scaleup.add_argument("--fail-on-breach", action="store_true")
@@ -2197,6 +2199,7 @@ def main(argv: list[str] | None = None) -> int:
             proof_refresh_dir=args.proof_refresh,
             instrument_metadata_dir=args.instrument_metadata,
             data_readiness_dir=args.data_readiness,
+            data_readiness_comparison_dir=args.data_readiness_comparison,
             broker_readiness_dir=args.broker_readiness,
             thresholds=ScaleUpThresholds(
                 target_mode=args.target_mode,
@@ -2225,6 +2228,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_proof_refresh=args.require_proof_refresh,
                 require_instrument_metadata=args.require_instrument_metadata,
                 require_data_readiness=args.require_data_readiness,
+                require_data_readiness_comparison=args.require_data_readiness_comparison,
                 require_broker_readiness=args.require_broker_readiness,
                 min_instrument_parse_coverage=args.min_instrument_parse_coverage,
             ),

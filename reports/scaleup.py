@@ -39,6 +39,7 @@ class ScaleUpThresholds:
     require_proof_refresh: bool = False
     require_instrument_metadata: bool = False
     require_data_readiness: bool = False
+    require_data_readiness_comparison: bool = False
     require_broker_readiness: bool = False
     min_instrument_parse_coverage: float = 1.0
 
@@ -67,6 +68,7 @@ def evaluate_scaleup_plan(
     proof_refresh_summary: pd.DataFrame | None = None,
     instrument_metadata_summary: pd.DataFrame | None = None,
     data_readiness_summary: pd.DataFrame | None = None,
+    data_readiness_comparison_summary: pd.DataFrame | None = None,
     broker_readiness_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
@@ -79,6 +81,9 @@ def evaluate_scaleup_plan(
     proof_refresh = proof_refresh_summary if proof_refresh_summary is not None else pd.DataFrame()
     instrument_metadata = instrument_metadata_summary if instrument_metadata_summary is not None else pd.DataFrame()
     data_readiness = data_readiness_summary if data_readiness_summary is not None else pd.DataFrame()
+    data_readiness_comparison = (
+        data_readiness_comparison_summary if data_readiness_comparison_summary is not None else pd.DataFrame()
+    )
     broker_readiness = broker_readiness_summary if broker_readiness_summary is not None else pd.DataFrame()
 
     rows = {
@@ -89,6 +94,9 @@ def evaluate_scaleup_plan(
         "proof_refresh": proof_refresh.iloc[0] if not proof_refresh.empty else pd.Series(dtype=object),
         "instrument_metadata": instrument_metadata.iloc[0] if not instrument_metadata.empty else pd.Series(dtype=object),
         "data_readiness": data_readiness.iloc[0] if not data_readiness.empty else pd.Series(dtype=object),
+        "data_readiness_comparison": data_readiness_comparison.iloc[0]
+        if not data_readiness_comparison.empty
+        else pd.Series(dtype=object),
         "broker_readiness": broker_readiness.iloc[0] if not broker_readiness.empty else pd.Series(dtype=object),
     }
     checks = _checks(rows, thresholds)
@@ -109,6 +117,7 @@ def write_scaleup_plan(
     proof_refresh_dir: str | Path | None = None,
     instrument_metadata_dir: str | Path | None = None,
     data_readiness_dir: str | Path | None = None,
+    data_readiness_comparison_dir: str | Path | None = None,
     broker_readiness_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
@@ -134,6 +143,11 @@ def write_scaleup_plan(
         if data_readiness_dir
         else None
     )
+    data_readiness_comparison = (
+        _read_optional_summary(data_readiness_comparison_dir, "data_readiness_comparison_summary.csv")
+        if data_readiness_comparison_dir
+        else None
+    )
     thresholds = thresholds or ScaleUpThresholds()
     report = evaluate_scaleup_plan(
         evidence_summary=evidence,
@@ -143,6 +157,7 @@ def write_scaleup_plan(
         proof_refresh_summary=proof_refresh,
         instrument_metadata_summary=instrument_metadata,
         data_readiness_summary=data_readiness,
+        data_readiness_comparison_summary=data_readiness_comparison,
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
     )
@@ -165,6 +180,8 @@ def write_scaleup_plan(
         inputs["instrument_metadata"] = Path(instrument_metadata_dir)
     if data_readiness_dir is not None:
         inputs["data_readiness"] = Path(data_readiness_dir)
+    if data_readiness_comparison_dir is not None:
+        inputs["data_readiness_comparison"] = Path(data_readiness_comparison_dir)
     if broker_readiness_dir is not None:
         inputs["broker_readiness"] = Path(broker_readiness_dir)
     write_experiment_manifest(
@@ -184,6 +201,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     proof_refresh = rows["proof_refresh"]
     instrument_metadata = rows["instrument_metadata"]
     data_readiness = rows["data_readiness"]
+    data_readiness_comparison = rows["data_readiness_comparison"]
     broker_readiness = rows["broker_readiness"]
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
@@ -305,6 +323,29 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "data readiness review is not ready",
             )
         )
+    if thresholds.require_data_readiness_comparison:
+        checks.append(
+            _check(
+                "data_readiness_comparison_available",
+                not data_readiness_comparison.empty,
+                "is",
+                True,
+                not data_readiness_comparison.empty,
+                "data readiness comparison is required but no summary was supplied",
+            )
+        )
+    if not data_readiness_comparison.empty:
+        data_comparison_accepted = _to_bool(data_readiness_comparison.get("accepted", False))
+        checks.append(
+            _check(
+                "data_readiness_comparison_accepted",
+                data_comparison_accepted,
+                "is",
+                True,
+                data_comparison_accepted,
+                "data readiness comparison is not accepted",
+            )
+        )
     if thresholds.require_broker_readiness:
         checks.append(
             _check(
@@ -337,6 +378,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
     proof_refresh = rows["proof_refresh"]
     instrument_metadata = rows["instrument_metadata"]
     data_readiness = rows["data_readiness"]
+    data_readiness_comparison = rows["data_readiness_comparison"]
     broker_readiness = rows["broker_readiness"]
     accepted_orders = int(_number(launch, "accepted_orders", fallback=0.0))
     launch_notional = _number(launch, "total_notional", fallback=0.0)
@@ -393,6 +435,36 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "data_readiness_recommendation": str(data_readiness.get("recommendation", ""))
                 if not data_readiness.empty
                 else "",
+                "data_readiness_comparison_provided": not data_readiness_comparison.empty,
+                "data_readiness_comparison_accepted": _to_bool(data_readiness_comparison.get("accepted", False))
+                if not data_readiness_comparison.empty
+                else False,
+                "data_readiness_comparison_dataset_count": int(
+                    _number(data_readiness_comparison, "dataset_count", fallback=0.0)
+                )
+                if not data_readiness_comparison.empty
+                else 0,
+                "data_readiness_comparison_ready_rate": _number(
+                    data_readiness_comparison,
+                    "ready_rate",
+                    fallback=np.nan,
+                )
+                if not data_readiness_comparison.empty
+                else np.nan,
+                "data_readiness_comparison_failed_checks": int(
+                    _number(
+                        data_readiness_comparison,
+                        "total_failed_checks",
+                        fallback=_number(data_readiness_comparison, "failed_checks", fallback=0.0),
+                    )
+                )
+                if not data_readiness_comparison.empty
+                else 0,
+                "data_readiness_comparison_recommendation": str(
+                    data_readiness_comparison.get("recommendation", "")
+                )
+                if not data_readiness_comparison.empty
+                else "",
                 "broker_readiness_provided": not broker_readiness.empty,
                 "broker_readiness_ready": _to_bool(broker_readiness.get("ready", False))
                 if not broker_readiness.empty
@@ -425,6 +497,15 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "instrument_metadata_passed": _to_bool(plan_row["instrument_metadata_passed"]),
                 "instrument_parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
                 "data_readiness_ready": _to_bool(plan_row["data_readiness_ready"]),
+                "data_readiness_comparison_accepted": _to_bool(
+                    plan_row["data_readiness_comparison_accepted"]
+                ),
+                "data_readiness_comparison_dataset_count": int(
+                    plan_row["data_readiness_comparison_dataset_count"]
+                ),
+                "data_readiness_comparison_ready_rate": _jsonable(
+                    plan_row["data_readiness_comparison_ready_rate"]
+                ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "failed_checks": failed,
@@ -481,6 +562,15 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "ready": _to_bool(plan_row["data_readiness_ready"]),
             "failed_checks": int(plan_row["data_readiness_failed_checks"]),
             "recommendation": str(plan_row["data_readiness_recommendation"]),
+        },
+        "data_readiness_comparison": {
+            "required": bool(thresholds.require_data_readiness_comparison),
+            "provided": _to_bool(plan_row["data_readiness_comparison_provided"]),
+            "accepted": _to_bool(plan_row["data_readiness_comparison_accepted"]),
+            "dataset_count": int(plan_row["data_readiness_comparison_dataset_count"]),
+            "ready_rate": _jsonable(plan_row["data_readiness_comparison_ready_rate"]),
+            "failed_checks": int(plan_row["data_readiness_comparison_failed_checks"]),
+            "recommendation": str(plan_row["data_readiness_comparison_recommendation"]),
         },
         "broker_readiness": {
             "required": bool(thresholds.require_broker_readiness),

@@ -175,9 +175,9 @@
   types before scale-up decisions.
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
-  instrument metadata coverage, data-readiness evidence, and broker-readiness
-  evidence into explicit order, notional, adapter, and telemetry-freshness
-  kill-switch limits.
+  instrument metadata coverage, single-day and multi-day data-readiness
+  evidence, and broker-readiness evidence into explicit order, notional,
+  adapter, and telemetry-freshness kill-switch limits.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   reconciliation, optional instrument metadata, PnL, open-order, and position
   artifacts into guard-ready `runtime_telemetry.csv` inputs with source/check
@@ -246,7 +246,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 305 tests.
+Current passing suite: 307 tests.
 
 ## Next Build Targets
 

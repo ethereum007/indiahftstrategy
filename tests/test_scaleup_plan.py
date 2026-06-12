@@ -139,6 +139,23 @@ def data_readiness_summary(ready=True):
     )
 
 
+def data_readiness_comparison_summary(accepted=True):
+    return pd.DataFrame(
+        [
+            {
+                "accepted": accepted,
+                "dataset_count": 2,
+                "ready_datasets": 2 if accepted else 1,
+                "failed_datasets": 0 if accepted else 1,
+                "ready_rate": 1.0 if accepted else 0.5,
+                "total_failed_checks": 0 if accepted else 1,
+                "failed_checks": 0 if accepted else 1,
+                "recommendation": "feed_walkforward_research" if accepted else "collect_or_fix_data",
+            }
+        ]
+    )
+
+
 def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_ready=True, exposure_passed=True):
     evidence = root / "evidence"
     shadow = root / "shadow"
@@ -252,6 +269,23 @@ def test_scaleup_plan_accepts_required_data_readiness():
     assert report.summary.iloc[0]["data_readiness_ready"]
     assert report.config["data_readiness"]["required"]
     assert report.config["data_readiness"]["ready"]
+
+
+def test_scaleup_plan_accepts_required_data_readiness_comparison():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        data_readiness_comparison_summary=data_readiness_comparison_summary(True),
+        thresholds=ScaleUpThresholds(require_data_readiness_comparison=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["data_readiness_comparison_accepted"]
+    assert report.summary.iloc[0]["data_readiness_comparison_dataset_count"] == 2
+    assert report.config["data_readiness_comparison"]["required"]
+    assert report.config["data_readiness_comparison"]["accepted"]
+    assert report.config["data_readiness_comparison"]["ready_rate"] == 1.0
 
 
 def test_scaleup_plan_fails_on_instrument_metadata_gap():
@@ -450,6 +484,33 @@ def test_cli_scaleup_plan_can_require_data_readiness(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "data_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_can_require_data_readiness_comparison(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-data-readiness-comparison",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "data_readiness_comparison_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
 
 
 def test_cli_scaleup_plan_writes_runtime_freshness_kill_switch(tmp_path):
