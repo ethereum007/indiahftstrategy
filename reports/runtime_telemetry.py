@@ -97,7 +97,7 @@ def write_runtime_telemetry_snapshot(
 ) -> RuntimeTelemetryReport:
     scaleup_file = _scaleup_config_path(scaleup_dir)
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
-    export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv")
+    export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv", fallback_dirs=("04_export",))
     reconciliation_summary = _read_optional_summary(reconciliation_dir, "reconciliation_summary.csv")
     reconciliation_checks = _read_optional_summary(reconciliation_dir, "reconciliation_checks.csv")
     instrument_metadata_summary = _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")
@@ -304,12 +304,24 @@ def _scaleup_config_path(path: str | Path) -> Path:
     return candidate
 
 
-def _read_optional_summary(path: str | Path | None, filename: str) -> pd.DataFrame | None:
+def _read_optional_summary(
+    path: str | Path | None,
+    filename: str,
+    *,
+    fallback_dirs: tuple[str, ...] = (),
+) -> pd.DataFrame | None:
     if path is None:
         return None
     candidate = Path(path)
     if candidate.is_dir():
-        candidate = candidate / filename
+        direct = candidate / filename
+        if direct.exists():
+            candidate = direct
+        else:
+            candidate = next(
+                (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
+                direct,
+            )
     return _read_optional_csv(candidate)
 
 

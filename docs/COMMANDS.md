@@ -1399,6 +1399,10 @@ runtime_telemetry_summary.csv
 manifest.json
 ```
 
+For settlement convergence handoffs, `--export` may point at the
+`pipeline-settlement-launch` root; telemetry will read
+`04_export\broker_order_summary.csv` from that folder.
+
 ## Runtime Scale-Up Guard
 
 Evaluate live or paper telemetry snapshots against the scale-up limits, kill

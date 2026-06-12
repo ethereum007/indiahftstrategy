@@ -221,6 +221,38 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     assert (out_dir / "manifest.json").exists()
 
 
+def test_cli_runtime_telemetry_reads_settlement_pipeline_export(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    pipeline_dir = tmp_path / "settlement_pipeline"
+    export_dir = pipeline_dir / "04_export"
+    out_dir = tmp_path / "telemetry"
+    scaleup_dir.mkdir()
+    export_dir.mkdir(parents=True)
+    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
+
+    code = main(
+        [
+            "build-runtime-telemetry",
+            "--scaleup",
+            str(scaleup_dir),
+            "--export",
+            str(pipeline_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "runtime_telemetry_summary.csv")
+    telemetry = pd.read_csv(out_dir / "runtime_telemetry.csv")
+    sources = pd.read_csv(out_dir / "runtime_telemetry_sources.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert int(telemetry.loc[0, "orders_sent"]) == 4
+    assert bool(sources.loc[sources["source"] == "export_summary", "provided"].iloc[0])
+
+
 def test_cli_runtime_telemetry_can_fail_on_missing_identity(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     out_dir = tmp_path / "telemetry"
