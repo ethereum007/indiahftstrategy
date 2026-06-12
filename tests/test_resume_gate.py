@@ -74,8 +74,11 @@ def scaleup_checks():
     return pd.DataFrame([{"check": "scaleup_ready", "passed": True, "reason": ""}])
 
 
-def operator_review(approved=True):
-    return pd.DataFrame([{"reviewer": "ops", "approved": approved, "reason": "incident closed"}])
+def operator_review(approved=True, guard_failed_check_names="open_order_count"):
+    row = {"reviewer": "ops", "approved": approved, "reason": "incident closed"}
+    if guard_failed_check_names is not None:
+        row["guard_failed_check_names"] = guard_failed_check_names
+    return pd.DataFrame([row])
 
 
 def write_inputs(root, *, incident_passed=True, scaleup_ready=True):
@@ -127,6 +130,30 @@ def test_resume_gate_blocks_scenario_mismatch():
     assert "scenario_match" in failed
 
 
+def test_resume_gate_can_require_operator_trigger_acknowledgment():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        operator_review=operator_review(guard_failed_check_names="open_order_count"),
+        thresholds=ResumeGateThresholds(require_operator_guard_trigger_ack=True),
+    )
+
+    assert report.ready
+
+    blocked = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        operator_review=operator_review(guard_failed_check_names="orders_sent"),
+        thresholds=ResumeGateThresholds(require_operator_guard_trigger_ack=True),
+    )
+
+    assert not blocked.ready
+    failed = set(blocked.checks.loc[~blocked.checks["passed"].astype(bool), "check"])
+    assert "operator_guard_trigger_ack" in failed
+
+
 def test_write_resume_gate_outputs_artifacts(tmp_path):
     incident, scaleup = write_inputs(tmp_path)
     out_dir = tmp_path / "resume"
@@ -173,3 +200,31 @@ def test_cli_resume_gate_fails_when_operator_approval_required(tmp_path):
     summary = pd.read_csv(out_dir / "resume_summary.csv")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+
+
+def test_cli_resume_gate_fails_when_operator_trigger_ack_missing(tmp_path):
+    incident, scaleup = write_inputs(tmp_path)
+    out_dir = tmp_path / "resume"
+    review_path = tmp_path / "operator_review.csv"
+    operator_review(guard_failed_check_names=None).to_csv(review_path, index=False)
+
+    code = main(
+        [
+            "review-resume-gate",
+            "--incident",
+            str(incident),
+            "--scaleup",
+            str(scaleup),
+            "--operator-review",
+            str(review_path),
+            "--out",
+            str(out_dir),
+            "--require-operator-trigger-ack",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "resume_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "operator_guard_trigger_ack" in failed

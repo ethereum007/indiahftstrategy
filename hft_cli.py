@@ -1179,6 +1179,7 @@ def main(argv: list[str] | None = None) -> int:
     resume_gate.add_argument("--allow-scenario-change", action="store_true")
     resume_gate.add_argument("--allow-adapter-change", action="store_true")
     resume_gate.add_argument("--require-operator-approval", action="store_true")
+    resume_gate.add_argument("--require-operator-trigger-ack", action="store_true")
     resume_gate.add_argument("--max-failed-scaleup-checks", type=int, default=0)
     resume_gate.add_argument("--fail-on-breach", action="store_true")
 
@@ -2713,6 +2714,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_same_scenario=not args.allow_scenario_change,
                 require_same_adapter=not args.allow_adapter_change,
                 require_operator_approval=args.require_operator_approval,
+                require_operator_guard_trigger_ack=args.require_operator_trigger_ack,
                 max_failed_scaleup_checks=args.max_failed_scaleup_checks,
             ),
         )

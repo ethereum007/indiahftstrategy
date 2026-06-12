@@ -1798,6 +1798,7 @@ python -m hft_cli review-resume-gate `
   --operator-review ops\resume_review.csv `
   --out runs\resume\leadlag_shadow_latest `
   --require-operator-approval `
+  --require-operator-trigger-ack `
   --fail-on-breach
 ```
 
@@ -1814,6 +1815,11 @@ manifest.json
 `resume_authorization.csv`, `resume_summary.csv`, and `resume_config.json`
 retain the prior incident's guard-trigger fields so resume approval is tied
 back to the halt that was closed.
+
+When `--require-operator-trigger-ack` is set, the latest operator review row
+must include a matching `guard_failed_check_names`,
+`incident_guard_failed_check_names`, `ack_guard_failed_check_names`, or
+`acknowledged_guard_failed_check_names` value.
 
 ## Calibration
 

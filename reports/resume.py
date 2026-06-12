@@ -17,6 +17,7 @@ class ResumeGateThresholds:
     require_same_scenario: bool = True
     require_same_adapter: bool = True
     require_operator_approval: bool = False
+    require_operator_guard_trigger_ack: bool = False
     max_failed_scaleup_checks: int = 0
 
 
@@ -120,6 +121,8 @@ def _checks(
     scaleup_adapter = str(scaleup.get("adapter", ""))
     scaleup_failed = _failed_scaleup_checks(scaleup, scaleup_checks)
     operator_approved = _operator_approved(operator_review)
+    incident_guard_trigger = _text(incident, "guard_failed_check_names")
+    operator_trigger_ack = _operator_guard_trigger_ack(operator_review, incident_guard_trigger)
     return pd.DataFrame(
         [
             _check(
@@ -169,6 +172,14 @@ def _checks(
                 True,
                 operator_approved or not thresholds.require_operator_approval,
                 "operator approval is missing or false",
+            ),
+            _check(
+                "operator_guard_trigger_ack",
+                operator_trigger_ack if operator_review.empty else _operator_guard_trigger_value(operator_review),
+                "==",
+                incident_guard_trigger,
+                operator_trigger_ack or not thresholds.require_operator_guard_trigger_ack,
+                "operator review did not acknowledge the incident guard trigger",
             ),
         ]
     )
@@ -296,6 +307,27 @@ def _operator_approved(operator_review: pd.DataFrame) -> bool:
         if column in row.index:
             return _to_bool(row[column])
     return False
+
+
+def _operator_guard_trigger_ack(operator_review: pd.DataFrame, incident_guard_trigger: str) -> bool:
+    if operator_review.empty or not incident_guard_trigger:
+        return False
+    return _operator_guard_trigger_value(operator_review) == incident_guard_trigger
+
+
+def _operator_guard_trigger_value(operator_review: pd.DataFrame) -> str:
+    if operator_review.empty:
+        return "missing"
+    row = operator_review.iloc[-1]
+    for column in (
+        "guard_failed_check_names",
+        "incident_guard_failed_check_names",
+        "ack_guard_failed_check_names",
+        "acknowledged_guard_failed_check_names",
+    ):
+        if column in row.index:
+            return _text(row, column)
+    return "missing"
 
 
 def _validate_thresholds(thresholds: ResumeGateThresholds) -> None:

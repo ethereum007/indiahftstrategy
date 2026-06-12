@@ -246,7 +246,8 @@
 - Post-halt resume gate that requires a closed incident, ready scale-up plan,
   scenario/adapter continuity, optional operator approval, and emits
   resume authorization/config artifacts carrying the incident guard trigger
-  that caused the prior halt.
+  that caused the prior halt, with an optional operator acknowledgement check
+  for the specific guard trigger.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -302,7 +303,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 376 tests.
+Current passing suite: 378 tests.
 
 ## Next Build Targets
 
