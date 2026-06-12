@@ -412,6 +412,46 @@ broker_order_schema.csv
 manifest.json
 ```
 
+## Mapped Broker Order Export
+
+Convert `broker_orders.csv` into a vendor-specific CSV shape using a mapping
+file supplied from the reviewed Arrow.money/iRage sample schema:
+
+```powershell
+python -m hft_cli map-broker-orders `
+  --export runs\exports\leadlag_shadow_arrow `
+  --mapping vendor\arrow_order_upload_mapping.csv `
+  --out runs\exports\leadlag_shadow_arrow_mapped `
+  --adapter arrow_money `
+  --output-file arrow_orders.csv `
+  --fail-on-breach
+```
+
+Mapping CSV:
+
+```text
+target_column,source_column,default_value,required,transform
+symbol,instrument_id,,true,string
+transaction_type,side,,true,side_text
+quantity,qty,,true,int
+limit_price,price,,true,float
+product,,MIS,true,uppercase
+validity,time_in_force,DAY,true,uppercase
+```
+
+Supported transforms are `identity`, `string`, `uppercase`, `lowercase`,
+`int`, `float`, `side_text`, and `side_signed`.
+
+Outputs:
+
+```text
+mapped_broker_orders.csv
+mapped_order_checks.csv
+mapped_order_summary.csv
+mapped_order_schema.csv
+manifest.json
+```
+
 ## Broker Fill Reconciliation
 
 Reconcile exported paper/shadow orders against normalized broker or drop-copy

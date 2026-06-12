@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 
 from adapters.broker import run_calibration_report
+from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
 from adapters.orders import OrderStagingLimits, write_staged_orders
@@ -225,6 +226,15 @@ def main(argv: list[str] | None = None) -> int:
     export_orders.add_argument("--allow-non-limit", action="store_true")
     export_orders.add_argument("--max-orders", type=int, default=None)
     export_orders.add_argument("--fail-on-breach", action="store_true")
+
+    mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
+    mapped_export.add_argument("--export", required=True)
+    mapped_export.add_argument("--mapping", required=True)
+    mapped_export.add_argument("--out", required=True)
+    mapped_export.add_argument("--adapter", default="normalized")
+    mapped_export.add_argument("--output-file", default="mapped_broker_orders.csv")
+    mapped_export.add_argument("--allow-missing-required", action="store_true")
+    mapped_export.add_argument("--fail-on-breach", action="store_true")
 
     reconcile = sub.add_parser("reconcile-broker-fills", help="Reconcile exported orders against broker/drop-copy fills.")
     reconcile.add_argument("--export", required=True)
@@ -591,6 +601,19 @@ def main(argv: list[str] | None = None) -> int:
                 require_launch_ready=not args.allow_unready_launch,
                 require_limit_orders=not args.allow_non_limit,
                 max_orders=args.max_orders,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "map-broker-orders":
+        result = write_mapped_order_export(
+            args.export,
+            args.mapping,
+            output_dir=args.out,
+            config=MappedOrderExportConfig(
+                adapter=args.adapter,
+                output_filename=args.output_file,
+                require_all_mapped=not args.allow_missing_required,
             ),
         )
         print(result.summary.to_string(index=False))

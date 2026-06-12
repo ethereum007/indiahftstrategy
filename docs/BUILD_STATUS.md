@@ -101,6 +101,9 @@
 - Adapter schema audit for vendor sample CSV headers, including required,
   missing, and extra source columns plus a mapping template and manifest before
   real Arrow.money/iRage column maps are finalized.
+- Configurable mapped broker-order export that converts broker-neutral launch
+  orders into a vendor CSV shape from a reviewed mapping file, with required
+  field checks, simple transforms, and manifests.
 
 ## Test Gate
 
@@ -110,7 +113,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 121 tests.
+Current passing suite: 125 tests.
 
 ## Next Build Targets
 
