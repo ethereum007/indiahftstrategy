@@ -170,6 +170,17 @@ def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_read
     return evidence, shadow, launch, exposure
 
 
+def write_settlement_pipeline(root, *, launch_ready=True, broker_ready=True):
+    pipeline = root / "settlement_pipeline"
+    launch = pipeline / "03_launch"
+    broker = pipeline / "06_broker_readiness"
+    launch.mkdir(parents=True, exist_ok=True)
+    broker.mkdir(parents=True, exist_ok=True)
+    launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
+    broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    return pipeline
+
+
 def test_scaleup_plan_accepts_clean_shadow_scaleup():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(True),
@@ -457,6 +468,35 @@ def test_cli_scaleup_plan_can_require_broker_readiness(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "broker_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_reads_settlement_launch_pipeline_outputs(tmp_path):
+    evidence, shadow, _, _ = write_inputs(tmp_path)
+    pipeline = write_settlement_pipeline(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(pipeline),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert config["broker_readiness"]["provided"]
+    assert config["broker_readiness"]["ready"]
 
 
 def test_cli_scaleup_plan_can_require_data_readiness(tmp_path):

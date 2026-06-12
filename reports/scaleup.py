@@ -123,7 +123,7 @@ def write_scaleup_plan(
 ) -> ScaleUpPlanReport:
     evidence = _read_summary(evidence_dir, "strategy_evidence_summary.csv")
     shadow = _read_summary(shadow_comparison_dir, "shadow_session_comparison_summary.csv")
-    launch = _read_summary(launch_dir, "launch_summary.csv")
+    launch = _read_summary(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch",))
     exposure = _read_optional_summary(order_exposure_dir, "order_exposure_summary.csv") if order_exposure_dir else None
     proof_refresh = (
         _read_optional_summary(proof_refresh_dir, "proof_refresh_summary.csv") if proof_refresh_dir else None
@@ -133,9 +133,10 @@ def write_scaleup_plan(
         if instrument_metadata_dir
         else None
     )
+    resolved_broker_readiness_dir = broker_readiness_dir or _auto_broker_readiness_dir(launch_dir)
     broker_readiness = (
-        _read_optional_summary(broker_readiness_dir, "broker_readiness_summary.csv")
-        if broker_readiness_dir
+        _read_optional_summary(resolved_broker_readiness_dir, "broker_readiness_summary.csv")
+        if resolved_broker_readiness_dir
         else None
     )
     data_readiness = (
@@ -182,8 +183,8 @@ def write_scaleup_plan(
         inputs["data_readiness"] = Path(data_readiness_dir)
     if data_readiness_comparison_dir is not None:
         inputs["data_readiness_comparison"] = Path(data_readiness_comparison_dir)
-    if broker_readiness_dir is not None:
-        inputs["broker_readiness"] = Path(broker_readiness_dir)
+    if resolved_broker_readiness_dir is not None:
+        inputs["broker_readiness"] = Path(resolved_broker_readiness_dir)
     write_experiment_manifest(
         out,
         run_type="scaleup_plan",
@@ -584,8 +585,8 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
     }
 
 
-def _read_summary(path: str | Path, filename: str) -> pd.DataFrame:
-    file_path = _summary_path(path, filename)
+def _read_summary(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> pd.DataFrame:
+    file_path = _summary_path(path, filename, fallback_dirs=fallback_dirs)
     if not file_path.exists():
         raise FileNotFoundError(f"required scale-up input missing: {file_path}")
     frame = pd.read_csv(file_path)
@@ -594,18 +595,34 @@ def _read_summary(path: str | Path, filename: str) -> pd.DataFrame:
     return frame
 
 
-def _read_optional_summary(path: str | Path, filename: str) -> pd.DataFrame:
-    file_path = _summary_path(path, filename)
+def _read_optional_summary(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> pd.DataFrame:
+    file_path = _summary_path(path, filename, fallback_dirs=fallback_dirs)
     if not file_path.exists():
         return pd.DataFrame()
     return _read_summary(file_path, filename)
 
 
-def _summary_path(path: str | Path, filename: str) -> Path:
+def _summary_path(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> Path:
     candidate = Path(path)
     if candidate.is_dir():
-        return candidate / filename
+        direct = candidate / filename
+        if direct.exists():
+            return direct
+        for folder in fallback_dirs:
+            nested = candidate / folder / filename
+            if nested.exists():
+                return nested
+        return direct
     return candidate
+
+
+def _auto_broker_readiness_dir(launch_dir: str | Path) -> Path | None:
+    candidate = Path(launch_dir)
+    if not candidate.is_dir():
+        return None
+    broker_dir = candidate / "06_broker_readiness"
+    summary = broker_dir / "broker_readiness_summary.csv"
+    return broker_dir if summary.exists() else None
 
 
 def _validate_thresholds(thresholds: ScaleUpThresholds) -> None:
