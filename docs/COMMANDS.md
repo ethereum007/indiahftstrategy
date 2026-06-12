@@ -1811,6 +1811,10 @@ resume_config.json
 manifest.json
 ```
 
+`resume_authorization.csv`, `resume_summary.csv`, and `resume_config.json`
+retain the prior incident's guard-trigger fields so resume approval is tied
+back to the halt that was closed.
+
 ## Calibration
 
 ```powershell

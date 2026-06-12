@@ -14,6 +14,8 @@ def incident_summary(passed=True, scenario_key="trigger_ticks=2", adapter="arrow
                 "incident_status": "halt_completed" if passed else "halt_incomplete",
                 "scenario_key": scenario_key,
                 "adapter": adapter,
+                "guard_failed_check_names": "open_order_count" if passed else "halt_execution_passed",
+                "guard_first_failed_reason": "open_order_count: limit breached" if passed else "execution incomplete",
                 "failed_checks": 0 if passed else 1,
                 "recommendation": "resume_only_after_new_scaleup_review" if passed else "keep_trading_disabled",
             }
@@ -105,7 +107,11 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.authorization.iloc[0]["max_gross_notional"] == 2_000.0
     assert report.authorization.iloc[0]["max_abs_net_delta"] == 100.0
     assert report.authorization.iloc[0]["max_abs_net_vega"] == 250.0
+    assert report.authorization.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
+    assert report.summary.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
+    assert report.summary.iloc[0]["incident_guard_first_failed_reason"] == "open_order_count: limit breached"
     assert report.summary.iloc[0]["recommendation"] == "resume_with_scaleup_controls"
+    assert report.config["incident"]["guard_failed_check_names"] == "open_order_count"
     assert report.config["ready"]
 
 
@@ -142,6 +148,8 @@ def test_write_resume_gate_outputs_artifacts(tmp_path):
     assert (out_dir / "resume_summary.csv").exists()
     assert (out_dir / "resume_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    saved_summary = pd.read_csv(out_dir / "resume_summary.csv")
+    assert saved_summary.loc[0, "incident_guard_failed_check_names"] == "open_order_count"
 
 
 def test_cli_resume_gate_fails_when_operator_approval_required(tmp_path):

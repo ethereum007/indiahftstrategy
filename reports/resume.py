@@ -191,6 +191,8 @@ def _authorization(
                 "scenario_key": str(scaleup.get("scenario_key", scaleup_config.get("scenario_key", ""))),
                 "adapter": str(scaleup.get("adapter", scaleup_config.get("adapter", ""))),
                 "incident_status": str(incident.get("incident_status", "")),
+                "incident_guard_failed_check_names": _text(incident, "guard_failed_check_names"),
+                "incident_guard_first_failed_reason": _text(incident, "guard_first_failed_reason"),
                 "max_orders_per_session": int(_number_from(limits, "max_orders_per_session", _number(scaleup, "max_orders_per_session", 0.0))),
                 "max_notional_per_session": float(_number_from(limits, "max_notional_per_session", _number(scaleup, "max_notional_per_session", 0.0))),
                 "stop_loss": _nullable_number(limits.get("stop_loss")),
@@ -220,6 +222,8 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "target_mode": str(authorization.get("target_mode", "")),
                 "scenario_key": str(authorization.get("scenario_key", "")),
                 "adapter": str(authorization.get("adapter", "")),
+                "incident_guard_failed_check_names": _text(authorization, "incident_guard_failed_check_names"),
+                "incident_guard_first_failed_reason": _text(authorization, "incident_guard_first_failed_reason"),
                 "failed_checks": failed,
                 "recommendation": "resume_with_scaleup_controls" if ready else "keep_trading_disabled",
             }
@@ -241,6 +245,11 @@ def _config(
         "adapter": str(authorization["adapter"]),
         "limits": scaleup_config.get("limits", {}),
         "kill_switches": scaleup_config.get("kill_switches", {}),
+        "incident": {
+            "status": str(authorization.get("incident_status", "")),
+            "guard_failed_check_names": _text(authorization, "incident_guard_failed_check_names"),
+            "guard_first_failed_reason": _text(authorization, "incident_guard_first_failed_reason"),
+        },
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
     }
@@ -310,6 +319,15 @@ def _nullable_number(value: object) -> float | None:
     if value is None or pd.isna(value):
         return None
     return float(value)
+
+
+def _text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    value = row[column]
+    if pd.isna(value):
+        return ""
+    return str(value)
 
 
 def _to_bool(value: object) -> bool:
