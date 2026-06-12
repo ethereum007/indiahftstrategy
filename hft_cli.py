@@ -6,6 +6,7 @@ from adapters.broker import run_calibration_report
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
+from reports.proof import ProofThresholds, write_proof_report
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_leadlag_replay import run_leadlag_replay
@@ -74,6 +75,20 @@ def main(argv: list[str] | None = None) -> int:
     diag_chain.add_argument("--tick-size", type=float, default=None)
     diag_chain.add_argument("--market", default="india_nse_index_derivatives")
     diag_chain.add_argument("--no-filter-session", action="store_true")
+
+    proof = sub.add_parser("proof-report", help="Evaluate replay output folders against proof thresholds.")
+    proof.add_argument("--runs", nargs="+", required=True)
+    proof.add_argument("--out", required=True)
+    proof.add_argument("--run-name", action="append", dest="run_names")
+    proof.add_argument("--min-net-pnl", type=float, default=0.0)
+    proof.add_argument("--min-fills", type=int, default=1)
+    proof.add_argument("--max-drawdown", type=float, default=None)
+    proof.add_argument("--max-otr", type=float, default=None)
+    proof.add_argument("--min-maker-share", type=float, default=None)
+    proof.add_argument("--min-worst-regime-equity-change", type=float, default=None)
+    proof.add_argument("--min-markout-mean", type=float, default=None)
+    proof.add_argument("--min-spread-net", type=float, default=None)
+    proof.add_argument("--fail-on-breach", action="store_true")
 
     args = parser.parse_args(argv)
     if args.command == "scan-parity-box":
@@ -146,6 +161,24 @@ def main(argv: list[str] | None = None) -> int:
         result = write_diagnostics(chain_diagnostics(chain, tick_size=args.tick_size, market=args.market), args.out)
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "proof-report":
+        result = write_proof_report(
+            args.runs,
+            output_dir=args.out,
+            run_names=args.run_names,
+            thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_maker_share=args.min_maker_share,
+                min_worst_regime_equity_change=args.min_worst_regime_equity_change,
+                min_markout_mean=args.min_markout_mean,
+                min_spread_net=args.min_spread_net,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     raise RuntimeError(f"unhandled command {args.command}")
 
 

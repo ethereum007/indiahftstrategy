@@ -139,3 +139,27 @@ Outputs:
 diagnostic_summary.csv
 diagnostic_issues.csv
 ```
+
+## Proof Report
+
+Evaluate one or more replay output folders against explicit proof thresholds:
+
+```powershell
+python -m hft_cli proof-report `
+  --runs runs\leadlag_replay_2026_06_10 runs\leadlag_replay_2026_06_11 `
+  --out runs\proof\leadlag `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --max-drawdown 5000 `
+  --max-otr 50 `
+  --min-worst-regime-equity-change 0 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+proof_metrics.csv
+proof_checks.csv
+proof_summary.csv
+```

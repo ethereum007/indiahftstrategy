@@ -45,6 +45,9 @@
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.
+- Proof-report gate for replay output folders, scoring PnL, fills, drawdown,
+  OTR, regime robustness, spread capture, and markout quality against explicit
+  thresholds.
 
 ## Test Gate
 
@@ -54,7 +57,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 66 tests.
+Current passing suite: 70 tests.
 
 ## Next Build Targets
 
