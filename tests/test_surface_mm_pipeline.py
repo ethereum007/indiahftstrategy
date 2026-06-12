@@ -1,0 +1,129 @@
+import json
+
+import pandas as pd
+
+from engine.surface import black76_price
+from hft_cli import main
+from reports.proof import ProofThresholds
+from reports.promotion import PromotionThresholds
+from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
+
+
+def ns_ist(value: str) -> int:
+    return pd.Timestamp(value, tz="Asia/Kolkata").value
+
+
+def option_row(ts, strike, *, forward=1000.0, vol=0.2, tte=30 / 365):
+    call_mid = black76_price(option_type="C", forward=forward, strike=strike, tte_years=tte, vol=vol)
+    put_mid = black76_price(option_type="P", forward=forward, strike=strike, tte_years=tte, vol=vol)
+    return {
+        "ts": ts,
+        "expiry": "2026-06-30",
+        "strike": float(strike),
+        "call_bid": round(max(call_mid - 0.10, 0.05), 2),
+        "call_ask": round(call_mid + 0.10, 2),
+        "call_bid_qty": 300,
+        "call_ask_qty": 300,
+        "put_bid": round(max(put_mid - 0.10, 0.05), 2),
+        "put_ask": round(put_mid + 0.10, 2),
+        "put_bid_qty": 300,
+        "put_ask_qty": 300,
+    }
+
+
+def write_surface_inputs(tmp_path):
+    ts0 = ns_ist("2026-06-10 09:15:00")
+    ts1 = ns_ist("2026-06-10 09:15:01")
+    chain = pd.DataFrame(
+        [option_row(ts0, strike, forward=1000.0) for strike in [950.0, 1000.0, 1050.0]]
+        + [option_row(ts1, strike, forward=970.0) for strike in [950.0, 1000.0, 1050.0]]
+    )
+    futures = pd.DataFrame(
+        [
+            {"ts": ts0, "bid": 999.95, "ask": 1000.05, "bid_qty": 300, "ask_qty": 300},
+            {"ts": ts1, "bid": 969.95, "ask": 970.05, "bid_qty": 300, "ask_qty": 300},
+        ]
+    )
+    chain_path = tmp_path / "chain.csv"
+    futures_path = tmp_path / "futures.csv"
+    chain.to_csv(chain_path, index=False)
+    futures.to_csv(futures_path, index=False)
+    return chain_path, futures_path
+
+
+def test_surface_mm_research_pipeline_promotes_candidate(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    out_dir = tmp_path / "surface_pipeline"
+
+    report = write_surface_mm_research_pipeline(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        edge_ticks=0.0,
+        max_market_spread_ticks=20.0,
+        max_quotes_per_snapshot=4,
+        quote_ttl_ns_values=[2_000_000_000],
+        order_latency_us_values=[0.0],
+        fill_depth_fraction_values=[1.0],
+        markout_horizon_ns_values=[1_000_000_000],
+        proof_thresholds=ProofThresholds(min_net_pnl=-1_000_000.0, min_fills=1, min_maker_share=0.0),
+        min_selection_median_net_pnl=-1_000_000.0,
+        promotion_thresholds=PromotionThresholds(min_median_net_pnl=-1_000_000.0, min_median_fills=1),
+    )
+
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert report.promotion is not None
+    assert int(report.summary.loc[0, "quotes"]) >= 1
+    assert bool(report.summary.loc[0, "sweep_proof_passed"])
+    assert bool(report.summary.loc[0, "promotion_ready"])
+    assert config["ready"]
+    assert config["strategy"] == "surface_mm"
+    assert config["source_run_type"] == "surface_mm_research_pipeline"
+    assert set(report.stages["stage"]) == {"quote_generation", "quote_review", "sweep", "selection", "promotion"}
+    assert (out_dir / "01_quotes" / "surface_quotes.csv").exists()
+    assert (out_dir / "02_quote_review" / "quote_risk_summary.csv").exists()
+    assert (out_dir / "03_sweep" / "sweep_summary.csv").exists()
+    assert (out_dir / "04_selection" / "selection_summary.csv").exists()
+    assert (out_dir / "05_promotion" / "promotion_summary.csv").exists()
+    assert (out_dir / "surface_mm_pipeline_stages.csv").exists()
+    assert (out_dir / "surface_mm_pipeline_summary.csv").exists()
+    assert (out_dir / "manifest.json").exists()
+
+
+def test_cli_surface_mm_research_pipeline_fails_closed_without_data_readiness(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    out_dir = tmp_path / "surface_pipeline_cli"
+
+    code = main(
+        [
+            "pipeline-surface-mm-research",
+            "--chain",
+            str(chain_path),
+            "--futures",
+            str(futures_path),
+            "--out",
+            str(out_dir),
+            "--edge-ticks",
+            "0",
+            "--max-market-spread-ticks",
+            "20",
+            "--max-quotes-per-snapshot",
+            "4",
+            "--quote-ttl-ns",
+            "2000000000",
+            "--fill-depth-fraction",
+            "1",
+            "--require-data-readiness-comparison",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "surface_mm_pipeline_summary.csv")
+    stages = pd.read_csv(out_dir / "surface_mm_pipeline_stages.csv")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert not bool(stages.loc[stages["stage"] == "quote_review", "status"].iloc[0])
+    assert bool(stages.loc[stages["stage"] == "sweep", "skipped"].iloc[0])
+    assert "quote_review" in config["failed_checks"]

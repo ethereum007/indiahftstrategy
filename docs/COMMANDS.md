@@ -870,6 +870,44 @@ unless the supplied comparison summary is present and accepted. This keeps
 surface market-making quotes from moving into replay or paper routing on
 unproven vendor market data.
 
+## Surface Market-Making Research Pipeline
+
+Run the complete surface market-making research path from option-chain/futures
+data through quote generation, quote review, replay sweep proof, scenario
+selection, and promotion:
+
+```powershell
+python -m hft_cli pipeline-surface-mm-research `
+  --chain data\chain.csv `
+  --futures data\futures.csv `
+  --out runs\surface_mm_pipeline_2026_06_10 `
+  --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
+  --require-data-readiness-comparison `
+  --max-market-spread-ticks 20 `
+  --max-quotes-per-snapshot 20 `
+  --quote-ttl-ns 500000000 1000000000 2000000000 `
+  --order-latency-us 0 100 250 `
+  --fill-depth-fraction 0.10 0.25 0.50 `
+  --markout-horizon-ns 500000000 1000000000 `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+01_quotes\surface_quotes.csv
+02_quote_review\quote_risk_summary.csv
+03_sweep\sweep_summary.csv
+04_selection\selection_summary.csv
+05_promotion\promotion_summary.csv
+surface_mm_pipeline_stages.csv
+surface_mm_pipeline_summary.csv
+candidate_config.json
+manifest.json
+```
+
 ## Order Exposure Review
 
 Review staged, launch, or exported option order batches for notional, side

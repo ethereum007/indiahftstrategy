@@ -101,6 +101,9 @@
   grids are run.
 - Direct surface market-making replay can require the same quote-risk review
   and emits blocked replay artifacts instead of simulating unreviewed quotes.
+- End-to-end surface market-making research pipeline that chains quote
+  generation, quote-risk/data-readiness review, replay sweep proof, scenario
+  selection, and promotion into one manifest-backed candidate run.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -271,7 +274,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 340 tests.
+Current passing suite: 342 tests.
 
 ## Next Build Targets
 

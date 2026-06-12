@@ -20,6 +20,7 @@ SUMMARY_FILES = [
     "imbalance_edge_walkforward_summary.csv",
     "imbalance_replay_walkforward_summary.csv",
     "imbalance_pipeline_summary.csv",
+    "surface_mm_pipeline_summary.csv",
     "settlement_convergence_walkforward_summary.csv",
     "settlement_launch_pipeline_summary.csv",
     "settlement_convergence_summary.csv",

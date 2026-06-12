@@ -84,6 +84,7 @@ from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_s
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
+from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
@@ -1172,6 +1173,55 @@ def main(argv: list[str] | None = None) -> int:
     surface_quote.add_argument("--max-market-spread-ticks", type=float, default=None)
     surface_quote.add_argument("--max-quotes-per-snapshot", type=int, default=None)
     surface_quote.add_argument("--max-snapshots", type=int, default=None)
+
+    surface_pipeline = sub.add_parser(
+        "pipeline-surface-mm-research",
+        help="Run surface quote generation, review, sweep proof, selection, and promotion.",
+    )
+    surface_pipeline.add_argument("--chain", required=True)
+    surface_pipeline.add_argument("--futures", required=True)
+    surface_pipeline.add_argument("--out", required=True)
+    surface_pipeline.add_argument("--data-readiness-comparison", default=None)
+    surface_pipeline.add_argument("--require-data-readiness-comparison", action="store_true")
+    surface_pipeline.add_argument("--no-filter-session", action="store_true")
+    surface_pipeline.add_argument("--asof-latency-ns", type=int, default=0)
+    surface_pipeline.add_argument("--tte-years", type=float, default=30 / 365)
+    surface_pipeline.add_argument("--tick-size", type=float, default=0.05)
+    surface_pipeline.add_argument("--lot-size", type=int, default=75)
+    surface_pipeline.add_argument("--quote-lots", type=int, default=1)
+    surface_pipeline.add_argument("--edge-ticks", type=float, default=2.0)
+    surface_pipeline.add_argument("--inventory-skew-ticks-per-lot", type=float, default=0.5)
+    surface_pipeline.add_argument("--max-market-spread-ticks", type=float, default=None)
+    surface_pipeline.add_argument("--max-quotes-per-snapshot", type=int, default=None)
+    surface_pipeline.add_argument("--max-snapshots", type=int, default=None)
+    surface_pipeline.add_argument("--min-quotes", type=int, default=1)
+    surface_pipeline.add_argument("--min-instruments", type=int, default=1)
+    surface_pipeline.add_argument("--max-marketable-quotes", type=int, default=0)
+    surface_pipeline.add_argument("--min-quote-edge", type=float, default=0.0)
+    surface_pipeline.add_argument("--min-bid-share", type=float, default=0.25)
+    surface_pipeline.add_argument("--max-bid-share", type=float, default=0.75)
+    surface_pipeline.add_argument("--max-quotes-per-instrument", type=int, default=None)
+    surface_pipeline.add_argument("--quote-ttl-ns", nargs="+", required=True, type=int)
+    surface_pipeline.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
+    surface_pipeline.add_argument("--fill-depth-fraction", nargs="+", required=True, type=float)
+    surface_pipeline.add_argument("--markout-horizon-ns", nargs="+", default=[1_000_000_000], type=int)
+    surface_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    surface_pipeline.add_argument("--max-quotes", type=int, default=None)
+    surface_pipeline.add_argument("--min-net-pnl", type=float, default=0.0)
+    surface_pipeline.add_argument("--min-fills", type=int, default=1)
+    surface_pipeline.add_argument("--max-drawdown", type=float, default=None)
+    surface_pipeline.add_argument("--max-otr", type=float, default=None)
+    surface_pipeline.add_argument("--min-maker-share", type=float, default=1.0)
+    surface_pipeline.add_argument("--min-markout-mean", type=float, default=None)
+    surface_pipeline.add_argument("--min-selection-pass-rate", type=float, default=1.0)
+    surface_pipeline.add_argument("--min-selection-sweeps", type=int, default=1)
+    surface_pipeline.add_argument("--min-selection-median-net-pnl", type=float, default=0.0)
+    surface_pipeline.add_argument("--max-selection-worst-drawdown", type=float, default=None)
+    surface_pipeline.add_argument("--min-promotion-pass-rate", type=float, default=1.0)
+    surface_pipeline.add_argument("--min-promotion-sweeps", type=int, default=1)
+    surface_pipeline.add_argument("--min-promotion-median-net-pnl", type=float, default=0.0)
+    surface_pipeline.add_argument("--min-promotion-median-fills", type=float, default=1.0)
+    surface_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     quote_review = sub.add_parser("review-quotes", help="Review generated surface quotes for MM risk hygiene.")
     quote_review.add_argument("--quotes", required=True)
@@ -2577,6 +2627,61 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "pipeline-surface-mm-research":
+        result = write_surface_mm_research_pipeline(
+            chain_path=args.chain,
+            futures_path=args.futures,
+            output_dir=args.out,
+            data_readiness_comparison_dir=args.data_readiness_comparison,
+            require_data_readiness_comparison=args.require_data_readiness_comparison,
+            filter_session=not args.no_filter_session,
+            asof_latency_ns=args.asof_latency_ns,
+            tte_years=args.tte_years,
+            tick_size=args.tick_size,
+            lot_size=args.lot_size,
+            quote_lots=args.quote_lots,
+            edge_ticks=args.edge_ticks,
+            inventory_skew_ticks_per_lot=args.inventory_skew_ticks_per_lot,
+            max_market_spread_ticks=args.max_market_spread_ticks,
+            max_quotes_per_snapshot=args.max_quotes_per_snapshot,
+            max_snapshots=args.max_snapshots,
+            quote_risk_thresholds=QuoteRiskThresholds(
+                min_quotes=args.min_quotes,
+                min_instruments=args.min_instruments,
+                max_marketable_quotes=args.max_marketable_quotes,
+                min_quote_edge=args.min_quote_edge,
+                min_bid_share=args.min_bid_share,
+                max_bid_share=args.max_bid_share,
+                max_market_spread_ticks=args.max_market_spread_ticks,
+                max_quotes_per_instrument=args.max_quotes_per_instrument,
+            ),
+            quote_ttl_ns_values=args.quote_ttl_ns,
+            order_latency_us_values=args.order_latency_us,
+            fill_depth_fraction_values=args.fill_depth_fraction,
+            markout_horizon_ns_values=args.markout_horizon_ns,
+            contract_multiplier=args.contract_multiplier,
+            max_quotes=args.max_quotes,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_maker_share=args.min_maker_share,
+                min_markout_mean=args.min_markout_mean,
+            ),
+            min_selection_pass_rate=args.min_selection_pass_rate,
+            min_selection_sweeps=args.min_selection_sweeps,
+            min_selection_median_net_pnl=args.min_selection_median_net_pnl,
+            max_selection_worst_drawdown=args.max_selection_worst_drawdown,
+            promotion_thresholds=PromotionThresholds(
+                min_pass_rate=args.min_promotion_pass_rate,
+                min_sweeps=args.min_promotion_sweeps,
+                min_median_net_pnl=args.min_promotion_median_net_pnl,
+                min_median_fills=args.min_promotion_median_fills,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "review-quotes":
         result = write_quote_risk_report(
             args.quotes,
