@@ -52,6 +52,7 @@ def open_orders():
                 "side": 1,
                 "qty": 75,
                 "filled_qty": 25,
+                "limit_price": 10.0,
                 "status": "PARTIAL",
             }
         ]
@@ -146,6 +147,35 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     assert summary.loc[0, "recommendation"] == "stop_routing_and_execute_halt_response"
     assert steps["step"].tolist() == ["telemetry", "runtime_guard", "halt_response"]
     assert response.loc[0, "recommendation"] == "submit_cancel_and_flatten"
+
+
+def test_cli_runtime_session_monitor_halts_on_open_order_notional_limit(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    open_orders_path = tmp_path / "open_orders.csv"
+    write_scaleup_dir(scaleup_dir, scaleup_config(max_open_order_notional=400))
+    open_orders().to_csv(open_orders_path, index=False)
+
+    code = main(
+        [
+            "monitor-runtime-session",
+            "--scaleup",
+            str(scaleup_dir),
+            "--open-orders",
+            str(open_orders_path),
+            "--out",
+            str(out_dir),
+            "--skip-halt-response",
+            "--fail-on-breach",
+        ]
+    )
+
+    telemetry = pd.read_csv(out_dir / "01_telemetry" / "runtime_telemetry.csv")
+    checks = pd.read_csv(out_dir / "02_guard" / "runtime_guard_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert telemetry.loc[0, "open_order_notional"] == 500.0
+    assert "open_order_notional" in failed
 
 
 def test_cli_runtime_session_monitor_halts_on_upload_pack_replace_limit(tmp_path):

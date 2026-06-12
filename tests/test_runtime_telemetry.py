@@ -120,8 +120,8 @@ def pnl_snapshot():
 def open_orders():
     return pd.DataFrame(
         [
-            {"client_order_id": "A", "qty": 75, "filled_qty": 25, "status": "partial"},
-            {"client_order_id": "B", "qty": 75, "filled_qty": 75, "status": "filled"},
+            {"client_order_id": "A", "qty": 75, "filled_qty": 25, "status": "partial", "limit_price": 10.0},
+            {"client_order_id": "B", "qty": 75, "filled_qty": 75, "status": "filled", "limit_price": 11.0},
         ]
     )
 
@@ -173,6 +173,7 @@ def test_runtime_telemetry_combines_operational_artifacts():
     assert row["worst_adverse_slippage"] == 0.03
     assert row["open_order_count"] == 1
     assert row["gross_position_qty"] == 100.0
+    assert row["open_order_notional"] == 500.0
     assert row["gross_position_notional"] == 1250.0
     assert row["net_position_notional"] == 250.0
     assert row["abs_net_position_notional"] == 250.0
@@ -219,6 +220,46 @@ def test_runtime_telemetry_uses_total_position_notional_columns():
     assert row["gross_position_notional"] == 1250.0
     assert row["net_position_notional"] == 250.0
     assert row["abs_net_position_notional"] == 250.0
+
+
+def test_runtime_telemetry_uses_side_aware_open_order_prices():
+    report = evaluate_runtime_telemetry(
+        scaleup_config(),
+        open_orders=pd.DataFrame(
+            [
+                {
+                    "client_order_id": "BUY-1",
+                    "side": "BUY",
+                    "open_qty": 50,
+                    "status": "OPEN",
+                    "market_bid": 9.8,
+                    "market_ask": 10.2,
+                },
+                {
+                    "client_order_id": "SELL-1",
+                    "side": "SELL",
+                    "open_qty": 25,
+                    "status": "OPEN",
+                    "market_bid": 19.5,
+                    "market_ask": 20.5,
+                },
+                {
+                    "client_order_id": "DONE",
+                    "side": "BUY",
+                    "open_qty": 100,
+                    "status": "CANCELLED",
+                    "market_bid": 99.0,
+                    "market_ask": 100.0,
+                },
+            ]
+        ),
+    )
+
+    row = report.telemetry.iloc[0]
+    assert report.ready
+    assert row["open_order_count"] == 2
+    assert row["open_order_qty"] == 75.0
+    assert row["open_order_notional"] == 997.5
 
 
 def test_runtime_telemetry_blocks_unready_upload_pack():

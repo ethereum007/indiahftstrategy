@@ -125,6 +125,7 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
         {
             "max_open_order_count": 1,
             "max_open_order_qty": 50,
+            "max_open_order_notional": 400,
             "max_gross_position_qty": 100,
             "max_abs_net_position_qty": 25,
             "max_gross_notional": 1_000,
@@ -138,6 +139,7 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
         telemetry(
             open_order_count=2,
             open_order_qty=75,
+            open_order_notional=500,
             gross_position_qty=150,
             abs_net_position_qty=50,
             gross_position_notional=1_250,
@@ -151,6 +153,7 @@ def test_runtime_guard_halts_on_open_order_and_position_breaches():
     assert {
         "open_order_count",
         "open_order_qty",
+        "open_order_notional",
         "gross_position_qty",
         "abs_net_position_qty",
         "gross_position_notional",
@@ -176,6 +179,7 @@ def test_runtime_guard_continues_within_open_order_and_position_limits():
         {
             "max_open_order_count": 2,
             "max_open_order_qty": 100,
+            "max_open_order_notional": 1_000,
             "max_gross_position_qty": 200,
             "max_abs_net_position_qty": 75,
             "max_gross_notional": 2_000,
@@ -189,6 +193,7 @@ def test_runtime_guard_continues_within_open_order_and_position_limits():
         telemetry(
             open_order_count=1,
             open_order_qty=50,
+            open_order_notional=500,
             gross_position_qty=100,
             abs_net_position_qty=25,
             gross_position_notional=1_250,

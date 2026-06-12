@@ -119,6 +119,7 @@ def _metrics(
                 "realized_pnl": _number(latest, "realized_pnl", fallback=_number(latest, "net_pnl")),
                 "open_order_count": _number(latest, "open_order_count"),
                 "open_order_qty": _number(latest, "open_order_qty"),
+                "open_order_notional": _number(latest, "open_order_notional"),
                 "gross_position_qty": _number(latest, "gross_position_qty"),
                 "abs_net_position_qty": _number(latest, "abs_net_position_qty"),
                 "gross_position_notional": _number(latest, "gross_position_notional"),
@@ -163,6 +164,7 @@ def _metrics(
                 "max_worst_adverse_slippage": _number_from(kill_switches, "max_worst_adverse_slippage"),
                 "max_open_order_count": _number_from(kill_switches, "max_open_order_count"),
                 "max_open_order_qty": _number_from(kill_switches, "max_open_order_qty"),
+                "max_open_order_notional": _number_from(kill_switches, "max_open_order_notional"),
                 "max_gross_position_qty": _number_from(kill_switches, "max_gross_position_qty"),
                 "max_abs_net_position_qty": _number_from(kill_switches, "max_abs_net_position_qty"),
                 "max_gross_notional": _first_number(
@@ -243,6 +245,7 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
     for value_column, threshold_column in (
         ("open_order_count", "max_open_order_count"),
         ("open_order_qty", "max_open_order_qty"),
+        ("open_order_notional", "max_open_order_notional"),
         ("gross_position_qty", "max_gross_position_qty"),
         ("abs_net_position_qty", "max_abs_net_position_qty"),
         ("gross_position_notional", "max_gross_notional"),
@@ -344,6 +347,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "orders_sent": row["orders_sent"],
                 "lifecycle_orders": row["lifecycle_orders"],
                 "replace_orders": row["replace_orders"],
+                "open_order_notional": row["open_order_notional"],
                 "gross_position_notional": row["gross_position_notional"],
                 "abs_net_delta": row["abs_net_delta"],
                 "abs_net_vega": row["abs_net_vega"],

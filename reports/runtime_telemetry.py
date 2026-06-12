@@ -20,6 +20,7 @@ GUARD_COLUMNS = [
     "session_notional",
     "realized_pnl",
     "total_failed_component_checks",
+    "open_order_notional",
     "gross_position_notional",
     "abs_net_delta",
     "abs_net_vega",
@@ -221,6 +222,7 @@ def _telemetry(
         "unparsed_instruments": float(_first_number(_number(metadata, "unparsed_instruments"), np.nan)),
         "open_order_count": int(_active_open_orders(open_orders)),
         "open_order_qty": float(_open_order_qty(open_orders)),
+        "open_order_notional": float(_open_order_notional(open_orders)),
         "gross_position_qty": float(_gross_position_qty(positions)),
         "abs_net_position_qty": float(_abs_net_position_qty(positions)),
         "gross_position_notional": float(_gross_position_notional(positions)),
@@ -335,6 +337,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "replace_orders": int(row["replace_orders"]),
                 "session_notional": float(row["session_notional"]),
                 "realized_pnl": float(row["realized_pnl"]),
+                "open_order_notional": float(row["open_order_notional"]),
                 "gross_position_notional": float(row["gross_position_notional"]),
                 "abs_net_delta": float(row["abs_net_delta"]),
                 "abs_net_vega": float(row["abs_net_vega"]),
@@ -433,25 +436,86 @@ def _failed_checks(checks: pd.DataFrame) -> int:
 def _active_open_orders(open_orders: pd.DataFrame) -> int:
     if open_orders.empty:
         return 0
-    status = open_orders["status"].astype(str).str.lower() if "status" in open_orders.columns else pd.Series(["open"] * len(open_orders))
-    open_qty = _open_quantities(open_orders)
-    terminal = {"filled", "cancelled", "canceled", "rejected", "expired", "complete", "closed"}
-    return int(((~status.isin(terminal)) & (open_qty > 0)).sum())
+    return int(_active_open_order_mask(open_orders).sum())
 
 
 def _open_order_qty(open_orders: pd.DataFrame) -> float:
     if open_orders.empty:
         return 0.0
-    return float(_open_quantities(open_orders).sum())
+    return float(_open_quantities(open_orders).loc[_active_open_order_mask(open_orders)].sum())
+
+
+def _open_order_notional(open_orders: pd.DataFrame) -> float:
+    if open_orders.empty:
+        return 0.0
+    active = _active_open_order_mask(open_orders)
+    for column in ("open_notional", "leaves_notional", "remaining_notional"):
+        if column in open_orders.columns:
+            return float(pd.to_numeric(open_orders.loc[active, column], errors="coerce").fillna(0.0).abs().sum())
+    if "notional" in open_orders.columns:
+        qty = _open_quantities(open_orders)
+        total_qty = _order_quantities(open_orders).replace(0.0, np.nan)
+        notional = pd.to_numeric(open_orders["notional"], errors="coerce").fillna(0.0).abs()
+        return float((notional * (qty / total_qty).fillna(0.0)).loc[active].sum())
+    return float((_open_quantities(open_orders).abs() * _open_order_prices(open_orders).abs()).loc[active].sum())
+
+
+def _active_open_order_mask(open_orders: pd.DataFrame) -> pd.Series:
+    status = open_orders["status"].astype(str).str.lower() if "status" in open_orders.columns else pd.Series(["open"] * len(open_orders), index=open_orders.index)
+    terminal = {"filled", "cancelled", "canceled", "rejected", "expired", "complete", "closed"}
+    return (~status.isin(terminal)) & (_open_quantities(open_orders) > 0)
 
 
 def _open_quantities(open_orders: pd.DataFrame) -> pd.Series:
     for column in ("open_qty", "leaves_qty", "remaining_qty"):
         if column in open_orders.columns:
             return pd.to_numeric(open_orders[column], errors="coerce").fillna(0.0)
-    qty = pd.to_numeric(open_orders["qty"], errors="coerce").fillna(0.0) if "qty" in open_orders.columns else pd.Series([0.0] * len(open_orders))
+    qty = _order_quantities(open_orders)
     filled = pd.to_numeric(open_orders["filled_qty"], errors="coerce").fillna(0.0) if "filled_qty" in open_orders.columns else pd.Series([0.0] * len(open_orders))
     return (qty - filled).clip(lower=0.0)
+
+
+def _order_quantities(open_orders: pd.DataFrame) -> pd.Series:
+    for column in ("qty", "order_qty", "quantity"):
+        if column in open_orders.columns:
+            return pd.to_numeric(open_orders[column], errors="coerce").fillna(0.0)
+    return pd.Series([0.0] * len(open_orders), index=open_orders.index)
+
+
+def _open_order_prices(open_orders: pd.DataFrame) -> pd.Series:
+    for column in ("limit_price", "order_price", "price", "last", "ltp"):
+        if column in open_orders.columns:
+            return pd.to_numeric(open_orders[column], errors="coerce").fillna(0.0)
+    side = open_orders["side"].map(_side_sign) if "side" in open_orders.columns else pd.Series([0] * len(open_orders), index=open_orders.index)
+    for bid_col, ask_col in (
+        ("market_bid", "market_ask"),
+        ("bid", "ask"),
+        ("best_bid", "best_ask"),
+    ):
+        if bid_col in open_orders.columns and ask_col in open_orders.columns:
+            bid = pd.to_numeric(open_orders[bid_col], errors="coerce")
+            ask = pd.to_numeric(open_orders[ask_col], errors="coerce")
+            mid = (bid + ask) / 2.0
+            return pd.Series(np.where(side > 0, ask, np.where(side < 0, bid, mid)), index=open_orders.index).fillna(0.0)
+    return pd.Series([0.0] * len(open_orders), index=open_orders.index)
+
+
+def _side_sign(value: object) -> int:
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"buy", "b", "long", "1"}:
+            return 1
+        if text in {"sell", "s", "short", "-1"}:
+            return -1
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0
+    if number > 0:
+        return 1
+    if number < 0:
+        return -1
+    return 0
 
 
 def _gross_position_qty(positions: pd.DataFrame) -> float:
