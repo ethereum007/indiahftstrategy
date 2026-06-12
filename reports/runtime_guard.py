@@ -28,10 +28,18 @@ class RuntimeGuardReport:
 def evaluate_runtime_guard(
     scaleup_config: dict[str, Any],
     telemetry: pd.DataFrame,
+    *,
+    as_of_ts_ns: int | float | None = None,
+    max_telemetry_age_ns: int | float | None = None,
 ) -> RuntimeGuardReport:
     if telemetry.empty:
         raise ValueError("runtime telemetry is empty")
-    metrics = _metrics(scaleup_config, telemetry)
+    metrics = _metrics(
+        scaleup_config,
+        telemetry,
+        as_of_ts_ns=as_of_ts_ns,
+        max_telemetry_age_ns=max_telemetry_age_ns,
+    )
     checks = _checks(metrics.iloc[0], scaleup_config)
     summary = _summary(metrics.iloc[0], checks)
     return RuntimeGuardReport(metrics=metrics, checks=checks, summary=summary)
@@ -42,13 +50,20 @@ def write_runtime_guard_report(
     scaleup_dir: str | Path,
     telemetry_path: str | Path,
     output_dir: str | Path,
+    as_of_ts_ns: int | float | None = None,
+    max_telemetry_age_ns: int | float | None = None,
 ) -> RuntimeGuardReport:
     scaleup_file = _scaleup_config_path(scaleup_dir)
     telemetry_file = Path(telemetry_path)
     if not telemetry_file.exists():
         raise FileNotFoundError(f"runtime telemetry file not found: {telemetry_file}")
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
-    report = evaluate_runtime_guard(scaleup_config, pd.read_csv(telemetry_file))
+    report = evaluate_runtime_guard(
+        scaleup_config,
+        pd.read_csv(telemetry_file),
+        as_of_ts_ns=as_of_ts_ns,
+        max_telemetry_age_ns=max_telemetry_age_ns,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.metrics.to_csv(out / "runtime_guard_metrics.csv", index=False)
@@ -57,18 +72,32 @@ def write_runtime_guard_report(
     write_experiment_manifest(
         out,
         run_type="runtime_guard",
-        parameters={"scaleup_ready": bool(scaleup_config.get("ready", False))},
+        parameters={
+            "scaleup_ready": bool(scaleup_config.get("ready", False)),
+            "as_of_ts_ns": as_of_ts_ns,
+            "max_telemetry_age_ns": max_telemetry_age_ns,
+        },
         inputs={"scaleup": scaleup_file, "telemetry": telemetry_file},
     )
     return RuntimeGuardReport(report.metrics, report.checks, report.summary, out)
 
 
-def _metrics(scaleup_config: dict[str, Any], telemetry: pd.DataFrame) -> pd.DataFrame:
+def _metrics(
+    scaleup_config: dict[str, Any],
+    telemetry: pd.DataFrame,
+    *,
+    as_of_ts_ns: int | float | None,
+    max_telemetry_age_ns: int | float | None,
+) -> pd.DataFrame:
     latest = telemetry.iloc[-1]
     limits = scaleup_config.get("limits", {}) or {}
     kill_switches = scaleup_config.get("kill_switches", {}) or {}
     instrument_metadata = scaleup_config.get("instrument_metadata", {}) or {}
     metadata_min_coverage = _number_from(instrument_metadata, "min_parse_coverage")
+    snapshot_ts_ns = _number(latest, "snapshot_ts_ns", fallback=_number(latest, "ts_ns"))
+    guard_as_of_ts_ns = _first_number(as_of_ts_ns, _number(latest, "guard_as_of_ts_ns"), np.nan)
+    telemetry_age_ns = guard_as_of_ts_ns - snapshot_ts_ns if not np.isnan(guard_as_of_ts_ns) and not np.isnan(snapshot_ts_ns) else np.nan
+    max_age_ns = _first_number(max_telemetry_age_ns, _number_from(kill_switches, "max_telemetry_age_ns"), np.nan)
     return pd.DataFrame(
         [
             {
@@ -79,6 +108,10 @@ def _metrics(scaleup_config: dict[str, Any], telemetry: pd.DataFrame) -> pd.Data
                 "adapter": str(_value(latest, "adapter", scaleup_config.get("adapter", ""))),
                 "expected_adapter": str(scaleup_config.get("adapter", "")),
                 "snapshot_count": int(len(telemetry)),
+                "snapshot_ts_ns": snapshot_ts_ns,
+                "guard_as_of_ts_ns": guard_as_of_ts_ns,
+                "runtime_telemetry_age_ns": telemetry_age_ns,
+                "max_telemetry_age_ns": max_age_ns,
                 "orders_sent": _number(latest, "orders_sent", fallback=_number(latest, "orders")),
                 "session_notional": _number(latest, "session_notional", fallback=_number(latest, "total_notional")),
                 "realized_pnl": _number(latest, "realized_pnl", fallback=_number(latest, "net_pnl")),
@@ -166,6 +199,23 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 "<=",
                 row["max_worst_adverse_slippage"],
             )
+        )
+    if not pd.isna(row["max_telemetry_age_ns"]):
+        checks.extend(
+            [
+                _threshold_check(
+                    "runtime_telemetry_age_nonnegative",
+                    row["runtime_telemetry_age_ns"],
+                    ">=",
+                    0,
+                ),
+                _threshold_check(
+                    "runtime_telemetry_age_ns",
+                    row["runtime_telemetry_age_ns"],
+                    "<=",
+                    row["max_telemetry_age_ns"],
+                ),
+            ]
         )
     metadata_required = bool(row["instrument_metadata_required"])
     metadata_provided = bool(row["runtime_instrument_metadata_provided"])
@@ -320,6 +370,17 @@ def _number_from(mapping: dict[str, Any], key: str) -> float:
     if value is None or pd.isna(value):
         return np.nan
     return float(value)
+
+
+def _first_number(*values: object) -> float:
+    for value in values:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            continue
+        if not np.isnan(number):
+            return number
+    return np.nan
 
 
 def _bool_from(mapping: dict[str, Any], key: str) -> bool:

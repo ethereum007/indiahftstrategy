@@ -92,6 +92,33 @@ def test_runtime_guard_halts_on_manual_halt_flag():
     assert "manual_halt" in failed
 
 
+def test_runtime_guard_continues_when_telemetry_is_fresh():
+    report = evaluate_runtime_guard(
+        scaleup_config(),
+        telemetry(snapshot_ts_ns=1_000),
+        as_of_ts_ns=1_500,
+        max_telemetry_age_ns=1_000,
+    )
+
+    assert not report.halted
+    row = report.metrics.iloc[0]
+    assert row["runtime_telemetry_age_ns"] == 500.0
+    assert row["max_telemetry_age_ns"] == 1_000.0
+
+
+def test_runtime_guard_halts_when_telemetry_is_stale():
+    report = evaluate_runtime_guard(
+        scaleup_config(),
+        telemetry(snapshot_ts_ns=1_000),
+        as_of_ts_ns=2_500,
+        max_telemetry_age_ns=1_000,
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "runtime_telemetry_age_ns" in failed
+
+
 def test_runtime_guard_halts_when_required_instrument_metadata_is_missing_from_telemetry():
     report = evaluate_runtime_guard(
         scaleup_config(instrument_metadata=instrument_metadata_config()),
@@ -165,3 +192,34 @@ def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
     summary = pd.read_csv(out_dir / "runtime_guard_summary.csv")
     assert code == 2
     assert summary.loc[0, "guard_action"] == "halt"
+
+
+def test_cli_runtime_guard_can_fail_on_stale_telemetry(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "guard"
+    telemetry_path = tmp_path / "telemetry.csv"
+    scaleup_dir.mkdir()
+    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    telemetry(snapshot_ts_ns=1_000).to_csv(telemetry_path, index=False)
+
+    code = main(
+        [
+            "monitor-scaleup-guard",
+            "--scaleup",
+            str(scaleup_dir),
+            "--telemetry",
+            str(telemetry_path),
+            "--out",
+            str(out_dir),
+            "--as-of-ts-ns",
+            "3000",
+            "--max-telemetry-age-ns",
+            "1000",
+            "--fail-on-halt",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "runtime_guard_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "runtime_telemetry_age_ns" in failed

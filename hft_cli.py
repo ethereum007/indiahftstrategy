@@ -902,6 +902,8 @@ def main(argv: list[str] | None = None) -> int:
     runtime_guard.add_argument("--scaleup", required=True)
     runtime_guard.add_argument("--telemetry", required=True)
     runtime_guard.add_argument("--out", required=True)
+    runtime_guard.add_argument("--as-of-ts-ns", type=float, default=None)
+    runtime_guard.add_argument("--max-telemetry-age-ns", type=float, default=None)
     runtime_guard.add_argument("--fail-on-halt", action="store_true")
 
     halt_response = sub.add_parser("plan-halt-response", help="Create cancel/flatten actions after a guard halt.")
@@ -2089,6 +2091,8 @@ def main(argv: list[str] | None = None) -> int:
             scaleup_dir=args.scaleup,
             telemetry_path=args.telemetry,
             output_dir=args.out,
+            as_of_ts_ns=args.as_of_ts_ns,
+            max_telemetry_age_ns=args.max_telemetry_age_ns,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_halt and result.halted else 0

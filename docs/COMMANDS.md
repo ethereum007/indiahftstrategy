@@ -1302,14 +1302,16 @@ manifest.json
 
 ## Runtime Scale-Up Guard
 
-Evaluate live or paper telemetry snapshots against the scale-up limits and kill
-switches:
+Evaluate live or paper telemetry snapshots against the scale-up limits, kill
+switches, and optional telemetry freshness window:
 
 ```powershell
 python -m hft_cli monitor-scaleup-guard `
   --scaleup runs\scaleup\leadlag_shadow `
   --telemetry runs\telemetry\leadlag_shadow_latest\runtime_telemetry.csv `
   --out runs\guards\leadlag_shadow_latest `
+  --as-of-ts-ns 1781248200000000000 `
+  --max-telemetry-age-ns 5000000000 `
   --fail-on-halt
 ```
 
