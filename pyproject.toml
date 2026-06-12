@@ -1,0 +1,21 @@
+[project]
+name = "india-hft-strategy"
+version = "0.1.0"
+description = "Research and backtesting platform for Indian index-derivatives HFT strategies."
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+]
+
+[project.scripts]
+hft = "hft_cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
