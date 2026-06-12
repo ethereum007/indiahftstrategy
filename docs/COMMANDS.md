@@ -1730,6 +1730,42 @@ The command fails closed when required normalized columns are not mapped, and
 tick/chain outputs pass through the same session, timestamp, and data-quality
 normalizers used by the strategy backtests.
 
+## Vendor Market Data Onboarding Pipeline
+
+Run the full first-mile market-data path for a raw Arrow.money/iRage tick or
+option-chain CSV: vendor intake, mapping draft, normalized data, diagnostics,
+and data-readiness evidence in one manifest-backed folder:
+
+```powershell
+python -m hft_cli pipeline-vendor-market-data `
+  --input vendor\arrow_ticks_2026_06_10.csv `
+  --out runs\vendor_data\arrow_ticks_2026_06_10 `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --min-rows 100000 `
+  --max-p99-gap-ns 1000000000 `
+  --max-median-spread-ticks 2 `
+  --fail-on-breach
+```
+
+Use `--kind chain` for option-chain snapshots. If `--mapping` is not supplied,
+the pipeline uses the intake-generated `vendor_mapping_draft.csv`; review and
+edit that mapping before treating the run as broker/vendor-approved evidence.
+
+Outputs:
+
+```text
+01_vendor_intake\vendor_intake_summary.csv
+02_normalized\normalized_ticks.csv
+03_diagnostics\diagnostic_summary.csv
+04_data_readiness\data_readiness_summary.csv
+vendor_market_data_pipeline_components.csv
+vendor_market_data_pipeline_summary.csv
+manifest.json
+```
+
 ## Order Staging
 
 Stage generated quote or order candidates into a broker-neutral pre-trade file

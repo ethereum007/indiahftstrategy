@@ -84,6 +84,7 @@ from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_s
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
+from reports.vendor_data_onboarding import VendorMarketDataPipelineConfig, write_vendor_market_data_pipeline
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
@@ -568,6 +569,33 @@ def main(argv: list[str] | None = None) -> int:
     mapped_data.add_argument("--no-filter-session", action="store_true")
     mapped_data.add_argument("--allow-missing-required", action="store_true")
     mapped_data.add_argument("--fail-on-breach", action="store_true")
+
+    vendor_market_data = sub.add_parser(
+        "pipeline-vendor-market-data",
+        help="Run vendor CSV intake, normalization, diagnostics, and data readiness for ticks or chains.",
+    )
+    vendor_market_data.add_argument("--input", required=True)
+    vendor_market_data.add_argument("--out", required=True)
+    vendor_market_data.add_argument("--mapping", default=None)
+    vendor_market_data.add_argument("--adapter", default="arrow_money")
+    vendor_market_data.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
+    vendor_market_data.add_argument("--output-file", default=None)
+    vendor_market_data.add_argument("--sample-rows", type=int, default=1000)
+    vendor_market_data.add_argument("--min-mapping-coverage", type=float, default=1.0)
+    vendor_market_data.add_argument("--timestamp-unit", default="ns")
+    vendor_market_data.add_argument("--timestamp-tz", default=None)
+    vendor_market_data.add_argument("--market", default="india_nse_index_derivatives")
+    vendor_market_data.add_argument("--no-filter-session", action="store_true")
+    vendor_market_data.add_argument("--tick-size", type=float, default=None)
+    vendor_market_data.add_argument("--allow-missing-required", action="store_true")
+    vendor_market_data.add_argument("--min-rows", type=int, default=1)
+    vendor_market_data.add_argument("--max-crossed-quote-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-out-of-session-rows", type=int, default=0)
+    vendor_market_data.add_argument("--max-p99-gap-ns", type=float, default=None)
+    vendor_market_data.add_argument("--max-median-spread-ticks", type=float, default=None)
+    vendor_market_data.add_argument("--fail-on-breach", action="store_true")
 
     diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
     diag_ticks.add_argument("--ticks", required=True)
@@ -1754,6 +1782,34 @@ def main(argv: list[str] | None = None) -> int:
                 filter_session=not args.no_filter_session,
                 market=args.market,
                 require_all_mapped=not args.allow_missing_required,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-vendor-market-data":
+        result = write_vendor_market_data_pipeline(
+            args.input,
+            output_dir=args.out,
+            mapping_path=args.mapping,
+            config=VendorMarketDataPipelineConfig(
+                adapter=args.adapter,
+                kind=args.kind,
+                sample_rows=args.sample_rows,
+                min_mapping_coverage=args.min_mapping_coverage,
+                output_filename=args.output_file,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                filter_session=not args.no_filter_session,
+                market=args.market,
+                tick_size=args.tick_size,
+                require_all_mapped=not args.allow_missing_required,
+                min_rows=args.min_rows,
+                max_crossed_quote_rows=args.max_crossed_quote_rows,
+                max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_out_of_session_rows=args.max_out_of_session_rows,
+                max_p99_gap_ns=args.max_p99_gap_ns,
+                max_median_spread_ticks=args.max_median_spread_ticks,
             ),
         )
         print(result.summary.to_string(index=False))

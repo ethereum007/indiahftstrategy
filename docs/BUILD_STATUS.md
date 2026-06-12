@@ -117,6 +117,9 @@
 - Data readiness gate that combines vendor CSV intake, schema audit,
   mapped-data normalization, tick/chain diagnostics, market-profile fee
   assumptions, and instrument metadata before strategy research or promotion.
+- Vendor market-data onboarding pipeline that runs Arrow.money/iRage CSV
+  intake, normalized mapping, tick/chain diagnostics, and data-readiness gates
+  in one manifest-backed command.
 - Multi-dataset data-readiness comparison gate that requires repeated clean
   market-data days before walk-forward research or strategy evidence review.
 - Market profile layer for India NSE index derivatives and US regular-hours
@@ -249,7 +252,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 313 tests.
+Current passing suite: 316 tests.
 
 ## Next Build Targets
 
