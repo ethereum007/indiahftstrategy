@@ -89,7 +89,7 @@ manifest.json
 
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
-shadow-session, scale-up, runtime guard, runtime-session, halt-response, and resume summaries,
+shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session, halt-response, and resume summaries,
 so those run types can be promoted into explicit `--required-run-type`
 evidence gates.
 
@@ -869,6 +869,42 @@ When `--require-data-readiness-comparison` is set, quote review fails closed
 unless the supplied comparison summary is present and accepted. This keeps
 surface market-making quotes from moving into replay or paper routing on
 unproven vendor market data.
+
+## Surface Quote Lifecycle Plan
+
+Convert generated surface quote snapshots into a submit/replace/cancel plan
+with exchange-message and outstanding-quote limits before paper routing:
+
+```powershell
+python -m hft_cli plan-quote-lifecycle `
+  --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
+  --quote-risk-review runs\surface_quotes_2026_06_10\quote_review `
+  --require-quote-risk-review `
+  --out runs\surface_quotes_2026_06_10\quote_lifecycle `
+  --quote-ttl-ns 1000000000 `
+  --max-order-messages 500 `
+  --max-active-quotes 60 `
+  --max-messages-per-snapshot 40 `
+  --expected-fills 25 `
+  --max-order-to-trade-ratio 20 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+quote_lifecycle_actions.csv
+quote_lifecycle_snapshots.csv
+quote_lifecycle_checks.csv
+quote_lifecycle_summary.csv
+manifest.json
+```
+
+The planner de-duplicates each snapshot by `instrument_id` and side, replaces
+quotes only when price or quantity changes, expires stale quotes when
+`--quote-ttl-ns` is set, and adds final cancels unless `--no-final-cancel` is
+used. This makes OTR and quote-churn limits explicit before Arrow.money/iRage
+upload preparation.
 
 ## Surface Market-Making Research Pipeline
 

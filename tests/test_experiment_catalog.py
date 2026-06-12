@@ -496,6 +496,13 @@ def test_catalog_experiment_runs_recognizes_scaleup_calibration_and_data_ops_sta
             "passed",
         ),
         (
+            "quote_lifecycle",
+            "quote_lifecycle_plan",
+            "quote_lifecycle_summary.csv",
+            {"ready": True, "order_messages": 10, "max_active_quotes": 4, "failed_checks": 0},
+            "ready",
+        ),
+        (
             "settlement_order",
             "settlement_order_plan",
             "settlement_order_summary.csv",

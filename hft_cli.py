@@ -57,6 +57,7 @@ from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
+from reports.quote_lifecycle import QuoteLifecycleThresholds, write_quote_lifecycle_plan
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
 from reports.runtime_guard import write_runtime_guard_report
@@ -1293,6 +1294,25 @@ def main(argv: list[str] | None = None) -> int:
     quote_review.add_argument("--data-readiness-comparison", default=None)
     quote_review.add_argument("--require-data-readiness-comparison", action="store_true")
     quote_review.add_argument("--fail-on-breach", action="store_true")
+
+    quote_lifecycle = sub.add_parser(
+        "plan-quote-lifecycle",
+        help="Convert surface quote snapshots into OTR-aware submit/replace/cancel actions.",
+    )
+    quote_lifecycle.add_argument("--quotes", required=True)
+    quote_lifecycle.add_argument("--out", required=True)
+    quote_lifecycle.add_argument("--quote-risk-review", default=None)
+    quote_lifecycle.add_argument("--require-quote-risk-review", action="store_true")
+    quote_lifecycle.add_argument("--quote-ttl-ns", type=int, default=None)
+    quote_lifecycle.add_argument("--max-order-messages", type=int, default=None)
+    quote_lifecycle.add_argument("--max-active-quotes", type=int, default=None)
+    quote_lifecycle.add_argument("--max-replaces", type=int, default=None)
+    quote_lifecycle.add_argument("--max-cancels", type=int, default=None)
+    quote_lifecycle.add_argument("--max-messages-per-snapshot", type=int, default=None)
+    quote_lifecycle.add_argument("--expected-fills", type=int, default=None)
+    quote_lifecycle.add_argument("--max-order-to-trade-ratio", type=float, default=None)
+    quote_lifecycle.add_argument("--no-final-cancel", action="store_true")
+    quote_lifecycle.add_argument("--fail-on-breach", action="store_true")
 
     exposure = sub.add_parser("review-order-exposure", help="Review option order-batch delta/vega/notional exposure.")
     exposure.add_argument("--orders", required=True)
@@ -2811,6 +2831,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "plan-quote-lifecycle":
+        result = write_quote_lifecycle_plan(
+            args.quotes,
+            output_dir=args.out,
+            thresholds=QuoteLifecycleThresholds(
+                quote_ttl_ns=args.quote_ttl_ns,
+                max_order_messages=args.max_order_messages,
+                max_active_quotes=args.max_active_quotes,
+                max_replaces=args.max_replaces,
+                max_cancels=args.max_cancels,
+                max_messages_per_snapshot=args.max_messages_per_snapshot,
+                expected_fills=args.expected_fills,
+                max_order_to_trade_ratio=args.max_order_to_trade_ratio,
+                final_cancel=not args.no_final_cancel,
+            ),
+            quote_risk_review_dir=args.quote_risk_review,
+            require_quote_risk_review=args.require_quote_risk_review,
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "review-order-exposure":
         result = write_order_exposure_report(
             args.orders,

@@ -195,8 +195,8 @@
 - Experiment catalog command that scans manifest-bearing run folders into a
   searchable evidence ledger with inferred pass/ready status and summary
   metrics for research, market portability, calibration, data operations,
-  launch, broker upload, broker readiness, shadow-session, scale-up, runtime
-  guard, halt-response, and resume artifacts.
+  launch, broker upload, broker readiness, shadow-session, scale-up, quote
+  lifecycle, runtime guard, halt-response, and resume artifacts.
 - Strategy evidence review gate that consumes the experiment catalog and
   requires successful proof, stress, promotion, broker-readiness, shadow, or
   user-selected run types before scale-up decisions.
@@ -240,6 +240,9 @@
 - Surface quote risk review for market-making quote sets, gating marketable
   quotes, quote edge, side balance, market spread, instrument coverage, and
   concentration before replay or live routing.
+- Surface quote lifecycle planner that converts reviewed quote snapshots into
+  submit/replace/cancel actions with TTL, OTR, message-budget, and active-quote
+  controls before Arrow.money/iRage paper-routing preparation.
 - Option order exposure review for staged, launch, or exported order batches,
   including Black-76 delta/vega, gross notional, side imbalance, and
   instrument concentration checks, with cross-market option metadata inference
@@ -282,7 +285,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 353 tests.
+Current passing suite: 356 tests.
 
 ## Next Build Targets
 
