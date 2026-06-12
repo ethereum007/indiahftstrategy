@@ -87,10 +87,11 @@ strategy_evidence_summary.csv
 manifest.json
 ```
 
-The catalog recognizes launch, broker export/upload, broker-readiness, data
-readiness, proof, promotion, shadow-session, runtime guard, halt-response, and
-resume summaries, so those run types can be promoted into explicit
-`--required-run-type` evidence gates.
+The catalog recognizes research, proof, promotion, data-readiness, market
+portability, calibration, launch, broker export/upload, broker-readiness,
+shadow-session, scale-up, runtime guard, halt-response, and resume summaries,
+so those run types can be promoted into explicit `--required-run-type`
+evidence gates.
 
 ## Market Profile Report
 

@@ -442,6 +442,114 @@ def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_
     assert rows.loc["resume_gate", "summary_status_column"] == "ready"
 
 
+def test_catalog_experiment_runs_recognizes_scaleup_calibration_and_data_ops_status(tmp_path):
+    root = tmp_path / "runs"
+    cases = [
+        (
+            "strategy_evidence",
+            "strategy_evidence_review",
+            "strategy_evidence_summary.csv",
+            {"ready": True, "required_run_type_count": 4, "failed_checks": 0},
+            "ready",
+        ),
+        (
+            "scaleup",
+            "scaleup_plan",
+            "scaleup_summary.csv",
+            {"ready": True, "target_mode": "shadow", "failed_checks": 0},
+            "ready",
+        ),
+        (
+            "market_profile",
+            "market_profile_report",
+            "market_profile_summary.csv",
+            {"failed_checks": 0, "market": "india_nse_index_derivatives", "currency": "INR"},
+            "failed_checks",
+        ),
+        (
+            "market_portability",
+            "market_portability_report",
+            "market_portability_summary.csv",
+            {"failed_checks": 0, "markets": 2, "strategies": 3},
+            "failed_checks",
+        ),
+        (
+            "instrument_metadata",
+            "instrument_metadata_report",
+            "instrument_metadata_summary.csv",
+            {"passed": True, "parse_coverage": 1.0, "unparsed_instruments": 0},
+            "passed",
+        ),
+        (
+            "settlement_order",
+            "settlement_order_plan",
+            "settlement_order_summary.csv",
+            {"ready": True, "orders": 1, "failed_checks": 0},
+            "ready",
+        ),
+        (
+            "order_mapping_draft",
+            "order_mapping_draft",
+            "order_mapping_draft_summary.csv",
+            {"ready": True, "unmapped_required_columns": 0, "failed_checks": 0},
+            "ready",
+        ),
+        (
+            "fill_model",
+            "fill_model_calibration",
+            "fill_model_summary.csv",
+            {"ready": True, "orders": 12, "failed_checks": 0},
+            "ready",
+        ),
+        (
+            "fill_model_drift",
+            "fill_model_drift",
+            "fill_model_drift_summary.csv",
+            {"ready": True, "failed_checks": 0, "recommendation": "reuse_existing_proof"},
+            "ready",
+        ),
+        (
+            "calibrated_replay",
+            "calibrated_replay_plan",
+            "calibrated_replay_summary.csv",
+            {"ready": True, "failed_checks": 0, "runs": 2},
+            "ready",
+        ),
+        (
+            "mapped_data",
+            "mapped_data_normalization",
+            "mapped_data_summary.csv",
+            {"ready": True, "rows": 100, "failed_checks": 0},
+            "ready",
+        ),
+        (
+            "diagnostics",
+            "data_diagnostics",
+            "diagnostic_summary.csv",
+            {"passed": True, "rows": 100, "failed_checks": 0},
+            "passed",
+        ),
+    ]
+    for folder, run_type, summary_name, summary_row, _ in cases:
+        write_run(
+            root / folder,
+            run_type=run_type,
+            summary_name=summary_name,
+            summary_row=summary_row,
+        )
+
+    report = catalog_experiment_runs([root])
+
+    rows = report.catalog.set_index("run_type")
+    assert int(report.summary.iloc[0]["status_true_runs"]) == len(cases)
+    for _, run_type, summary_name, _, status_column in cases:
+        assert rows.loc[run_type, "summary_file"] == summary_name
+        assert rows.loc[run_type, "summary_status_column"] == status_column
+    assert rows.loc["scaleup_plan", "summary_target_mode"] == "shadow"
+    assert rows.loc["market_profile_report", "summary_currency"] == "INR"
+    assert rows.loc["instrument_metadata_report", "summary_parse_coverage"] == 1.0
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"
