@@ -999,10 +999,13 @@ def main(argv: list[str] | None = None) -> int:
     shadow_session.add_argument("--launch", required=True)
     shadow_session.add_argument("--export", required=True)
     shadow_session.add_argument("--reconciliation", required=True)
+    shadow_session.add_argument("--runtime-session", default=None)
     shadow_session.add_argument("--out", required=True)
     shadow_session.add_argument("--allow-unready-launch", action="store_true")
     shadow_session.add_argument("--allow-unready-export", action="store_true")
     shadow_session.add_argument("--allow-failed-reconciliation", action="store_true")
+    shadow_session.add_argument("--require-runtime-session", action="store_true")
+    shadow_session.add_argument("--allow-runtime-guard-halt", action="store_true")
     shadow_session.add_argument("--max-failed-component-checks", type=int, default=0)
     shadow_session.add_argument("--min-order-fill-rate", type=float, default=0.0)
     shadow_session.add_argument("--max-unmatched-fills", type=int, default=0)
@@ -1025,6 +1028,7 @@ def main(argv: list[str] | None = None) -> int:
     shadow_compare.add_argument("--max-total-unmatched-fills", type=int, default=0)
     shadow_compare.add_argument("--max-total-mismatched-orders", type=int, default=0)
     shadow_compare.add_argument("--max-total-overfilled-orders", type=int, default=0)
+    shadow_compare.add_argument("--max-runtime-halted-sessions", type=int, default=0)
     shadow_compare.add_argument("--max-worst-adverse-slippage", type=float, default=None)
     shadow_compare.add_argument("--fail-on-breach", action="store_true")
 
@@ -2493,10 +2497,13 @@ def main(argv: list[str] | None = None) -> int:
             export_dir=args.export,
             reconciliation_dir=args.reconciliation,
             output_dir=args.out,
+            runtime_session_dir=args.runtime_session,
             thresholds=ShadowSessionThresholds(
                 require_launch_ready=not args.allow_unready_launch,
                 require_export_ready=not args.allow_unready_export,
                 require_reconciliation_passed=not args.allow_failed_reconciliation,
+                require_runtime_session=args.require_runtime_session,
+                require_runtime_guard_continue=not args.allow_runtime_guard_halt,
                 max_failed_component_checks=args.max_failed_component_checks,
                 min_order_fill_rate=args.min_order_fill_rate,
                 max_unmatched_fills=args.max_unmatched_fills,
@@ -2523,6 +2530,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_total_unmatched_fills=args.max_total_unmatched_fills,
                 max_total_mismatched_orders=args.max_total_mismatched_orders,
                 max_total_overfilled_orders=args.max_total_overfilled_orders,
+                max_runtime_halted_sessions=args.max_runtime_halted_sessions,
                 max_worst_adverse_slippage=args.max_worst_adverse_slippage,
             ),
         )

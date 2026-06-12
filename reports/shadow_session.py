@@ -14,6 +14,8 @@ class ShadowSessionThresholds:
     require_launch_ready: bool = True
     require_export_ready: bool = True
     require_reconciliation_passed: bool = True
+    require_runtime_session: bool = False
+    require_runtime_guard_continue: bool = True
     max_failed_component_checks: int = 0
     min_order_fill_rate: float = 0.0
     max_unmatched_fills: int = 0
@@ -43,6 +45,7 @@ def evaluate_shadow_session(
     export_checks: pd.DataFrame,
     reconciliation_summary: pd.DataFrame,
     reconciliation_checks: pd.DataFrame,
+    runtime_session_summary: pd.DataFrame | None = None,
     thresholds: ShadowSessionThresholds | None = None,
 ) -> ShadowSessionReport:
     thresholds = thresholds or ShadowSessionThresholds()
@@ -50,6 +53,7 @@ def evaluate_shadow_session(
     _require(launch_summary, ["ready", "mode", "adapter", "scenario_key"], "launch_summary")
     _require(export_summary, ["ready", "adapter", "scenario_key"], "export_summary")
     _require(reconciliation_summary, ["passed", "order_fill_rate"], "reconciliation_summary")
+    runtime_session_summary = pd.DataFrame() if runtime_session_summary is None else runtime_session_summary
 
     metrics = _metrics(
         launch_summary,
@@ -58,6 +62,7 @@ def evaluate_shadow_session(
         export_checks,
         reconciliation_summary,
         reconciliation_checks,
+        runtime_session_summary,
     )
     checks = _checks(metrics.iloc[0], thresholds)
     summary = _summary(metrics.iloc[0], checks)
@@ -70,6 +75,7 @@ def write_shadow_session_report(
     export_dir: str | Path,
     reconciliation_dir: str | Path,
     output_dir: str | Path,
+    runtime_session_dir: str | Path | None = None,
     thresholds: ShadowSessionThresholds | None = None,
 ) -> ShadowSessionReport:
     launch = Path(launch_dir)
@@ -83,6 +89,7 @@ def write_shadow_session_report(
         export_checks=_read_required(export / "broker_order_checks.csv"),
         reconciliation_summary=_read_required(reconciliation / "reconciliation_summary.csv"),
         reconciliation_checks=_read_required(reconciliation / "reconciliation_checks.csv"),
+        runtime_session_summary=_read_runtime_session_summary(runtime_session_dir),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -94,7 +101,12 @@ def write_shadow_session_report(
         out,
         run_type="shadow_session_report",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={"launch": launch, "export": export, "reconciliation": reconciliation},
+        inputs={
+            "launch": launch,
+            "export": export,
+            "reconciliation": reconciliation,
+            "runtime_session": runtime_session_dir,
+        },
     )
     return ShadowSessionReport(report.metrics, report.checks, report.summary, out)
 
@@ -106,13 +118,16 @@ def _metrics(
     export_checks: pd.DataFrame,
     reconciliation_summary: pd.DataFrame,
     reconciliation_checks: pd.DataFrame,
+    runtime_session_summary: pd.DataFrame,
 ) -> pd.DataFrame:
     launch = launch_summary.iloc[0]
     export = export_summary.iloc[0]
     recon = reconciliation_summary.iloc[0]
+    runtime = runtime_session_summary.iloc[0] if not runtime_session_summary.empty else pd.Series(dtype=object)
     launch_failed = _failed_checks(launch_checks)
     export_failed = _failed_checks(export_checks)
     recon_failed = _failed_checks(reconciliation_checks)
+    runtime_failed = int(_number(runtime, "failed_checks")) if not runtime.empty else 0
     launch_scenario = str(launch.get("scenario_key", ""))
     export_scenario = str(export.get("scenario_key", ""))
     scenario_match = launch_scenario == export_scenario
@@ -122,6 +137,12 @@ def _metrics(
                 "launch_ready": _to_bool(launch["ready"]),
                 "export_ready": _to_bool(export["ready"]),
                 "reconciliation_passed": _to_bool(recon["passed"]),
+                "runtime_session_provided": not runtime_session_summary.empty,
+                "runtime_session_ready": _to_bool(runtime.get("ready", False)) if not runtime.empty else False,
+                "runtime_guard_action": str(runtime.get("guard_action", "")) if not runtime.empty else "",
+                "runtime_guard_halted": _to_bool(runtime.get("halted", False)) if not runtime.empty else False,
+                "runtime_failed_steps": _number(runtime, "failed_steps") if not runtime.empty else 0.0,
+                "runtime_failed_checks": runtime_failed,
                 "scenario_key": launch_scenario,
                 "export_scenario_key": export_scenario,
                 "scenario_match": scenario_match,
@@ -130,7 +151,7 @@ def _metrics(
                 "launch_failed_checks": launch_failed,
                 "export_failed_checks": export_failed,
                 "reconciliation_failed_checks": recon_failed,
-                "total_failed_component_checks": launch_failed + export_failed + recon_failed,
+                "total_failed_component_checks": launch_failed + export_failed + recon_failed + runtime_failed,
                 "orders": _number(recon, "orders"),
                 "filled_orders": _number(recon, "filled_orders"),
                 "unfilled_orders": _number(recon, "unfilled_orders"),
@@ -200,6 +221,38 @@ def _checks(row: pd.Series, thresholds: ShadowSessionThresholds) -> pd.DataFrame
         checks.append(
             _threshold_check("max_adverse_slippage", row["max_adverse_slippage"], "<=", thresholds.max_adverse_slippage)
         )
+    if thresholds.require_runtime_session or bool(row["runtime_session_provided"]):
+        checks.append(
+            _check(
+                "runtime_session_provided",
+                row["runtime_session_provided"],
+                "is",
+                True,
+                bool(row["runtime_session_provided"]),
+                "runtime session monitor evidence is required but missing",
+            )
+        )
+    if bool(row["runtime_session_provided"]) and thresholds.require_runtime_guard_continue:
+        checks.extend(
+            [
+                _check(
+                    "runtime_session_ready",
+                    row["runtime_session_ready"],
+                    "is",
+                    True,
+                    bool(row["runtime_session_ready"]),
+                    "runtime session monitor did not finish ready",
+                ),
+                _check(
+                    "runtime_guard_continue",
+                    row["runtime_guard_action"],
+                    "==",
+                    "continue",
+                    str(row["runtime_guard_action"]) == "continue" and not bool(row["runtime_guard_halted"]),
+                    "runtime guard halted during the paper/shadow session",
+                ),
+            ]
+        )
     return pd.DataFrame(checks)
 
 
@@ -214,6 +267,10 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "mode": row["mode"],
                 "adapter": row["adapter"],
                 "order_fill_rate": float(row["order_fill_rate"]),
+                "runtime_session_provided": bool(row["runtime_session_provided"]),
+                "runtime_guard_action": row["runtime_guard_action"],
+                "runtime_failed_checks": int(row["runtime_failed_checks"]),
+                "total_failed_component_checks": int(row["total_failed_component_checks"]),
                 "failed_checks": failed_checks,
                 "recommendation": "continue_shadow_or_promote" if accepted else "hold_in_research",
             }
@@ -290,6 +347,15 @@ def _read_required(path: Path) -> pd.DataFrame:
     if frame.empty:
         raise ValueError(f"required shadow-session input is empty: {path}")
     return frame
+
+
+def _read_runtime_session_summary(path: str | Path | None) -> pd.DataFrame | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "runtime_session_summary.csv"
+    return _read_required(candidate)
 
 
 def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:

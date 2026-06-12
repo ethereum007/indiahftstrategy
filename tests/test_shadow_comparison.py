@@ -25,6 +25,10 @@ def session_rows():
                 "mismatched_orders": 0,
                 "overfilled_orders": 0,
                 "unmatched_fills": 0,
+                "runtime_session_provided": True,
+                "runtime_guard_action": "continue",
+                "runtime_guard_halted": False,
+                "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.03,
                 "avg_latency_ns": 100,
             },
@@ -42,6 +46,10 @@ def session_rows():
                 "mismatched_orders": 0,
                 "overfilled_orders": 0,
                 "unmatched_fills": 0,
+                "runtime_session_provided": True,
+                "runtime_guard_action": "continue",
+                "runtime_guard_halted": False,
+                "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 120,
             },
@@ -49,7 +57,14 @@ def session_rows():
     )
 
 
-def write_session_dir(path, *, accepted=True, scenario_key="trigger_ticks=2", fill_rate=1.0):
+def write_session_dir(
+    path,
+    *,
+    accepted=True,
+    scenario_key="trigger_ticks=2",
+    fill_rate=1.0,
+    runtime_halted=False,
+):
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
@@ -77,6 +92,10 @@ def write_session_dir(path, *, accepted=True, scenario_key="trigger_ticks=2", fi
                 "mismatched_orders": 0,
                 "overfilled_orders": 0,
                 "unmatched_fills": 0,
+                "runtime_session_provided": True,
+                "runtime_guard_action": "halt" if runtime_halted else "continue",
+                "runtime_guard_halted": runtime_halted,
+                "runtime_failed_checks": 1 if runtime_halted else 0,
                 "order_fill_rate": fill_rate,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 100,
@@ -100,7 +119,23 @@ def test_compare_shadow_sessions_accepts_consistent_sessions():
     assert report.accepted
     assert report.summary.iloc[0]["session_count"] == 2
     assert report.summary.iloc[0]["scenario_key"] == "trigger_ticks=2"
+    assert report.summary.iloc[0]["runtime_sessions_provided"] == 2
+    assert report.summary.iloc[0]["runtime_halted_sessions"] == 0
     assert report.summary.iloc[0]["recommendation"] == "eligible_for_controlled_paper_scaleup"
+
+
+def test_compare_shadow_sessions_blocks_runtime_halted_sessions():
+    rows = session_rows()
+    rows.loc[1, "runtime_guard_action"] = "halt"
+    rows.loc[1, "runtime_guard_halted"] = True
+    rows.loc[1, "runtime_failed_checks"] = 1
+
+    report = compare_shadow_sessions(rows)
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert report.summary.iloc[0]["runtime_halted_sessions"] == 1
+    assert "runtime_halted_sessions" in failed
 
 
 def test_write_shadow_session_comparison_outputs_artifacts(tmp_path):
@@ -148,3 +183,32 @@ def test_unified_cli_compare_shadow_sessions_fails_on_mixed_scenarios(tmp_path):
     assert code == 2
     assert (out_dir / "shadow_session_comparison_checks.csv").exists()
     assert (out_dir / "shadow_session_comparison_summary.csv").exists()
+
+
+def test_unified_cli_compare_shadow_sessions_fails_on_halted_runtime_session(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "cli_runtime_comparison"
+    write_session_dir(day1)
+    write_session_dir(day2, runtime_halted=True)
+
+    code = main(
+        [
+            "compare-shadow-sessions",
+            "--sessions",
+            str(day1),
+            str(day2),
+            "--out",
+            str(out_dir),
+            "--min-sessions",
+            "2",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "shadow_session_comparison_summary.csv")
+    checks = pd.read_csv(out_dir / "shadow_session_comparison_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert int(summary.loc[0, "runtime_halted_sessions"]) == 1
+    assert "runtime_halted_sessions" in failed

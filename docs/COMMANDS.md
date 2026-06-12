@@ -1415,15 +1415,17 @@ manifest.json
 
 ## Shadow Session Report
 
-Gate a full paper/shadow loop by combining launch, export, and reconciliation
-artifacts:
+Gate a full paper/shadow loop by combining launch, export, reconciliation, and
+optional runtime-session monitor artifacts:
 
 ```powershell
 python -m hft_cli shadow-session-report `
   --launch runs\launch\leadlag_shadow `
   --export runs\exports\leadlag_shadow_arrow `
   --reconciliation runs\reconciliation\leadlag_shadow_arrow `
+  --runtime-session runs\runtime_sessions\leadlag_shadow_latest `
   --out runs\sessions\leadlag_shadow_2026_06_10 `
+  --require-runtime-session `
   --min-order-fill-rate 0.8 `
   --max-unmatched-fills 0 `
   --max-mismatched-orders 0 `
@@ -1441,6 +1443,10 @@ shadow_session_summary.csv
 manifest.json
 ```
 
+When `--runtime-session` is supplied, a halted runtime guard blocks session
+acceptance by default. Use `--require-runtime-session` to fail closed until the
+paper/shadow monitor evidence is present.
+
 ## Shadow Session Comparison
 
 Compare multiple paper/shadow session reports before allowing the workflow to
@@ -1456,6 +1462,7 @@ python -m hft_cli compare-shadow-sessions `
   --min-acceptance-rate 1 `
   --min-median-order-fill-rate 0.8 `
   --min-worst-order-fill-rate 0.7 `
+  --max-runtime-halted-sessions 0 `
   --max-worst-adverse-slippage 0.05 `
   --fail-on-breach
 ```

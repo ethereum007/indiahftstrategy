@@ -20,6 +20,7 @@ class ShadowComparisonThresholds:
     max_total_unmatched_fills: int = 0
     max_total_mismatched_orders: int = 0
     max_total_overfilled_orders: int = 0
+    max_runtime_halted_sessions: int = 0
     max_worst_adverse_slippage: float | None = None
 
 
@@ -51,11 +52,16 @@ def compare_shadow_sessions(
         "unmatched_fills",
         "mismatched_orders",
         "overfilled_orders",
+        "runtime_failed_checks",
         "max_adverse_slippage",
     ):
         if column not in runs.columns:
             runs[column] = 0.0 if column != "max_adverse_slippage" else np.nan
         runs[column] = pd.to_numeric(runs[column], errors="coerce")
+    for column in ("runtime_session_provided", "runtime_guard_halted"):
+        if column not in runs.columns:
+            runs[column] = False
+        runs[column] = runs[column].map(_to_bool)
     summary = _summary(runs)
     checks = _checks(summary.iloc[0], thresholds)
     summary["accepted"] = bool(checks["passed"].all()) if not checks.empty else False
@@ -118,6 +124,10 @@ def _read_sessions(session_dirs: list[str | Path], *, labels: list[str] | None) 
             "mismatched_orders": _number(metrics, "mismatched_orders", fallback=0.0),
             "overfilled_orders": _number(metrics, "overfilled_orders", fallback=0.0),
             "unmatched_fills": _number(metrics, "unmatched_fills", fallback=0.0),
+            "runtime_session_provided": _to_bool(metrics.get("runtime_session_provided", False)),
+            "runtime_guard_action": str(metrics.get("runtime_guard_action", "")),
+            "runtime_guard_halted": _to_bool(metrics.get("runtime_guard_halted", False)),
+            "runtime_failed_checks": _number(metrics, "runtime_failed_checks", fallback=0.0),
             "max_adverse_slippage": _number(metrics, "max_adverse_slippage"),
             "avg_latency_ns": _number(metrics, "avg_latency_ns"),
         }
@@ -152,6 +162,11 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "total_overfilled_orders": int(
                     pd.to_numeric(runs["overfilled_orders"], errors="coerce").sum(skipna=True)
+                ),
+                "runtime_sessions_provided": int(runs["runtime_session_provided"].sum()),
+                "runtime_halted_sessions": int(runs["runtime_guard_halted"].sum()),
+                "total_runtime_failed_checks": int(
+                    pd.to_numeric(runs["runtime_failed_checks"], errors="coerce").sum(skipna=True)
                 ),
                 "worst_adverse_slippage": float(slippage.max(skipna=True)) if slippage.notna().any() else np.nan,
                 "median_latency_ns": float(pd.to_numeric(runs["avg_latency_ns"], errors="coerce").median(skipna=True))
@@ -198,6 +213,12 @@ def _checks(row: pd.Series, thresholds: ShadowComparisonThresholds) -> pd.DataFr
             row["total_overfilled_orders"],
             "<=",
             thresholds.max_total_overfilled_orders,
+        ),
+        _threshold_check(
+            "runtime_halted_sessions",
+            row["runtime_halted_sessions"],
+            "<=",
+            thresholds.max_runtime_halted_sessions,
         ),
     ]
     if thresholds.min_worst_order_fill_rate is not None:
@@ -266,6 +287,7 @@ def _validate_thresholds(thresholds: ShadowComparisonThresholds) -> None:
         "max_total_unmatched_fills",
         "max_total_mismatched_orders",
         "max_total_overfilled_orders",
+        "max_runtime_halted_sessions",
     ):
         if getattr(thresholds, name) < 0:
             raise ValueError(f"{name} must be non-negative")

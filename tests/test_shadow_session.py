@@ -60,6 +60,25 @@ def reconciliation_summary(passed=True, *, fill_rate=1.0, unmatched=0, mismatche
     )
 
 
+def runtime_session_summary(ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "guard_action": "continue" if ready else "halt",
+                "halted": not ready,
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "orders_sent": 2,
+                "telemetry_ready": ready,
+                "failed_steps": 0 if ready else 1,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "continue_with_controls" if ready else "stop_routing_and_execute_halt_response",
+            }
+        ]
+    )
+
+
 def checks(passed=True):
     return pd.DataFrame(
         [
@@ -110,6 +129,39 @@ def test_evaluate_shadow_session_accepts_clean_shadow_loop():
     assert report.summary.iloc[0]["recommendation"] == "continue_shadow_or_promote"
 
 
+def test_evaluate_shadow_session_accepts_runtime_guard_continue_evidence():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(True),
+    )
+
+    row = report.metrics.iloc[0]
+    assert report.accepted
+    assert bool(row["runtime_session_provided"])
+    assert row["runtime_guard_action"] == "continue"
+
+
+def test_evaluate_shadow_session_blocks_halted_runtime_guard():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(False),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {"runtime_session_ready", "runtime_guard_continue", "total_failed_component_checks"} <= failed
+
+
 def test_write_shadow_session_report_outputs_metrics_checks_summary_and_manifest(tmp_path):
     launch_dir, export_dir, reconciliation_dir = write_component_dirs(tmp_path, accepted=True)
     out_dir = tmp_path / "session"
@@ -127,6 +179,32 @@ def test_write_shadow_session_report_outputs_metrics_checks_summary_and_manifest
     assert (out_dir / "shadow_session_checks.csv").exists()
     assert (out_dir / "shadow_session_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_unified_cli_shadow_session_requires_runtime_session_when_requested(tmp_path):
+    launch_dir, export_dir, reconciliation_dir = write_component_dirs(tmp_path, accepted=True)
+    out_dir = tmp_path / "cli_session_missing_runtime"
+
+    code = main(
+        [
+            "shadow-session-report",
+            "--launch",
+            str(launch_dir),
+            "--export",
+            str(export_dir),
+            "--reconciliation",
+            str(reconciliation_dir),
+            "--out",
+            str(out_dir),
+            "--require-runtime-session",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks_out = pd.read_csv(out_dir / "shadow_session_checks.csv")
+    failed = set(checks_out.loc[~checks_out["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "runtime_session_provided" in failed
 
 
 def test_unified_cli_shadow_session_fails_on_component_breach(tmp_path):
