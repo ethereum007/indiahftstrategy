@@ -32,6 +32,7 @@ class QuoteLifecycleThresholds:
 @dataclass(frozen=True)
 class QuoteLifecycleReport:
     actions: pd.DataFrame
+    route_orders: pd.DataFrame
     snapshots: pd.DataFrame
     checks: pd.DataFrame
     summary: pd.DataFrame
@@ -56,7 +57,8 @@ def evaluate_quote_lifecycle(
     _validate_thresholds(thresholds)
     frame = _normalize_quotes(quotes)
     actions, snapshots = _lifecycle_actions(frame, thresholds)
-    summary = _summary(frame, actions, snapshots, thresholds)
+    route_orders = _route_orders(actions)
+    summary = _summary(frame, actions, route_orders, snapshots, thresholds)
     checks = _checks(summary.iloc[0], thresholds)
     quote_risk_summary = pd.DataFrame() if quote_risk_summary is None else quote_risk_summary
     quote_risk_check = quote_risk_review_check(
@@ -73,7 +75,7 @@ def evaluate_quote_lifecycle(
     summary["failed_checks"] = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     summary["ready"] = bool(summary.iloc[0]["failed_checks"] == 0)
     summary["recommendation"] = _recommendation(summary.iloc[0])
-    return QuoteLifecycleReport(actions=actions, snapshots=snapshots, checks=checks, summary=summary)
+    return QuoteLifecycleReport(actions=actions, route_orders=route_orders, snapshots=snapshots, checks=checks, summary=summary)
 
 
 def write_quote_lifecycle_plan(
@@ -101,6 +103,7 @@ def write_quote_lifecycle_plan(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.actions.to_csv(out / "quote_lifecycle_actions.csv", index=False)
+    report.route_orders.to_csv(out / "quote_lifecycle_route_orders.csv", index=False)
     report.snapshots.to_csv(out / "quote_lifecycle_snapshots.csv", index=False)
     report.checks.to_csv(out / "quote_lifecycle_checks.csv", index=False)
     report.summary.to_csv(out / "quote_lifecycle_summary.csv", index=False)
@@ -117,7 +120,7 @@ def write_quote_lifecycle_plan(
         },
         inputs=inputs,
     )
-    return QuoteLifecycleReport(report.actions, report.snapshots, report.checks, report.summary, out)
+    return QuoteLifecycleReport(report.actions, report.route_orders, report.snapshots, report.checks, report.summary, out)
 
 
 def _lifecycle_actions(
@@ -164,6 +167,7 @@ def _lifecycle_actions(
                         message_count=1,
                         reason="new_quote",
                         quote_age_ns=0,
+                        order_action="submit",
                     )
                 )
                 active[key] = _active_quote(row, order_id, ts_ns)
@@ -185,6 +189,7 @@ def _lifecycle_actions(
                         message_count=2,
                         reason="price_or_qty_change",
                         quote_age_ns=_quote_age(ts_ns, current["ts_submit_ns"]),
+                        order_action="replace",
                     )
                 )
                 active[key] = _active_quote(row, order_id, ts_ns)
@@ -308,6 +313,19 @@ def _active_quote(row: Any, order_id: str, ts_ns: int) -> dict[str, Any]:
         "price": float(row.price),
         "ts_submit_ns": int(ts_ns),
         "source_row": int(row.source_row),
+        "expiry": _optional(row, "expiry"),
+        "strike": _optional(row, "strike"),
+        "option_type": _optional(row, "option_type"),
+        "market_bid": _optional(row, "market_bid"),
+        "market_ask": _optional(row, "market_ask"),
+        "marketable": _optional(row, "marketable", False),
+        "quote_edge": _optional(row, "quote_edge"),
+        "theo": _optional(row, "theo"),
+        "market_spread_ticks": _optional(row, "market_spread_ticks"),
+        "forward": _optional(row, "forward"),
+        "futures_ts": _optional(row, "futures_ts"),
+        "order_type": str(_optional(row, "order_type", "LIMIT")),
+        "time_in_force": str(_optional(row, "time_in_force", "DAY")),
     }
 
 
@@ -323,6 +341,7 @@ def _action_row(
     message_count: int,
     reason: str,
     quote_age_ns: int,
+    order_action: str,
 ) -> dict[str, Any]:
     return {
         "action_id": _action_id(action_seq),
@@ -340,6 +359,20 @@ def _action_row(
         "reason": reason,
         "quote_age_ns": int(quote_age_ns),
         "source_row": int(row.source_row),
+        "expiry": _optional(row, "expiry"),
+        "strike": _optional(row, "strike"),
+        "option_type": _optional(row, "option_type"),
+        "market_bid": _optional(row, "market_bid"),
+        "market_ask": _optional(row, "market_ask"),
+        "marketable": _optional(row, "marketable", False),
+        "quote_edge": _optional(row, "quote_edge"),
+        "theo": _optional(row, "theo"),
+        "market_spread_ticks": _optional(row, "market_spread_ticks"),
+        "forward": _optional(row, "forward"),
+        "futures_ts": _optional(row, "futures_ts"),
+        "order_type": str(_optional(row, "order_type", "LIMIT")),
+        "time_in_force": str(_optional(row, "time_in_force", "DAY")),
+        "lifecycle_action": order_action,
     }
 
 
@@ -367,12 +400,66 @@ def _cancel_row(
         "reason": reason,
         "quote_age_ns": int(_quote_age(ts_ns, current["ts_submit_ns"])),
         "source_row": int(current["source_row"]),
+        "expiry": current.get("expiry", np.nan),
+        "strike": current.get("strike", np.nan),
+        "option_type": current.get("option_type", np.nan),
+        "market_bid": current.get("market_bid", np.nan),
+        "market_ask": current.get("market_ask", np.nan),
+        "marketable": current.get("marketable", False),
+        "quote_edge": current.get("quote_edge", np.nan),
+        "theo": current.get("theo", np.nan),
+        "market_spread_ticks": current.get("market_spread_ticks", np.nan),
+        "forward": current.get("forward", np.nan),
+        "futures_ts": current.get("futures_ts", np.nan),
+        "order_type": str(current.get("order_type", "LIMIT")),
+        "time_in_force": str(current.get("time_in_force", "DAY")),
+        "lifecycle_action": "cancel",
     }
+
+
+def _route_orders(actions: pd.DataFrame) -> pd.DataFrame:
+    columns = [
+        "client_order_id",
+        "source_row",
+        "instrument_id",
+        "side",
+        "side_text",
+        "qty",
+        "price",
+        "order_type",
+        "time_in_force",
+        "ts_signal_ns",
+        "market_bid",
+        "market_ask",
+        "marketable",
+        "quote_edge",
+        "theo",
+        "expiry",
+        "strike",
+        "option_type",
+        "market_spread_ticks",
+        "forward",
+        "futures_ts",
+        "lifecycle_action",
+        "replaces_order_id",
+    ]
+    if actions.empty:
+        return pd.DataFrame(columns=columns)
+    route = actions.loc[actions["action"].isin(["submit", "replace"])].copy().reset_index(drop=True)
+    if route.empty:
+        return pd.DataFrame(columns=columns)
+    route["ts_signal_ns"] = route["ts_ns"]
+    route["source_row"] = route.index
+    for column in columns:
+        if column not in route.columns:
+            route[column] = np.nan
+    return route[columns]
 
 
 def _summary(
     quotes: pd.DataFrame,
     actions: pd.DataFrame,
+    route_orders: pd.DataFrame,
     snapshots: pd.DataFrame,
     thresholds: QuoteLifecycleThresholds,
 ) -> pd.DataFrame:
@@ -394,9 +481,10 @@ def _summary(
                 "input_quotes": int(len(quotes)),
                 "instruments": int(quotes["instrument_id"].nunique()) if not quotes.empty else 0,
                 "invalid_side_quotes": int((~quotes["side"].isin([-1, 1])).sum()) if not quotes.empty else 0,
-                "nonpositive_qty_quotes": int((pd.to_numeric(quotes["qty"], errors="coerce") <= 0).sum()) if not quotes.empty else 0,
-                "nonpositive_price_quotes": int((pd.to_numeric(quotes["price"], errors="coerce") <= 0).sum()) if not quotes.empty else 0,
+                "nonpositive_qty_quotes": _invalid_positive_count(quotes, "qty"),
+                "nonpositive_price_quotes": _invalid_positive_count(quotes, "price"),
                 "lifecycle_actions": int(len(actions)),
+                "route_orders": int(len(route_orders)),
                 "submits": int(action_counts.get("submit", 0)),
                 "replaces": int(action_counts.get("replace", 0)),
                 "cancels": int(action_counts.get("cancel", 0)),
@@ -438,6 +526,14 @@ def _checks(row: pd.Series, thresholds: QuoteLifecycleThresholds) -> pd.DataFram
             0,
             int(row["nonpositive_price_quotes"]) == 0,
             "one or more quotes has nonpositive price",
+        ),
+        _check(
+            "route_orders_nonempty",
+            row["route_orders"],
+            ">=",
+            1,
+            int(row["route_orders"]) >= 1,
+            "no submit or replace orders are available to route",
         ),
     ]
     optional_limits = (
@@ -562,6 +658,17 @@ def _side_text(side: Any) -> str:
     return "BUY" if int(side) > 0 else "SELL" if int(side) < 0 else "UNKNOWN"
 
 
+def _optional(row: Any, name: str, default: Any = np.nan) -> Any:
+    return getattr(row, name, default)
+
+
+def _invalid_positive_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty:
+        return 0
+    values = pd.to_numeric(frame[column], errors="coerce")
+    return int((values.isna() | (values <= 0)).sum())
+
+
 def _order_id(order_seq: int) -> str:
     return f"QLF-{order_seq:06d}"
 
@@ -598,6 +705,20 @@ def _action_columns() -> list[str]:
         "reason",
         "quote_age_ns",
         "source_row",
+        "expiry",
+        "strike",
+        "option_type",
+        "market_bid",
+        "market_ask",
+        "marketable",
+        "quote_edge",
+        "theo",
+        "market_spread_ticks",
+        "forward",
+        "futures_ts",
+        "order_type",
+        "time_in_force",
+        "lifecycle_action",
     ]
 
 

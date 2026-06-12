@@ -120,7 +120,7 @@ def write_surface_mm_launch_pipeline(
     staging_dir = out / "01_staged_orders"
     if quote_lifecycle.ready:
         staging = write_staged_orders(
-            quotes_path,
+            quote_lifecycle_dir / "quote_lifecycle_route_orders.csv",
             output_dir=staging_dir,
             source="surface_quotes",
             adapter=config.adapter,

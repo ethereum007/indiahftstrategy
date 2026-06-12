@@ -42,6 +42,15 @@ def surface_quotes():
     )
 
 
+def multi_snapshot_surface_quotes():
+    quotes = surface_quotes()
+    second = quotes.copy()
+    second["ts"] = 200
+    second = second.iloc[[0, 1]].copy()
+    second.loc[second["side"] == 1, "price"] = 100.1
+    return pd.concat([quotes, second], ignore_index=True, sort=False)
+
+
 def write_surface_pipeline(path, *, quote_review_passed=True, promotion_ready=True):
     quotes_dir = path / "01_quotes"
     review_dir = path / "02_quote_review"
@@ -160,6 +169,29 @@ def test_surface_mm_launch_pipeline_blocks_quote_lifecycle_message_breach(tmp_pa
     assert not bool(components.loc["quote_lifecycle", "ready"])
     assert components.loc["staged_orders", "status"] == "skipped"
     assert components.loc["staged_orders", "reason"] == "quote_lifecycle_not_ready"
+
+
+def test_surface_mm_launch_pipeline_stages_lifecycle_route_orders_not_raw_quotes(tmp_path):
+    surface_pipeline = tmp_path / "surface_pipeline"
+    out_dir = tmp_path / "launch_pipeline_route_orders"
+    write_surface_pipeline(surface_pipeline)
+    raw_quotes = multi_snapshot_surface_quotes()
+    raw_quotes.to_csv(surface_pipeline / "01_quotes" / "surface_quotes.csv", index=False)
+
+    report = write_surface_mm_launch_pipeline(
+        surface_pipeline,
+        output_dir=out_dir,
+        config=SurfaceMMLaunchPipelineConfig(adapter="normalized", mode="paper"),
+    )
+
+    route_orders = pd.read_csv(out_dir / "00_quote_lifecycle" / "quote_lifecycle_route_orders.csv")
+    staged = pd.read_csv(out_dir / "01_staged_orders" / "staged_orders.csv")
+    assert report.ready
+    assert len(raw_quotes) == 4
+    assert len(route_orders) == 3
+    assert len(staged) == 3
+    assert set(staged["client_order_id"]) == set(route_orders["client_order_id"])
+    assert "replace" in set(route_orders["lifecycle_action"])
 
 
 def test_cli_surface_mm_launch_pipeline_can_fail_on_breach(tmp_path):

@@ -894,6 +894,7 @@ Outputs:
 
 ```text
 quote_lifecycle_actions.csv
+quote_lifecycle_route_orders.csv
 quote_lifecycle_snapshots.csv
 quote_lifecycle_checks.csv
 quote_lifecycle_summary.csv
@@ -903,8 +904,10 @@ manifest.json
 The planner de-duplicates each snapshot by `instrument_id` and side, replaces
 quotes only when price or quantity changes, expires stale quotes when
 `--quote-ttl-ns` is set, and adds final cancels unless `--no-final-cancel` is
-used. This makes OTR and quote-churn limits explicit before Arrow.money/iRage
-upload preparation.
+used. The `quote_lifecycle_route_orders.csv` file contains only submit/replace
+orders for staging, while cancel actions stay in the full lifecycle action log.
+This makes OTR and quote-churn limits explicit before Arrow.money/iRage upload
+preparation.
 
 ## Surface Market-Making Research Pipeline
 
@@ -983,7 +986,8 @@ manifest.json
 
 The launch pipeline runs quote lifecycle planning before staging and blocks the
 handoff when the generated quotes would exceed message, active-quote, churn, or
-OTR limits.
+OTR limits. Staging uses `00_quote_lifecycle\quote_lifecycle_route_orders.csv`
+so stale raw quote rows and unchanged repeated quotes are not routed.
 
 ## Order Exposure Review
 

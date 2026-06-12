@@ -51,6 +51,8 @@ def test_quote_lifecycle_plans_submits_replaces_and_cancels():
     assert int(summary["replaces"]) == 1
     assert int(summary["cancels"]) == 4
     assert int(summary["order_messages"]) == 10
+    assert int(summary["route_orders"]) == 5
+    assert report.route_orders["lifecycle_action"].tolist() == ["submit", "submit", "submit", "submit", "replace"]
     assert report.actions["action"].tolist() == [
         "submit",
         "submit",
@@ -101,6 +103,7 @@ def test_write_quote_lifecycle_outputs_artifacts_and_manifest(tmp_path):
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.output_dir == out_dir
     assert (out_dir / "quote_lifecycle_actions.csv").exists()
+    assert (out_dir / "quote_lifecycle_route_orders.csv").exists()
     assert (out_dir / "quote_lifecycle_snapshots.csv").exists()
     assert (out_dir / "quote_lifecycle_checks.csv").exists()
     assert (out_dir / "quote_lifecycle_summary.csv").exists()

@@ -242,8 +242,9 @@
   quotes, quote edge, side balance, market spread, instrument coverage, and
   concentration before replay or live routing.
 - Surface quote lifecycle planner that converts reviewed quote snapshots into
-  submit/replace/cancel actions with TTL, OTR, message-budget, and active-quote
-  controls before Arrow.money/iRage paper-routing preparation.
+  submit/replace/cancel actions plus routeable submit/replace order files with
+  TTL, OTR, message-budget, and active-quote controls before Arrow.money/iRage
+  paper-routing preparation.
 - Option order exposure review for staged, launch, or exported order batches,
   including Black-76 delta/vega, gross notional, side imbalance, and
   instrument concentration checks, with cross-market option metadata inference
@@ -286,7 +287,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 357 tests.
+Current passing suite: 358 tests.
 
 ## Next Build Targets
 
