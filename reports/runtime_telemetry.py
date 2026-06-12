@@ -97,7 +97,7 @@ def write_runtime_telemetry_snapshot(
 ) -> RuntimeTelemetryReport:
     scaleup_file = _scaleup_config_path(scaleup_dir)
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
-    export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv", fallback_dirs=("04_export",))
+    export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv", fallback_dirs=("04_export", "03_export"))
     reconciliation_summary = _read_optional_summary(reconciliation_dir, "reconciliation_summary.csv")
     reconciliation_checks = _read_optional_summary(reconciliation_dir, "reconciliation_checks.csv")
     instrument_metadata_summary = _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")

@@ -1461,11 +1461,10 @@ scaleup_config.json
 manifest.json
 ```
 
-For settlement convergence handoffs, `--launch` may point at the
-`pipeline-settlement-launch` root. In that case scale-up reads
-`03_launch\launch_summary.csv` and automatically includes
-`06_broker_readiness\broker_readiness_summary.csv` when present, so
-`--require-broker-readiness` can gate the pipeline folder directly.
+For settlement convergence or surface market-making handoffs, `--launch` may
+point at the launch-pipeline root. In that case scale-up reads the nested
+launch summary and automatically includes nested broker-readiness evidence when
+present, so `--require-broker-readiness` can gate the pipeline folder directly.
 
 ## Runtime Telemetry Snapshot
 
@@ -1495,9 +1494,9 @@ runtime_telemetry_summary.csv
 manifest.json
 ```
 
-For settlement convergence handoffs, `--export` may point at the
-`pipeline-settlement-launch` root; telemetry will read
-`04_export\broker_order_summary.csv` from that folder.
+For settlement convergence or surface market-making handoffs, `--export` may
+point at the launch-pipeline root; telemetry will read the nested broker export
+summary from that folder.
 
 ## Runtime Scale-Up Guard
 

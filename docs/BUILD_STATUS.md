@@ -205,12 +205,12 @@
   instrument metadata coverage, single-day and multi-day data-readiness
   evidence, and broker-readiness evidence into explicit order, notional,
   adapter, and telemetry-freshness kill-switch limits, and can consume a
-  settlement launch pipeline root directly.
+  settlement or surface-MM launch pipeline root directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   reconciliation, optional instrument metadata, PnL, open-order, and position
   artifacts into guard-ready `runtime_telemetry.csv` inputs with source/check
-  summaries, and can consume a settlement launch pipeline root for broker
-  export evidence.
+  summaries, and can consume settlement or surface-MM launch pipeline roots for
+  broker export evidence.
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
   against `scaleup_config.json` limits, kill switches, telemetry freshness,
   open-order/position inventory limits, and required instrument metadata
@@ -279,7 +279,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 348 tests.
+Current passing suite: 350 tests.
 
 ## Next Build Targets
 

@@ -123,7 +123,7 @@ def write_scaleup_plan(
 ) -> ScaleUpPlanReport:
     evidence = _read_summary(evidence_dir, "strategy_evidence_summary.csv")
     shadow = _read_summary(shadow_comparison_dir, "shadow_session_comparison_summary.csv")
-    launch = _read_summary(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch",))
+    launch = _read_summary(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch", "02_launch"))
     exposure = _read_optional_summary(order_exposure_dir, "order_exposure_summary.csv") if order_exposure_dir else None
     proof_refresh = (
         _read_optional_summary(proof_refresh_dir, "proof_refresh_summary.csv") if proof_refresh_dir else None
@@ -620,9 +620,11 @@ def _auto_broker_readiness_dir(launch_dir: str | Path) -> Path | None:
     candidate = Path(launch_dir)
     if not candidate.is_dir():
         return None
-    broker_dir = candidate / "06_broker_readiness"
-    summary = broker_dir / "broker_readiness_summary.csv"
-    return broker_dir if summary.exists() else None
+    for folder in ("06_broker_readiness", "05_broker_readiness"):
+        broker_dir = candidate / folder
+        if (broker_dir / "broker_readiness_summary.csv").exists():
+            return broker_dir
+    return None
 
 
 def _validate_thresholds(thresholds: ScaleUpThresholds) -> None:
