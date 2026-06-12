@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.imbalance_candidate_promotion import (
     ImbalanceCandidatePromotionReport,
     ImbalanceCandidatePromotionThresholds,
@@ -65,6 +66,7 @@ def write_imbalance_research_pipeline(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     instrument_id: str = "BOOK",
     instrument_kind: str = "OPT",
     lot_size: int = 75,
@@ -121,6 +123,7 @@ def write_imbalance_research_pipeline(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
         sweep_thresholds=sweep_thresholds,
         selection_thresholds=selection_thresholds,
         walkforward_thresholds=edge_walkforward_thresholds,
@@ -149,6 +152,7 @@ def write_imbalance_research_pipeline(
                 timestamp_unit=timestamp_unit,
                 timestamp_tz=timestamp_tz,
                 filter_session=filter_session,
+                market=market,
                 instrument_id=instrument_id,
                 instrument_kind=instrument_kind,
                 lot_size=lot_size,
@@ -175,6 +179,7 @@ def write_imbalance_research_pipeline(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
         instrument_id=instrument_id,
         instrument_kind=instrument_kind,
         lot_size=lot_size,
@@ -214,6 +219,7 @@ def write_imbalance_research_pipeline(
                 timestamp_unit=timestamp_unit,
                 timestamp_tz=timestamp_tz,
                 filter_session=filter_session,
+                market=market,
                 instrument_id=instrument_id,
                 instrument_kind=instrument_kind,
                 lot_size=lot_size,
@@ -260,6 +266,7 @@ def write_imbalance_research_pipeline(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=market,
             instrument_id=instrument_id,
             instrument_kind=instrument_kind,
             lot_size=lot_size,

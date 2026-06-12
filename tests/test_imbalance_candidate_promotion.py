@@ -42,6 +42,7 @@ def candidate_config(*, ready=True):
         "failed_checks": [] if ready else ["proof_pass_rate"],
         "replay_defaults": {
             "tick_size": 0.05,
+            "market": "india_nse_index_derivatives",
             "entry_imbalance": 0.6,
             "min_microprice_edge_ticks": 0.25,
             "hold_ns": 1_000_000,
@@ -97,7 +98,8 @@ def test_evaluate_imbalance_candidate_promotion_outputs_launch_compatible_config
 
     assert report.ready
     assert report.summary.iloc[0]["candidate_scenario_key"] == (
-        "strategy=imbalance|entry_imbalance=0.6|min_microprice_edge_ticks=0.25|hold_ns=1000000"
+        "strategy=imbalance|market=india_nse_index_derivatives|entry_imbalance=0.6|"
+        "min_microprice_edge_ticks=0.25|hold_ns=1000000"
     )
     assert report.candidate_config["ready"]
     assert report.candidate_config["strategy"] == "imbalance"

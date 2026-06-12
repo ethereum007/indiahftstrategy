@@ -41,6 +41,10 @@
 - Microprice/order-book imbalance replay strategy for single-instrument
   top-of-book pressure, including latency, depth, spread, hold-time, signal
   decay exits, signals, markouts, and proof-compatible outputs.
+- Imbalance edge, replay, sweep, walk-forward, and pipeline commands now accept
+  explicit market profiles, preserve market/tick-size defaults in candidate
+  configs, and can run US regular-hours equity/options research without
+  applying India session filters or costs.
 - Imbalance replay walk-forward runner that takes a selected candidate, replays
   it across multiple tick folds, runs proof gates, and emits aggregate
   paper/shadow readiness evidence.
@@ -194,7 +198,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 229 tests.
+Current passing suite: 231 tests.
 
 ## Next Build Targets
 

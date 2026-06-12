@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -10,6 +12,10 @@ from reports.imbalance_edge import (
 
 def ns_ist(value: str) -> int:
     return pd.Timestamp(value, tz="Asia/Kolkata").value
+
+
+def ns_us(value: str) -> int:
+    return pd.Timestamp(value, tz="America/New_York").value
 
 
 def edge_ticks():
@@ -65,6 +71,35 @@ def test_write_imbalance_edge_audit_outputs_artifacts(tmp_path):
     assert (out_dir / "imbalance_edge_checks.csv").exists()
     assert (out_dir / "imbalance_edge_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_write_imbalance_edge_audit_uses_us_market_session(tmp_path):
+    ticks_path = tmp_path / "us_ticks.csv"
+    out_dir = tmp_path / "us_imbalance_edge"
+    pd.DataFrame(
+        [
+            {"ts": ns_us("2026-06-10 09:29:59"), "bid": 99.00, "ask": 99.01, "bid_qty": 900, "ask_qty": 100},
+            {"ts": ns_us("2026-06-10 09:30:00"), "bid": 100.00, "ask": 100.01, "bid_qty": 900, "ask_qty": 100},
+            {"ts": ns_us("2026-06-10 09:30:00.000100"), "bid": 100.10, "ask": 100.11, "bid_qty": 500, "ask_qty": 500},
+        ]
+    ).to_csv(ticks_path, index=False)
+
+    audit = write_imbalance_edge_audit(
+        ticks_path,
+        output_dir=out_dir,
+        tick_size=0.01,
+        market="us_equities_regular",
+        thresholds=ImbalanceEdgeThresholds(
+            forward_horizon_ns=100_000,
+            min_signals=1,
+            min_mean_forward_edge_ticks=1.0,
+        ),
+    )
+
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert audit.passed
+    assert int(audit.summary.loc[0, "signal_count"]) == 1
+    assert manifest["parameters"]["market"] == "us_equities_regular"
 
 
 def test_cli_imbalance_edge_can_fail_on_breach(tmp_path):

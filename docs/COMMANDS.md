@@ -393,6 +393,11 @@ The `candidate_config.json` from the edge sweep, edge selection, or
 walk-forward command can be passed directly into replay or replay-sweep
 commands with `--candidate-config`.
 
+For US research, pass a market profile such as `--market us_equities_regular`
+or `--market us_options_regular` on edge, walk-forward, replay, sweep, or
+pipeline commands. Candidate configs preserve `market` and `tick_size`, so
+replay commands can inherit those settings from `--candidate-config`.
+
 ## Microprice Imbalance Replay
 
 Replay a single-instrument top-of-book imbalance strategy that enters when

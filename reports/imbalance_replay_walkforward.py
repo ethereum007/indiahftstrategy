@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_imbalance_replay import ImbalanceReplayResult, run_imbalance_replay
@@ -51,10 +52,11 @@ def write_imbalance_replay_walkforward(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str | None = None,
     instrument_id: str = "BOOK",
     instrument_kind: str = "OPT",
     lot_size: int = 75,
-    tick_size: float = 0.05,
+    tick_size: float | None = None,
     qty: int = 75,
     entry_imbalance: float | None = None,
     exit_imbalance: float = 0.15,
@@ -81,6 +83,7 @@ def write_imbalance_replay_walkforward(
         raise ValueError("candidate config replay_defaults must be an object")
 
     replay_params = {
+        "market": str(_coalesce(market, replay_defaults.get("market"), INDIA_NSE_INDEX_DERIVATIVES.name)),
         "tick_size": float(tick_size if tick_size is not None else _coalesce(replay_defaults.get("tick_size"), 0.05)),
         "entry_imbalance": float(_coalesce(entry_imbalance, replay_defaults.get("entry_imbalance"), 0.6)),
         "min_microprice_edge_ticks": float(
@@ -109,6 +112,7 @@ def write_imbalance_replay_walkforward(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=replay_params["market"],
             instrument_id=instrument_id,
             instrument_kind=instrument_kind,
             lot_size=lot_size,
@@ -163,6 +167,7 @@ def write_imbalance_replay_walkforward(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "market": replay_params["market"],
             "instrument_id": instrument_id,
             "instrument_kind": instrument_kind,
             "lot_size": lot_size,
@@ -341,6 +346,7 @@ def _candidate_config(
     config["replay_defaults"] = {
         **(config.get("replay_defaults", {}) if isinstance(config.get("replay_defaults", {}), dict) else {}),
         "tick_size": _jsonable(replay_params["tick_size"]),
+        "market": _jsonable(replay_params["market"]),
         "entry_imbalance": _jsonable(replay_params["entry_imbalance"]),
         "min_microprice_edge_ticks": _jsonable(replay_params["min_microprice_edge_ticks"]),
         "hold_ns": _jsonable(replay_params["hold_ns"]),

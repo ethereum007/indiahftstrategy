@@ -55,6 +55,7 @@ from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_s
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from research.run_leadlag import run_leadlag
 from scanners.run_parity_box import run_scan
 from strategies.run_imbalance_replay import run_imbalance_replay
@@ -133,6 +134,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_edge.add_argument("--ticks", required=True)
     imbalance_edge.add_argument("--out", required=True)
     imbalance_edge.add_argument("--no-filter-session", action="store_true")
+    imbalance_edge.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     imbalance_edge.add_argument("--tick-size", type=float, default=0.05)
     imbalance_edge.add_argument("--entry-imbalance", type=float, default=0.6)
     imbalance_edge.add_argument("--min-microprice-edge-ticks", type=float, default=0.25)
@@ -150,6 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_edge_sweep.add_argument("--ticks", required=True)
     imbalance_edge_sweep.add_argument("--out", required=True)
     imbalance_edge_sweep.add_argument("--no-filter-session", action="store_true")
+    imbalance_edge_sweep.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     imbalance_edge_sweep.add_argument("--tick-size", type=float, default=0.05)
     imbalance_edge_sweep.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
     imbalance_edge_sweep.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
@@ -184,6 +187,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_edge_walkforward.add_argument("--out", required=True)
     imbalance_edge_walkforward.add_argument("--label", action="append", dest="labels")
     imbalance_edge_walkforward.add_argument("--no-filter-session", action="store_true")
+    imbalance_edge_walkforward.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     imbalance_edge_walkforward.add_argument("--tick-size", type=float, default=0.05)
     imbalance_edge_walkforward.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
     imbalance_edge_walkforward.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
@@ -229,10 +233,11 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay.add_argument("--ticks", required=True)
     imbalance_replay.add_argument("--out", required=True)
     imbalance_replay.add_argument("--no-filter-session", action="store_true")
+    imbalance_replay.add_argument("--market", default=None)
     imbalance_replay.add_argument("--instrument-id", default="BOOK")
     imbalance_replay.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
     imbalance_replay.add_argument("--lot-size", type=int, default=75)
-    imbalance_replay.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_replay.add_argument("--tick-size", type=float, default=None)
     imbalance_replay.add_argument("--qty", type=int, default=75)
     imbalance_replay.add_argument("--entry-imbalance", type=float, default=None)
     imbalance_replay.add_argument("--exit-imbalance", type=float, default=0.15)
@@ -254,10 +259,11 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_replay_walkforward.add_argument("--label", action="append", dest="labels")
     imbalance_replay_walkforward.add_argument("--candidate-config", default=None)
     imbalance_replay_walkforward.add_argument("--no-filter-session", action="store_true")
+    imbalance_replay_walkforward.add_argument("--market", default=None)
     imbalance_replay_walkforward.add_argument("--instrument-id", default="BOOK")
     imbalance_replay_walkforward.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
     imbalance_replay_walkforward.add_argument("--lot-size", type=int, default=75)
-    imbalance_replay_walkforward.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_replay_walkforward.add_argument("--tick-size", type=float, default=None)
     imbalance_replay_walkforward.add_argument("--qty", type=int, default=75)
     imbalance_replay_walkforward.add_argument("--entry-imbalance", type=float, default=None)
     imbalance_replay_walkforward.add_argument("--exit-imbalance", type=float, default=0.15)
@@ -299,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_pipeline.add_argument("--out", required=True)
     imbalance_pipeline.add_argument("--label", action="append", dest="labels")
     imbalance_pipeline.add_argument("--no-filter-session", action="store_true")
+    imbalance_pipeline.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     imbalance_pipeline.add_argument("--tick-size", type=float, default=0.05)
     imbalance_pipeline.add_argument("--entry-imbalance", nargs="+", required=True, type=float)
     imbalance_pipeline.add_argument("--min-microprice-edge-ticks", nargs="+", required=True, type=float)
@@ -488,10 +495,11 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_sweep.add_argument("--ticks", required=True)
     imbalance_sweep.add_argument("--out", required=True)
     imbalance_sweep.add_argument("--no-filter-session", action="store_true")
+    imbalance_sweep.add_argument("--market", default=None)
     imbalance_sweep.add_argument("--instrument-id", default="BOOK")
     imbalance_sweep.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
     imbalance_sweep.add_argument("--lot-size", type=int, default=75)
-    imbalance_sweep.add_argument("--tick-size", type=float, default=0.05)
+    imbalance_sweep.add_argument("--tick-size", type=float, default=None)
     imbalance_sweep.add_argument("--qty", type=int, default=75)
     imbalance_sweep.add_argument("--entry-imbalance", nargs="+", default=None, type=float)
     imbalance_sweep.add_argument("--exit-imbalance", type=float, default=0.15)
@@ -936,6 +944,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             tick_size=args.tick_size,
             filter_session=not args.no_filter_session,
+            market=args.market,
             thresholds=ImbalanceEdgeThresholds(
                 entry_imbalance=args.entry_imbalance,
                 min_microprice_edge_ticks=args.min_microprice_edge_ticks,
@@ -957,6 +966,7 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             tick_size=args.tick_size,
             filter_session=not args.no_filter_session,
+            market=args.market,
             entry_imbalance_values=args.entry_imbalance,
             min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
             forward_horizon_ns_values=args.forward_horizon_ns,
@@ -1000,6 +1010,7 @@ def main(argv: list[str] | None = None) -> int:
             labels=args.labels,
             tick_size=args.tick_size,
             filter_session=not args.no_filter_session,
+            market=args.market,
             entry_imbalance_values=args.entry_imbalance,
             min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
             forward_horizon_ns_values=args.forward_horizon_ns,
@@ -1056,6 +1067,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "replay-imbalance":
         candidate_defaults = _imbalance_candidate_replay_defaults(args.candidate_config)
+        market = args.market or candidate_defaults.get("market") or INDIA_NSE_INDEX_DERIVATIVES.name
+        tick_size = _coalesce_number(args.tick_size, candidate_defaults.get("tick_size"), 0.05)
         entry_imbalance = _coalesce_number(args.entry_imbalance, candidate_defaults.get("entry_imbalance"), 0.6)
         min_edge_ticks = _coalesce_number(
             args.min_microprice_edge_ticks,
@@ -1077,10 +1090,11 @@ def main(argv: list[str] | None = None) -> int:
             ticks_path=args.ticks,
             output_dir=args.out,
             filter_session=not args.no_filter_session,
+            market=market,
             instrument_id=args.instrument_id,
             instrument_kind=args.instrument_kind,
             lot_size=args.lot_size,
-            tick_size=args.tick_size,
+            tick_size=tick_size,
             qty=args.qty,
             entry_imbalance=entry_imbalance,
             exit_imbalance=args.exit_imbalance,
@@ -1102,6 +1116,7 @@ def main(argv: list[str] | None = None) -> int:
             labels=args.labels,
             candidate_config=args.candidate_config,
             filter_session=not args.no_filter_session,
+            market=args.market,
             instrument_id=args.instrument_id,
             instrument_kind=args.instrument_kind,
             lot_size=args.lot_size,
@@ -1159,6 +1174,7 @@ def main(argv: list[str] | None = None) -> int:
             labels=args.labels,
             tick_size=args.tick_size,
             filter_session=not args.no_filter_session,
+            market=args.market,
             entry_imbalance_values=args.entry_imbalance,
             min_microprice_edge_ticks_values=args.min_microprice_edge_ticks,
             forward_horizon_ns_values=args.forward_horizon_ns,
@@ -1406,6 +1422,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2 if args.fail_on_breach and not result.proof.passed else 0
     if args.command == "sweep-imbalance":
         candidate_defaults = _imbalance_candidate_replay_defaults(args.candidate_config)
+        market = args.market or candidate_defaults.get("market") or INDIA_NSE_INDEX_DERIVATIVES.name
+        tick_size = _coalesce_number(args.tick_size, candidate_defaults.get("tick_size"), 0.05)
         entry_imbalance_values = _coalesce_list(
             args.entry_imbalance,
             candidate_defaults.get("entry_imbalance"),
@@ -1430,10 +1448,11 @@ def main(argv: list[str] | None = None) -> int:
             feed_latency_us_values=args.feed_latency_us,
             order_latency_us_values=args.order_latency_us,
             filter_session=not args.no_filter_session,
+            market=market,
             instrument_id=args.instrument_id,
             instrument_kind=args.instrument_kind,
             lot_size=args.lot_size,
-            tick_size=args.tick_size,
+            tick_size=tick_size,
             qty=args.qty,
             exit_imbalance=args.exit_imbalance,
             max_spread_ticks=args.max_spread_ticks,

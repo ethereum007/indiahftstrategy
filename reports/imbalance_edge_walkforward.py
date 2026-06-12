@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.imbalance_edge_selection import (
     ImbalanceEdgeSelectionReport,
     ImbalanceEdgeSelectionThresholds,
@@ -66,6 +67,7 @@ def write_imbalance_edge_walkforward(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     sweep_thresholds: ImbalanceEdgeSweepThresholds | None = None,
     selection_thresholds: ImbalanceEdgeSelectionThresholds | None = None,
     walkforward_thresholds: ImbalanceEdgeWalkForwardThresholds | None = None,
@@ -107,6 +109,7 @@ def write_imbalance_edge_walkforward(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=market,
             thresholds=sweep_thresholds,
         )
         sweep_dirs.append(sweep_dir)
@@ -122,7 +125,7 @@ def write_imbalance_edge_walkforward(
     )
     checks = _checks(folds, selection, walkforward_thresholds)
     summary = _summary(folds, selection, checks)
-    candidate_config = _candidate_config(selection, checks, summary.iloc[0], tick_size=tick_size)
+    candidate_config = _candidate_config(selection, checks, summary.iloc[0], tick_size=tick_size, market=market)
 
     folds.to_csv(out / "imbalance_edge_walkforward_folds.csv", index=False)
     checks.to_csv(out / "imbalance_edge_walkforward_checks.csv", index=False)
@@ -150,6 +153,7 @@ def write_imbalance_edge_walkforward(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "market": market,
             "sweep_thresholds": asdict(sweep_thresholds),
             "selection_thresholds": asdict(selection_thresholds),
             "walkforward_thresholds": asdict(walkforward_thresholds),
@@ -295,6 +299,7 @@ def _candidate_config(
     summary: pd.Series,
     *,
     tick_size: float,
+    market: str,
 ) -> dict[str, Any]:
     config = copy.deepcopy(selection.candidate_config)
     config["ready"] = bool(summary.get("passed", False))
@@ -305,6 +310,7 @@ def _candidate_config(
     replay_defaults = config.setdefault("replay_defaults", {})
     if isinstance(replay_defaults, dict):
         replay_defaults.setdefault("tick_size", float(tick_size))
+        replay_defaults.setdefault("market", market)
     config["walkforward"] = {
         "fold_count": _jsonable(summary.get("fold_count")),
         "passed_sweeps": _jsonable(summary.get("passed_sweeps")),

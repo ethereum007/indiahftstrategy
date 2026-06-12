@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from data.loaders import load_tick_csv
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 
 
@@ -65,6 +66,7 @@ def write_imbalance_edge_audit(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
 ) -> ImbalanceEdgeAudit:
     thresholds = thresholds or ImbalanceEdgeThresholds()
     ticks_file = Path(ticks_path)
@@ -73,6 +75,7 @@ def write_imbalance_edge_audit(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     audit = evaluate_imbalance_edge(ticks, thresholds=thresholds, tick_size=tick_size)
     out = Path(output_dir)
@@ -90,6 +93,7 @@ def write_imbalance_edge_audit(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "market": market,
         },
         inputs={"ticks": ticks_file},
     )

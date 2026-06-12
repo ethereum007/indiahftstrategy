@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from strategies.run_imbalance_replay import run_imbalance_replay
@@ -32,6 +33,7 @@ def run_imbalance_sweep(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     instrument_id: str = "BOOK",
     instrument_kind: str = "OPT",
     lot_size: int = 75,
@@ -78,6 +80,7 @@ def run_imbalance_sweep(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=market,
             instrument_id=instrument_id,
             instrument_kind=instrument_kind,
             lot_size=lot_size,
@@ -135,6 +138,7 @@ def run_imbalance_sweep(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "market": market,
             "instrument_id": instrument_id,
             "instrument_kind": instrument_kind,
             "lot_size": lot_size,
@@ -247,6 +251,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
     parser.add_argument("--timestamp-tz", default=None)
     parser.add_argument("--no-filter-session", action="store_true")
+    parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--instrument-id", default="BOOK")
     parser.add_argument("--instrument-kind", default="OPT", choices=["FUT", "OPT", "EQ"])
     parser.add_argument("--lot-size", type=int, default=75)
@@ -281,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,
+        market=args.market,
         instrument_id=args.instrument_id,
         instrument_kind=args.instrument_kind,
         lot_size=args.lot_size,

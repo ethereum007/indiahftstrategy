@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 
 from data.loaders import load_tick_csv
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.imbalance_edge import ImbalanceEdgeThresholds, evaluate_imbalance_edge
 from reports.manifest import write_experiment_manifest
 
@@ -120,6 +121,7 @@ def write_imbalance_edge_sweep(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     thresholds: ImbalanceEdgeSweepThresholds | None = None,
 ) -> ImbalanceEdgeSweepReport:
     thresholds = thresholds or ImbalanceEdgeSweepThresholds()
@@ -129,6 +131,7 @@ def write_imbalance_edge_sweep(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     report = evaluate_imbalance_edge_sweep(
         ticks,
@@ -145,6 +148,7 @@ def write_imbalance_edge_sweep(
         min_median_forward_edge_ticks=min_median_forward_edge_ticks,
         thresholds=thresholds,
     )
+    report.candidate_config.setdefault("replay_defaults", {})["market"] = market
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.runs.to_csv(out / "imbalance_edge_sweep_runs.csv", index=False)
@@ -172,6 +176,7 @@ def write_imbalance_edge_sweep(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "market": market,
             "thresholds": asdict(thresholds),
         },
         inputs={"ticks": ticks_file},

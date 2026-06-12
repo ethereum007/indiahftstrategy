@@ -154,6 +154,7 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
         "min_microprice_edge_ticks": _jsonable(replay_defaults.get("min_microprice_edge_ticks")),
         "hold_ns": _jsonable(replay_defaults.get("hold_ns")),
         "tick_size": _jsonable(replay_defaults.get("tick_size")),
+        "market": _jsonable(replay_defaults.get("market")),
         "proof_pass_rate": _float(row, "proof_pass_rate"),
         "fold_count": _int(row, "fold_count"),
         "proof_passed_folds": _int(row, "proof_passed_folds"),
@@ -205,6 +206,7 @@ def _promotion_candidate_config(
             "min_microprice_edge_ticks": _jsonable(candidate.get("min_microprice_edge_ticks")),
             "hold_ns": _jsonable(candidate.get("hold_ns")),
             "tick_size": _jsonable(candidate.get("tick_size")),
+            "market": _jsonable(candidate.get("market")),
         },
         "replay_defaults": _jsonable(replay_defaults),
         "metrics": {
@@ -230,6 +232,7 @@ def _promotion_candidate_config(
 def _scenario_key(replay_defaults: dict[str, Any]) -> str:
     pieces = [
         ("strategy", "imbalance"),
+        ("market", replay_defaults.get("market")),
         ("entry_imbalance", replay_defaults.get("entry_imbalance")),
         ("min_microprice_edge_ticks", replay_defaults.get("min_microprice_edge_ticks")),
         ("hold_ns", replay_defaults.get("hold_ns")),
