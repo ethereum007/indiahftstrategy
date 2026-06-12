@@ -871,6 +871,31 @@ halt_incident_summary.csv
 manifest.json
 ```
 
+## Resume Gate
+
+Authorize a post-halt resume only after the halt incident is closed and a fresh
+scale-up plan is ready:
+
+```powershell
+python -m hft_cli review-resume-gate `
+  --incident runs\halt_incidents\leadlag_shadow_latest `
+  --scaleup runs\scaleup\leadlag_shadow_resume `
+  --operator-review ops\resume_review.csv `
+  --out runs\resume\leadlag_shadow_latest `
+  --require-operator-approval `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+resume_authorization.csv
+resume_checks.csv
+resume_summary.csv
+resume_config.json
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

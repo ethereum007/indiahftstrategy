@@ -111,6 +111,9 @@
   acknowledgements, flatten fills, and final flat positions after a guard halt.
 - Halt incident review that combines guard, response, export, and execution
   evidence into one incident-closure timeline, check set, and summary.
+- Post-halt resume gate that requires a closed incident, ready scale-up plan,
+  scenario/adapter continuity, optional operator approval, and emits
+  resume authorization/config artifacts.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -147,7 +150,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 173 tests.
+Current passing suite: 177 tests.
 
 ## Next Build Targets
 

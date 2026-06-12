@@ -25,6 +25,7 @@ from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.proof import ProofThresholds, write_proof_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
+from reports.resume import ResumeGateThresholds, write_resume_gate_report
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
@@ -436,6 +437,19 @@ def main(argv: list[str] | None = None) -> int:
     halt_incident.add_argument("--require-export", action="store_true")
     halt_incident.add_argument("--allow-incomplete-execution", action="store_true")
     halt_incident.add_argument("--fail-on-breach", action="store_true")
+
+    resume_gate = sub.add_parser("review-resume-gate", help="Authorize post-halt resume against a fresh scale-up plan.")
+    resume_gate.add_argument("--incident", required=True)
+    resume_gate.add_argument("--scaleup", required=True)
+    resume_gate.add_argument("--out", required=True)
+    resume_gate.add_argument("--operator-review", default=None)
+    resume_gate.add_argument("--allow-open-incident", action="store_true")
+    resume_gate.add_argument("--allow-unready-scaleup", action="store_true")
+    resume_gate.add_argument("--allow-scenario-change", action="store_true")
+    resume_gate.add_argument("--allow-adapter-change", action="store_true")
+    resume_gate.add_argument("--require-operator-approval", action="store_true")
+    resume_gate.add_argument("--max-failed-scaleup-checks", type=int, default=0)
+    resume_gate.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -1016,6 +1030,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "review-resume-gate":
+        result = write_resume_gate_report(
+            incident_dir=args.incident,
+            scaleup_dir=args.scaleup,
+            output_dir=args.out,
+            operator_review_path=args.operator_review,
+            thresholds=ResumeGateThresholds(
+                require_incident_passed=not args.allow_open_incident,
+                require_scaleup_ready=not args.allow_unready_scaleup,
+                require_same_scenario=not args.allow_scenario_change,
+                require_same_adapter=not args.allow_adapter_change,
+                require_operator_approval=args.require_operator_approval,
+                max_failed_scaleup_checks=args.max_failed_scaleup_checks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,
