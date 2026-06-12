@@ -203,7 +203,9 @@
   lifecycle, runtime guard, halt-response, and resume artifacts.
 - Strategy evidence review gate that consumes the experiment catalog and
   requires successful proof, stress, promotion, broker-readiness, shadow, or
-  user-selected run types before scale-up decisions.
+  user-selected run types before scale-up decisions, with optional fail-closed
+  checks that all passing required artifacts share the expected strategy and
+  market identity.
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness
@@ -306,7 +308,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 392 tests.
+Current passing suite: 395 tests.
 
 ## Next Build Targets
 

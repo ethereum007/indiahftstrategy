@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -8,7 +10,7 @@ from reports.evidence import (
 )
 
 
-def catalog_rows(*, dirty=False, commit="abc123"):
+def catalog_rows(*, dirty=False, commit="abc123", strategy="leadlag", market="india_nse_index_derivatives"):
     return pd.DataFrame(
         [
             {
@@ -19,6 +21,7 @@ def catalog_rows(*, dirty=False, commit="abc123"):
                 "git_dirty": dirty,
                 "summary_status": True,
                 "summary_file": "proof_summary.csv",
+                "parameters_json": json.dumps({"strategy": strategy, "market": market}),
             },
             {
                 "run_dir": "runs/stress",
@@ -28,6 +31,7 @@ def catalog_rows(*, dirty=False, commit="abc123"):
                 "git_dirty": dirty,
                 "summary_status": True,
                 "summary_file": "stress_summary.csv",
+                "parameters_json": json.dumps({"strategy": strategy, "market": market}),
             },
             {
                 "run_dir": "runs/promotion",
@@ -37,6 +41,8 @@ def catalog_rows(*, dirty=False, commit="abc123"):
                 "git_dirty": dirty,
                 "summary_status": True,
                 "summary_file": "promotion_summary.csv",
+                "summary_candidate_scenario_key": f"strategy={strategy}|market={market}|trigger_ticks=2",
+                "parameters_json": json.dumps({"thresholds": {}}),
             },
         ]
     )
@@ -132,6 +138,41 @@ def test_strategy_evidence_can_require_broker_readiness_gate():
     assert "broker_readiness" in set(review.evidence["required_run_type"])
 
 
+def test_strategy_evidence_can_require_same_strategy_and_market():
+    review = evaluate_strategy_evidence(
+        catalog_rows(),
+        thresholds=EvidenceThresholds(
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="lead_lag_taker",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["latest_strategy"]) == {"lead_lag_taker"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert review.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+
+
+def test_strategy_evidence_blocks_mixed_strategy_artifacts():
+    catalog = catalog_rows()
+    catalog.loc[catalog["run_type"] == "promotion_report", "summary_candidate_scenario_key"] = (
+        "strategy=imbalance|market=india_nse_index_derivatives|entry_imbalance=0.6"
+    )
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(require_same_strategy=True, expected_strategy="leadlag"),
+    )
+
+    assert not review.ready
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert {"same_strategy", "expected_strategy"} <= failed
+    assert int(review.summary.iloc[0]["strategy_count"]) == 2
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -175,3 +216,32 @@ def test_cli_strategy_evidence_can_fail_on_breach(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "failed_checks"]) == 1
+
+
+def test_cli_strategy_evidence_can_require_strategy_identity(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "evidence"
+    catalog = catalog_rows()
+    catalog.loc[catalog["run_type"] == "promotion_report", "summary_candidate_scenario_key"] = (
+        "strategy=imbalance|market=india_nse_index_derivatives|entry_imbalance=0.6"
+    )
+    catalog.to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--require-same-strategy",
+            "--expected-strategy",
+            "leadlag",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "strategy_evidence_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert {"same_strategy", "expected_strategy"} <= failed

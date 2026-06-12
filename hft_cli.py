@@ -769,6 +769,10 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--min-passed-per-type", type=int, default=1)
     evidence.add_argument("--allow-dirty-git", action="store_true")
     evidence.add_argument("--require-same-git-commit", action="store_true")
+    evidence.add_argument("--require-same-strategy", action="store_true")
+    evidence.add_argument("--require-same-market", action="store_true")
+    evidence.add_argument("--expected-strategy", default=None)
+    evidence.add_argument("--expected-market", default=None)
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_sweep = sub.add_parser("sweep-leadlag", help="Run lead-lag replay robustness sweep.")
@@ -2207,6 +2211,10 @@ def main(argv: list[str] | None = None) -> int:
                 min_passed_per_type=args.min_passed_per_type,
                 allow_dirty_git=args.allow_dirty_git,
                 require_same_git_commit=args.require_same_git_commit,
+                require_same_strategy=args.require_same_strategy,
+                require_same_market=args.require_same_market,
+                expected_strategy=args.expected_strategy,
+                expected_market=args.expected_market,
             ),
         )
         print(result.summary.to_string(index=False))

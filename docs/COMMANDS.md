@@ -75,6 +75,10 @@ python -m hft_cli review-strategy-evidence `
   --required-run-type broker_readiness `
   --required-run-type shadow_session_comparison `
   --require-same-git-commit `
+  --require-same-strategy `
+  --expected-strategy lead_lag_taker `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
   --fail-on-breach
 ```
 
@@ -92,6 +96,11 @@ portability, calibration, launch, broker export/upload, broker-readiness,
 shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session, halt-response, and resume summaries,
 so those run types can be promoted into explicit `--required-run-type`
 evidence gates.
+
+Use `--require-same-strategy` and `--require-same-market` before scale-up to
+fail closed when required proof, stress, promotion, broker, or shadow artifacts
+come from different strategy or market identities. Pair them with
+`--expected-strategy` and `--expected-market` when the scale-up target is known.
 
 ## Market Profile Report
 

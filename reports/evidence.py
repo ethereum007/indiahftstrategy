@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,10 @@ class EvidenceThresholds:
     min_passed_per_type: int = 1
     allow_dirty_git: bool = False
     require_same_git_commit: bool = False
+    require_same_strategy: bool = False
+    require_same_market: bool = False
+    expected_strategy: str | None = None
+    expected_market: str | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,8 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
         }
     matched["summary_status_bool"] = matched["summary_status"].map(_to_optional_bool)
     latest = _latest_row(matched)
+    passed = matched.loc[matched["summary_status_bool"] == True]  # noqa: E712
+    identity = _latest_row(passed) if not passed.empty else latest
     passed_runs = int((matched["summary_status_bool"] == True).sum())  # noqa: E712 - pandas scalar comparison
     failed_runs = int((matched["summary_status_bool"] == False).sum())  # noqa: E712
     unknown_runs = int(matched["summary_status_bool"].isna().sum())
@@ -103,6 +110,8 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
         "latest_status": bool(_to_bool(latest.get("summary_status", False))),
         "latest_generated_at_utc": str(latest.get("generated_at_utc", "")),
         "latest_git_commit": str(latest.get("git_commit", "")),
+        "latest_strategy": _strategy_identity(identity),
+        "latest_market": _market_identity(identity),
         "passed": bool(passed_runs >= thresholds.min_passed_per_type),
     }
 
@@ -143,6 +152,57 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "passed required evidence spans multiple git commits or no commit",
             )
         )
+    passed_required = _passed_required_rows(catalog, evidence)
+    if thresholds.require_same_strategy:
+        strategies = _identity_values(passed_required, _strategy_identity)
+        rows.append(
+            _check(
+                "same_strategy",
+                ";".join(sorted(strategies)) if strategies else "",
+                "count==",
+                1,
+                len(strategies) == 1 and _missing_identities(passed_required, _strategy_identity) == 0,
+                "passed required evidence has missing or multiple strategy identities",
+            )
+        )
+    if thresholds.expected_strategy is not None:
+        expected = _normalize_strategy(thresholds.expected_strategy)
+        strategies = _identity_values(passed_required, _strategy_identity)
+        rows.append(
+            _check(
+                "expected_strategy",
+                ";".join(sorted(strategies)) if strategies else "",
+                "==",
+                expected,
+                strategies == {expected} and _missing_identities(passed_required, _strategy_identity) == 0,
+                "passed required evidence does not match the expected strategy",
+            )
+        )
+    if thresholds.require_same_market:
+        markets = _identity_values(passed_required, _market_identity)
+        rows.append(
+            _check(
+                "same_market",
+                ";".join(sorted(markets)) if markets else "",
+                "count==",
+                1,
+                len(markets) == 1 and _missing_identities(passed_required, _market_identity) == 0,
+                "passed required evidence has missing or multiple market identities",
+            )
+        )
+    if thresholds.expected_market is not None:
+        expected = _normalize_identity(thresholds.expected_market)
+        markets = _identity_values(passed_required, _market_identity)
+        rows.append(
+            _check(
+                "expected_market",
+                ";".join(sorted(markets)) if markets else "",
+                "==",
+                expected,
+                markets == {expected} and _missing_identities(passed_required, _market_identity) == 0,
+                "passed required evidence does not match the expected market",
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -155,6 +215,9 @@ def _summary(
     ready = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     passed_required = int(evidence["passed"].astype(bool).sum()) if not evidence.empty else 0
+    passed_required_rows = _passed_required_rows(catalog, evidence)
+    strategies = _identity_values(passed_required_rows, _strategy_identity)
+    markets = _identity_values(passed_required_rows, _market_identity)
     return pd.DataFrame(
         [
             {
@@ -168,6 +231,18 @@ def _summary(
                 "min_passed_per_type": int(thresholds.min_passed_per_type),
                 "dirty_runs": int(catalog["git_dirty"].map(_to_bool).sum()) if not catalog.empty else 0,
                 "git_commit_count": int(catalog["git_commit"].dropna().nunique()) if not catalog.empty else 0,
+                "strategy": next(iter(strategies)) if len(strategies) == 1 else "",
+                "strategy_count": int(len(strategies)),
+                "missing_strategy_runs": _missing_identities(passed_required_rows, _strategy_identity),
+                "expected_strategy": _normalize_strategy(thresholds.expected_strategy)
+                if thresholds.expected_strategy is not None
+                else "",
+                "market": next(iter(markets)) if len(markets) == 1 else "",
+                "market_count": int(len(markets)),
+                "missing_market_runs": _missing_identities(passed_required_rows, _market_identity),
+                "expected_market": _normalize_identity(thresholds.expected_market)
+                if thresholds.expected_market is not None
+                else "",
             }
         ]
     )
@@ -195,13 +270,141 @@ def _latest_row(frame: pd.DataFrame) -> pd.Series:
 
 
 def _passed_required_commits(catalog: pd.DataFrame, evidence: pd.DataFrame) -> set[str]:
+    passed = _passed_required_rows(catalog, evidence)
+    return {str(value) for value in passed["git_commit"].dropna() if str(value)}
+
+
+def _passed_required_rows(catalog: pd.DataFrame, evidence: pd.DataFrame) -> pd.DataFrame:
     required = set(evidence.loc[evidence["passed"].astype(bool), "required_run_type"].astype(str))
     if not required:
-        return set()
+        return catalog.iloc[0:0].copy()
     work = catalog.copy()
     work["summary_status_bool"] = work["summary_status"].map(_to_optional_bool)
-    passed = work.loc[work["run_type"].astype(str).isin(required) & (work["summary_status_bool"] == True)]  # noqa: E712
-    return {str(value) for value in passed["git_commit"].dropna() if str(value)}
+    return work.loc[work["run_type"].astype(str).isin(required) & (work["summary_status_bool"] == True)].copy()  # noqa: E712
+
+
+def _identity_values(frame: pd.DataFrame, extractor: Any) -> set[str]:
+    values: set[str] = set()
+    for _, row in frame.iterrows():
+        value = extractor(row)
+        if value:
+            values.add(value)
+    return values
+
+
+def _missing_identities(frame: pd.DataFrame, extractor: Any) -> int:
+    if frame.empty:
+        return 0
+    return int(sum(1 for _, row in frame.iterrows() if not extractor(row)))
+
+
+def _strategy_identity(row: pd.Series) -> str:
+    return _normalize_strategy(_first_identity(row, ("strategy", "strategy_name", "strategy_id")))
+
+
+def _market_identity(row: pd.Series) -> str:
+    return _normalize_identity(_first_identity(row, ("market", "market_profile", "market_name", "market_id")))
+
+
+def _first_identity(row: pd.Series, keys: tuple[str, ...]) -> str:
+    for column in _summary_columns(keys):
+        value = _row_text(row, column)
+        if value:
+            return value
+    for scenario_column in (
+        "summary_candidate_scenario_key",
+        "summary_best_scenario_key",
+        "summary_selected_scenario_key",
+        "summary_scenario_key",
+        "scenario_key",
+    ):
+        parsed = _parse_scenario_key(_row_text(row, scenario_column))
+        for key in keys:
+            if key in parsed:
+                return parsed[key]
+    for json_column in ("parameters_json", "inputs_json"):
+        parsed_json = _parse_json(_row_text(row, json_column))
+        value = _find_json_key(parsed_json, keys)
+        if value:
+            return value
+    return ""
+
+
+def _summary_columns(keys: tuple[str, ...]) -> tuple[str, ...]:
+    columns: list[str] = []
+    for key in keys:
+        columns.append(f"summary_{key}")
+    if "market" in keys:
+        columns.extend(["summary_market_key", "summary_market_profile_name"])
+    return tuple(dict.fromkeys(columns))
+
+
+def _parse_scenario_key(value: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for part in value.split("|"):
+        if "=" not in part:
+            continue
+        key, item = part.split("=", 1)
+        key = key.strip()
+        item = item.strip()
+        if key and item:
+            parsed[key] = item
+    return parsed
+
+
+def _parse_json(value: str) -> Any:
+    if not value:
+        return {}
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return {}
+
+
+def _find_json_key(value: Any, keys: tuple[str, ...]) -> str:
+    if isinstance(value, dict):
+        for key in keys:
+            item = value.get(key)
+            if isinstance(item, (str, int, float)) and str(item).strip():
+                return str(item)
+        for item in value.values():
+            found = _find_json_key(item, keys)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_json_key(item, keys)
+            if found:
+                return found
+    return ""
+
+
+def _row_text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    value = row[column]
+    if pd.isna(value):
+        return ""
+    return str(value)
+
+
+def _normalize_strategy(value: str | None) -> str:
+    normalized = _normalize_identity(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(normalized, normalized)
+
+
+def _normalize_identity(value: str | None) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _catalog_path(path: str | Path) -> Path:
