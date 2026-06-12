@@ -14,6 +14,7 @@ from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnost
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
+from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
 from reports.halt_response import HaltResponseConfig, write_halt_response_plan
 from reports.launch import LaunchThresholds, write_launch_bundle
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
@@ -409,6 +410,19 @@ def main(argv: list[str] | None = None) -> int:
     halt_export.add_argument("--allow-unready-response", action="store_true")
     halt_export.add_argument("--allow-missing-required", action="store_true")
     halt_export.add_argument("--fail-on-breach", action="store_true")
+
+    halt_execution = sub.add_parser("reconcile-halt-execution", help="Verify emergency cancel/flatten execution.")
+    halt_execution.add_argument("--halt-response", required=True)
+    halt_execution.add_argument("--out", required=True)
+    halt_execution.add_argument("--cancel-acks", default=None)
+    halt_execution.add_argument("--flatten-fills", default=None)
+    halt_execution.add_argument("--positions", default=None)
+    halt_execution.add_argument("--allow-unready-response", action="store_true")
+    halt_execution.add_argument("--allow-missing-cancel-acks", action="store_true")
+    halt_execution.add_argument("--allow-incomplete-flatten-fills", action="store_true")
+    halt_execution.add_argument("--allow-missing-final-positions", action="store_true")
+    halt_execution.add_argument("--position-tolerance", type=float, default=0.0)
+    halt_execution.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -956,6 +970,23 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "reconcile-halt-execution":
+        result = write_halt_execution_report(
+            halt_response_dir=args.halt_response,
+            output_dir=args.out,
+            cancel_acks_path=args.cancel_acks,
+            flatten_fills_path=args.flatten_fills,
+            positions_path=args.positions,
+            thresholds=HaltExecutionThresholds(
+                require_response_ready=not args.allow_unready_response,
+                require_all_cancel_acks=not args.allow_missing_cancel_acks,
+                require_all_flatten_fills=not args.allow_incomplete_flatten_fills,
+                require_final_positions=not args.allow_missing_final_positions,
+                position_tolerance=args.position_tolerance,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,

@@ -816,6 +816,36 @@ halt_response_export_schema.csv
 manifest.json
 ```
 
+## Halt Execution Reconciliation
+
+Verify that emergency cancels were acknowledged, flatten orders were filled,
+and final positions are flat after a halt response:
+
+```powershell
+python -m hft_cli reconcile-halt-execution `
+  --halt-response runs\halt_response\leadlag_shadow_latest `
+  --cancel-acks logs\cancel_acks.csv `
+  --flatten-fills logs\flatten_fills.csv `
+  --positions logs\positions_after_halt.csv `
+  --out runs\halt_execution\leadlag_shadow_latest `
+  --fail-on-breach
+```
+
+Cancel acknowledgements can match on `action_id`, `broker_order_id`, or
+`client_order_id`. Flatten fills can match on `action_id` or
+`instrument_id` plus `side`.
+
+Outputs:
+
+```text
+halt_cancel_execution.csv
+halt_flatten_execution.csv
+halt_position_execution.csv
+halt_execution_checks.csv
+halt_execution_summary.csv
+manifest.json
+```
+
 ## Calibration
 
 ```powershell

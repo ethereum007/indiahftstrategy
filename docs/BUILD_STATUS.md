@@ -107,6 +107,8 @@
 - Halt response export mapper that turns emergency cancel and flatten actions
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
   Arrow.money/iRage emergency schemas are finalized.
+- Halt execution reconciliation gate that verifies emergency cancel
+  acknowledgements, flatten fills, and final flat positions after a guard halt.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -143,7 +145,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 165 tests.
+Current passing suite: 169 tests.
 
 ## Next Build Targets
 
