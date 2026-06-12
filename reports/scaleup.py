@@ -46,6 +46,8 @@ class ScaleUpThresholds:
     require_data_readiness_comparison: bool = False
     require_broker_readiness: bool = False
     min_instrument_parse_coverage: float = 1.0
+    expected_strategy: str | None = None
+    expected_market: str | None = None
 
 
 @dataclass(frozen=True)
@@ -210,6 +212,8 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     broker_readiness = rows["broker_readiness"]
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
+    evidence_strategy = _strategy_key(evidence.get("strategy", ""))
+    evidence_market = _identity_key(evidence.get("market", ""))
     checks = [
         _check("evidence_ready", _to_bool(evidence.get("ready", False)), "is", True, _to_bool(evidence.get("ready", False)), "strategy evidence review is not ready"),
         _check("shadow_comparison_accepted", _to_bool(shadow.get("accepted", False)), "is", True, _to_bool(shadow.get("accepted", False)), "shadow comparison is not accepted"),
@@ -223,6 +227,30 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         _threshold_check("total_mismatched_orders", _number(shadow, "total_mismatched_orders"), "<=", thresholds.max_total_mismatched_orders),
         _threshold_check("total_overfilled_orders", _number(shadow, "total_overfilled_orders"), "<=", thresholds.max_total_overfilled_orders),
     ]
+    if thresholds.expected_strategy is not None:
+        expected_strategy = _strategy_key(thresholds.expected_strategy)
+        checks.append(
+            _check(
+                "evidence_strategy_matches",
+                evidence_strategy,
+                "==",
+                expected_strategy,
+                bool(evidence_strategy and evidence_strategy == expected_strategy),
+                "strategy evidence identity does not match expected strategy",
+            )
+        )
+    if thresholds.expected_market is not None:
+        expected_market = _identity_key(thresholds.expected_market)
+        checks.append(
+            _check(
+                "evidence_market_matches",
+                evidence_market,
+                "==",
+                expected_market,
+                bool(evidence_market and evidence_market == expected_market),
+                "strategy evidence identity does not match expected market",
+            )
+        )
     if thresholds.allowed_adapters:
         checks.append(
             _check(
@@ -412,6 +440,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
 
 
 def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool) -> pd.DataFrame:
+    evidence = rows["evidence"]
     launch = rows["launch"]
     shadow = rows["shadow"]
     proof_refresh = rows["proof_refresh"]
@@ -432,6 +461,10 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
             {
                 "ready": ready,
                 "target_mode": thresholds.target_mode,
+                "strategy": _strategy_key(evidence.get("strategy", "")),
+                "market": _identity_key(evidence.get("market", "")),
+                "expected_strategy": _strategy_key(thresholds.expected_strategy),
+                "expected_market": _identity_key(thresholds.expected_market),
                 "scenario_key": str(launch.get("scenario_key", "")),
                 "adapter": str(launch.get("adapter", "")),
                 "source_launch_mode": str(launch.get("mode", "")),
@@ -540,6 +573,10 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
             {
                 "ready": ready,
                 "target_mode": str(plan_row["target_mode"]),
+                "strategy": str(plan_row["strategy"]),
+                "market": str(plan_row["market"]),
+                "expected_strategy": str(plan_row["expected_strategy"]),
+                "expected_market": str(plan_row["expected_market"]),
                 "scenario_key": str(plan_row["scenario_key"]),
                 "adapter": str(plan_row["adapter"]),
                 "max_orders_per_session": int(plan_row["max_orders_per_session"]),
@@ -577,8 +614,16 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
         "schema_version": 1,
         "ready": bool(plan_row["ready"]),
         "target_mode": str(plan_row["target_mode"]),
+        "strategy": str(plan_row["strategy"]),
+        "market": str(plan_row["market"]),
         "scenario_key": str(plan_row["scenario_key"]),
         "adapter": str(plan_row["adapter"]),
+        "identity": {
+            "strategy": str(plan_row["strategy"]),
+            "market": str(plan_row["market"]),
+            "expected_strategy": str(plan_row["expected_strategy"]),
+            "expected_market": str(plan_row["expected_market"]),
+        },
         "limits": {
             "max_orders_per_session": int(plan_row["max_orders_per_session"]),
             "max_notional_per_session": float(plan_row["max_notional_per_session"]),
@@ -657,6 +702,25 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
 
 def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
     return bool(thresholds.require_broker_readiness or thresholds.target_mode == "live_dryrun")
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _read_summary(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> pd.DataFrame:

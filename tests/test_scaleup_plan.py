@@ -6,11 +6,13 @@ from hft_cli import main
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
 
 
-def evidence_summary(ready=True):
+def evidence_summary(ready=True, strategy="lead_lag_taker", market="india_nse_index_derivatives"):
     return pd.DataFrame(
         [
             {
                 "ready": ready,
+                "strategy": strategy,
+                "market": market,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "eligible_for_shadow_scaleup_review" if ready else "evidence_incomplete",
             }
@@ -167,14 +169,26 @@ def data_readiness_comparison_summary(accepted=True):
     )
 
 
-def write_inputs(root, *, evidence_ready=True, shadow_accepted=True, launch_ready=True, exposure_passed=True):
+def write_inputs(
+    root,
+    *,
+    evidence_ready=True,
+    shadow_accepted=True,
+    launch_ready=True,
+    exposure_passed=True,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+):
     evidence = root / "evidence"
     shadow = root / "shadow"
     launch = root / "launch"
     exposure = root / "exposure"
     for path in (evidence, shadow, launch, exposure):
         path.mkdir(parents=True, exist_ok=True)
-    evidence_summary(evidence_ready).to_csv(evidence / "strategy_evidence_summary.csv", index=False)
+    evidence_summary(evidence_ready, strategy=strategy, market=market).to_csv(
+        evidence / "strategy_evidence_summary.csv",
+        index=False,
+    )
     shadow_summary(shadow_accepted).to_csv(shadow / "shadow_session_comparison_summary.csv", index=False)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
     exposure_summary(exposure_passed).to_csv(exposure / "order_exposure_summary.csv", index=False)
@@ -239,6 +253,10 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert plan["max_orders_per_session"] == 3
     assert plan["max_notional_per_session"] == 2000.0
     assert report.summary.iloc[0]["recommendation"] == "scale_up_with_controls"
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert report.config["identity"]["strategy"] == "lead_lag_taker"
+    assert report.config["identity"]["market"] == "india_nse_index_derivatives"
     assert report.config["kill_switches"]["max_worst_adverse_slippage"] == 0.05
     assert report.config["kill_switches"]["max_telemetry_age_ns"] == 5_000_000_000
     assert report.config["kill_switches"]["max_lifecycle_orders"] == 6
@@ -250,6 +268,41 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert report.config["kill_switches"]["max_gross_notional"] == 2000.0
     assert report.config["kill_switches"]["max_abs_net_delta"] == 100.0
     assert report.config["kill_switches"]["max_abs_net_vega"] == 250.0
+
+
+def test_scaleup_plan_can_require_expected_strategy_and_market():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True, strategy="leadlag", market="india_nse_index_derivatives"),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        thresholds=ScaleUpThresholds(
+            expected_strategy="lead_lag_taker",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["expected_strategy"] == "lead_lag_taker"
+    assert report.config["identity"]["expected_market"] == "india_nse_index_derivatives"
+
+
+def test_scaleup_plan_blocks_wrong_evidence_identity():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True, strategy="imbalance", market="us_equities_regular"),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        thresholds=ScaleUpThresholds(
+            expected_strategy="leadlag",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"evidence_strategy_matches", "evidence_market_matches"} <= failed
+    assert report.config["identity"]["strategy"] == "imbalance"
+    assert report.config["identity"]["expected_strategy"] == "lead_lag_taker"
 
 
 def test_scaleup_plan_accepts_required_ready_proof_refresh():
@@ -488,6 +541,37 @@ def test_cli_scaleup_plan_can_fail_on_breach(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "failed_checks"]) == 1
+
+
+def test_cli_scaleup_plan_can_require_expected_identity(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path, strategy="imbalance", market="us_equities_regular")
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--expected-strategy",
+            "leadlag",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {"evidence_strategy_matches", "evidence_market_matches"} <= failed
 
 
 def test_cli_scaleup_plan_can_require_proof_refresh(tmp_path):

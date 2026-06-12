@@ -1084,6 +1084,8 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--require-data-readiness-comparison", action="store_true")
     scaleup.add_argument("--require-broker-readiness", action="store_true")
     scaleup.add_argument("--min-instrument-parse-coverage", type=float, default=1.0)
+    scaleup.add_argument("--expected-strategy", default=None)
+    scaleup.add_argument("--expected-market", default=None)
     scaleup.add_argument("--fail-on-breach", action="store_true")
 
     runtime_telemetry = sub.add_parser("build-runtime-telemetry", help="Build a guard-ready runtime telemetry snapshot.")
@@ -2603,6 +2605,8 @@ def main(argv: list[str] | None = None) -> int:
                 require_data_readiness_comparison=args.require_data_readiness_comparison,
                 require_broker_readiness=args.require_broker_readiness,
                 min_instrument_parse_coverage=args.min_instrument_parse_coverage,
+                expected_strategy=args.expected_strategy,
+                expected_market=args.expected_market,
             ),
         )
         print(result.summary.to_string(index=False))

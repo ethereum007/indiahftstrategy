@@ -1516,6 +1516,8 @@ python -m hft_cli plan-scaleup `
   --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
   --out runs\scaleup\leadlag_shadow `
   --target-mode shadow `
+  --expected-strategy lead_lag_taker `
+  --expected-market india_nse_index_derivatives `
   --allowed-adapter arrow_money `
   --min-shadow-sessions 2 `
   --min-shadow-acceptance-rate 1 `
@@ -1562,6 +1564,10 @@ present, so `--require-broker-readiness` can gate the pipeline folder directly.
 If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status for the
 session that fed the broker gate.
+Use `--expected-strategy` and `--expected-market` to fail closed unless the
+strategy-evidence summary carries the intended strategy and market identity.
+Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
+for runtime guard, halt, and resume traceability.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
 broker readiness plus broker runtime-session evidence with a continuing runtime
 guard.
