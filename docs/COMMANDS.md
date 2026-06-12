@@ -88,8 +88,9 @@ manifest.json
 ```
 
 The catalog recognizes launch, broker export/upload, broker-readiness, data
-readiness, proof, promotion, and shadow-session summaries, so those run types
-can be promoted into explicit `--required-run-type` evidence gates.
+readiness, proof, promotion, shadow-session, runtime guard, halt-response, and
+resume summaries, so those run types can be promoted into explicit
+`--required-run-type` evidence gates.
 
 ## Market Profile Report
 

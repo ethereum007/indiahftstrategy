@@ -343,6 +343,105 @@ def test_catalog_experiment_runs_recognizes_broker_upload_and_readiness_status(t
     assert rows.loc["broker_readiness", "summary_adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
 
 
+def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "runtime_telemetry",
+        run_type="runtime_telemetry_snapshot",
+        summary_name="runtime_telemetry_summary.csv",
+        summary_row={
+            "ready": True,
+            "scenario_key": "trigger_ticks=2",
+            "adapter": "arrow_money",
+            "orders_sent": 4,
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "runtime_guard",
+        run_type="runtime_guard",
+        summary_name="runtime_guard_summary.csv",
+        summary_row={
+            "guard_action": "continue",
+            "halted": False,
+            "failed_checks": 0,
+            "scenario_key": "trigger_ticks=2",
+            "adapter": "arrow_money",
+        },
+    )
+    write_run(
+        root / "halt_response",
+        run_type="halt_response_plan",
+        summary_name="halt_response_summary.csv",
+        summary_row={
+            "ready": True,
+            "guard_action": "halt",
+            "cancel_orders": 1,
+            "flatten_orders": 1,
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "halt_export",
+        run_type="halt_response_export",
+        summary_name="halt_response_export_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "cancel_orders": 1,
+            "flatten_orders": 1,
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "halt_execution",
+        run_type="halt_execution_reconciliation",
+        summary_name="halt_execution_summary.csv",
+        summary_row={
+            "passed": True,
+            "cancel_actions": 1,
+            "flatten_actions": 1,
+            "nonflat_positions": 0,
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "halt_incident",
+        run_type="halt_incident_review",
+        summary_name="halt_incident_summary.csv",
+        summary_row={
+            "passed": True,
+            "incident_status": "halt_completed",
+            "scenario_key": "trigger_ticks=2",
+            "adapter": "arrow_money",
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "resume",
+        run_type="resume_gate",
+        summary_name="resume_summary.csv",
+        summary_row={
+            "ready": True,
+            "scenario_key": "trigger_ticks=2",
+            "adapter": "arrow_money",
+            "failed_checks": 0,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    rows = report.catalog.set_index("run_type")
+    assert int(report.summary.iloc[0]["status_true_runs"]) == 7
+    assert rows.loc["runtime_telemetry_snapshot", "summary_file"] == "runtime_telemetry_summary.csv"
+    assert rows.loc["runtime_guard", "summary_file"] == "runtime_guard_summary.csv"
+    assert rows.loc["runtime_guard", "summary_status_column"] == "failed_checks"
+    assert rows.loc["halt_response_plan", "summary_status_column"] == "ready"
+    assert rows.loc["halt_execution_reconciliation", "summary_status_column"] == "passed"
+    assert rows.loc["halt_incident_review", "summary_file"] == "halt_incident_summary.csv"
+    assert rows.loc["resume_gate", "summary_status_column"] == "ready"
+
+
 def test_cli_catalog_runs_writes_catalog(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

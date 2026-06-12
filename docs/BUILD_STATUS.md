@@ -176,7 +176,7 @@
 - Experiment catalog command that scans manifest-bearing run folders into a
   searchable evidence ledger with inferred pass/ready status and summary
   metrics for research, launch, broker upload, broker readiness, and
-  shadow-session artifacts.
+  shadow-session, runtime guard, halt-response, and resume artifacts.
 - Strategy evidence review gate that consumes the experiment catalog and
   requires successful proof, stress, promotion, broker-readiness, shadow, or
   user-selected run types before scale-up decisions.
@@ -259,7 +259,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 329 tests.
+Current passing suite: 330 tests.
 
 ## Next Build Targets
 
