@@ -1368,6 +1368,42 @@ For `arrow_money` and `irage`, the summary is marked
 `placeholder_normalized_pending_vendor_schema` until real vendor source columns
 replace the normalized placeholders.
 
+## Mapped Vendor Data Normalization
+
+After a schema audit and review, apply the mapping to a real vendor CSV and
+write a normalized file that existing research, replay, calibration, and
+diagnostic commands can consume:
+
+```powershell
+python -m hft_cli normalize-mapped-data `
+  --input vendor\arrow_fills_2026_06_10.csv `
+  --mapping mappings\arrow_fills_mapping.csv `
+  --out data\normalized\arrow_fills_2026_06_10 `
+  --adapter arrow_money `
+  --kind fills `
+  --output-file normalized_fills.csv `
+  --fail-on-breach
+```
+
+Supported `--kind` values match the schema audit workflow: `ticks`, `chain`,
+`orders`, and `fills`. Mapping files use `normalized_column`, `source_column`,
+optional `default_value`, optional `required`, and optional `transform`.
+Supported transforms are `identity`, `string`, `uppercase`, `lowercase`,
+`int`, `float`, `side_text`, and `side_signed`.
+
+Outputs:
+
+```text
+normalized_data.csv
+mapped_data_checks.csv
+mapped_data_summary.csv
+manifest.json
+```
+
+The command fails closed when required normalized columns are not mapped, and
+tick/chain outputs pass through the same session, timestamp, and data-quality
+normalizers used by the strategy backtests.
+
 ## Order Staging
 
 Stage generated quote or order candidates into a broker-neutral pre-trade file

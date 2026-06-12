@@ -6,6 +6,7 @@ from pathlib import Path
 
 from adapters.broker import run_calibration_report
 from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
+from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_export import OrderExportConfig, write_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
@@ -428,6 +429,20 @@ def main(argv: list[str] | None = None) -> int:
     schema_audit.add_argument("--adapter", default="normalized")
     schema_audit.add_argument("--kind", default="ticks")
     schema_audit.add_argument("--fail-on-missing", action="store_true")
+
+    mapped_data = sub.add_parser("normalize-mapped-data", help="Normalize vendor CSV data using a reviewed adapter mapping.")
+    mapped_data.add_argument("--input", required=True)
+    mapped_data.add_argument("--mapping", required=True)
+    mapped_data.add_argument("--out", required=True)
+    mapped_data.add_argument("--adapter", default="normalized")
+    mapped_data.add_argument("--kind", default="ticks")
+    mapped_data.add_argument("--output-file", default="normalized_data.csv")
+    mapped_data.add_argument("--timestamp-unit", default="ns")
+    mapped_data.add_argument("--timestamp-tz", default=None)
+    mapped_data.add_argument("--market", default="india_nse_index_derivatives")
+    mapped_data.add_argument("--no-filter-session", action="store_true")
+    mapped_data.add_argument("--allow-missing-required", action="store_true")
+    mapped_data.add_argument("--fail-on-breach", action="store_true")
 
     diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
     diag_ticks.add_argument("--ticks", required=True)
@@ -1358,6 +1373,24 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_missing and not result.passed else 0
+    if args.command == "normalize-mapped-data":
+        result = write_mapped_data_normalization(
+            args.input,
+            args.mapping,
+            output_dir=args.out,
+            config=MappedDataConfig(
+                adapter=args.adapter,
+                kind=args.kind,
+                output_filename=args.output_file,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                filter_session=not args.no_filter_session,
+                market=args.market,
+                require_all_mapped=not args.allow_missing_required,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "diagnose-ticks":
         ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session, market=args.market).data
         result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size, market=args.market), args.out)
