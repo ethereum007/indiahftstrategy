@@ -273,9 +273,9 @@
   `live_dryrun` resumes.
 - Cutover gate that authorizes the final paper/shadow/live-dryrun route only
   after scale-up, broker readiness, runtime-session guard, proof freshness,
-  required dispatch round-trip proof for live-dry-run, optional broker
-  resume-gate proof, and operator strategy/market/limit acknowledgement agree
-  in one manifest-backed authorization artifact.
+  required dispatch round-trip proof plus nested route proof for live-dry-run,
+  optional broker resume-gate proof, and operator strategy/market/limit
+  acknowledgement agree in one manifest-backed authorization artifact.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
   live-dry-run dispatch round-trip proof, and emits the final machine-readable
@@ -360,7 +360,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 490 tests.
+Current passing suite: 492 tests.
 
 ## Next Build Targets
 

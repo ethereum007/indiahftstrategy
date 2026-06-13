@@ -1988,8 +1988,9 @@ operator acknowledgement of the strategy/market identity, acknowledgement of
 the scale-up order/notional limits, a continuing runtime guard, and clean
 dispatch round-trip proof carried by both scale-up and broker readiness. It
 validates runtime and dispatch strategy/market/target-mode identity against the
-scale-up plan, carries proof-refresh state, and validates any supplied broker
-resume-gate proof identity before broker routing is allowed.
+scale-up plan, requires matching clean route proof from both scale-up and
+broker readiness, carries proof-refresh state, and validates any supplied
+broker resume-gate proof identity before broker routing is allowed.
 
 ## Route Enable Packet
 
