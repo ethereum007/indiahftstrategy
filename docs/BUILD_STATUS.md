@@ -279,8 +279,9 @@
   manifest-backed authorization artifact.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
-  live-dry-run dispatch round-trip proof plus nested route proof, and emits the
-  final machine-readable broker route-enable config without submitting orders.
+  live-dry-run dispatch round-trip proof, failed-check counters, plus nested
+  route proof, and emits the final machine-readable broker route-enable config
+  without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries live-dry-run nested route proof from
@@ -362,7 +363,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 501 tests.
+Current passing suite: 502 tests.
 
 ## Next Build Targets
 

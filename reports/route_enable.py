@@ -318,6 +318,14 @@ def _dispatch_roundtrip_checks(cutover: dict[str, Any], target_mode: str) -> lis
             int(cutover["dispatch_roundtrip_unmatched_acks"]) <= 0,
             "cutover dispatch round-trip has unmatched acknowledgements",
         ),
+        _check(
+            "cutover_dispatch_roundtrip_failed_checks",
+            cutover["dispatch_roundtrip_failed_checks"],
+            "<=",
+            0,
+            int(cutover["dispatch_roundtrip_failed_checks"]) <= 0,
+            "cutover dispatch round-trip has failed component checks",
+        ),
     ]
 
 
@@ -475,6 +483,7 @@ def _packet(
                 "dispatch_roundtrip_missing_request_acks": cutover["dispatch_roundtrip_missing_request_acks"],
                 "dispatch_roundtrip_rejected_orders": cutover["dispatch_roundtrip_rejected_orders"],
                 "dispatch_roundtrip_unmatched_acks": cutover["dispatch_roundtrip_unmatched_acks"],
+                "dispatch_roundtrip_failed_checks": cutover["dispatch_roundtrip_failed_checks"],
                 "route_dispatch_roundtrip_required": _route_dispatch_roundtrip_required(thresholds, cutover),
                 "route_dispatch_roundtrip_provided": cutover["route_dispatch_roundtrip_provided"],
                 "route_dispatch_roundtrip_ready": cutover["route_dispatch_roundtrip_ready"],
@@ -525,6 +534,7 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "dispatch_roundtrip_missing_request_acks": int(packet["dispatch_roundtrip_missing_request_acks"]),
                 "dispatch_roundtrip_rejected_orders": int(packet["dispatch_roundtrip_rejected_orders"]),
                 "dispatch_roundtrip_unmatched_acks": int(packet["dispatch_roundtrip_unmatched_acks"]),
+                "dispatch_roundtrip_failed_checks": int(packet["dispatch_roundtrip_failed_checks"]),
                 "route_dispatch_roundtrip_required": _to_bool(packet["route_dispatch_roundtrip_required"]),
                 "route_dispatch_roundtrip_provided": _to_bool(packet["route_dispatch_roundtrip_provided"]),
                 "route_dispatch_roundtrip_ready": _to_bool(packet["route_dispatch_roundtrip_ready"]),
@@ -595,6 +605,7 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             "missing_request_acks": int(packet["dispatch_roundtrip_missing_request_acks"]),
             "rejected_orders": int(packet["dispatch_roundtrip_rejected_orders"]),
             "unmatched_acks": int(packet["dispatch_roundtrip_unmatched_acks"]),
+            "failed_checks": int(packet["dispatch_roundtrip_failed_checks"]),
             "route_proof": {
                 "required": _to_bool(packet["route_dispatch_roundtrip_required"]),
                 "provided": _to_bool(packet["route_dispatch_roundtrip_provided"]),
@@ -704,6 +715,13 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
                 dispatch,
                 "unmatched_acks",
                 _number(row, "broker_dispatch_roundtrip_unmatched_acks", 0.0),
+            )
+        ),
+        "dispatch_roundtrip_failed_checks": int(
+            _number_from(
+                dispatch,
+                "failed_checks",
+                _number(row, "broker_dispatch_roundtrip_failed_checks", 0.0),
             )
         ),
         "route_dispatch_roundtrip_required": _to_bool(
