@@ -67,13 +67,13 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "parameters_json": parameters,
             },
             {
-                "run_dir": "runs/proof",
-                "run_type": "proof_report",
+                "run_dir": "runs/leadlag_walkforward",
+                "run_type": "leadlag_replay_walkforward",
                 "generated_at_utc": "2026-06-10T09:30:00Z",
                 "git_commit": commit,
                 "git_dirty": False,
                 "summary_status": True,
-                "summary_file": "proof_summary.csv",
+                "summary_file": "leadlag_replay_walkforward_summary.csv",
                 "summary_strategy": "lead_lag_taker",
                 "summary_market": market,
                 "parameters_json": parameters,
@@ -429,7 +429,7 @@ def test_strategy_evidence_blocks_mixed_strategy_artifacts():
     assert int(review.summary.iloc[0]["strategy_count"]) == 2
 
 
-def test_leadlag_evidence_profile_requires_edge_proof_stress_promotion_identity():
+def test_leadlag_evidence_profile_requires_edge_walkforward_stress_promotion_identity():
     review = evaluate_strategy_evidence(
         leadlag_catalog_rows(),
         thresholds=EvidenceThresholds(
@@ -460,6 +460,20 @@ def test_leadlag_evidence_profile_fails_without_edge_audit():
     failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
     assert not review.ready
     assert "required_run_type:leadlag_edge_audit" in failed
+
+
+def test_leadlag_evidence_profile_fails_without_replay_walkforward():
+    catalog = leadlag_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "leadlag_replay_walkforward"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("leadlag")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:leadlag_replay_walkforward" in failed
 
 
 def test_surface_mm_evidence_profile_requires_surface_quality_and_identity():

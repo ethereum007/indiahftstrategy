@@ -14,7 +14,7 @@ from reports.manifest import write_experiment_manifest
 DEFAULT_REQUIRED_RUN_TYPES = ("proof_report", "stress_report", "promotion_report")
 LEADLAG_REQUIRED_RUN_TYPES = (
     "leadlag_edge_audit",
-    "proof_report",
+    "leadlag_replay_walkforward",
     "stress_report",
     "promotion_report",
 )

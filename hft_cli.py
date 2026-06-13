@@ -54,7 +54,15 @@ from reports.imbalance_replay_walkforward import (
 )
 from reports.instrument_metadata import InstrumentMetadataConfig, write_instrument_metadata_report
 from reports.launch import LaunchThresholds, write_launch_bundle
+from reports.leadlag_candidate_promotion import (
+    LeadLagCandidatePromotionThresholds,
+    write_leadlag_candidate_promotion,
+)
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
+from reports.leadlag_replay_walkforward import (
+    LeadLagReplayWalkForwardThresholds,
+    write_leadlag_replay_walkforward,
+)
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
@@ -289,6 +297,53 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_replay.add_argument("--fill-model", default=None)
     leadlag_replay.add_argument("--allow-unready-fill-model", action="store_true")
     _add_generic_cost_args(leadlag_replay)
+
+    leadlag_replay_walkforward = sub.add_parser("walkforward-leadlag-replay", help="Replay one lead-lag candidate across paired leader/laggard folds and aggregate proof.")
+    leadlag_replay_walkforward.add_argument("--leaders", nargs="+", required=True)
+    leadlag_replay_walkforward.add_argument("--laggards", nargs="+", required=True)
+    leadlag_replay_walkforward.add_argument("--out", required=True)
+    leadlag_replay_walkforward.add_argument("--label", action="append", dest="labels")
+    leadlag_replay_walkforward.add_argument("--candidate-config", default=None)
+    leadlag_replay_walkforward.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
+    leadlag_replay_walkforward.add_argument("--timestamp-tz", default=None)
+    leadlag_replay_walkforward.add_argument("--no-filter-session", action="store_true")
+    leadlag_replay_walkforward.add_argument("--market", default=None)
+    leadlag_replay_walkforward.add_argument("--lot-size", type=int, default=75)
+    leadlag_replay_walkforward.add_argument("--leader-tick", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--laggard-tick", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--delta", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--trigger-ticks", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--qty", type=int, default=None)
+    leadlag_replay_walkforward.add_argument("--flat-after-ns", type=int, default=None)
+    leadlag_replay_walkforward.add_argument("--cooloff-ns", type=int, default=None)
+    leadlag_replay_walkforward.add_argument("--feed-latency-us", type=float, default=0.0)
+    leadlag_replay_walkforward.add_argument("--order-latency-us", type=float, default=0.0)
+    leadlag_replay_walkforward.add_argument("--markout-horizons-ns", nargs="+", default=None, type=int)
+    leadlag_replay_walkforward.add_argument("--min-net-pnl", type=float, default=0.0)
+    leadlag_replay_walkforward.add_argument("--min-fills", type=int, default=1)
+    leadlag_replay_walkforward.add_argument("--max-drawdown", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--max-otr", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--min-markout-mean", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--min-folds", type=int, default=None)
+    leadlag_replay_walkforward.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    leadlag_replay_walkforward.add_argument("--min-total-fills", type=int, default=1)
+    leadlag_replay_walkforward.add_argument("--min-total-net-pnl", type=float, default=0.0)
+    leadlag_replay_walkforward.add_argument("--max-worst-drawdown", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--min-median-markout-mean", type=float, default=None)
+    leadlag_replay_walkforward.add_argument("--fail-on-breach", action="store_true")
+    _add_generic_cost_args(leadlag_replay_walkforward)
+
+    leadlag_promotion = sub.add_parser("promote-leadlag-candidate", help="Promote a proven lead-lag replay walk-forward candidate for paper/shadow launch.")
+    leadlag_promotion.add_argument("--walkforward", required=True)
+    leadlag_promotion.add_argument("--out", required=True)
+    leadlag_promotion.add_argument("--allow-unpassed-walkforward", action="store_true")
+    leadlag_promotion.add_argument("--allow-unready-candidate", action="store_true")
+    leadlag_promotion.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    leadlag_promotion.add_argument("--min-total-fills", type=int, default=1)
+    leadlag_promotion.add_argument("--min-total-net-pnl", type=float, default=0.0)
+    leadlag_promotion.add_argument("--max-worst-drawdown", type=float, default=None)
+    leadlag_promotion.add_argument("--min-median-markout-mean", type=float, default=None)
+    leadlag_promotion.add_argument("--fail-on-breach", action="store_true")
 
     imbalance_replay = sub.add_parser("replay-imbalance", help="Replay microprice/order-book imbalance strategy.")
     imbalance_replay.add_argument("--ticks", required=True)
@@ -1773,6 +1828,63 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "walkforward-leadlag-replay":
+        result = write_leadlag_replay_walkforward(
+            args.leaders,
+            args.laggards,
+            output_dir=args.out,
+            labels=args.labels,
+            candidate_config=args.candidate_config,
+            timestamp_unit=args.timestamp_unit,
+            timestamp_tz=args.timestamp_tz,
+            filter_session=not args.no_filter_session,
+            market=args.market,
+            lot_size=args.lot_size,
+            leader_tick=args.leader_tick,
+            laggard_tick=args.laggard_tick,
+            delta=args.delta,
+            trigger_ticks=args.trigger_ticks,
+            qty=args.qty,
+            flat_after_ns=args.flat_after_ns,
+            cooloff_ns=args.cooloff_ns,
+            feed_latency_us=args.feed_latency_us,
+            order_latency_us=args.order_latency_us,
+            **_generic_cost_override_kwargs(args),
+            markout_horizons_ns=args.markout_horizons_ns,
+            proof_thresholds=ProofThresholds(
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_markout_mean=args.min_markout_mean,
+            ),
+            thresholds=LeadLagReplayWalkForwardThresholds(
+                min_folds=args.min_folds if args.min_folds is not None else len(args.leaders),
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "promote-leadlag-candidate":
+        result = write_leadlag_candidate_promotion(
+            args.walkforward,
+            output_dir=args.out,
+            thresholds=LeadLagCandidatePromotionThresholds(
+                require_walkforward_passed=not args.allow_unpassed_walkforward,
+                require_candidate_ready=not args.allow_unready_candidate,
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "replay-imbalance":
         candidate_defaults = _imbalance_candidate_replay_defaults(args.candidate_config)
         market = args.market or candidate_defaults.get("market") or INDIA_NSE_INDEX_DERIVATIVES.name

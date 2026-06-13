@@ -63,7 +63,12 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
         strategy="lead_lag_taker",
         family="cross_instrument_latency",
         data_requirements=("paired_top_of_book_ticks", "lead_lag_measurement", "explicit_fees"),
-        workflow_commands=("measure-leadlag", "audit-leadlag-edge", "replay-leadlag", "sweep-leadlag"),
+        workflow_commands=(
+            "measure-leadlag",
+            "audit-leadlag-edge",
+            "walkforward-leadlag-replay",
+            "promote-leadlag-candidate",
+        ),
         portable_market_types=("equity", "options", "derivatives"),
         notes="portable to US pairs once paired feeds share a normalized clock",
     ),

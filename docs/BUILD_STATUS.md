@@ -20,12 +20,19 @@
 - Lead-lag edge audit that gates measured relationships on events,
   correlation, laggard update rate, update latency, and latency-curve PnL
   before replay/sweep promotion.
-- Lead-lag edge, replay, and sweep artifacts retain `lead_lag_taker` plus
-  market-profile identity for proof/catalog review, and non-India lead-lag
-  replay can use explicit generic fee assumptions instead of NSE costs.
+- Lead-lag edge, replay, replay walk-forward, promotion, and sweep artifacts
+  retain `lead_lag_taker` plus market-profile identity for proof/catalog
+  review, and non-India lead-lag replay can use explicit generic fee
+  assumptions instead of NSE costs.
+- Lead-lag replay walk-forward runner replays paired leader/laggard folds,
+  aggregates proof gates, and writes a replay-ready candidate config with
+  inherited market and generic fee assumptions.
+- Lead-lag candidate promotion bridge converts passed replay walk-forward
+  evidence into launch-compatible promotion reports and candidate configs for
+  paper/shadow staging.
 - Strategy evidence review supports a `leadlag` profile that requires measured
-  lead-lag edge, proof, stress, and promotion artifacts with shared strategy
-  and market identity before shadow scale-up review.
+  lead-lag edge, replay walk-forward, stress, and promotion artifacts with
+  shared strategy and market identity before shadow scale-up review.
 - Microprice/order-book imbalance edge audit that scans top-of-book ticks for
   imbalance/microprice signals and gates forward-mid response, direction
   coverage, and win rate before replay/sweep work.

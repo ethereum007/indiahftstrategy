@@ -14,6 +14,7 @@ from reports.manifest import MANIFEST_NAME, write_experiment_manifest
 SUMMARY_FILES = [
     "parity_edge_summary.csv",
     "leadlag_edge_summary.csv",
+    "leadlag_replay_walkforward_summary.csv",
     "imbalance_edge_summary.csv",
     "imbalance_edge_sweep_summary.csv",
     "imbalance_edge_selection_summary.csv",

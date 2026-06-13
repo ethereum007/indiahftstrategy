@@ -98,7 +98,7 @@ python -m hft_cli review-strategy-evidence `
 ```
 
 For lead-lag taker research, use the named profile after the measured edge,
-proof, stress, and promotion artifacts are present:
+replay walk-forward, stress, and promotion artifacts are present:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `
@@ -144,9 +144,9 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
-The `leadlag` profile expands to `leadlag_edge_audit`, `proof_report`,
-`stress_report`, and `promotion_report`. The `surface_mm` profile expands to
-`surface_quality_report`, `quote_risk_report`, and
+The `leadlag` profile expands to `leadlag_edge_audit`,
+`leadlag_replay_walkforward`, `stress_report`, and `promotion_report`. The
+`surface_mm` profile expands to `surface_quality_report`, `quote_risk_report`, and
 `surface_mm_research_pipeline`. The `imbalance` profile expands to
 `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
@@ -411,6 +411,73 @@ python -m hft_cli replay-leadlag `
   --trigger-ticks 3 `
   --qty 75 `
   --fill-model runs\fill_model\leadlag_shadow_latest
+```
+
+## Lead-Lag Replay Walk-Forward
+
+Replay one lead-lag candidate across paired leader/laggard folds and aggregate
+proof before promotion:
+
+```powershell
+python -m hft_cli walkforward-leadlag-replay `
+  --leaders data\day1_futures.csv data\day2_futures.csv `
+  --laggards data\day1_atm_call.csv data\day2_atm_call.csv `
+  --label day1 `
+  --label day2 `
+  --out runs\leadlag_replay_walkforward_2026_06_10 `
+  --market india_nse_index_derivatives `
+  --delta 0.5 `
+  --trigger-ticks 3 `
+  --qty 75 `
+  --flat-after-ns 500000000 `
+  --markout-horizons-ns 100000000 1000000000 `
+  --min-net-pnl 1 `
+  --min-fills 10 `
+  --min-folds 2 `
+  --min-proof-pass-rate 1 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+leadlag_replay_walkforward_folds.csv
+leadlag_replay_walkforward_checks.csv
+leadlag_replay_walkforward_summary.csv
+candidate_config.json
+proof/proof_metrics.csv
+proof/proof_checks.csv
+proof/proof_summary.csv
+manifest.json
+```
+
+For US research, provide `--market us_equities_regular` or
+`--market us_options_regular` plus explicit generic fee flags, or supply a
+ready lead-lag `candidate_config.json` with `replay_defaults.generic_costs`.
+
+## Lead-Lag Candidate Promotion
+
+Convert a passed lead-lag replay walk-forward into a launch-compatible
+promotion report:
+
+```powershell
+python -m hft_cli promote-leadlag-candidate `
+  --walkforward runs\leadlag_replay_walkforward_2026_06_10 `
+  --out runs\promotion\leadlag_2026_06_10 `
+  --min-proof-pass-rate 1 `
+  --min-total-fills 20 `
+  --min-total-net-pnl 1 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+promotion_candidate.csv
+promotion_checks.csv
+promotion_summary.csv
+candidate_config.json
+manifest.json
 ```
 
 ## Microprice Imbalance Edge Audit
