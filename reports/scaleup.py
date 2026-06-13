@@ -272,6 +272,53 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         checks.append(_threshold_check("accepted_orders", _number(launch, "accepted_orders"), "<=", thresholds.max_orders_per_session))
     if thresholds.max_session_notional is not None:
         checks.append(_threshold_check("launch_total_notional", _number(launch, "total_notional"), "<=", thresholds.max_session_notional))
+    shadow_proof_sessions = int(_number(shadow, "runtime_proof_refresh_sessions", fallback=0.0))
+    if shadow_proof_sessions > 0:
+        shadow_proof_strategy = _strategy_key(shadow.get("proof_refresh_strategy", ""))
+        shadow_proof_market = _identity_key(shadow.get("proof_refresh_market", ""))
+        checks.extend(
+            [
+                _check(
+                    "shadow_proof_refresh_ready",
+                    int(_number(shadow, "runtime_proof_refresh_ready_sessions", fallback=0.0)),
+                    "==",
+                    shadow_proof_sessions,
+                    int(_number(shadow, "runtime_proof_refresh_ready_sessions", fallback=0.0))
+                    == shadow_proof_sessions,
+                    "not every accepted shadow runtime proof-refresh evidence item is ready",
+                ),
+                _check(
+                    "shadow_proof_refresh_identity_consistent",
+                    int(_number(shadow, "runtime_proof_refresh_mixed_identity_sessions", fallback=0.0)),
+                    "==",
+                    0,
+                    int(_number(shadow, "runtime_proof_refresh_mixed_identity_sessions", fallback=0.0)) == 0,
+                    "shadow comparison reported mixed proof-refresh identity",
+                ),
+            ]
+        )
+        if expected_proof_strategy:
+            checks.append(
+                _check(
+                    "shadow_proof_refresh_strategy_matches",
+                    shadow_proof_strategy,
+                    "==",
+                    expected_proof_strategy,
+                    bool(shadow_proof_strategy and shadow_proof_strategy == expected_proof_strategy),
+                    "shadow proof-refresh strategy does not match scale-up strategy",
+                )
+            )
+        if expected_proof_market:
+            checks.append(
+                _check(
+                    "shadow_proof_refresh_market_matches",
+                    shadow_proof_market,
+                    "==",
+                    expected_proof_market,
+                    bool(shadow_proof_market and shadow_proof_market == expected_proof_market),
+                    "shadow proof-refresh market does not match scale-up market",
+                )
+            )
     if not exposure.empty:
         checks.append(_check("order_exposure_passed", _to_bool(exposure.get("passed", False)), "is", True, _to_bool(exposure.get("passed", False)), "order exposure report did not pass"))
         if thresholds.max_gross_notional is not None:
@@ -535,6 +582,17 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "observed_median_fill_rate": _number(shadow, "median_order_fill_rate"),
                 "observed_worst_fill_rate": _number(shadow, "worst_order_fill_rate"),
                 "observed_worst_adverse_slippage": _number(shadow, "worst_adverse_slippage"),
+                "shadow_proof_refresh_sessions": int(
+                    _number(shadow, "runtime_proof_refresh_sessions", fallback=0.0)
+                ),
+                "shadow_proof_refresh_ready_sessions": int(
+                    _number(shadow, "runtime_proof_refresh_ready_sessions", fallback=0.0)
+                ),
+                "shadow_proof_refresh_mixed_identity_sessions": int(
+                    _number(shadow, "runtime_proof_refresh_mixed_identity_sessions", fallback=0.0)
+                ),
+                "shadow_proof_refresh_strategy": _strategy_key(shadow.get("proof_refresh_strategy", "")),
+                "shadow_proof_refresh_market": _identity_key(shadow.get("proof_refresh_market", "")),
                 "proof_refresh_provided": not proof_refresh.empty,
                 "proof_refresh_ready": _to_bool(proof_refresh.get("ready", False)) if not proof_refresh.empty else False,
                 "proof_refresh_strategy": _strategy_key(proof_refresh.get("strategy", ""))
@@ -660,6 +718,13 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "proof_refresh_strategy": str(plan_row["proof_refresh_strategy"]),
                 "proof_refresh_market": str(plan_row["proof_refresh_market"]),
                 "proof_refresh_mixed_identity": _to_bool(plan_row["proof_refresh_mixed_identity"]),
+                "shadow_proof_refresh_sessions": int(plan_row["shadow_proof_refresh_sessions"]),
+                "shadow_proof_refresh_ready_sessions": int(plan_row["shadow_proof_refresh_ready_sessions"]),
+                "shadow_proof_refresh_mixed_identity_sessions": int(
+                    plan_row["shadow_proof_refresh_mixed_identity_sessions"]
+                ),
+                "shadow_proof_refresh_strategy": str(plan_row["shadow_proof_refresh_strategy"]),
+                "shadow_proof_refresh_market": str(plan_row["shadow_proof_refresh_market"]),
                 "proof_source": str(plan_row["proof_source"]),
                 "instrument_metadata_passed": _to_bool(plan_row["instrument_metadata_passed"]),
                 "instrument_parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
@@ -740,6 +805,13 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "proof_source": str(plan_row["proof_source"]),
             "fresh_proof_required": _to_bool(plan_row["fresh_proof_required"]),
             "recommendation": str(plan_row["proof_refresh_recommendation"]),
+        },
+        "shadow_proof_freshness": {
+            "sessions": int(plan_row["shadow_proof_refresh_sessions"]),
+            "ready_sessions": int(plan_row["shadow_proof_refresh_ready_sessions"]),
+            "mixed_identity_sessions": int(plan_row["shadow_proof_refresh_mixed_identity_sessions"]),
+            "strategy": str(plan_row["shadow_proof_refresh_strategy"]),
+            "market": str(plan_row["shadow_proof_refresh_market"]),
         },
         "instrument_metadata": {
             "required": bool(thresholds.require_instrument_metadata),

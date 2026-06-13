@@ -218,11 +218,11 @@
   evidence, and broker-readiness evidence into explicit order, open-order
   notional and age, position notional, adapter, telemetry-freshness,
   lifecycle-order, replace-order, delta, and vega kill-switch limits, carries
-  strategy/market identity and broker runtime-session guard evidence into
-  scale-up configs, automatically requires broker/runtime guard evidence for
-  live-dry-run targets, fails closed on broker runtime-session strategy/market
-  mismatches, and can consume a settlement or surface-MM launch pipeline root
-  directly.
+  strategy/market identity, direct and shadow proof-refresh state, and broker
+  runtime-session guard evidence into scale-up configs, automatically requires
+  broker/runtime guard evidence for live-dry-run targets, fails closed on
+  broker runtime-session or shadow proof-refresh strategy/market mismatches,
+  and can consume a settlement or surface-MM launch pipeline root directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
@@ -320,7 +320,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 416 tests.
+Current passing suite: 418 tests.
 
 ## Next Build Targets
 

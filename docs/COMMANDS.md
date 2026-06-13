@@ -1588,7 +1588,10 @@ Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
 for runtime guard, halt, and resume traceability.
 When proof-refresh evidence is supplied, scale-up also requires its
 strategy/market identity to match the evidence or explicit expected identity,
-and blocks summaries that report mixed proof-refresh identities.
+and blocks summaries that report mixed proof-refresh identities. If the shadow
+comparison carried runtime proof-refresh evidence, scale-up validates that
+accepted sessions used ready, non-mixed proof-refresh identity for the same
+strategy/market before writing a scale-up config.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
 broker readiness plus broker runtime-session evidence with a continuing runtime
 guard, and fails closed unless that runtime-session strategy and market match

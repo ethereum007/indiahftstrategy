@@ -20,7 +20,16 @@ def evidence_summary(ready=True, strategy="lead_lag_taker", market="india_nse_in
     )
 
 
-def shadow_summary(accepted=True):
+def shadow_summary(
+    accepted=True,
+    proof_refresh_sessions=0,
+    proof_refresh_ready_sessions=None,
+    proof_refresh_strategy="",
+    proof_refresh_market="",
+    proof_refresh_mixed_identity_sessions=0,
+):
+    if proof_refresh_ready_sessions is None:
+        proof_refresh_ready_sessions = proof_refresh_sessions
     return pd.DataFrame(
         [
             {
@@ -37,6 +46,11 @@ def shadow_summary(accepted=True):
                 "total_mismatched_orders": 0,
                 "total_overfilled_orders": 0,
                 "worst_adverse_slippage": 0.04,
+                "runtime_proof_refresh_sessions": proof_refresh_sessions,
+                "runtime_proof_refresh_ready_sessions": proof_refresh_ready_sessions,
+                "runtime_proof_refresh_mixed_identity_sessions": proof_refresh_mixed_identity_sessions,
+                "proof_refresh_strategy": proof_refresh_strategy,
+                "proof_refresh_market": proof_refresh_market,
             }
         ]
     )
@@ -364,6 +378,56 @@ def test_scaleup_plan_blocks_mismatched_proof_refresh_identity():
     assert report.summary.iloc[0]["proof_refresh_strategy"] == "surface_mm"
     assert report.summary.iloc[0]["proof_refresh_market"] == "us_options_regular"
     assert report.config["proof_freshness"]["mixed_identity"]
+
+
+def test_scaleup_plan_carries_shadow_proof_refresh_identity():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(
+            True,
+            proof_refresh_sessions=2,
+            proof_refresh_strategy="leadlag",
+            proof_refresh_market="india_nse_index_derivatives",
+        ),
+        launch_summary=launch_summary(True),
+        proof_refresh_summary=proof_refresh_summary(True, proof_source="latest"),
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["shadow_proof_refresh_sessions"] == 2
+    assert report.summary.iloc[0]["shadow_proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["shadow_proof_refresh_market"] == "india_nse_index_derivatives"
+    assert report.config["shadow_proof_freshness"]["sessions"] == 2
+    assert report.config["shadow_proof_freshness"]["strategy"] == "lead_lag_taker"
+
+
+def test_scaleup_plan_blocks_bad_shadow_proof_refresh_identity():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True, strategy="leadlag", market="india_nse_index_derivatives"),
+        shadow_comparison_summary=shadow_summary(
+            True,
+            proof_refresh_sessions=2,
+            proof_refresh_ready_sessions=1,
+            proof_refresh_strategy="surface_mm",
+            proof_refresh_market="us_options_regular",
+            proof_refresh_mixed_identity_sessions=1,
+        ),
+        launch_summary=launch_summary(True),
+        proof_refresh_summary=proof_refresh_summary(True, proof_source="latest"),
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "shadow_proof_refresh_ready",
+        "shadow_proof_refresh_identity_consistent",
+        "shadow_proof_refresh_strategy_matches",
+        "shadow_proof_refresh_market_matches",
+    } <= failed
+    assert report.summary.iloc[0]["shadow_proof_refresh_strategy"] == "surface_mm"
+    assert report.config["shadow_proof_freshness"]["mixed_identity_sessions"] == 1
 
 
 def test_scaleup_plan_accepts_required_instrument_metadata():
