@@ -6,7 +6,7 @@ from hft_cli import main
 from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
 
 
-def scaleup_config(**overrides):
+def scaleup_config(require_proof_refresh=False, **overrides):
     config = {
         "schema_version": 1,
         "ready": True,
@@ -35,6 +35,17 @@ def scaleup_config(**overrides):
             "max_worst_adverse_slippage": 0.05,
         },
     }
+    if require_proof_refresh:
+        config["proof_freshness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "mixed_identity": False,
+            "proof_source": "latest",
+            "fresh_proof_required": True,
+        }
     config.update(overrides)
     return config
 
@@ -306,6 +317,39 @@ def test_runtime_guard_continues_when_required_instrument_metadata_is_present():
     assert not report.halted
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert failed == set()
+
+
+def test_runtime_guard_halts_when_required_proof_refresh_is_missing_from_telemetry():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_proof_refresh=True),
+        telemetry(),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "runtime_proof_refresh_provided",
+        "runtime_proof_refresh_ready",
+        "runtime_proof_refresh_strategy_matches",
+        "runtime_proof_refresh_market_matches",
+    } <= failed
+
+
+def test_runtime_guard_continues_with_required_proof_refresh_evidence():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_proof_refresh=True),
+        telemetry(
+            proof_refresh_provided=True,
+            proof_refresh_ready=True,
+            proof_refresh_strategy="leadlag",
+            proof_refresh_market="india_nse_index_derivatives",
+            proof_refresh_mixed_identity=False,
+        ),
+    )
+
+    assert not report.halted
+    assert set(report.checks.loc[~report.checks["passed"].astype(bool), "check"]) == set()
+    assert bool(report.summary.iloc[0]["proof_refresh_ready"])
 
 
 def test_write_runtime_guard_outputs_artifacts(tmp_path):

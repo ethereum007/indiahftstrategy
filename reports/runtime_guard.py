@@ -93,6 +93,9 @@ def _metrics(
     limits = scaleup_config.get("limits", {}) or {}
     kill_switches = scaleup_config.get("kill_switches", {}) or {}
     instrument_metadata = scaleup_config.get("instrument_metadata", {}) or {}
+    proof_freshness = scaleup_config.get("proof_freshness", {}) or {}
+    if not isinstance(proof_freshness, dict):
+        proof_freshness = {}
     metadata_min_coverage = _number_from(instrument_metadata, "min_parse_coverage")
     snapshot_ts_ns = _number(latest, "snapshot_ts_ns", fallback=_number(latest, "ts_ns"))
     guard_as_of_ts_ns = _first_number(as_of_ts_ns, _number(latest, "guard_as_of_ts_ns"), np.nan)
@@ -156,6 +159,21 @@ def _metrics(
                     latest,
                     "min_instrument_parse_coverage",
                     fallback=metadata_min_coverage,
+                ),
+                "scaleup_proof_refresh_required": _bool_from(proof_freshness, "required"),
+                "scaleup_proof_refresh_provided": _bool_from(proof_freshness, "provided"),
+                "scaleup_proof_refresh_ready": _bool_from(proof_freshness, "ready"),
+                "scaleup_proof_refresh_strategy": _strategy_key(proof_freshness.get("strategy", "")),
+                "scaleup_proof_refresh_market": _identity_key(proof_freshness.get("market", "")),
+                "scaleup_proof_refresh_mixed_identity": _bool_from(proof_freshness, "mixed_identity"),
+                "runtime_proof_refresh_provided": _bool_value(latest, "proof_refresh_provided", fallback=False),
+                "runtime_proof_refresh_ready": _bool_value(latest, "proof_refresh_ready", fallback=False),
+                "runtime_proof_refresh_strategy": _strategy_key(_value(latest, "proof_refresh_strategy", "")),
+                "runtime_proof_refresh_market": _identity_key(_value(latest, "proof_refresh_market", "")),
+                "runtime_proof_refresh_mixed_identity": _bool_value(
+                    latest,
+                    "proof_refresh_mixed_identity",
+                    fallback=False,
                 ),
                 "max_orders_per_session": _number_from(limits, "max_orders_per_session"),
                 "max_notional_per_session": _number_from(limits, "max_notional_per_session"),
@@ -350,6 +368,92 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 ),
             ]
         )
+    scaleup_proof_active = bool(row["scaleup_proof_refresh_required"]) or bool(row["scaleup_proof_refresh_provided"])
+    runtime_proof_active = bool(row["runtime_proof_refresh_provided"])
+    if scaleup_proof_active:
+        checks.extend(
+            [
+                _check(
+                    "scaleup_proof_refresh_provided",
+                    bool(row["scaleup_proof_refresh_provided"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_proof_refresh_provided"]),
+                    "scale-up config requires proof refresh but does not record supplied evidence",
+                ),
+                _check(
+                    "scaleup_proof_refresh_ready",
+                    bool(row["scaleup_proof_refresh_ready"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_proof_refresh_ready"]),
+                    "scale-up config proof refresh evidence is not ready",
+                ),
+                _check(
+                    "scaleup_proof_refresh_identity_consistent",
+                    bool(row["scaleup_proof_refresh_mixed_identity"]),
+                    "is",
+                    False,
+                    not bool(row["scaleup_proof_refresh_mixed_identity"]),
+                    "scale-up config proof refresh evidence reports mixed identity",
+                ),
+                _check(
+                    "runtime_proof_refresh_provided",
+                    bool(row["runtime_proof_refresh_provided"]),
+                    "is",
+                    True,
+                    bool(row["runtime_proof_refresh_provided"]),
+                    "runtime telemetry is missing required proof refresh evidence",
+                ),
+            ]
+        )
+    if scaleup_proof_active or runtime_proof_active:
+        expected_proof_strategy = row["scaleup_proof_refresh_strategy"] or row["expected_strategy"]
+        expected_proof_market = row["scaleup_proof_refresh_market"] or row["expected_market"]
+        checks.extend(
+            [
+                _check(
+                    "runtime_proof_refresh_ready",
+                    bool(row["runtime_proof_refresh_ready"]),
+                    "is",
+                    True,
+                    bool(row["runtime_proof_refresh_ready"]),
+                    "runtime proof refresh evidence is not ready",
+                ),
+                _check(
+                    "runtime_proof_refresh_identity_consistent",
+                    bool(row["runtime_proof_refresh_mixed_identity"]),
+                    "is",
+                    False,
+                    not bool(row["runtime_proof_refresh_mixed_identity"]),
+                    "runtime proof refresh evidence reports mixed identity",
+                ),
+                _check(
+                    "runtime_proof_refresh_strategy_matches",
+                    row["runtime_proof_refresh_strategy"],
+                    "==",
+                    expected_proof_strategy,
+                    bool(
+                        row["runtime_proof_refresh_strategy"]
+                        and expected_proof_strategy
+                        and row["runtime_proof_refresh_strategy"] == expected_proof_strategy
+                    ),
+                    "runtime proof refresh strategy does not match scale-up proof identity",
+                ),
+                _check(
+                    "runtime_proof_refresh_market_matches",
+                    row["runtime_proof_refresh_market"],
+                    "==",
+                    expected_proof_market,
+                    bool(
+                        row["runtime_proof_refresh_market"]
+                        and expected_proof_market
+                        and row["runtime_proof_refresh_market"] == expected_proof_market
+                    ),
+                    "runtime proof refresh market does not match scale-up proof identity",
+                ),
+            ]
+        )
     manual_halt = _manual_halt(scaleup_config)
     if manual_halt:
         checks.append(_check("manual_halt", True, "is", False, False, "scale-up config contains a manual halt"))
@@ -375,6 +479,12 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "market": row["market"],
                 "scenario_key": row["scenario_key"],
                 "adapter": row["adapter"],
+                "proof_refresh_required": bool(row["scaleup_proof_refresh_required"]),
+                "proof_refresh_provided": bool(row["runtime_proof_refresh_provided"]),
+                "proof_refresh_ready": bool(row["runtime_proof_refresh_ready"]),
+                "proof_refresh_strategy": row["runtime_proof_refresh_strategy"],
+                "proof_refresh_market": row["runtime_proof_refresh_market"],
+                "proof_refresh_mixed_identity": bool(row["runtime_proof_refresh_mixed_identity"]),
                 "orders_sent": row["orders_sent"],
                 "lifecycle_orders": row["lifecycle_orders"],
                 "replace_orders": row["replace_orders"],

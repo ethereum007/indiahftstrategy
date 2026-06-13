@@ -12,6 +12,7 @@ def scaleup_config(
     strategy="lead_lag_taker",
     market="india_nse_index_derivatives",
     require_instrument_metadata=False,
+    require_proof_refresh=False,
 ):
     config = {
         "schema_version": 1,
@@ -48,6 +49,17 @@ def scaleup_config(
             "parse_coverage": 1.0,
             "min_parse_coverage": 1.0,
             "unparsed_instruments": 0,
+        }
+    if require_proof_refresh:
+        config["proof_freshness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": strategy,
+            "market": market,
+            "mixed_identity": False,
+            "proof_source": "latest",
+            "fresh_proof_required": True,
         }
     return config
 
@@ -350,6 +362,22 @@ def test_runtime_telemetry_carries_required_instrument_metadata_summary():
     assert row["unparsed_instruments"] == 0.0
     source = report.sources.loc[report.sources["source"] == "instrument_metadata_summary"].iloc[0]
     assert bool(source["provided"])
+
+
+def test_runtime_telemetry_carries_required_proof_refresh_config():
+    report = evaluate_runtime_telemetry(scaleup_config(require_proof_refresh=True))
+
+    row = report.telemetry.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(row["proof_refresh_required"])
+    assert bool(row["proof_refresh_provided"])
+    assert bool(row["proof_refresh_ready"])
+    assert row["proof_refresh_strategy"] == "lead_lag_taker"
+    assert row["proof_refresh_market"] == "india_nse_index_derivatives"
+    assert not bool(row["proof_refresh_mixed_identity"])
+    assert summary["proof_source"] == "latest"
+    assert bool(summary["proof_refresh_ready"])
 
 
 def test_runtime_telemetry_fails_when_required_instrument_metadata_is_missing():

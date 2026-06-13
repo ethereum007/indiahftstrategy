@@ -175,6 +175,9 @@ def _telemetry(
     recon = _first_row(reconciliation_summary)
     metadata = _first_row(instrument_metadata_summary)
     scaleup_metadata = scaleup_config.get("instrument_metadata", {}) or {}
+    proof_freshness = scaleup_config.get("proof_freshness", {}) or {}
+    if not isinstance(proof_freshness, dict):
+        proof_freshness = {}
     pnl = _last_row(pnl_snapshot)
     orders_sent = _first_number(
         _number(export, "orders"),
@@ -222,6 +225,14 @@ def _telemetry(
             )
         ),
         "unparsed_instruments": float(_first_number(_number(metadata, "unparsed_instruments"), np.nan)),
+        "proof_refresh_required": _to_bool(proof_freshness.get("required", False)),
+        "proof_refresh_provided": _to_bool(proof_freshness.get("provided", False)),
+        "proof_refresh_ready": _to_bool(proof_freshness.get("ready", False)),
+        "proof_refresh_strategy": _strategy_key(proof_freshness.get("strategy", "")),
+        "proof_refresh_market": _identity_key(proof_freshness.get("market", "")),
+        "proof_refresh_mixed_identity": _to_bool(proof_freshness.get("mixed_identity", False)),
+        "proof_source": str(proof_freshness.get("proof_source", "")),
+        "fresh_proof_required": _to_bool(proof_freshness.get("fresh_proof_required", False)),
         "open_order_count": int(_active_open_orders(open_orders)),
         "open_order_qty": float(_open_order_qty(open_orders)),
         "open_order_notional": float(_open_order_notional(open_orders)),
@@ -330,6 +341,62 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                 ),
             ]
         )
+    proof_refresh_required = _to_bool(row.get("proof_refresh_required", False))
+    proof_refresh_provided = _to_bool(row.get("proof_refresh_provided", False))
+    if proof_refresh_required:
+        checks.append(
+            _check(
+                "proof_refresh_provided",
+                proof_refresh_provided,
+                "is",
+                True,
+                proof_refresh_provided,
+                "proof refresh evidence is required but missing from scale-up config",
+            )
+        )
+    if proof_refresh_required or proof_refresh_provided:
+        proof_refresh_ready = _to_bool(row.get("proof_refresh_ready", False))
+        proof_refresh_mixed = _to_bool(row.get("proof_refresh_mixed_identity", False))
+        proof_refresh_strategy = _strategy_key(row.get("proof_refresh_strategy", ""))
+        proof_refresh_market = _identity_key(row.get("proof_refresh_market", ""))
+        strategy = _strategy_key(row.get("strategy", ""))
+        market = _identity_key(row.get("market", ""))
+        checks.extend(
+            [
+                _check(
+                    "proof_refresh_ready",
+                    proof_refresh_ready,
+                    "is",
+                    True,
+                    proof_refresh_ready,
+                    "proof refresh evidence is not ready",
+                ),
+                _check(
+                    "proof_refresh_identity_consistent",
+                    proof_refresh_mixed,
+                    "is",
+                    False,
+                    not proof_refresh_mixed,
+                    "proof refresh evidence reports mixed strategy or market identity",
+                ),
+                _check(
+                    "proof_refresh_strategy_matches",
+                    proof_refresh_strategy,
+                    "==",
+                    strategy,
+                    bool(proof_refresh_strategy and strategy and proof_refresh_strategy == strategy),
+                    "proof refresh strategy does not match runtime telemetry strategy",
+                ),
+                _check(
+                    "proof_refresh_market_matches",
+                    proof_refresh_market,
+                    "==",
+                    market,
+                    bool(proof_refresh_market and market and proof_refresh_market == market),
+                    "proof refresh market does not match runtime telemetry market",
+                ),
+            ]
+        )
     return pd.DataFrame(checks)
 
 
@@ -355,6 +422,13 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "gross_position_notional": float(row["gross_position_notional"]),
                 "abs_net_delta": float(row["abs_net_delta"]),
                 "abs_net_vega": float(row["abs_net_vega"]),
+                "proof_refresh_required": _to_bool(row["proof_refresh_required"]),
+                "proof_refresh_provided": _to_bool(row["proof_refresh_provided"]),
+                "proof_refresh_ready": _to_bool(row["proof_refresh_ready"]),
+                "proof_refresh_strategy": row["proof_refresh_strategy"],
+                "proof_refresh_market": row["proof_refresh_market"],
+                "proof_refresh_mixed_identity": _to_bool(row["proof_refresh_mixed_identity"]),
+                "proof_source": row["proof_source"],
                 "failed_checks": failed,
                 "recommendation": "feed_runtime_guard" if ready else "fix_telemetry_before_guard",
             }
