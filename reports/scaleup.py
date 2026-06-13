@@ -671,6 +671,12 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                     "<=",
                     0,
                 ),
+                _threshold_check(
+                    "broker_dispatch_roundtrip_failed_checks",
+                    _number(broker_readiness, "dispatch_roundtrip_failed_checks", 0.0),
+                    "<=",
+                    0,
+                ),
             ]
         )
     if not broker_readiness.empty and (
@@ -1104,6 +1110,11 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not broker_readiness.empty
                 else 0,
+                "broker_dispatch_roundtrip_failed_checks": int(
+                    _number(broker_readiness, "dispatch_roundtrip_failed_checks", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
                 "broker_route_dispatch_roundtrip_required": _route_dispatch_roundtrip_required(
                     thresholds,
                     broker_readiness,
@@ -1263,6 +1274,9 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "broker_dispatch_roundtrip_unmatched_acks": int(
                     plan_row["broker_dispatch_roundtrip_unmatched_acks"]
+                ),
+                "broker_dispatch_roundtrip_failed_checks": int(
+                    plan_row["broker_dispatch_roundtrip_failed_checks"]
                 ),
                 "broker_route_dispatch_roundtrip_required": _to_bool(
                     plan_row["broker_route_dispatch_roundtrip_required"]
@@ -1434,6 +1448,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                 "missing_request_acks": int(plan_row["broker_dispatch_roundtrip_missing_request_acks"]),
                 "rejected_orders": int(plan_row["broker_dispatch_roundtrip_rejected_orders"]),
                 "unmatched_acks": int(plan_row["broker_dispatch_roundtrip_unmatched_acks"]),
+                "failed_checks": int(plan_row["broker_dispatch_roundtrip_failed_checks"]),
                 "route_proof": {
                     "required": _to_bool(plan_row["broker_route_dispatch_roundtrip_required"]),
                     "provided": _to_bool(plan_row["broker_route_dispatch_roundtrip_provided"]),

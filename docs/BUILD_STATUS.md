@@ -225,7 +225,7 @@
   scale-up configs, automatically requires broker/runtime guard and clean
   dispatch round-trip evidence plus nested route proof for live-dry-run targets,
   fails closed on broker runtime-session, broker resume-gate proof-refresh,
-  dispatch round-trip, dispatch route proof, or shadow proof-refresh
+  dispatch round-trip failed checks, dispatch route proof, or shadow proof-refresh
   strategy/market mismatches, and can consume a settlement or surface-MM launch
   pipeline root directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
@@ -361,7 +361,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 499 tests.
+Current passing suite: 500 tests.
 
 ## Next Build Targets
 
