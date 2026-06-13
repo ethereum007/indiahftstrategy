@@ -6,7 +6,7 @@ from hft_cli import main
 from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
 
 
-def scaleup_config(require_proof_refresh=False, **overrides):
+def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False, **overrides):
     config = {
         "schema_version": 1,
         "ready": True,
@@ -45,6 +45,24 @@ def scaleup_config(require_proof_refresh=False, **overrides):
             "mixed_identity": False,
             "proof_source": "latest",
             "fresh_proof_required": True,
+        }
+    if require_broker_resume_gate:
+        config["broker_readiness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "resume_gate": {
+                "required": True,
+                "provided": True,
+                "ready": True,
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "incident_strategy": "lead_lag_taker",
+                "incident_market": "india_nse_index_derivatives",
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+            },
         }
     config.update(overrides)
     return config
@@ -350,6 +368,47 @@ def test_runtime_guard_continues_with_required_proof_refresh_evidence():
     assert not report.halted
     assert set(report.checks.loc[~report.checks["passed"].astype(bool), "check"]) == set()
     assert bool(report.summary.iloc[0]["proof_refresh_ready"])
+
+
+def test_runtime_guard_halts_when_required_broker_resume_gate_is_missing_from_telemetry():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_broker_resume_gate=True),
+        telemetry(),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "runtime_broker_resume_gate_provided",
+        "runtime_broker_resume_gate_ready",
+        "runtime_broker_resume_strategy_matches",
+        "runtime_broker_resume_market_matches",
+        "runtime_broker_resume_proof_refresh_ready",
+        "runtime_broker_resume_proof_refresh_strategy_matches",
+        "runtime_broker_resume_proof_refresh_market_matches",
+    } <= failed
+
+
+def test_runtime_guard_continues_with_required_broker_resume_gate_evidence():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_broker_resume_gate=True),
+        telemetry(
+            broker_resume_gate_provided=True,
+            broker_resume_gate_ready=True,
+            broker_resume_strategy="leadlag",
+            broker_resume_market="india_nse_index_derivatives",
+            broker_resume_proof_refresh_ready=True,
+            broker_resume_proof_refresh_strategy="lead_lag_taker",
+            broker_resume_proof_refresh_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert not report.halted
+    assert set(report.checks.loc[~report.checks["passed"].astype(bool), "check"]) == set()
+    summary = report.summary.iloc[0]
+    assert bool(summary["broker_resume_gate_ready"])
+    assert summary["broker_resume_strategy"] == "lead_lag_taker"
+    assert summary["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
 
 
 def test_write_runtime_guard_outputs_artifacts(tmp_path):

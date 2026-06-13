@@ -96,6 +96,12 @@ def _metrics(
     proof_freshness = scaleup_config.get("proof_freshness", {}) or {}
     if not isinstance(proof_freshness, dict):
         proof_freshness = {}
+    broker_readiness = scaleup_config.get("broker_readiness", {}) or {}
+    if not isinstance(broker_readiness, dict):
+        broker_readiness = {}
+    broker_resume_gate = broker_readiness.get("resume_gate", {}) or {}
+    if not isinstance(broker_resume_gate, dict):
+        broker_resume_gate = {}
     metadata_min_coverage = _number_from(instrument_metadata, "min_parse_coverage")
     snapshot_ts_ns = _number(latest, "snapshot_ts_ns", fallback=_number(latest, "ts_ns"))
     guard_as_of_ts_ns = _first_number(as_of_ts_ns, _number(latest, "guard_as_of_ts_ns"), np.nan)
@@ -174,6 +180,40 @@ def _metrics(
                     latest,
                     "proof_refresh_mixed_identity",
                     fallback=False,
+                ),
+                "scaleup_broker_resume_gate_required": _bool_from(broker_resume_gate, "required"),
+                "scaleup_broker_resume_gate_provided": _bool_from(broker_resume_gate, "provided"),
+                "scaleup_broker_resume_gate_ready": _bool_from(broker_resume_gate, "ready"),
+                "scaleup_broker_resume_strategy": _strategy_key(broker_resume_gate.get("strategy", "")),
+                "scaleup_broker_resume_market": _identity_key(broker_resume_gate.get("market", "")),
+                "scaleup_broker_resume_proof_refresh_ready": _bool_from(
+                    broker_resume_gate,
+                    "proof_refresh_ready",
+                ),
+                "scaleup_broker_resume_proof_refresh_strategy": _strategy_key(
+                    broker_resume_gate.get("proof_refresh_strategy", "")
+                ),
+                "scaleup_broker_resume_proof_refresh_market": _identity_key(
+                    broker_resume_gate.get("proof_refresh_market", "")
+                ),
+                "runtime_broker_resume_gate_provided": _bool_value(
+                    latest,
+                    "broker_resume_gate_provided",
+                    fallback=False,
+                ),
+                "runtime_broker_resume_gate_ready": _bool_value(latest, "broker_resume_gate_ready", fallback=False),
+                "runtime_broker_resume_strategy": _strategy_key(_value(latest, "broker_resume_strategy", "")),
+                "runtime_broker_resume_market": _identity_key(_value(latest, "broker_resume_market", "")),
+                "runtime_broker_resume_proof_refresh_ready": _bool_value(
+                    latest,
+                    "broker_resume_proof_refresh_ready",
+                    fallback=False,
+                ),
+                "runtime_broker_resume_proof_refresh_strategy": _strategy_key(
+                    _value(latest, "broker_resume_proof_refresh_strategy", "")
+                ),
+                "runtime_broker_resume_proof_refresh_market": _identity_key(
+                    _value(latest, "broker_resume_proof_refresh_market", "")
                 ),
                 "max_orders_per_session": _number_from(limits, "max_orders_per_session"),
                 "max_notional_per_session": _number_from(limits, "max_notional_per_session"),
@@ -454,6 +494,120 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
                 ),
             ]
         )
+    scaleup_broker_resume_active = bool(row["scaleup_broker_resume_gate_required"]) or bool(
+        row["scaleup_broker_resume_gate_provided"]
+    )
+    runtime_broker_resume_active = bool(row["runtime_broker_resume_gate_provided"])
+    if scaleup_broker_resume_active:
+        checks.extend(
+            [
+                _check(
+                    "scaleup_broker_resume_gate_provided",
+                    bool(row["scaleup_broker_resume_gate_provided"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_broker_resume_gate_provided"]),
+                    "scale-up config requires broker resume gate but does not record supplied evidence",
+                ),
+                _check(
+                    "scaleup_broker_resume_gate_ready",
+                    bool(row["scaleup_broker_resume_gate_ready"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_broker_resume_gate_ready"]),
+                    "scale-up config broker resume gate is not ready",
+                ),
+                _check(
+                    "scaleup_broker_resume_proof_refresh_ready",
+                    bool(row["scaleup_broker_resume_proof_refresh_ready"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_broker_resume_proof_refresh_ready"]),
+                    "scale-up config broker resume proof freshness is not ready",
+                ),
+                _check(
+                    "runtime_broker_resume_gate_provided",
+                    bool(row["runtime_broker_resume_gate_provided"]),
+                    "is",
+                    True,
+                    bool(row["runtime_broker_resume_gate_provided"]),
+                    "runtime telemetry is missing required broker resume-gate evidence",
+                ),
+            ]
+        )
+    if scaleup_broker_resume_active or runtime_broker_resume_active:
+        expected_resume_strategy = row["scaleup_broker_resume_strategy"] or row["expected_strategy"]
+        expected_resume_market = row["scaleup_broker_resume_market"] or row["expected_market"]
+        expected_resume_proof_strategy = row["scaleup_broker_resume_proof_refresh_strategy"] or expected_resume_strategy
+        expected_resume_proof_market = row["scaleup_broker_resume_proof_refresh_market"] or expected_resume_market
+        checks.extend(
+            [
+                _check(
+                    "runtime_broker_resume_gate_ready",
+                    bool(row["runtime_broker_resume_gate_ready"]),
+                    "is",
+                    True,
+                    bool(row["runtime_broker_resume_gate_ready"]),
+                    "runtime broker resume gate is not ready",
+                ),
+                _check(
+                    "runtime_broker_resume_strategy_matches",
+                    row["runtime_broker_resume_strategy"],
+                    "==",
+                    expected_resume_strategy,
+                    bool(
+                        row["runtime_broker_resume_strategy"]
+                        and expected_resume_strategy
+                        and row["runtime_broker_resume_strategy"] == expected_resume_strategy
+                    ),
+                    "runtime broker resume strategy does not match scale-up broker resume identity",
+                ),
+                _check(
+                    "runtime_broker_resume_market_matches",
+                    row["runtime_broker_resume_market"],
+                    "==",
+                    expected_resume_market,
+                    bool(
+                        row["runtime_broker_resume_market"]
+                        and expected_resume_market
+                        and row["runtime_broker_resume_market"] == expected_resume_market
+                    ),
+                    "runtime broker resume market does not match scale-up broker resume identity",
+                ),
+                _check(
+                    "runtime_broker_resume_proof_refresh_ready",
+                    bool(row["runtime_broker_resume_proof_refresh_ready"]),
+                    "is",
+                    True,
+                    bool(row["runtime_broker_resume_proof_refresh_ready"]),
+                    "runtime broker resume proof freshness is not ready",
+                ),
+                _check(
+                    "runtime_broker_resume_proof_refresh_strategy_matches",
+                    row["runtime_broker_resume_proof_refresh_strategy"],
+                    "==",
+                    expected_resume_proof_strategy,
+                    bool(
+                        row["runtime_broker_resume_proof_refresh_strategy"]
+                        and expected_resume_proof_strategy
+                        and row["runtime_broker_resume_proof_refresh_strategy"] == expected_resume_proof_strategy
+                    ),
+                    "runtime broker resume proof strategy does not match scale-up broker resume proof identity",
+                ),
+                _check(
+                    "runtime_broker_resume_proof_refresh_market_matches",
+                    row["runtime_broker_resume_proof_refresh_market"],
+                    "==",
+                    expected_resume_proof_market,
+                    bool(
+                        row["runtime_broker_resume_proof_refresh_market"]
+                        and expected_resume_proof_market
+                        and row["runtime_broker_resume_proof_refresh_market"] == expected_resume_proof_market
+                    ),
+                    "runtime broker resume proof market does not match scale-up broker resume proof identity",
+                ),
+            ]
+        )
     manual_halt = _manual_halt(scaleup_config)
     if manual_halt:
         checks.append(_check("manual_halt", True, "is", False, False, "scale-up config contains a manual halt"))
@@ -485,6 +639,14 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "proof_refresh_strategy": row["runtime_proof_refresh_strategy"],
                 "proof_refresh_market": row["runtime_proof_refresh_market"],
                 "proof_refresh_mixed_identity": bool(row["runtime_proof_refresh_mixed_identity"]),
+                "broker_resume_gate_required": bool(row["scaleup_broker_resume_gate_required"]),
+                "broker_resume_gate_provided": bool(row["runtime_broker_resume_gate_provided"]),
+                "broker_resume_gate_ready": bool(row["runtime_broker_resume_gate_ready"]),
+                "broker_resume_strategy": row["runtime_broker_resume_strategy"],
+                "broker_resume_market": row["runtime_broker_resume_market"],
+                "broker_resume_proof_refresh_ready": bool(row["runtime_broker_resume_proof_refresh_ready"]),
+                "broker_resume_proof_refresh_strategy": row["runtime_broker_resume_proof_refresh_strategy"],
+                "broker_resume_proof_refresh_market": row["runtime_broker_resume_proof_refresh_market"],
                 "orders_sent": row["orders_sent"],
                 "lifecycle_orders": row["lifecycle_orders"],
                 "replace_orders": row["replace_orders"],

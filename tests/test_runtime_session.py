@@ -6,7 +6,7 @@ from hft_cli import main
 from reports.runtime_session import write_runtime_session_monitor
 
 
-def scaleup_config(require_proof_refresh=False, **kill_switch_overrides):
+def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False, **kill_switch_overrides):
     kill_switches = {
         "max_total_failed_component_checks": 0,
         "max_total_unmatched_fills": 0,
@@ -50,6 +50,24 @@ def scaleup_config(require_proof_refresh=False, **kill_switch_overrides):
             "mixed_identity": False,
             "proof_source": "latest",
             "fresh_proof_required": True,
+        }
+    if require_broker_resume_gate:
+        config["broker_readiness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "resume_gate": {
+                "required": True,
+                "provided": True,
+                "ready": True,
+                "strategy": "surface_mm",
+                "market": "india_nse_index_derivatives",
+                "incident_strategy": "surface_mm",
+                "incident_market": "india_nse_index_derivatives",
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "surface_mm",
+                "proof_refresh_market": "india_nse_index_derivatives",
+            },
         }
     return config
 
@@ -163,6 +181,32 @@ def test_runtime_session_monitor_carries_proof_refresh_state(tmp_path):
     assert summary["proof_source"] == "latest"
     assert set(report.steps["proof_refresh_strategy"]) == {"surface_mm"}
     assert set(report.steps["proof_refresh_market"]) == {"india_nse_index_derivatives"}
+
+
+def test_runtime_session_monitor_carries_broker_resume_gate_state(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    write_scaleup_dir(scaleup_dir, scaleup_config(require_broker_resume_gate=True))
+
+    report = write_runtime_session_monitor(
+        scaleup_dir=scaleup_dir,
+        output_dir=out_dir,
+        snapshot_ts_ns=1_000,
+        as_of_ts_ns=1_500,
+        max_telemetry_age_ns=1_000,
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(summary["broker_resume_gate_required"])
+    assert bool(summary["broker_resume_gate_provided"])
+    assert bool(summary["broker_resume_gate_ready"])
+    assert summary["broker_resume_strategy"] == "surface_mm"
+    assert summary["broker_resume_market"] == "india_nse_index_derivatives"
+    assert bool(summary["broker_resume_proof_refresh_ready"])
+    assert summary["broker_resume_proof_refresh_strategy"] == "surface_mm"
+    assert set(report.steps["broker_resume_strategy"]) == {"surface_mm"}
+    assert set(report.steps["broker_resume_proof_refresh_market"]) == {"india_nse_index_derivatives"}
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):

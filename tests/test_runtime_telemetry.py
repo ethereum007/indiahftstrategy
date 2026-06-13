@@ -13,6 +13,7 @@ def scaleup_config(
     market="india_nse_index_derivatives",
     require_instrument_metadata=False,
     require_proof_refresh=False,
+    require_broker_resume_gate=False,
 ):
     config = {
         "schema_version": 1,
@@ -60,6 +61,24 @@ def scaleup_config(
             "mixed_identity": False,
             "proof_source": "latest",
             "fresh_proof_required": True,
+        }
+    if require_broker_resume_gate:
+        config["broker_readiness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "resume_gate": {
+                "required": True,
+                "provided": True,
+                "ready": True,
+                "strategy": strategy,
+                "market": market,
+                "incident_strategy": strategy,
+                "incident_market": market,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": strategy,
+                "proof_refresh_market": market,
+            },
         }
     return config
 
@@ -378,6 +397,47 @@ def test_runtime_telemetry_carries_required_proof_refresh_config():
     assert not bool(row["proof_refresh_mixed_identity"])
     assert summary["proof_source"] == "latest"
     assert bool(summary["proof_refresh_ready"])
+
+
+def test_runtime_telemetry_carries_broker_resume_gate_config():
+    report = evaluate_runtime_telemetry(scaleup_config(require_broker_resume_gate=True))
+
+    row = report.telemetry.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(row["broker_resume_gate_required"])
+    assert bool(row["broker_resume_gate_provided"])
+    assert bool(row["broker_resume_gate_ready"])
+    assert row["broker_resume_strategy"] == "lead_lag_taker"
+    assert row["broker_resume_market"] == "india_nse_index_derivatives"
+    assert bool(row["broker_resume_proof_refresh_ready"])
+    assert row["broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
+    assert row["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
+    assert bool(summary["broker_resume_gate_ready"])
+    assert summary["broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
+
+
+def test_runtime_telemetry_blocks_bad_broker_resume_gate_config():
+    config = scaleup_config(require_broker_resume_gate=True)
+    config["broker_readiness"]["resume_gate"].update(
+        {
+            "ready": False,
+            "proof_refresh_ready": False,
+            "proof_refresh_strategy": "surface_mm",
+            "proof_refresh_market": "us_options_regular",
+        }
+    )
+
+    report = evaluate_runtime_telemetry(config)
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_resume_gate_ready",
+        "broker_resume_proof_refresh_ready",
+        "broker_resume_proof_refresh_strategy_matches",
+        "broker_resume_proof_refresh_market_matches",
+    } <= failed
 
 
 def test_runtime_telemetry_fails_when_required_instrument_metadata_is_missing():

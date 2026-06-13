@@ -1649,6 +1649,10 @@ Telemetry carries the scale-up `strategy` and `market` identities from
 When scale-up required proof-refresh evidence, telemetry also carries
 `proof_refresh_*` fields from the scale-up config and fails closed if the proof
 is missing, unready, mixed, or for a different strategy/market.
+When scale-up required broker resume-gate evidence, telemetry also carries
+`broker_resume_*` fields from the scale-up config and fails closed if the
+resume authorization, its strategy/market identity, or its proof-refresh
+identity is missing or stale.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
@@ -1682,7 +1686,7 @@ python -m hft_cli monitor-scaleup-guard `
 Telemetry CSV columns:
 
 ```text
-target_mode,strategy,market,scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,proof_refresh_provided,proof_refresh_ready,proof_refresh_strategy,proof_refresh_market,proof_refresh_mixed_identity,open_order_count,open_order_qty,open_order_notional,oldest_open_order_age_ns,gross_position_qty,abs_net_position_qty,gross_position_notional,net_position_notional,abs_net_position_notional,net_delta,abs_net_delta,net_vega,abs_net_vega
+target_mode,strategy,market,scenario_key,adapter,orders_sent,lifecycle_orders,replace_orders,session_notional,realized_pnl,total_failed_component_checks,broker_upload_pack_provided,broker_upload_pack_ready,broker_upload_failed_checks,unmatched_fills,mismatched_orders,overfilled_orders,worst_adverse_slippage,instrument_metadata_provided,instrument_metadata_passed,instrument_parse_coverage,min_instrument_parse_coverage,unparsed_instruments,proof_refresh_provided,proof_refresh_ready,proof_refresh_strategy,proof_refresh_market,proof_refresh_mixed_identity,broker_resume_gate_provided,broker_resume_gate_ready,broker_resume_strategy,broker_resume_market,broker_resume_proof_refresh_ready,broker_resume_proof_refresh_strategy,broker_resume_proof_refresh_market,open_order_count,open_order_qty,open_order_notional,oldest_open_order_age_ns,gross_position_qty,abs_net_position_qty,gross_position_notional,net_position_notional,abs_net_position_notional,net_delta,abs_net_delta,net_vega,abs_net_vega
 ```
 
 The runtime guard compares telemetry `strategy` and `market` against the
@@ -1690,6 +1694,9 @@ scale-up config, the same way it checks scenario and adapter continuity.
 If proof refresh was required or supplied at scale-up, the guard also requires
 runtime telemetry to carry ready, non-mixed proof-refresh identity matching the
 scale-up proof target.
+If broker resume-gate evidence was required or supplied at scale-up, the guard
+also requires runtime telemetry to carry a ready resume authorization and ready
+resume proof-refresh identity matching the scale-up strategy and market.
 
 Outputs:
 
@@ -1739,7 +1746,9 @@ halt-response evidence folders. The session summary carries
 `guard_failed_check_names` and `guard_first_failed_reason` when the runtime
 guard blocks routing, plus `proof_refresh_*` fields from telemetry/guard so
 shadow-session and broker-readiness reviews can trace the proof freshness state
-that fed the monitor.
+that fed the monitor. It also retains `broker_resume_*` fields so post-halt
+resume authorization and proof identity remain visible after runtime guard
+evaluation.
 
 ## Halt Response Plan
 

@@ -140,6 +140,17 @@ def _steps(
             "proof_refresh_market": _text(telemetry_row, "proof_refresh_market"),
             "proof_refresh_mixed_identity": _bool_text(telemetry_row, "proof_refresh_mixed_identity"),
             "proof_source": _text(telemetry_row, "proof_source"),
+            "broker_resume_gate_required": _bool_text(telemetry_row, "broker_resume_gate_required"),
+            "broker_resume_gate_provided": _bool_text(telemetry_row, "broker_resume_gate_provided"),
+            "broker_resume_gate_ready": _bool_text(telemetry_row, "broker_resume_gate_ready"),
+            "broker_resume_strategy": _text(telemetry_row, "broker_resume_strategy"),
+            "broker_resume_market": _text(telemetry_row, "broker_resume_market"),
+            "broker_resume_proof_refresh_ready": _bool_text(
+                telemetry_row,
+                "broker_resume_proof_refresh_ready",
+            ),
+            "broker_resume_proof_refresh_strategy": _text(telemetry_row, "broker_resume_proof_refresh_strategy"),
+            "broker_resume_proof_refresh_market": _text(telemetry_row, "broker_resume_proof_refresh_market"),
             "recommendation": str(telemetry_row.get("recommendation", "")),
         },
         {
@@ -163,6 +174,34 @@ def _steps(
                 "proof_refresh_mixed_identity",
             ),
             "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
+            "broker_resume_gate_required": _identity_bool(
+                guard_row,
+                telemetry_row,
+                "broker_resume_gate_required",
+            ),
+            "broker_resume_gate_provided": _identity_bool(
+                guard_row,
+                telemetry_row,
+                "broker_resume_gate_provided",
+            ),
+            "broker_resume_gate_ready": _identity_bool(guard_row, telemetry_row, "broker_resume_gate_ready"),
+            "broker_resume_strategy": _identity_text(guard_row, telemetry_row, "broker_resume_strategy"),
+            "broker_resume_market": _identity_text(guard_row, telemetry_row, "broker_resume_market"),
+            "broker_resume_proof_refresh_ready": _identity_bool(
+                guard_row,
+                telemetry_row,
+                "broker_resume_proof_refresh_ready",
+            ),
+            "broker_resume_proof_refresh_strategy": _identity_text(
+                guard_row,
+                telemetry_row,
+                "broker_resume_proof_refresh_strategy",
+            ),
+            "broker_resume_proof_refresh_market": _identity_text(
+                guard_row,
+                telemetry_row,
+                "broker_resume_proof_refresh_market",
+            ),
             "recommendation": str(guard_row.get("recommendation", "")),
         },
     ]
@@ -190,6 +229,34 @@ def _steps(
                     "proof_refresh_mixed_identity",
                 ),
                 "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
+                "broker_resume_gate_required": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_gate_required",
+                ),
+                "broker_resume_gate_provided": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_gate_provided",
+                ),
+                "broker_resume_gate_ready": _identity_bool(guard_row, telemetry_row, "broker_resume_gate_ready"),
+                "broker_resume_strategy": _identity_text(guard_row, telemetry_row, "broker_resume_strategy"),
+                "broker_resume_market": _identity_text(guard_row, telemetry_row, "broker_resume_market"),
+                "broker_resume_proof_refresh_ready": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_ready",
+                ),
+                "broker_resume_proof_refresh_strategy": _identity_text(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_strategy",
+                ),
+                "broker_resume_proof_refresh_market": _identity_text(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_market",
+                ),
                 "recommendation": str(response_row.get("recommendation", "")),
             }
         )
@@ -216,6 +283,34 @@ def _steps(
                     "proof_refresh_mixed_identity",
                 ),
                 "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
+                "broker_resume_gate_required": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_gate_required",
+                ),
+                "broker_resume_gate_provided": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_gate_provided",
+                ),
+                "broker_resume_gate_ready": _identity_bool(guard_row, telemetry_row, "broker_resume_gate_ready"),
+                "broker_resume_strategy": _identity_text(guard_row, telemetry_row, "broker_resume_strategy"),
+                "broker_resume_market": _identity_text(guard_row, telemetry_row, "broker_resume_market"),
+                "broker_resume_proof_refresh_ready": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_ready",
+                ),
+                "broker_resume_proof_refresh_strategy": _identity_text(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_strategy",
+                ),
+                "broker_resume_proof_refresh_market": _identity_text(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_market",
+                ),
                 "recommendation": "manual_halt_response_required" if not plan_halt_response else "not_created",
             }
         )
@@ -271,6 +366,34 @@ def _summary(
                     "proof_refresh_mixed_identity",
                 ),
                 "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
+                "broker_resume_gate_required": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_gate_required",
+                ),
+                "broker_resume_gate_provided": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_gate_provided",
+                ),
+                "broker_resume_gate_ready": _identity_bool(guard_row, telemetry_row, "broker_resume_gate_ready"),
+                "broker_resume_strategy": _identity_text(guard_row, telemetry_row, "broker_resume_strategy"),
+                "broker_resume_market": _identity_text(guard_row, telemetry_row, "broker_resume_market"),
+                "broker_resume_proof_refresh_ready": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_ready",
+                ),
+                "broker_resume_proof_refresh_strategy": _identity_text(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_strategy",
+                ),
+                "broker_resume_proof_refresh_market": _identity_text(
+                    guard_row,
+                    telemetry_row,
+                    "broker_resume_proof_refresh_market",
+                ),
                 "telemetry_ready": bool(telemetry.ready),
                 "halt_response_created": halt_response is not None,
                 "halt_response_ready": response_ready,

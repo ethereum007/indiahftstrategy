@@ -178,6 +178,12 @@ def _telemetry(
     proof_freshness = scaleup_config.get("proof_freshness", {}) or {}
     if not isinstance(proof_freshness, dict):
         proof_freshness = {}
+    broker_readiness = scaleup_config.get("broker_readiness", {}) or {}
+    if not isinstance(broker_readiness, dict):
+        broker_readiness = {}
+    broker_resume_gate = broker_readiness.get("resume_gate", {}) or {}
+    if not isinstance(broker_resume_gate, dict):
+        broker_resume_gate = {}
     pnl = _last_row(pnl_snapshot)
     orders_sent = _first_number(
         _number(export, "orders"),
@@ -233,6 +239,18 @@ def _telemetry(
         "proof_refresh_mixed_identity": _to_bool(proof_freshness.get("mixed_identity", False)),
         "proof_source": str(proof_freshness.get("proof_source", "")),
         "fresh_proof_required": _to_bool(proof_freshness.get("fresh_proof_required", False)),
+        "broker_resume_gate_required": _to_bool(broker_resume_gate.get("required", False)),
+        "broker_resume_gate_provided": _to_bool(broker_resume_gate.get("provided", False)),
+        "broker_resume_gate_ready": _to_bool(broker_resume_gate.get("ready", False)),
+        "broker_resume_strategy": _strategy_key(broker_resume_gate.get("strategy", "")),
+        "broker_resume_market": _identity_key(broker_resume_gate.get("market", "")),
+        "broker_resume_incident_strategy": _strategy_key(broker_resume_gate.get("incident_strategy", "")),
+        "broker_resume_incident_market": _identity_key(broker_resume_gate.get("incident_market", "")),
+        "broker_resume_proof_refresh_ready": _to_bool(broker_resume_gate.get("proof_refresh_ready", False)),
+        "broker_resume_proof_refresh_strategy": _strategy_key(
+            broker_resume_gate.get("proof_refresh_strategy", "")
+        ),
+        "broker_resume_proof_refresh_market": _identity_key(broker_resume_gate.get("proof_refresh_market", "")),
         "open_order_count": int(_active_open_orders(open_orders)),
         "open_order_qty": float(_open_order_qty(open_orders)),
         "open_order_notional": float(_open_order_notional(open_orders)),
@@ -397,6 +415,84 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                 ),
             ]
         )
+    broker_resume_required = _to_bool(row.get("broker_resume_gate_required", False))
+    broker_resume_provided = _to_bool(row.get("broker_resume_gate_provided", False))
+    if broker_resume_required:
+        checks.append(
+            _check(
+                "broker_resume_gate_provided",
+                broker_resume_provided,
+                "is",
+                True,
+                broker_resume_provided,
+                "broker resume gate is required but missing from scale-up config",
+            )
+        )
+    if broker_resume_required or broker_resume_provided:
+        broker_resume_ready = _to_bool(row.get("broker_resume_gate_ready", False))
+        broker_resume_strategy = _strategy_key(row.get("broker_resume_strategy", ""))
+        broker_resume_market = _identity_key(row.get("broker_resume_market", ""))
+        broker_resume_proof_ready = _to_bool(row.get("broker_resume_proof_refresh_ready", False))
+        broker_resume_proof_strategy = _strategy_key(row.get("broker_resume_proof_refresh_strategy", ""))
+        broker_resume_proof_market = _identity_key(row.get("broker_resume_proof_refresh_market", ""))
+        strategy = _strategy_key(row.get("strategy", ""))
+        market = _identity_key(row.get("market", ""))
+        checks.extend(
+            [
+                _check(
+                    "broker_resume_gate_ready",
+                    broker_resume_ready,
+                    "is",
+                    True,
+                    broker_resume_ready,
+                    "broker resume gate is not ready",
+                ),
+                _check(
+                    "broker_resume_strategy_matches",
+                    broker_resume_strategy,
+                    "==",
+                    strategy,
+                    bool(broker_resume_strategy and strategy and broker_resume_strategy == strategy),
+                    "broker resume-gate strategy does not match runtime telemetry strategy",
+                ),
+                _check(
+                    "broker_resume_market_matches",
+                    broker_resume_market,
+                    "==",
+                    market,
+                    bool(broker_resume_market and market and broker_resume_market == market),
+                    "broker resume-gate market does not match runtime telemetry market",
+                ),
+                _check(
+                    "broker_resume_proof_refresh_ready",
+                    broker_resume_proof_ready,
+                    "is",
+                    True,
+                    broker_resume_proof_ready,
+                    "broker resume-gate proof freshness is not ready",
+                ),
+                _check(
+                    "broker_resume_proof_refresh_strategy_matches",
+                    broker_resume_proof_strategy,
+                    "==",
+                    strategy,
+                    bool(
+                        broker_resume_proof_strategy
+                        and strategy
+                        and broker_resume_proof_strategy == strategy
+                    ),
+                    "broker resume-gate proof strategy does not match runtime telemetry strategy",
+                ),
+                _check(
+                    "broker_resume_proof_refresh_market_matches",
+                    broker_resume_proof_market,
+                    "==",
+                    market,
+                    bool(broker_resume_proof_market and market and broker_resume_proof_market == market),
+                    "broker resume-gate proof market does not match runtime telemetry market",
+                ),
+            ]
+        )
     return pd.DataFrame(checks)
 
 
@@ -429,6 +525,16 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "proof_refresh_market": row["proof_refresh_market"],
                 "proof_refresh_mixed_identity": _to_bool(row["proof_refresh_mixed_identity"]),
                 "proof_source": row["proof_source"],
+                "broker_resume_gate_required": _to_bool(row["broker_resume_gate_required"]),
+                "broker_resume_gate_provided": _to_bool(row["broker_resume_gate_provided"]),
+                "broker_resume_gate_ready": _to_bool(row["broker_resume_gate_ready"]),
+                "broker_resume_strategy": row["broker_resume_strategy"],
+                "broker_resume_market": row["broker_resume_market"],
+                "broker_resume_incident_strategy": row["broker_resume_incident_strategy"],
+                "broker_resume_incident_market": row["broker_resume_incident_market"],
+                "broker_resume_proof_refresh_ready": _to_bool(row["broker_resume_proof_refresh_ready"]),
+                "broker_resume_proof_refresh_strategy": row["broker_resume_proof_refresh_strategy"],
+                "broker_resume_proof_refresh_market": row["broker_resume_proof_refresh_market"],
                 "failed_checks": failed,
                 "recommendation": "feed_runtime_guard" if ready else "fix_telemetry_before_guard",
             }
