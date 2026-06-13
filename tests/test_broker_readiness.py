@@ -63,6 +63,9 @@ def runtime_session_summary(adapter="normalized", ready=True, halted=False):
             {
                 "ready": ready,
                 "adapter": adapter,
+                "target_mode": "shadow",
+                "strategy": "surface_mm",
+                "market": "india_nse_index_derivatives",
                 "guard_action": "halt" if halted else "continue",
                 "halted": halted,
                 "failed_checks": 1 if halted else 0,
@@ -98,11 +101,17 @@ def test_broker_readiness_accepts_required_runtime_session():
     runtime_item = report.items.loc[report.items["component"] == "runtime_session"].iloc[0]
     assert bool(runtime_item["ready"])
     assert runtime_item["runtime_guard_action"] == "continue"
+    assert runtime_item["runtime_target_mode"] == "shadow"
+    assert runtime_item["runtime_strategy"] == "surface_mm"
+    assert runtime_item["runtime_market"] == "india_nse_index_derivatives"
     summary = report.summary.iloc[0]
     assert bool(summary["runtime_session_provided"])
     assert bool(summary["runtime_session_ready"])
     assert summary["runtime_guard_action"] == "continue"
     assert not bool(summary["runtime_guard_halted"])
+    assert summary["runtime_target_mode"] == "shadow"
+    assert summary["runtime_strategy"] == "surface_mm"
+    assert summary["runtime_market"] == "india_nse_index_derivatives"
 
 
 def test_broker_readiness_blocks_halted_runtime_session():

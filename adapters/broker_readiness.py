@@ -153,6 +153,9 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
         "runtime_guard_action": str(row.get("guard_action", "")).strip() if component == "runtime_session" else "",
         "runtime_guard_halted": _guard_halted(row) if component == "runtime_session" and provided else False,
+        "runtime_target_mode": _runtime_text(component, row, "target_mode"),
+        "runtime_strategy": _runtime_text(component, row, "strategy"),
+        "runtime_market": _runtime_text(component, row, "market"),
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -234,6 +237,9 @@ def _summary(
                 "runtime_session_ready": _item_bool(runtime_item, "ready"),
                 "runtime_guard_action": _item_text(runtime_item, "runtime_guard_action"),
                 "runtime_guard_halted": _item_bool(runtime_item, "runtime_guard_halted"),
+                "runtime_target_mode": _item_text(runtime_item, "runtime_target_mode"),
+                "runtime_strategy": _item_text(runtime_item, "runtime_strategy"),
+                "runtime_market": _item_text(runtime_item, "runtime_market"),
                 "recommendation": _summary_recommendation(ready, schema_status, thresholds),
             }
         ]
@@ -306,6 +312,15 @@ def _item_text(item: pd.Series, column: str) -> str:
     if item.empty or column not in item.index or pd.isna(item[column]):
         return ""
     return str(item[column])
+
+
+def _runtime_text(component: str, row: pd.Series, column: str) -> str:
+    if component != "runtime_session" or row.empty:
+        return ""
+    value = row.get(column, "")
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFrame | None:
