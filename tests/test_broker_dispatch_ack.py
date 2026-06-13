@@ -22,6 +22,7 @@ def dispatch_summary(
     route_roundtrip_missing_request_acks=0,
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
 ):
     return pd.DataFrame(
         [
@@ -46,6 +47,7 @@ def dispatch_summary(
                 "route_dispatch_roundtrip_missing_request_acks": route_roundtrip_missing_request_acks,
                 "route_dispatch_roundtrip_rejected_orders": route_roundtrip_rejected_orders,
                 "route_dispatch_roundtrip_unmatched_acks": route_roundtrip_unmatched_acks,
+                "route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "ready_for_broker_dryrun_dispatch"
                 if ready
@@ -183,7 +185,9 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert report.acknowledgements["match_key"].tolist() == ["source_order_id", "source_order_id"]
     assert report.acknowledgements["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.acknowledgements["ack_route_dispatch_roundtrip_batch_ids"].tolist() == ["BDP-0", "BDP-0"]
+    assert int(summary["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
+    assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 0
 
 
 def test_broker_dispatch_ack_requires_route_roundtrip_proof():
@@ -228,6 +232,20 @@ def test_broker_dispatch_ack_blocks_bad_route_roundtrip_quality():
         "route_dispatch_roundtrip_unmatched_acks",
     } <= failed
     assert report.config["route_dispatch_roundtrip"]["missing_request_acks"] == 1
+
+
+def test_broker_dispatch_ack_blocks_route_enable_dispatch_roundtrip_failed_checks():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(route_enable_dispatch_roundtrip_failed_checks=1),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
 
 
 def test_broker_dispatch_ack_blocks_route_roundtrip_batch_mismatch():

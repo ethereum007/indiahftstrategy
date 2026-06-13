@@ -243,6 +243,9 @@ def _dispatch_roundtrip_checks(dispatch_summary: pd.Series) -> list[dict[str, ob
     strategy = _identity_key(dispatch_summary.get("strategy", ""))
     market = _identity_key(dispatch_summary.get("market", ""))
     scenario = _text(dispatch_summary, "scenario_key")
+    route_enable_failed_checks = int(
+        _number(dispatch_summary, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
+    )
     return [
         _check(
             "route_dispatch_roundtrip_provided",
@@ -333,6 +336,14 @@ def _dispatch_roundtrip_checks(dispatch_summary: pd.Series) -> list[dict[str, ob
             0,
             int(_number(dispatch_summary, "route_dispatch_roundtrip_unmatched_acks", 0.0)) <= 0,
             "dispatch route round-trip has unmatched acknowledgements",
+        ),
+        _check(
+            "route_enable_dispatch_roundtrip_failed_checks",
+            route_enable_failed_checks,
+            "<=",
+            0,
+            route_enable_failed_checks <= 0,
+            "route-enable dispatch round-trip has failed component checks",
         ),
     ]
 
@@ -442,6 +453,9 @@ def _summary(
                 "route_dispatch_roundtrip_unmatched_acks": int(
                     _number(dispatch_summary, "route_dispatch_roundtrip_unmatched_acks", 0.0)
                 ),
+                "route_enable_dispatch_roundtrip_failed_checks": int(
+                    _number(dispatch_summary, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
+                ),
                 "ack_rate": acked / orders if orders else 0.0,
                 "failed_checks": failed,
                 "recommendation": "broker_dispatch_acknowledged" if passed else "investigate_broker_dispatch_acks",
@@ -479,6 +493,9 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
             "missing_request_acks": int(summary["route_dispatch_roundtrip_missing_request_acks"]),
             "rejected_orders": int(summary["route_dispatch_roundtrip_rejected_orders"]),
             "unmatched_acks": int(summary["route_dispatch_roundtrip_unmatched_acks"]),
+        },
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": int(summary["route_enable_dispatch_roundtrip_failed_checks"]),
         },
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
