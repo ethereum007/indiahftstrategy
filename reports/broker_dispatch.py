@@ -298,6 +298,14 @@ def _dispatch_roundtrip_checks(route: dict[str, Any], target_mode: str) -> list[
             int(route["dispatch_roundtrip_unmatched_acks"]) <= 0,
             "route-enable dispatch round-trip has unmatched acknowledgements",
         ),
+        _check(
+            "route_enable_dispatch_roundtrip_failed_checks",
+            route["route_enable_dispatch_roundtrip_failed_checks"],
+            "<=",
+            0,
+            int(route["route_enable_dispatch_roundtrip_failed_checks"]) <= 0,
+            "route-enable dispatch round-trip has failed component checks",
+        ),
     ]
 
 
@@ -338,6 +346,9 @@ def _summary(
                 "route_dispatch_roundtrip_missing_request_acks": route["dispatch_roundtrip_missing_request_acks"],
                 "route_dispatch_roundtrip_rejected_orders": route["dispatch_roundtrip_rejected_orders"],
                 "route_dispatch_roundtrip_unmatched_acks": route["dispatch_roundtrip_unmatched_acks"],
+                "route_enable_dispatch_roundtrip_failed_checks": route[
+                    "route_enable_dispatch_roundtrip_failed_checks"
+                ],
                 "dry_run_only": True,
                 "failed_checks": failed,
                 "recommendation": "ready_for_broker_dryrun_dispatch" if ready else "keep_dispatch_disabled",
@@ -398,6 +409,9 @@ def _config(
             "missing_request_acks": int(route["dispatch_roundtrip_missing_request_acks"]),
             "rejected_orders": int(route["dispatch_roundtrip_rejected_orders"]),
             "unmatched_acks": int(route["dispatch_roundtrip_unmatched_acks"]),
+        },
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": int(route["route_enable_dispatch_roundtrip_failed_checks"]),
         },
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
@@ -472,6 +486,13 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         ),
         "dispatch_roundtrip_unmatched_acks": int(
             _number_from(route_proof, "unmatched_acks", _number(row, "route_dispatch_roundtrip_unmatched_acks", 0.0))
+        ),
+        "route_enable_dispatch_roundtrip_failed_checks": int(
+            _number_from(
+                dispatch,
+                "failed_checks",
+                _number(row, "dispatch_roundtrip_failed_checks", 0.0),
+            )
         ),
     }
 
