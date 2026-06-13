@@ -97,7 +97,22 @@ def resume_summary(adapter="normalized", ready=True):
     )
 
 
-def dispatch_roundtrip_summary(adapter="normalized", passed=True):
+def dispatch_roundtrip_summary(
+    adapter="normalized",
+    passed=True,
+    route_provided=True,
+    route_ready=True,
+    route_target_mode="live_dryrun",
+    route_strategy="lead_lag_taker",
+    route_market="india_nse_index_derivatives",
+    route_scenario_key="trigger_ticks=2",
+    route_batch_id="BDP-0",
+    route_requests=2,
+    route_acked_orders=2,
+    route_missing_request_acks=0,
+    route_rejected_orders=0,
+    route_unmatched_acks=0,
+):
     return pd.DataFrame(
         [
             {
@@ -115,6 +130,19 @@ def dispatch_roundtrip_summary(adapter="normalized", passed=True):
                 "rejected_orders": 0,
                 "duplicate_ack_orders": 0,
                 "unmatched_acks": 0,
+                "route_dispatch_roundtrip_required": True,
+                "route_dispatch_roundtrip_provided": route_provided,
+                "route_dispatch_roundtrip_ready": route_ready,
+                "route_dispatch_roundtrip_target_mode": route_target_mode,
+                "route_dispatch_roundtrip_strategy": route_strategy,
+                "route_dispatch_roundtrip_market": route_market,
+                "route_dispatch_roundtrip_scenario_key": route_scenario_key,
+                "route_dispatch_roundtrip_batch_id": route_batch_id,
+                "route_dispatch_roundtrip_requests": route_requests,
+                "route_dispatch_roundtrip_acked_orders": route_acked_orders,
+                "route_dispatch_roundtrip_missing_request_acks": route_missing_request_acks,
+                "route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
+                "route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
                 "failed_checks": 0 if passed else 1,
                 "recommendation": "broker_dry_run_roundtrip_proved"
                 if passed
@@ -207,6 +235,68 @@ def test_broker_readiness_accepts_required_dispatch_roundtrip():
     assert summary["dispatch_roundtrip_batch_id"] == "BDP-1"
     assert int(summary["dispatch_roundtrip_requests"]) == 2
     assert int(summary["dispatch_roundtrip_missing_request_acks"]) == 0
+    assert bool(summary["route_dispatch_roundtrip_provided"])
+    assert bool(summary["route_dispatch_roundtrip_ready"])
+    assert summary["route_dispatch_roundtrip_batch_id"] == "BDP-0"
+    assert int(summary["route_dispatch_roundtrip_requests"]) == 2
+
+
+def test_broker_readiness_fails_for_missing_route_dispatch_roundtrip_proof():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary(
+            "normalized",
+            True,
+            route_provided=False,
+            route_ready=False,
+        ),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_dispatch_roundtrip_provided", "route_dispatch_roundtrip_ready"} <= failed
+    assert not bool(report.summary.iloc[0]["route_dispatch_roundtrip_provided"])
+
+
+def test_broker_readiness_fails_for_dirty_route_dispatch_roundtrip_proof():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary(
+            "normalized",
+            True,
+            route_ready=False,
+            route_target_mode="shadow",
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_scenario_key="wrong-scenario",
+            route_requests=1,
+            route_acked_orders=1,
+            route_missing_request_acks=1,
+            route_rejected_orders=1,
+            route_unmatched_acks=1,
+        ),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_dispatch_roundtrip_ready",
+        "route_dispatch_roundtrip_target_mode_matches",
+        "route_dispatch_roundtrip_strategy_matches",
+        "route_dispatch_roundtrip_market_matches",
+        "route_dispatch_roundtrip_scenario_matches",
+        "route_dispatch_roundtrip_request_count_matches",
+        "route_dispatch_roundtrip_missing_request_acks",
+        "route_dispatch_roundtrip_rejected_orders",
+        "route_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    assert int(report.summary.iloc[0]["route_dispatch_roundtrip_missing_request_acks"]) == 1
 
 
 def test_broker_readiness_blocks_halted_runtime_session():

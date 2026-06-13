@@ -1414,9 +1414,10 @@ reviews.
 When `--dispatch-roundtrip` is supplied, broker readiness retains the proved
 dry-run target mode, strategy, market, scenario, dispatch batch, request count,
 accepted acknowledgements, and missing/rejected/unmatched acknowledgement
-counts. `--require-dispatch-roundtrip` fails closed unless the dry-run dispatch
-plan, non-submitting send packet, and acknowledgement reconciliation passed as
-one round-trip proof.
+counts, plus the nested route dispatch round-trip proof batch and quality
+counters. `--require-dispatch-roundtrip` fails closed unless the dry-run
+dispatch plan, non-submitting send packet, acknowledgement reconciliation, and
+route proof chain passed as one round-trip proof.
 
 Outputs:
 
