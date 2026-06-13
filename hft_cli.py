@@ -22,6 +22,7 @@ from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
+from reports.broker_dispatch_roundtrip import BrokerDispatchRoundTripThresholds, write_broker_dispatch_roundtrip
 from reports.broker_dispatch_send import BrokerDispatchSendThresholds, write_broker_dispatch_send_packet
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
@@ -1271,6 +1272,28 @@ def main(argv: list[str] | None = None) -> int:
     dispatch_ack.add_argument("--max-duplicate-ack-orders", type=int, default=0)
     dispatch_ack.add_argument("--max-unmatched-acks", type=int, default=0)
     dispatch_ack.add_argument("--fail-on-breach", action="store_true")
+
+    dispatch_roundtrip = sub.add_parser(
+        "review-broker-dispatch-roundtrip",
+        help="Review dispatch, send-packet, and acknowledgement evidence as one broker dry-run proof.",
+    )
+    dispatch_roundtrip.add_argument("--dispatch", required=True)
+    dispatch_roundtrip.add_argument("--send", required=True)
+    dispatch_roundtrip.add_argument("--ack", required=True)
+    dispatch_roundtrip.add_argument("--out", required=True)
+    dispatch_roundtrip.add_argument("--target-mode", default="live_dryrun", choices=["paper", "shadow", "live_dryrun"])
+    dispatch_roundtrip.add_argument("--allow-unready-dispatch", action="store_true")
+    dispatch_roundtrip.add_argument("--allow-unready-send", action="store_true")
+    dispatch_roundtrip.add_argument("--allow-failed-ack", action="store_true")
+    dispatch_roundtrip.add_argument("--allow-identity-mismatch", action="store_true")
+    dispatch_roundtrip.add_argument("--allow-submission-enabled", action="store_true")
+    dispatch_roundtrip.add_argument("--allow-missing-request-acks", action="store_true")
+    dispatch_roundtrip.add_argument("--allow-rejections", action="store_true")
+    dispatch_roundtrip.add_argument("--max-duplicate-ack-orders", type=int, default=0)
+    dispatch_roundtrip.add_argument("--max-unmatched-acks", type=int, default=0)
+    dispatch_roundtrip.add_argument("--max-missing-request-acks", type=int, default=0)
+    dispatch_roundtrip.add_argument("--max-total-failed-component-checks", type=int, default=0)
+    dispatch_roundtrip.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -2905,6 +2928,29 @@ def main(argv: list[str] | None = None) -> int:
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
+    if args.command == "review-broker-dispatch-roundtrip":
+        result = write_broker_dispatch_roundtrip(
+            dispatch_dir=args.dispatch,
+            send_dir=args.send,
+            ack_dir=args.ack,
+            output_dir=args.out,
+            thresholds=BrokerDispatchRoundTripThresholds(
+                target_mode=args.target_mode,
+                require_dispatch_ready=not args.allow_unready_dispatch,
+                require_send_ready=not args.allow_unready_send,
+                require_ack_passed=not args.allow_failed_ack,
+                require_identity_match=not args.allow_identity_mismatch,
+                require_submission_disabled=not args.allow_submission_enabled,
+                require_all_requests_acked=not args.allow_missing_request_acks,
+                allow_rejections=args.allow_rejections,
+                max_duplicate_ack_orders=args.max_duplicate_ack_orders,
+                max_unmatched_acks=args.max_unmatched_acks,
+                max_missing_request_acks=args.max_missing_request_acks,
+                max_total_failed_component_checks=args.max_total_failed_component_checks,
             ),
         )
         print(result.summary.to_string(index=False))

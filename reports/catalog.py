@@ -59,6 +59,7 @@ SUMMARY_FILES = [
     "broker_dispatch_summary.csv",
     "broker_dispatch_send_summary.csv",
     "broker_dispatch_ack_summary.csv",
+    "broker_dispatch_roundtrip_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",

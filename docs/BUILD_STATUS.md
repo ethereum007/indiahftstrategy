@@ -287,6 +287,9 @@
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, and fails
   closed on missing, rejected, duplicate, or unmatched acknowledgement rows.
+- Broker dispatch round-trip review that joins dispatch rows, non-submitting
+  sender requests, and broker acknowledgements into one dry-run proof gate with
+  identity, request-count, submission-disabled, and accepted-ack checks.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -348,7 +351,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 458 tests.
+Current passing suite: 462 tests.
 
 ## Next Build Targets
 

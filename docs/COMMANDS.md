@@ -95,8 +95,9 @@ The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
 shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
 cutover, route-enable, broker-dispatch, broker-dispatch-send,
-broker-dispatch-ack, halt-response, and resume summaries, so those run types
-can be promoted into explicit `--required-run-type` evidence gates.
+broker-dispatch-ack, broker-dispatch-roundtrip, halt-response, and resume
+summaries, so those run types can be promoted into explicit
+`--required-run-type` evidence gates.
 
 Use `--require-same-strategy` and `--require-same-market` before scale-up to
 fail closed when required proof, stress, promotion, broker, or shadow artifacts
@@ -2093,6 +2094,37 @@ The gate matches acknowledgements by `dispatch_order_id` with
 fails closed on unready dispatch plans, missing acknowledgements, rejected
 orders, duplicate acknowledgement rows, or acknowledgement rows that do not
 belong to the dispatch batch.
+
+## Broker Dispatch Round-Trip Review
+
+Review dispatch, send-packet, and acknowledgement evidence as one dry-run
+broker proof:
+
+```powershell
+python -m hft_cli review-broker-dispatch-roundtrip `
+  --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
+  --send runs\dispatch_send\leadlag_shadow_live_dryrun `
+  --ack runs\dispatch_acks\leadlag_shadow_live_dryrun `
+  --out runs\dispatch_roundtrip\leadlag_shadow_live_dryrun `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+broker_dispatch_roundtrip_orders.csv
+broker_dispatch_roundtrip_checks.csv
+broker_dispatch_roundtrip_summary.csv
+broker_dispatch_roundtrip_config.json
+manifest.json
+```
+
+This gate proves the broker dry-run bridge as a whole. It joins dispatch rows
+to sender requests and acknowledgement rows, then fails closed unless the
+dispatch plan, non-submitting sender packet, and acknowledgement reconciliation
+all pass with matching strategy/market/scenario/adapter identity, disabled
+live submission, dry-run-only requests, one request per dispatch order, and an
+accepted acknowledgement for every request.
 
 ## Calibration
 
