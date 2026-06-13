@@ -6,6 +6,10 @@ from hft_cli import main
 from reports.runtime_session import write_runtime_session_monitor
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False, **kill_switch_overrides):
     kill_switches = {
         "max_total_failed_component_checks": 0,
@@ -155,6 +159,27 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
     assert report.steps["step"].tolist() == ["telemetry", "runtime_guard"]
     assert set(report.steps["strategy"]) == {"surface_mm"}
     assert set(report.steps["market"]) == {"india_nse_index_derivatives"}
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "scaleup",
+        "telemetry",
+        "telemetry_sources",
+        "telemetry_checks",
+        "telemetry_summary",
+        "telemetry_manifest",
+        "guard_metrics",
+        "guard_checks",
+        "guard_summary",
+        "guard_manifest",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["scaleup"]["path"]).endswith("/scaleup/scaleup_config.json")
+    assert path_tail(manifest["inputs"]["telemetry"]["path"]).endswith(
+        "/session/01_telemetry/runtime_telemetry.csv"
+    )
+    assert path_tail(manifest["inputs"]["guard_summary"]["path"]).endswith(
+        "/session/02_guard/runtime_guard_summary.csv"
+    )
+    assert "halt_response_summary" not in manifest["inputs"]
 
 
 def test_runtime_session_monitor_carries_proof_refresh_state(tmp_path):
@@ -251,6 +276,22 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     assert summary.loc[0, "recommendation"] == "stop_routing_and_execute_halt_response"
     assert steps["step"].tolist() == ["telemetry", "runtime_guard", "halt_response"]
     assert response.loc[0, "recommendation"] == "submit_cancel_and_flatten"
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "open_orders",
+        "positions",
+        "halt_cancel_orders",
+        "halt_flatten_orders",
+        "halt_response_checks",
+        "halt_response_summary",
+        "halt_response_config",
+        "halt_response_manifest",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["open_orders"]["path"]).endswith("/open_orders.csv")
+    assert path_tail(manifest["inputs"]["positions"]["path"]).endswith("/positions.csv")
+    assert path_tail(manifest["inputs"]["halt_response_summary"]["path"]).endswith(
+        "/session/03_halt_response/halt_response_summary.csv"
+    )
 
 
 def test_cli_runtime_session_monitor_halts_on_open_order_notional_limit(tmp_path):
@@ -343,6 +384,10 @@ def test_cli_runtime_session_monitor_halts_on_upload_pack_replace_limit(tmp_path
     assert not bool(summary.loc[0, "ready"])
     assert int(telemetry.loc[0, "replace_orders"]) == 2
     assert "replace_orders" in failed
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith(
+        "/upload/broker_upload_summary.csv"
+    )
 
 
 def test_cli_runtime_session_monitor_halts_on_live_greek_limit(tmp_path):

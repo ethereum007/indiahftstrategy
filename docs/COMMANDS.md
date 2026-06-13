@@ -2316,6 +2316,10 @@ shadow-session and broker-readiness reviews can trace the proof freshness state
 that fed the monitor. It also retains `broker_resume_*` fields so post-halt
 resume authorization and proof identity remain visible after runtime guard
 evaluation.
+The top-level `manifest.json` fingerprints the resolved scale-up config,
+runtime source snapshots, telemetry artifacts, guard artifacts, child
+manifests, and halt-response artifacts when a halt packet is created, so the
+session report can prove the exact runtime chain that fed the go/no-go outcome.
 
 ## Halt Response Plan
 

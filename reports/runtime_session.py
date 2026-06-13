@@ -93,16 +93,19 @@ def write_runtime_session_monitor(
             "plan_halt_response": plan_halt_response,
             "halt_response_config": asdict(halt_response_config or HaltResponseConfig()),
         },
-        inputs={
-            "scaleup": scaleup_dir,
-            "export": export_dir,
-            "upload_pack": upload_pack_dir,
-            "reconciliation": reconciliation_dir,
-            "instrument_metadata": instrument_metadata_dir,
-            "pnl": pnl_path,
-            "open_orders": open_orders_path,
-            "positions": positions_path,
-        },
+        inputs=_session_manifest_inputs(
+            scaleup_dir=scaleup_dir,
+            telemetry_dir=telemetry_dir,
+            guard_dir=guard_dir,
+            halt_response_dir=halt_response_dir if halt_response is not None else None,
+            export_dir=export_dir,
+            upload_pack_dir=upload_pack_dir,
+            reconciliation_dir=reconciliation_dir,
+            instrument_metadata_dir=instrument_metadata_dir,
+            pnl_path=pnl_path,
+            open_orders_path=open_orders_path,
+            positions_path=positions_path,
+        ),
     )
     return RuntimeSessionMonitorReport(
         telemetry=telemetry,
@@ -112,6 +115,104 @@ def write_runtime_session_monitor(
         summary=summary,
         output_dir=out,
     )
+
+
+def _session_manifest_inputs(
+    *,
+    scaleup_dir: str | Path,
+    telemetry_dir: Path,
+    guard_dir: Path,
+    halt_response_dir: Path | None,
+    export_dir: str | Path | None,
+    upload_pack_dir: str | Path | None,
+    reconciliation_dir: str | Path | None,
+    instrument_metadata_dir: str | Path | None,
+    pnl_path: str | Path | None,
+    open_orders_path: str | Path | None,
+    positions_path: str | Path | None,
+) -> dict[str, Any]:
+    inputs: dict[str, Any] = {
+        "scaleup": _scaleup_config_path(scaleup_dir),
+    }
+    for name, path in {
+        "export": _optional_summary_path(
+            export_dir,
+            "broker_order_summary.csv",
+            fallback_dirs=("04_export", "03_export"),
+        ),
+        "upload_pack": _optional_summary_path(
+            upload_pack_dir,
+            "broker_upload_summary.csv",
+            fallback_dirs=("05_upload_pack", "04_upload_pack"),
+        ),
+        "reconciliation_summary": _optional_summary_path(reconciliation_dir, "reconciliation_summary.csv"),
+        "reconciliation_checks": _optional_summary_path(reconciliation_dir, "reconciliation_checks.csv"),
+        "instrument_metadata": _optional_summary_path(
+            instrument_metadata_dir,
+            "instrument_metadata_summary.csv",
+        ),
+        "pnl": _optional_file_path(pnl_path),
+        "open_orders": _optional_file_path(open_orders_path),
+        "positions": _optional_file_path(positions_path),
+        "telemetry": telemetry_dir / "runtime_telemetry.csv",
+        "telemetry_sources": telemetry_dir / "runtime_telemetry_sources.csv",
+        "telemetry_checks": telemetry_dir / "runtime_telemetry_checks.csv",
+        "telemetry_summary": telemetry_dir / "runtime_telemetry_summary.csv",
+        "telemetry_manifest": telemetry_dir / "manifest.json",
+        "guard_metrics": guard_dir / "runtime_guard_metrics.csv",
+        "guard_checks": guard_dir / "runtime_guard_checks.csv",
+        "guard_summary": guard_dir / "runtime_guard_summary.csv",
+        "guard_manifest": guard_dir / "manifest.json",
+    }.items():
+        _add_existing_input(inputs, name, path)
+
+    if halt_response_dir is not None:
+        for name, path in {
+            "halt_cancel_orders": halt_response_dir / "halt_cancel_orders.csv",
+            "halt_flatten_orders": halt_response_dir / "halt_flatten_orders.csv",
+            "halt_response_checks": halt_response_dir / "halt_response_checks.csv",
+            "halt_response_summary": halt_response_dir / "halt_response_summary.csv",
+            "halt_response_config": halt_response_dir / "halt_response_config.json",
+            "halt_response_manifest": halt_response_dir / "manifest.json",
+        }.items():
+            _add_existing_input(inputs, name, path)
+    return inputs
+
+
+def _scaleup_config_path(path: str | Path) -> Path:
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "scaleup_config.json"
+    return candidate
+
+
+def _optional_summary_path(
+    path: str | Path | None,
+    filename: str,
+    *,
+    fallback_dirs: tuple[str, ...] = (),
+) -> Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if not candidate.is_dir():
+        return candidate
+    direct = candidate / filename
+    if direct.exists():
+        return direct
+    return next(
+        (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
+        direct,
+    )
+
+
+def _optional_file_path(path: str | Path | None) -> Path | None:
+    return Path(path) if path is not None else None
+
+
+def _add_existing_input(inputs: dict[str, Any], name: str, path: Path | None) -> None:
+    if path is not None and path.exists():
+        inputs[name] = path
 
 
 def _steps(

@@ -330,7 +330,9 @@
   evaluation, and automatic halt-response planning into one manifest-backed
   paper/shadow go/no-go artifact, preserving the guard halt trigger and
   strategy/market plus proof-refresh and broker resume-gate identity in the
-  top-level session summary.
+  top-level session summary while fingerprinting resolved source snapshots,
+  telemetry/guard child artifacts, child manifests, and optional halt-response
+  artifacts in the session manifest.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests, stamping guard failed check names and first halt reasons onto
