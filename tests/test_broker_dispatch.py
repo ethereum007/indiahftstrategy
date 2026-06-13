@@ -234,6 +234,10 @@ def upload_orders(duplicate=False):
     )
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True):
     route = root / "route_enable"
     upload = root / "upload"
@@ -414,6 +418,46 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_plan"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_cli_broker_dispatch_reads_launch_pipeline_upload_roots(tmp_path):
+    cases = [
+        ("leadlag", "05_upload_pack"),
+        ("imbalance", "05_upload_pack"),
+        ("parity", "05_upload_pack"),
+        ("surface_mm", "04_upload_pack"),
+    ]
+    for family, upload_folder in cases:
+        case_dir = tmp_path / family
+        route, _upload = write_inputs(case_dir)
+        pipeline = case_dir / f"{family}_launch_pipeline"
+        upload_dir = pipeline / upload_folder
+        out_dir = case_dir / "dispatch"
+        upload_dir.mkdir(parents=True)
+        upload_orders().to_csv(upload_dir / "broker_upload_orders.csv", index=False)
+
+        code = main(
+            [
+                "plan-broker-dispatch",
+                "--route-enable",
+                str(route),
+                "--upload-pack",
+                str(pipeline),
+                "--out",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+
+        summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+        dispatch = pd.read_csv(out_dir / "broker_dispatch_orders.csv")
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert code == 0
+        assert bool(summary.loc[0, "ready"])
+        assert len(dispatch) == 2
+        assert path_tail(manifest["inputs"]["upload_orders"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{upload_folder}/broker_upload_orders.csv"
+        )
 
 
 def test_cli_broker_dispatch_fails_on_disabled_route(tmp_path):

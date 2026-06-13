@@ -524,8 +524,20 @@ def _upload_orders_path(upload_dir: Path, route_config: dict[str, Any], override
         candidate = Path(override)
     else:
         upload_file = str((route_config.get("upload", {}) or {}).get("output_file", "")).strip()
-        candidate = upload_dir / (upload_file or "broker_upload_orders.csv")
-    if not candidate.exists():
+        filename = upload_file or "broker_upload_orders.csv"
+        if upload_dir.is_dir():
+            direct = upload_dir / filename
+            candidate = next(
+                (
+                    nested
+                    for folder in ("05_upload_pack", "04_upload_pack")
+                    if (nested := upload_dir / folder / filename).exists()
+                ),
+                direct,
+            )
+        else:
+            candidate = upload_dir
+    if not candidate.exists() or not candidate.is_file():
         raise FileNotFoundError(f"broker upload orders not found: {candidate}")
     return candidate
 

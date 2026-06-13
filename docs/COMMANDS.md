@@ -2572,7 +2572,10 @@ live dry-run routing, zero nested route-enable dispatch round-trip failed
 checks, and order counts within the approved route limits. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, and `broker_dispatch_config.json` is the artifact a future
-Arrow.money or iRage sender can consume.
+Arrow.money or iRage sender can consume. `--upload-pack` may point at a
+launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
+surface-MM `04_upload_pack` upload-order files and fingerprints the resolved
+CSV in the manifest.
 
 ## Broker Dispatch Send Packet
 

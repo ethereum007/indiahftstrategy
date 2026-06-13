@@ -354,8 +354,9 @@
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries live-dry-run nested route proof from
   route-enable, and fails closed on disabled routes, nested route-enable
-  dispatch round-trip failed checks, dirty route proof, or duplicate source
-  order IDs without sending orders.
+  dispatch round-trip failed checks, dirty route proof, duplicate source order
+  IDs, or unresolved upload-order files while resolving launch pipeline upload
+  roots without sending orders.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route round-trip proof tags, and acknowledgement templates while
