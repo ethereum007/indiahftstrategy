@@ -301,6 +301,35 @@ records ready strategy/market pairs, gap pairs, next gates, the matching
 strategy-evidence profile command, and the file-provenance-gated `ops_launch`
 review command for downstream US research planning.
 
+## Route Readiness Review
+
+Combine market portability, strategy evidence, and operational launch evidence
+into a per-route go/no-go matrix before live dry-run review:
+
+```powershell
+python -m hft_cli review-route-readiness `
+  --portability runs\market_profiles\portability `
+  --strategy-evidence runs\evidence\imbalance_strategy `
+  --ops-evidence runs\evidence\imbalance_ops_launch `
+  --out runs\evidence\imbalance_route_readiness `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+route_readiness_pairs.csv
+route_readiness_gaps.csv
+route_readiness_summary.csv
+route_readiness_config.json
+manifest.json
+```
+
+The review fails closed until the route is portable, matching strategy evidence
+is ready, matching `ops_launch` evidence is ready, and ops evidence was reviewed
+with file-fingerprinted inputs. Use `--allow-non-file-ops-inputs` only for
+explicit dry-run investigations that are not route-review candidates.
+
 ## Instrument Metadata Report
 
 Audit option symbol parse coverage before exposure review, upload mapping, or

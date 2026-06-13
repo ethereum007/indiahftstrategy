@@ -218,6 +218,9 @@
   exists, while emitting a machine-readable ready/gap config with matching
   strategy-evidence and ops-launch evidence commands for downstream US research
   planning.
+- Route readiness review that combines market-portability pairs, matching
+  strategy evidence, and file-provenance-gated `ops_launch` evidence into a
+  route-level live-dry-run go/no-go matrix.
 - Instrument metadata coverage report that parses option symbols across
   internal, settlement, NSE compact, and OCC formats, emits unparsed gaps, and
   can fail closed before exposure, upload, or US portability work.

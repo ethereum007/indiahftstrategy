@@ -39,6 +39,7 @@ SUMMARY_FILES = [
     "scaleup_summary.csv",
     "market_profile_summary.csv",
     "market_portability_summary.csv",
+    "route_readiness_summary.csv",
     "instrument_metadata_summary.csv",
     "vendor_market_data_batch_summary.csv",
     "vendor_market_data_pipeline_summary.csv",

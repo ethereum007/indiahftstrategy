@@ -84,6 +84,7 @@ from reports.quote_lifecycle import QuoteLifecycleThresholds, write_quote_lifecy
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
 from reports.route_enable import RouteEnableThresholds, write_route_enable_packet
+from reports.route_readiness import write_route_readiness_review
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_session import write_runtime_session_monitor
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
@@ -977,6 +978,17 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--require-file-inputs", action="store_true")
     evidence.add_argument("--allow-non-file-inputs", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
+
+    route_readiness = sub.add_parser(
+        "review-route-readiness",
+        help="Combine portability plus strategy/ops evidence into route readiness.",
+    )
+    route_readiness.add_argument("--portability", required=True)
+    route_readiness.add_argument("--strategy-evidence", action="append", dest="strategy_evidence")
+    route_readiness.add_argument("--ops-evidence", action="append", dest="ops_evidence")
+    route_readiness.add_argument("--out", required=True)
+    route_readiness.add_argument("--allow-non-file-ops-inputs", action="store_true")
+    route_readiness.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_sweep = sub.add_parser("sweep-leadlag", help="Run lead-lag replay robustness sweep.")
     leadlag_sweep.add_argument("--leader", required=True)
@@ -2859,6 +2871,16 @@ def main(argv: list[str] | None = None) -> int:
                 require_file_inputs=args.require_file_inputs
                 or (is_ops_launch_profile and not args.allow_non_file_inputs),
             ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "review-route-readiness":
+        result = write_route_readiness_review(
+            args.out,
+            market_portability=args.portability,
+            strategy_evidence=tuple(args.strategy_evidence or ()),
+            ops_evidence=tuple(args.ops_evidence or ()),
+            require_ops_file_inputs=not args.allow_non_file_ops_inputs,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
