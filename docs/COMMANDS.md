@@ -2091,14 +2091,16 @@ scaleup_config.json
 manifest.json
 ```
 
-For settlement convergence or surface market-making handoffs, `--launch` may
-point at the launch-pipeline root. In that case scale-up reads the nested
-launch summary and automatically includes nested broker-readiness evidence when
-present, so `--require-broker-readiness` can gate the pipeline folder directly.
-For surface market-making launch roots, scale-up also reads
-`surface_mm_launch_pipeline_summary.csv` and fails closed if its ready status or
+For lead-lag, imbalance, parity-box, settlement convergence, or surface
+market-making handoffs, `--launch` may point at the launch-pipeline root. In
+that case scale-up reads the nested launch summary and automatically includes
+nested broker-readiness evidence when present, so `--require-broker-readiness`
+can gate the pipeline folder directly. Scale-up also reads the root
+`*_launch_pipeline_summary.csv`, preserves it in the generic
+`launch_pipeline` config block, and fails closed if its ready status or
 strategy/market identity disagrees with the evidence or explicit expected
-identity.
+identity. Surface-MM keeps the legacy `surface_launch_pipeline` block as a
+compatibility alias.
 If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker
@@ -2161,10 +2163,11 @@ runtime_telemetry_summary.csv
 manifest.json
 ```
 
-For settlement convergence or surface market-making handoffs, `--export` and
-`--upload-pack` may point at the launch-pipeline root; telemetry will read the
-nested broker export and upload-pack summaries from that folder. Upload-pack
-summaries carry `lifecycle_orders` and `replace_orders` into runtime guardrails.
+For lead-lag, imbalance, parity-box, settlement convergence, or surface
+market-making handoffs, `--export` and `--upload-pack` may point at the
+launch-pipeline root; telemetry will read the nested broker export and
+upload-pack summaries from that folder. Upload-pack summaries carry
+`lifecycle_orders` and `replace_orders` into runtime guardrails.
 Telemetry carries the scale-up `strategy` and `market` identities from
 `scaleup_config.json`; missing identity fails closed before guard evaluation.
 When scale-up required proof-refresh evidence, telemetry also carries

@@ -370,6 +370,42 @@ def write_surface_launch_pipeline(
     return pipeline
 
 
+def write_strategy_launch_pipeline(
+    root,
+    *,
+    family="leadlag",
+    summary_file="leadlag_launch_pipeline_summary.csv",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    launch_ready=True,
+    broker_ready=True,
+):
+    pipeline = root / f"{family}_launch_pipeline"
+    launch = pipeline / "03_launch"
+    broker = pipeline / "06_broker_readiness"
+    launch.mkdir(parents=True, exist_ok=True)
+    broker.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": launch_ready and broker_ready,
+                "strategy": strategy,
+                "market": market,
+                "adapter": "arrow_money",
+                "mode": "shadow",
+                "components": 6,
+                "ready_components": 6 if launch_ready and broker_ready else 5,
+                "failed_components": 0 if launch_ready and broker_ready else 1,
+                "skipped_components": 0,
+                "recommendation": "paper_or_shadow_handoff" if launch_ready and broker_ready else "keep_in_research",
+            }
+        ]
+    ).to_csv(pipeline / summary_file, index=False)
+    launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
+    broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    return pipeline
+
+
 def test_scaleup_plan_accepts_clean_shadow_scaleup():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(True),
@@ -1317,6 +1353,119 @@ def test_cli_scaleup_plan_reads_surface_launch_pipeline_outputs(tmp_path):
     assert config["broker_readiness"]["ready"]
     assert config["surface_launch_pipeline"]["provided"]
     assert config["surface_launch_pipeline"]["market"] == "india_nse_index_derivatives"
+
+
+def test_cli_scaleup_plan_reads_strategy_launch_pipeline_roots(tmp_path):
+    cases = [
+        ("leadlag", "leadlag_launch_pipeline_summary.csv", "lead_lag_taker"),
+        ("imbalance", "imbalance_launch_pipeline_summary.csv", "imbalance"),
+        ("parity", "parity_launch_pipeline_summary.csv", "parity"),
+    ]
+    for family, summary_file, strategy in cases:
+        case_dir = tmp_path / family
+        evidence, shadow, _, _ = write_inputs(case_dir, strategy=strategy)
+        pipeline = write_strategy_launch_pipeline(
+            case_dir,
+            family=family,
+            summary_file=summary_file,
+            strategy=strategy,
+        )
+        out_dir = case_dir / "scaleup"
+
+        code = main(
+            [
+                "plan-scaleup",
+                "--evidence",
+                str(evidence),
+                "--shadow-comparison",
+                str(shadow),
+                "--launch",
+                str(pipeline),
+                "--out",
+                str(out_dir),
+                "--require-broker-readiness",
+                "--fail-on-breach",
+            ]
+        )
+
+        summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+        config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+        assert code == 0
+        assert bool(summary.loc[0, "ready"])
+        assert bool(summary.loc[0, "launch_pipeline_ready"])
+        assert summary.loc[0, "launch_pipeline_family"] == family
+        assert summary.loc[0, "launch_pipeline_strategy"] == strategy
+        assert config["launch_pipeline"]["provided"]
+        assert config["launch_pipeline"]["family"] == family
+        assert config["broker_readiness"]["provided"]
+        assert config["broker_readiness"]["ready"]
+
+
+def test_cli_scaleup_plan_direct_launch_summary_file_ignores_pipeline_detector(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch / "launch_summary.csv"),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "launch_pipeline_provided"])
+    assert not config["launch_pipeline"]["provided"]
+
+
+def test_cli_scaleup_plan_blocks_strategy_launch_pipeline_market_mismatch(tmp_path):
+    evidence, shadow, _, _ = write_inputs(tmp_path, strategy="parity", market="india_nse_index_derivatives")
+    pipeline = write_strategy_launch_pipeline(
+        tmp_path,
+        family="parity",
+        summary_file="parity_launch_pipeline_summary.csv",
+        strategy="parity",
+        market="us_options_regular",
+    )
+    out_dir = tmp_path / "scaleup_parity_mismatch"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(pipeline),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--expected-strategy",
+            "parity",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "launch_pipeline_market"] == "us_options_regular"
+    assert "launch_pipeline_market_matches" in failed
 
 
 def test_cli_scaleup_plan_blocks_surface_launch_pipeline_market_mismatch(tmp_path):

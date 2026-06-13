@@ -287,13 +287,13 @@
   runtime-session guard, resume-gate, and dispatch round-trip evidence into
   scale-up configs, automatically requires broker/runtime guard and clean
   dispatch round-trip evidence plus nested route proof for live-dry-run targets,
-  consumes surface-MM launch pipeline root summaries for strategy/market
-  readiness continuity when a launch-pipeline folder is supplied directly,
-  fails closed on broker runtime-session, broker resume-gate proof-refresh,
-  dispatch round-trip failed checks, route-enable dispatch round-trip failed
-  checks, dispatch route proof, or shadow proof-refresh strategy/market
-  mismatches, and can consume a settlement or surface-MM launch pipeline root
-  directly.
+  consumes lead-lag, imbalance, parity-box, settlement, and surface-MM launch
+  pipeline root summaries for strategy/market readiness continuity when a
+  launch-pipeline folder is supplied directly, fails closed on broker
+  runtime-session, broker resume-gate proof-refresh, dispatch round-trip failed
+  checks, route-enable dispatch round-trip failed checks, dispatch route proof,
+  launch-pipeline identity mismatches, or shadow proof-refresh strategy/market
+  mismatches, and can consume these launch pipeline roots directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
@@ -303,8 +303,7 @@
   notional from marks or total notional columns, derives net delta/vega from
   total or unit Greek position columns, carries scale-up strategy/market and
   proof-refresh freshness identity plus broker resume-gate proof identity, and
-  can consume settlement or surface-MM launch pipeline roots for broker export
-  and upload-pack evidence.
+  can consume launch pipeline roots for broker export and upload-pack evidence.
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
   against `scaleup_config.json` limits, kill switches, telemetry freshness,
   lifecycle/replace message controls, open-order quantity/notional/age,
