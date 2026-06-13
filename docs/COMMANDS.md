@@ -2089,11 +2089,12 @@ This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
 carries route dispatch round-trip proof into the sender request envelope and
-fails closed if the dispatch plan is not ready and armed, target mode does not
-match, route round-trip proof is missing or dirty for live dry-run sending, any
-dispatch row or request carries a mismatched route proof batch id, the adapter
-is unknown, payload JSON is invalid, idempotency keys are not unique, request
-limits are exceeded, or any request is not dry-run-only.
+expected acknowledgement rows, then fails closed if the dispatch plan is not
+ready and armed, target mode does not match, route round-trip proof is missing
+or dirty for live dry-run sending, any dispatch row or request carries a
+mismatched route proof batch id, the adapter is unknown, payload JSON is
+invalid, idempotency keys are not unique, request limits are exceeded, or any
+request is not dry-run-only.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 
@@ -2124,8 +2125,9 @@ The gate matches acknowledgements by `dispatch_order_id` with
 `source_order_id` fallback, accepts common broker success status names, and
 fails closed on unready dispatch plans, missing acknowledgements, rejected
 orders, duplicate acknowledgement rows, dirty route round-trip proof for live
-dry-run dispatches, or acknowledgement rows that do not belong to the dispatch
-batch.
+dry-run dispatches, dispatch rows or acknowledgement rows that carry a stale
+route proof batch id, missing acknowledgement route proof tags, or
+acknowledgement rows that do not belong to the dispatch batch.
 
 ## Broker Dispatch Round-Trip Review
 

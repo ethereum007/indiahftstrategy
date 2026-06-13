@@ -153,6 +153,7 @@ def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
     assert request_payload["order"]["client_order_id"] == "ORD-1"
     assert report.requests["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.expected_acks["dispatch_order_id"].tolist() == ["DSP-1", "DSP-2"]
+    assert report.expected_acks["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
 
 

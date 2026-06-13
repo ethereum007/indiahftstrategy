@@ -84,14 +84,24 @@ def dispatch_orders():
     )
 
 
-def ack_rows(statuses=("accepted", "accepted"), *, extra=False, duplicate=False, by_source=False):
+def ack_rows(
+    statuses=("accepted", "accepted"),
+    *,
+    extra=False,
+    duplicate=False,
+    by_source=False,
+    route_roundtrip_batch_id="BDP-0",
+):
     rows = []
     for index, status in enumerate(statuses, start=1):
+        route_batch_id = _route_batch_id(route_roundtrip_batch_id, index)
         row = {
             "status": status,
             "broker_order_id": f"BRK-{index}",
             "ack_ts_ns": 1_000 + index,
         }
+        if route_batch_id is not None:
+            row["route_dispatch_roundtrip_batch_id"] = route_batch_id
         if by_source:
             row["source_order_id"] = f"ORD-{index}"
         else:
@@ -99,6 +109,7 @@ def ack_rows(statuses=("accepted", "accepted"), *, extra=False, duplicate=False,
             row["source_order_id"] = f"ORD-{index}"
         rows.append(row)
     if duplicate:
+        route_batch_id = _route_batch_id(route_roundtrip_batch_id, 1)
         rows.append(
             {
                 "dispatch_order_id": "DSP-1",
@@ -106,9 +117,15 @@ def ack_rows(statuses=("accepted", "accepted"), *, extra=False, duplicate=False,
                 "status": "accepted",
                 "broker_order_id": "BRK-1-DUP",
                 "ack_ts_ns": 1_099,
+                **(
+                    {"route_dispatch_roundtrip_batch_id": route_batch_id}
+                    if route_batch_id is not None
+                    else {}
+                ),
             }
         )
     if extra:
+        route_batch_id = _route_batch_id(route_roundtrip_batch_id, 999)
         rows.append(
             {
                 "dispatch_order_id": "DSP-999",
@@ -116,9 +133,20 @@ def ack_rows(statuses=("accepted", "accepted"), *, extra=False, duplicate=False,
                 "status": "accepted",
                 "broker_order_id": "BRK-999",
                 "ack_ts_ns": 9_999,
+                **(
+                    {"route_dispatch_roundtrip_batch_id": route_batch_id}
+                    if route_batch_id is not None
+                    else {}
+                ),
             }
         )
     return pd.DataFrame(rows)
+
+
+def _route_batch_id(value, index):
+    if isinstance(value, (list, tuple)):
+        return value[index - 1] if index <= len(value) else value[-1]
+    return value
 
 
 def write_inputs(
@@ -154,6 +182,7 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert summary["recommendation"] == "broker_dispatch_acknowledged"
     assert report.acknowledgements["match_key"].tolist() == ["source_order_id", "source_order_id"]
     assert report.acknowledgements["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
+    assert report.acknowledgements["ack_route_dispatch_roundtrip_batch_ids"].tolist() == ["BDP-0", "BDP-0"]
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
 
 
@@ -199,6 +228,26 @@ def test_broker_dispatch_ack_blocks_bad_route_roundtrip_quality():
         "route_dispatch_roundtrip_unmatched_acks",
     } <= failed
     assert report.config["route_dispatch_roundtrip"]["missing_request_acks"] == 1
+
+
+def test_broker_dispatch_ack_blocks_route_roundtrip_batch_mismatch():
+    orders = dispatch_orders()
+    orders.loc[0, "route_dispatch_roundtrip_batch_id"] = "BDP-OLD"
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=orders,
+        broker_acks=ack_rows(route_roundtrip_batch_id="BDP-BAD"),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "dispatch_order_route_roundtrip_batch_matches",
+        "ack_route_roundtrip_batch_matches",
+    } <= failed
+    assert report.acknowledgements["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-BAD", "BDP-BAD"]
+    assert report.acknowledgements["ack_route_dispatch_roundtrip_batch_ids"].tolist() == ["BDP-BAD", "BDP-BAD"]
 
 
 def test_broker_dispatch_ack_blocks_missing_ack():

@@ -124,12 +124,18 @@ def _acknowledgements(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.D
         status = _latest_text(matches, "ack_status")
         broker_order_id = _latest_text(matches, "broker_order_id")
         ack_ts_ns = _latest_number(matches, "ack_ts_ns")
+        dispatch_route_batch_id = _text(order, "route_dispatch_roundtrip_batch_id")
+        ack_route_batch_ids = _unique_text_values(matches, "route_dispatch_roundtrip_batch_id")
         ack_count = int(len(matches))
         rows.append(
             {
                 "dispatch_batch_id": _text(order, "dispatch_batch_id"),
                 "dispatch_order_id": _text(order, "dispatch_order_id"),
-                "route_dispatch_roundtrip_batch_id": _text(order, "route_dispatch_roundtrip_batch_id"),
+                "route_dispatch_roundtrip_batch_id": (
+                    ack_route_batch_ids[0] if len(ack_route_batch_ids) == 1 else dispatch_route_batch_id
+                ),
+                "dispatch_order_route_roundtrip_batch_id": dispatch_route_batch_id,
+                "ack_route_dispatch_roundtrip_batch_ids": "|".join(ack_route_batch_ids),
                 "source_order_id": _text(order, "source_order_id"),
                 "target_mode": _text(order, "target_mode"),
                 "strategy": _text(order, "strategy"),
@@ -225,6 +231,7 @@ def _checks(
             [
                 checks,
                 pd.DataFrame(_dispatch_roundtrip_checks(dispatch_summary)),
+                pd.DataFrame(_route_batch_continuity_checks(dispatch_summary, acknowledgements)),
             ],
             ignore_index=True,
         )
@@ -252,6 +259,14 @@ def _dispatch_roundtrip_checks(dispatch_summary: pd.Series) -> list[dict[str, ob
             True,
             _to_bool(dispatch_summary.get("route_dispatch_roundtrip_ready", False)),
             "dispatch route round-trip proof is not ready",
+        ),
+        _check(
+            "route_dispatch_roundtrip_batch_id_provided",
+            _text(dispatch_summary, "route_dispatch_roundtrip_batch_id"),
+            "nonempty",
+            True,
+            bool(_text(dispatch_summary, "route_dispatch_roundtrip_batch_id")),
+            "dispatch route round-trip proof batch id is missing",
         ),
         _check(
             "route_dispatch_roundtrip_target_mode_matches",
@@ -318,6 +333,44 @@ def _dispatch_roundtrip_checks(dispatch_summary: pd.Series) -> list[dict[str, ob
             0,
             int(_number(dispatch_summary, "route_dispatch_roundtrip_unmatched_acks", 0.0)) <= 0,
             "dispatch route round-trip has unmatched acknowledgements",
+        ),
+    ]
+
+
+def _route_batch_continuity_checks(
+    dispatch_summary: pd.Series,
+    acknowledgements: pd.DataFrame,
+) -> list[dict[str, object]]:
+    route_batch_id = _text(dispatch_summary, "route_dispatch_roundtrip_batch_id")
+    dispatch_order_batches = _unique_text_values(acknowledgements, "dispatch_order_route_roundtrip_batch_id")
+    ack_route_batches = _unique_pipe_text_values(acknowledgements, "ack_route_dispatch_roundtrip_batch_ids")
+    matched = acknowledgements.loc[acknowledgements["ack_count"].astype(int) > 0] if not acknowledgements.empty else acknowledgements
+    missing_ack_route_batches = (
+        int((matched["ack_route_dispatch_roundtrip_batch_ids"].astype(str).str.strip() == "").sum())
+        if not matched.empty and "ack_route_dispatch_roundtrip_batch_ids" in matched.columns
+        else 0
+    )
+    return [
+        _check(
+            "dispatch_order_route_roundtrip_batch_matches",
+            "|".join(dispatch_order_batches),
+            "==",
+            route_batch_id,
+            bool(route_batch_id and len(dispatch_order_batches) == 1 and dispatch_order_batches[0] == route_batch_id),
+            "dispatch order route proof batch ids do not match dispatch summary",
+        ),
+        _check(
+            "ack_route_roundtrip_batch_matches",
+            f"{'|'.join(ack_route_batches)}; missing={missing_ack_route_batches}",
+            "==",
+            route_batch_id,
+            bool(
+                route_batch_id
+                and missing_ack_route_batches == 0
+                and len(ack_route_batches) == 1
+                and ack_route_batches[0] == route_batch_id
+            ),
+            "broker acknowledgement route proof batch ids do not match dispatch summary",
         ),
     ]
 
@@ -484,6 +537,25 @@ def _latest_number(frame: pd.DataFrame, column: str) -> float:
         return float("nan")
     values = pd.to_numeric(frame[column], errors="coerce").dropna()
     return float(values.iloc[-1]) if not values.empty else float("nan")
+
+
+def _unique_text_values(frame: pd.DataFrame, column: str) -> list[str]:
+    if frame.empty or column not in frame.columns:
+        return []
+    values = frame[column].dropna().astype(str).str.strip()
+    return sorted(set(values.loc[values != ""]))
+
+
+def _unique_pipe_text_values(frame: pd.DataFrame, column: str) -> list[str]:
+    values: set[str] = set()
+    if frame.empty or column not in frame.columns:
+        return []
+    for raw in frame[column].dropna().astype(str):
+        for value in raw.split("|"):
+            cleaned = value.strip()
+            if cleaned:
+                values.add(cleaned)
+    return sorted(values)
 
 
 def _read_required(path: str | Path, name: str) -> pd.DataFrame:
