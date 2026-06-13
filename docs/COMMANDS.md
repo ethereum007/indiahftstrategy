@@ -1923,7 +1923,7 @@ schema review.
 `--order-export` and `--upload-pack` may point at a launch-pipeline root;
 broker readiness resolves nested `04_export`/`05_upload_pack` or surface-MM
 `03_export`/`04_upload_pack` summaries and fingerprints the resolved files in
-the manifest.
+the manifest, including the broker dispatch round-trip config when supplied.
 When `--runtime-session` is supplied, broker readiness requires the runtime
 guard to be continuing. `--require-runtime-session` makes that evidence
 mandatory before paper/shadow routing. Runtime-session target mode, strategy,

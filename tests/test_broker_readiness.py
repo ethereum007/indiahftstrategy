@@ -643,6 +643,55 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert (out_dir / "broker_readiness_checks.csv").exists()
     assert (out_dir / "broker_readiness_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(manifest["inputs"]["dispatch_roundtrip"]["path"]).endswith(
+        "/roundtrip/broker_dispatch_roundtrip_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_roundtrip_config"]["path"]).endswith(
+        "/roundtrip/broker_dispatch_roundtrip_config.json"
+    )
+
+
+def test_broker_readiness_reads_roundtrip_config_next_to_summary_file(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    roundtrip_dir = tmp_path / "roundtrip"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    roundtrip_summary_path = roundtrip_dir / "broker_dispatch_roundtrip_summary.csv"
+    dispatch_roundtrip_summary("normalized", True).to_csv(roundtrip_summary_path, index=False)
+    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(dispatch_roundtrip_config(route_enable_dispatch_roundtrip_failed_checks=1), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_summary_path,
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    summary = report.summary.iloc[0]
+    assert int(summary["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(manifest["inputs"]["dispatch_roundtrip"]["path"]).endswith(
+        "/roundtrip/broker_dispatch_roundtrip_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_roundtrip_config"]["path"]).endswith(
+        "/roundtrip/broker_dispatch_roundtrip_config.json"
+    )
 
 
 def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):

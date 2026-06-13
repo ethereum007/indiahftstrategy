@@ -251,6 +251,9 @@
 - Broker/drop-copy fill reconciliation for exported orders, including
   order-level fill status, unmatched fills, side/instrument mismatches,
   adverse slippage, latency, pass/fail checks, and manifests.
+- Broker readiness gate that fingerprints supplied dispatch round-trip config
+  files so carried route-enable dispatch failed-check counters stay auditable
+  when round-trip evidence is passed as either a folder or sibling files.
 - Shadow-session acceptance report that combines launch, export,
   reconciliation, and optional runtime-session monitor artifacts into one
   go/no-go record for paper/shadow promotion decisions, carrying runtime

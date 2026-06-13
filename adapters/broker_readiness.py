@@ -115,6 +115,10 @@ def write_broker_readiness_report(
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
     _validate_thresholds(thresholds)
+    dispatch_roundtrip_config_path = _manifest_config_input(
+        dispatch_roundtrip_dir,
+        "broker_dispatch_roundtrip_config.json",
+    )
     input_paths = {
         "schema_audit": _manifest_summary_input(schema_audit_dir, "schema_audit"),
         "order_export": _manifest_summary_input(order_export_dir, "order_export"),
@@ -127,6 +131,8 @@ def write_broker_readiness_report(
         "resume_gate": _manifest_summary_input(resume_dir, "resume_gate"),
         "dispatch_roundtrip": _manifest_summary_input(dispatch_roundtrip_dir, "dispatch_roundtrip"),
     }
+    if dispatch_roundtrip_config_path is not None:
+        input_paths["dispatch_roundtrip_config"] = dispatch_roundtrip_config_path
     report = evaluate_broker_readiness(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),
@@ -757,15 +763,29 @@ def _manifest_summary_input(path: str | Path | None, component: str) -> Path | N
     return summary_path if summary_path.exists() else Path(path)
 
 
+def _manifest_config_input(path: str | Path | None, file_name: str) -> Path | None:
+    if path is None:
+        return None
+    candidate = _config_path(path, file_name)
+    return candidate if candidate.exists() else None
+
+
 def _read_optional_config(path: str | Path | None, file_name: str) -> dict[str, Any]:
     if path is None:
         return {}
-    candidate = Path(path)
-    if candidate.is_dir():
-        candidate = candidate / file_name
+    candidate = _config_path(path, file_name)
     if not candidate.exists():
         return {}
     return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _config_path(path: str | Path, file_name: str) -> Path:
+    candidate = Path(path)
+    if candidate.is_dir():
+        return candidate / file_name
+    if candidate.name == file_name:
+        return candidate
+    return candidate.with_name(file_name)
 
 
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
