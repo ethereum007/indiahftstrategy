@@ -223,10 +223,11 @@
   strategy/market identity, direct and shadow proof-refresh state, and broker
   runtime-session guard, resume-gate, and dispatch round-trip evidence into
   scale-up configs, automatically requires broker/runtime guard and clean
-  dispatch round-trip evidence for live-dry-run targets, fails closed on broker
-  runtime-session, broker resume-gate proof-refresh, dispatch round-trip, or
-  shadow proof-refresh strategy/market mismatches, and can consume a settlement
-  or surface-MM launch pipeline root directly.
+  dispatch round-trip evidence plus nested route proof for live-dry-run targets,
+  fails closed on broker runtime-session, broker resume-gate proof-refresh,
+  dispatch round-trip, dispatch route proof, or shadow proof-refresh
+  strategy/market mismatches, and can consume a settlement or surface-MM launch
+  pipeline root directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
@@ -359,7 +360,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 488 tests.
+Current passing suite: 490 tests.
 
 ## Next Build Targets
 

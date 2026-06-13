@@ -159,7 +159,44 @@ def broker_readiness_summary(
     dispatch_roundtrip_missing_request_acks=0,
     dispatch_roundtrip_rejected_orders=0,
     dispatch_roundtrip_unmatched_acks=0,
+    route_dispatch_roundtrip_required=None,
+    route_dispatch_roundtrip_provided=None,
+    route_dispatch_roundtrip_ready=None,
+    route_dispatch_roundtrip_target_mode=None,
+    route_dispatch_roundtrip_strategy=None,
+    route_dispatch_roundtrip_market=None,
+    route_dispatch_roundtrip_scenario_key=None,
+    route_dispatch_roundtrip_batch_id="BDP-0",
+    route_dispatch_roundtrip_requests=None,
+    route_dispatch_roundtrip_acked_orders=None,
+    route_dispatch_roundtrip_missing_request_acks=None,
+    route_dispatch_roundtrip_rejected_orders=None,
+    route_dispatch_roundtrip_unmatched_acks=None,
 ):
+    if route_dispatch_roundtrip_required is None:
+        route_dispatch_roundtrip_required = dispatch_roundtrip_provided
+    if route_dispatch_roundtrip_provided is None:
+        route_dispatch_roundtrip_provided = dispatch_roundtrip_provided
+    if route_dispatch_roundtrip_ready is None:
+        route_dispatch_roundtrip_ready = dispatch_roundtrip_ready
+    if route_dispatch_roundtrip_target_mode is None:
+        route_dispatch_roundtrip_target_mode = dispatch_roundtrip_target_mode
+    if route_dispatch_roundtrip_strategy is None:
+        route_dispatch_roundtrip_strategy = dispatch_roundtrip_strategy
+    if route_dispatch_roundtrip_market is None:
+        route_dispatch_roundtrip_market = dispatch_roundtrip_market
+    if route_dispatch_roundtrip_scenario_key is None:
+        route_dispatch_roundtrip_scenario_key = dispatch_roundtrip_scenario_key
+    if route_dispatch_roundtrip_requests is None:
+        route_dispatch_roundtrip_requests = dispatch_roundtrip_requests
+    if route_dispatch_roundtrip_acked_orders is None:
+        route_dispatch_roundtrip_acked_orders = dispatch_roundtrip_acked_orders
+    if route_dispatch_roundtrip_missing_request_acks is None:
+        route_dispatch_roundtrip_missing_request_acks = dispatch_roundtrip_missing_request_acks
+    if route_dispatch_roundtrip_rejected_orders is None:
+        route_dispatch_roundtrip_rejected_orders = dispatch_roundtrip_rejected_orders
+    if route_dispatch_roundtrip_unmatched_acks is None:
+        route_dispatch_roundtrip_unmatched_acks = dispatch_roundtrip_unmatched_acks
     return pd.DataFrame(
         [
             {
@@ -199,6 +236,19 @@ def broker_readiness_summary(
                 "dispatch_roundtrip_missing_request_acks": dispatch_roundtrip_missing_request_acks,
                 "dispatch_roundtrip_rejected_orders": dispatch_roundtrip_rejected_orders,
                 "dispatch_roundtrip_unmatched_acks": dispatch_roundtrip_unmatched_acks,
+                "route_dispatch_roundtrip_required": route_dispatch_roundtrip_required,
+                "route_dispatch_roundtrip_provided": route_dispatch_roundtrip_provided,
+                "route_dispatch_roundtrip_ready": route_dispatch_roundtrip_ready,
+                "route_dispatch_roundtrip_target_mode": route_dispatch_roundtrip_target_mode,
+                "route_dispatch_roundtrip_strategy": route_dispatch_roundtrip_strategy,
+                "route_dispatch_roundtrip_market": route_dispatch_roundtrip_market,
+                "route_dispatch_roundtrip_scenario_key": route_dispatch_roundtrip_scenario_key,
+                "route_dispatch_roundtrip_batch_id": route_dispatch_roundtrip_batch_id,
+                "route_dispatch_roundtrip_requests": route_dispatch_roundtrip_requests,
+                "route_dispatch_roundtrip_acked_orders": route_dispatch_roundtrip_acked_orders,
+                "route_dispatch_roundtrip_missing_request_acks": route_dispatch_roundtrip_missing_request_acks,
+                "route_dispatch_roundtrip_rejected_orders": route_dispatch_roundtrip_rejected_orders,
+                "route_dispatch_roundtrip_unmatched_acks": route_dispatch_roundtrip_unmatched_acks,
                 "recommendation": "dry_run_only_until_vendor_schema_review"
                 if ready and adapter != "normalized"
                 else "fix_broker_readiness_gaps",
@@ -563,9 +613,84 @@ def test_scaleup_plan_accepts_required_broker_dispatch_roundtrip():
     assert report.summary.iloc[0]["broker_dispatch_roundtrip_ready"]
     assert report.summary.iloc[0]["broker_dispatch_roundtrip_strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["broker_dispatch_roundtrip_market"] == "india_nse_index_derivatives"
+    assert report.summary.iloc[0]["broker_route_dispatch_roundtrip_provided"]
+    assert report.summary.iloc[0]["broker_route_dispatch_roundtrip_ready"]
+    assert report.summary.iloc[0]["broker_route_dispatch_roundtrip_strategy"] == "lead_lag_taker"
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["ready"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["provided"]
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["requests"] == 2
+
+
+def test_scaleup_plan_blocks_missing_broker_dispatch_route_proof():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            route_dispatch_roundtrip_provided=False,
+            route_dispatch_roundtrip_ready=False,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_route_dispatch_roundtrip_provided",
+        "broker_route_dispatch_roundtrip_ready",
+    } <= failed
+    assert not report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["provided"]
+
+
+def test_scaleup_plan_blocks_bad_broker_dispatch_route_proof_quality():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            route_dispatch_roundtrip_ready=False,
+            route_dispatch_roundtrip_target_mode="paper",
+            route_dispatch_roundtrip_strategy="imbalance",
+            route_dispatch_roundtrip_market="us_equities_regular",
+            route_dispatch_roundtrip_scenario_key="wrong-scenario",
+            route_dispatch_roundtrip_batch_id="",
+            route_dispatch_roundtrip_requests=1,
+            route_dispatch_roundtrip_acked_orders=1,
+            route_dispatch_roundtrip_missing_request_acks=1,
+            route_dispatch_roundtrip_rejected_orders=1,
+            route_dispatch_roundtrip_unmatched_acks=1,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_route_dispatch_roundtrip_ready",
+        "broker_route_dispatch_roundtrip_target_mode_matches",
+        "broker_route_dispatch_roundtrip_strategy_matches",
+        "broker_route_dispatch_roundtrip_market_matches",
+        "broker_route_dispatch_roundtrip_scenario_matches",
+        "broker_route_dispatch_roundtrip_batch_id_provided",
+        "broker_route_dispatch_roundtrip_request_count_matches",
+        "broker_route_dispatch_roundtrip_missing_request_acks",
+        "broker_route_dispatch_roundtrip_rejected_orders",
+        "broker_route_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    route_proof = report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]
+    assert route_proof["strategy"] == "imbalance"
+    assert route_proof["missing_request_acks"] == 1
 
 
 def test_scaleup_plan_blocks_bad_broker_dispatch_roundtrip_quality():

@@ -1617,8 +1617,10 @@ identity matching the scale-up identity.
 If broker readiness included dispatch round-trip evidence, scale-up also
 retains the proved dry-run target mode, strategy, market, scenario, dispatch
 batch, request count, accepted acknowledgements, and missing/rejected/unmatched
-ack counts. `--require-dispatch-roundtrip` fails closed unless that broker
-dry-run proof is present, ready, identity-matched, and clean.
+ack counts, plus the nested route proof target, identity, batch, request, and
+ack quality fields. `--require-dispatch-roundtrip` fails closed unless that
+broker dry-run proof and its route proof are present, ready, identity-matched,
+count-matched, and clean.
 Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
@@ -1631,8 +1633,8 @@ accepted sessions used ready, non-mixed proof-refresh identity for the same
 strategy/market before writing a scale-up config.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
 broker readiness plus broker runtime-session evidence with a continuing runtime
-guard, broker dispatch round-trip proof with clean acknowledgements, and
-matching runtime/dispatch strategy-market identity.
+guard, broker dispatch round-trip proof with clean acknowledgements, matching
+route proof, and matching runtime/dispatch strategy-market identity.
 
 ## Runtime Telemetry Snapshot
 
