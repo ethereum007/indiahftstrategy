@@ -191,13 +191,15 @@
 - Shadow-session acceptance report that combines launch, export,
   reconciliation, and optional runtime-session monitor artifacts into one
   go/no-go record for paper/shadow promotion decisions, carrying runtime
-  strategy/market and proof-refresh identity, blocking supplied or required
-  sessions when the runtime guard halted, and failing closed on bad runtime
-  proof-refresh state.
+  strategy/market, proof-refresh identity, and broker resume-gate proof
+  identity, blocking supplied or required sessions when the runtime guard
+  halted, and failing closed on bad runtime proof-refresh or resume-gate proof
+  state.
 - Multi-session shadow comparison gate for requiring repeated accepted
   paper/shadow sessions with consistent scenario keys, fill rates, slippage,
-  runtime strategy/market and proof-refresh identity, mismatch, reconciliation
-  quality, and zero halted runtime monitors before scale-up.
+  runtime strategy/market, proof-refresh identity, broker resume proof
+  identity, mismatch, reconciliation quality, and zero halted runtime monitors
+  before scale-up.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -328,7 +330,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 430 tests.
+Current passing suite: 433 tests.
 
 ## Next Build Targets
 

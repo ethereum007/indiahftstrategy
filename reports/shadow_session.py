@@ -161,6 +161,30 @@ def _metrics(
                 if not runtime.empty
                 else False,
                 "runtime_proof_source": _text(runtime, "proof_source"),
+                "runtime_broker_resume_gate_required": _to_bool(runtime.get("broker_resume_gate_required", False))
+                if not runtime.empty
+                else False,
+                "runtime_broker_resume_gate_provided": _to_bool(runtime.get("broker_resume_gate_provided", False))
+                if not runtime.empty
+                else False,
+                "runtime_broker_resume_gate_ready": _to_bool(runtime.get("broker_resume_gate_ready", False))
+                if not runtime.empty
+                else False,
+                "runtime_broker_resume_strategy": _text(runtime, "broker_resume_strategy"),
+                "runtime_broker_resume_market": _text(runtime, "broker_resume_market"),
+                "runtime_broker_resume_proof_refresh_ready": _to_bool(
+                    runtime.get("broker_resume_proof_refresh_ready", False)
+                )
+                if not runtime.empty
+                else False,
+                "runtime_broker_resume_proof_refresh_strategy": _text(
+                    runtime,
+                    "broker_resume_proof_refresh_strategy",
+                ),
+                "runtime_broker_resume_proof_refresh_market": _text(
+                    runtime,
+                    "broker_resume_proof_refresh_market",
+                ),
                 "runtime_failed_steps": _number(runtime, "failed_steps") if not runtime.empty else 0.0,
                 "runtime_failed_checks": runtime_failed,
                 "scenario_key": launch_scenario,
@@ -312,6 +336,71 @@ def _checks(row: pd.Series, thresholds: ShadowSessionThresholds) -> pd.DataFrame
                     ),
                 ]
             )
+        if bool(row["runtime_broker_resume_gate_required"]) or bool(row["runtime_broker_resume_gate_provided"]):
+            checks.extend(
+                [
+                    _check(
+                        "runtime_broker_resume_gate_provided",
+                        row["runtime_broker_resume_gate_provided"],
+                        "is",
+                        True,
+                        bool(row["runtime_broker_resume_gate_provided"]),
+                        "runtime broker resume-gate evidence is required but missing",
+                    ),
+                    _check(
+                        "runtime_broker_resume_gate_ready",
+                        row["runtime_broker_resume_gate_ready"],
+                        "is",
+                        True,
+                        bool(row["runtime_broker_resume_gate_ready"]),
+                        "runtime broker resume-gate evidence is not ready",
+                    ),
+                    _check(
+                        "runtime_broker_resume_strategy_matches",
+                        row["runtime_broker_resume_strategy"],
+                        "==",
+                        row["runtime_strategy"],
+                        bool(row["runtime_broker_resume_strategy"])
+                        and row["runtime_broker_resume_strategy"] == row["runtime_strategy"],
+                        "runtime broker resume-gate strategy does not match runtime strategy",
+                    ),
+                    _check(
+                        "runtime_broker_resume_market_matches",
+                        row["runtime_broker_resume_market"],
+                        "==",
+                        row["runtime_market"],
+                        bool(row["runtime_broker_resume_market"])
+                        and row["runtime_broker_resume_market"] == row["runtime_market"],
+                        "runtime broker resume-gate market does not match runtime market",
+                    ),
+                    _check(
+                        "runtime_broker_resume_proof_refresh_ready",
+                        row["runtime_broker_resume_proof_refresh_ready"],
+                        "is",
+                        True,
+                        bool(row["runtime_broker_resume_proof_refresh_ready"]),
+                        "runtime broker resume-gate proof freshness is not ready",
+                    ),
+                    _check(
+                        "runtime_broker_resume_proof_refresh_strategy_matches",
+                        row["runtime_broker_resume_proof_refresh_strategy"],
+                        "==",
+                        row["runtime_strategy"],
+                        bool(row["runtime_broker_resume_proof_refresh_strategy"])
+                        and row["runtime_broker_resume_proof_refresh_strategy"] == row["runtime_strategy"],
+                        "runtime broker resume-gate proof strategy does not match runtime strategy",
+                    ),
+                    _check(
+                        "runtime_broker_resume_proof_refresh_market_matches",
+                        row["runtime_broker_resume_proof_refresh_market"],
+                        "==",
+                        row["runtime_market"],
+                        bool(row["runtime_broker_resume_proof_refresh_market"])
+                        and row["runtime_broker_resume_proof_refresh_market"] == row["runtime_market"],
+                        "runtime broker resume-gate proof market does not match runtime market",
+                    ),
+                ]
+            )
     return pd.DataFrame(checks)
 
 
@@ -340,6 +429,20 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "runtime_proof_refresh_market": row["runtime_proof_refresh_market"],
                 "runtime_proof_refresh_mixed_identity": bool(row["runtime_proof_refresh_mixed_identity"]),
                 "runtime_proof_source": row["runtime_proof_source"],
+                "runtime_broker_resume_gate_required": bool(row["runtime_broker_resume_gate_required"]),
+                "runtime_broker_resume_gate_provided": bool(row["runtime_broker_resume_gate_provided"]),
+                "runtime_broker_resume_gate_ready": bool(row["runtime_broker_resume_gate_ready"]),
+                "runtime_broker_resume_strategy": row["runtime_broker_resume_strategy"],
+                "runtime_broker_resume_market": row["runtime_broker_resume_market"],
+                "runtime_broker_resume_proof_refresh_ready": bool(
+                    row["runtime_broker_resume_proof_refresh_ready"]
+                ),
+                "runtime_broker_resume_proof_refresh_strategy": row[
+                    "runtime_broker_resume_proof_refresh_strategy"
+                ],
+                "runtime_broker_resume_proof_refresh_market": row[
+                    "runtime_broker_resume_proof_refresh_market"
+                ],
                 "runtime_failed_checks": int(row["runtime_failed_checks"]),
                 "total_failed_component_checks": int(row["total_failed_component_checks"]),
                 "failed_checks": failed_checks,

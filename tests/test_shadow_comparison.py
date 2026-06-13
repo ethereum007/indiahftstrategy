@@ -38,6 +38,14 @@ def session_rows():
                 "runtime_proof_refresh_market": "india_nse_index_derivatives",
                 "runtime_proof_refresh_mixed_identity": False,
                 "runtime_proof_source": "latest",
+                "runtime_broker_resume_gate_required": True,
+                "runtime_broker_resume_gate_provided": True,
+                "runtime_broker_resume_gate_ready": True,
+                "runtime_broker_resume_strategy": "lead_lag_taker",
+                "runtime_broker_resume_market": "india_nse_index_derivatives",
+                "runtime_broker_resume_proof_refresh_ready": True,
+                "runtime_broker_resume_proof_refresh_strategy": "lead_lag_taker",
+                "runtime_broker_resume_proof_refresh_market": "india_nse_index_derivatives",
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.03,
                 "avg_latency_ns": 100,
@@ -69,6 +77,14 @@ def session_rows():
                 "runtime_proof_refresh_market": "india_nse_index_derivatives",
                 "runtime_proof_refresh_mixed_identity": False,
                 "runtime_proof_source": "latest",
+                "runtime_broker_resume_gate_required": True,
+                "runtime_broker_resume_gate_provided": True,
+                "runtime_broker_resume_gate_ready": True,
+                "runtime_broker_resume_strategy": "lead_lag_taker",
+                "runtime_broker_resume_market": "india_nse_index_derivatives",
+                "runtime_broker_resume_proof_refresh_ready": True,
+                "runtime_broker_resume_proof_refresh_strategy": "lead_lag_taker",
+                "runtime_broker_resume_proof_refresh_market": "india_nse_index_derivatives",
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 120,
@@ -91,6 +107,13 @@ def write_session_dir(
     proof_refresh_strategy="lead_lag_taker",
     proof_refresh_market="india_nse_index_derivatives",
     proof_refresh_mixed_identity=False,
+    broker_resume_required=True,
+    broker_resume_ready=True,
+    broker_resume_strategy="lead_lag_taker",
+    broker_resume_market="india_nse_index_derivatives",
+    broker_resume_proof_refresh_ready=True,
+    broker_resume_proof_refresh_strategy="lead_lag_taker",
+    broker_resume_proof_refresh_market="india_nse_index_derivatives",
 ):
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
@@ -114,6 +137,14 @@ def write_session_dir(
                 "runtime_proof_refresh_market": proof_refresh_market,
                 "runtime_proof_refresh_mixed_identity": proof_refresh_mixed_identity,
                 "runtime_proof_source": "latest" if proof_refresh_required else "",
+                "runtime_broker_resume_gate_required": broker_resume_required,
+                "runtime_broker_resume_gate_provided": broker_resume_required,
+                "runtime_broker_resume_gate_ready": broker_resume_ready,
+                "runtime_broker_resume_strategy": broker_resume_strategy,
+                "runtime_broker_resume_market": broker_resume_market,
+                "runtime_broker_resume_proof_refresh_ready": broker_resume_proof_refresh_ready,
+                "runtime_broker_resume_proof_refresh_strategy": broker_resume_proof_refresh_strategy,
+                "runtime_broker_resume_proof_refresh_market": broker_resume_proof_refresh_market,
                 "recommendation": "continue_shadow_or_promote" if accepted else "hold_in_research",
             }
         ]
@@ -144,6 +175,14 @@ def write_session_dir(
                 "runtime_proof_refresh_market": proof_refresh_market,
                 "runtime_proof_refresh_mixed_identity": proof_refresh_mixed_identity,
                 "runtime_proof_source": "latest" if proof_refresh_required else "",
+                "runtime_broker_resume_gate_required": broker_resume_required,
+                "runtime_broker_resume_gate_provided": broker_resume_required,
+                "runtime_broker_resume_gate_ready": broker_resume_ready,
+                "runtime_broker_resume_strategy": broker_resume_strategy,
+                "runtime_broker_resume_market": broker_resume_market,
+                "runtime_broker_resume_proof_refresh_ready": broker_resume_proof_refresh_ready,
+                "runtime_broker_resume_proof_refresh_strategy": broker_resume_proof_refresh_strategy,
+                "runtime_broker_resume_proof_refresh_market": broker_resume_proof_refresh_market,
                 "runtime_failed_checks": 1 if runtime_halted else 0,
                 "order_fill_rate": fill_rate,
                 "max_adverse_slippage": 0.04,
@@ -176,6 +215,9 @@ def test_compare_shadow_sessions_accepts_consistent_sessions():
     assert report.summary.iloc[0]["runtime_proof_refresh_sessions"] == 2
     assert report.summary.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
+    assert report.summary.iloc[0]["runtime_broker_resume_sessions"] == 2
+    assert report.summary.iloc[0]["broker_resume_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["recommendation"] == "eligible_for_controlled_paper_scaleup"
 
 
@@ -228,6 +270,31 @@ def test_compare_shadow_sessions_blocks_bad_runtime_proof_refresh_evidence():
     assert int(report.summary.iloc[0]["proof_refresh_strategy_count"]) == 2
 
 
+def test_compare_shadow_sessions_blocks_bad_runtime_broker_resume_evidence():
+    rows = session_rows()
+    rows.loc[1, "runtime_broker_resume_gate_ready"] = False
+    rows.loc[1, "runtime_broker_resume_strategy"] = "surface_mm"
+    rows.loc[1, "runtime_broker_resume_market"] = "us_options_regular"
+    rows.loc[1, "runtime_broker_resume_proof_refresh_ready"] = False
+    rows.loc[1, "runtime_broker_resume_proof_refresh_strategy"] = "surface_mm"
+    rows.loc[1, "runtime_broker_resume_proof_refresh_market"] = "us_options_regular"
+
+    report = compare_shadow_sessions(rows)
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {
+        "runtime_broker_resume_ready",
+        "runtime_broker_resume_proof_refresh_ready",
+        "same_runtime_broker_resume_strategy",
+        "same_runtime_broker_resume_market",
+        "same_runtime_broker_resume_proof_refresh_strategy",
+        "same_runtime_broker_resume_proof_refresh_market",
+    } <= failed
+    assert int(report.summary.iloc[0]["runtime_broker_resume_ready_sessions"]) == 1
+    assert int(report.summary.iloc[0]["broker_resume_proof_refresh_strategy_count"]) == 2
+
+
 def test_write_shadow_session_comparison_carries_runtime_proof_refresh_evidence(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
@@ -246,8 +313,11 @@ def test_write_shadow_session_comparison_carries_runtime_proof_refresh_evidence(
     summary = pd.read_csv(out_dir / "shadow_session_comparison_summary.csv")
     assert report.accepted
     assert "runtime_proof_refresh_strategy" in runs.columns
+    assert "runtime_broker_resume_proof_refresh_strategy" in runs.columns
     assert summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
+    assert summary.loc[0, "broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
     assert int(summary.loc[0, "runtime_proof_refresh_sessions"]) == 2
+    assert int(summary.loc[0, "runtime_broker_resume_sessions"]) == 2
 
 
 def test_write_shadow_session_comparison_outputs_artifacts(tmp_path):

@@ -1484,7 +1484,11 @@ later comparison and evidence-review gates can prove which strategy was
 actually monitored. If the runtime session includes proof-refresh evidence, the
 shadow-session gate retains its ready/source/identity fields and fails closed
 when the runtime proof-refresh evidence is unready, mixed, or for a different
-strategy/market.
+strategy/market. Runtime broker resume-gate evidence is also carried as
+`runtime_broker_resume_*` metrics and summary fields; when the runtime session
+requires or provides that gate, the shadow-session report requires a ready
+resume authorization plus matching strategy, market, and resume proof-refresh
+identity.
 
 ## Shadow Session Comparison
 
@@ -1520,7 +1524,10 @@ accepted sessions mix runtime strategy or market identities. The comparison
 summary exposes `strategy`, `market`, and missing/mixed identity counts for the
 experiment catalog and strategy-evidence review. Accepted sessions with runtime
 proof-refresh evidence must also have ready, non-mixed proof-refresh identity
-for the same strategy/market across the comparison set.
+for the same strategy/market across the comparison set. If accepted sessions
+carry runtime broker resume-gate evidence, the comparison also requires ready
+resume authorization, ready resume proof-refresh state, and one consistent
+broker resume strategy/market/proof identity across the comparison set.
 
 ## Controlled Scale-Up Plan
 

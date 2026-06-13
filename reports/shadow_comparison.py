@@ -68,6 +68,10 @@ def compare_shadow_sessions(
         "runtime_proof_refresh_provided",
         "runtime_proof_refresh_ready",
         "runtime_proof_refresh_mixed_identity",
+        "runtime_broker_resume_gate_required",
+        "runtime_broker_resume_gate_provided",
+        "runtime_broker_resume_gate_ready",
+        "runtime_broker_resume_proof_refresh_ready",
     ):
         if column not in runs.columns:
             runs[column] = False
@@ -79,6 +83,10 @@ def compare_shadow_sessions(
         "runtime_proof_refresh_strategy",
         "runtime_proof_refresh_market",
         "runtime_proof_source",
+        "runtime_broker_resume_strategy",
+        "runtime_broker_resume_market",
+        "runtime_broker_resume_proof_refresh_strategy",
+        "runtime_broker_resume_proof_refresh_market",
     ):
         if column not in runs.columns:
             runs[column] = ""
@@ -191,6 +199,54 @@ def _read_sessions(session_dirs: list[str | Path], *, labels: list[str] | None) 
             "runtime_proof_source": str(
                 summary.get("runtime_proof_source", metrics.get("runtime_proof_source", ""))
             ),
+            "runtime_broker_resume_gate_required": _to_bool(
+                summary.get(
+                    "runtime_broker_resume_gate_required",
+                    metrics.get("runtime_broker_resume_gate_required", False),
+                )
+            ),
+            "runtime_broker_resume_gate_provided": _to_bool(
+                summary.get(
+                    "runtime_broker_resume_gate_provided",
+                    metrics.get("runtime_broker_resume_gate_provided", False),
+                )
+            ),
+            "runtime_broker_resume_gate_ready": _to_bool(
+                summary.get(
+                    "runtime_broker_resume_gate_ready",
+                    metrics.get("runtime_broker_resume_gate_ready", False),
+                )
+            ),
+            "runtime_broker_resume_strategy": _strategy_key(
+                summary.get(
+                    "runtime_broker_resume_strategy",
+                    metrics.get("runtime_broker_resume_strategy", ""),
+                )
+            ),
+            "runtime_broker_resume_market": _identity_key(
+                summary.get(
+                    "runtime_broker_resume_market",
+                    metrics.get("runtime_broker_resume_market", ""),
+                )
+            ),
+            "runtime_broker_resume_proof_refresh_ready": _to_bool(
+                summary.get(
+                    "runtime_broker_resume_proof_refresh_ready",
+                    metrics.get("runtime_broker_resume_proof_refresh_ready", False),
+                )
+            ),
+            "runtime_broker_resume_proof_refresh_strategy": _strategy_key(
+                summary.get(
+                    "runtime_broker_resume_proof_refresh_strategy",
+                    metrics.get("runtime_broker_resume_proof_refresh_strategy", ""),
+                )
+            ),
+            "runtime_broker_resume_proof_refresh_market": _identity_key(
+                summary.get(
+                    "runtime_broker_resume_proof_refresh_market",
+                    metrics.get("runtime_broker_resume_proof_refresh_market", ""),
+                )
+            ),
             "runtime_failed_checks": _number(metrics, "runtime_failed_checks", fallback=0.0),
             "max_adverse_slippage": _number(metrics, "max_adverse_slippage"),
             "avg_latency_ns": _number(metrics, "avg_latency_ns"),
@@ -216,6 +272,14 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
         if not runtime_runs.empty
         else pd.DataFrame()
     )
+    broker_resume_runs = (
+        runtime_runs.loc[
+            runtime_runs["runtime_broker_resume_gate_required"].astype(bool)
+            | runtime_runs["runtime_broker_resume_gate_provided"].astype(bool)
+        ]
+        if not runtime_runs.empty
+        else pd.DataFrame()
+    )
     runtime_strategies = _identity_values(runtime_runs, "runtime_strategy", normalizer=_strategy_key)
     runtime_markets = _identity_values(runtime_runs, "runtime_market", normalizer=_identity_key)
     proof_refresh_strategies = _identity_values(
@@ -226,6 +290,26 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
     proof_refresh_markets = _identity_values(
         proof_refresh_runs,
         "runtime_proof_refresh_market",
+        normalizer=_identity_key,
+    )
+    broker_resume_strategies = _identity_values(
+        broker_resume_runs,
+        "runtime_broker_resume_strategy",
+        normalizer=_strategy_key,
+    )
+    broker_resume_markets = _identity_values(
+        broker_resume_runs,
+        "runtime_broker_resume_market",
+        normalizer=_identity_key,
+    )
+    broker_resume_proof_strategies = _identity_values(
+        broker_resume_runs,
+        "runtime_broker_resume_proof_refresh_strategy",
+        normalizer=_strategy_key,
+    )
+    broker_resume_proof_markets = _identity_values(
+        broker_resume_runs,
+        "runtime_broker_resume_proof_refresh_market",
         normalizer=_identity_key,
     )
     fill_rates = pd.to_numeric(runs["order_fill_rate"], errors="coerce")
@@ -297,6 +381,59 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "missing_proof_refresh_market_sessions": _missing_identity_count(
                     proof_refresh_runs,
                     "runtime_proof_refresh_market",
+                ),
+                "runtime_broker_resume_sessions": int(len(broker_resume_runs)),
+                "runtime_broker_resume_required_sessions": int(
+                    broker_resume_runs["runtime_broker_resume_gate_required"].sum()
+                )
+                if not broker_resume_runs.empty
+                else 0,
+                "runtime_broker_resume_provided_sessions": int(
+                    broker_resume_runs["runtime_broker_resume_gate_provided"].sum()
+                )
+                if not broker_resume_runs.empty
+                else 0,
+                "runtime_broker_resume_ready_sessions": int(
+                    broker_resume_runs["runtime_broker_resume_gate_ready"].sum()
+                )
+                if not broker_resume_runs.empty
+                else 0,
+                "runtime_broker_resume_proof_refresh_ready_sessions": int(
+                    broker_resume_runs["runtime_broker_resume_proof_refresh_ready"].sum()
+                )
+                if not broker_resume_runs.empty
+                else 0,
+                "broker_resume_strategy": next(iter(broker_resume_strategies))
+                if len(broker_resume_strategies) == 1
+                else "",
+                "broker_resume_strategy_count": int(len(broker_resume_strategies)),
+                "missing_broker_resume_strategy_sessions": _missing_identity_count(
+                    broker_resume_runs,
+                    "runtime_broker_resume_strategy",
+                ),
+                "broker_resume_market": next(iter(broker_resume_markets))
+                if len(broker_resume_markets) == 1
+                else "",
+                "broker_resume_market_count": int(len(broker_resume_markets)),
+                "missing_broker_resume_market_sessions": _missing_identity_count(
+                    broker_resume_runs,
+                    "runtime_broker_resume_market",
+                ),
+                "broker_resume_proof_refresh_strategy": next(iter(broker_resume_proof_strategies))
+                if len(broker_resume_proof_strategies) == 1
+                else "",
+                "broker_resume_proof_refresh_strategy_count": int(len(broker_resume_proof_strategies)),
+                "missing_broker_resume_proof_refresh_strategy_sessions": _missing_identity_count(
+                    broker_resume_runs,
+                    "runtime_broker_resume_proof_refresh_strategy",
+                ),
+                "broker_resume_proof_refresh_market": next(iter(broker_resume_proof_markets))
+                if len(broker_resume_proof_markets) == 1
+                else "",
+                "broker_resume_proof_refresh_market_count": int(len(broker_resume_proof_markets)),
+                "missing_broker_resume_proof_refresh_market_sessions": _missing_identity_count(
+                    broker_resume_runs,
+                    "runtime_broker_resume_proof_refresh_market",
                 ),
                 "total_runtime_failed_checks": int(
                     pd.to_numeric(runs["runtime_failed_checks"], errors="coerce").sum(skipna=True)
@@ -420,6 +557,73 @@ def _checks(row: pd.Series, thresholds: ShadowComparisonThresholds) -> pd.DataFr
                     int(row["proof_refresh_market_count"]) == 1
                     and int(row["missing_proof_refresh_market_sessions"]) == 0,
                     "runtime proof-refresh market identity is missing or mixed across shadow sessions",
+                ),
+            ]
+        )
+    broker_resume_sessions = int(row["runtime_broker_resume_sessions"])
+    if broker_resume_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "runtime_broker_resume_provided",
+                    row["runtime_broker_resume_provided_sessions"],
+                    ">=",
+                    row["runtime_broker_resume_required_sessions"],
+                    int(row["runtime_broker_resume_provided_sessions"])
+                    >= int(row["runtime_broker_resume_required_sessions"]),
+                    "accepted runtime sessions require broker resume gate but some did not provide it",
+                ),
+                _check(
+                    "runtime_broker_resume_ready",
+                    row["runtime_broker_resume_ready_sessions"],
+                    "==",
+                    broker_resume_sessions,
+                    int(row["runtime_broker_resume_ready_sessions"]) == broker_resume_sessions,
+                    "accepted runtime broker resume gate is not ready for every session",
+                ),
+                _check(
+                    "runtime_broker_resume_proof_refresh_ready",
+                    row["runtime_broker_resume_proof_refresh_ready_sessions"],
+                    "==",
+                    broker_resume_sessions,
+                    int(row["runtime_broker_resume_proof_refresh_ready_sessions"]) == broker_resume_sessions,
+                    "accepted runtime broker resume proof is not ready for every session",
+                ),
+                _check(
+                    "same_runtime_broker_resume_strategy",
+                    row["broker_resume_strategy_count"],
+                    "==",
+                    1,
+                    int(row["broker_resume_strategy_count"]) == 1
+                    and int(row["missing_broker_resume_strategy_sessions"]) == 0,
+                    "runtime broker resume strategy identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_runtime_broker_resume_market",
+                    row["broker_resume_market_count"],
+                    "==",
+                    1,
+                    int(row["broker_resume_market_count"]) == 1
+                    and int(row["missing_broker_resume_market_sessions"]) == 0,
+                    "runtime broker resume market identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_runtime_broker_resume_proof_refresh_strategy",
+                    row["broker_resume_proof_refresh_strategy_count"],
+                    "==",
+                    1,
+                    int(row["broker_resume_proof_refresh_strategy_count"]) == 1
+                    and int(row["missing_broker_resume_proof_refresh_strategy_sessions"]) == 0,
+                    "runtime broker resume proof strategy identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_runtime_broker_resume_proof_refresh_market",
+                    row["broker_resume_proof_refresh_market_count"],
+                    "==",
+                    1,
+                    int(row["broker_resume_proof_refresh_market_count"]) == 1
+                    and int(row["missing_broker_resume_proof_refresh_market_sessions"]) == 0,
+                    "runtime broker resume proof market identity is missing or mixed across shadow sessions",
                 ),
             ]
         )

@@ -67,6 +67,13 @@ def runtime_session_summary(
     proof_refresh_strategy="lead_lag_taker",
     proof_refresh_market="india_nse_index_derivatives",
     proof_refresh_mixed_identity=False,
+    broker_resume_gate_required=False,
+    broker_resume_gate_ready=True,
+    broker_resume_strategy="lead_lag_taker",
+    broker_resume_market="india_nse_index_derivatives",
+    broker_resume_proof_refresh_ready=True,
+    broker_resume_proof_refresh_strategy="lead_lag_taker",
+    broker_resume_proof_refresh_market="india_nse_index_derivatives",
 ):
     return pd.DataFrame(
         [
@@ -87,6 +94,14 @@ def runtime_session_summary(
                 "proof_refresh_market": proof_refresh_market,
                 "proof_refresh_mixed_identity": proof_refresh_mixed_identity,
                 "proof_source": "latest" if proof_refresh_required else "",
+                "broker_resume_gate_required": broker_resume_gate_required,
+                "broker_resume_gate_provided": broker_resume_gate_required,
+                "broker_resume_gate_ready": broker_resume_gate_ready,
+                "broker_resume_strategy": broker_resume_strategy,
+                "broker_resume_market": broker_resume_market,
+                "broker_resume_proof_refresh_ready": broker_resume_proof_refresh_ready,
+                "broker_resume_proof_refresh_strategy": broker_resume_proof_refresh_strategy,
+                "broker_resume_proof_refresh_market": broker_resume_proof_refresh_market,
                 "telemetry_ready": ready,
                 "failed_steps": 0 if ready else 1,
                 "failed_checks": 0 if ready else 1,
@@ -213,6 +228,61 @@ def test_evaluate_shadow_session_blocks_bad_runtime_proof_refresh_evidence():
         "runtime_proof_refresh_identity_consistent",
         "runtime_proof_refresh_strategy_matches",
         "runtime_proof_refresh_market_matches",
+    } <= failed
+
+
+def test_evaluate_shadow_session_carries_runtime_broker_resume_gate_evidence():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(True, broker_resume_gate_required=True),
+    )
+
+    row = report.metrics.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.accepted
+    assert bool(row["runtime_broker_resume_gate_required"])
+    assert bool(row["runtime_broker_resume_gate_ready"])
+    assert row["runtime_broker_resume_strategy"] == "lead_lag_taker"
+    assert bool(row["runtime_broker_resume_proof_refresh_ready"])
+    assert row["runtime_broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
+    assert bool(summary["runtime_broker_resume_gate_provided"])
+    assert summary["runtime_broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
+
+
+def test_evaluate_shadow_session_blocks_bad_runtime_broker_resume_gate_evidence():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(
+            True,
+            broker_resume_gate_required=True,
+            broker_resume_gate_ready=False,
+            broker_resume_strategy="surface_mm",
+            broker_resume_market="us_options_regular",
+            broker_resume_proof_refresh_ready=False,
+            broker_resume_proof_refresh_strategy="surface_mm",
+            broker_resume_proof_refresh_market="us_options_regular",
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {
+        "runtime_broker_resume_gate_ready",
+        "runtime_broker_resume_strategy_matches",
+        "runtime_broker_resume_market_matches",
+        "runtime_broker_resume_proof_refresh_ready",
+        "runtime_broker_resume_proof_refresh_strategy_matches",
+        "runtime_broker_resume_proof_refresh_market_matches",
     } <= failed
 
 
