@@ -269,6 +269,10 @@
   the incident guard trigger and proof context from the prior halt, with
   automatic operator approval and guard-trigger acknowledgement required for
   `live_dryrun` resumes.
+- Cutover gate that authorizes the final paper/shadow/live-dryrun route only
+  after scale-up, broker readiness, runtime-session guard, proof freshness,
+  optional broker resume-gate proof, and operator strategy/market/limit
+  acknowledgement agree in one manifest-backed authorization artifact.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -330,7 +334,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 433 tests.
+Current passing suite: 439 tests.
 
 ## Next Build Targets
 

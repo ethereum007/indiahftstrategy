@@ -1,0 +1,319 @@
+import json
+
+import pandas as pd
+
+from hft_cli import main
+from reports.catalog import catalog_experiment_runs
+from reports.cutover import CutoverGateThresholds, evaluate_cutover_gate, write_cutover_gate_report
+
+
+def scaleup_summary(
+    ready=True,
+    target_mode="live_dryrun",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    adapter="arrow_money",
+    failed_checks=0,
+):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "target_mode": target_mode,
+                "strategy": strategy,
+                "market": market,
+                "scenario_key": "trigger_ticks=2",
+                "adapter": adapter,
+                "max_orders_per_session": 10,
+                "max_notional_per_session": 100_000.0,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": strategy,
+                "proof_refresh_market": market,
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
+                "failed_checks": failed_checks if ready else max(1, failed_checks),
+                "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
+            }
+        ]
+    )
+
+
+def scaleup_config(
+    target_mode="live_dryrun",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    adapter="arrow_money",
+):
+    return {
+        "schema_version": 1,
+        "ready": True,
+        "target_mode": target_mode,
+        "strategy": strategy,
+        "market": market,
+        "scenario_key": "trigger_ticks=2",
+        "adapter": adapter,
+        "identity": {
+            "strategy": strategy,
+            "market": market,
+            "expected_strategy": strategy,
+            "expected_market": market,
+        },
+        "limits": {
+            "max_orders_per_session": 10,
+            "max_notional_per_session": 100_000.0,
+            "max_scale_multiplier": 1.0,
+            "stop_loss": 5_000.0,
+        },
+        "proof_freshness": {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": strategy,
+            "market": market,
+            "mixed_identity": False,
+            "proof_source": "latest",
+        },
+    }
+
+
+def broker_readiness_summary(
+    ready=True,
+    adapter="arrow_money",
+    target_mode="live_dryrun",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    runtime_ready=True,
+    runtime_halted=False,
+    resume_provided=False,
+    resume_ready=True,
+    resume_strategy="lead_lag_taker",
+    resume_market="india_nse_index_derivatives",
+    resume_proof_ready=True,
+):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+                "runtime_session_provided": True,
+                "runtime_session_ready": runtime_ready,
+                "runtime_guard_action": "halt" if runtime_halted else "continue",
+                "runtime_guard_halted": runtime_halted,
+                "runtime_target_mode": target_mode,
+                "runtime_strategy": strategy,
+                "runtime_market": market,
+                "resume_gate_provided": resume_provided,
+                "resume_gate_ready": resume_ready,
+                "resume_strategy": resume_strategy,
+                "resume_market": resume_market,
+                "resume_proof_refresh_ready": resume_proof_ready,
+                "resume_proof_refresh_strategy": resume_strategy,
+                "resume_proof_refresh_market": resume_market,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "dry_run_only_until_vendor_schema_review" if ready else "fix_broker_readiness_gaps",
+            }
+        ]
+    )
+
+
+def runtime_session_summary(
+    ready=True,
+    target_mode="live_dryrun",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    halted=False,
+):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "guard_action": "halt" if halted else "continue",
+                "halted": halted,
+                "target_mode": target_mode,
+                "strategy": strategy,
+                "market": market,
+                "failed_checks": 1 if halted or not ready else 0,
+                "recommendation": "stop_routing_and_execute_halt_response" if halted else "continue_with_controls",
+            }
+        ]
+    )
+
+
+def operator_review(
+    approved=True,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    limits_ack=True,
+):
+    return pd.DataFrame(
+        [
+            {
+                "reviewer": "ops",
+                "approved": approved,
+                "strategy": strategy,
+                "market": market,
+                "limits_acknowledged": limits_ack,
+                "reason": "cutover reviewed",
+            }
+        ]
+    )
+
+
+def scaleup_checks(passed=True):
+    return pd.DataFrame([{"check": "scaleup_ready", "passed": passed, "reason": "" if passed else "blocked"}])
+
+
+def write_inputs(root, *, target_mode="live_dryrun", operator=True):
+    scaleup = root / "scaleup"
+    broker = root / "broker"
+    runtime = root / "runtime"
+    scaleup.mkdir(parents=True)
+    broker.mkdir()
+    runtime.mkdir()
+    scaleup_summary(target_mode=target_mode).to_csv(scaleup / "scaleup_summary.csv", index=False)
+    scaleup_checks().to_csv(scaleup / "scaleup_checks.csv", index=False)
+    (scaleup / "scaleup_config.json").write_text(
+        json.dumps(scaleup_config(target_mode=target_mode), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    broker_readiness_summary(target_mode=target_mode).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    runtime_session_summary(target_mode=target_mode).to_csv(runtime / "runtime_session_summary.csv", index=False)
+    review_path = root / "operator_review.csv"
+    if operator:
+        operator_review().to_csv(review_path, index=False)
+    return scaleup, broker, runtime, review_path
+
+
+def test_cutover_gate_authorizes_clean_live_dryrun():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert summary["target_mode"] == "live_dryrun"
+    assert summary["strategy"] == "lead_lag_taker"
+    assert bool(summary["runtime_session_ready"])
+    assert bool(summary["operator_approval_required"])
+    assert summary["recommendation"] == "allow_live_dryrun_cutover"
+    assert report.config["runtime_session"]["guard_action"] == "continue"
+    assert report.config["limits"]["max_orders_per_session"] == 10
+
+
+def test_cutover_gate_live_dryrun_requires_operator_review():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"operator_approved", "operator_identity_ack", "operator_limits_ack"} <= failed
+
+
+def test_cutover_gate_blocks_runtime_identity_and_guard_breaks():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(
+            ready=False,
+            halted=True,
+            strategy="surface_mm",
+            market="us_options_regular",
+        ),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "runtime_session_ready",
+        "runtime_guard_continue",
+        "runtime_strategy_matches",
+        "runtime_market_matches",
+    } <= failed
+
+
+def test_cutover_gate_validates_supplied_resume_gate_identity():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        broker_readiness_summary=broker_readiness_summary(
+            resume_provided=True,
+            resume_strategy="surface_mm",
+            resume_market="us_options_regular",
+            resume_proof_ready=False,
+        ),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_resume_strategy_matches",
+        "broker_resume_market_matches",
+        "broker_resume_proof_refresh_ready",
+        "broker_resume_proof_refresh_strategy_matches",
+        "broker_resume_proof_refresh_market_matches",
+    } <= failed
+
+
+def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+    out_dir = tmp_path / "cutover"
+
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=out_dir,
+    )
+
+    assert report.ready
+    assert (out_dir / "cutover_authorization.csv").exists()
+    assert (out_dir / "cutover_checks.csv").exists()
+    assert (out_dir / "cutover_summary.csv").exists()
+    assert (out_dir / "cutover_config.json").exists()
+    assert (out_dir / "manifest.json").exists()
+    catalog = catalog_experiment_runs([out_dir])
+    assert catalog.catalog.iloc[0]["run_type"] == "cutover_gate"
+    assert catalog.catalog.iloc[0]["summary_file"] == "cutover_summary.csv"
+    assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_cli_cutover_gate_fails_without_operator_review(tmp_path):
+    scaleup, broker, runtime, _review_path = write_inputs(tmp_path, operator=False)
+    out_dir = tmp_path / "cutover"
+
+    code = main(
+        [
+            "review-cutover-gate",
+            "--scaleup",
+            str(scaleup),
+            "--broker-readiness",
+            str(broker),
+            "--runtime-session",
+            str(runtime),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 2
+    summary = pd.read_csv(out_dir / "cutover_summary.csv")
+    checks = pd.read_csv(out_dir / "cutover_checks.csv")
+    assert not bool(summary.loc[0, "ready"])
+    assert "operator_approved" in set(checks.loc[~checks["passed"].astype(bool), "check"])

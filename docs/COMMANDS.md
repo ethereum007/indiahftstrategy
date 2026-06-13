@@ -93,7 +93,8 @@ manifest.json
 
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
-shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session, halt-response, and resume summaries,
+shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
+cutover, halt-response, and resume summaries,
 so those run types can be promoted into explicit `--required-run-type`
 evidence gates.
 
@@ -1936,6 +1937,39 @@ When `--require-operator-trigger-ack` is set, the latest operator review row
 must include a matching `guard_failed_check_names`,
 `incident_guard_failed_check_names`, `ack_guard_failed_check_names`, or
 `acknowledged_guard_failed_check_names` value.
+
+## Cutover Gate
+
+Authorize the final paper/shadow/live-dryrun cutover after scale-up, broker
+readiness, runtime-session, and operator-review evidence agree:
+
+```powershell
+python -m hft_cli review-cutover-gate `
+  --scaleup runs\scaleup\leadlag_shadow_live_dryrun `
+  --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
+  --runtime-session runs\runtime_sessions\leadlag_shadow_latest `
+  --operator-review ops\cutover_review.csv `
+  --out runs\cutover\leadlag_shadow_live_dryrun `
+  --target-mode live_dryrun `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+cutover_authorization.csv
+cutover_checks.csv
+cutover_summary.csv
+cutover_config.json
+manifest.json
+```
+
+For `live_dryrun`, the cutover gate automatically requires operator approval,
+operator acknowledgement of the strategy/market identity, and acknowledgement
+of the scale-up order/notional limits. It also requires the runtime guard to be
+continuing, validates runtime strategy/market/target-mode identity against the
+scale-up plan, carries proof-refresh state, and validates any supplied broker
+resume-gate proof identity before broker routing is allowed.
 
 ## Calibration
 

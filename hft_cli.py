@@ -20,6 +20,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
+from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
     write_data_readiness_comparison,
@@ -1196,6 +1197,24 @@ def main(argv: list[str] | None = None) -> int:
     resume_gate.add_argument("--require-operator-trigger-ack", action="store_true")
     resume_gate.add_argument("--max-failed-scaleup-checks", type=int, default=0)
     resume_gate.add_argument("--fail-on-breach", action="store_true")
+
+    cutover_gate = sub.add_parser("review-cutover-gate", help="Authorize final paper/shadow/live-dryrun cutover.")
+    cutover_gate.add_argument("--scaleup", required=True)
+    cutover_gate.add_argument("--broker-readiness", required=True)
+    cutover_gate.add_argument("--out", required=True)
+    cutover_gate.add_argument("--runtime-session", default=None)
+    cutover_gate.add_argument("--operator-review", default=None)
+    cutover_gate.add_argument("--target-mode", default="live_dryrun", choices=["paper", "shadow", "live_dryrun"])
+    cutover_gate.add_argument("--allow-unready-scaleup", action="store_true")
+    cutover_gate.add_argument("--allow-missing-broker-readiness", action="store_true")
+    cutover_gate.add_argument("--allow-missing-runtime-session", action="store_true")
+    cutover_gate.add_argument("--allow-runtime-guard-halt", action="store_true")
+    cutover_gate.add_argument("--require-resume-gate", action="store_true")
+    cutover_gate.add_argument("--allow-missing-operator-approval", action="store_true")
+    cutover_gate.add_argument("--allow-missing-operator-identity-ack", action="store_true")
+    cutover_gate.add_argument("--allow-missing-operator-limits-ack", action="store_true")
+    cutover_gate.add_argument("--max-failed-scaleup-checks", type=int, default=0)
+    cutover_gate.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -2745,6 +2764,28 @@ def main(argv: list[str] | None = None) -> int:
                 require_same_adapter=not args.allow_adapter_change,
                 require_operator_approval=args.require_operator_approval,
                 require_operator_guard_trigger_ack=args.require_operator_trigger_ack,
+                max_failed_scaleup_checks=args.max_failed_scaleup_checks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "review-cutover-gate":
+        result = write_cutover_gate_report(
+            scaleup_dir=args.scaleup,
+            broker_readiness_dir=args.broker_readiness,
+            runtime_session_dir=args.runtime_session,
+            operator_review_path=args.operator_review,
+            output_dir=args.out,
+            thresholds=CutoverGateThresholds(
+                target_mode=args.target_mode,
+                require_scaleup_ready=not args.allow_unready_scaleup,
+                require_broker_readiness=not args.allow_missing_broker_readiness,
+                require_runtime_session=not args.allow_missing_runtime_session,
+                require_runtime_guard_continue=not args.allow_runtime_guard_halt,
+                require_resume_gate=args.require_resume_gate,
+                require_operator_approval=not args.allow_missing_operator_approval,
+                require_operator_identity_ack=not args.allow_missing_operator_identity_ack,
+                require_operator_limits_ack=not args.allow_missing_operator_limits_ack,
                 max_failed_scaleup_checks=args.max_failed_scaleup_checks,
             ),
         )

@@ -54,6 +54,7 @@ SUMMARY_FILES = [
     "runtime_telemetry_summary.csv",
     "runtime_guard_summary.csv",
     "runtime_session_summary.csv",
+    "cutover_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",
