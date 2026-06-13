@@ -60,6 +60,44 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert report.summary.iloc[0]["run_count"] == 1
 
 
+def test_catalog_experiment_runs_reports_input_fingerprint_provenance(tmp_path):
+    root = tmp_path / "runs"
+    run = root / "runtime_session"
+    exact_file = tmp_path / "runtime_telemetry.csv"
+    directory_input = tmp_path / "runtime_guard"
+    missing_input = tmp_path / "missing_snapshot.csv"
+    run.mkdir(parents=True, exist_ok=True)
+    directory_input.mkdir()
+    pd.DataFrame([{"guard_action": "continue"}]).to_csv(directory_input / "runtime_guard_summary.csv", index=False)
+    pd.DataFrame([{"ready": True, "failed_steps": 0}]).to_csv(run / "runtime_session_summary.csv", index=False)
+    pd.DataFrame([{"orders_sent": 0}]).to_csv(exact_file, index=False)
+    write_experiment_manifest(
+        run,
+        run_type="runtime_session_monitor",
+        parameters={"scenario": "runtime_session"},
+        inputs={
+            "telemetry": exact_file,
+            "guard_dir": directory_input,
+            "missing_snapshot": missing_input,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    summary = report.summary.iloc[0]
+    assert int(row["input_count"]) == 3
+    assert int(row["input_file_count"]) == 1
+    assert int(row["input_directory_count"]) == 1
+    assert int(row["input_hashed_count"]) == 2
+    assert int(row["input_unfingerprinted_count"]) == 1
+    assert int(summary["input_file_count"]) == 1
+    assert int(summary["input_directory_count"]) == 1
+    assert int(summary["input_unfingerprinted_count"]) == 1
+    assert int(summary["runs_with_directory_inputs"]) == 1
+    assert int(summary["runs_with_unfingerprinted_inputs"]) == 1
+
+
 def test_catalog_experiment_runs_recognizes_proof_refresh_status(tmp_path):
     root = tmp_path / "runs"
     write_run(

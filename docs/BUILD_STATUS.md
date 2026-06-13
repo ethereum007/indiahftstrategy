@@ -273,7 +273,9 @@
   searchable evidence ledger with inferred pass/ready status and summary
   metrics for research, market portability, calibration, data operations,
   launch, broker upload, broker readiness, shadow-session, scale-up, quote
-  lifecycle, runtime guard, halt-response, and resume artifacts.
+  lifecycle, runtime guard, halt-response, and resume artifacts, plus input
+  provenance counters that separate exact file fingerprints, directory-tree
+  fingerprints, hashed inputs, and unresolved raw inputs.
 - Strategy evidence review gate that consumes the experiment catalog and
   requires successful proof, stress, promotion, broker-readiness, shadow, or
   user-selected run types before scale-up decisions, with optional fail-closed

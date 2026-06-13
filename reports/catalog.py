@@ -164,6 +164,8 @@ def _catalog_row(manifest_path: Path) -> dict[str, Any]:
     run_dir = manifest_path.parent
     summary_file, summary_row = _summary_row(run_dir)
     status_column, status = _summary_status(summary_row)
+    inputs = manifest.get("inputs", {}) or {}
+    input_stats = _input_stats(inputs)
     row = {
         "run_dir": str(run_dir),
         "manifest_path": str(manifest_path),
@@ -173,12 +175,13 @@ def _catalog_row(manifest_path: Path) -> dict[str, Any]:
         "git_commit": _nested(manifest, "git", "commit"),
         "git_dirty": _nested(manifest, "git", "dirty"),
         "artifact_count": len(manifest.get("artifacts", []) or []),
-        "input_count": len(manifest.get("inputs", {}) or {}),
+        "input_count": len(inputs),
+        **input_stats,
         "summary_file": summary_file,
         "summary_status_column": status_column,
         "summary_status": status,
         "parameters_json": json.dumps(manifest.get("parameters", {}), sort_keys=True),
-        "inputs_json": json.dumps(manifest.get("inputs", {}), sort_keys=True),
+        "inputs_json": json.dumps(inputs, sort_keys=True),
     }
     for column, value in summary_row.items():
         row[f"summary_{column}"] = value
@@ -225,6 +228,13 @@ def _catalog_summary(catalog: pd.DataFrame) -> pd.DataFrame:
                     "missing_summary_runs": 0,
                     "dirty_runs": 0,
                     "git_commit_count": 0,
+                    "input_file_count": 0,
+                    "input_directory_count": 0,
+                    "input_other_count": 0,
+                    "input_hashed_count": 0,
+                    "input_unfingerprinted_count": 0,
+                    "runs_with_directory_inputs": 0,
+                    "runs_with_unfingerprinted_inputs": 0,
                 }
             ]
         )
@@ -239,6 +249,13 @@ def _catalog_summary(catalog: pd.DataFrame) -> pd.DataFrame:
                 "missing_summary_runs": int((catalog["summary_file"].astype(str) == "").sum()),
                 "dirty_runs": int(catalog["git_dirty"].map(_to_bool).sum()),
                 "git_commit_count": int(catalog["git_commit"].dropna().nunique()),
+                "input_file_count": int(catalog["input_file_count"].sum()),
+                "input_directory_count": int(catalog["input_directory_count"].sum()),
+                "input_other_count": int(catalog["input_other_count"].sum()),
+                "input_hashed_count": int(catalog["input_hashed_count"].sum()),
+                "input_unfingerprinted_count": int(catalog["input_unfingerprinted_count"].sum()),
+                "runs_with_directory_inputs": int((catalog["input_directory_count"] > 0).sum()),
+                "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
             }
         ]
     )
@@ -251,6 +268,43 @@ def _nested(value: dict[str, Any], *keys: str) -> Any:
             return None
         current = current.get(key)
     return current
+
+
+def _input_stats(inputs: Any) -> dict[str, int]:
+    stats = {
+        "input_file_count": 0,
+        "input_directory_count": 0,
+        "input_other_count": 0,
+        "input_hashed_count": 0,
+        "input_unfingerprinted_count": 0,
+    }
+    _accumulate_input_stats(inputs, stats)
+    return stats
+
+
+def _accumulate_input_stats(value: Any, stats: dict[str, int]) -> None:
+    if isinstance(value, dict):
+        kind = value.get("kind")
+        if isinstance(kind, str) and "path" in value:
+            normalized = kind.strip().lower()
+            if normalized == "file":
+                stats["input_file_count"] += 1
+            elif normalized == "directory":
+                stats["input_directory_count"] += 1
+            else:
+                stats["input_other_count"] += 1
+            if value.get("sha256") or value.get("tree_sha256"):
+                stats["input_hashed_count"] += 1
+            return
+        for item in value.values():
+            _accumulate_input_stats(item, stats)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _accumulate_input_stats(item, stats)
+        return
+    if value is not None:
+        stats["input_unfingerprinted_count"] += 1
 
 
 def _jsonable_row(row: dict[str, Any]) -> dict[str, Any]:

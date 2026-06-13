@@ -60,6 +60,11 @@ experiment_catalog_summary.csv
 manifest.json
 ```
 
+The catalog includes input provenance counters for each run, including exact
+file fingerprints, directory-tree fingerprints, hashed inputs, and
+unfingerprinted raw inputs. Use these columns to spot broad or unresolved
+handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
+
 ## Strategy Evidence Review
 
 Gate a strategy from the experiment catalog before shadow scale-up:
