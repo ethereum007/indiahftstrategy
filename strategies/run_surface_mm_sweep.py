@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
 from reports.quote_risk import (
@@ -37,6 +38,7 @@ def run_surface_mm_sweep(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     lot_size: int = 75,
     option_tick: float = 0.05,
     contract_multiplier: float = 1.0,
@@ -71,6 +73,7 @@ def run_surface_mm_sweep(
         "timestamp_unit": timestamp_unit,
         "timestamp_tz": timestamp_tz,
         "filter_session": filter_session,
+        "market": market,
         "lot_size": lot_size,
         "option_tick": option_tick,
         "contract_multiplier": contract_multiplier,
@@ -113,6 +116,7 @@ def run_surface_mm_sweep(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=market,
             config=SurfaceMMReplayConfig(
                 quote_ttl_ns=quote_ttl_ns,
                 order_latency_us=order_latency_us,
@@ -373,6 +377,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
     parser.add_argument("--timestamp-tz", default=None)
     parser.add_argument("--no-filter-session", action="store_true")
+    parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--quote-ttl-ns", nargs="+", required=True)
     parser.add_argument("--order-latency-us", nargs="+", default=["0"])
     parser.add_argument("--fill-depth-fraction", nargs="+", required=True)
@@ -403,6 +408,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,
+        market=args.market,
         lot_size=args.lot_size,
         option_tick=args.option_tick,
         contract_multiplier=args.contract_multiplier,

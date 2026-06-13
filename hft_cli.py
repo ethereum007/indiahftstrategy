@@ -133,6 +133,7 @@ def main(argv: list[str] | None = None) -> int:
     scan.add_argument("--futures", required=True)
     scan.add_argument("--out", required=True)
     scan.add_argument("--no-filter-session", action="store_true")
+    scan.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     scan.add_argument("--asof-latency-ns", type=int, default=0)
     scan.add_argument("--depth-fraction", type=float, default=0.25)
 
@@ -863,6 +864,7 @@ def main(argv: list[str] | None = None) -> int:
     surface_mm_sweep.add_argument("--chain", required=True)
     surface_mm_sweep.add_argument("--out", required=True)
     surface_mm_sweep.add_argument("--no-filter-session", action="store_true")
+    surface_mm_sweep.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     surface_mm_sweep.add_argument("--quote-ttl-ns", nargs="+", required=True, type=int)
     surface_mm_sweep.add_argument("--order-latency-us", nargs="+", default=[0.0], type=float)
     surface_mm_sweep.add_argument("--fill-depth-fraction", nargs="+", required=True, type=float)
@@ -1329,6 +1331,7 @@ def main(argv: list[str] | None = None) -> int:
     surface_quote.add_argument("--futures", required=True)
     surface_quote.add_argument("--out", required=True)
     surface_quote.add_argument("--no-filter-session", action="store_true")
+    surface_quote.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     surface_quote.add_argument("--asof-latency-ns", type=int, default=0)
     surface_quote.add_argument("--tte-years", type=float, default=30 / 365)
     surface_quote.add_argument("--tick-size", type=float, default=0.05)
@@ -1349,7 +1352,10 @@ def main(argv: list[str] | None = None) -> int:
     surface_pipeline.add_argument("--out", required=True)
     surface_pipeline.add_argument("--data-readiness-comparison", default=None)
     surface_pipeline.add_argument("--require-data-readiness-comparison", action="store_true")
+    surface_pipeline.add_argument("--market-portability", default=None)
+    surface_pipeline.add_argument("--require-market-portability", action="store_true")
     surface_pipeline.add_argument("--no-filter-session", action="store_true")
+    surface_pipeline.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     surface_pipeline.add_argument("--asof-latency-ns", type=int, default=0)
     surface_pipeline.add_argument("--tte-years", type=float, default=30 / 365)
     surface_pipeline.add_argument("--tick-size", type=float, default=0.05)
@@ -1483,6 +1489,7 @@ def main(argv: list[str] | None = None) -> int:
     surface_mm.add_argument("--chain", required=True)
     surface_mm.add_argument("--out", required=True)
     surface_mm.add_argument("--no-filter-session", action="store_true")
+    surface_mm.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     surface_mm.add_argument("--order-latency-us", type=float, default=0.0)
     surface_mm.add_argument("--quote-ttl-ns", type=int, default=1_000_000_000)
     surface_mm.add_argument("--markout-horizon-ns", type=int, default=1_000_000_000)
@@ -1518,6 +1525,7 @@ def main(argv: list[str] | None = None) -> int:
             futures_path=args.futures,
             output_dir=args.out,
             filter_session=not args.no_filter_session,
+            market=args.market,
             asof_latency_ns=args.asof_latency_ns,
             depth_fraction=args.depth_fraction,
         )
@@ -2454,6 +2462,7 @@ def main(argv: list[str] | None = None) -> int:
             fill_depth_fraction_values=args.fill_depth_fraction,
             markout_horizon_ns_values=args.markout_horizon_ns,
             filter_session=not args.no_filter_session,
+            market=args.market,
             lot_size=args.lot_size,
             option_tick=args.option_tick,
             contract_multiplier=args.contract_multiplier,
@@ -3029,7 +3038,10 @@ def main(argv: list[str] | None = None) -> int:
             output_dir=args.out,
             data_readiness_comparison_dir=args.data_readiness_comparison,
             require_data_readiness_comparison=args.require_data_readiness_comparison,
+            market_portability_dir=args.market_portability,
+            require_market_portability=args.require_market_portability,
             filter_session=not args.no_filter_session,
+            market=args.market,
             asof_latency_ns=args.asof_latency_ns,
             tte_years=args.tte_years,
             tick_size=args.tick_size,
@@ -3188,6 +3200,7 @@ def main(argv: list[str] | None = None) -> int:
             chain_path=args.chain,
             output_dir=args.out,
             filter_session=not args.no_filter_session,
+            market=args.market,
             config=SurfaceMMReplayConfig(
                 order_latency_us=replay_params["order_latency_us"],
                 quote_ttl_ns=args.quote_ttl_ns,

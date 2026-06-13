@@ -11,6 +11,7 @@ import pandas as pd
 from data.chains import load_option_chain_csv
 from data.loaders import load_tick_csv
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from scanners.parity_box import (
     ScannerCosts,
     ScannerInstruments,
@@ -38,6 +39,7 @@ def run_scan(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     lot_size: int = 75,
     option_tick: float = 0.05,
     future_tick: float = 0.05,
@@ -51,6 +53,7 @@ def run_scan(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     futures = load_tick_csv(
         futures_path,
@@ -58,6 +61,7 @@ def run_scan(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     option = Instrument("INDEX-OPT", Kind.OPT, lot_size=lot_size, tick=option_tick)
     future = Instrument("INDEX-FUT", Kind.FUT, lot_size=lot_size, tick=future_tick)
@@ -110,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
     parser.add_argument("--timestamp-tz", default=None)
     parser.add_argument("--no-filter-session", action="store_true")
+    parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--lot-size", type=int, default=75)
     parser.add_argument("--asof-latency-ns", type=int, default=0)
     parser.add_argument("--tolerance-ns", type=int, default=None)
@@ -125,6 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,
+        market=args.market,
         lot_size=args.lot_size,
         asof_latency_ns=args.asof_latency_ns,
         tolerance_ns=args.tolerance_ns,

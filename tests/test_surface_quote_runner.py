@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from engine.surface import black76_price
@@ -71,7 +73,8 @@ def test_run_surface_quote_generation_writes_quotes_summary_and_manifest(tmp_pat
     assert set(result.quotes["side"]) == {-1, 1}
     assert (out_dir / "surface_quotes.csv").exists()
     assert (out_dir / "surface_quote_summary.csv").exists()
-    assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
 
 
 def test_unified_cli_quote_surface_dispatches(tmp_path):
@@ -93,6 +96,8 @@ def test_unified_cli_quote_surface_dispatches(tmp_path):
             "2",
             "--max-market-spread-ticks",
             "10",
+            "--market",
+            "india_nse_index_derivatives",
         ]
     )
 

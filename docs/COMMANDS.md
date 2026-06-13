@@ -848,6 +848,7 @@ python -m hft_cli quote-surface `
   --chain data\chain.csv `
   --futures data\futures.csv `
   --out runs\surface_quotes_2026_06_10 `
+  --market india_nse_index_derivatives `
   --tte-years 0.08219 `
   --edge-ticks 2 `
   --max-market-spread-ticks 20 `
@@ -946,7 +947,10 @@ python -m hft_cli pipeline-surface-mm-research `
   --chain data\chain.csv `
   --futures data\futures.csv `
   --out runs\surface_mm_pipeline_2026_06_10 `
+  --market india_nse_index_derivatives `
+  --market-portability runs\market_profiles\portability `
   --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
+  --require-market-portability `
   --require-data-readiness-comparison `
   --max-market-spread-ticks 20 `
   --max-quotes-per-snapshot 20 `
@@ -972,6 +976,10 @@ surface_mm_pipeline_summary.csv
 candidate_config.json
 manifest.json
 ```
+
+Use `--market-portability` with `--require-market-portability` to fail closed
+before quote generation unless `market_portability_config.json` marks
+`surface_market_making` ready for the pipeline `--market`.
 
 ## Surface Market-Making Launch Pipeline
 

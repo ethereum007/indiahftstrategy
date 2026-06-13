@@ -10,6 +10,7 @@ import pandas as pd
 from data.chains import load_option_chain_csv
 from data.loaders import load_tick_csv
 from engine.surface import fit_quadratic_smile
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from strategies.surface_mm import QuoteBudget, SurfaceQuoteConfig, generate_surface_quotes
 
@@ -29,6 +30,7 @@ def run_surface_quote_generation(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     asof_latency_ns: int = 0,
     tte_years: float = 30 / 365,
     tick_size: float = 0.05,
@@ -50,12 +52,14 @@ def run_surface_quote_generation(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     futures = load_tick_csv(
         futures_path,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     quotes = generate_surface_quotes_from_data(
         chain,
@@ -87,6 +91,7 @@ def run_surface_quote_generation(
                 "timestamp_unit": timestamp_unit,
                 "timestamp_tz": timestamp_tz,
                 "filter_session": filter_session,
+                "market": market,
                 "asof_latency_ns": asof_latency_ns,
                 "tte_years": tte_years,
                 "tick_size": tick_size,
@@ -281,6 +286,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
     parser.add_argument("--timestamp-tz", default=None)
     parser.add_argument("--no-filter-session", action="store_true")
+    parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--asof-latency-ns", type=int, default=0)
     parser.add_argument("--tte-years", type=float, default=30 / 365)
     parser.add_argument("--tick-size", type=float, default=0.05)
@@ -299,6 +305,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,
+        market=args.market,
         asof_latency_ns=args.asof_latency_ns,
         tte_years=args.tte_years,
         tick_size=args.tick_size,

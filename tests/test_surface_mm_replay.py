@@ -135,6 +135,8 @@ def test_surface_mm_replay_fills_passive_touches_and_writes_proof_artifacts(tmp_
     )
 
     assert len(result.fills) == 2
+    assert result.summary.iloc[0]["strategy"] == "surface_mm"
+    assert result.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert result.summary.iloc[0]["fills"] == 2
     assert result.summary.iloc[0]["net_pnl"] > 0
     assert bool(result.summary.iloc[0]["quote_risk_review_passed"])

@@ -103,7 +103,8 @@
   and emits blocked replay artifacts instead of simulating unreviewed quotes.
 - End-to-end surface market-making research pipeline that chains quote
   generation, quote-risk/data-readiness review, replay sweep proof, scenario
-  selection, and promotion into one manifest-backed candidate run.
+  selection, and promotion into one manifest-backed candidate run with an
+  optional required market-portability preflight before quote generation.
 - Surface market-making launch pipeline that consumes a promoted surface
   research pipeline and runs quote-risk-enforced lifecycle planning, staging,
   launch bundling, broker export, upload-pack generation, and
@@ -313,8 +314,8 @@
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
-  data and emits budgeted market-making quotes with marketability checks and
-  manifests.
+  data using explicit market session profiles and emits budgeted market-making
+  quotes with marketability checks and manifests.
 - Surface quote risk review for market-making quote sets, gating marketable
   quotes, quote edge, side balance, market spread, instrument coverage, and
   concentration before replay or live routing.
@@ -331,8 +332,8 @@
   later option-chain snapshots, writes fills/unfilled quotes/equity/markout
   artifacts, and produces proof-report-compatible `summary.csv` runs.
 - Surface market-making robustness sweep across TTL, routing latency,
-  fill-depth, and markout horizons, with per-scenario replays, proof gates,
-  robust scores, and manifests.
+  fill-depth, and markout horizons, with market identity carried through
+  per-scenario replays, proof gates, robust scores, and manifests.
 - Broker-neutral order staging for generated quotes or generic order
   candidates, including pre-trade quantity/notional/marketability/price-band
   checks, accepted/rejected order artifacts, and manifests for later
@@ -373,7 +374,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 521 tests.
+Current passing suite: 523 tests.
 
 ## Next Build Targets
 

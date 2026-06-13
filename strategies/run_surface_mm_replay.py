@@ -9,6 +9,7 @@ import pandas as pd
 
 from data.chains import load_option_chain_csv
 from engine.hft_backtest import IndianCostModel, Instrument, Kind
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.quote_risk import (
     quote_risk_review_check,
@@ -50,6 +51,7 @@ def run_surface_mm_replay(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     config: SurfaceMMReplayConfig | None = None,
     quote_risk_review_dir: str | Path | None = None,
     require_quote_risk_review: bool = False,
@@ -70,7 +72,7 @@ def run_surface_mm_replay(
         input_dir=quote_risk_review_dir,
     )
     if quote_risk_check is not None and not bool(quote_risk_check["passed"]):
-        result = _blocked_replay_result(quote_risk_check, config, required=require_quote_risk_review)
+        result = _blocked_replay_result(quote_risk_check, config, required=require_quote_risk_review, market=market)
         out_dir = Path(output_dir) if output_dir else None
         if out_dir:
             out_dir.mkdir(parents=True, exist_ok=True)
@@ -83,6 +85,7 @@ def run_surface_mm_replay(
                 timestamp_unit=timestamp_unit,
                 timestamp_tz=timestamp_tz,
                 filter_session=filter_session,
+                market=market,
                 config=config,
                 quote_risk_summary=quote_risk_summary,
                 quote_risk_review_dir=quote_risk_review_dir,
@@ -105,13 +108,14 @@ def run_surface_mm_replay(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
     ).data
     book = _option_book(chain)
     fills, unfilled = replay_surface_quotes(quotes, book, config=config)
     markouts = _fill_markouts(fills, book, config.markout_horizon_ns)
     fills = _attach_markouts_and_costs(fills, markouts, config)
     equity = _equity_curve(fills)
-    summary = _summary(quotes, fills, unfilled, config)
+    summary = _summary(quotes, fills, unfilled, config, market=market)
     summary = _attach_quote_risk_summary(
         summary,
         quote_risk_check=quote_risk_check,
@@ -131,6 +135,7 @@ def run_surface_mm_replay(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=market,
             config=config,
             quote_risk_summary=quote_risk_summary,
             quote_risk_review_dir=quote_risk_review_dir,
@@ -365,6 +370,8 @@ def _summary(
     fills: pd.DataFrame,
     unfilled: pd.DataFrame,
     config: SurfaceMMReplayConfig,
+    *,
+    market: str,
 ) -> pd.DataFrame:
     orders_sent = int(len(quotes))
     fill_events = int(len(fills))
@@ -378,6 +385,8 @@ def _summary(
     return pd.DataFrame(
         [
             {
+                "strategy": "surface_mm",
+                "market": market,
                 "net_pnl": net_pnl,
                 "gross_pnl": gross_pnl,
                 "total_costs": total_costs,
@@ -423,13 +432,14 @@ def _blocked_replay_result(
     config: SurfaceMMReplayConfig,
     *,
     required: bool,
+    market: str,
 ) -> SurfaceMMReplayResult:
     fills = _empty_fills()
     unfilled = _empty_unfilled()
     equity = pd.DataFrame(columns=["ts", "equity"])
     markouts = _empty_markouts()
     markout_summary = _empty_markout_summary()
-    summary = _summary(_empty_quotes(), fills, unfilled, config)
+    summary = _summary(_empty_quotes(), fills, unfilled, config, market=market)
     summary = _attach_quote_risk_summary(summary, quote_risk_check=check, required=required)
     return SurfaceMMReplayResult(fills, unfilled, equity, summary, markouts, markout_summary)
 
@@ -444,6 +454,7 @@ def _write_outputs(
     timestamp_unit: str,
     timestamp_tz: str | None,
     filter_session: bool,
+    market: str,
     config: SurfaceMMReplayConfig,
     quote_risk_summary: pd.DataFrame,
     quote_risk_review_dir: str | Path | None,
@@ -467,6 +478,7 @@ def _write_outputs(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "market": market,
             "config": asdict(config),
             "require_quote_risk_review": bool(require_quote_risk_review),
             "quote_risk_review": quote_risk_review_parameters(quote_risk_summary, quote_risk_review_dir),
@@ -638,6 +650,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
     parser.add_argument("--timestamp-tz", default=None)
     parser.add_argument("--no-filter-session", action="store_true")
+    parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--order-latency-us", type=float, default=0.0)
     parser.add_argument("--quote-ttl-ns", type=int, default=1_000_000_000)
     parser.add_argument("--markout-horizon-ns", type=int, default=1_000_000_000)
@@ -656,6 +669,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,
+        market=args.market,
         config=SurfaceMMReplayConfig(
             order_latency_us=args.order_latency_us,
             quote_ttl_ns=args.quote_ttl_ns,

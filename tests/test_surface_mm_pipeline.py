@@ -4,6 +4,7 @@ import pandas as pd
 
 from engine.surface import black76_price
 from hft_cli import main
+from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
 from reports.promotion import PromotionThresholds
 from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
@@ -79,6 +80,7 @@ def test_surface_mm_research_pipeline_promotes_candidate(tmp_path):
     assert bool(report.summary.loc[0, "promotion_ready"])
     assert config["ready"]
     assert config["strategy"] == "surface_mm"
+    assert report.stages.iloc[0]["stage"] == "quote_generation"
     assert config["source_run_type"] == "surface_mm_research_pipeline"
     assert set(report.stages["stage"]) == {"quote_generation", "quote_review", "sweep", "selection", "promotion"}
     assert (out_dir / "01_quotes" / "surface_quotes.csv").exists()
@@ -89,6 +91,41 @@ def test_surface_mm_research_pipeline_promotes_candidate(tmp_path):
     assert (out_dir / "surface_mm_pipeline_stages.csv").exists()
     assert (out_dir / "surface_mm_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_surface_mm_pipeline_blocks_nonportable_market_pair(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    portability_dir = tmp_path / "portability"
+    out_dir = tmp_path / "surface_pipeline_blocked"
+    write_market_portability_report(
+        portability_dir,
+        config=MarketPortabilityReportConfig(
+            markets=("us_options_regular",),
+            strategies=("surface_market_making",),
+        ),
+    )
+
+    report = write_surface_mm_research_pipeline(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        market="us_options_regular",
+        filter_session=False,
+        market_portability_dir=portability_dir,
+        require_market_portability=True,
+        quote_ttl_ns_values=[2_000_000_000],
+        order_latency_us_values=[0.0],
+        fill_depth_fraction_values=[1.0],
+        markout_horizon_ns_values=[1_000_000_000],
+    )
+
+    stages = report.stages.set_index("stage")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert not bool(stages.loc["market_portability", "status"])
+    assert bool(stages.loc["quote_generation", "skipped"])
+    assert stages.loc["quote_generation", "recommendation"] == "market_portability_not_ready"
+    assert "market_portability" in config["failed_checks"]
 
 
 def test_cli_surface_mm_research_pipeline_fails_closed_without_data_readiness(tmp_path):
@@ -127,3 +164,48 @@ def test_cli_surface_mm_research_pipeline_fails_closed_without_data_readiness(tm
     assert not bool(stages.loc[stages["stage"] == "quote_review", "status"].iloc[0])
     assert bool(stages.loc[stages["stage"] == "sweep", "skipped"].iloc[0])
     assert "quote_review" in config["failed_checks"]
+
+
+def test_cli_surface_mm_pipeline_requires_market_portability(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    portability_dir = tmp_path / "portability"
+    out_dir = tmp_path / "surface_pipeline_cli_portability"
+    write_market_portability_report(
+        portability_dir,
+        config=MarketPortabilityReportConfig(
+            markets=("us_options_regular",),
+            strategies=("surface_market_making",),
+        ),
+    )
+
+    code = main(
+        [
+            "pipeline-surface-mm-research",
+            "--chain",
+            str(chain_path),
+            "--futures",
+            str(futures_path),
+            "--out",
+            str(out_dir),
+            "--market",
+            "us_options_regular",
+            "--no-filter-session",
+            "--market-portability",
+            str(portability_dir),
+            "--require-market-portability",
+            "--quote-ttl-ns",
+            "2000000000",
+            "--fill-depth-fraction",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "surface_mm_pipeline_summary.csv")
+    stages = pd.read_csv(out_dir / "surface_mm_pipeline_stages.csv")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "market_portability" in set(stages.loc[~stages["status"].astype(bool), "stage"])
+    assert bool(stages.loc[stages["stage"] == "quote_generation", "skipped"].iloc[0])
+    assert "market_portability" in config["failed_checks"]

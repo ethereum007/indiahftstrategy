@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofThresholds
 from reports.promotion import PromotionReport, PromotionThresholds, write_promotion_report
@@ -44,9 +45,12 @@ def write_surface_mm_research_pipeline(
     output_dir: str | Path,
     data_readiness_comparison_dir: str | Path | None = None,
     require_data_readiness_comparison: bool = False,
+    market_portability_dir: str | Path | None = None,
+    require_market_portability: bool = False,
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     asof_latency_ns: int = 0,
     tte_years: float = 30 / 365,
     tick_size: float = 0.05,
@@ -82,7 +86,16 @@ def write_surface_mm_research_pipeline(
     quote_risk_thresholds = quote_risk_thresholds or QuoteRiskThresholds()
     proof_thresholds = proof_thresholds or ProofThresholds()
     promotion_thresholds = promotion_thresholds or PromotionThresholds()
+    market_portability_config = _read_market_portability_config(market_portability_dir)
+    portability_stage = _market_portability_stage(
+        market_portability_config,
+        required=require_market_portability,
+        input_dir=market_portability_dir,
+        expected_market=market,
+    )
     parameters = _parameters(
+        market=market,
+        require_market_portability=require_market_portability,
         require_data_readiness_comparison=require_data_readiness_comparison,
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
@@ -111,6 +124,25 @@ def write_surface_mm_research_pipeline(
         max_selection_worst_drawdown=max_selection_worst_drawdown,
         promotion_thresholds=promotion_thresholds,
     )
+    if portability_stage is not None and not bool(portability_stage["status"]):
+        return _write_pipeline_outputs(
+            output_dir=out,
+            quotes=None,
+            quote_review=None,
+            sweep=None,
+            selection=None,
+            promotion=None,
+            candidate_config=_blocked_candidate_config("market_portability"),
+            chain_path=Path(chain_path),
+            futures_path=Path(futures_path),
+            data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+            if data_readiness_comparison_dir is not None
+            else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
+            parameters=parameters,
+            portability_stage=portability_stage,
+            blocked_reason="market_portability_not_ready",
+        )
 
     quotes = run_surface_quote_generation(
         chain_path=chain_path,
@@ -119,6 +151,7 @@ def write_surface_mm_research_pipeline(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
         asof_latency_ns=asof_latency_ns,
         tte_years=tte_years,
         tick_size=tick_size,
@@ -151,7 +184,9 @@ def write_surface_mm_research_pipeline(
             data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
             if data_readiness_comparison_dir is not None
             else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
             parameters=parameters,
+            portability_stage=portability_stage,
         )
 
     sweep = run_surface_mm_sweep(
@@ -165,6 +200,7 @@ def write_surface_mm_research_pipeline(
         timestamp_unit=timestamp_unit,
         timestamp_tz=timestamp_tz,
         filter_session=filter_session,
+        market=market,
         lot_size=lot_size,
         option_tick=tick_size,
         contract_multiplier=contract_multiplier,
@@ -187,7 +223,9 @@ def write_surface_mm_research_pipeline(
             data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
             if data_readiness_comparison_dir is not None
             else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
             parameters=parameters,
+            portability_stage=portability_stage,
         )
 
     selection = write_sweep_comparison(
@@ -214,7 +252,9 @@ def write_surface_mm_research_pipeline(
             data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
             if data_readiness_comparison_dir is not None
             else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
             parameters=parameters,
+            portability_stage=portability_stage,
         )
 
     promotion = write_promotion_report(
@@ -235,7 +275,9 @@ def write_surface_mm_research_pipeline(
         data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
         if data_readiness_comparison_dir is not None
         else None,
+        market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
         parameters=parameters,
+        portability_stage=portability_stage,
     )
 
 
@@ -252,8 +294,19 @@ def _write_pipeline_outputs(
     futures_path: Path,
     data_readiness_comparison_dir: Path | None,
     parameters: dict[str, Any],
+    market_portability_dir: Path | None = None,
+    portability_stage: dict[str, Any] | None = None,
+    blocked_reason: str = "preflight_not_ready",
 ) -> SurfaceMMResearchPipelineReport:
-    stages = _stages(quotes, quote_review, sweep, selection, promotion)
+    stages = _stages(
+        quotes,
+        quote_review,
+        sweep,
+        selection,
+        promotion,
+        portability_stage=portability_stage,
+        blocked_reason=blocked_reason,
+    )
     summary = _summary(stages, quotes, quote_review, sweep, selection, promotion)
     config = _candidate_config(candidate_config, summary.iloc[0], stages)
     stages.to_csv(output_dir / "surface_mm_pipeline_stages.csv", index=False)
@@ -275,6 +328,7 @@ def _write_pipeline_outputs(
             "selection": output_dir / "04_selection",
             "promotion": output_dir / "05_promotion",
             "data_readiness_comparison": data_readiness_comparison_dir,
+            "market_portability": market_portability_dir,
         },
     )
     return SurfaceMMResearchPipelineReport(
@@ -296,18 +350,26 @@ def _stages(
     sweep: SurfaceMMSweepResult | None,
     selection: SweepComparison | None,
     promotion: PromotionReport | None,
+    *,
+    portability_stage: dict[str, Any] | None = None,
+    blocked_reason: str = "preflight_not_ready",
 ) -> pd.DataFrame:
-    rows = [
-        _quote_stage(quotes) if quotes is not None else _skipped_stage("quote_generation", "not_started"),
-        _stage_row("quote_review", quote_review.output_dir, quote_review.summary, "all_passed")
-        if quote_review is not None
-        else _skipped_stage("quote_review", "quote_generation_not_ready"),
-        _sweep_stage(sweep) if sweep is not None else _skipped_stage("sweep", "quote_review_not_ready"),
-        _selection_stage(selection) if selection is not None else _skipped_stage("selection", "sweep_not_ready"),
-        _stage_row("promotion", promotion.output_dir, promotion.summary, "ready")
-        if promotion is not None
-        else _skipped_stage("promotion", "selection_not_ready"),
-    ]
+    rows = []
+    if portability_stage is not None:
+        rows.append(portability_stage)
+    rows.extend(
+        [
+            _quote_stage(quotes) if quotes is not None else _skipped_stage("quote_generation", blocked_reason),
+            _stage_row("quote_review", quote_review.output_dir, quote_review.summary, "all_passed")
+            if quote_review is not None
+            else _skipped_stage("quote_review", "quote_generation_not_ready"),
+            _sweep_stage(sweep) if sweep is not None else _skipped_stage("sweep", "quote_review_not_ready"),
+            _selection_stage(selection) if selection is not None else _skipped_stage("selection", "sweep_not_ready"),
+            _stage_row("promotion", promotion.output_dir, promotion.summary, "ready")
+            if promotion is not None
+            else _skipped_stage("promotion", "selection_not_ready"),
+        ]
+    )
     return pd.DataFrame(rows)
 
 
@@ -424,6 +486,66 @@ def _summary(
     )
 
 
+def _read_market_portability_config(path: str | Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "market_portability_config.json"
+    if not candidate.exists():
+        raise FileNotFoundError(f"market portability config not found: {candidate}")
+    return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _market_portability_stage(
+    config: dict[str, Any],
+    *,
+    required: bool,
+    input_dir: str | Path | None,
+    expected_market: str,
+) -> dict[str, Any] | None:
+    if not config and not required:
+        return None
+    provided = bool(config)
+    pair = _matching_portability_pair(config, expected_market) if provided else {}
+    status = bool(pair)
+    reason = "ready" if status else "market_portability_missing"
+    if provided and not status:
+        reason = _matching_portability_gap(config, expected_market).get(
+            "next_gate",
+            "market_portability_pair_not_ready",
+        )
+    return {
+        "stage": "market_portability",
+        "status": bool(status),
+        "status_column": "ready_pairs",
+        "skipped": False,
+        "output_dir": str(input_dir or ""),
+        "failed_checks": 0 if status else 1,
+        "recommendation": reason,
+    }
+
+
+def _matching_portability_pair(config: dict[str, Any], expected_market: str) -> dict[str, Any]:
+    expected = _identity(expected_market)
+    for pair in config.get("ready_pairs") or []:
+        if _identity(pair.get("strategy")) != "surface_market_making":
+            continue
+        if _identity(pair.get("market")) != expected:
+            continue
+        if str(pair.get("status", "")).strip().lower() in {"india_ready", "portable_research"}:
+            return dict(pair)
+    return {}
+
+
+def _matching_portability_gap(config: dict[str, Any], expected_market: str) -> dict[str, Any]:
+    expected = _identity(expected_market)
+    for pair in config.get("gap_pairs") or []:
+        if _identity(pair.get("strategy")) == "surface_market_making" and _identity(pair.get("market")) == expected:
+            return dict(pair)
+    return {}
+
+
 def _promotion_candidate_config(path: Path, promotion: PromotionReport) -> dict[str, Any]:
     config_path = path / "candidate_config.json"
     if not config_path.exists():
@@ -498,6 +620,12 @@ def _to_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "ready", "passed"}
     return bool(value)
+
+
+def _identity(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _jsonable(value: Any) -> Any:
