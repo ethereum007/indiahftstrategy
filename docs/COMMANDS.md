@@ -2166,8 +2166,9 @@ proof tag recorded by the acknowledgement reconciler, then fails closed unless
 the dispatch plan, non-submitting sender packet, and acknowledgement
 reconciliation all pass with matching strategy/market/scenario/adapter
 identity, disabled live submission, dry-run-only requests, consistent route
-round-trip proof, one request per dispatch order, and an accepted
-acknowledgement for every request.
+round-trip proof, zero carried route-enable dispatch round-trip failed checks,
+one request per dispatch order, and an accepted acknowledgement for every
+request.
 
 ## Calibration
 

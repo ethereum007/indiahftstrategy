@@ -195,6 +195,7 @@ def _checks(
     identity_mismatches = _identity_mismatches(dispatch_summary, send_summary, ack_summary)
     route_roundtrip_required = _dispatch_roundtrip_required(dispatch_summary, thresholds)
     route_roundtrip_provided = _route_roundtrip_provided(dispatch_summary, send_summary, ack_summary)
+    route_enable_failed_checks = _route_enable_failed_checks(dispatch_summary, send_summary, ack_summary)
     submission_enabled = _submission_enabled(send_summary, send_requests)
     dry_run_only = _all_dry_run(dispatch_orders, send_requests, roundtrip_orders)
     checks = pd.DataFrame(
@@ -320,6 +321,14 @@ def _checks(
                 thresholds.max_total_failed_component_checks,
                 component_failed <= thresholds.max_total_failed_component_checks,
                 "component reports contain failed checks",
+            ),
+            _check(
+                "route_enable_dispatch_roundtrip_failed_checks",
+                route_enable_failed_checks,
+                "<=",
+                0,
+                route_enable_failed_checks <= 0,
+                "route-enable dispatch round-trip has failed component checks",
             ),
         ]
     )
@@ -485,6 +494,7 @@ def _summary(
                     proof_rows,
                     "route_dispatch_roundtrip_unmatched_acks",
                 ),
+                "route_enable_dispatch_roundtrip_failed_checks": _route_enable_failed_checks(*proof_rows),
                 "total_failed_component_checks": _component_failed_checks(
                     dispatch_summary,
                     send_summary,
@@ -534,6 +544,9 @@ def _config(
             "missing_request_acks": int(summary["route_dispatch_roundtrip_missing_request_acks"]),
             "rejected_orders": int(summary["route_dispatch_roundtrip_rejected_orders"]),
             "unmatched_acks": int(summary["route_dispatch_roundtrip_unmatched_acks"]),
+        },
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": int(summary["route_enable_dispatch_roundtrip_failed_checks"]),
         },
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
@@ -657,6 +670,10 @@ def _route_roundtrip_request_counts_match(rows: tuple[pd.Series, ...]) -> bool:
 
 def _route_roundtrip_counter_max(rows: tuple[pd.Series, ...], column: str) -> int:
     return max(int(_number(row, column, 0.0)) for row in rows)
+
+
+def _route_enable_failed_checks(*rows: pd.Series) -> int:
+    return max(int(_number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)) for row in rows)
 
 
 def _route_identity_value(row: pd.Series, column: str) -> str:
