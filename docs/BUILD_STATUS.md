@@ -289,7 +289,8 @@
   dispatch acknowledgement, and broker dispatch round-trip artifacts before a
   launch route is treated as operationally proven, and emits an operational
   live-dry-run route-review recommendation instead of the strategy scale-up
-  recommendation.
+  recommendation; ops-launch reviews now fail closed by default on directory or
+  unfingerprinted catalog inputs unless explicitly allowed.
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness

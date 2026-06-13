@@ -205,10 +205,18 @@ profile expands to `scaleup_plan`, `runtime_telemetry_snapshot`,
 `broker_dispatch_roundtrip`; aliases include `broker_dryrun`, `launch_ops`,
 and `live_dryrun`. Explicit `--required-run-type` flags still override the
 profile for custom launch reviews.
+The `ops_launch` profile automatically requires passed required artifacts to
+have file-resolved input provenance in the experiment catalog, blocking
+directory-tree or unfingerprinted raw inputs before live-dryrun route review.
+Use `--allow-non-file-inputs` only for legacy exploratory catalogs, or
+`--require-file-inputs` to apply the same fail-closed provenance rule to a
+custom evidence set.
 
 `strategy_evidence_summary.csv` records the inferred `evidence_profile`. Ready
 strategy profiles recommend `eligible_for_shadow_scaleup_review`, while a ready
 `ops_launch` profile recommends `eligible_for_live_dryrun_route_review`.
+It also records passed-required input provenance totals when the catalog
+contains them.
 
 Outputs:
 

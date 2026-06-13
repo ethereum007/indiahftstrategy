@@ -974,6 +974,8 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--require-same-market", action="store_true")
     evidence.add_argument("--expected-strategy", default=None)
     evidence.add_argument("--expected-market", default=None)
+    evidence.add_argument("--require-file-inputs", action="store_true")
+    evidence.add_argument("--allow-non-file-inputs", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     leadlag_sweep = sub.add_parser("sweep-leadlag", help="Run lead-lag replay robustness sweep.")
@@ -2841,6 +2843,7 @@ def main(argv: list[str] | None = None) -> int:
         required_run_types = (
             tuple(args.required_run_types) if args.required_run_types else evidence_profile_run_types(args.profile)
         )
+        is_ops_launch_profile = tuple(required_run_types) == evidence_profile_run_types("ops_launch")
         result = write_strategy_evidence_review(
             args.catalog,
             output_dir=args.out,
@@ -2853,6 +2856,8 @@ def main(argv: list[str] | None = None) -> int:
                 require_same_market=args.require_same_market,
                 expected_strategy=args.expected_strategy,
                 expected_market=args.expected_market,
+                require_file_inputs=args.require_file_inputs
+                or (is_ops_launch_profile and not args.allow_non_file_inputs),
             ),
         )
         print(result.summary.to_string(index=False))

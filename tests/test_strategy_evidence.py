@@ -899,6 +899,47 @@ def test_ops_launch_evidence_profile_fails_without_dispatch_roundtrip():
     assert "required_run_type:broker_dispatch_roundtrip" in failed
 
 
+def test_strategy_evidence_can_require_file_input_provenance():
+    catalog = ops_launch_catalog_rows()
+    catalog["input_count"] = 2
+    catalog["input_file_count"] = 2
+    catalog["input_directory_count"] = 0
+    catalog["input_other_count"] = 0
+    catalog["input_unfingerprinted_count"] = 0
+    catalog["input_hashed_count"] = 2
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("ops_launch"),
+            require_file_inputs=True,
+        ),
+    )
+
+    assert review.ready
+    assert int(review.summary.iloc[0]["input_file_count"]) == 22
+    assert int(review.summary.iloc[0]["input_hashed_count"]) == 22
+    assert bool(review.summary.iloc[0]["require_file_inputs"])
+    assert set(review.evidence["latest_input_directory_count"]) == {0}
+
+    catalog.loc[catalog["run_type"] == "runtime_session_monitor", "input_directory_count"] = 1
+    catalog.loc[catalog["run_type"] == "broker_dispatch_ack_reconciliation", "input_unfingerprinted_count"] = 1
+
+    blocked = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("ops_launch"),
+            require_file_inputs=True,
+        ),
+    )
+
+    failed = set(blocked.checks.loc[~blocked.checks["passed"].astype(bool), "check"])
+    assert not blocked.ready
+    assert "file_fingerprinted_inputs" in failed
+    assert int(blocked.summary.iloc[0]["input_directory_count"]) == 1
+    assert int(blocked.summary.iloc[0]["input_unfingerprinted_count"]) == 1
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -1099,6 +1140,41 @@ def test_cli_strategy_evidence_ops_launch_profile(tmp_path):
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "evidence_profile"] == "ops_launch"
     assert summary.loc[0, "recommendation"] == "eligible_for_live_dryrun_route_review"
+
+
+def test_cli_strategy_evidence_ops_launch_profile_requires_file_inputs(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "ops_launch_evidence"
+    catalog = ops_launch_catalog_rows()
+    catalog["input_count"] = 2
+    catalog["input_file_count"] = 2
+    catalog["input_directory_count"] = 0
+    catalog["input_other_count"] = 0
+    catalog["input_unfingerprinted_count"] = 0
+    catalog["input_hashed_count"] = 2
+    catalog.loc[catalog["run_type"] == "runtime_session_monitor", "input_directory_count"] = 1
+    catalog.to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "ops_launch",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "strategy_evidence_checks.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "file_fingerprinted_inputs" in failed
+    assert bool(summary.loc[0, "require_file_inputs"])
+    assert int(summary.loc[0, "input_directory_count"]) == 1
 
 
 def test_cli_strategy_evidence_can_require_strategy_identity(tmp_path):

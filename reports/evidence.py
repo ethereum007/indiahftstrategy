@@ -105,6 +105,7 @@ class EvidenceThresholds:
     require_same_market: bool = False
     expected_strategy: str | None = None
     expected_market: str | None = None
+    require_file_inputs: bool = False
 
 
 @dataclass(frozen=True)
@@ -193,6 +194,11 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
         "latest_git_commit": str(latest.get("git_commit", "")),
         "latest_strategy": _strategy_identity(identity),
         "latest_market": _market_identity(identity),
+        "latest_input_count": int(_numeric(latest.get("input_count", 0))),
+        "latest_input_file_count": int(_numeric(latest.get("input_file_count", 0))),
+        "latest_input_directory_count": int(_numeric(latest.get("input_directory_count", 0))),
+        "latest_input_other_count": int(_numeric(latest.get("input_other_count", 0))),
+        "latest_input_unfingerprinted_count": int(_numeric(latest.get("input_unfingerprinted_count", 0))),
         "passed": bool(passed_runs >= thresholds.min_passed_per_type),
     }
 
@@ -284,6 +290,21 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "passed required evidence does not match the expected market",
             )
         )
+    if thresholds.require_file_inputs:
+        broad_inputs = _input_provenance_count(passed_required, "input_directory_count")
+        other_inputs = _input_provenance_count(passed_required, "input_other_count")
+        unfingerprinted_inputs = _input_provenance_count(passed_required, "input_unfingerprinted_count")
+        non_file_inputs = broad_inputs + other_inputs + unfingerprinted_inputs
+        rows.append(
+            _check(
+                "file_fingerprinted_inputs",
+                non_file_inputs,
+                "==",
+                0,
+                non_file_inputs == 0,
+                "passed required evidence has directory, other, or unfingerprinted inputs",
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -300,6 +321,11 @@ def _summary(
     passed_required_rows = _passed_required_rows(catalog, evidence)
     strategies = _identity_values(passed_required_rows, _strategy_identity)
     markets = _identity_values(passed_required_rows, _market_identity)
+    input_file_count = _input_provenance_count(passed_required_rows, "input_file_count")
+    input_directory_count = _input_provenance_count(passed_required_rows, "input_directory_count")
+    input_other_count = _input_provenance_count(passed_required_rows, "input_other_count")
+    input_unfingerprinted_count = _input_provenance_count(passed_required_rows, "input_unfingerprinted_count")
+    input_hashed_count = _input_provenance_count(passed_required_rows, "input_hashed_count")
     return pd.DataFrame(
         [
             {
@@ -326,6 +352,12 @@ def _summary(
                 "expected_market": _normalize_identity(thresholds.expected_market)
                 if thresholds.expected_market is not None
                 else "",
+                "require_file_inputs": bool(thresholds.require_file_inputs),
+                "input_file_count": input_file_count,
+                "input_directory_count": input_directory_count,
+                "input_other_count": input_other_count,
+                "input_unfingerprinted_count": input_unfingerprinted_count,
+                "input_hashed_count": input_hashed_count,
             }
         ]
     )
@@ -353,9 +385,24 @@ def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
         "git_commit",
         "git_dirty",
         "summary_status",
+        "input_count",
+        "input_file_count",
+        "input_directory_count",
+        "input_other_count",
+        "input_unfingerprinted_count",
+        "input_hashed_count",
     ]:
         if column not in frame.columns:
             frame[column] = np.nan
+    for column in (
+        "input_count",
+        "input_file_count",
+        "input_directory_count",
+        "input_other_count",
+        "input_unfingerprinted_count",
+        "input_hashed_count",
+    ):
+        frame[column] = pd.to_numeric(frame[column], errors="coerce").fillna(0)
     return frame
 
 
@@ -392,6 +439,20 @@ def _missing_identities(frame: pd.DataFrame, extractor: Any) -> int:
     if frame.empty:
         return 0
     return int(sum(1 for _, row in frame.iterrows() if not extractor(row)))
+
+
+def _input_provenance_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty or column not in frame.columns:
+        return 0
+    return int(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
+
+
+def _numeric(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if np.isnan(number) else number
 
 
 def _strategy_identity(row: pd.Series) -> str:
