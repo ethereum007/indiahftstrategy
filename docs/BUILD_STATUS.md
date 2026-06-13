@@ -277,6 +277,10 @@
   bounds order counts and optional export notional by cutover limits, and emits
   the final machine-readable broker route-enable config without submitting
   orders.
+- Broker dispatch planner that binds a route-enable authorization to the exact
+  broker upload rows, hashes the route/upload payloads, creates deterministic
+  dry-run dispatch IDs, and fails closed on disabled routes or duplicate source
+  order IDs without sending orders.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -338,7 +342,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 444 tests.
+Current passing suite: 449 tests.
 
 ## Next Build Targets
 

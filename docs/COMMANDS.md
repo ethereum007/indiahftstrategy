@@ -94,7 +94,7 @@ manifest.json
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
 shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
-cutover, route-enable, halt-response, and resume summaries,
+cutover, route-enable, broker-dispatch, halt-response, and resume summaries,
 so those run types can be promoted into explicit `--required-run-type`
 evidence gates.
 
@@ -2003,6 +2003,37 @@ and proof/resume context into one machine-readable artifact. It fails closed if
 cutover is not ready, the upload pack is not ready, the adapter or target mode
 does not match, the upload order count exceeds the cutover limit, or the
 optional order-export notional exceeds the cutover notional cap.
+
+## Broker Dispatch Plan
+
+Bind the enabled route to the exact broker upload rows and create a dry-run
+dispatch batch with deterministic idempotency keys:
+
+```powershell
+python -m hft_cli plan-broker-dispatch `
+  --route-enable runs\route_enable\leadlag_shadow_live_dryrun `
+  --upload-pack runs\uploads\leadlag_shadow_arrow `
+  --out runs\dispatch\leadlag_shadow_live_dryrun `
+  --target-mode live_dryrun `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+broker_dispatch_orders.csv
+broker_dispatch_checks.csv
+broker_dispatch_summary.csv
+broker_dispatch_config.json
+manifest.json
+```
+
+This command still does not submit orders. It hashes the route-enable
+authorization and upload file, creates one dry-run dispatch row per upload
+order, and requires unique source order IDs, unique dispatch IDs, route-enabled
+state, matching target mode, and order counts within the approved route limits.
+The resulting `broker_dispatch_config.json` is the artifact a future
+Arrow.money/iRage sender can consume.
 
 ## Calibration
 

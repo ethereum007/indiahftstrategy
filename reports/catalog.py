@@ -56,6 +56,7 @@ SUMMARY_FILES = [
     "runtime_session_summary.csv",
     "cutover_summary.csv",
     "route_enable_summary.csv",
+    "broker_dispatch_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",

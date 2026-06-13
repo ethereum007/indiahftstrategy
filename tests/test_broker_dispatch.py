@@ -1,0 +1,191 @@
+import json
+
+import pandas as pd
+
+from hft_cli import main
+from reports.broker_dispatch import (
+    BrokerDispatchThresholds,
+    evaluate_broker_dispatch_plan,
+    write_broker_dispatch_plan,
+)
+from reports.catalog import catalog_experiment_runs
+
+
+def route_summary(ready=True, upload_orders=2):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "route_state": "enabled" if ready else "disabled",
+                "upload_orders": upload_orders,
+                "max_orders_per_session": 10,
+                "max_notional_per_session": 100_000.0,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "enable_broker_route" if ready else "keep_broker_route_disabled",
+            }
+        ]
+    )
+
+
+def route_config(enabled=True, upload_orders=2):
+    return {
+        "schema_version": 1,
+        "route_enabled": enabled,
+        "route_state": "enabled" if enabled else "disabled",
+        "target_mode": "live_dryrun",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "limits": {
+            "max_orders_per_session": 10,
+            "max_notional_per_session": 100_000.0,
+            "stop_loss": 5_000.0,
+        },
+        "upload": {
+            "ready": True,
+            "orders": upload_orders,
+            "output_file": "broker_upload_orders.csv",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+        },
+    }
+
+
+def upload_orders(duplicate=False):
+    second_id = "ORD-1" if duplicate else "ORD-2"
+    return pd.DataFrame(
+        [
+            {
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY24JUN22500CE",
+                "transaction_type": "BUY",
+                "quantity": 75,
+                "order_type": "LIMIT",
+                "product": "MIS",
+                "price": 10.0,
+                "validity": "DAY",
+                "client_order_id": "ORD-1",
+                "tag": "shadow_nse",
+            },
+            {
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY24JUN22500PE",
+                "transaction_type": "SELL",
+                "quantity": 75,
+                "order_type": "LIMIT",
+                "product": "MIS",
+                "price": 11.0,
+                "validity": "DAY",
+                "client_order_id": second_id,
+                "tag": "shadow_nse",
+            },
+        ]
+    )
+
+
+def write_inputs(root, *, route_ready=True, duplicate=False):
+    route = root / "route_enable"
+    upload = root / "upload"
+    route.mkdir(parents=True)
+    upload.mkdir()
+    route_summary(route_ready).to_csv(route / "route_enable_summary.csv", index=False)
+    (route / "route_enable_config.json").write_text(
+        json.dumps(route_config(route_ready), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    upload_orders(duplicate).to_csv(upload / "broker_upload_orders.csv", index=False)
+    return route, upload
+
+
+def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=route_config(),
+        upload_orders=upload_orders(),
+        upload_file_hash="abc123",
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert summary["dispatch_state"] == "armed_dry_run"
+    assert summary["recommendation"] == "ready_for_broker_dryrun_dispatch"
+    assert report.dispatch_orders["dry_run_only"].tolist() == [True, True]
+    assert report.dispatch_orders["dispatch_action"].tolist() == ["dry_run_submit", "dry_run_submit"]
+    assert report.dispatch_orders["source_order_id"].tolist() == ["ORD-1", "ORD-2"]
+    assert report.dispatch_orders["dispatch_batch_id"].nunique() == 1
+    assert report.config["dry_run_only"]
+
+
+def test_broker_dispatch_blocks_duplicate_source_order_ids():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=route_config(),
+        upload_orders=upload_orders(duplicate=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "unique_source_order_id" in failed
+
+
+def test_broker_dispatch_blocks_disabled_route_enable():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(ready=False),
+        route_enable_config=route_config(enabled=False),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enabled" in failed
+
+
+def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path):
+    route, upload = write_inputs(tmp_path)
+    out_dir = tmp_path / "dispatch"
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=out_dir,
+    )
+
+    assert report.ready
+    assert (out_dir / "broker_dispatch_orders.csv").exists()
+    assert (out_dir / "broker_dispatch_checks.csv").exists()
+    assert (out_dir / "broker_dispatch_summary.csv").exists()
+    assert (out_dir / "broker_dispatch_config.json").exists()
+    assert (out_dir / "manifest.json").exists()
+    catalog = catalog_experiment_runs([out_dir])
+    assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_plan"
+    assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_summary.csv"
+    assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_cli_broker_dispatch_fails_on_disabled_route(tmp_path):
+    route, upload = write_inputs(tmp_path, route_ready=False)
+    out_dir = tmp_path / "dispatch"
+
+    code = main(
+        [
+            "plan-broker-dispatch",
+            "--route-enable",
+            str(route),
+            "--upload-pack",
+            str(upload),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "route_enabled" in set(checks.loc[~checks["passed"].astype(bool), "check"])

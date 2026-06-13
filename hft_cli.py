@@ -20,6 +20,7 @@ from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
+from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
@@ -1229,6 +1230,18 @@ def main(argv: list[str] | None = None) -> int:
     route_enable.add_argument("--allow-adapter-mismatch", action="store_true")
     route_enable.add_argument("--min-orders", type=int, default=1)
     route_enable.add_argument("--fail-on-breach", action="store_true")
+
+    broker_dispatch = sub.add_parser("plan-broker-dispatch", help="Create a dry-run broker dispatch plan.")
+    broker_dispatch.add_argument("--route-enable", required=True)
+    broker_dispatch.add_argument("--upload-pack", required=True)
+    broker_dispatch.add_argument("--out", required=True)
+    broker_dispatch.add_argument("--upload-orders", default=None)
+    broker_dispatch.add_argument("--target-mode", default="live_dryrun", choices=["paper", "shadow", "live_dryrun"])
+    broker_dispatch.add_argument("--allow-disabled-route", action="store_true")
+    broker_dispatch.add_argument("--allow-non-dry-run", action="store_true")
+    broker_dispatch.add_argument("--min-orders", type=int, default=1)
+    broker_dispatch.add_argument("--max-orders", type=int, default=None)
+    broker_dispatch.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -2818,6 +2831,22 @@ def main(argv: list[str] | None = None) -> int:
                 require_order_export_ready=args.require_order_export,
                 require_adapter_match=not args.allow_adapter_mismatch,
                 min_orders=args.min_orders,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "plan-broker-dispatch":
+        result = write_broker_dispatch_plan(
+            route_enable_dir=args.route_enable,
+            upload_pack_dir=args.upload_pack,
+            upload_orders_path=args.upload_orders,
+            output_dir=args.out,
+            thresholds=BrokerDispatchThresholds(
+                target_mode=args.target_mode,
+                require_route_enabled=not args.allow_disabled_route,
+                require_dry_run=not args.allow_non_dry_run,
+                min_orders=args.min_orders,
+                max_orders=args.max_orders,
             ),
         )
         print(result.summary.to_string(index=False))
