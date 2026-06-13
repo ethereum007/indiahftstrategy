@@ -98,19 +98,28 @@ def write_broker_dispatch_roundtrip(
     dispatch = Path(dispatch_dir)
     send = Path(send_dir)
     ack = Path(ack_dir)
+    dispatch_summary_path = dispatch / "broker_dispatch_summary.csv"
+    dispatch_orders_path = dispatch / "broker_dispatch_orders.csv"
+    dispatch_config_path = dispatch / "broker_dispatch_config.json"
+    send_summary_path = send / "broker_dispatch_send_summary.csv"
+    send_requests_path = send / "broker_dispatch_send_requests.csv"
+    send_config_path = send / "broker_dispatch_send_config.json"
+    ack_summary_path = ack / "broker_dispatch_ack_summary.csv"
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    ack_config_path = ack / "broker_dispatch_ack_config.json"
     report = evaluate_broker_dispatch_roundtrip(
-        dispatch_summary=_read_required(dispatch / "broker_dispatch_summary.csv", "broker_dispatch_summary"),
-        dispatch_orders=_read_required(dispatch / "broker_dispatch_orders.csv", "broker_dispatch_orders"),
-        send_summary=_read_required(send / "broker_dispatch_send_summary.csv", "broker_dispatch_send_summary"),
-        send_requests=_read_required(send / "broker_dispatch_send_requests.csv", "broker_dispatch_send_requests"),
-        ack_summary=_read_required(ack / "broker_dispatch_ack_summary.csv", "broker_dispatch_ack_summary"),
+        dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
+        dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
+        send_summary=_read_required(send_summary_path, "broker_dispatch_send_summary"),
+        send_requests=_read_required(send_requests_path, "broker_dispatch_send_requests"),
+        ack_summary=_read_required(ack_summary_path, "broker_dispatch_ack_summary"),
         acknowledgements=_read_required(
-            ack / "broker_dispatch_acknowledgements.csv",
+            acknowledgements_path,
             "broker_dispatch_acknowledgements",
         ),
-        dispatch_config=_read_optional_json(dispatch / "broker_dispatch_config.json"),
-        send_config=_read_optional_json(send / "broker_dispatch_send_config.json"),
-        ack_config=_read_optional_json(ack / "broker_dispatch_ack_config.json"),
+        dispatch_config=_read_optional_json(dispatch_config_path),
+        send_config=_read_optional_json(send_config_path),
+        ack_config=_read_optional_json(ack_config_path),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -126,9 +135,23 @@ def write_broker_dispatch_roundtrip(
         out,
         run_type="broker_dispatch_roundtrip",
         parameters={"thresholds": asdict(thresholds or BrokerDispatchRoundTripThresholds())},
-        inputs={"dispatch": dispatch, "send": send, "ack": ack},
+        inputs=_manifest_inputs(
+            dispatch_summary=dispatch_summary_path,
+            dispatch_orders=dispatch_orders_path,
+            dispatch_config=dispatch_config_path,
+            send_summary=send_summary_path,
+            send_requests=send_requests_path,
+            send_config=send_config_path,
+            ack_summary=ack_summary_path,
+            acknowledgements=acknowledgements_path,
+            ack_config=ack_config_path,
+        ),
     )
     return BrokerDispatchRoundTripReport(report.orders, report.checks, report.summary, report.config, out)
+
+
+def _manifest_inputs(**paths: Path) -> dict[str, Path]:
+    return {name: path for name, path in paths.items() if path.exists()}
 
 
 def _roundtrip_orders(

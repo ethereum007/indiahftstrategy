@@ -89,14 +89,16 @@ def write_broker_dispatch_acknowledgements(
     if not acks.exists():
         raise FileNotFoundError(f"broker acknowledgement file not found: {acks}")
     dispatch_config_path = dispatch / "broker_dispatch_config.json"
+    dispatch_summary_path = dispatch / "broker_dispatch_summary.csv"
+    dispatch_orders_path = dispatch / "broker_dispatch_orders.csv"
     dispatch_config = (
         json.loads(dispatch_config_path.read_text(encoding="utf-8"))
         if dispatch_config_path.exists()
         else {}
     )
     report = evaluate_broker_dispatch_acknowledgements(
-        dispatch_summary=_read_required(dispatch / "broker_dispatch_summary.csv", "broker_dispatch_summary"),
-        dispatch_orders=_read_required(dispatch / "broker_dispatch_orders.csv", "broker_dispatch_orders"),
+        dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
+        dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
         broker_acks=pd.read_csv(acks),
         dispatch_config=dispatch_config,
         thresholds=thresholds,
@@ -115,7 +117,12 @@ def write_broker_dispatch_acknowledgements(
         out,
         run_type="broker_dispatch_ack_reconciliation",
         parameters={"thresholds": asdict(thresholds or BrokerDispatchAckThresholds())},
-        inputs={"dispatch": dispatch, "acks": acks},
+        inputs=_manifest_inputs(
+            dispatch_summary=dispatch_summary_path,
+            dispatch_orders=dispatch_orders_path,
+            dispatch_config=dispatch_config_path,
+            broker_acks=acks,
+        ),
     )
     return BrokerDispatchAckReport(
         report.acknowledgements,
@@ -125,6 +132,10 @@ def write_broker_dispatch_acknowledgements(
         report.config,
         out,
     )
+
+
+def _manifest_inputs(**paths: Path) -> dict[str, Path]:
+    return {name: path for name, path in paths.items() if path.exists()}
 
 
 def _acknowledgements(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.DataFrame:

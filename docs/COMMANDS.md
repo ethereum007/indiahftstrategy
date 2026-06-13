@@ -2614,7 +2614,9 @@ or dirty for live dry-run sending, route-enable dispatch round-trip failed
 checks read from the dispatch config are nonzero, any dispatch row or request
 carries a mismatched route proof batch id, the adapter is unknown, payload JSON
 is invalid, idempotency keys are not unique, request limits are exceeded, or
-any request is not dry-run-only.
+any request is not dry-run-only. The manifest fingerprints the exact dispatch
+summary, dispatch orders, and dispatch config files consumed by the sender
+packet.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 
@@ -2648,7 +2650,9 @@ orders, duplicate acknowledgement rows, dirty route round-trip proof for live
 dry-run dispatches, nonzero route-enable dispatch round-trip failed checks read
 from the dispatch config, dispatch rows or acknowledgement rows that carry a
 stale route proof batch id, missing acknowledgement route proof tags, or
-acknowledgement rows that do not belong to the dispatch batch.
+acknowledgement rows that do not belong to the dispatch batch. The manifest
+fingerprints the exact dispatch summary, dispatch orders, dispatch config, and
+broker acknowledgement log files used in the reconciliation.
 
 ## Broker Dispatch Round-Trip Review
 
@@ -2683,7 +2687,9 @@ reconciliation all pass with matching strategy/market/scenario/adapter
 identity, disabled live submission, dry-run-only requests, consistent route
 round-trip proof, zero carried route-enable dispatch round-trip failed checks
 from upstream configs, one request per dispatch order, and an accepted
-acknowledgement for every request.
+acknowledgement for every request. The manifest fingerprints the exact
+dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
+files that formed the proof.
 
 ## Calibration
 

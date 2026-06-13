@@ -10,6 +10,10 @@ from reports.broker_dispatch_roundtrip import (
 from reports.catalog import catalog_experiment_runs
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def dispatch_summary(
     ready=True,
     route_roundtrip_provided=True,
@@ -516,6 +520,20 @@ def test_write_broker_dispatch_roundtrip_outputs_artifacts_and_catalog_entry(tmp
     assert (out_dir / "broker_dispatch_roundtrip_summary.csv").exists()
     assert (out_dir / "broker_dispatch_roundtrip_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    expected_inputs = {
+        "dispatch_summary": "/broker_dispatch_summary.csv",
+        "dispatch_orders": "/broker_dispatch_orders.csv",
+        "dispatch_config": "/broker_dispatch_config.json",
+        "send_summary": "/broker_dispatch_send_summary.csv",
+        "send_requests": "/broker_dispatch_send_requests.csv",
+        "send_config": "/broker_dispatch_send_config.json",
+        "ack_summary": "/broker_dispatch_ack_summary.csv",
+        "acknowledgements": "/broker_dispatch_acknowledgements.csv",
+        "ack_config": "/broker_dispatch_ack_config.json",
+    }
+    for name, suffix in expected_inputs.items():
+        assert path_tail(manifest["inputs"][name]["path"]).endswith(suffix)
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_roundtrip"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_roundtrip_summary.csv"

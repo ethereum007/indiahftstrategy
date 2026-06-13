@@ -72,14 +72,16 @@ def write_broker_dispatch_send_packet(
 ) -> BrokerDispatchSendReport:
     dispatch = Path(dispatch_dir)
     dispatch_config_path = dispatch / "broker_dispatch_config.json"
+    dispatch_summary_path = dispatch / "broker_dispatch_summary.csv"
+    dispatch_orders_path = dispatch / "broker_dispatch_orders.csv"
     dispatch_config = (
         json.loads(dispatch_config_path.read_text(encoding="utf-8"))
         if dispatch_config_path.exists()
         else {}
     )
     report = evaluate_broker_dispatch_send_packet(
-        dispatch_summary=_read_required(dispatch / "broker_dispatch_summary.csv", "broker_dispatch_summary"),
-        dispatch_orders=_read_required(dispatch / "broker_dispatch_orders.csv", "broker_dispatch_orders"),
+        dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
+        dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
         dispatch_config=dispatch_config,
         thresholds=thresholds,
     )
@@ -97,7 +99,11 @@ def write_broker_dispatch_send_packet(
         out,
         run_type="broker_dispatch_send_packet",
         parameters={"thresholds": asdict(thresholds or BrokerDispatchSendThresholds())},
-        inputs={"dispatch": dispatch},
+        inputs=_manifest_inputs(
+            dispatch_summary=dispatch_summary_path,
+            dispatch_orders=dispatch_orders_path,
+            dispatch_config=dispatch_config_path,
+        ),
     )
     return BrokerDispatchSendReport(
         report.requests,
@@ -107,6 +113,10 @@ def write_broker_dispatch_send_packet(
         report.config,
         out,
     )
+
+
+def _manifest_inputs(**paths: Path) -> dict[str, Path]:
+    return {name: path for name, path in paths.items() if path.exists()}
 
 
 def _request_rows(dispatch_summary: pd.Series, dispatch_orders: pd.DataFrame) -> pd.DataFrame:

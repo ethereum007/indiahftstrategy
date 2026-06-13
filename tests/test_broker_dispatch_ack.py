@@ -10,6 +10,10 @@ from reports.broker_dispatch_ack import (
 from reports.catalog import catalog_experiment_runs
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def dispatch_summary(
     ready=True,
     route_roundtrip_provided=True,
@@ -353,6 +357,17 @@ def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path)
     assert (out_dir / "broker_dispatch_ack_summary.csv").exists()
     assert (out_dir / "broker_dispatch_ack_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(manifest["inputs"]["dispatch_summary"]["path"]).endswith(
+        "/broker_dispatch_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_orders"]["path"]).endswith(
+        "/broker_dispatch_orders.csv"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_config"]["path"]).endswith(
+        "/broker_dispatch_config.json"
+    )
+    assert path_tail(manifest["inputs"]["broker_acks"]["path"]).endswith("/broker_dispatch_acks.csv")
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_ack_reconciliation"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_ack_summary.csv"

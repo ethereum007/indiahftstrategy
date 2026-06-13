@@ -361,19 +361,20 @@
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route round-trip proof tags, and acknowledgement templates while
   carrying route-enable dispatch round-trip failed-check counters from the
-  dispatch config, validating route proof batch continuity, and forcing live
-  submission off.
+  dispatch config, validating route proof batch continuity, forcing live
+  submission off, and fingerprinting exact dispatch input files.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   route round-trip proof and route-enable failed-check counters from the
   dispatch config, validates acknowledgement-log proof batch continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
-  unmatched acknowledgement rows.
+  unmatched acknowledgement rows while fingerprinting exact dispatch and ack
+  log inputs.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, raw ack-log route proof consistency, route-enable failed-check
   counters from upstream configs, request-count, submission-disabled, and
-  accepted-ack checks.
+  accepted-ack checks while fingerprinting exact component proof files.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
