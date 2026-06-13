@@ -291,7 +291,8 @@
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route round-trip proof tags, and acknowledgement templates while
-  validating route proof batch continuity and forcing live submission off.
+  carrying route-enable dispatch round-trip failed-check counters, validating
+  route proof batch continuity, and forcing live submission off.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   route round-trip proof, validates acknowledgement-log proof batch continuity,
@@ -364,7 +365,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 503 tests.
+Current passing suite: 504 tests.
 
 ## Next Build Targets
 
