@@ -17,6 +17,7 @@ class RouteEnableThresholds:
     require_upload_ready: bool = True
     require_order_export_ready: bool = False
     require_adapter_match: bool = True
+    require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
     min_orders: int = 1
 
@@ -136,6 +137,8 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
     max_orders = int(cutover["max_orders_per_session"])
     max_notional = float(cutover["max_notional_per_session"])
     export_notional = float(order_export["total_notional"])
+    route_readiness_required = _route_readiness_required(thresholds, cutover)
+    route_readiness_active = bool(route_readiness_required or cutover["route_readiness_provided"])
     checks = [
         _check(
             "cutover_ready",
@@ -172,39 +175,56 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
             ),
             "route enable requires cutover with dispatch route proof",
         ),
-        _check(
-            "upload_ready",
-            upload["ready"],
-            "is",
-            True,
-            bool(upload["ready"]) or not thresholds.require_upload_ready,
-            "broker upload pack is not ready",
-        ),
-        _check(
-            "upload_orders_min",
-            upload_orders,
-            ">=",
-            thresholds.min_orders,
-            upload_orders >= thresholds.min_orders,
-            "broker upload pack does not contain enough orders",
-        ),
-        _check(
-            "upload_orders_within_cutover_limit",
-            upload_orders,
-            "<=",
-            max_orders,
-            upload_orders <= max_orders,
-            "broker upload order count exceeds cutover limit",
-        ),
-        _check(
-            "upload_adapter_matches",
-            upload["adapter"],
-            "==",
-            cutover["adapter"],
-            (not thresholds.require_adapter_match) or upload["adapter"] == cutover["adapter"],
-            "broker upload adapter does not match cutover adapter",
-        ),
     ]
+    if route_readiness_required:
+        checks.append(
+            _check(
+                "cutover_route_readiness_provided",
+                cutover["route_readiness_provided"],
+                "is",
+                True,
+                bool(cutover["route_readiness_provided"]),
+                "route enable requires cutover with route-readiness proof",
+            )
+        )
+    if route_readiness_active:
+        checks.extend(_route_readiness_checks(cutover))
+    checks.extend(
+        [
+            _check(
+                "upload_ready",
+                upload["ready"],
+                "is",
+                True,
+                bool(upload["ready"]) or not thresholds.require_upload_ready,
+                "broker upload pack is not ready",
+            ),
+            _check(
+                "upload_orders_min",
+                upload_orders,
+                ">=",
+                thresholds.min_orders,
+                upload_orders >= thresholds.min_orders,
+                "broker upload pack does not contain enough orders",
+            ),
+            _check(
+                "upload_orders_within_cutover_limit",
+                upload_orders,
+                "<=",
+                max_orders,
+                upload_orders <= max_orders,
+                "broker upload order count exceeds cutover limit",
+            ),
+            _check(
+                "upload_adapter_matches",
+                upload["adapter"],
+                "==",
+                cutover["adapter"],
+                (not thresholds.require_adapter_match) or upload["adapter"] == cutover["adapter"],
+                "broker upload adapter does not match cutover adapter",
+            ),
+        ]
+    )
     if _dispatch_roundtrip_required(thresholds) or cutover["dispatch_roundtrip_provided"]:
         checks.extend(_dispatch_roundtrip_checks(cutover, target_mode))
     if _route_dispatch_roundtrip_required(thresholds, cutover):
@@ -258,6 +278,43 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
             ]
         )
     return pd.DataFrame(checks)
+
+
+def _route_readiness_checks(cutover: dict[str, Any]) -> list[dict[str, object]]:
+    return [
+        _check(
+            "cutover_route_readiness_ready",
+            cutover["route_readiness_ready"],
+            "is",
+            True,
+            bool(cutover["route_readiness_ready"]),
+            "cutover route-readiness proof is not ready",
+        ),
+        _check(
+            "cutover_route_readiness_strategy_matches",
+            cutover["route_readiness_strategy"],
+            "==",
+            cutover["strategy"],
+            bool(
+                cutover["route_readiness_strategy"]
+                and cutover["strategy"]
+                and cutover["route_readiness_strategy"] == cutover["strategy"]
+            ),
+            "cutover route-readiness strategy does not match route strategy",
+        ),
+        _check(
+            "cutover_route_readiness_market_matches",
+            cutover["route_readiness_market"],
+            "==",
+            cutover["market"],
+            bool(
+                cutover["route_readiness_market"]
+                and cutover["market"]
+                and cutover["route_readiness_market"] == cutover["market"]
+            ),
+            "cutover route-readiness market does not match route market",
+        ),
+    ]
 
 
 def _dispatch_roundtrip_checks(cutover: dict[str, Any], target_mode: str) -> list[dict[str, object]]:
@@ -499,6 +556,14 @@ def _packet(
                 "proof_refresh_ready": cutover["proof_refresh_ready"],
                 "proof_refresh_strategy": cutover["proof_refresh_strategy"],
                 "proof_refresh_market": cutover["proof_refresh_market"],
+                "route_readiness_required": _route_readiness_required(thresholds, cutover),
+                "route_readiness_provided": cutover["route_readiness_provided"],
+                "route_readiness_ready": cutover["route_readiness_ready"],
+                "route_readiness_strategy": cutover["route_readiness_strategy"],
+                "route_readiness_market": cutover["route_readiness_market"],
+                "route_readiness_route_ready_pairs": cutover["route_readiness_route_ready_pairs"],
+                "route_readiness_gap_pairs": cutover["route_readiness_gap_pairs"],
+                "route_readiness_recommendation": cutover["route_readiness_recommendation"],
                 "broker_resume_gate_ready": cutover["broker_resume_gate_ready"],
                 "broker_resume_proof_refresh_ready": cutover["broker_resume_proof_refresh_ready"],
                 "dispatch_roundtrip_required": _dispatch_roundtrip_required(thresholds),
@@ -560,6 +625,13 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_schema_reviewed": _to_bool(packet["broker_schema_reviewed"]),
                 "broker_schema_review_mode": str(packet["broker_schema_review_mode"]),
                 "proof_refresh_ready": _to_bool(packet["proof_refresh_ready"]),
+                "route_readiness_required": _to_bool(packet["route_readiness_required"]),
+                "route_readiness_provided": _to_bool(packet["route_readiness_provided"]),
+                "route_readiness_ready": _to_bool(packet["route_readiness_ready"]),
+                "route_readiness_strategy": str(packet["route_readiness_strategy"]),
+                "route_readiness_market": str(packet["route_readiness_market"]),
+                "route_readiness_route_ready_pairs": int(packet["route_readiness_route_ready_pairs"]),
+                "route_readiness_gap_pairs": int(packet["route_readiness_gap_pairs"]),
                 "broker_resume_gate_ready": _to_bool(packet["broker_resume_gate_ready"]),
                 "broker_resume_proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
                 "dispatch_roundtrip_required": _to_bool(packet["dispatch_roundtrip_required"]),
@@ -632,6 +704,16 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             "strategy": str(packet["proof_refresh_strategy"]),
             "market": str(packet["proof_refresh_market"]),
         },
+        "route_readiness": {
+            "required": _to_bool(packet["route_readiness_required"]),
+            "provided": _to_bool(packet["route_readiness_provided"]),
+            "ready": _to_bool(packet["route_readiness_ready"]),
+            "strategy": str(packet["route_readiness_strategy"]),
+            "market": str(packet["route_readiness_market"]),
+            "route_ready_pairs": int(packet["route_readiness_route_ready_pairs"]),
+            "gap_pairs": int(packet["route_readiness_gap_pairs"]),
+            "recommendation": str(packet["route_readiness_recommendation"]),
+        },
         "broker_resume_gate": {
             "ready": _to_bool(packet["broker_resume_gate_ready"]),
             "proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
@@ -682,6 +764,7 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     resume = broker_readiness.get("resume_gate", {}) or {}
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
     broker_route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
+    route_readiness = config.get("scaleup_route_readiness", {}) or {}
     scaleup_dispatch = config.get("scaleup_dispatch_roundtrip", {}) or {}
     scaleup_route_enable = scaleup_dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
@@ -704,6 +787,35 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             _first_text(proof.get("strategy", ""), row.get("proof_refresh_strategy", ""))
         ),
         "proof_refresh_market": _identity_key(_first_text(proof.get("market", ""), row.get("proof_refresh_market", ""))),
+        "route_readiness_required": _to_bool(
+            route_readiness.get("required", row.get("scaleup_route_readiness_required", False))
+        ),
+        "route_readiness_provided": _to_bool(
+            route_readiness.get("provided", row.get("scaleup_route_readiness_provided", False))
+        ),
+        "route_readiness_ready": _to_bool(
+            route_readiness.get("ready", row.get("scaleup_route_readiness_ready", False))
+        ),
+        "route_readiness_strategy": _strategy_key(
+            _first_text(route_readiness.get("strategy", ""), row.get("scaleup_route_readiness_strategy", ""))
+        ),
+        "route_readiness_market": _identity_key(
+            _first_text(route_readiness.get("market", ""), row.get("scaleup_route_readiness_market", ""))
+        ),
+        "route_readiness_route_ready_pairs": int(
+            _number_from(
+                route_readiness,
+                "route_ready_pairs",
+                _number(row, "scaleup_route_readiness_route_ready_pairs", 0.0),
+            )
+        ),
+        "route_readiness_gap_pairs": int(
+            _number_from(route_readiness, "gap_pairs", _number(row, "scaleup_route_readiness_gap_pairs", 0.0))
+        ),
+        "route_readiness_recommendation": _first_text(
+            route_readiness.get("recommendation", ""),
+            row.get("scaleup_route_readiness_recommendation", ""),
+        ),
         "broker_schema_status": _first_text(
             broker_readiness.get("adapter_schema_status", ""),
             row.get("broker_schema_status", ""),
@@ -936,6 +1048,14 @@ def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:
 
 def _dispatch_roundtrip_required(thresholds: RouteEnableThresholds) -> bool:
     return bool(thresholds.require_dispatch_roundtrip or thresholds.target_mode == "live_dryrun")
+
+
+def _route_readiness_required(thresholds: RouteEnableThresholds, cutover: dict[str, Any] | None = None) -> bool:
+    return bool(
+        thresholds.require_route_readiness
+        or thresholds.target_mode == "live_dryrun"
+        or (cutover is not None and cutover["route_readiness_required"])
+    )
 
 
 def _route_dispatch_roundtrip_required(thresholds: RouteEnableThresholds, cutover: dict[str, Any]) -> bool:

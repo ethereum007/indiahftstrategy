@@ -1545,6 +1545,7 @@ def main(argv: list[str] | None = None) -> int:
     route_enable.add_argument("--allow-unready-cutover", action="store_true")
     route_enable.add_argument("--allow-unready-upload", action="store_true")
     route_enable.add_argument("--require-order-export", action="store_true")
+    route_enable.add_argument("--require-route-readiness", action="store_true")
     route_enable.add_argument("--require-dispatch-roundtrip", action="store_true")
     route_enable.add_argument("--allow-adapter-mismatch", action="store_true")
     route_enable.add_argument("--min-orders", type=int, default=1)
@@ -3555,6 +3556,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_upload_ready=not args.allow_unready_upload,
                 require_order_export_ready=args.require_order_export,
                 require_adapter_match=not args.allow_adapter_mismatch,
+                require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 min_orders=args.min_orders,
             ),

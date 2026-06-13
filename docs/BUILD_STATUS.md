@@ -378,11 +378,11 @@
   operator-review inputs.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
-  live-dry-run dispatch round-trip proof, carried route-enable failed-check
-  counters, plus nested route proof, resolves broker upload/export summaries
-  from launch pipeline roots, fingerprints resolved cutover/upload/export
-  inputs, and emits the final machine-readable broker route-enable config
-  without submitting orders.
+  cutover route-readiness proof, live-dry-run dispatch round-trip proof,
+  carried route-enable failed-check counters, plus nested route proof, resolves
+  broker upload/export summaries from launch pipeline roots, fingerprints
+  resolved cutover/upload/export inputs, and emits the final machine-readable
+  broker route-enable config without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries broker schema review status/mode plus

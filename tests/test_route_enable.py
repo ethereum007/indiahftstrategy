@@ -43,6 +43,14 @@ def cutover_summary(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy=None,
+    route_readiness_market=None,
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -61,6 +69,15 @@ def cutover_summary(
     )
     route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
     route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
+    route_readiness_strategy = dispatch_strategy if route_readiness_strategy is None else route_readiness_strategy
+    route_readiness_market = dispatch_market if route_readiness_market is None else route_readiness_market
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return pd.DataFrame(
         [
             {
@@ -109,6 +126,14 @@ def cutover_summary(
                 "broker_route_dispatch_roundtrip_missing_request_acks": route_missing_request_acks,
                 "broker_route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
                 "broker_route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
+                "scaleup_route_readiness_required": route_readiness_required,
+                "scaleup_route_readiness_provided": route_readiness_provided,
+                "scaleup_route_readiness_ready": route_readiness_ready,
+                "scaleup_route_readiness_strategy": route_readiness_strategy,
+                "scaleup_route_readiness_market": route_readiness_market,
+                "scaleup_route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
+                "scaleup_route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "scaleup_route_readiness_recommendation": route_readiness_recommendation,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "allow_live_dryrun_cutover" if ready else "keep_cutover_disabled",
             }
@@ -147,6 +172,14 @@ def cutover_config(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy=None,
+    route_readiness_market=None,
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -165,6 +198,15 @@ def cutover_config(
     )
     route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
     route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
+    route_readiness_strategy = dispatch_strategy if route_readiness_strategy is None else route_readiness_strategy
+    route_readiness_market = dispatch_market if route_readiness_market is None else route_readiness_market
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return {
         "schema_version": 1,
         "ready": True,
@@ -182,6 +224,16 @@ def cutover_config(
             "ready": True,
             "strategy": "lead_lag_taker",
             "market": "india_nse_index_derivatives",
+        },
+        "scaleup_route_readiness": {
+            "required": route_readiness_required,
+            "provided": route_readiness_provided,
+            "ready": route_readiness_ready,
+            "strategy": route_readiness_strategy,
+            "market": route_readiness_market,
+            "route_ready_pairs": route_readiness_route_ready_pairs,
+            "gap_pairs": route_readiness_gap_pairs,
+            "recommendation": route_readiness_recommendation,
         },
         "broker_readiness": {
             "adapter_schema_status": broker_schema_status,
@@ -286,6 +338,7 @@ def write_inputs(
     upload_orders=2,
     export_notional=25_000.0,
     dispatch=True,
+    route_readiness=True,
 ):
     cutover = root / "cutover"
     upload = root / "upload"
@@ -293,12 +346,27 @@ def write_inputs(
     cutover.mkdir(parents=True)
     upload.mkdir()
     export.mkdir()
-    cutover_summary(ready=cutover_ready, dispatch_provided=dispatch, dispatch_ready=dispatch).to_csv(
+    cutover_summary(
+        ready=cutover_ready,
+        dispatch_provided=dispatch,
+        dispatch_ready=dispatch,
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    ).to_csv(
         cutover / "cutover_summary.csv",
         index=False,
     )
     (cutover / "cutover_config.json").write_text(
-        json.dumps(cutover_config(dispatch_provided=dispatch, dispatch_ready=dispatch), indent=2) + "\n",
+        json.dumps(
+            cutover_config(
+                dispatch_provided=dispatch,
+                dispatch_ready=dispatch,
+                route_readiness_provided=route_readiness,
+                route_readiness_ready=route_readiness,
+            ),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     upload_summary(ready=upload_ready, orders=upload_orders).to_csv(upload / "broker_upload_summary.csv", index=False)
@@ -341,6 +409,45 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert bool(report.summary.iloc[0]["route_dispatch_roundtrip_ready"])
     assert report.config["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["dispatch_roundtrip"]["route_proof"]["requests"] == 2
+    assert bool(report.summary.iloc[0]["route_readiness_required"])
+    assert bool(report.summary.iloc[0]["route_readiness_ready"])
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
+    assert report.config["route_readiness"]["required"]
+    assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_route_enable_live_dryrun_requires_cutover_route_readiness():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(route_readiness_provided=False, route_readiness_ready=False),
+        cutover_config=cutover_config(route_readiness_provided=False, route_readiness_ready=False),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"cutover_route_readiness_provided", "cutover_route_readiness_ready"} <= failed
+    assert report.config["route_readiness"]["required"]
+    assert not report.config["route_readiness"]["provided"]
+
+
+def test_route_enable_blocks_cutover_route_readiness_identity_mismatch():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+        ),
+        cutover_config=cutover_config(
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+        ),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"cutover_route_readiness_strategy_matches", "cutover_route_readiness_market_matches"} <= failed
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "surface_mm"
+    assert report.config["route_readiness"]["market"] == "us_options_regular"
 
 
 def test_route_enable_requires_cutover_dispatch_roundtrip():
@@ -653,3 +760,31 @@ def test_cli_route_enable_can_require_dispatch_roundtrip(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "cutover_dispatch_roundtrip_provided" in failed
+
+
+def test_cli_route_enable_can_require_route_readiness(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path, route_readiness=False)
+    out_dir = tmp_path / "route_enable"
+
+    code = main(
+        [
+            "review-route-enable",
+            "--cutover",
+            str(cutover),
+            "--upload-pack",
+            str(upload),
+            "--order-export",
+            str(export),
+            "--out",
+            str(out_dir),
+            "--require-route-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "route_enable_summary.csv")
+    checks = pd.read_csv(out_dir / "route_enable_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "cutover_route_readiness_provided" in failed

@@ -2621,6 +2621,7 @@ python -m hft_cli review-route-enable `
   --out runs\route_enable\leadlag_shadow_live_dryrun `
   --target-mode live_dryrun `
   --require-order-export `
+  --require-route-readiness `
   --require-dispatch-roundtrip `
   --fail-on-breach
 ```
@@ -2639,12 +2640,15 @@ The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
 proof/resume context, and dispatch round-trip proof into one machine-readable
 artifact. It fails closed if cutover is not ready, the upload pack is not
-ready, the adapter or target mode does not match, dispatch round-trip proof is
-missing, dirty, or has failed component checks for live dry-run routing, the
-carried route-enable dispatch round-trip failed-check counter is nonzero, the
-nested cutover route proof is missing, mismatched, or dirty, the upload order
-count exceeds the cutover limit, or the optional order-export notional exceeds
-the cutover notional cap. `--upload-pack` and `--order-export` may point at a
+ready, the adapter or target mode does not match, cutover route-readiness proof
+is missing, unready, or for a different strategy/market, dispatch round-trip
+proof is missing, dirty, or has failed component checks for live dry-run
+routing, the carried route-enable dispatch round-trip failed-check counter is
+nonzero, the nested cutover route proof is missing, mismatched, or dirty, the
+upload order count exceeds the cutover limit, or the optional order-export
+notional exceeds the cutover notional cap. `--require-route-readiness` is
+automatic for `--target-mode live_dryrun`; the explicit flag keeps paper/shadow
+route reviews equally strict. `--upload-pack` and `--order-export` may point at a
 launch-pipeline root; route-enable resolves nested `05_upload_pack`/`04_export`
 or surface-MM `04_upload_pack`/`03_export` summaries and fingerprints the
 resolved cutover summary, cutover config, upload summary, and optional order
