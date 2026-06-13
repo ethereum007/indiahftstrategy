@@ -1,0 +1,197 @@
+import pandas as pd
+
+from hft_cli import main
+from reports.broker_dispatch_ack import (
+    evaluate_broker_dispatch_acknowledgements,
+    write_broker_dispatch_acknowledgements,
+)
+from reports.catalog import catalog_experiment_runs
+
+
+def dispatch_summary(ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "dispatch_orders": 2,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "ready_for_broker_dryrun_dispatch"
+                if ready
+                else "fix_broker_dispatch_plan",
+            }
+        ]
+    )
+
+
+def dispatch_orders():
+    return pd.DataFrame(
+        [
+            {
+                "dispatch_batch_id": "BDP-1",
+                "dispatch_order_id": "DSP-1",
+                "source_order_id": "ORD-1",
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "adapter": "arrow_money",
+                "dry_run_only": True,
+            },
+            {
+                "dispatch_batch_id": "BDP-1",
+                "dispatch_order_id": "DSP-2",
+                "source_order_id": "ORD-2",
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "adapter": "arrow_money",
+                "dry_run_only": True,
+            },
+        ]
+    )
+
+
+def ack_rows(statuses=("accepted", "accepted"), *, extra=False, duplicate=False, by_source=False):
+    rows = []
+    for index, status in enumerate(statuses, start=1):
+        row = {
+            "status": status,
+            "broker_order_id": f"BRK-{index}",
+            "ack_ts_ns": 1_000 + index,
+        }
+        if by_source:
+            row["source_order_id"] = f"ORD-{index}"
+        else:
+            row["dispatch_order_id"] = f"DSP-{index}"
+            row["source_order_id"] = f"ORD-{index}"
+        rows.append(row)
+    if duplicate:
+        rows.append(
+            {
+                "dispatch_order_id": "DSP-1",
+                "source_order_id": "ORD-1",
+                "status": "accepted",
+                "broker_order_id": "BRK-1-DUP",
+                "ack_ts_ns": 1_099,
+            }
+        )
+    if extra:
+        rows.append(
+            {
+                "dispatch_order_id": "DSP-999",
+                "source_order_id": "ORD-999",
+                "status": "accepted",
+                "broker_order_id": "BRK-999",
+                "ack_ts_ns": 9_999,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def write_inputs(tmp_path, *, dispatch_ready=True, ack_statuses=("accepted", "accepted")):
+    dispatch = tmp_path / "dispatch"
+    dispatch.mkdir()
+    dispatch_summary(dispatch_ready).to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
+    dispatch_orders().to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
+    acks = tmp_path / "broker_dispatch_acks.csv"
+    ack_rows(ack_statuses).to_csv(acks, index=False)
+    return dispatch, acks
+
+
+def test_broker_dispatch_ack_accepts_complete_source_id_acks():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(by_source=True),
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    assert summary["ack_rate"] == 1.0
+    assert summary["recommendation"] == "broker_dispatch_acknowledged"
+    assert report.acknowledgements["match_key"].tolist() == ["source_order_id", "source_order_id"]
+
+
+def test_broker_dispatch_ack_blocks_missing_ack():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(("accepted",)),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "all_dispatch_orders_acked" in failed
+    assert int(report.summary.iloc[0]["missing_acks"]) == 1
+
+
+def test_broker_dispatch_ack_blocks_rejected_duplicate_and_unmatched_acks():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(("accepted", "rejected"), duplicate=True, extra=True),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert failed >= {
+        "all_dispatch_orders_acked",
+        "rejected_orders",
+        "duplicate_ack_orders",
+        "unmatched_acks",
+    }
+    summary = report.summary.iloc[0]
+    assert int(summary["rejected_orders"]) == 1
+    assert int(summary["duplicate_ack_orders"]) == 1
+    assert int(summary["unmatched_acks"]) == 1
+
+
+def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path):
+    dispatch, acks = write_inputs(tmp_path)
+    out_dir = tmp_path / "dispatch_acks"
+
+    report = write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        acks_path=acks,
+        output_dir=out_dir,
+    )
+
+    assert report.passed
+    assert (out_dir / "broker_dispatch_acknowledgements.csv").exists()
+    assert (out_dir / "broker_dispatch_unmatched_acks.csv").exists()
+    assert (out_dir / "broker_dispatch_ack_checks.csv").exists()
+    assert (out_dir / "broker_dispatch_ack_summary.csv").exists()
+    assert (out_dir / "broker_dispatch_ack_config.json").exists()
+    assert (out_dir / "manifest.json").exists()
+    catalog = catalog_experiment_runs([out_dir])
+    assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_ack_reconciliation"
+    assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_ack_summary.csv"
+    assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_cli_broker_dispatch_ack_fails_on_rejected_ack(tmp_path):
+    dispatch, acks = write_inputs(tmp_path, ack_statuses=("accepted", "rejected"))
+    out_dir = tmp_path / "dispatch_acks"
+
+    code = main(
+        [
+            "reconcile-broker-dispatch",
+            "--dispatch",
+            str(dispatch),
+            "--acks",
+            str(acks),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_ack_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_ack_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "passed"])
+    assert "rejected_orders" in set(checks.loc[~checks["passed"].astype(bool), "check"])

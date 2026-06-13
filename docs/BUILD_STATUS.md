@@ -281,6 +281,9 @@
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, and fails closed on disabled routes or duplicate source
   order IDs without sending orders.
+- Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
+  rows to broker ack logs, accepts only explicit success statuses, and fails
+  closed on missing, rejected, duplicate, or unmatched acknowledgement rows.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -342,7 +345,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 449 tests.
+Current passing suite: 454 tests.
 
 ## Next Build Targets
 

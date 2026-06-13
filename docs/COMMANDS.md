@@ -94,9 +94,9 @@ manifest.json
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
 shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
-cutover, route-enable, broker-dispatch, halt-response, and resume summaries,
-so those run types can be promoted into explicit `--required-run-type`
-evidence gates.
+cutover, route-enable, broker-dispatch, broker-dispatch-ack, halt-response,
+and resume summaries, so those run types can be promoted into explicit
+`--required-run-type` evidence gates.
 
 Use `--require-same-strategy` and `--require-same-market` before scale-up to
 fail closed when required proof, stress, promotion, broker, or shadow artifacts
@@ -2034,6 +2034,36 @@ order, and requires unique source order IDs, unique dispatch IDs, route-enabled
 state, matching target mode, and order counts within the approved route limits.
 The resulting `broker_dispatch_config.json` is the artifact a future
 Arrow.money/iRage sender can consume.
+
+## Broker Dispatch Acknowledgement Reconciliation
+
+Reconcile the dispatch batch against Arrow.money/iRage acknowledgement logs
+before trusting a dry-run broker bridge:
+
+```powershell
+python -m hft_cli reconcile-broker-dispatch `
+  --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
+  --acks logs\broker_dispatch_acks.csv `
+  --out runs\dispatch_acks\leadlag_shadow_live_dryrun `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+broker_dispatch_acknowledgements.csv
+broker_dispatch_unmatched_acks.csv
+broker_dispatch_ack_checks.csv
+broker_dispatch_ack_summary.csv
+broker_dispatch_ack_config.json
+manifest.json
+```
+
+The gate matches acknowledgements by `dispatch_order_id` with
+`source_order_id` fallback, accepts common broker success status names, and
+fails closed on unready dispatch plans, missing acknowledgements, rejected
+orders, duplicate acknowledgement rows, or acknowledgement rows that do not
+belong to the dispatch batch.
 
 ## Calibration
 

@@ -21,6 +21,7 @@ from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnost
 from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
+from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
@@ -1242,6 +1243,20 @@ def main(argv: list[str] | None = None) -> int:
     broker_dispatch.add_argument("--min-orders", type=int, default=1)
     broker_dispatch.add_argument("--max-orders", type=int, default=None)
     broker_dispatch.add_argument("--fail-on-breach", action="store_true")
+
+    dispatch_ack = sub.add_parser(
+        "reconcile-broker-dispatch",
+        help="Reconcile broker acknowledgements for a dispatch batch.",
+    )
+    dispatch_ack.add_argument("--dispatch", required=True)
+    dispatch_ack.add_argument("--acks", required=True)
+    dispatch_ack.add_argument("--out", required=True)
+    dispatch_ack.add_argument("--allow-unready-dispatch", action="store_true")
+    dispatch_ack.add_argument("--allow-missing-acks", action="store_true")
+    dispatch_ack.add_argument("--allow-rejections", action="store_true")
+    dispatch_ack.add_argument("--max-duplicate-ack-orders", type=int, default=0)
+    dispatch_ack.add_argument("--max-unmatched-acks", type=int, default=0)
+    dispatch_ack.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -2851,6 +2866,21 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "reconcile-broker-dispatch":
+        result = write_broker_dispatch_acknowledgements(
+            dispatch_dir=args.dispatch,
+            acks_path=args.acks,
+            output_dir=args.out,
+            thresholds=BrokerDispatchAckThresholds(
+                require_dispatch_ready=not args.allow_unready_dispatch,
+                require_all_acked=not args.allow_missing_acks,
+                allow_rejections=args.allow_rejections,
+                max_duplicate_ack_orders=args.max_duplicate_ack_orders,
+                max_unmatched_acks=args.max_unmatched_acks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "stress-replay":
         result = write_stress_report(
             args.runs,
