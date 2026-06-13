@@ -12,6 +12,12 @@ from reports.manifest import write_experiment_manifest
 
 
 DEFAULT_REQUIRED_RUN_TYPES = ("proof_report", "stress_report", "promotion_report")
+LEADLAG_REQUIRED_RUN_TYPES = (
+    "leadlag_edge_audit",
+    "proof_report",
+    "stress_report",
+    "promotion_report",
+)
 IMBALANCE_REQUIRED_RUN_TYPES = (
     "imbalance_edge_walkforward",
     "imbalance_replay_walkforward",
@@ -27,11 +33,15 @@ SETTLEMENT_REQUIRED_RUN_TYPES = (
 SURFACE_MM_REQUIRED_RUN_TYPES = ("surface_quality_report", "quote_risk_report", "surface_mm_research_pipeline")
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
+    "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
     "imbalance": IMBALANCE_REQUIRED_RUN_TYPES,
     "settlement": SETTLEMENT_REQUIRED_RUN_TYPES,
     "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
 }
 EVIDENCE_PROFILE_ALIASES = {
+    "lead_lag": "leadlag",
+    "lead_lag_taker": "leadlag",
+    "leadlag_taker": "leadlag",
     "microprice_imbalance": "imbalance",
     "settlement_convergence": "settlement",
     "surface_market_making": "surface_mm",

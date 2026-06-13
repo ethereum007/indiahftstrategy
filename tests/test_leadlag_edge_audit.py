@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -67,6 +69,8 @@ def test_leadlag_edge_audit_passes_strong_measurement():
     assert metrics["best_abs_correlation"] == 0.82
     assert metrics["update_rate"] == 1.0
     assert metrics["max_profitable_latency_ns"] == 50_000
+    assert audit.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert audit.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert audit.summary.iloc[0]["recommendation"] == "replay_or_sweep_candidate"
 
 
@@ -113,6 +117,12 @@ def test_write_leadlag_edge_audit_outputs_report_files(tmp_path):
     assert (out_dir / "leadlag_edge_checks.csv").exists()
     assert (out_dir / "leadlag_edge_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    summary = pd.read_csv(out_dir / "leadlag_edge_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert summary.loc[0, "strategy"] == "lead_lag_taker"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "lead_lag_taker"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
 
 
 def test_cli_leadlag_edge_audit_can_fail_on_breach(tmp_path):
@@ -137,3 +147,5 @@ def test_cli_leadlag_edge_audit_can_fail_on_breach(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
     assert int(summary.loc[0, "failed_checks"]) == 1
+    assert summary.loc[0, "strategy"] == "lead_lag_taker"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"

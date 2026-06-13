@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -61,6 +63,10 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     )
 
     assert len(result.runs) == 2
+    assert set(result.runs["strategy"]) == {"lead_lag_taker"}
+    assert set(result.runs["market"]) == {"india_nse_index_derivatives"}
+    assert result.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert result.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert result.summary.iloc[0]["scenario_count"] == 2
     assert result.summary.iloc[0]["passed_scenarios"] == 1
     assert result.summary.iloc[0]["pass_rate"] == 0.5
@@ -71,6 +77,9 @@ def test_run_leadlag_sweep_writes_runs_proof_and_robust_summary(tmp_path):
     assert (out_dir / "proof" / "manifest.json").exists()
     assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "summary.csv").exists()
     assert (out_dir / "runs" / "trigger_10__feed_0us__order_0us" / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["parameters"]["strategy"] == "lead_lag_taker"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
 
 
 def test_unified_cli_sweep_leadlag_dispatches_and_can_fail_on_breach(tmp_path):
@@ -112,3 +121,6 @@ def test_unified_cli_sweep_leadlag_dispatches_and_can_fail_on_breach(tmp_path):
     assert code == 2
     assert (out_dir / "sweep_runs.csv").exists()
     assert (out_dir / "proof" / "proof_summary.csv").exists()
+    summary = pd.read_csv(out_dir / "sweep_summary.csv")
+    assert summary.loc[0, "strategy"] == "lead_lag_taker"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"

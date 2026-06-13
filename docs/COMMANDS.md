@@ -97,6 +97,21 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+For lead-lag taker research, use the named profile after the measured edge,
+proof, stress, and promotion artifacts are present:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\leadlag_shadow `
+  --profile leadlag `
+  --require-same-strategy `
+  --expected-strategy lead_lag_taker `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
 For microprice/order-book imbalance research, use the named profile so edge
 walk-forward, replay walk-forward, promotion, and the top-level research
 pipeline are all present before scale-up review:
@@ -129,9 +144,11 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
-The `surface_mm` profile expands to `surface_quality_report`,
-`quote_risk_report`, and `surface_mm_research_pipeline`. The `imbalance`
-profile expands to `imbalance_edge_walkforward`,
+The `leadlag` profile expands to `leadlag_edge_audit`, `proof_report`,
+`stress_report`, and `promotion_report`. The `surface_mm` profile expands to
+`surface_quality_report`, `quote_risk_report`, and
+`surface_mm_research_pipeline`. The `imbalance` profile expands to
+`imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
 `imbalance_research_pipeline`. The `settlement` profile expands to
 `settlement_convergence_walkforward`, `promotion_report`,
@@ -362,6 +379,7 @@ Gate a measured lead-lag relationship before spending replay/sweep cycles:
 python -m hft_cli audit-leadlag-edge `
   --measure runs\leadlag_measure_2026_06_10 `
   --out runs\leadlag_edge\2026_06_10 `
+  --market india_nse_index_derivatives `
   --min-events 20 `
   --min-abs-correlation 0.15 `
   --min-update-rate 0.6 `
@@ -388,6 +406,7 @@ python -m hft_cli replay-leadlag `
   --leader data\futures.csv `
   --laggard data\atm_call.csv `
   --out runs\leadlag_replay_2026_06_10 `
+  --market india_nse_index_derivatives `
   --delta 0.5 `
   --trigger-ticks 3 `
   --qty 75 `
@@ -878,6 +897,7 @@ python -m hft_cli sweep-leadlag `
   --leader data\futures.csv `
   --laggard data\atm_call.csv `
   --out runs\leadlag_sweep_2026_06_10 `
+  --market india_nse_index_derivatives `
   --trigger-ticks 2 3 4 `
   --feed-latency-us 0 50 100 `
   --order-latency-us 100 250 500 `
@@ -895,6 +915,7 @@ sweep_summary.csv
 proof/proof_metrics.csv
 proof/proof_checks.csv
 proof/proof_summary.csv
+manifest.json
 ```
 
 ## Surface Quotes

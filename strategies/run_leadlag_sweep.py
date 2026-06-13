@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.proof import ProofReport, ProofThresholds, write_proof_report
-from strategies.run_leadlag_replay import run_leadlag_replay
+from strategies.run_leadlag_replay import LEAD_LAG_STRATEGY, run_leadlag_replay
 
 
 @dataclass(frozen=True)
@@ -31,6 +32,7 @@ def run_leadlag_sweep(
     timestamp_unit: str = "ns",
     timestamp_tz: str | None = None,
     filter_session: bool = True,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
     lot_size: int = 75,
     leader_tick: float = 0.05,
     laggard_tick: float = 0.05,
@@ -38,6 +40,11 @@ def run_leadlag_sweep(
     qty: int = 75,
     flat_after_ns: int = 500_000_000,
     cooloff_ns: int = 0,
+    generic_buy_notional_rate: float = 0.0,
+    generic_sell_notional_rate: float = 0.0,
+    generic_per_unit_fee: float = 0.0,
+    generic_per_contract_fee: float = 0.0,
+    generic_per_order_fee: float = 0.0,
     max_position_lots: int = 20,
     markout_horizons_ns: list[int] | None = None,
     proof_thresholds: ProofThresholds | None = None,
@@ -70,6 +77,7 @@ def run_leadlag_sweep(
             timestamp_unit=timestamp_unit,
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
+            market=market,
             lot_size=lot_size,
             leader_tick=leader_tick,
             laggard_tick=laggard_tick,
@@ -80,6 +88,11 @@ def run_leadlag_sweep(
             cooloff_ns=cooloff_ns,
             feed_latency_us=feed_latency_us,
             order_latency_us=order_latency_us,
+            generic_buy_notional_rate=generic_buy_notional_rate,
+            generic_sell_notional_rate=generic_sell_notional_rate,
+            generic_per_unit_fee=generic_per_unit_fee,
+            generic_per_contract_fee=generic_per_contract_fee,
+            generic_per_order_fee=generic_per_order_fee,
             max_position_lots=max_position_lots,
             markout_horizons_ns=markout_horizons_ns,
         )
@@ -105,6 +118,8 @@ def run_leadlag_sweep(
     )
     runs = _merge_proof_metrics(pd.DataFrame(rows), proof)
     summary = _sweep_summary(runs)
+    summary["strategy"] = LEAD_LAG_STRATEGY
+    summary["market"] = market
     runs.to_csv(out / "sweep_runs.csv", index=False)
     summary.to_csv(out / "sweep_summary.csv", index=False)
     write_experiment_manifest(
@@ -118,6 +133,8 @@ def run_leadlag_sweep(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "strategy": LEAD_LAG_STRATEGY,
+            "market": market,
             "lot_size": lot_size,
             "leader_tick": leader_tick,
             "laggard_tick": laggard_tick,
@@ -125,6 +142,13 @@ def run_leadlag_sweep(
             "qty": qty,
             "flat_after_ns": flat_after_ns,
             "cooloff_ns": cooloff_ns,
+            "generic_costs": {
+                "buy_notional_rate": generic_buy_notional_rate,
+                "sell_notional_rate": generic_sell_notional_rate,
+                "per_unit_fee": generic_per_unit_fee,
+                "per_contract_fee": generic_per_contract_fee,
+                "per_order_fee": generic_per_order_fee,
+            },
             "max_position_lots": max_position_lots,
             "markout_horizons_ns": markout_horizons_ns,
             "proof_thresholds": getattr(proof_thresholds, "__dict__", None),
@@ -207,6 +231,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timestamp-unit", default="ns", choices=["ns", "us", "ms", "s", "datetime"])
     parser.add_argument("--timestamp-tz", default=None)
     parser.add_argument("--no-filter-session", action="store_true")
+    parser.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     parser.add_argument("--lot-size", type=int, default=75)
     parser.add_argument("--leader-tick", type=float, default=0.05)
     parser.add_argument("--laggard-tick", type=float, default=0.05)
@@ -217,6 +242,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--qty", type=int, default=75)
     parser.add_argument("--flat-after-ns", type=int, default=500_000_000)
     parser.add_argument("--cooloff-ns", type=int, default=0)
+    parser.add_argument("--generic-buy-notional-rate", type=float, default=0.0)
+    parser.add_argument("--generic-sell-notional-rate", type=float, default=0.0)
+    parser.add_argument("--generic-per-unit-fee", type=float, default=0.0)
+    parser.add_argument("--generic-per-contract-fee", type=float, default=0.0)
+    parser.add_argument("--generic-per-order-fee", type=float, default=0.0)
     parser.add_argument("--markout-horizons-ns", nargs="+", default=None)
     parser.add_argument("--min-net-pnl", type=float, default=0.0)
     parser.add_argument("--min-fills", type=int, default=1)
@@ -236,6 +266,7 @@ def main(argv: list[str] | None = None) -> int:
         timestamp_unit=args.timestamp_unit,
         timestamp_tz=args.timestamp_tz,
         filter_session=not args.no_filter_session,
+        market=args.market,
         lot_size=args.lot_size,
         leader_tick=args.leader_tick,
         laggard_tick=args.laggard_tick,
@@ -243,6 +274,11 @@ def main(argv: list[str] | None = None) -> int:
         qty=args.qty,
         flat_after_ns=args.flat_after_ns,
         cooloff_ns=args.cooloff_ns,
+        generic_buy_notional_rate=args.generic_buy_notional_rate,
+        generic_sell_notional_rate=args.generic_sell_notional_rate,
+        generic_per_unit_fee=args.generic_per_unit_fee,
+        generic_per_contract_fee=args.generic_per_contract_fee,
+        generic_per_order_fee=args.generic_per_order_fee,
         markout_horizons_ns=_int_list(args.markout_horizons_ns),
         proof_thresholds=ProofThresholds(
             min_net_pnl=args.min_net_pnl,

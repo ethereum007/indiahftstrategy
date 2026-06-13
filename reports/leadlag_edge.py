@@ -7,7 +7,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
+
+
+LEAD_LAG_STRATEGY = "lead_lag_taker"
 
 
 @dataclass(frozen=True)
@@ -42,6 +46,8 @@ def evaluate_leadlag_edge(
     latency_curve: pd.DataFrame,
     *,
     thresholds: LeadLagEdgeThresholds | None = None,
+    strategy: str = LEAD_LAG_STRATEGY,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
 ) -> LeadLagEdgeAudit:
     thresholds = thresholds or LeadLagEdgeThresholds()
     _validate_thresholds(thresholds)
@@ -55,7 +61,7 @@ def evaluate_leadlag_edge(
         ]
     )
     checks = _checks(metrics.iloc[0], thresholds)
-    summary = _summary(metrics, checks)
+    summary = _summary(metrics, checks, strategy=strategy, market=market)
     return LeadLagEdgeAudit(metrics=metrics, checks=checks, summary=summary)
 
 
@@ -64,6 +70,8 @@ def write_leadlag_edge_audit(
     *,
     output_dir: str | Path,
     thresholds: LeadLagEdgeThresholds | None = None,
+    strategy: str = LEAD_LAG_STRATEGY,
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
 ) -> LeadLagEdgeAudit:
     source = Path(measure_dir)
     cross_correlation = _read_required(source / "cross_correlation.csv")
@@ -75,6 +83,8 @@ def write_leadlag_edge_audit(
         lag_profile,
         latency_curve,
         thresholds=thresholds,
+        strategy=strategy,
+        market=market,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -84,7 +94,7 @@ def write_leadlag_edge_audit(
     write_experiment_manifest(
         out,
         run_type="leadlag_edge_audit",
-        parameters={"thresholds": asdict(thresholds)},
+        parameters={"strategy": strategy, "market": market, "thresholds": asdict(thresholds)},
         inputs={"measure": source},
     )
     return LeadLagEdgeAudit(audit.metrics, audit.checks, audit.summary, out)
@@ -180,13 +190,15 @@ def _checks(row: pd.Series, thresholds: LeadLagEdgeThresholds) -> pd.DataFrame:
     return pd.DataFrame(checks)
 
 
-def _summary(metrics: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
+def _summary(metrics: pd.DataFrame, checks: pd.DataFrame, *, strategy: str, market: str) -> pd.DataFrame:
     passed = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     metric = metrics.iloc[0]
     return pd.DataFrame(
         [
             {
+                "strategy": strategy,
+                "market": market,
                 "passed": passed,
                 "failed_checks": failed,
                 "recommendation": "replay_or_sweep_candidate" if passed else "keep_researching",

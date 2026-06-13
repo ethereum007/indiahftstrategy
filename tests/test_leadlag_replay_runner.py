@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from strategies.run_leadlag_replay import run_leadlag_replay
@@ -51,6 +53,8 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     )
 
     assert replay.result.engine.orders_sent == 2
+    assert replay.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert replay.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert replay.summary.iloc[0]["fills"] == 2
     assert not replay.markouts.empty
     assert (out_dir / "fills.csv").exists()
@@ -64,3 +68,9 @@ def test_run_leadlag_replay_writes_outputs_and_markouts(tmp_path):
     assert (out_dir / "equity_by_regime.csv").exists()
     assert (out_dir / "markouts.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    summary = pd.read_csv(out_dir / "summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert summary.loc[0, "strategy"] == "lead_lag_taker"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "lead_lag_taker"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"

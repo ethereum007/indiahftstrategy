@@ -50,6 +50,63 @@ def catalog_rows(*, dirty=False, commit="abc123", strategy="leadlag", market="in
     )
 
 
+def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
+    parameters = json.dumps({"strategy": "lead_lag_taker", "market": market})
+    return pd.DataFrame(
+        [
+            {
+                "run_dir": "runs/leadlag_edge",
+                "run_type": "leadlag_edge_audit",
+                "generated_at_utc": "2026-06-10T09:25:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "leadlag_edge_summary.csv",
+                "summary_strategy": "lead_lag_taker",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/proof",
+                "run_type": "proof_report",
+                "generated_at_utc": "2026-06-10T09:30:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "proof_summary.csv",
+                "summary_strategy": "lead_lag_taker",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/stress",
+                "run_type": "stress_report",
+                "generated_at_utc": "2026-06-10T09:35:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "stress_summary.csv",
+                "summary_strategy": "lead_lag_taker",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/promotion",
+                "run_type": "promotion_report",
+                "generated_at_utc": "2026-06-10T09:40:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "promotion_summary.csv",
+                "summary_strategy": "lead_lag_taker",
+                "summary_market": market,
+                "summary_candidate_scenario_key": f"strategy=lead_lag_taker|market={market}|trigger_ticks=2",
+                "parameters_json": parameters,
+            },
+        ]
+    )
+
+
 def surface_mm_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
     parameters = json.dumps({"strategy": "surface_mm", "market": market})
     return pd.DataFrame(
@@ -372,6 +429,39 @@ def test_strategy_evidence_blocks_mixed_strategy_artifacts():
     assert int(review.summary.iloc[0]["strategy_count"]) == 2
 
 
+def test_leadlag_evidence_profile_requires_edge_proof_stress_promotion_identity():
+    review = evaluate_strategy_evidence(
+        leadlag_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("lead-lag"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="leadlag",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["leadlag"])
+    assert set(review.evidence["latest_strategy"]) == {"lead_lag_taker"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["strategy"] == "lead_lag_taker"
+
+
+def test_leadlag_evidence_profile_fails_without_edge_audit():
+    catalog = leadlag_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "leadlag_edge_audit"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("lead_lag_taker")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:leadlag_edge_audit" in failed
+
+
 def test_surface_mm_evidence_profile_requires_surface_quality_and_identity():
     review = evaluate_strategy_evidence(
         surface_mm_catalog_rows(),
@@ -606,6 +696,37 @@ def test_cli_strategy_evidence_settlement_profile(tmp_path):
     summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
     assert code == 0
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["settlement"])
+    assert bool(summary.loc[0, "ready"])
+
+
+def test_cli_strategy_evidence_leadlag_profile(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "leadlag_evidence"
+    leadlag_catalog_rows().to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "leadlag",
+            "--require-same-strategy",
+            "--expected-strategy",
+            "lead_lag_taker",
+            "--require-same-market",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    assert code == 0
+    assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["leadlag"])
     assert bool(summary.loc[0, "ready"])
 
 

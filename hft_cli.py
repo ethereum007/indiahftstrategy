@@ -177,6 +177,8 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_edge = sub.add_parser("audit-leadlag-edge", help="Gate lead-lag measurement evidence before replay.")
     leadlag_edge.add_argument("--measure", required=True)
     leadlag_edge.add_argument("--out", required=True)
+    leadlag_edge.add_argument("--strategy", default="lead_lag_taker")
+    leadlag_edge.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     leadlag_edge.add_argument("--min-events", type=int, default=1)
     leadlag_edge.add_argument("--min-abs-correlation", type=float, default=0.0)
     leadlag_edge.add_argument("--min-correlation-samples", type=int, default=2)
@@ -276,6 +278,7 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_replay.add_argument("--laggard", required=True)
     leadlag_replay.add_argument("--out", required=True)
     leadlag_replay.add_argument("--no-filter-session", action="store_true")
+    leadlag_replay.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     leadlag_replay.add_argument("--leader-tick", type=float, default=0.05)
     leadlag_replay.add_argument("--laggard-tick", type=float, default=0.05)
     leadlag_replay.add_argument("--delta", type=float, default=1.0)
@@ -285,6 +288,7 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_replay.add_argument("--order-latency-us", type=float, default=0.0)
     leadlag_replay.add_argument("--fill-model", default=None)
     leadlag_replay.add_argument("--allow-unready-fill-model", action="store_true")
+    _add_generic_cost_args(leadlag_replay)
 
     imbalance_replay = sub.add_parser("replay-imbalance", help="Replay microprice/order-book imbalance strategy.")
     imbalance_replay.add_argument("--ticks", required=True)
@@ -796,6 +800,7 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_sweep.add_argument("--laggard", required=True)
     leadlag_sweep.add_argument("--out", required=True)
     leadlag_sweep.add_argument("--no-filter-session", action="store_true")
+    leadlag_sweep.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     leadlag_sweep.add_argument("--leader-tick", type=float, default=0.05)
     leadlag_sweep.add_argument("--laggard-tick", type=float, default=0.05)
     leadlag_sweep.add_argument("--delta", type=float, default=1.0)
@@ -812,6 +817,7 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_sweep.add_argument("--max-otr", type=float, default=None)
     leadlag_sweep.add_argument("--min-markout-mean", type=float, default=None)
     leadlag_sweep.add_argument("--fail-on-breach", action="store_true")
+    _add_generic_cost_args(leadlag_sweep)
 
     imbalance_sweep = sub.add_parser("sweep-imbalance", help="Run microprice imbalance replay robustness sweep.")
     imbalance_sweep.add_argument("--ticks", required=True)
@@ -1623,6 +1629,8 @@ def main(argv: list[str] | None = None) -> int:
         result = write_leadlag_edge_audit(
             args.measure,
             output_dir=args.out,
+            strategy=args.strategy,
+            market=args.market,
             thresholds=LeadLagEdgeThresholds(
                 min_events=args.min_events,
                 min_abs_correlation=args.min_abs_correlation,
@@ -1753,6 +1761,7 @@ def main(argv: list[str] | None = None) -> int:
             laggard_path=args.laggard,
             output_dir=args.out,
             filter_session=not args.no_filter_session,
+            market=args.market,
             leader_tick=args.leader_tick,
             laggard_tick=args.laggard_tick,
             delta=args.delta,
@@ -1760,6 +1769,7 @@ def main(argv: list[str] | None = None) -> int:
             qty=args.qty,
             feed_latency_us=args.feed_latency_us,
             order_latency_us=replay_params["order_latency_us"],
+            **_generic_cost_kwargs(args),
         )
         print(result.summary.to_string(index=False))
         return 0
@@ -2401,12 +2411,14 @@ def main(argv: list[str] | None = None) -> int:
             feed_latency_us_values=args.feed_latency_us,
             order_latency_us_values=args.order_latency_us,
             filter_session=not args.no_filter_session,
+            market=args.market,
             leader_tick=args.leader_tick,
             laggard_tick=args.laggard_tick,
             delta=args.delta,
             qty=args.qty,
             flat_after_ns=args.flat_after_ns,
             cooloff_ns=args.cooloff_ns,
+            **_generic_cost_kwargs(args),
             markout_horizons_ns=args.markout_horizons_ns,
             proof_thresholds=ProofThresholds(
                 min_net_pnl=args.min_net_pnl,
