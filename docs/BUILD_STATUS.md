@@ -431,12 +431,15 @@
   export, mapping draft, mapped orders, upload pack, optional halt export, and
   optional reconciliation/runtime-session/resume-gate/dispatch-roundtrip
   evidence into one fail-closed Arrow.money/iRage go/no-go artifact, blocking
-  supplied or required runtime sessions when the scale-up guard halted,
-  retaining resume proof-refresh identity for post-halt restart review, and
-  resolving launch pipeline export/upload roots while carrying proved dry-run
-  dispatch round-trip identity, route proof quality,
-  failed-check count, route-enable dispatch round-trip failed-check count from
-  the round-trip config, and acknowledgement quality into broker readiness.
+  unreviewed placeholder schemas unless a passed schema audit, reviewable
+  order-mapping draft, and mapped-order export prove a reviewed vendor mapping
+  path for the same adapter, blocking supplied or required runtime sessions
+  when the scale-up guard halted, retaining resume proof-refresh identity for
+  post-halt restart review, and resolving launch pipeline export/upload roots
+  while carrying proved dry-run dispatch round-trip identity, route proof
+  quality, failed-check count, route-enable dispatch round-trip failed-check
+  count from the round-trip config, and acknowledgement quality into broker
+  readiness.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.

@@ -59,6 +59,43 @@ def upload_summary(adapter="normalized", ready=True):
     )
 
 
+def mapping_draft_summary(adapter="normalized", ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "adapter_schema_status": "native_normalized"
+                if adapter == "normalized"
+                else "placeholder_normalized_pending_vendor_schema",
+                "vendor_columns": 8,
+                "required_columns": 8,
+                "mapped_columns": 8 if ready else 7,
+                "mapped_required_columns": 8 if ready else 7,
+                "unmapped_required_columns": 0 if ready else 1,
+            }
+        ]
+    )
+
+
+def mapped_order_summary(adapter="normalized", ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "adapter_schema_status": "native_normalized"
+                if adapter == "normalized"
+                else "placeholder_normalized_pending_vendor_schema",
+                "orders": 2,
+                "target_columns": 8,
+                "mapped_columns": 8 if ready else 7,
+                "failed_mappings": 0 if ready else 1,
+            }
+        ]
+    )
+
+
 def runtime_session_summary(adapter="normalized", ready=True, halted=False):
     return pd.DataFrame(
         [
@@ -462,7 +499,60 @@ def test_broker_readiness_fails_closed_for_placeholder_broker_schema():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "schema_reviewed" in failed
+    assert not bool(report.summary.iloc[0]["schema_reviewed"])
+    assert report.summary.iloc[0]["schema_review_mode"] == "placeholder_unreviewed"
     assert report.summary.iloc[0]["recommendation"] == "obtain_vendor_schema_samples"
+
+
+def test_broker_readiness_accepts_reviewed_vendor_mapping_for_placeholder_adapter():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        mapping_draft_summary=mapping_draft_summary("arrow_money", True),
+        mapped_order_summary=mapped_order_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        thresholds=BrokerReadinessThresholds(adapter="arrow_money"),
+    )
+
+    assert report.ready
+    assert bool(report.summary.iloc[0]["schema_reviewed"])
+    assert report.summary.iloc[0]["schema_review_mode"] == "reviewed_vendor_mapping"
+    assert report.summary.iloc[0]["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert report.summary.iloc[0]["recommendation"] == "broker_integration_ready"
+    assert set(report.checks["passed"]) == {True}
+
+
+def test_broker_readiness_blocks_incomplete_reviewed_vendor_mapping():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        mapping_draft_summary=mapping_draft_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        thresholds=BrokerReadinessThresholds(adapter="arrow_money"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "schema_reviewed" in failed
+    assert not bool(report.summary.iloc[0]["schema_reviewed"])
+    assert report.summary.iloc[0]["schema_review_mode"] == "placeholder_unreviewed"
+
+
+def test_broker_readiness_blocks_mixed_vendor_mapping_adapter():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        mapping_draft_summary=mapping_draft_summary("irage", True),
+        mapped_order_summary=mapped_order_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        thresholds=BrokerReadinessThresholds(adapter="arrow_money"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"schema_reviewed", "mapping_draft_adapter_match"} <= failed
+    assert not bool(report.summary.iloc[0]["schema_reviewed"])
+    assert report.summary.iloc[0]["schema_review_mode"] == "placeholder_unreviewed"
 
 
 def test_broker_readiness_fails_when_required_upload_pack_is_missing():
@@ -589,6 +679,54 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "schema_reviewed" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_broker_readiness_accepts_reviewed_vendor_mapping_without_placeholder_override(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    mapping_dir = tmp_path / "mapping"
+    mapped_dir = tmp_path / "mapped"
+    upload_dir = tmp_path / "upload"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, mapping_dir, mapped_dir, upload_dir):
+        path.mkdir()
+    schema_summary("arrow_money", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("arrow_money", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    mapping_draft_summary("arrow_money", True).to_csv(mapping_dir / "order_mapping_draft_summary.csv", index=False)
+    mapped_order_summary("arrow_money", True).to_csv(mapped_dir / "mapped_order_summary.csv", index=False)
+    upload_summary("arrow_money", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--adapter",
+            "arrow_money",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--mapping-draft",
+            str(mapping_dir),
+            "--mapped-orders",
+            str(mapped_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--out",
+            str(out_dir),
+            "--require-mapping-draft",
+            "--require-mapped-orders",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "schema_reviewed"])
+    assert summary.loc[0, "schema_review_mode"] == "reviewed_vendor_mapping"
+    assert summary.loc[0, "recommendation"] == "broker_integration_ready"
+    assert set(checks["passed"]) == {True}
 
 
 def test_cli_broker_readiness_reads_launch_pipeline_export_and_upload_roots(tmp_path):

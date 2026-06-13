@@ -277,14 +277,14 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
 
 
 def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.DataFrame:
+    schema_review = _schema_review_state(items, thresholds)
     checks: list[dict[str, Any]] = [
         _check(
             "schema_reviewed",
-            adapter_schema_status(thresholds.adapter),
+            schema_review["mode"],
             "!=",
-            "placeholder_normalized_pending_vendor_schema",
-            (not thresholds.require_reviewed_schema)
-            or adapter_schema_status(thresholds.adapter) != "placeholder_normalized_pending_vendor_schema",
+            "placeholder_unreviewed",
+            (not thresholds.require_reviewed_schema) or bool(schema_review["reviewed"]),
             "adapter schema is still placeholder; review a real vendor sample before broker integration",
         )
     ]
@@ -455,6 +455,7 @@ def _summary(
     missing_required = int((~required_items["provided"].astype(bool)).sum()) if not required_items.empty else 0
     ready_items = int(items["ready"].astype(bool).sum()) if not items.empty else 0
     schema_status = adapter_schema_status(thresholds.adapter)
+    schema_review = _schema_review_state(items, thresholds)
     ready = failed == 0
     runtime_item = _component_item(items, "runtime_session")
     resume_item = _component_item(items, "resume_gate")
@@ -465,6 +466,8 @@ def _summary(
                 "ready": ready,
                 "adapter": thresholds.adapter,
                 "adapter_schema_status": schema_status,
+                "schema_reviewed": bool(schema_review["reviewed"]),
+                "schema_review_mode": schema_review["mode"],
                 "required_components": int(len(required_items)),
                 "provided_components": int(items["provided"].astype(bool).sum()) if not items.empty else 0,
                 "ready_components": ready_items,
@@ -558,10 +561,35 @@ def _summary(
                 "route_dispatch_roundtrip_unmatched_acks": int(
                     _number(dispatch_item, "route_dispatch_roundtrip_unmatched_acks", 0.0)
                 ),
-                "recommendation": _summary_recommendation(ready, schema_status, thresholds),
+                "recommendation": _summary_recommendation(ready, schema_status, schema_review, thresholds),
             }
         ]
     )
+
+
+def _schema_review_state(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> dict[str, Any]:
+    schema_status = adapter_schema_status(thresholds.adapter)
+    if schema_status != "placeholder_normalized_pending_vendor_schema":
+        return {"reviewed": True, "mode": "native_schema"}
+    schema_item = _component_item(items, "schema_audit")
+    mapping_item = _component_item(items, "mapping_draft")
+    mapped_item = _component_item(items, "mapped_orders")
+    mapping_reviewed = all(
+        [
+            _item_bool(schema_item, "provided"),
+            _item_bool(schema_item, "ready"),
+            _item_bool(schema_item, "adapter_match"),
+            _item_bool(mapping_item, "provided"),
+            _item_bool(mapping_item, "ready"),
+            _item_bool(mapping_item, "adapter_match"),
+            _item_bool(mapped_item, "provided"),
+            _item_bool(mapped_item, "ready"),
+            _item_bool(mapped_item, "adapter_match"),
+        ]
+    )
+    if mapping_reviewed:
+        return {"reviewed": True, "mode": "reviewed_vendor_mapping"}
+    return {"reviewed": False, "mode": "placeholder_unreviewed"}
 
 
 def _component_required(component: str, thresholds: BrokerReadinessThresholds) -> bool:
@@ -608,13 +636,22 @@ def _component_recommendation(component: str, provided: bool, ready: bool, requi
 def _summary_recommendation(
     ready: bool,
     schema_status: str,
+    schema_review: dict[str, Any],
     thresholds: BrokerReadinessThresholds,
 ) -> str:
-    if ready and schema_status == "placeholder_normalized_pending_vendor_schema":
+    if (
+        ready
+        and schema_status == "placeholder_normalized_pending_vendor_schema"
+        and schema_review.get("mode") != "reviewed_vendor_mapping"
+    ):
         return "dry_run_only_until_vendor_schema_review"
     if ready:
         return "broker_integration_ready"
-    if thresholds.require_reviewed_schema and schema_status == "placeholder_normalized_pending_vendor_schema":
+    if (
+        thresholds.require_reviewed_schema
+        and schema_status == "placeholder_normalized_pending_vendor_schema"
+        and not bool(schema_review.get("reviewed"))
+    ):
         return "obtain_vendor_schema_samples"
     return "fix_broker_readiness_gaps"
 

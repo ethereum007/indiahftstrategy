@@ -1908,7 +1908,11 @@ python -m hft_cli review-broker-readiness `
 ```
 
 Use `--allow-placeholder-schema` only for dry-run review while Arrow.money/iRage
-schemas are still placeholders. Without it, placeholder schemas fail closed.
+schemas are still placeholders. Without it, placeholder schemas fail closed
+unless schema audit, order-mapping draft, and mapped-order export artifacts are
+all supplied and ready for the same adapter; in that case the readiness summary
+records `schema_review_mode=reviewed_vendor_mapping` and can emit
+`broker_integration_ready`.
 When broker-neutral exports contain quote lifecycle fields, the built-in
 normalized, Arrow.money, and iRage review templates carry `lifecycle_action`,
 `lifecycle_action_id`, `lifecycle_reason`, `lifecycle_message_count`,
