@@ -89,6 +89,8 @@ def test_settlement_candidate_promotion_passes_ready_walkforward():
     config = report.candidate_config
     assert report.ready
     assert report.summary.loc[0, "recommendation"] == "paper_or_shadow_candidate"
+    assert report.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert config["ready"]
     assert config["strategy"] == "settlement_convergence"
     assert "strategy=settlement_convergence" in config["scenario_key"]
@@ -108,8 +110,14 @@ def test_write_settlement_candidate_promotion_outputs_launch_compatible_files(tm
     )
 
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
+    assert report.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert config["ready"]
+    assert config["parameters"]["market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "settlement_convergence"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert (out_dir / "promotion_candidate.csv").exists()
     assert (out_dir / "promotion_checks.csv").exists()
     assert (out_dir / "promotion_summary.csv").exists()

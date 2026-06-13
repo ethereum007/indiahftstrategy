@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from adapters.broker_readiness import (
     BrokerReadinessReport,
     BrokerReadinessThresholds,
@@ -209,13 +210,17 @@ def write_settlement_launch_pipeline(
         )
 
     component_frame = pd.DataFrame(components)
-    summary = _summary(component_frame, config)
+    summary = _summary(component_frame, config, order_plan=order_plan)
     component_frame.to_csv(out / "settlement_launch_pipeline_components.csv", index=False)
     summary.to_csv(out / "settlement_launch_pipeline_summary.csv", index=False)
     write_experiment_manifest(
         out,
         run_type="settlement_launch_pipeline",
-        parameters={"config": asdict(config)},
+        parameters={
+            "strategy": str(summary.iloc[0].get("strategy", "settlement_convergence")),
+            "market": str(summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
+            "config": asdict(config),
+        },
         inputs={"promotion": promotion},
     )
     return SettlementLaunchPipelineReport(
@@ -270,14 +275,22 @@ def _skipped_component(name: str, artifact_dir: Path, reason: str) -> dict[str, 
     }
 
 
-def _summary(components: pd.DataFrame, config: SettlementLaunchPipelineConfig) -> pd.DataFrame:
+def _summary(
+    components: pd.DataFrame,
+    config: SettlementLaunchPipelineConfig,
+    *,
+    order_plan: SettlementOrderPlanReport,
+) -> pd.DataFrame:
     ready = bool(components["ready"].astype(bool).all()) if not components.empty else False
     failed = int((~components["ready"].astype(bool)).sum()) if not components.empty else 0
     skipped = int((components["status"] == "skipped").sum()) if not components.empty else 0
+    order_row = order_plan.summary.iloc[0] if not order_plan.summary.empty else pd.Series(dtype=object)
     return pd.DataFrame(
         [
             {
                 "ready": ready,
+                "strategy": str(order_row.get("strategy", "settlement_convergence")),
+                "market": str(order_row.get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
                 "adapter": config.adapter,
                 "mode": config.mode,
                 "components": int(len(components)),

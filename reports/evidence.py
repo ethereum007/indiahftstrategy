@@ -18,14 +18,22 @@ IMBALANCE_REQUIRED_RUN_TYPES = (
     "promotion_report",
     "imbalance_research_pipeline",
 )
+SETTLEMENT_REQUIRED_RUN_TYPES = (
+    "settlement_convergence_walkforward",
+    "promotion_report",
+    "settlement_order_plan",
+    "settlement_launch_pipeline",
+)
 SURFACE_MM_REQUIRED_RUN_TYPES = ("surface_quality_report", "quote_risk_report", "surface_mm_research_pipeline")
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "imbalance": IMBALANCE_REQUIRED_RUN_TYPES,
+    "settlement": SETTLEMENT_REQUIRED_RUN_TYPES,
     "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
 }
 EVIDENCE_PROFILE_ALIASES = {
     "microprice_imbalance": "imbalance",
+    "settlement_convergence": "settlement",
     "surface_market_making": "surface_mm",
 }
 

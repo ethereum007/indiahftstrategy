@@ -148,6 +148,65 @@ def imbalance_catalog_rows(*, commit="abc123", market="india_nse_index_derivativ
     )
 
 
+def settlement_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
+    parameters = json.dumps({"strategy": "settlement_convergence", "market": market})
+    return pd.DataFrame(
+        [
+            {
+                "run_dir": "runs/settlement_walkforward",
+                "run_type": "settlement_convergence_walkforward",
+                "generated_at_utc": "2026-06-10T09:30:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "settlement_convergence_walkforward_summary.csv",
+                "summary_strategy": "settlement_convergence",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/settlement_promotion",
+                "run_type": "promotion_report",
+                "generated_at_utc": "2026-06-10T09:35:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "promotion_summary.csv",
+                "summary_strategy": "settlement_convergence",
+                "summary_market": market,
+                "summary_candidate_scenario_key": (
+                    f"strategy=settlement_convergence|market={market}|direction=buy_underpriced"
+                ),
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/settlement_orders",
+                "run_type": "settlement_order_plan",
+                "generated_at_utc": "2026-06-10T09:40:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "settlement_order_summary.csv",
+                "summary_strategy": "settlement_convergence",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/settlement_launch",
+                "run_type": "settlement_launch_pipeline",
+                "generated_at_utc": "2026-06-10T09:45:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "settlement_launch_pipeline_summary.csv",
+                "summary_strategy": "settlement_convergence",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+        ]
+    )
+
+
 def test_strategy_evidence_passes_complete_clean_catalog():
     review = evaluate_strategy_evidence(
         catalog_rows(),
@@ -379,6 +438,39 @@ def test_imbalance_evidence_profile_fails_without_replay_walkforward():
     assert "required_run_type:imbalance_replay_walkforward" in failed
 
 
+def test_settlement_evidence_profile_requires_research_order_and_launch_identity():
+    review = evaluate_strategy_evidence(
+        settlement_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("settlement-convergence"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="settlement_convergence",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["settlement"])
+    assert set(review.evidence["latest_strategy"]) == {"settlement_convergence"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["strategy"] == "settlement_convergence"
+
+
+def test_settlement_evidence_profile_fails_without_launch_pipeline():
+    catalog = settlement_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "settlement_launch_pipeline"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("settlement")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:settlement_launch_pipeline" in failed
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -483,6 +575,37 @@ def test_cli_strategy_evidence_imbalance_profile(tmp_path):
     summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
     assert code == 0
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["imbalance"])
+    assert bool(summary.loc[0, "ready"])
+
+
+def test_cli_strategy_evidence_settlement_profile(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "settlement_evidence"
+    settlement_catalog_rows().to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "settlement",
+            "--require-same-strategy",
+            "--expected-strategy",
+            "settlement_convergence",
+            "--require-same-market",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    assert code == 0
+    assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["settlement"])
     assert bool(summary.loc[0, "ready"])
 
 

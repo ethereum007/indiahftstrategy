@@ -75,6 +75,8 @@ def test_build_settlement_order_plan_creates_stageable_order_candidate():
     )
 
     assert report.ready
+    assert report.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert len(report.orders) == 1
     order = report.orders.iloc[0]
     assert order["client_order_id"].startswith("SETTLE-")
@@ -103,8 +105,13 @@ def test_write_settlement_order_plan_outputs_files_and_manifest(tmp_path):
 
     report = write_settlement_order_plan(promotion_dir, output_dir=out_dir)
 
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
     assert report.output_dir == out_dir
+    assert report.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "settlement_convergence"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert (out_dir / "settlement_order_candidates.csv").exists()
     assert (out_dir / "settlement_order_checks.csv").exists()
     assert (out_dir / "settlement_order_summary.csv").exists()

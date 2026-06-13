@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 from reports.settlement_convergence import (
     SettlementConvergenceReport,
@@ -87,6 +88,8 @@ def write_settlement_convergence_walkforward(
     runs_root = out / "runs"
     out.mkdir(parents=True, exist_ok=True)
     parameters = {
+        "strategy": "settlement_convergence",
+        "market": INDIA_NSE_INDEX_DERIVATIVES.name,
         "window_start_ns": starts,
         "window_end_ns": ends,
         "index_price_col": index_price_col,
@@ -106,7 +109,7 @@ def write_settlement_convergence_walkforward(
     if comparison_check is not None and not bool(comparison_check["passed"]):
         folds = _empty_folds()
         checks = pd.DataFrame([comparison_check])
-        summary = _summary(folds, checks)
+        summary = _summary(folds, checks, market=INDIA_NSE_INDEX_DERIVATIVES.name)
         config = _candidate_config(checks, summary.iloc[0], parameters=parameters, folds=folds)
         _write_outputs(
             out,
@@ -155,7 +158,7 @@ def write_settlement_convergence_walkforward(
     checks = _checks(folds, thresholds)
     if comparison_check is not None:
         checks = pd.concat([pd.DataFrame([comparison_check]), checks], ignore_index=True)
-    summary = _summary(folds, checks)
+    summary = _summary(folds, checks, market=INDIA_NSE_INDEX_DERIVATIVES.name)
     config = _candidate_config(
         checks,
         summary.iloc[0],
@@ -393,7 +396,7 @@ def _checks(
     )
 
 
-def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
+def _summary(folds: pd.DataFrame, checks: pd.DataFrame, *, market: str) -> pd.DataFrame:
     passed = bool(checks["passed"].all()) if not checks.empty else False
     best = folds.sort_values("best_net_edge", ascending=False).iloc[0] if not folds.empty else pd.Series(dtype=object)
     pass_rate = float(folds["passed"].map(_to_bool).mean()) if not folds.empty else 0.0
@@ -402,6 +405,8 @@ def _summary(folds: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
             {
                 "passed": passed,
                 "failed_checks": int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0,
+                "strategy": "settlement_convergence",
+                "market": market,
                 "recommendation": "candidate_for_replay" if passed else "keep_researching",
                 "fold_count": int(len(folds)),
                 "passed_folds": int(folds["passed"].map(_to_bool).sum()) if not folds.empty else 0,

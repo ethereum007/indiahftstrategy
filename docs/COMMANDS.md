@@ -113,12 +113,31 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+For settlement convergence, use the named profile after promotion and launch
+handoff so the India-specific walk-forward, promotion, order plan, and launch
+pipeline are all present:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\settlement_shadow `
+  --profile settlement `
+  --require-same-strategy `
+  --expected-strategy settlement_convergence `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
 The `surface_mm` profile expands to `surface_quality_report`,
 `quote_risk_report`, and `surface_mm_research_pipeline`. The `imbalance`
 profile expands to `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
-`imbalance_research_pipeline`. Explicit `--required-run-type` flags still
-override the profile for custom launch reviews.
+`imbalance_research_pipeline`. The `settlement` profile expands to
+`settlement_convergence_walkforward`, `promotion_report`,
+`settlement_order_plan`, and `settlement_launch_pipeline`. Explicit
+`--required-run-type` flags still override the profile for custom launch
+reviews.
 
 Outputs:
 

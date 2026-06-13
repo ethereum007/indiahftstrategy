@@ -8,6 +8,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 
 
@@ -97,7 +98,11 @@ def write_settlement_candidate_promotion(
     write_experiment_manifest(
         out,
         run_type="promotion_report",
-        parameters={"strategy": "settlement_convergence", "thresholds": asdict(thresholds)},
+        parameters={
+            "strategy": "settlement_convergence",
+            "market": INDIA_NSE_INDEX_DERIVATIVES.name,
+            "thresholds": asdict(thresholds),
+        },
         inputs={"walkforward": walkforward, "summary": summary_path, "candidate_config": candidate_path},
         extra={"promotion_source": "settlement_convergence_walkforward"},
     )
@@ -170,6 +175,7 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
     return {
         "scenario_key": scenario_key,
         "strategy": "settlement_convergence",
+        "market": _jsonable(defaults.get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
         "source_run_type": str(candidate_config.get("source_run_type", "")),
         "best_fold": _jsonable(best.get("fold")),
         "best_ts": _jsonable(best.get("ts")),
@@ -204,12 +210,15 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
 def _summary(candidate: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
-    key = str(candidate.iloc[0]["scenario_key"]) if not candidate.empty else ""
+    row = candidate.iloc[0] if not candidate.empty else pd.Series(dtype=object)
+    key = str(row.get("scenario_key", ""))
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "candidate_scenario_key": key,
+                "strategy": str(row.get("strategy", "")),
+                "market": str(row.get("market", "")),
                 "checks": int(len(checks)),
                 "failed_checks": failed,
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_in_research",
@@ -234,6 +243,7 @@ def _promotion_candidate_config(
         "scenario_key": str(candidate["scenario_key"]),
         "parameters": {
             "best_fold": _jsonable(candidate.get("best_fold")),
+            "market": _jsonable(candidate.get("market")),
             "best_ts": _jsonable(candidate.get("best_ts")),
             "best_expiry": _jsonable(candidate.get("best_expiry")),
             "best_strike": _jsonable(candidate.get("best_strike")),
@@ -273,6 +283,7 @@ def _promotion_candidate_config(
 def _scenario_key(best: dict[str, Any], defaults: dict[str, Any]) -> str:
     pieces = [
         ("strategy", "settlement_convergence"),
+        ("market", defaults.get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
         ("direction", best.get("direction")),
         ("option_type", best.get("option_type")),
         ("strike", best.get("strike")),

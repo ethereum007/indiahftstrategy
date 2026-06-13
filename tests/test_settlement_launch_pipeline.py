@@ -103,8 +103,13 @@ def test_write_settlement_launch_pipeline_runs_full_paper_handoff(tmp_path):
         ),
     )
 
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     broker_summary = pd.read_csv(out_dir / "06_broker_readiness" / "broker_readiness_summary.csv")
     assert report.ready
+    assert report.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "settlement_convergence"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert report.output_dir == out_dir
     assert report.broker_readiness is not None
     assert bool(broker_summary.loc[0, "runtime_session_ready"])

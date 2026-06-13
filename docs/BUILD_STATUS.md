@@ -89,6 +89,9 @@
   through order planning, staging, launch bundling, broker export,
   Arrow.money/iRage upload-pack generation, and broker-readiness/runtime-session
   gating with component-level readiness.
+- Strategy evidence review supports a `settlement` profile that requires
+  settlement walk-forward, promotion, order-plan, and launch-pipeline artifacts
+  with shared India market identity before shadow scale-up review.
 - Compliance/risk utilities for OTR and cross-segment loss/profit guardrails.
 - Black-76 pricing, implied-vol inversion, and quadratic smile fitting for
   options surface work.
@@ -392,7 +395,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 545 tests.
+Current passing suite: 549 tests.
 
 ## Next Build Targets
 

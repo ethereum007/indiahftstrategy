@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 
 
@@ -48,6 +49,12 @@ def build_settlement_order_plan(
     parameters = (
         candidate_config.get("parameters", {}) if isinstance(candidate_config.get("parameters", {}), dict) else {}
     )
+    strategy = str(candidate_config.get("strategy") or parameters.get("strategy") or "settlement_convergence")
+    market = str(
+        candidate_config.get("market")
+        or parameters.get("market")
+        or INDIA_NSE_INDEX_DERIVATIVES.name
+    )
     scenario_key = str(candidate_config.get("scenario_key") or promotion_summary.iloc[0]["candidate_scenario_key"])
     checks = _checks(promotion_summary.iloc[0], candidate_config, parameters, config)
     orders = (
@@ -55,7 +62,7 @@ def build_settlement_order_plan(
         if bool(checks["passed"].all())
         else _empty_orders()
     )
-    summary = _summary(orders, checks, scenario_key, config)
+    summary = _summary(orders, checks, scenario_key, config, strategy=strategy, market=market)
     return SettlementOrderPlanReport(orders=orders, checks=checks, summary=summary)
 
 
@@ -86,7 +93,11 @@ def write_settlement_order_plan(
     write_experiment_manifest(
         out,
         run_type="settlement_order_plan",
-        parameters={"config": asdict(config)},
+        parameters={
+            "strategy": str(report.summary.iloc[0].get("strategy", "settlement_convergence")),
+            "market": str(report.summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
+            "config": asdict(config),
+        },
         inputs={"promotion": promotion, "summary": summary_path, "candidate_config": candidate_path},
     )
     return SettlementOrderPlanReport(report.orders, report.checks, report.summary, out)
@@ -190,6 +201,9 @@ def _summary(
     checks: pd.DataFrame,
     scenario_key: str,
     config: SettlementOrderPlanConfig,
+    *,
+    strategy: str,
+    market: str,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -199,6 +213,8 @@ def _summary(
             {
                 "ready": ready,
                 "scenario_key": scenario_key,
+                "strategy": strategy,
+                "market": market,
                 "orders": int(len(orders)),
                 "buy_orders": int((orders["side"] == 1).sum()) if not orders.empty else 0,
                 "sell_orders": int((orders["side"] == -1).sum()) if not orders.empty else 0,

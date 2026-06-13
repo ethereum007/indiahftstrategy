@@ -3,11 +3,18 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.catalog import catalog_experiment_runs
+from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evidence_profile_run_types
+from reports.settlement_candidate_promotion import (
+    SettlementCandidatePromotionThresholds,
+    write_settlement_candidate_promotion,
+)
 from reports.settlement_convergence import SettlementConvergenceThresholds
 from reports.settlement_convergence_walkforward import (
     SettlementConvergenceWalkForwardThresholds,
     write_settlement_convergence_walkforward,
 )
+from reports.settlement_launch_pipeline import SettlementLaunchPipelineConfig, write_settlement_launch_pipeline
 
 
 def index_ticks(offset=0):
@@ -92,7 +99,12 @@ def test_settlement_convergence_walkforward_passes_repeated_expiry_edges(tmp_pat
     )
 
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.passed
+    assert report.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "settlement_convergence"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert int(report.summary.loc[0, "fold_count"]) == 2
     assert int(report.summary.loc[0, "passed_folds"]) == 2
     assert int(report.summary.loc[0, "total_opportunities"]) == 2
@@ -103,6 +115,68 @@ def test_settlement_convergence_walkforward_passes_repeated_expiry_edges(tmp_pat
     assert (out_dir / "settlement_convergence_walkforward_summary.csv").exists()
     assert (out_dir / "runs" / "01_nifty_tue_1" / "settlement_convergence_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_settlement_artifacts_satisfy_settlement_evidence_profile(tmp_path):
+    idx_a, chain_a = write_fold(tmp_path, "day1", offset=0, call_ask=1.0)
+    idx_b, chain_b = write_fold(tmp_path, "day2", offset=1000, call_ask=1.1)
+    walkforward_dir = tmp_path / "walkforward"
+    promotion_dir = tmp_path / "promotion"
+    launch_dir = tmp_path / "launch"
+
+    write_settlement_convergence_walkforward(
+        [idx_a, idx_b],
+        [chain_a, chain_b],
+        output_dir=walkforward_dir,
+        labels=["nifty_tue_1", "nifty_tue_2"],
+        window_start_ns=[100, 1100],
+        window_end_ns=[300, 1300],
+        min_known_fraction=0.5,
+        min_gross_edge_ticks=10.0,
+        min_net_edge=100.0,
+        audit_thresholds=SettlementConvergenceThresholds(min_best_net_edge=100.0),
+        thresholds=SettlementConvergenceWalkForwardThresholds(
+            min_folds=2,
+            min_pass_rate=1.0,
+            min_total_opportunities=2,
+            min_total_net_edge=200.0,
+            min_median_best_net_edge=100.0,
+            min_median_known_fraction=0.5,
+        ),
+    )
+    write_settlement_candidate_promotion(
+        walkforward_dir,
+        output_dir=promotion_dir,
+        thresholds=SettlementCandidatePromotionThresholds(min_total_net_edge=200.0),
+    )
+    write_settlement_launch_pipeline(
+        promotion_dir,
+        output_dir=launch_dir,
+        config=SettlementLaunchPipelineConfig(
+            require_reviewed_schema=False,
+            max_order_qty=75,
+            max_notional=10_000,
+            max_orders=1,
+        ),
+    )
+
+    catalog = catalog_experiment_runs([tmp_path]).catalog
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("settlement_convergence"),
+            allow_dirty_git=True,
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="settlement_convergence",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(evidence_profile_run_types("settlement"))
+    assert review.summary.loc[0, "strategy"] == "settlement_convergence"
+    assert review.summary.loc[0, "market"] == "india_nse_index_derivatives"
 
 
 def test_settlement_convergence_walkforward_can_require_data_readiness_comparison(tmp_path):
