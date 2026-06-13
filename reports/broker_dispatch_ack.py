@@ -191,6 +191,19 @@ def _unmatched_acks(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.Dat
 
 def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
     state = row.copy()
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    if "adapter_schema_status" in broker_readiness:
+        state["broker_schema_status"] = _object_text(
+            broker_readiness.get("adapter_schema_status", _text(state, "broker_schema_status"))
+        )
+    if "schema_reviewed" in broker_readiness:
+        state["broker_schema_reviewed"] = _to_bool(
+            broker_readiness.get("schema_reviewed", state.get("broker_schema_reviewed", False))
+        )
+    if "schema_review_mode" in broker_readiness:
+        state["broker_schema_review_mode"] = _object_text(
+            broker_readiness.get("schema_review_mode", _text(state, "broker_schema_review_mode"))
+        )
     route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
     if "failed_checks" in route_enable:
         state["route_enable_dispatch_roundtrip_failed_checks"] = int(
@@ -442,6 +455,9 @@ def _summary(
                 "market": _text(dispatch_summary, "market"),
                 "scenario_key": _text(dispatch_summary, "scenario_key"),
                 "adapter": _text(dispatch_summary, "adapter"),
+                "broker_schema_status": _text(dispatch_summary, "broker_schema_status"),
+                "broker_schema_reviewed": _to_bool(dispatch_summary.get("broker_schema_reviewed", False)),
+                "broker_schema_review_mode": _text(dispatch_summary, "broker_schema_review_mode"),
                 "dispatch_orders": orders,
                 "acked_orders": acked,
                 "missing_acks": missing,
@@ -507,6 +523,11 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
         "market": _text(summary, "market"),
         "scenario_key": _text(summary, "scenario_key"),
         "adapter": _text(summary, "adapter"),
+        "broker_readiness": {
+            "adapter_schema_status": _text(summary, "broker_schema_status"),
+            "schema_reviewed": _to_bool(summary["broker_schema_reviewed"]),
+            "schema_review_mode": _text(summary, "broker_schema_review_mode"),
+        },
         "dispatch_orders": int(summary["dispatch_orders"]),
         "acked_orders": int(summary["acked_orders"]),
         "missing_acks": int(summary["missing_acks"]),
@@ -652,6 +673,15 @@ def _text(row: pd.Series, column: str) -> str:
     value = row[column]
     if pd.isna(value):
         return ""
+    return str(value).strip()
+
+
+def _object_text(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
     return str(value).strip()
 
 

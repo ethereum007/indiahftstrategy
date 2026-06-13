@@ -208,6 +208,19 @@ def _expected_ack_template(requests: pd.DataFrame) -> pd.DataFrame:
 
 def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
     state = row.copy()
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    if "adapter_schema_status" in broker_readiness:
+        state["broker_schema_status"] = _object_text(
+            broker_readiness.get("adapter_schema_status", _text(state, "broker_schema_status"))
+        )
+    if "schema_reviewed" in broker_readiness:
+        state["broker_schema_reviewed"] = _to_bool(
+            broker_readiness.get("schema_reviewed", state.get("broker_schema_reviewed", False))
+        )
+    if "schema_review_mode" in broker_readiness:
+        state["broker_schema_review_mode"] = _object_text(
+            broker_readiness.get("schema_review_mode", _text(state, "broker_schema_review_mode"))
+        )
     route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
     if "failed_checks" in route_enable:
         state["route_enable_dispatch_roundtrip_failed_checks"] = int(
@@ -479,6 +492,9 @@ def _summary(dispatch_summary: pd.Series, requests: pd.DataFrame, checks: pd.Dat
                 "market": _text(dispatch_summary, "market"),
                 "scenario_key": _text(dispatch_summary, "scenario_key"),
                 "adapter": _text(dispatch_summary, "adapter"),
+                "broker_schema_status": _text(dispatch_summary, "broker_schema_status"),
+                "broker_schema_reviewed": _to_bool(dispatch_summary.get("broker_schema_reviewed", False)),
+                "broker_schema_review_mode": _text(dispatch_summary, "broker_schema_review_mode"),
                 "dispatch_batch_id": _text(dispatch_summary, "dispatch_batch_id"),
                 "dispatch_orders": int(_number(dispatch_summary, "dispatch_orders", len(requests))),
                 "requests": int(len(requests)),
@@ -552,6 +568,11 @@ def _config(
         "market": _text(summary, "market"),
         "scenario_key": _text(summary, "scenario_key"),
         "adapter": _text(summary, "adapter"),
+        "broker_readiness": {
+            "adapter_schema_status": _text(summary, "broker_schema_status"),
+            "schema_reviewed": _to_bool(summary["broker_schema_reviewed"]),
+            "schema_review_mode": _text(summary, "broker_schema_review_mode"),
+        },
         "dispatch_batch_id": _text(summary, "dispatch_batch_id"),
         "requests": int(summary["requests"]),
         "first_request_id": str(requests.iloc[0]["request_id"]) if not requests.empty else "",
@@ -640,6 +661,15 @@ def _unique_text_values(frame: pd.DataFrame, column: str) -> list[str]:
         return []
     values = frame[column].dropna().astype(str).str.strip()
     return sorted(set(values.loc[values != ""]))
+
+
+def _object_text(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
 
 
 def _text(row: pd.Series, column: str) -> str:

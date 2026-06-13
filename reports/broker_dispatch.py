@@ -327,6 +327,9 @@ def _summary(
                 "market": route["market"],
                 "scenario_key": route["scenario_key"],
                 "adapter": route["adapter"],
+                "broker_schema_status": route["broker_schema_status"],
+                "broker_schema_reviewed": route["broker_schema_reviewed"],
+                "broker_schema_review_mode": route["broker_schema_review_mode"],
                 "dispatch_orders": int(len(dispatch_orders)),
                 "route_upload_orders": int(route["upload_orders"]),
                 "max_orders_per_session": int(route["max_orders_per_session"]),
@@ -376,6 +379,11 @@ def _config(
         "market": route["market"],
         "scenario_key": route["scenario_key"],
         "adapter": route["adapter"],
+        "broker_readiness": {
+            "adapter_schema_status": route["broker_schema_status"],
+            "schema_reviewed": _to_bool(route["broker_schema_reviewed"]),
+            "schema_review_mode": route["broker_schema_review_mode"],
+        },
         "limits": {
             "max_orders_per_session": int(route["max_orders_per_session"]),
             "max_notional_per_session": float(route["max_notional_per_session"]),
@@ -421,6 +429,7 @@ def _config(
 def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     upload = config.get("upload", {}) or {}
+    broker_readiness = config.get("broker_readiness", {}) or {}
     dispatch = config.get("dispatch_roundtrip", {}) or {}
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route_proof = dispatch.get("route_proof", {}) or {}
@@ -433,6 +442,17 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         "market": _identity_key(_first_text(row.get("market", ""), config.get("market", ""))),
         "scenario_key": _first_text(row.get("scenario_key", ""), config.get("scenario_key", "")),
         "adapter": _first_text(row.get("adapter", ""), config.get("adapter", "")),
+        "broker_schema_status": _first_text(
+            broker_readiness.get("adapter_schema_status", ""),
+            row.get("broker_schema_status", ""),
+        ),
+        "broker_schema_reviewed": _to_bool(
+            broker_readiness.get("schema_reviewed", row.get("broker_schema_reviewed", False))
+        ),
+        "broker_schema_review_mode": _first_text(
+            broker_readiness.get("schema_review_mode", ""),
+            row.get("broker_schema_review_mode", ""),
+        ),
         "max_orders_per_session": int(
             _number_from(limits, "max_orders_per_session", _number(row, "max_orders_per_session", 0.0))
         ),

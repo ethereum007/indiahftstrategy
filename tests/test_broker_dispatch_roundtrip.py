@@ -29,6 +29,9 @@ def dispatch_summary(
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
     route_enable_dispatch_roundtrip_failed_checks=0,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     return pd.DataFrame(
         [
@@ -40,6 +43,9 @@ def dispatch_summary(
                 "market": "india_nse_index_derivatives",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
+                "broker_schema_status": broker_schema_status,
+                "broker_schema_reviewed": broker_schema_reviewed,
+                "broker_schema_review_mode": broker_schema_review_mode,
                 "dispatch_orders": 2,
                 "dispatch_batch_id": "BDP-1",
                 "dry_run_only": True,
@@ -111,6 +117,9 @@ def send_summary(
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
     route_enable_dispatch_roundtrip_failed_checks=0,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     return pd.DataFrame(
         [
@@ -122,6 +131,9 @@ def send_summary(
                 "market": "india_nse_index_derivatives",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
+                "broker_schema_status": broker_schema_status,
+                "broker_schema_reviewed": broker_schema_reviewed,
+                "broker_schema_review_mode": broker_schema_review_mode,
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_orders": 2,
                 "requests": 2,
@@ -207,6 +219,9 @@ def ack_summary(
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
     route_enable_dispatch_roundtrip_failed_checks=0,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     return pd.DataFrame(
         [
@@ -217,6 +232,9 @@ def ack_summary(
                 "market": "india_nse_index_derivatives",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
+                "broker_schema_status": broker_schema_status,
+                "broker_schema_reviewed": broker_schema_reviewed,
+                "broker_schema_review_mode": broker_schema_review_mode,
                 "dispatch_orders": 2,
                 "acked_orders": acked_orders,
                 "missing_acks": missing,
@@ -299,8 +317,18 @@ def acknowledgements(
     )
 
 
-def route_enable_config(route_enable_dispatch_roundtrip_failed_checks=0):
+def route_enable_config(
+    route_enable_dispatch_roundtrip_failed_checks=0,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
+):
     return {
+        "broker_readiness": {
+            "adapter_schema_status": broker_schema_status,
+            "schema_reviewed": broker_schema_reviewed,
+            "schema_review_mode": broker_schema_review_mode,
+        },
         "route_enable_dispatch_roundtrip": {
             "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
         }
@@ -358,6 +386,11 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert report.orders["ack_raw_route_roundtrip_batch_ids"].tolist() == ["BDP-0", "BDP-0"]
     assert int(report.summary.iloc[0]["missing_request_acks"]) == 0
     assert bool(report.summary.iloc[0]["route_dispatch_roundtrip_ready"])
+    assert report.summary.iloc[0]["broker_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert bool(report.summary.iloc[0]["broker_schema_reviewed"])
+    assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
+    assert report.config["broker_readiness"]["schema_reviewed"]
+    assert report.config["broker_readiness"]["schema_review_mode"] == "reviewed_vendor_mapping"
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 0

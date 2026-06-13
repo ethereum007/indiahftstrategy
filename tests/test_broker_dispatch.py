@@ -40,6 +40,9 @@ def route_summary(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     route_provided = dispatch_provided if route_provided is None else route_provided
     route_ready = dispatch_ready if route_ready is None else route_ready
@@ -63,6 +66,9 @@ def route_summary(
                 "market": "india_nse_index_derivatives",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
+                "broker_schema_status": broker_schema_status,
+                "broker_schema_reviewed": broker_schema_reviewed,
+                "broker_schema_review_mode": broker_schema_review_mode,
                 "route_state": "enabled" if ready else "disabled",
                 "upload_orders": upload_orders,
                 "max_orders_per_session": 10,
@@ -131,6 +137,9 @@ def route_config(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     route_provided = dispatch_provided if route_provided is None else route_provided
     route_ready = dispatch_ready if route_ready is None else route_ready
@@ -154,6 +163,11 @@ def route_config(
         "market": "india_nse_index_derivatives",
         "scenario_key": "trigger_ticks=2",
         "adapter": "arrow_money",
+        "broker_readiness": {
+            "adapter_schema_status": broker_schema_status,
+            "schema_reviewed": broker_schema_reviewed,
+            "schema_review_mode": broker_schema_review_mode,
+        },
         "limits": {
             "max_orders_per_session": 10,
             "max_notional_per_session": 100_000.0,
@@ -274,6 +288,11 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert report.config["dry_run_only"]
     assert report.dispatch_orders["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.summary.iloc[0]["route_dispatch_roundtrip_ready"]
+    assert report.summary.iloc[0]["broker_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert bool(report.summary.iloc[0]["broker_schema_reviewed"])
+    assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
+    assert report.config["broker_readiness"]["schema_reviewed"]
+    assert report.config["broker_readiness"]["schema_review_mode"] == "reviewed_vendor_mapping"
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 0

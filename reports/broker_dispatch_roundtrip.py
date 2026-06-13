@@ -209,6 +209,19 @@ def _roundtrip_orders(
 
 def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
     state = row.copy()
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    if "adapter_schema_status" in broker_readiness:
+        state["broker_schema_status"] = _object_text(
+            broker_readiness.get("adapter_schema_status", _text(state, "broker_schema_status"))
+        )
+    if "schema_reviewed" in broker_readiness:
+        state["broker_schema_reviewed"] = _to_bool(
+            broker_readiness.get("schema_reviewed", state.get("broker_schema_reviewed", False))
+        )
+    if "schema_review_mode" in broker_readiness:
+        state["broker_schema_review_mode"] = _object_text(
+            broker_readiness.get("schema_review_mode", _text(state, "broker_schema_review_mode"))
+        )
     route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
     if "failed_checks" in route_enable:
         state["route_enable_dispatch_roundtrip_failed_checks"] = int(
@@ -490,6 +503,9 @@ def _summary(
                 "market": _text(dispatch_summary, "market"),
                 "scenario_key": _text(dispatch_summary, "scenario_key"),
                 "adapter": _text(dispatch_summary, "adapter"),
+                "broker_schema_status": _broker_schema_text(proof_rows, "broker_schema_status"),
+                "broker_schema_reviewed": _broker_schema_reviewed(proof_rows),
+                "broker_schema_review_mode": _broker_schema_text(proof_rows, "broker_schema_review_mode"),
                 "dispatch_batch_id": _text(dispatch_summary, "dispatch_batch_id")
                 or _text(send_summary, "dispatch_batch_id"),
                 "dispatch_orders": int(_number(dispatch_summary, "dispatch_orders", len(roundtrip_orders))),
@@ -567,6 +583,11 @@ def _config(
         "market": _text(summary, "market"),
         "scenario_key": _text(summary, "scenario_key"),
         "adapter": _text(summary, "adapter"),
+        "broker_readiness": {
+            "adapter_schema_status": _text(summary, "broker_schema_status"),
+            "schema_reviewed": _to_bool(summary["broker_schema_reviewed"]),
+            "schema_review_mode": _text(summary, "broker_schema_review_mode"),
+        },
         "dispatch_batch_id": _text(summary, "dispatch_batch_id"),
         "dispatch_orders": int(summary["dispatch_orders"]),
         "send_requests": int(summary["send_requests"]),
@@ -721,6 +742,19 @@ def _route_enable_failed_checks(*rows: pd.Series) -> int:
     return max(int(_number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)) for row in rows)
 
 
+def _broker_schema_text(rows: tuple[pd.Series, ...], column: str) -> str:
+    for row in rows:
+        text = _text(row, column)
+        if text:
+            return text
+    return ""
+
+
+def _broker_schema_reviewed(rows: tuple[pd.Series, ...]) -> bool:
+    values = [_to_bool(row.get("broker_schema_reviewed", False)) for row in rows if not row.empty]
+    return bool(values and all(values))
+
+
 def _route_identity_value(row: pd.Series, column: str) -> str:
     proof_column = f"route_dispatch_roundtrip_{column}"
     if column == "scenario_key":
@@ -793,6 +827,15 @@ def _text(row: pd.Series, column: str) -> str:
     value = row[column]
     if pd.isna(value):
         return ""
+    return str(value).strip()
+
+
+def _object_text(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
     return str(value).strip()
 
 

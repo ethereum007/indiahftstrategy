@@ -2607,7 +2607,8 @@ state, matching target mode, clean nested route proof from route-enable for
 live dry-run routing, zero nested route-enable dispatch round-trip failed
 checks, and order counts within the approved route limits. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
-dispatch row, and `broker_dispatch_config.json` is the artifact a future
+dispatch row, while the summary/config carry the broker schema review
+status/mode from route-enable. `broker_dispatch_config.json` is the artifact a future
 Arrow.money or iRage sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
 surface-MM `04_upload_pack` upload-order files and fingerprints the resolved
@@ -2646,9 +2647,10 @@ or dirty for live dry-run sending, route-enable dispatch round-trip failed
 checks read from the dispatch config are nonzero, any dispatch row or request
 carries a mismatched route proof batch id, the adapter is unknown, payload JSON
 is invalid, idempotency keys are not unique, request limits are exceeded, or
-any request is not dry-run-only. The manifest fingerprints the exact dispatch
-summary, dispatch orders, and dispatch config files consumed by the sender
-packet.
+any request is not dry-run-only. It also carries the dispatch config broker
+schema review status/mode into the sender summary/config. The manifest
+fingerprints the exact dispatch summary, dispatch orders, and dispatch config
+files consumed by the sender packet.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 
@@ -2682,7 +2684,8 @@ orders, duplicate acknowledgement rows, dirty route round-trip proof for live
 dry-run dispatches, nonzero route-enable dispatch round-trip failed checks read
 from the dispatch config, dispatch rows or acknowledgement rows that carry a
 stale route proof batch id, missing acknowledgement route proof tags, or
-acknowledgement rows that do not belong to the dispatch batch. The manifest
+acknowledgement rows that do not belong to the dispatch batch. It carries the
+dispatch config broker schema review status/mode into the ack summary/config. The manifest
 fingerprints the exact dispatch summary, dispatch orders, dispatch config, and
 broker acknowledgement log files used in the reconciliation.
 
@@ -2721,7 +2724,8 @@ round-trip proof, zero carried route-enable dispatch round-trip failed checks
 from upstream configs, one request per dispatch order, and an accepted
 acknowledgement for every request. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
-files that formed the proof.
+files that formed the proof, and the final summary/config retain the broker
+schema review status/mode reconciled from the component configs.
 
 ## Calibration
 
