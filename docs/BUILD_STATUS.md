@@ -56,8 +56,8 @@
   configs for paper/shadow order staging.
 - End-to-end imbalance research pipeline that runs edge walk-forward,
   replay-proof walk-forward, and candidate promotion in one manifest-backed
-  command with stage-level readiness evidence and an optional required
-  multi-day data-readiness comparison preflight.
+  command with stage-level readiness evidence plus optional required
+  market-portability and multi-day data-readiness comparison preflights.
 - Microprice/order-book imbalance robustness sweep across entry threshold,
   microprice edge, hold timer, feed latency, and order latency, with per-run
   replay artifacts, proof gate, pass rate, and robust score summary.
@@ -373,7 +373,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 519 tests.
+Current passing suite: 521 tests.
 
 ## Next Build Targets
 

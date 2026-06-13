@@ -7,6 +7,7 @@ from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds
 from reports.imbalance_edge_walkforward import ImbalanceEdgeWalkForwardThresholds
 from reports.imbalance_pipeline import write_imbalance_research_pipeline
 from reports.imbalance_replay_walkforward import ImbalanceReplayWalkForwardThresholds
+from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
 
 
@@ -140,6 +141,40 @@ def test_imbalance_research_pipeline_can_require_data_readiness_comparison(tmp_p
     assert config["pipeline"]["stages"][0]["stage"] == "data_readiness_comparison"
 
 
+def test_imbalance_pipeline_blocks_nonportable_market_pair(tmp_path):
+    fold_a = tmp_path / "fold_a.csv"
+    portability_dir = tmp_path / "portability"
+    out_dir = tmp_path / "pipeline"
+    write_ticks(fold_a, "2026-06-10")
+    write_market_portability_report(
+        portability_dir,
+        config=MarketPortabilityReportConfig(
+            markets=("us_equities_regular",),
+            strategies=("microprice_imbalance",),
+        ),
+    )
+
+    report = write_imbalance_research_pipeline(
+        [fold_a],
+        output_dir=out_dir,
+        market_portability_dir=portability_dir,
+        require_market_portability=True,
+        market="us_equities_regular",
+        filter_session=False,
+        entry_imbalance_values=[0.6],
+        min_microprice_edge_ticks_values=[0.25],
+        forward_horizon_ns_values=[100_000],
+    )
+
+    stages = report.stages.set_index("stage")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert not bool(stages.loc["market_portability", "status"])
+    assert bool(stages.loc["edge_walkforward", "skipped"])
+    assert stages.loc["edge_walkforward", "recommendation"] == "market_portability_not_ready"
+    assert config["failed_checks"] == ["market_portability", "edge_walkforward", "replay_walkforward", "promotion"]
+
+
 def test_cli_imbalance_research_pipeline_fails_closed_when_edge_gate_fails(tmp_path):
     fold_a = tmp_path / "fold_a.csv"
     out_dir = tmp_path / "pipeline"
@@ -213,3 +248,50 @@ def test_cli_imbalance_pipeline_requires_data_readiness_comparison(tmp_path):
     assert "data_readiness_comparison" in failed
     assert bool(stages.loc[stages["stage"] == "edge_walkforward", "skipped"].iloc[0])
     assert "data_readiness_comparison" in config["failed_checks"]
+
+
+def test_cli_imbalance_pipeline_requires_market_portability(tmp_path):
+    fold_a = tmp_path / "fold_a.csv"
+    portability_dir = tmp_path / "portability"
+    out_dir = tmp_path / "pipeline"
+    write_ticks(fold_a, "2026-06-10")
+    write_market_portability_report(
+        portability_dir,
+        config=MarketPortabilityReportConfig(
+            markets=("us_equities_regular",),
+            strategies=("microprice_imbalance",),
+        ),
+    )
+
+    code = main(
+        [
+            "pipeline-imbalance-research",
+            "--ticks",
+            str(fold_a),
+            "--out",
+            str(out_dir),
+            "--market",
+            "us_equities_regular",
+            "--no-filter-session",
+            "--market-portability",
+            str(portability_dir),
+            "--require-market-portability",
+            "--entry-imbalance",
+            "0.6",
+            "--min-microprice-edge-ticks",
+            "0.25",
+            "--forward-horizon-ns",
+            "100000",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "imbalance_pipeline_summary.csv")
+    stages = pd.read_csv(out_dir / "imbalance_pipeline_stages.csv")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    failed = stages.loc[~stages["status"].astype(bool), "stage"].astype(str).tolist()
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "market_portability" in failed
+    assert bool(stages.loc[stages["stage"] == "edge_walkforward", "skipped"].iloc[0])
+    assert "market_portability" in config["failed_checks"]

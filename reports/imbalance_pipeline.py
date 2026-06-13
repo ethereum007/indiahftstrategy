@@ -54,6 +54,8 @@ def write_imbalance_research_pipeline(
     labels: list[str] | None = None,
     data_readiness_comparison_dir: str | Path | None = None,
     require_data_readiness_comparison: bool = False,
+    market_portability_dir: str | Path | None = None,
+    require_market_portability: bool = False,
     entry_imbalance_values: list[float],
     min_microprice_edge_ticks_values: list[float],
     forward_horizon_ns_values: list[int],
@@ -111,6 +113,13 @@ def write_imbalance_research_pipeline(
         min_folds=len(paths),
     )
     promotion_thresholds = promotion_thresholds or ImbalanceCandidatePromotionThresholds()
+    market_portability_config = _read_market_portability_config(market_portability_dir)
+    portability_stage = _market_portability_stage(
+        market_portability_config,
+        required=require_market_portability,
+        input_dir=market_portability_dir,
+        expected_market=market,
+    )
     comparison_summary = _read_data_readiness_comparison_summary(data_readiness_comparison_dir)
     comparison_stage = _data_readiness_comparison_stage(
         comparison_summary,
@@ -147,6 +156,7 @@ def write_imbalance_research_pipeline(
         generic_per_contract_fee=generic_per_contract_fee,
         generic_per_order_fee=generic_per_order_fee,
         max_position_lots=max_position_lots,
+        require_market_portability=require_market_portability,
         require_data_readiness_comparison=require_data_readiness_comparison,
         sweep_thresholds=sweep_thresholds,
         selection_thresholds=selection_thresholds,
@@ -155,6 +165,24 @@ def write_imbalance_research_pipeline(
         replay_walkforward_thresholds=replay_walkforward_thresholds,
         promotion_thresholds=promotion_thresholds,
     )
+    if portability_stage is not None and not bool(portability_stage["status"]):
+        return _write_pipeline_outputs(
+            output_dir=out,
+            edge=None,
+            replay=None,
+            promotion=None,
+            candidate_config=_blocked_candidate_config("market_portability"),
+            labels=labels,
+            tick_paths=paths,
+            parameters=parameters,
+            comparison_stage=comparison_stage,
+            portability_stage=portability_stage,
+            blocked_reason="market_portability_not_ready",
+            data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+            if data_readiness_comparison_dir is not None
+            else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
+        )
     if comparison_stage is not None and not bool(comparison_stage["status"]):
         return _write_pipeline_outputs(
             output_dir=out,
@@ -166,9 +194,12 @@ def write_imbalance_research_pipeline(
             tick_paths=paths,
             parameters=parameters,
             comparison_stage=comparison_stage,
+            portability_stage=portability_stage,
+            blocked_reason="data_readiness_comparison_not_ready",
             data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
             if data_readiness_comparison_dir is not None
             else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
         )
 
     edge = write_imbalance_edge_walkforward(
@@ -205,9 +236,11 @@ def write_imbalance_research_pipeline(
             tick_paths=paths,
             parameters=parameters,
             comparison_stage=comparison_stage,
+            portability_stage=portability_stage,
             data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
             if data_readiness_comparison_dir is not None
             else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
         )
 
     replay = write_imbalance_replay_walkforward(
@@ -250,9 +283,11 @@ def write_imbalance_research_pipeline(
             tick_paths=paths,
             parameters=parameters,
             comparison_stage=comparison_stage,
+            portability_stage=portability_stage,
             data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
             if data_readiness_comparison_dir is not None
             else None,
+            market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
         )
 
     promotion = write_imbalance_candidate_promotion(
@@ -270,9 +305,11 @@ def write_imbalance_research_pipeline(
         tick_paths=paths,
         parameters=parameters,
         comparison_stage=comparison_stage,
+        portability_stage=portability_stage,
         data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
         if data_readiness_comparison_dir is not None
         else None,
+        market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
     )
 
 
@@ -287,9 +324,19 @@ def _write_pipeline_outputs(
     tick_paths: list[Path],
     parameters: dict[str, Any],
     comparison_stage: dict[str, Any] | None = None,
+    portability_stage: dict[str, Any] | None = None,
+    blocked_reason: str = "preflight_not_ready",
     data_readiness_comparison_dir: Path | None = None,
+    market_portability_dir: Path | None = None,
 ) -> ImbalanceResearchPipelineReport:
-    stages = _stages(edge, replay, promotion, comparison_stage=comparison_stage)
+    stages = _stages(
+        edge,
+        replay,
+        promotion,
+        comparison_stage=comparison_stage,
+        portability_stage=portability_stage,
+        blocked_reason=blocked_reason,
+    )
     summary = _summary(stages, edge, replay, promotion)
     config = _candidate_config(candidate_config, summary.iloc[0], stages)
 
@@ -309,6 +356,7 @@ def _write_pipeline_outputs(
             "replay_walkforward": output_dir / "replay_walkforward",
             "promotion": output_dir / "promotion",
             "data_readiness_comparison": data_readiness_comparison_dir,
+            "market_portability": market_portability_dir,
         },
     )
     return ImbalanceResearchPipelineReport(
@@ -328,14 +376,18 @@ def _stages(
     promotion: ImbalanceCandidatePromotionReport | None,
     *,
     comparison_stage: dict[str, Any] | None = None,
+    portability_stage: dict[str, Any] | None = None,
+    blocked_reason: str = "preflight_not_ready",
 ) -> pd.DataFrame:
     rows = []
+    if portability_stage is not None:
+        rows.append(portability_stage)
     if comparison_stage is not None:
         rows.append(comparison_stage)
     rows.append(
         _stage_row("edge_walkforward", edge.output_dir, edge.summary, "passed")
         if edge is not None
-        else _skipped_stage("edge_walkforward", "data_readiness_comparison_not_ready")
+        else _skipped_stage("edge_walkforward", blocked_reason)
     )
     rows.append(
         _stage_row("replay_walkforward", replay.output_dir, replay.summary, "passed")
@@ -444,6 +496,66 @@ def _read_data_readiness_comparison_summary(path: str | Path | None) -> pd.DataF
     return frame
 
 
+def _read_market_portability_config(path: str | Path | None) -> dict[str, Any]:
+    if path is None:
+        return {}
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / "market_portability_config.json"
+    if not candidate.exists():
+        raise FileNotFoundError(f"market portability config not found: {candidate}")
+    return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _market_portability_stage(
+    config: dict[str, Any],
+    *,
+    required: bool,
+    input_dir: str | Path | None,
+    expected_market: str,
+) -> dict[str, Any] | None:
+    if not config and not required:
+        return None
+    provided = bool(config)
+    pair = _matching_portability_pair(config, expected_market) if provided else {}
+    status = bool(pair)
+    reason = "ready" if status else "market_portability_missing"
+    if provided and not status:
+        reason = _matching_portability_gap(config, expected_market).get(
+            "next_gate",
+            "market_portability_pair_not_ready",
+        )
+    return {
+        "stage": "market_portability",
+        "status": bool(status),
+        "status_column": "ready_pairs",
+        "skipped": False,
+        "output_dir": str(input_dir or ""),
+        "failed_checks": 0 if status else 1,
+        "recommendation": reason,
+    }
+
+
+def _matching_portability_pair(config: dict[str, Any], expected_market: str) -> dict[str, Any]:
+    expected = _identity(expected_market)
+    for pair in config.get("ready_pairs") or []:
+        if _identity(pair.get("strategy")) != "microprice_imbalance":
+            continue
+        if _identity(pair.get("market")) != expected:
+            continue
+        if str(pair.get("status", "")).strip().lower() in {"india_ready", "portable_research"}:
+            return dict(pair)
+    return {}
+
+
+def _matching_portability_gap(config: dict[str, Any], expected_market: str) -> dict[str, Any]:
+    expected = _identity(expected_market)
+    for pair in config.get("gap_pairs") or []:
+        if _identity(pair.get("strategy")) == "microprice_imbalance" and _identity(pair.get("market")) == expected:
+            return dict(pair)
+    return {}
+
+
 def _data_readiness_comparison_stage(
     summary: pd.DataFrame,
     *,
@@ -503,6 +615,12 @@ def _to_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "ready", "passed"}
     return bool(value)
+
+
+def _identity(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _jsonable(value: Any) -> Any:

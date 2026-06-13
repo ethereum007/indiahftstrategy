@@ -574,6 +574,7 @@ python -m hft_cli pipeline-imbalance-research `
   --ticks data\atm_option_ticks_2026_06_10.csv data\atm_option_ticks_2026_06_11.csv `
   --label day1 `
   --label day2 `
+  --market-portability runs\market_profiles\portability `
   --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
   --out runs\imbalance_pipeline `
   --entry-imbalance 0.55 0.60 0.70 `
@@ -587,6 +588,7 @@ python -m hft_cli pipeline-imbalance-research `
   --min-proof-pass-rate 1 `
   --min-total-fills 20 `
   --min-total-net-pnl 0 `
+  --require-market-portability `
   --require-data-readiness-comparison `
   --fail-on-breach
 ```
@@ -602,6 +604,10 @@ edge_walkforward\...
 replay_walkforward\...
 promotion\...
 ```
+
+Use `--market-portability` with `--require-market-portability` to fail closed
+before edge walk-forward unless `market_portability_config.json` marks
+`microprice_imbalance` ready for the pipeline `--market`.
 
 ## Settlement Convergence Audit
 
