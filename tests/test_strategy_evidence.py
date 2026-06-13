@@ -225,6 +225,30 @@ def imbalance_catalog_rows(*, commit="abc123", market="india_nse_index_derivativ
                 "summary_market": market,
                 "parameters_json": parameters,
             },
+            {
+                "run_dir": "runs/imbalance_orders",
+                "run_type": "imbalance_order_plan",
+                "generated_at_utc": "2026-06-10T09:50:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "imbalance_order_summary.csv",
+                "summary_strategy": "imbalance",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/imbalance_launch_pipeline",
+                "run_type": "imbalance_launch_pipeline",
+                "generated_at_utc": "2026-06-10T09:55:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "imbalance_launch_pipeline_summary.csv",
+                "summary_strategy": "imbalance",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
         ]
     )
 
@@ -592,6 +616,34 @@ def test_imbalance_evidence_profile_fails_without_replay_walkforward():
     failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
     assert not review.ready
     assert "required_run_type:imbalance_replay_walkforward" in failed
+
+
+def test_imbalance_evidence_profile_fails_without_order_plan():
+    catalog = imbalance_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "imbalance_order_plan"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("imbalance")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:imbalance_order_plan" in failed
+
+
+def test_imbalance_evidence_profile_fails_without_launch_pipeline():
+    catalog = imbalance_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "imbalance_launch_pipeline"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("imbalance")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:imbalance_launch_pipeline" in failed
 
 
 def test_settlement_evidence_profile_requires_research_order_and_launch_identity():

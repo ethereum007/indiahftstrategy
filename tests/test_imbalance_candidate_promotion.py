@@ -43,9 +43,17 @@ def candidate_config(*, ready=True):
         "replay_defaults": {
             "tick_size": 0.05,
             "market": "india_nse_index_derivatives",
+            "instrument_id": "NIFTY_20260610_25000C",
+            "instrument_kind": "OPT",
+            "lot_size": 75,
+            "qty": 75,
             "entry_imbalance": 0.6,
+            "exit_imbalance": 0.15,
             "min_microprice_edge_ticks": 0.25,
+            "max_spread_ticks": 2.0,
+            "min_depth": 1,
             "hold_ns": 1_000_000,
+            "cooloff_ns": 1000,
             "markout_horizons_ns": [100_000],
         },
     }
@@ -103,7 +111,10 @@ def test_evaluate_imbalance_candidate_promotion_outputs_launch_compatible_config
     )
     assert report.candidate_config["ready"]
     assert report.candidate_config["strategy"] == "imbalance"
+    assert report.candidate_config["parameters"]["instrument_id"] == "NIFTY_20260610_25000C"
+    assert report.candidate_config["parameters"]["qty"] == 75
     assert report.candidate_config["parameters"]["entry_imbalance"] == 0.6
+    assert report.candidate_config["parameters"]["max_spread_ticks"] == 2.0
 
     launch = evaluate_launch_bundle(
         promotion_summary=report.summary,

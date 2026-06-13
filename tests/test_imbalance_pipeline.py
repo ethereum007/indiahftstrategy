@@ -7,6 +7,7 @@ from reports.catalog import catalog_experiment_runs
 from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evidence_profile_run_types
 from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds
 from reports.imbalance_edge_walkforward import ImbalanceEdgeWalkForwardThresholds
+from reports.imbalance_launch_pipeline import ImbalanceLaunchPipelineConfig, write_imbalance_launch_pipeline
 from reports.imbalance_pipeline import write_imbalance_research_pipeline
 from reports.imbalance_replay_walkforward import ImbalanceReplayWalkForwardThresholds
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
@@ -142,6 +143,18 @@ def test_imbalance_pipeline_artifacts_satisfy_imbalance_evidence_profile(tmp_pat
             min_folds=2,
             min_proof_pass_rate=1.0,
             min_total_fills=2,
+        ),
+    )
+    write_imbalance_launch_pipeline(
+        out_dir / "promotion",
+        output_dir=out_dir / "launch_pipeline",
+        config=ImbalanceLaunchPipelineConfig(
+            adapter="normalized",
+            instrument_id="BOOK",
+            reference_price=100.0,
+            max_order_qty=75,
+            max_notional=10_000,
+            max_orders=2,
         ),
     )
 

@@ -114,8 +114,8 @@ python -m hft_cli review-strategy-evidence `
 ```
 
 For microprice/order-book imbalance research, use the named profile so edge
-walk-forward, replay walk-forward, promotion, and the top-level research
-pipeline are all present before scale-up review:
+walk-forward, replay walk-forward, promotion, the top-level research pipeline,
+order plan, and launch pipeline are all present before scale-up review:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `
@@ -152,7 +152,8 @@ expands to `surface_quality_report`, `quote_risk_report`, and
 `surface_mm_research_pipeline`. The `imbalance` profile expands to
 `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
-`imbalance_research_pipeline`. The `settlement` profile expands to
+`imbalance_research_pipeline`, `imbalance_order_plan`, and
+`imbalance_launch_pipeline`. The `settlement` profile expands to
 `settlement_convergence_walkforward`, `promotion_report`,
 `settlement_order_plan`, and `settlement_launch_pipeline`. Explicit
 `--required-run-type` flags still override the profile for custom launch
@@ -786,6 +787,74 @@ promotion_candidate.csv
 promotion_checks.csv
 promotion_summary.csv
 candidate_config.json
+manifest.json
+```
+
+## Microprice Imbalance Order Plan
+
+Convert a promoted imbalance candidate into broker-neutral paper/shadow order
+templates. The plan emits both signal-conditioned paths: buy on bid-side depth
+pressure and sell on ask-side depth pressure.
+
+```powershell
+python -m hft_cli plan-imbalance-orders `
+  --promotion runs\imbalance_promotion `
+  --out runs\orders\imbalance_shadow `
+  --instrument-id NIFTY_20260610_25000C `
+  --reference-price 10.00 `
+  --entry-offset-ticks 1 `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --price-band-pct 0.02 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+imbalance_order_candidates.csv
+imbalance_order_checks.csv
+imbalance_order_summary.csv
+manifest.json
+```
+
+The generated `imbalance_order_candidates.csv` uses the broker-neutral `orders`
+schema and carries `SIGNAL_TEMPLATE` lifecycle metadata, so it can be staged
+for Arrow.money/iRage paper or shadow routing without losing the trigger
+intent.
+
+Run the promoted imbalance candidate through the full paper/shadow handoff
+chain in one command:
+
+```powershell
+python -m hft_cli pipeline-imbalance-launch `
+  --promotion runs\imbalance_promotion `
+  --out runs\pipelines\imbalance_shadow `
+  --adapter arrow_money `
+  --mode shadow `
+  --route-tag imbalance_shadow `
+  --instrument-id NIFTY_20260610_25000C `
+  --reference-price 10.00 `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --max-orders 2 `
+  --broker-runtime-session runs\runtime_sessions\imbalance_shadow_latest `
+  --require-broker-runtime-session `
+  --allow-placeholder-schema `
+  --fail-on-breach
+```
+
+Pipeline outputs:
+
+```text
+01_order_plan\...
+02_staged_orders\...
+03_launch\...
+04_export\...
+05_upload_pack\...
+06_broker_readiness\...
+imbalance_launch_pipeline_components.csv
+imbalance_launch_pipeline_summary.csv
 manifest.json
 ```
 

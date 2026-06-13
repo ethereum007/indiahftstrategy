@@ -25,6 +25,8 @@ IMBALANCE_REQUIRED_RUN_TYPES = (
     "imbalance_replay_walkforward",
     "promotion_report",
     "imbalance_research_pipeline",
+    "imbalance_order_plan",
+    "imbalance_launch_pipeline",
 )
 SETTLEMENT_REQUIRED_RUN_TYPES = (
     "settlement_convergence_walkforward",

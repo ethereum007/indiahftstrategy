@@ -20,6 +20,12 @@ def test_market_portability_report_gates_us_research_on_explicit_fees():
 
     rows = report.matrix.set_index(["strategy", "market"])
     assert rows.loc[("microprice_imbalance", "india_nse_index_derivatives"), "status"] == "india_ready"
+    assert "plan-imbalance-orders" in rows.loc[
+        ("microprice_imbalance", "india_nse_index_derivatives"), "workflow_commands"
+    ]
+    assert "pipeline-imbalance-launch" in rows.loc[
+        ("microprice_imbalance", "india_nse_index_derivatives"), "workflow_commands"
+    ]
     assert rows.loc[("microprice_imbalance", "us_equities_regular"), "status"] == "needs_fee_model"
     assert rows.loc[("settlement_convergence", "us_options_regular"), "status"] == "blocked"
     assert (

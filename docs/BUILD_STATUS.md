@@ -63,9 +63,9 @@
   top-of-book pressure, including latency, depth, spread, hold-time, signal
   decay exits, signals, markouts, and proof-compatible outputs.
 - Imbalance edge, replay, sweep, walk-forward, and pipeline commands now accept
-  explicit market profiles, preserve market/tick-size defaults in candidate
-  configs, and can run US regular-hours equity/options research without
-  applying India session filters or costs.
+  explicit market profiles, preserve market/tick-size and deployment defaults
+  in candidate configs, and can run US regular-hours equity/options research
+  without applying India session filters or costs.
 - Non-India imbalance replay, replay sweeps, replay walk-forward, and pipeline
   runs accept explicit generic fee assumptions, preserve them in manifests and
   candidate configs, and apply them to US research PnL.
@@ -75,14 +75,20 @@
 - Imbalance candidate promotion bridge that converts passed replay
   walk-forward evidence into launch-compatible promotion reports and candidate
   configs for paper/shadow order staging.
+- Imbalance order-plan bridge converts promoted microprice candidates into
+  broker-neutral paper/shadow templates for bid-pressure buy and ask-pressure
+  sell paths, with quantity, price, notional, and threshold checks.
+- Imbalance launch pipeline runs promoted candidates through order planning,
+  staging, launch bundle creation, broker export, upload pack, and broker
+  readiness review for Arrow.money/iRage-style paper or shadow handoff.
 - End-to-end imbalance research pipeline that runs edge walk-forward,
   replay-proof walk-forward, and candidate promotion in one manifest-backed
   command with stage-level readiness evidence plus optional required
   market-portability and multi-day data-readiness comparison preflights.
 - Strategy evidence review supports an `imbalance` profile that requires
-  imbalance edge walk-forward, replay walk-forward, promotion, and research
-  pipeline artifacts with shared strategy and market identity before shadow
-  scale-up review.
+  imbalance edge walk-forward, replay walk-forward, promotion, research
+  pipeline, order-plan, and launch-pipeline artifacts with shared strategy and
+  market identity before shadow scale-up review.
 - Microprice/order-book imbalance robustness sweep across entry threshold,
   microprice edge, hold timer, feed latency, and order latency, with per-run
   replay artifacts, proof gate, pass rate, and robust score summary.

@@ -137,8 +137,16 @@ def test_write_imbalance_replay_walkforward_outputs_proof_and_candidate(tmp_path
     assert float(report.summary.loc[0, "proof_pass_rate"]) == 1.0
     assert config["ready"]
     assert config["source_run_type"] == "imbalance_replay_walkforward"
+    assert config["replay_defaults"]["instrument_id"] == "BOOK"
+    assert config["replay_defaults"]["instrument_kind"] == "OPT"
+    assert config["replay_defaults"]["lot_size"] == 75
+    assert config["replay_defaults"]["qty"] == 75
     assert config["replay_defaults"]["entry_imbalance"] == 0.6
+    assert config["replay_defaults"]["exit_imbalance"] == 0.15
+    assert config["replay_defaults"]["max_spread_ticks"] == 2.0
+    assert config["replay_defaults"]["min_depth"] == 1
     assert config["replay_defaults"]["hold_ns"] == 1_000_000
+    assert config["replay_defaults"]["cooloff_ns"] == 1_000_000
     assert (out_dir / "imbalance_replay_walkforward_folds.csv").exists()
     assert (out_dir / "imbalance_replay_walkforward_checks.csv").exists()
     assert (out_dir / "imbalance_replay_walkforward_summary.csv").exists()
@@ -181,7 +189,12 @@ def test_write_imbalance_replay_walkforward_inherits_us_generic_costs(tmp_path):
     assert abs(float(report.folds["total_costs"].sum()) - 0.04) < 1e-12
     assert float(report.summary.loc[0, "total_net_pnl"]) > 0.0
     assert config["replay_defaults"]["market"] == "us_equities_regular"
+    assert config["replay_defaults"]["instrument_kind"] == "EQ"
+    assert config["replay_defaults"]["lot_size"] == 1
+    assert config["replay_defaults"]["qty"] == 1
     assert config["replay_defaults"]["generic_costs"]["per_order_fee"] == 0.01
+    assert manifest["parameters"]["instrument_kind"] == "EQ"
+    assert manifest["parameters"]["qty"] == 1
     assert manifest["parameters"]["generic_costs"]["per_order_fee"] == 0.01
 
 

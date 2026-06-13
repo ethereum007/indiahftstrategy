@@ -22,6 +22,8 @@ SUMMARY_FILES = [
     "imbalance_edge_selection_summary.csv",
     "imbalance_edge_walkforward_summary.csv",
     "imbalance_replay_walkforward_summary.csv",
+    "imbalance_order_summary.csv",
+    "imbalance_launch_pipeline_summary.csv",
     "imbalance_pipeline_summary.csv",
     "surface_mm_pipeline_summary.csv",
     "surface_mm_launch_pipeline_summary.csv",

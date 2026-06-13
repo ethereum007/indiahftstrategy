@@ -47,6 +47,8 @@ from reports.imbalance_edge_walkforward import (
     ImbalanceEdgeWalkForwardThresholds,
     write_imbalance_edge_walkforward,
 )
+from reports.imbalance_launch_pipeline import ImbalanceLaunchPipelineConfig, write_imbalance_launch_pipeline
+from reports.imbalance_order_plan import ImbalanceOrderPlanConfig, write_imbalance_order_plan
 from reports.imbalance_pipeline import write_imbalance_research_pipeline
 from reports.imbalance_replay_walkforward import (
     ImbalanceReplayWalkForwardThresholds,
@@ -477,6 +479,64 @@ def main(argv: list[str] | None = None) -> int:
     imbalance_promotion.add_argument("--max-worst-drawdown", type=float, default=None)
     imbalance_promotion.add_argument("--min-median-markout-mean", type=float, default=None)
     imbalance_promotion.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_orders = sub.add_parser(
+        "plan-imbalance-orders",
+        help="Create broker-neutral paper/shadow order templates from a promoted imbalance candidate.",
+    )
+    imbalance_orders.add_argument("--promotion", required=True)
+    imbalance_orders.add_argument("--out", required=True)
+    imbalance_orders.add_argument("--instrument-id", default="BOOK")
+    imbalance_orders.add_argument("--qty", type=int, default=None)
+    imbalance_orders.add_argument("--reference-price", type=float, default=None)
+    imbalance_orders.add_argument("--buy-limit-price", type=float, default=None)
+    imbalance_orders.add_argument("--sell-limit-price", type=float, default=None)
+    imbalance_orders.add_argument("--entry-offset-ticks", type=float, default=0.0)
+    imbalance_orders.add_argument("--tick-size", type=float, default=None)
+    imbalance_orders.add_argument("--max-order-qty", type=int, default=None)
+    imbalance_orders.add_argument("--max-notional", type=float, default=None)
+    imbalance_orders.add_argument("--price-band-pct", type=float, default=None)
+    imbalance_orders.add_argument("--output-file", default="imbalance_order_candidates.csv")
+    imbalance_orders.add_argument("--allow-unready-promotion", action="store_true")
+    imbalance_orders.add_argument("--fail-on-breach", action="store_true")
+
+    imbalance_launch_pipeline = sub.add_parser(
+        "pipeline-imbalance-launch",
+        help="Run promoted imbalance candidate through order plan, staging, launch, export, and upload pack.",
+    )
+    imbalance_launch_pipeline.add_argument("--promotion", required=True)
+    imbalance_launch_pipeline.add_argument("--out", required=True)
+    imbalance_launch_pipeline.add_argument("--adapter", default="arrow_money")
+    imbalance_launch_pipeline.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
+    imbalance_launch_pipeline.add_argument("--route-tag", default=None)
+    imbalance_launch_pipeline.add_argument("--instrument-id", default="BOOK")
+    imbalance_launch_pipeline.add_argument("--qty", type=int, default=None)
+    imbalance_launch_pipeline.add_argument("--reference-price", type=float, default=None)
+    imbalance_launch_pipeline.add_argument("--buy-limit-price", type=float, default=None)
+    imbalance_launch_pipeline.add_argument("--sell-limit-price", type=float, default=None)
+    imbalance_launch_pipeline.add_argument("--entry-offset-ticks", type=float, default=0.0)
+    imbalance_launch_pipeline.add_argument("--tick-size", type=float, default=None)
+    imbalance_launch_pipeline.add_argument("--max-order-qty", type=int, default=None)
+    imbalance_launch_pipeline.add_argument("--max-notional", type=float, default=None)
+    imbalance_launch_pipeline.add_argument("--price-band-pct", type=float, default=None)
+    imbalance_launch_pipeline.add_argument("--max-orders", type=int, default=None)
+    imbalance_launch_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    imbalance_launch_pipeline.add_argument("--product", default="MIS")
+    imbalance_launch_pipeline.add_argument("--exchange", default="NFO")
+    imbalance_launch_pipeline.add_argument("--broker-schema-audit", default=None)
+    imbalance_launch_pipeline.add_argument("--broker-mapping-draft", default=None)
+    imbalance_launch_pipeline.add_argument("--broker-mapped-orders", default=None)
+    imbalance_launch_pipeline.add_argument("--broker-halt-export", default=None)
+    imbalance_launch_pipeline.add_argument("--broker-reconciliation", default=None)
+    imbalance_launch_pipeline.add_argument("--broker-runtime-session", default=None)
+    imbalance_launch_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
+    imbalance_launch_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
+    imbalance_launch_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
+    imbalance_launch_pipeline.add_argument("--require-broker-halt-export", action="store_true")
+    imbalance_launch_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
+    imbalance_launch_pipeline.add_argument("--require-broker-runtime-session", action="store_true")
+    imbalance_launch_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
+    imbalance_launch_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     imbalance_pipeline = sub.add_parser("pipeline-imbalance-research", help="Run edge, replay-proof, and promotion gates for imbalance research.")
     imbalance_pipeline.add_argument("--ticks", nargs="+", required=True)
@@ -2104,6 +2164,66 @@ def main(argv: list[str] | None = None) -> int:
                 min_total_net_pnl=args.min_total_net_pnl,
                 max_worst_drawdown=args.max_worst_drawdown,
                 min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "plan-imbalance-orders":
+        result = write_imbalance_order_plan(
+            args.promotion,
+            output_dir=args.out,
+            config=ImbalanceOrderPlanConfig(
+                instrument_id=args.instrument_id,
+                require_promotion_ready=not args.allow_unready_promotion,
+                qty=args.qty,
+                reference_price=args.reference_price,
+                buy_limit_price=args.buy_limit_price,
+                sell_limit_price=args.sell_limit_price,
+                entry_offset_ticks=args.entry_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                output_filename=args.output_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-imbalance-launch":
+        result = write_imbalance_launch_pipeline(
+            args.promotion,
+            output_dir=args.out,
+            config=ImbalanceLaunchPipelineConfig(
+                adapter=args.adapter,
+                mode=args.mode,
+                route_tag=args.route_tag,
+                instrument_id=args.instrument_id,
+                qty=args.qty,
+                reference_price=args.reference_price,
+                buy_limit_price=args.buy_limit_price,
+                sell_limit_price=args.sell_limit_price,
+                entry_offset_ticks=args.entry_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                broker_schema_audit_dir=args.broker_schema_audit,
+                broker_mapping_draft_dir=args.broker_mapping_draft,
+                broker_mapped_orders_dir=args.broker_mapped_orders,
+                broker_halt_export_dir=args.broker_halt_export,
+                broker_reconciliation_dir=args.broker_reconciliation,
+                broker_runtime_session_dir=args.broker_runtime_session,
+                require_broker_schema_audit=args.require_broker_schema_audit,
+                require_broker_mapping_draft=args.require_broker_mapping_draft,
+                require_broker_mapped_orders=args.require_broker_mapped_orders,
+                require_broker_halt_export=args.require_broker_halt_export,
+                require_broker_reconciliation=args.require_broker_reconciliation,
+                require_broker_runtime_session=args.require_broker_runtime_session,
             ),
         )
         print(result.summary.to_string(index=False))
