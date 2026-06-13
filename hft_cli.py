@@ -999,6 +999,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--reconciliation", default=None)
     broker_readiness.add_argument("--runtime-session", default=None)
     broker_readiness.add_argument("--resume-gate", default=None)
+    broker_readiness.add_argument("--dispatch-roundtrip", default=None)
     broker_readiness.add_argument("--allow-placeholder-schema", action="store_true")
     broker_readiness.add_argument("--allow-adapter-mismatch", action="store_true")
     broker_readiness.add_argument("--skip-schema-audit", action="store_true")
@@ -1010,6 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--require-reconciliation", action="store_true")
     broker_readiness.add_argument("--require-runtime-session", action="store_true")
     broker_readiness.add_argument("--require-resume-gate", action="store_true")
+    broker_readiness.add_argument("--require-dispatch-roundtrip", action="store_true")
     broker_readiness.add_argument("--fail-on-breach", action="store_true")
 
     shadow_session = sub.add_parser("shadow-session-report", help="Gate a full paper/shadow session after reconciliation.")
@@ -2602,6 +2604,7 @@ def main(argv: list[str] | None = None) -> int:
             reconciliation_dir=args.reconciliation,
             runtime_session_dir=args.runtime_session,
             resume_dir=args.resume_gate,
+            dispatch_roundtrip_dir=args.dispatch_roundtrip,
             thresholds=BrokerReadinessThresholds(
                 adapter=args.adapter,
                 require_reviewed_schema=not args.allow_placeholder_schema,
@@ -2614,6 +2617,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_reconciliation=args.require_reconciliation,
                 require_runtime_session=args.require_runtime_session,
                 require_resume_gate=args.require_resume_gate,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 require_adapter_match=not args.allow_adapter_mismatch,
             ),
         )

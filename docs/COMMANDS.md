@@ -1370,9 +1370,9 @@ manifest.json
 ## Broker Integration Readiness
 
 Combine adapter schema review, broker-neutral export, mapped/upload files,
-optional halt-export, optional reconciliation, optional runtime-session, and
-optional resume-gate evidence into one go/no-go record before Arrow.money/iRage
-paper or shadow routing:
+optional halt-export, optional reconciliation, optional runtime-session,
+optional resume-gate, and optional dispatch round-trip evidence into one
+go/no-go record before Arrow.money/iRage paper or shadow routing:
 
 ```powershell
 python -m hft_cli review-broker-readiness `
@@ -1384,11 +1384,13 @@ python -m hft_cli review-broker-readiness `
   --upload-pack runs\uploads\leadlag_shadow_arrow `
   --runtime-session runs\runtime_sessions\leadlag_shadow_latest `
   --resume-gate runs\resume\leadlag_shadow_latest `
+  --dispatch-roundtrip runs\dispatch_roundtrip\leadlag_shadow_live_dryrun `
   --out runs\broker_readiness\leadlag_shadow_arrow `
   --require-mapping-draft `
   --require-mapped-orders `
   --require-runtime-session `
   --require-resume-gate `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -1409,6 +1411,12 @@ authorization's strategy/market identity, incident identity, and
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless
 `resume_summary.csv` is present and ready, which is useful for post-halt restart
 reviews.
+When `--dispatch-roundtrip` is supplied, broker readiness retains the proved
+dry-run target mode, strategy, market, scenario, dispatch batch, request count,
+accepted acknowledgements, and missing/rejected/unmatched acknowledgement
+counts. `--require-dispatch-roundtrip` fails closed unless the dry-run dispatch
+plan, non-submitting send packet, and acknowledgement reconciliation passed as
+one round-trip proof.
 
 Outputs:
 

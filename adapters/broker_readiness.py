@@ -20,6 +20,7 @@ SUMMARY_FILES = {
     "reconciliation": "reconciliation_summary.csv",
     "runtime_session": "runtime_session_summary.csv",
     "resume_gate": "resume_summary.csv",
+    "dispatch_roundtrip": "broker_dispatch_roundtrip_summary.csv",
 }
 
 
@@ -36,6 +37,7 @@ class BrokerReadinessThresholds:
     require_reconciliation: bool = False
     require_runtime_session: bool = False
     require_resume_gate: bool = False
+    require_dispatch_roundtrip: bool = False
     require_adapter_match: bool = True
 
 
@@ -62,6 +64,7 @@ def evaluate_broker_readiness(
     reconciliation_summary: pd.DataFrame | None = None,
     runtime_session_summary: pd.DataFrame | None = None,
     resume_summary: pd.DataFrame | None = None,
+    dispatch_roundtrip_summary: pd.DataFrame | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
@@ -76,6 +79,7 @@ def evaluate_broker_readiness(
         "reconciliation": _optional_frame(reconciliation_summary),
         "runtime_session": _optional_frame(runtime_session_summary),
         "resume_gate": _optional_frame(resume_summary),
+        "dispatch_roundtrip": _optional_frame(dispatch_roundtrip_summary),
     }
     items = _items(summaries, thresholds)
     checks = _checks(items, thresholds)
@@ -95,6 +99,7 @@ def write_broker_readiness_report(
     reconciliation_dir: str | Path | None = None,
     runtime_session_dir: str | Path | None = None,
     resume_dir: str | Path | None = None,
+    dispatch_roundtrip_dir: str | Path | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
@@ -109,6 +114,7 @@ def write_broker_readiness_report(
         reconciliation_summary=_read_optional_summary(reconciliation_dir, "reconciliation"),
         runtime_session_summary=_read_optional_summary(runtime_session_dir, "runtime_session"),
         resume_summary=_read_optional_summary(resume_dir, "resume_gate"),
+        dispatch_roundtrip_summary=_read_optional_summary(dispatch_roundtrip_dir, "dispatch_roundtrip"),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -130,6 +136,7 @@ def write_broker_readiness_report(
             "reconciliation": reconciliation_dir,
             "runtime_session": runtime_session_dir,
             "resume_gate": resume_dir,
+            "dispatch_roundtrip": dispatch_roundtrip_dir,
         },
     )
     return BrokerReadinessReport(report.items, report.checks, report.summary, out)
@@ -172,6 +179,26 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "resume_proof_refresh_market": _resume_text(component, row, "proof_refresh_market"),
         "resume_incident_proof_refresh_strategy": _resume_text(component, row, "incident_proof_refresh_strategy"),
         "resume_incident_proof_refresh_market": _resume_text(component, row, "incident_proof_refresh_market"),
+        "dispatch_roundtrip_target_mode": _dispatch_text(component, row, "target_mode"),
+        "dispatch_roundtrip_strategy": _dispatch_text(component, row, "strategy"),
+        "dispatch_roundtrip_market": _dispatch_text(component, row, "market"),
+        "dispatch_roundtrip_scenario_key": _dispatch_text(component, row, "scenario_key"),
+        "dispatch_roundtrip_batch_id": _dispatch_text(component, row, "dispatch_batch_id"),
+        "dispatch_roundtrip_requests": int(_number(row, "send_requests", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "dispatch_roundtrip_acked_orders": int(_number(row, "acked_orders", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "dispatch_roundtrip_missing_request_acks": int(_number(row, "missing_request_acks", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "dispatch_roundtrip_rejected_orders": int(_number(row, "rejected_orders", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "dispatch_roundtrip_unmatched_acks": int(_number(row, "unmatched_acks", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -239,6 +266,7 @@ def _summary(
     ready = failed == 0
     runtime_item = _component_item(items, "runtime_session")
     resume_item = _component_item(items, "resume_gate")
+    dispatch_item = _component_item(items, "dispatch_roundtrip")
     return pd.DataFrame(
         [
             {
@@ -274,6 +302,26 @@ def _summary(
                     resume_item,
                     "resume_incident_proof_refresh_market",
                 ),
+                "dispatch_roundtrip_provided": _item_bool(dispatch_item, "provided"),
+                "dispatch_roundtrip_ready": _item_bool(dispatch_item, "ready"),
+                "dispatch_roundtrip_target_mode": _item_text(dispatch_item, "dispatch_roundtrip_target_mode"),
+                "dispatch_roundtrip_strategy": _item_text(dispatch_item, "dispatch_roundtrip_strategy"),
+                "dispatch_roundtrip_market": _item_text(dispatch_item, "dispatch_roundtrip_market"),
+                "dispatch_roundtrip_scenario_key": _item_text(dispatch_item, "dispatch_roundtrip_scenario_key"),
+                "dispatch_roundtrip_batch_id": _item_text(dispatch_item, "dispatch_roundtrip_batch_id"),
+                "dispatch_roundtrip_requests": int(_number(dispatch_item, "dispatch_roundtrip_requests", 0.0)),
+                "dispatch_roundtrip_acked_orders": int(
+                    _number(dispatch_item, "dispatch_roundtrip_acked_orders", 0.0)
+                ),
+                "dispatch_roundtrip_missing_request_acks": int(
+                    _number(dispatch_item, "dispatch_roundtrip_missing_request_acks", 0.0)
+                ),
+                "dispatch_roundtrip_rejected_orders": int(
+                    _number(dispatch_item, "dispatch_roundtrip_rejected_orders", 0.0)
+                ),
+                "dispatch_roundtrip_unmatched_acks": int(
+                    _number(dispatch_item, "dispatch_roundtrip_unmatched_acks", 0.0)
+                ),
                 "recommendation": _summary_recommendation(ready, schema_status, thresholds),
             }
         ]
@@ -292,6 +340,7 @@ def _component_required(component: str, thresholds: BrokerReadinessThresholds) -
             "reconciliation": thresholds.require_reconciliation,
             "runtime_session": thresholds.require_runtime_session,
             "resume_gate": thresholds.require_resume_gate,
+            "dispatch_roundtrip": thresholds.require_dispatch_roundtrip,
         }[component]
     )
 
@@ -305,6 +354,8 @@ def _component_ready(component: str, row: pd.Series) -> bool:
         return _to_bool(row.get("ready", False)) and not _guard_halted(row)
     if component == "resume_gate":
         return _to_bool(row.get("ready", False))
+    if component == "dispatch_roundtrip":
+        return _to_bool(row.get("passed", False))
     return _to_bool(row.get("ready", False))
 
 
@@ -373,6 +424,15 @@ def _resume_bool(component: str, row: pd.Series, column: str) -> bool:
     if component != "resume_gate" or row.empty:
         return False
     return _to_bool(row.get(column, False))
+
+
+def _dispatch_text(component: str, row: pd.Series, column: str) -> str:
+    if component != "dispatch_roundtrip" or row.empty:
+        return ""
+    value = row.get(column, "")
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFrame | None:

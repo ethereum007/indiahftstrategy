@@ -97,6 +97,33 @@ def resume_summary(adapter="normalized", ready=True):
     )
 
 
+def dispatch_roundtrip_summary(adapter="normalized", passed=True):
+    return pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "adapter": adapter,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "dispatch_batch_id": "BDP-1",
+                "dispatch_orders": 2,
+                "send_requests": 2,
+                "acked_orders": 2 if passed else 1,
+                "missing_request_acks": 0 if passed else 1,
+                "rejected_orders": 0,
+                "duplicate_ack_orders": 0,
+                "unmatched_acks": 0,
+                "failed_checks": 0 if passed else 1,
+                "recommendation": "broker_dry_run_roundtrip_proved"
+                if passed
+                else "investigate_broker_dry_run_roundtrip",
+            }
+        ]
+    )
+
+
 def test_broker_readiness_accepts_ready_normalized_artifacts():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("normalized", True),
@@ -159,6 +186,29 @@ def test_broker_readiness_accepts_required_resume_gate():
     assert summary["resume_proof_refresh_market"] == "india_nse_index_derivatives"
 
 
+def test_broker_readiness_accepts_required_dispatch_roundtrip():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("normalized", True),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert bool(item["ready"])
+    assert item["dispatch_roundtrip_target_mode"] == "live_dryrun"
+    assert item["dispatch_roundtrip_strategy"] == "lead_lag_taker"
+    assert int(item["dispatch_roundtrip_acked_orders"]) == 2
+    summary = report.summary.iloc[0]
+    assert bool(summary["dispatch_roundtrip_provided"])
+    assert bool(summary["dispatch_roundtrip_ready"])
+    assert summary["dispatch_roundtrip_batch_id"] == "BDP-1"
+    assert int(summary["dispatch_roundtrip_requests"]) == 2
+    assert int(summary["dispatch_roundtrip_missing_request_acks"]) == 0
+
+
 def test_broker_readiness_blocks_halted_runtime_session():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("normalized", True),
@@ -178,6 +228,36 @@ def test_broker_readiness_blocks_halted_runtime_session():
     assert bool(summary["runtime_guard_halted"])
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "runtime_session_ready" in failed
+
+
+def test_broker_readiness_fails_when_required_dispatch_roundtrip_is_missing():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "dispatch_roundtrip_provided" in failed
+
+
+def test_broker_readiness_fails_for_failed_dispatch_roundtrip():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("normalized", False),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert not bool(item["ready"])
+    assert int(item["dispatch_roundtrip_missing_request_acks"]) == 1
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "dispatch_roundtrip_ready" in failed
 
 
 def test_broker_readiness_fails_closed_for_placeholder_broker_schema():
@@ -237,15 +317,21 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     export_dir = tmp_path / "export"
     upload_dir = tmp_path / "upload"
     resume_dir = tmp_path / "resume"
+    roundtrip_dir = tmp_path / "roundtrip"
     out_dir = tmp_path / "readiness"
     schema_dir.mkdir()
     export_dir.mkdir()
     upload_dir.mkdir()
     resume_dir.mkdir()
+    roundtrip_dir.mkdir()
     schema_summary("arrow_money", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
     order_export_summary("arrow_money", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary("arrow_money", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
     resume_summary("arrow_money", True).to_csv(resume_dir / "resume_summary.csv", index=False)
+    dispatch_roundtrip_summary("arrow_money", True).to_csv(
+        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
+        index=False,
+    )
 
     report = write_broker_readiness_report(
         output_dir=out_dir,
@@ -253,10 +339,12 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
         order_export_dir=export_dir,
         upload_pack_dir=upload_dir,
         resume_dir=resume_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
         thresholds=BrokerReadinessThresholds(
             adapter="arrow_money",
             require_reviewed_schema=False,
             require_resume_gate=True,
+            require_dispatch_roundtrip=True,
         ),
     )
 
@@ -265,6 +353,7 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert report.summary.iloc[0]["recommendation"] == "dry_run_only_until_vendor_schema_review"
     assert report.summary.iloc[0]["resume_strategy"] == "surface_mm"
     assert bool(report.summary.iloc[0]["resume_gate_ready"])
+    assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
     assert (out_dir / "broker_readiness_items.csv").exists()
     assert (out_dir / "broker_readiness_checks.csv").exists()
     assert (out_dir / "broker_readiness_summary.csv").exists()
@@ -375,3 +464,38 @@ def test_cli_broker_readiness_can_require_resume_gate(tmp_path):
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert "resume_gate_provided" in failed
+
+
+def test_cli_broker_readiness_can_require_dispatch_roundtrip(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, upload_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--adapter",
+            "normalized",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--out",
+            str(out_dir),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "dispatch_roundtrip_provided" in failed
