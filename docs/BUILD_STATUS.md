@@ -14,7 +14,18 @@
 - Parity/box edge audit that gates scan outputs on opportunity count, net edge,
   persistence, direction coverage, and futures staleness before replay/sweep
   work.
+- Parity/box scan outputs now preserve executable leg sides and touch prices
+  for downstream multi-leg order planning.
+- Parity/box order-plan bridge converts promoted candidates into grouped
+  broker-neutral multi-leg paper/shadow templates for synthetic/future and box
+  directions, with quantity, price, notional, and strike/expiry gates.
+- Parity/box launch pipeline runs promoted candidates through order planning,
+  staging, launch bundle creation, broker export, upload pack, and broker
+  readiness review for Arrow.money/iRage-style paper or shadow handoff.
 - CLI/report runners for parity/box scans and lead-lag measurement.
+- Strategy evidence review supports a `parity` profile that requires parity
+  edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts
+  with shared strategy and market identity before shadow scale-up review.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

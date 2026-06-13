@@ -174,13 +174,17 @@ def scan_boxes(
                         low,
                         high,
                         getattr(low_row, "regime", "unknown"),
-                        "buy_box",
-                        qty,
-                        raw_edge,
-                        total_cost,
-                        option_instrument,
-                    )
+                    "buy_box",
+                    qty,
+                    raw_edge,
+                    total_cost,
+                    option_instrument,
+                    low_call_price=low_row.call_ask,
+                    low_put_price=low_row.put_bid,
+                    high_call_price=high_row.call_bid,
+                    high_put_price=high_row.put_ask,
                 )
+            )
 
             credit = low_row.call_bid - low_row.put_ask - high_row.call_ask + high_row.put_bid
             qty = _executable_qty(
@@ -208,13 +212,17 @@ def scan_boxes(
                         low,
                         high,
                         getattr(low_row, "regime", "unknown"),
-                        "sell_box",
-                        qty,
-                        raw_edge,
-                        total_cost,
-                        option_instrument,
-                    )
+                    "sell_box",
+                    qty,
+                    raw_edge,
+                    total_cost,
+                    option_instrument,
+                    low_call_price=low_row.call_bid,
+                    low_put_price=low_row.put_ask,
+                    high_call_price=high_row.call_ask,
+                    high_put_price=high_row.put_bid,
                 )
+            )
 
     out = pd.DataFrame(rows)
     if out.empty:
@@ -292,6 +300,14 @@ def _executable_qty(depths: list[float], lot_size: int, depth_fraction: float) -
 
 def _opportunity_row(row, direction, qty, raw_edge, total_cost, instrument):
     gross_edge = raw_edge * qty * instrument.multiplier
+    if direction == "buy_synthetic_sell_future":
+        call_side, call_price = 1, row.call_ask
+        put_side, put_price = -1, row.put_bid
+        future_side, future_price = -1, row.future_bid
+    else:
+        call_side, call_price = -1, row.call_bid
+        put_side, put_price = 1, row.put_ask
+        future_side, future_price = 1, row.future_ask
     return {
         "ts": int(row.ts),
         "expiry": row.expiry,
@@ -305,11 +321,37 @@ def _opportunity_row(row, direction, qty, raw_edge, total_cost, instrument):
         "displayed_depth": int(qty),
         "future_ts": int(row.future_ts),
         "regime": getattr(row, "regime", "unknown"),
+        "call_side": int(call_side),
+        "call_price": float(call_price),
+        "put_side": int(put_side),
+        "put_price": float(put_price),
+        "future_side": int(future_side),
+        "future_price": float(future_price),
     }
 
 
-def _box_row(ts, expiry, low, high, regime, direction, qty, raw_edge, total_cost, instrument):
+def _box_row(
+    ts,
+    expiry,
+    low,
+    high,
+    regime,
+    direction,
+    qty,
+    raw_edge,
+    total_cost,
+    instrument,
+    *,
+    low_call_price,
+    low_put_price,
+    high_call_price,
+    high_put_price,
+):
     gross_edge = raw_edge * qty * instrument.multiplier
+    if direction == "buy_box":
+        low_call_side, low_put_side, high_call_side, high_put_side = 1, -1, -1, 1
+    else:
+        low_call_side, low_put_side, high_call_side, high_put_side = -1, 1, 1, -1
     return {
         "ts": int(ts),
         "expiry": expiry,
@@ -323,6 +365,14 @@ def _box_row(ts, expiry, low, high, regime, direction, qty, raw_edge, total_cost
         "net_edge": float(gross_edge - total_cost),
         "displayed_depth": int(qty),
         "regime": regime,
+        "low_call_side": int(low_call_side),
+        "low_call_price": float(low_call_price),
+        "low_put_side": int(low_put_side),
+        "low_put_price": float(low_put_price),
+        "high_call_side": int(high_call_side),
+        "high_call_price": float(high_call_price),
+        "high_put_side": int(high_put_side),
+        "high_put_price": float(high_put_price),
     }
 
 
@@ -368,6 +418,12 @@ def _empty_opportunities() -> pd.DataFrame:
             "displayed_depth",
             "future_ts",
             "regime",
+            "call_side",
+            "call_price",
+            "put_side",
+            "put_price",
+            "future_side",
+            "future_price",
             "persistence_ticks",
         ]
     )
@@ -388,6 +444,14 @@ def _empty_box_opportunities() -> pd.DataFrame:
             "net_edge",
             "displayed_depth",
             "regime",
+            "low_call_side",
+            "low_call_price",
+            "low_put_side",
+            "low_put_price",
+            "high_call_side",
+            "high_call_price",
+            "high_put_side",
+            "high_put_price",
             "persistence_ticks",
         ]
     )

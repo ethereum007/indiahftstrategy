@@ -34,12 +34,20 @@ SETTLEMENT_REQUIRED_RUN_TYPES = (
     "settlement_order_plan",
     "settlement_launch_pipeline",
 )
+PARITY_REQUIRED_RUN_TYPES = (
+    "parity_edge_audit",
+    "parity_sweep",
+    "promotion_report",
+    "parity_order_plan",
+    "parity_launch_pipeline",
+)
 SURFACE_MM_REQUIRED_RUN_TYPES = ("surface_quality_report", "quote_risk_report", "surface_mm_research_pipeline")
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
     "imbalance": IMBALANCE_REQUIRED_RUN_TYPES,
     "settlement": SETTLEMENT_REQUIRED_RUN_TYPES,
+    "parity": PARITY_REQUIRED_RUN_TYPES,
     "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
 }
 EVIDENCE_PROFILE_ALIASES = {
@@ -48,6 +56,7 @@ EVIDENCE_PROFILE_ALIASES = {
     "leadlag_taker": "leadlag",
     "microprice_imbalance": "imbalance",
     "settlement_convergence": "settlement",
+    "parity_box": "parity",
     "surface_market_making": "surface_mm",
 }
 

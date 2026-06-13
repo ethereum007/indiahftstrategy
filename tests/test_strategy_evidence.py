@@ -312,6 +312,75 @@ def settlement_catalog_rows(*, commit="abc123", market="india_nse_index_derivati
     )
 
 
+def parity_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
+    parameters = json.dumps({"strategy": "parity_box", "market": market})
+    return pd.DataFrame(
+        [
+            {
+                "run_dir": "runs/parity_edge",
+                "run_type": "parity_edge_audit",
+                "generated_at_utc": "2026-06-10T09:25:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "parity_edge_summary.csv",
+                "summary_strategy": "parity_box",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/parity_sweep",
+                "run_type": "parity_sweep",
+                "generated_at_utc": "2026-06-10T09:30:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "sweep_summary.csv",
+                "summary_strategy": "parity_box",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/parity_promotion",
+                "run_type": "promotion_report",
+                "generated_at_utc": "2026-06-10T09:35:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "promotion_summary.csv",
+                "summary_strategy": "parity_box",
+                "summary_market": market,
+                "summary_candidate_scenario_key": f"strategy=parity_box|market={market}|direction=buy_synthetic_sell_future",
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/parity_orders",
+                "run_type": "parity_order_plan",
+                "generated_at_utc": "2026-06-10T09:40:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "parity_order_summary.csv",
+                "summary_strategy": "parity_box",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/parity_launch",
+                "run_type": "parity_launch_pipeline",
+                "generated_at_utc": "2026-06-10T09:45:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "parity_launch_pipeline_summary.csv",
+                "summary_strategy": "parity_box",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+        ]
+    )
+
+
 def test_strategy_evidence_passes_complete_clean_catalog():
     review = evaluate_strategy_evidence(
         catalog_rows(),
@@ -677,6 +746,39 @@ def test_settlement_evidence_profile_fails_without_launch_pipeline():
     failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
     assert not review.ready
     assert "required_run_type:settlement_launch_pipeline" in failed
+
+
+def test_parity_evidence_profile_requires_sweep_order_and_launch_identity():
+    review = evaluate_strategy_evidence(
+        parity_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("parity-box"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="parity_box",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["parity"])
+    assert set(review.evidence["latest_strategy"]) == {"parity"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["strategy"] == "parity"
+
+
+def test_parity_evidence_profile_fails_without_launch_pipeline():
+    catalog = parity_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "parity_launch_pipeline"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("parity")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:parity_launch_pipeline" in failed
 
 
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):

@@ -73,6 +73,12 @@ def test_scan_parity_finds_touchable_dislocation_and_persistence():
     assert list(opps["edge_per_unit"]) == [7.0, 6.0]
     assert list(opps["net_edge"]) == [525.0, 450.0]
     assert list(opps["persistence_ticks"]) == [1, 0]
+    assert list(opps["call_side"]) == [1, 1]
+    assert list(opps["put_side"]) == [-1, -1]
+    assert list(opps["future_side"]) == [-1, -1]
+    assert list(opps["call_price"]) == [55.0, 55.0]
+    assert list(opps["put_price"]) == [60.0, 60.0]
+    assert list(opps["future_price"]) == [1002.0, 1001.0]
 
 
 def test_scan_parity_asof_latency_prevents_future_lookahead():
@@ -163,6 +169,14 @@ def test_scan_boxes_finds_planted_box_and_reports_summary():
     assert row["edge_per_unit"] == 2.0
     assert row["net_edge"] == 150.0
     assert row["persistence_ticks"] == 0
+    assert row["low_call_side"] == 1
+    assert row["low_put_side"] == -1
+    assert row["high_call_side"] == -1
+    assert row["high_put_side"] == 1
+    assert row["low_call_price"] == 52.0
+    assert row["low_put_price"] == 45.0
+    assert row["high_call_price"] == 45.0
+    assert row["high_put_price"] == 46.0
 
     report = opportunity_report(opps)
     assert report.iloc[0]["regime"] == "post_stt_hike"

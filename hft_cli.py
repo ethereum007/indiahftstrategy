@@ -71,6 +71,8 @@ from reports.market_profile import MarketProfileReportConfig, write_market_profi
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
+from reports.parity_launch_pipeline import ParityLaunchPipelineConfig, write_parity_launch_pipeline
+from reports.parity_order_plan import ParityOrderPlanConfig, write_parity_order_plan
 from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
@@ -1041,6 +1043,84 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--max-otr", type=float, default=None)
     parity_sweep.add_argument("--min-spread-net", type=float, default=None)
     parity_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    parity_orders = sub.add_parser(
+        "plan-parity-orders",
+        help="Create broker-neutral multi-leg paper/shadow order templates from a promoted parity/box candidate.",
+    )
+    parity_orders.add_argument("--promotion", required=True)
+    parity_orders.add_argument("--out", required=True)
+    parity_orders.add_argument("--symbol-prefix", default="NIFTY")
+    parity_orders.add_argument("--future-instrument-id", default="NIFTY_FUT")
+    parity_orders.add_argument("--direction", default=None)
+    parity_orders.add_argument("--expiry", default=None)
+    parity_orders.add_argument("--strike", type=float, default=None)
+    parity_orders.add_argument("--low-strike", type=float, default=None)
+    parity_orders.add_argument("--high-strike", type=float, default=None)
+    parity_orders.add_argument("--qty", type=int, default=None)
+    parity_orders.add_argument("--call-price", type=float, default=None)
+    parity_orders.add_argument("--put-price", type=float, default=None)
+    parity_orders.add_argument("--future-price", type=float, default=None)
+    parity_orders.add_argument("--low-call-price", type=float, default=None)
+    parity_orders.add_argument("--low-put-price", type=float, default=None)
+    parity_orders.add_argument("--high-call-price", type=float, default=None)
+    parity_orders.add_argument("--high-put-price", type=float, default=None)
+    parity_orders.add_argument("--price-offset-ticks", type=float, default=0.0)
+    parity_orders.add_argument("--tick-size", type=float, default=0.05)
+    parity_orders.add_argument("--max-order-qty", type=int, default=None)
+    parity_orders.add_argument("--max-notional", type=float, default=None)
+    parity_orders.add_argument("--price-band-pct", type=float, default=None)
+    parity_orders.add_argument("--output-file", default="parity_order_candidates.csv")
+    parity_orders.add_argument("--allow-unready-promotion", action="store_true")
+    parity_orders.add_argument("--fail-on-breach", action="store_true")
+
+    parity_launch_pipeline = sub.add_parser(
+        "pipeline-parity-launch",
+        help="Run promoted parity/box candidate through order plan, staging, launch, export, and upload pack.",
+    )
+    parity_launch_pipeline.add_argument("--promotion", required=True)
+    parity_launch_pipeline.add_argument("--out", required=True)
+    parity_launch_pipeline.add_argument("--adapter", default="arrow_money")
+    parity_launch_pipeline.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
+    parity_launch_pipeline.add_argument("--route-tag", default=None)
+    parity_launch_pipeline.add_argument("--symbol-prefix", default="NIFTY")
+    parity_launch_pipeline.add_argument("--future-instrument-id", default="NIFTY_FUT")
+    parity_launch_pipeline.add_argument("--direction", default=None)
+    parity_launch_pipeline.add_argument("--expiry", default=None)
+    parity_launch_pipeline.add_argument("--strike", type=float, default=None)
+    parity_launch_pipeline.add_argument("--low-strike", type=float, default=None)
+    parity_launch_pipeline.add_argument("--high-strike", type=float, default=None)
+    parity_launch_pipeline.add_argument("--qty", type=int, default=None)
+    parity_launch_pipeline.add_argument("--call-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--put-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--future-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--low-call-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--low-put-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--high-call-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--high-put-price", type=float, default=None)
+    parity_launch_pipeline.add_argument("--price-offset-ticks", type=float, default=0.0)
+    parity_launch_pipeline.add_argument("--tick-size", type=float, default=0.05)
+    parity_launch_pipeline.add_argument("--max-order-qty", type=int, default=None)
+    parity_launch_pipeline.add_argument("--max-notional", type=float, default=None)
+    parity_launch_pipeline.add_argument("--price-band-pct", type=float, default=None)
+    parity_launch_pipeline.add_argument("--max-orders", type=int, default=None)
+    parity_launch_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    parity_launch_pipeline.add_argument("--product", default="MIS")
+    parity_launch_pipeline.add_argument("--exchange", default="NFO")
+    parity_launch_pipeline.add_argument("--broker-schema-audit", default=None)
+    parity_launch_pipeline.add_argument("--broker-mapping-draft", default=None)
+    parity_launch_pipeline.add_argument("--broker-mapped-orders", default=None)
+    parity_launch_pipeline.add_argument("--broker-halt-export", default=None)
+    parity_launch_pipeline.add_argument("--broker-reconciliation", default=None)
+    parity_launch_pipeline.add_argument("--broker-runtime-session", default=None)
+    parity_launch_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
+    parity_launch_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
+    parity_launch_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
+    parity_launch_pipeline.add_argument("--require-broker-halt-export", action="store_true")
+    parity_launch_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
+    parity_launch_pipeline.add_argument("--require-broker-runtime-session", action="store_true")
+    parity_launch_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
+    parity_launch_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     surface_mm_sweep = sub.add_parser("sweep-surface-mm", help="Run surface MM replay robustness sweep.")
     surface_mm_sweep.add_argument("--quotes", required=True)
@@ -2855,6 +2935,86 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "plan-parity-orders":
+        result = write_parity_order_plan(
+            args.promotion,
+            output_dir=args.out,
+            config=ParityOrderPlanConfig(
+                symbol_prefix=args.symbol_prefix,
+                future_instrument_id=args.future_instrument_id,
+                require_promotion_ready=not args.allow_unready_promotion,
+                direction=args.direction,
+                expiry=args.expiry,
+                strike=args.strike,
+                low_strike=args.low_strike,
+                high_strike=args.high_strike,
+                qty=args.qty,
+                call_price=args.call_price,
+                put_price=args.put_price,
+                future_price=args.future_price,
+                low_call_price=args.low_call_price,
+                low_put_price=args.low_put_price,
+                high_call_price=args.high_call_price,
+                high_put_price=args.high_put_price,
+                price_offset_ticks=args.price_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                output_filename=args.output_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-parity-launch":
+        result = write_parity_launch_pipeline(
+            args.promotion,
+            output_dir=args.out,
+            config=ParityLaunchPipelineConfig(
+                adapter=args.adapter,
+                mode=args.mode,
+                route_tag=args.route_tag,
+                symbol_prefix=args.symbol_prefix,
+                future_instrument_id=args.future_instrument_id,
+                direction=args.direction,
+                expiry=args.expiry,
+                strike=args.strike,
+                low_strike=args.low_strike,
+                high_strike=args.high_strike,
+                qty=args.qty,
+                call_price=args.call_price,
+                put_price=args.put_price,
+                future_price=args.future_price,
+                low_call_price=args.low_call_price,
+                low_put_price=args.low_put_price,
+                high_call_price=args.high_call_price,
+                high_put_price=args.high_put_price,
+                price_offset_ticks=args.price_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                broker_schema_audit_dir=args.broker_schema_audit,
+                broker_mapping_draft_dir=args.broker_mapping_draft,
+                broker_mapped_orders_dir=args.broker_mapped_orders,
+                broker_halt_export_dir=args.broker_halt_export,
+                broker_reconciliation_dir=args.broker_reconciliation,
+                broker_runtime_session_dir=args.broker_runtime_session,
+                require_broker_schema_audit=args.require_broker_schema_audit,
+                require_broker_mapping_draft=args.require_broker_mapping_draft,
+                require_broker_mapped_orders=args.require_broker_mapped_orders,
+                require_broker_halt_export=args.require_broker_halt_export,
+                require_broker_reconciliation=args.require_broker_reconciliation,
+                require_broker_runtime_session=args.require_broker_runtime_session,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "sweep-surface-mm":
         result = run_surface_mm_sweep(
             quotes_path=args.quotes,

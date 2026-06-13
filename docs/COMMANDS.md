@@ -129,6 +129,22 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+For parity/box research, use the named profile once the scan edge audit,
+robustness sweep, promotion, multi-leg order plan, and launch pipeline are all
+present:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\parity_shadow `
+  --profile parity `
+  --require-same-strategy `
+  --expected-strategy parity_box `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
 For settlement convergence, use the named profile after promotion and launch
 handoff so the India-specific walk-forward, promotion, order plan, and launch
 pipeline are all present:
@@ -153,7 +169,9 @@ expands to `surface_quality_report`, `quote_risk_report`, and
 `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
 `imbalance_research_pipeline`, `imbalance_order_plan`, and
-`imbalance_launch_pipeline`. The `settlement` profile expands to
+`imbalance_launch_pipeline`. The `parity` profile expands to
+`parity_edge_audit`, `parity_sweep`, `promotion_report`,
+`parity_order_plan`, and `parity_launch_pipeline`. The `settlement` profile expands to
 `settlement_convergence_walkforward`, `promotion_report`,
 `settlement_order_plan`, and `settlement_launch_pipeline`. Explicit
 `--required-run-type` flags still override the profile for custom launch
@@ -352,6 +370,82 @@ sweep_summary.csv
 proof/proof_metrics.csv
 proof/proof_checks.csv
 proof/proof_summary.csv
+```
+
+## Parity / Box Order Plan
+
+Convert a promoted parity/box candidate into broker-neutral multi-leg
+paper/shadow order templates. Candidate configs produced from scan-like
+selections can carry leg prices directly; otherwise pass the target direction,
+expiry, strikes, quantity, and leg prices explicitly:
+
+```powershell
+python -m hft_cli plan-parity-orders `
+  --promotion runs\promotion\parity_box `
+  --out runs\orders\parity_box_shadow `
+  --direction buy_synthetic_sell_future `
+  --expiry 2026-06-30 `
+  --strike 25000 `
+  --qty 75 `
+  --call-price 105 `
+  --put-price 95 `
+  --future-price 25020 `
+  --max-order-qty 75 `
+  --max-notional 2000000 `
+  --fail-on-breach
+```
+
+For boxes, use `--direction buy_box` or `--direction sell_box` with
+`--low-strike`, `--high-strike`, `--low-call-price`, `--low-put-price`,
+`--high-call-price`, and `--high-put-price`.
+
+Outputs:
+
+```text
+parity_order_candidates.csv
+parity_order_checks.csv
+parity_order_summary.csv
+manifest.json
+```
+
+## Parity / Box Launch Pipeline
+
+Run the promoted multi-leg candidate through order planning, staging, launch
+bundle creation, broker export, broker upload pack, and broker readiness:
+
+```powershell
+python -m hft_cli pipeline-parity-launch `
+  --promotion runs\promotion\parity_box `
+  --out runs\launch_pipelines\parity_box_arrow `
+  --adapter arrow_money `
+  --mode shadow `
+  --route-tag parity_shadow `
+  --direction buy_synthetic_sell_future `
+  --expiry 2026-06-30 `
+  --strike 25000 `
+  --qty 75 `
+  --call-price 105 `
+  --put-price 95 `
+  --future-price 25020 `
+  --max-order-qty 75 `
+  --max-notional 2000000 `
+  --max-orders 3 `
+  --allow-placeholder-schema `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+01_order_plan\...
+02_staged_orders\...
+03_launch\...
+04_export\...
+05_upload_pack\...
+06_broker_readiness\...
+parity_launch_pipeline_components.csv
+parity_launch_pipeline_summary.csv
+manifest.json
 ```
 
 ## Lead-Lag Measurement

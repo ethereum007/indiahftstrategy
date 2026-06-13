@@ -305,6 +305,60 @@ def test_catalog_experiment_runs_recognizes_settlement_launch_pipeline_status(tm
     assert row["summary_components"] == 6
 
 
+def test_catalog_experiment_runs_recognizes_parity_order_plan_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "parity_order_plan",
+        run_type="parity_order_plan",
+        summary_name="parity_order_summary.csv",
+        summary_row={
+            "ready": True,
+            "strategy": "parity_box",
+            "market": "india_nse_index_derivatives",
+            "direction": "buy_synthetic_sell_future",
+            "orders": 3,
+            "failed_checks": 0,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "parity_order_plan"
+    assert row["summary_file"] == "parity_order_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_direction"] == "buy_synthetic_sell_future"
+
+
+def test_catalog_experiment_runs_recognizes_parity_launch_pipeline_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "parity_launch_pipeline",
+        run_type="parity_launch_pipeline",
+        summary_name="parity_launch_pipeline_summary.csv",
+        summary_row={
+            "ready": True,
+            "strategy": "parity_box",
+            "market": "india_nse_index_derivatives",
+            "adapter": "arrow_money",
+            "mode": "shadow",
+            "components": 6,
+            "failed_components": 0,
+            "recommendation": "paper_or_shadow_handoff",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "parity_launch_pipeline"
+    assert row["summary_file"] == "parity_launch_pipeline_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_components"] == 6
+
+
 def test_catalog_experiment_runs_recognizes_broker_upload_and_readiness_status(tmp_path):
     root = tmp_path / "runs"
     write_run(
