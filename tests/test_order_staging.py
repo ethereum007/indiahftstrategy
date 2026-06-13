@@ -68,6 +68,28 @@ def write_quote_risk_review(path, *, passed=True):
     ).to_csv(path / "quote_risk_summary.csv", index=False)
 
 
+def write_surface_quality_review(path, *, passed=True):
+    path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "horizon_ns": 1_000_000_000,
+                "observations": 2,
+                "unmatched_observations": 0,
+                "instruments": 1,
+                "theo_mae": 0.10 if passed else 1.0,
+                "mid_mae": 0.50,
+                "mae_improvement": 0.40 if passed else -0.50,
+                "relative_mae_improvement": 0.80 if passed else -1.0,
+                "improvement_rate": 1.0 if passed else 0.0,
+                "all_passed": passed,
+                "failed_checks": 0 if passed else 1,
+                "recommendation": "surface_model_usable" if passed else "improve_surface_before_quoting",
+            }
+        ]
+    ).to_csv(path / "surface_quality_summary.csv", index=False)
+
+
 def test_stage_surface_quotes_accepts_safe_limit_orders():
     report = stage_surface_quote_orders(
         safe_surface_quotes(),
@@ -200,6 +222,31 @@ def test_write_staged_orders_accepts_passed_quote_risk_review(tmp_path):
     assert "quote_risk_review" in manifest["inputs"]
 
 
+def test_write_staged_orders_accepts_passed_surface_quality_review(tmp_path):
+    quotes_path = tmp_path / "surface_quotes.csv"
+    quality_dir = tmp_path / "surface_quality"
+    out_dir = tmp_path / "staged_with_surface_quality"
+    safe_surface_quotes().to_csv(quotes_path, index=False)
+    write_surface_quality_review(quality_dir, passed=True)
+
+    report = write_staged_orders(
+        quotes_path,
+        output_dir=out_dir,
+        source="surface_quotes",
+        limits=OrderStagingLimits(max_order_qty=75, max_notional=10_000),
+        surface_quality_review_dir=quality_dir,
+        require_surface_quality=True,
+    )
+
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.passed
+    assert len(report.accepted) == 2
+    assert bool(report.summary.loc[0, "surface_quality_passed"])
+    assert manifest["parameters"]["require_surface_quality"]
+    assert manifest["parameters"]["surface_quality"]["accepted"]
+    assert "surface_quality" in manifest["inputs"]
+
+
 def test_write_staged_orders_blocks_surface_quotes_without_required_quote_review(tmp_path):
     quotes_path = tmp_path / "surface_quotes.csv"
     out_dir = tmp_path / "staged_missing_quote_review"
@@ -219,6 +266,27 @@ def test_write_staged_orders_blocks_surface_quotes_without_required_quote_review
     assert set(report.rejected["rejection_reason"]) == {"quote_risk_review_missing"}
     assert not bool(report.summary.loc[0, "all_passed"])
     assert not bool(report.summary.loc[0, "quote_risk_review_provided"])
+
+
+def test_write_staged_orders_blocks_surface_quotes_without_required_surface_quality(tmp_path):
+    quotes_path = tmp_path / "surface_quotes.csv"
+    out_dir = tmp_path / "staged_missing_surface_quality"
+    safe_surface_quotes().to_csv(quotes_path, index=False)
+
+    report = write_staged_orders(
+        quotes_path,
+        output_dir=out_dir,
+        source="surface_quotes",
+        limits=OrderStagingLimits(max_order_qty=75, max_notional=10_000),
+        require_surface_quality=True,
+    )
+
+    assert not report.passed
+    assert report.accepted.empty
+    assert len(report.rejected) == 2
+    assert set(report.rejected["rejection_reason"]) == {"surface_quality_missing"}
+    assert not bool(report.summary.loc[0, "all_passed"])
+    assert not bool(report.summary.loc[0, "surface_quality_provided"])
 
 
 def test_unified_cli_stage_orders_can_fail_on_reject(tmp_path):
@@ -273,3 +341,31 @@ def test_unified_cli_stage_orders_requires_quote_risk_review(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "all_passed"])
     assert summary.loc[0, "quote_risk_review_reason"] == "quote_risk_review_missing"
+
+
+def test_unified_cli_stage_orders_requires_surface_quality_review(tmp_path):
+    quotes_path = tmp_path / "surface_quotes.csv"
+    out_dir = tmp_path / "stage_surface_quality_cli"
+    safe_surface_quotes().to_csv(quotes_path, index=False)
+
+    code = main(
+        [
+            "stage-orders",
+            "--orders",
+            str(quotes_path),
+            "--source",
+            "surface_quotes",
+            "--out",
+            str(out_dir),
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "10000",
+            "--require-surface-quality",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "staged_order_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "all_passed"])
+    assert summary.loc[0, "surface_quality_reason"] == "surface_quality_missing"

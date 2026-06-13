@@ -13,6 +13,11 @@ from reports.quote_risk import (
     quote_risk_review_parameters,
     read_quote_risk_summary,
 )
+from reports.surface_quality import (
+    read_surface_quality_summary,
+    surface_quality_review_check,
+    surface_quality_review_parameters,
+)
 from risk.compliance import check_order_to_trade_ratio
 
 
@@ -52,6 +57,9 @@ def evaluate_quote_lifecycle(
     quote_risk_summary: pd.DataFrame | None = None,
     quote_risk_review_dir: str | Path | None = None,
     require_quote_risk_review: bool = False,
+    surface_quality_summary: pd.DataFrame | None = None,
+    surface_quality_review_dir: str | Path | None = None,
+    require_surface_quality: bool = False,
 ) -> QuoteLifecycleReport:
     thresholds = thresholds or QuoteLifecycleThresholds()
     _validate_thresholds(thresholds)
@@ -68,10 +76,22 @@ def evaluate_quote_lifecycle(
     )
     if quote_risk_check is not None:
         checks = pd.concat([pd.DataFrame([quote_risk_check]), checks], ignore_index=True, sort=False)
+    surface_quality_summary = pd.DataFrame() if surface_quality_summary is None else surface_quality_summary
+    surface_quality_check = surface_quality_review_check(
+        surface_quality_summary,
+        required=require_surface_quality,
+        input_dir=surface_quality_review_dir,
+    )
+    if surface_quality_check is not None:
+        checks = pd.concat([pd.DataFrame([surface_quality_check]), checks], ignore_index=True, sort=False)
     summary["quote_risk_review_required"] = bool(require_quote_risk_review)
     summary["quote_risk_review_provided"] = bool(quote_risk_check is not None and quote_risk_check["input_dir"])
     summary["quote_risk_review_passed"] = bool(True if quote_risk_check is None else quote_risk_check["passed"])
     summary["quote_risk_review_reason"] = "" if quote_risk_check is None else str(quote_risk_check["reason"])
+    summary["surface_quality_required"] = bool(require_surface_quality)
+    summary["surface_quality_provided"] = bool(surface_quality_check is not None and surface_quality_check["input_dir"])
+    summary["surface_quality_passed"] = bool(True if surface_quality_check is None else surface_quality_check["passed"])
+    summary["surface_quality_reason"] = "" if surface_quality_check is None else str(surface_quality_check["reason"])
     summary["failed_checks"] = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     summary["ready"] = bool(summary.iloc[0]["failed_checks"] == 0)
     summary["recommendation"] = _recommendation(summary.iloc[0])
@@ -85,6 +105,8 @@ def write_quote_lifecycle_plan(
     thresholds: QuoteLifecycleThresholds | None = None,
     quote_risk_review_dir: str | Path | None = None,
     require_quote_risk_review: bool = False,
+    surface_quality_review_dir: str | Path | None = None,
+    require_surface_quality: bool = False,
 ) -> QuoteLifecycleReport:
     quotes_file = Path(quotes_path)
     if quotes_file.is_dir():
@@ -93,12 +115,16 @@ def write_quote_lifecycle_plan(
         raise FileNotFoundError(f"surface quotes file not found: {quotes_file}")
     thresholds = thresholds or QuoteLifecycleThresholds()
     quote_risk_summary = read_quote_risk_summary(quote_risk_review_dir)
+    surface_quality_summary = read_surface_quality_summary(surface_quality_review_dir)
     report = evaluate_quote_lifecycle(
         pd.read_csv(quotes_file),
         thresholds=thresholds,
         quote_risk_summary=quote_risk_summary,
         quote_risk_review_dir=quote_risk_review_dir,
         require_quote_risk_review=require_quote_risk_review,
+        surface_quality_summary=surface_quality_summary,
+        surface_quality_review_dir=surface_quality_review_dir,
+        require_surface_quality=require_surface_quality,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -110,6 +136,8 @@ def write_quote_lifecycle_plan(
     inputs: dict[str, Any] = {"quotes": quotes_file}
     if quote_risk_review_dir is not None:
         inputs["quote_risk_review"] = Path(quote_risk_review_dir)
+    if surface_quality_review_dir is not None:
+        inputs["surface_quality"] = Path(surface_quality_review_dir)
     write_experiment_manifest(
         out,
         run_type="quote_lifecycle_plan",
@@ -117,6 +145,8 @@ def write_quote_lifecycle_plan(
             "thresholds": asdict(thresholds),
             "require_quote_risk_review": bool(require_quote_risk_review),
             "quote_risk_review": quote_risk_review_parameters(quote_risk_summary, quote_risk_review_dir),
+            "require_surface_quality": bool(require_surface_quality),
+            "surface_quality": surface_quality_review_parameters(surface_quality_summary, surface_quality_review_dir),
         },
         inputs=inputs,
     )
@@ -581,6 +611,8 @@ def _recommendation(row: pd.Series) -> str:
     if not bool(row["ready"]):
         if not bool(row.get("quote_risk_review_passed", True)):
             return "fix_quote_risk_review_before_routing"
+        if not bool(row.get("surface_quality_passed", True)):
+            return "improve_surface_quality_before_routing"
         return "reduce_quote_churn_or_limits_before_routing"
     if int(row.get("order_messages", 0)) == 0:
         return "no_quote_actions_to_route"

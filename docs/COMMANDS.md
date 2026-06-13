@@ -934,6 +934,8 @@ python -m hft_cli plan-quote-lifecycle `
   --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
   --quote-risk-review runs\surface_quotes_2026_06_10\quote_review `
   --require-quote-risk-review `
+  --surface-quality-review runs\surface_quotes_2026_06_10\surface_quality `
+  --require-surface-quality `
   --out runs\surface_quotes_2026_06_10\quote_lifecycle `
   --quote-ttl-ns 1000000000 `
   --max-order-messages 500 `
@@ -964,6 +966,9 @@ Lifecycle action id, reason, message count, quote age, and replace-order ids
 are preserved through staged, launch, broker-neutral export, and built-in
 upload-pack files. This makes OTR and quote-churn limits explicit before
 Arrow.money/iRage upload preparation.
+Use `--surface-quality-review` with `--require-surface-quality` to fail closed
+unless `surface_quality_summary.csv` shows the fitted surface theo beat current
+mids against future chain mids.
 
 ## Surface Market-Making Research Pipeline
 
@@ -2496,6 +2501,8 @@ python -m hft_cli stage-orders `
   --out runs\surface_quotes_2026_06_10\staged_orders `
   --quote-risk-review runs\surface_quotes_2026_06_10\quote_review `
   --require-quote-risk-review `
+  --surface-quality-review runs\surface_quotes_2026_06_10\surface_quality `
+  --require-surface-quality `
   --max-order-qty 75 `
   --max-notional 10000 `
   --price-band-pct 0.02 `
@@ -2503,10 +2510,10 @@ python -m hft_cli stage-orders `
   --fail-on-reject
 ```
 
-For `--source surface_quotes`, requiring the quote-risk review blocks all
-orders unless the supplied `quote_risk_summary.csv` passed. This keeps market
-making quotes from moving into broker-neutral staging before the data and quote
-hygiene gates are accepted.
+For `--source surface_quotes`, requiring quote-risk or surface-quality review
+blocks all orders unless the supplied summaries passed. This keeps market
+making quotes from moving into broker-neutral staging before data hygiene,
+quote hygiene, and surface-theo quality gates are accepted.
 
 For `--source orders`, the input CSV must include:
 

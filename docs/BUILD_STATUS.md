@@ -328,9 +328,10 @@
   concentration before replay or live routing.
 - Surface quote lifecycle planner that converts reviewed quote snapshots into
   submit/replace/cancel actions plus routeable submit/replace order files with
-  TTL, OTR, message-budget, and active-quote controls before Arrow.money/iRage
-  paper-routing preparation, preserving replace lineage through staging,
-  launch, and broker-neutral export artifacts.
+  optional surface-quality evidence, TTL, OTR, message-budget, and
+  active-quote controls before Arrow.money/iRage paper-routing preparation,
+  preserving replace lineage through staging, launch, and broker-neutral
+  export artifacts.
 - Option order exposure review for staged, launch, or exported order batches,
   including Black-76 delta/vega, gross notional, side imbalance, and
   instrument concentration checks, with cross-market option metadata inference
@@ -342,9 +343,9 @@
   fill-depth, and markout horizons, with market identity carried through
   per-scenario replays, proof gates, robust scores, and manifests.
 - Broker-neutral order staging for generated quotes or generic order
-  candidates, including pre-trade quantity/notional/marketability/price-band
-  checks, accepted/rejected order artifacts, and manifests for later
-  Arrow.money/iRage routing adapters.
+  candidates, including optional surface-quality evidence, pre-trade
+  quantity/notional/marketability/price-band checks, accepted/rejected order
+  artifacts, and manifests for later Arrow.money/iRage routing adapters.
 - Adapter schema audit for vendor sample CSV headers, including required,
   missing, and extra source columns plus a mapping template and manifest before
   real Arrow.money/iRage column maps are finalized.
@@ -381,7 +382,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 533 tests.
+Current passing suite: 537 tests.
 
 ## Next Build Targets
 

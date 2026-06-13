@@ -89,6 +89,10 @@ def write_surface_mm_launch_pipeline(
     out.mkdir(parents=True, exist_ok=True)
 
     quotes_path = surface_pipeline / "01_quotes" / "surface_quotes.csv"
+    surface_quality_dir = surface_pipeline / "02_surface_quality"
+    surface_quality_review_dir = (
+        surface_quality_dir if (surface_quality_dir / "surface_quality_summary.csv").exists() else None
+    )
     quote_review_dir = surface_pipeline / "02_quote_review"
     promotion_dir = surface_pipeline / "05_promotion"
 
@@ -148,6 +152,8 @@ def write_surface_mm_launch_pipeline(
         ),
         quote_risk_review_dir=quote_review_dir,
         require_quote_risk_review=True,
+        surface_quality_review_dir=surface_quality_review_dir,
+        require_surface_quality=surface_quality_review_dir is not None,
     )
     components.append(_component("quote_lifecycle", quote_lifecycle.ready, quote_lifecycle_dir, quote_lifecycle.summary))
 
@@ -167,6 +173,8 @@ def write_surface_mm_launch_pipeline(
             ),
             quote_risk_review_dir=quote_review_dir,
             require_quote_risk_review=True,
+            surface_quality_review_dir=surface_quality_review_dir,
+            require_surface_quality=surface_quality_review_dir is not None,
         )
         components.append(_component("staged_orders", _staging_ready(staging), staging_dir, staging.summary))
     else:

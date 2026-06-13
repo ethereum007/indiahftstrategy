@@ -1487,6 +1487,8 @@ def main(argv: list[str] | None = None) -> int:
     quote_lifecycle.add_argument("--out", required=True)
     quote_lifecycle.add_argument("--quote-risk-review", default=None)
     quote_lifecycle.add_argument("--require-quote-risk-review", action="store_true")
+    quote_lifecycle.add_argument("--surface-quality-review", default=None)
+    quote_lifecycle.add_argument("--require-surface-quality", action="store_true")
     quote_lifecycle.add_argument("--quote-ttl-ns", type=int, default=None)
     quote_lifecycle.add_argument("--max-order-messages", type=int, default=None)
     quote_lifecycle.add_argument("--max-active-quotes", type=int, default=None)
@@ -1546,6 +1548,8 @@ def main(argv: list[str] | None = None) -> int:
     order_stage.add_argument("--allow-marketable", action="store_true")
     order_stage.add_argument("--quote-risk-review", default=None)
     order_stage.add_argument("--require-quote-risk-review", action="store_true")
+    order_stage.add_argument("--surface-quality-review", default=None)
+    order_stage.add_argument("--require-surface-quality", action="store_true")
     order_stage.add_argument("--fail-on-reject", action="store_true")
 
     args = parser.parse_args(argv)
@@ -3227,9 +3231,16 @@ def main(argv: list[str] | None = None) -> int:
             ),
             quote_risk_review_dir=args.quote_risk_review,
             require_quote_risk_review=args.require_quote_risk_review,
+            surface_quality_review_dir=args.surface_quality_review,
+            require_surface_quality=args.require_surface_quality,
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        return (
+            2
+            if (args.fail_on_breach or args.require_quote_risk_review or args.require_surface_quality)
+            and not result.ready
+            else 0
+        )
     if args.command == "review-order-exposure":
         result = write_order_exposure_report(
             args.orders,
@@ -3295,9 +3306,16 @@ def main(argv: list[str] | None = None) -> int:
             ),
             quote_risk_review_dir=args.quote_risk_review,
             require_quote_risk_review=args.require_quote_risk_review,
+            surface_quality_review_dir=args.surface_quality_review,
+            require_surface_quality=args.require_surface_quality,
         )
         print(result.summary.to_string(index=False))
-        return 2 if (args.fail_on_reject or args.require_quote_risk_review) and not result.passed else 0
+        return (
+            2
+            if (args.fail_on_reject or args.require_quote_risk_review or args.require_surface_quality)
+            and not result.passed
+            else 0
+        )
     raise RuntimeError(f"unhandled command {args.command}")
 
 

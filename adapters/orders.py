@@ -15,6 +15,11 @@ from reports.quote_risk import (
     quote_risk_review_parameters,
     read_quote_risk_summary,
 )
+from reports.surface_quality import (
+    read_surface_quality_summary,
+    surface_quality_review_check,
+    surface_quality_review_parameters,
+)
 
 
 @dataclass(frozen=True)
@@ -124,6 +129,8 @@ def write_staged_orders(
     adapter: str = "normalized",
     quote_risk_review_dir: str | Path | None = None,
     require_quote_risk_review: bool = False,
+    surface_quality_review_dir: str | Path | None = None,
+    require_surface_quality: bool = False,
 ) -> OrderStagingReport:
     get_adapter(adapter)
     orders_file = Path(orders_path)
@@ -139,10 +146,23 @@ def write_staged_orders(
     )
     if quote_risk_check is not None and not bool(quote_risk_check["passed"]):
         report = _block_staged_orders(report, str(quote_risk_check["reason"]))
+    surface_quality_summary = read_surface_quality_summary(surface_quality_review_dir)
+    surface_quality_check = surface_quality_review_check(
+        surface_quality_summary,
+        required=require_surface_quality,
+        input_dir=surface_quality_review_dir,
+    )
+    if surface_quality_check is not None and not bool(surface_quality_check["passed"]):
+        report = _block_staged_orders(report, str(surface_quality_check["reason"]))
     report = _attach_quote_risk_summary(
         report,
         quote_risk_check=quote_risk_check,
         required=require_quote_risk_review,
+    )
+    report = _attach_surface_quality_summary(
+        report,
+        surface_quality_check=surface_quality_check,
+        required=require_surface_quality,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -152,6 +172,8 @@ def write_staged_orders(
     inputs: dict[str, Any] = {"orders": orders_file}
     if quote_risk_review_dir is not None:
         inputs["quote_risk_review"] = Path(quote_risk_review_dir)
+    if surface_quality_review_dir is not None:
+        inputs["surface_quality"] = Path(surface_quality_review_dir)
     write_experiment_manifest(
         out,
         run_type="order_staging",
@@ -161,6 +183,11 @@ def write_staged_orders(
             "limits": asdict(limits),
             "require_quote_risk_review": bool(require_quote_risk_review),
             "quote_risk_review": quote_risk_review_parameters(quote_risk_summary, quote_risk_review_dir),
+            "require_surface_quality": bool(require_surface_quality),
+            "surface_quality": surface_quality_review_parameters(
+                surface_quality_summary,
+                surface_quality_review_dir,
+            ),
         },
         inputs=inputs,
     )
@@ -281,6 +308,27 @@ def _attach_quote_risk_summary(
     summary["quote_risk_review_provided"] = bool(quote_risk_check is not None and quote_risk_check["input_dir"])
     summary["quote_risk_review_passed"] = bool(passed)
     summary["quote_risk_review_reason"] = "" if quote_risk_check is None else str(quote_risk_check["reason"])
+    summary["all_passed"] = summary["all_passed"].astype(bool) & bool(passed)
+    return OrderStagingReport(
+        accepted=report.accepted,
+        rejected=report.rejected,
+        summary=summary,
+        output_dir=report.output_dir,
+    )
+
+
+def _attach_surface_quality_summary(
+    report: OrderStagingReport,
+    *,
+    surface_quality_check: dict[str, Any] | None,
+    required: bool,
+) -> OrderStagingReport:
+    summary = report.summary.copy()
+    passed = True if surface_quality_check is None else bool(surface_quality_check["passed"])
+    summary["surface_quality_required"] = bool(required)
+    summary["surface_quality_provided"] = bool(surface_quality_check is not None and surface_quality_check["input_dir"])
+    summary["surface_quality_passed"] = bool(passed)
+    summary["surface_quality_reason"] = "" if surface_quality_check is None else str(surface_quality_check["reason"])
     summary["all_passed"] = summary["all_passed"].astype(bool) & bool(passed)
     return OrderStagingReport(
         accepted=report.accepted,
