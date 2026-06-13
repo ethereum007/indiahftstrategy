@@ -139,7 +139,8 @@
   depth, timestamp, session, crossed quote, and strike coverage reports.
 - Data readiness gate that combines vendor CSV intake, schema audit,
   mapped-data normalization, tick/chain diagnostics, market-profile fee
-  assumptions, and instrument metadata before strategy research or promotion.
+  assumptions, market-portability strategy/market pair approval, and
+  instrument metadata before strategy research or promotion.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research.
@@ -372,7 +373,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 516 tests.
+Current passing suite: 519 tests.
 
 ## Next Build Targets
 

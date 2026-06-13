@@ -2498,8 +2498,9 @@ diagnostic_issues.csv
 ## Data Readiness Gate
 
 Combine vendor sample intake, adapter schema audit, mapped-data normalization,
-tick/chain diagnostics, market profile fees, and instrument metadata into one
-go/no-go record before edge scans, walk-forwards, or replay pipelines:
+tick/chain diagnostics, market profile fees, market-portability approval, and
+instrument metadata into one go/no-go record before edge scans,
+walk-forwards, or replay pipelines:
 
 ```powershell
 python -m hft_cli review-data-readiness `
@@ -2509,6 +2510,7 @@ python -m hft_cli review-data-readiness `
   --tick-diagnostics runs\diagnostics\futures `
   --chain-diagnostics runs\diagnostics\chain `
   --market-profile runs\market_profiles\india_us `
+  --market-portability runs\market_profiles\portability `
   --instrument-metadata runs\risk\leadlag_shadow_instruments `
   --out runs\data_readiness\india_nse_2026_06_10 `
   --require-vendor-intake `
@@ -2517,7 +2519,10 @@ python -m hft_cli review-data-readiness `
   --require-chain-diagnostics `
   --require-market-profile `
   --require-explicit-fee-model `
+  --require-market-portability `
   --require-instrument-metadata `
+  --expected-strategy microprice_imbalance `
+  --expected-market india_nse_index_derivatives `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
@@ -2532,6 +2537,10 @@ data_readiness_checks.csv
 data_readiness_summary.csv
 manifest.json
 ```
+
+When `--market-portability` is supplied with `--expected-strategy` and
+`--expected-market`, the gate reads `market_portability_config.json` and fails
+closed unless that exact strategy-market pair is in `ready_pairs`.
 
 Compare multiple data-readiness runs before walk-forward research:
 

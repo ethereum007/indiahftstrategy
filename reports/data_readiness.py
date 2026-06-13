@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ SUMMARY_FILES = {
     "tick_diagnostics": "diagnostic_summary.csv",
     "chain_diagnostics": "diagnostic_summary.csv",
     "market_profile": "market_profile_summary.csv",
+    "market_portability": "market_portability_config.json",
     "instrument_metadata": "instrument_metadata_summary.csv",
 }
 
@@ -30,7 +32,10 @@ class DataReadinessThresholds:
     require_chain_diagnostics: bool = False
     require_market_profile: bool = False
     require_explicit_fee_model: bool = False
+    require_market_portability: bool = False
     require_instrument_metadata: bool = False
+    expected_strategy: str | None = None
+    expected_market: str | None = None
     min_tick_rows: int = 1
     min_chain_rows: int = 1
     min_chain_expiries: int = 1
@@ -65,11 +70,13 @@ def evaluate_data_readiness(
     tick_diagnostic_summary: pd.DataFrame | None = None,
     chain_diagnostic_summary: pd.DataFrame | None = None,
     market_profile_summary: pd.DataFrame | None = None,
+    market_portability_config: dict[str, Any] | None = None,
     instrument_metadata_summary: pd.DataFrame | None = None,
     thresholds: DataReadinessThresholds | None = None,
 ) -> DataReadinessReport:
     thresholds = thresholds or DataReadinessThresholds()
     _validate_thresholds(thresholds)
+    portability_config = _optional_config(market_portability_config)
     summaries = {
         "vendor_intake": _optional_frame(vendor_intake_summary),
         "schema_audit": _optional_frame(schema_audit_summary),
@@ -77,6 +84,7 @@ def evaluate_data_readiness(
         "tick_diagnostics": _optional_frame(tick_diagnostic_summary),
         "chain_diagnostics": _optional_frame(chain_diagnostic_summary),
         "market_profile": _optional_frame(market_profile_summary),
+        "market_portability": _market_portability_frame(portability_config, thresholds),
         "instrument_metadata": _optional_frame(instrument_metadata_summary),
     }
     items = _items(summaries, thresholds)
@@ -94,6 +102,7 @@ def write_data_readiness_report(
     tick_diagnostics_dir: str | Path | None = None,
     chain_diagnostics_dir: str | Path | None = None,
     market_profile_dir: str | Path | None = None,
+    market_portability_dir: str | Path | None = None,
     instrument_metadata_dir: str | Path | None = None,
     thresholds: DataReadinessThresholds | None = None,
 ) -> DataReadinessReport:
@@ -106,6 +115,7 @@ def write_data_readiness_report(
         tick_diagnostic_summary=_read_optional_summary(tick_diagnostics_dir, "tick_diagnostics"),
         chain_diagnostic_summary=_read_optional_summary(chain_diagnostics_dir, "chain_diagnostics"),
         market_profile_summary=_read_optional_summary(market_profile_dir, "market_profile"),
+        market_portability_config=_read_optional_market_portability_config(market_portability_dir),
         instrument_metadata_summary=_read_optional_summary(instrument_metadata_dir, "instrument_metadata"),
         thresholds=thresholds,
     )
@@ -125,6 +135,7 @@ def write_data_readiness_report(
             "tick_diagnostics": tick_diagnostics_dir,
             "chain_diagnostics": chain_diagnostics_dir,
             "market_profile": market_profile_dir,
+            "market_portability": market_portability_dir,
             "instrument_metadata": instrument_metadata_dir,
         },
     )
@@ -147,8 +158,12 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
     )
     failed_checks = _number(
         row,
-        "failed_mappings",
-        fallback=_number(row, "unmapped_required_columns", fallback=0.0),
+        "failed_checks",
+        fallback=_number(
+            row,
+            "failed_mappings",
+            fallback=_number(row, "unmapped_required_columns", fallback=0.0),
+        ),
     )
     return {
         "component": component,
@@ -207,6 +222,24 @@ def _checks(
                 True,
                 explicit_fee,
                 "market profile does not include explicit fee assumptions",
+            )
+        )
+    if (
+        not summaries["market_portability"].empty
+        and thresholds.expected_strategy is not None
+        and thresholds.expected_market is not None
+    ):
+        row = summaries["market_portability"].iloc[0]
+        expected_pair = f"{_identity(thresholds.expected_strategy)}|{_identity(thresholds.expected_market)}"
+        pair_ready = _to_bool(row.get("expected_pair_ready", False))
+        checks.append(
+            _check(
+                "market_portability_pair_ready",
+                expected_pair,
+                "in",
+                "ready_pairs",
+                pair_ready,
+                "expected strategy-market pair is not marked portable or India-ready",
             )
         )
     return pd.DataFrame(checks)
@@ -300,6 +333,8 @@ def _summary(
                 "ready_components": int(items["ready"].astype(bool).sum()) if not items.empty else 0,
                 "failed_checks": failed,
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
+                "expected_strategy": _identity(thresholds.expected_strategy),
+                "expected_market": _identity(thresholds.expected_market),
                 "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
             }
         ]
@@ -315,6 +350,7 @@ def _component_required(component: str, thresholds: DataReadinessThresholds) -> 
             "tick_diagnostics": thresholds.require_tick_diagnostics,
             "chain_diagnostics": thresholds.require_chain_diagnostics,
             "market_profile": thresholds.require_market_profile,
+            "market_portability": thresholds.require_market_portability,
             "instrument_metadata": thresholds.require_instrument_metadata,
         }[component]
     )
@@ -330,6 +366,8 @@ def _component_ready(component: str, frame: pd.DataFrame) -> bool:
         return _to_bool(row.get("ready", False))
     if component == "instrument_metadata":
         return _to_bool(row.get("passed", False))
+    if component == "market_portability":
+        return _to_bool(row.get("expected_pair_ready", row.get("ready", False)))
     if component == "market_profile":
         return int(_number(row, "markets", fallback=0.0)) > 0
     if component in {"tick_diagnostics", "chain_diagnostics"}:
@@ -371,8 +409,70 @@ def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFr
     return frame
 
 
+def _read_optional_market_portability_config(path: str | Path | None) -> dict[str, Any] | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / SUMMARY_FILES["market_portability"]
+    if not candidate.exists():
+        raise FileNotFoundError(f"market portability config not found: {candidate}")
+    return json.loads(candidate.read_text(encoding="utf-8"))
+
+
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
     return pd.DataFrame() if frame is None else frame.copy().reset_index(drop=True)
+
+
+def _optional_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    return {} if config is None else dict(config)
+
+
+def _market_portability_frame(
+    config: dict[str, Any],
+    thresholds: DataReadinessThresholds,
+) -> pd.DataFrame:
+    if not config:
+        return pd.DataFrame()
+    ready_pairs = config.get("ready_pairs") or []
+    gap_pairs = config.get("gap_pairs") or []
+    pair_ready = _portability_pair_ready(config, thresholds)
+    return pd.DataFrame(
+        [
+            {
+                "ready": _to_bool(config.get("ready", False)),
+                "rows": int(len(ready_pairs) + len(gap_pairs)),
+                "ready_pairs": int(len(ready_pairs)),
+                "gap_pairs": int(len(gap_pairs)),
+                "failed_checks": 0 if pair_ready else 1,
+                "expected_strategy": _identity(thresholds.expected_strategy),
+                "expected_market": _identity(thresholds.expected_market),
+                "expected_pair_ready": pair_ready,
+            }
+        ]
+    )
+
+
+def _portability_pair_ready(config: dict[str, Any], thresholds: DataReadinessThresholds) -> bool:
+    expected_strategy = _identity(thresholds.expected_strategy)
+    expected_market = _identity(thresholds.expected_market)
+    if not expected_strategy and not expected_market:
+        return _to_bool(config.get("ready", False))
+    if not expected_strategy or not expected_market:
+        return False
+    for pair in config.get("ready_pairs") or []:
+        if _identity(pair.get("strategy")) != expected_strategy:
+            continue
+        if _identity(pair.get("market")) != expected_market:
+            continue
+        return str(pair.get("status", "")).strip().lower() in {"india_ready", "portable_research"}
+    return False
+
+
+def _identity(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _threshold_check(name: str, value: float | int, operator: str, threshold: float | int) -> dict[str, Any]:

@@ -685,6 +685,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--tick-diagnostics", default=None)
     data_readiness.add_argument("--chain-diagnostics", default=None)
     data_readiness.add_argument("--market-profile", default=None)
+    data_readiness.add_argument("--market-portability", default=None)
     data_readiness.add_argument("--instrument-metadata", default=None)
     data_readiness.add_argument("--require-vendor-intake", action="store_true")
     data_readiness.add_argument("--require-schema-audit", action="store_true")
@@ -693,7 +694,10 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--require-chain-diagnostics", action="store_true")
     data_readiness.add_argument("--require-market-profile", action="store_true")
     data_readiness.add_argument("--require-explicit-fee-model", action="store_true")
+    data_readiness.add_argument("--require-market-portability", action="store_true")
     data_readiness.add_argument("--require-instrument-metadata", action="store_true")
+    data_readiness.add_argument("--expected-strategy", default=None)
+    data_readiness.add_argument("--expected-market", default=None)
     data_readiness.add_argument("--min-tick-rows", type=int, default=1)
     data_readiness.add_argument("--min-chain-rows", type=int, default=1)
     data_readiness.add_argument("--min-chain-expiries", type=int, default=1)
@@ -2214,6 +2218,7 @@ def main(argv: list[str] | None = None) -> int:
             tick_diagnostics_dir=args.tick_diagnostics,
             chain_diagnostics_dir=args.chain_diagnostics,
             market_profile_dir=args.market_profile,
+            market_portability_dir=args.market_portability,
             instrument_metadata_dir=args.instrument_metadata,
             thresholds=DataReadinessThresholds(
                 require_vendor_intake=args.require_vendor_intake,
@@ -2223,7 +2228,10 @@ def main(argv: list[str] | None = None) -> int:
                 require_chain_diagnostics=args.require_chain_diagnostics,
                 require_market_profile=args.require_market_profile,
                 require_explicit_fee_model=args.require_explicit_fee_model,
+                require_market_portability=args.require_market_portability,
                 require_instrument_metadata=args.require_instrument_metadata,
+                expected_strategy=args.expected_strategy,
+                expected_market=args.expected_market,
                 min_tick_rows=args.min_tick_rows,
                 min_chain_rows=args.min_chain_rows,
                 min_chain_expiries=args.min_chain_expiries,

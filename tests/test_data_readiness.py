@@ -6,6 +6,11 @@ from reports.data_readiness import (
     evaluate_data_readiness,
     write_data_readiness_report,
 )
+from reports.market_portability import (
+    MarketPortabilityReportConfig,
+    build_market_portability_report,
+    write_market_portability_report,
+)
 
 
 def tick_summary(**overrides):
@@ -169,6 +174,33 @@ def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
     assert report.items.set_index("component").loc["vendor_intake", "ready"]
 
 
+def test_data_readiness_can_require_market_portability_pair():
+    portability = build_market_portability_report(
+        MarketPortabilityReportConfig(
+            markets=("us_equities_regular",),
+            strategies=("microprice_imbalance",),
+            explicit_fee_model=True,
+        )
+    )
+
+    report = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(),
+        market_portability_config=portability.config,
+        thresholds=DataReadinessThresholds(
+            require_market_portability=True,
+            expected_strategy="microprice_imbalance",
+            expected_market="us_equities_regular",
+        ),
+    )
+
+    checks = report.checks.set_index("check")
+    items = report.items.set_index("component")
+    assert report.ready
+    assert bool(items.loc["market_portability", "ready"])
+    assert bool(checks.loc["market_portability_pair_ready", "passed"])
+    assert report.summary.loc[0, "expected_market"] == "us_equities_regular"
+
+
 def test_data_readiness_fails_on_unready_vendor_intake():
     report = evaluate_data_readiness(
         vendor_intake_summary=vendor_intake_summary(False),
@@ -180,6 +212,31 @@ def test_data_readiness_fails_on_unready_vendor_intake():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     item = report.items.set_index("component").loc["vendor_intake"]
     assert "vendor_intake_ready" in failed
+    assert int(item["failed_checks"]) == 1
+
+
+def test_data_readiness_blocks_nonportable_expected_pair():
+    portability = build_market_portability_report(
+        MarketPortabilityReportConfig(
+            markets=("us_equities_regular",),
+            strategies=("microprice_imbalance",),
+        )
+    )
+
+    report = evaluate_data_readiness(
+        tick_diagnostic_summary=tick_summary(),
+        market_portability_config=portability.config,
+        thresholds=DataReadinessThresholds(
+            require_market_portability=True,
+            expected_strategy="microprice_imbalance",
+            expected_market="us_equities_regular",
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    item = report.items.set_index("component").loc["market_portability"]
+    assert not report.ready
+    assert {"market_portability_ready", "market_portability_pair_ready"} <= failed
     assert int(item["failed_checks"]) == 1
 
 
@@ -251,3 +308,42 @@ def test_cli_data_readiness_can_require_vendor_intake(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "vendor_intake_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_data_readiness_can_require_market_portability_pair(tmp_path):
+    tick_dir = tmp_path / "tick_diag"
+    portability_dir = tmp_path / "portability"
+    out_dir = tmp_path / "data_readiness"
+    tick_dir.mkdir()
+    tick_summary().to_csv(tick_dir / "diagnostic_summary.csv", index=False)
+    write_market_portability_report(
+        portability_dir,
+        config=MarketPortabilityReportConfig(
+            markets=("us_equities_regular",),
+            strategies=("microprice_imbalance",),
+        ),
+    )
+
+    code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(out_dir),
+            "--tick-diagnostics",
+            str(tick_dir),
+            "--market-portability",
+            str(portability_dir),
+            "--require-market-portability",
+            "--expected-strategy",
+            "microprice_imbalance",
+            "--expected-market",
+            "us_equities_regular",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "data_readiness_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "market_portability_pair_ready" in set(checks.loc[~checks["passed"].astype(bool), "check"])
