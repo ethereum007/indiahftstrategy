@@ -11,11 +11,22 @@ import pandas as pd
 from reports.manifest import write_experiment_manifest
 
 
+PROOF_REFRESH_COLUMNS = [
+    "proof_refresh_required",
+    "proof_refresh_provided",
+    "proof_refresh_ready",
+    "proof_refresh_strategy",
+    "proof_refresh_market",
+    "proof_refresh_mixed_identity",
+    "proof_source",
+]
+
 CANCEL_COLUMNS = [
     "action_id",
     "action",
     "strategy",
     "market",
+    *PROOF_REFRESH_COLUMNS,
     "client_order_id",
     "broker_order_id",
     "instrument_id",
@@ -32,6 +43,7 @@ FLATTEN_COLUMNS = [
     "action",
     "strategy",
     "market",
+    *PROOF_REFRESH_COLUMNS,
     "instrument_id",
     "side",
     "side_text",
@@ -95,6 +107,7 @@ def evaluate_halt_response(
         "market": guard_context["market"],
         "guard_failed_checks": guard_context["failed_check_names"],
         "guard_failed_check_reasons": guard_context["failed_check_reasons"],
+        "proof_freshness": _proof_freshness_config(guard_context),
     }
     return HaltResponseReport(
         cancel_orders=cancel_orders,
@@ -175,6 +188,7 @@ def _cancel_actions(open_orders: pd.DataFrame, guard_context: dict[str, object])
     active["action"] = "cancel_order"
     active["strategy"] = guard_context["strategy"]
     active["market"] = guard_context["market"]
+    _assign_proof_refresh_columns(active, guard_context)
     active["reason"] = "guard_halt_open_order"
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
@@ -203,6 +217,7 @@ def _flatten_actions(
     active["reason"] = "flatten_residual_position"
     active["strategy"] = guard_context["strategy"]
     active["market"] = guard_context["market"]
+    _assign_proof_refresh_columns(active, guard_context)
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
     active["action"] = "flatten_position"
@@ -288,6 +303,7 @@ def _summary(
                 "guard_failed_check_names": guard_context["failed_check_names_text"],
                 "guard_first_failed_reason": guard_context["first_failed_reason"],
                 "guard_failed_check_reasons": guard_context["failed_check_reasons_text"],
+                **_proof_refresh_summary_fields(guard_context),
                 "scenario_key": str(guard_row.get("scenario_key", "")),
                 "adapter": str(guard_row.get("adapter", "")),
                 "recommendation": recommendation,
@@ -398,6 +414,7 @@ def _guard_halt_context(guard_row: pd.Series, guard_checks: pd.DataFrame) -> dic
         "first_failed_reason": first_reason,
         "failed_check_reasons": reasons,
         "failed_check_reasons_text": ";".join(reasons),
+        **_proof_refresh_context(guard_row),
     }
 
 
@@ -430,9 +447,44 @@ def _clean(value: object) -> str:
 
 
 def _to_bool(value: object) -> bool:
+    if pd.isna(value):
+        return False
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "halt"}
     return bool(value)
+
+
+def _proof_refresh_context(guard_row: pd.Series) -> dict[str, object]:
+    return {
+        "proof_refresh_required": _to_bool(guard_row.get("proof_refresh_required", False)),
+        "proof_refresh_provided": _to_bool(guard_row.get("proof_refresh_provided", False)),
+        "proof_refresh_ready": _to_bool(guard_row.get("proof_refresh_ready", False)),
+        "proof_refresh_strategy": _clean(guard_row.get("proof_refresh_strategy", "")),
+        "proof_refresh_market": _clean(guard_row.get("proof_refresh_market", "")),
+        "proof_refresh_mixed_identity": _to_bool(guard_row.get("proof_refresh_mixed_identity", False)),
+        "proof_source": _clean(guard_row.get("proof_source", "")),
+    }
+
+
+def _assign_proof_refresh_columns(frame: pd.DataFrame, guard_context: dict[str, object]) -> None:
+    for column in PROOF_REFRESH_COLUMNS:
+        frame[column] = guard_context[column]
+
+
+def _proof_refresh_summary_fields(guard_context: dict[str, object]) -> dict[str, object]:
+    return {column: guard_context[column] for column in PROOF_REFRESH_COLUMNS}
+
+
+def _proof_freshness_config(guard_context: dict[str, object]) -> dict[str, object]:
+    return {
+        "required": bool(guard_context["proof_refresh_required"]),
+        "provided": bool(guard_context["proof_refresh_provided"]),
+        "ready": bool(guard_context["proof_refresh_ready"]),
+        "strategy": str(guard_context["proof_refresh_strategy"]),
+        "market": str(guard_context["proof_refresh_market"]),
+        "mixed_identity": bool(guard_context["proof_refresh_mixed_identity"]),
+        "proof_source": str(guard_context["proof_source"]),
+    }
 
 
 def _check(

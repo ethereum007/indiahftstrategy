@@ -15,6 +15,13 @@ def guard_summary(action="halt"):
                 "failed_checks": 1 if action == "halt" else 0,
                 "strategy": "lead_lag_taker",
                 "market": "india_nse_index_derivatives",
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "recommendation": "stop_routing_and_investigate" if action == "halt" else "continue_with_controls",
@@ -86,21 +93,44 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.cancel_orders.iloc[0]["open_qty"] == 50
     assert report.cancel_orders.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.cancel_orders.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert report.cancel_orders.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
+    assert bool(report.cancel_orders.iloc[0]["proof_refresh_ready"])
+    assert report.cancel_orders.iloc[0]["proof_source"] == "latest"
     assert report.cancel_orders.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.cancel_orders.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
     assert report.flatten_orders["side_text"].tolist() == ["SELL", "BUY"]
     assert report.flatten_orders["strategy"].tolist() == ["lead_lag_taker", "lead_lag_taker"]
     assert report.flatten_orders["market"].tolist() == ["india_nse_index_derivatives", "india_nse_index_derivatives"]
+    assert report.flatten_orders["proof_refresh_market"].tolist() == [
+        "india_nse_index_derivatives",
+        "india_nse_index_derivatives",
+    ]
     assert report.flatten_orders["price"].tolist() == [11.2, 9.1]
     assert report.flatten_orders["guard_failed_check_names"].tolist() == ["orders_sent", "orders_sent"]
     assert report.summary.iloc[0]["recommendation"] == "submit_cancel_and_flatten"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.iloc[0]["proof_refresh_required"])
+    assert bool(report.summary.iloc[0]["proof_refresh_provided"])
+    assert bool(report.summary.iloc[0]["proof_refresh_ready"])
+    assert report.summary.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
+    assert not bool(report.summary.iloc[0]["proof_refresh_mixed_identity"])
+    assert report.summary.iloc[0]["proof_source"] == "latest"
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
     assert report.config["guard_failed_checks"] == ["orders_sent"]
     assert report.config["strategy"] == "lead_lag_taker"
     assert report.config["market"] == "india_nse_index_derivatives"
+    assert report.config["proof_freshness"] == {
+        "required": True,
+        "provided": True,
+        "ready": True,
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "mixed_identity": False,
+        "proof_source": "latest",
+    }
 
 
 def test_halt_response_fails_when_guard_not_halted_by_default():
@@ -138,8 +168,12 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     assert (out_dir / "manifest.json").exists()
     saved_config = json.loads((out_dir / "halt_response_config.json").read_text(encoding="utf-8"))
     assert saved_config["guard_failed_checks"] == ["orders_sent"]
+    assert saved_config["proof_freshness"]["strategy"] == "lead_lag_taker"
+    assert saved_config["proof_freshness"]["ready"]
     saved_summary = pd.read_csv(out_dir / "halt_response_summary.csv")
     assert saved_summary.loc[0, "guard_failed_check_names"] == "orders_sent"
+    assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
+    assert bool(saved_summary.loc[0, "proof_refresh_ready"])
 
 
 def test_cli_halt_response_can_fail_on_missing_flatten_price(tmp_path):

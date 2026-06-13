@@ -1761,7 +1761,10 @@ manifest.json
 `halt_response_summary.csv`, `halt_cancel_orders.csv`, and
 `halt_flatten_orders.csv` include the guard failed check names, first halt
 reason, strategy, and market so emergency action files show why the
-cancel/flatten packet exists and which scaled strategy produced it.
+cancel/flatten packet exists and which scaled strategy produced it. They also
+retain `proof_refresh_*` and `proof_source` fields from the runtime guard so a
+halt packet can be tied back to the fresh proof state that authorized the
+runtime session.
 
 ## Halt Response Export
 
@@ -1856,9 +1859,10 @@ halt_incident_summary.csv
 manifest.json
 ```
 
-The timeline and summary retain guard-trigger, strategy, and market fields so
-the incident closure record shows both the failed guard checks that caused the
-halt and the scaled strategy context that produced them.
+The timeline and summary retain guard-trigger, strategy, market, and
+`proof_refresh_*` fields so the incident closure record shows both the failed
+guard checks that caused the halt and the proof-freshness context that fed the
+scaled runtime.
 
 ## Resume Gate
 

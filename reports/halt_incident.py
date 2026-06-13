@@ -8,6 +8,23 @@ import pandas as pd
 from reports.manifest import write_experiment_manifest
 
 
+PROOF_REFRESH_COLUMNS = [
+    "proof_refresh_required",
+    "proof_refresh_provided",
+    "proof_refresh_ready",
+    "proof_refresh_strategy",
+    "proof_refresh_market",
+    "proof_refresh_mixed_identity",
+    "proof_source",
+]
+PROOF_REFRESH_BOOL_COLUMNS = {
+    "proof_refresh_required",
+    "proof_refresh_provided",
+    "proof_refresh_ready",
+    "proof_refresh_mixed_identity",
+}
+
+
 @dataclass(frozen=True)
 class HaltIncidentThresholds:
     require_guard_halt: bool = True
@@ -198,6 +215,7 @@ def _timeline_row(
         or _summary_text(summary, "first_failed_reason"),
         "strategy": str(summary.get("strategy", "")),
         "market": str(summary.get("market", "")),
+        **_proof_refresh_context(summary),
         "scenario_key": str(summary.get("scenario_key", "")),
         "adapter": str(summary.get("adapter", "")),
         "recommendation": str(summary.get("recommendation", "")),
@@ -276,6 +294,7 @@ def _summary(
         response,
         "guard_first_failed_reason",
     )
+    proof_refresh = _proof_refresh_context(guard, fallback=response)
     return pd.DataFrame(
         [
             {
@@ -283,6 +302,7 @@ def _summary(
                 "incident_status": status,
                 "strategy": str(guard.get("strategy", response.get("strategy", ""))),
                 "market": str(guard.get("market", response.get("market", ""))),
+                **proof_refresh,
                 "scenario_key": str(guard.get("scenario_key", response.get("scenario_key", ""))),
                 "adapter": str(guard.get("adapter", response.get("adapter", ""))),
                 "guard_action": str(guard.get("guard_action", "")),
@@ -369,6 +389,37 @@ def _summary_text(row: pd.Series, column: str) -> str:
     if row.empty or column not in row.index:
         return ""
     return _clean(row[column])
+
+
+def _proof_refresh_context(summary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
+    fallback = pd.Series(dtype=object) if fallback is None else fallback
+    fields = {}
+    for column in PROOF_REFRESH_COLUMNS:
+        if column in PROOF_REFRESH_BOOL_COLUMNS:
+            fields[column] = _summary_bool(summary, fallback, column)
+        else:
+            fields[column] = _summary_value(summary, fallback, column)
+    return fields
+
+
+def _summary_bool(row: pd.Series, fallback: pd.Series, column: str) -> bool:
+    value = _raw_summary_value(row, column)
+    if value is None:
+        value = _raw_summary_value(fallback, column)
+    return _to_bool(value) if value is not None else False
+
+
+def _summary_value(row: pd.Series, fallback: pd.Series, column: str) -> str:
+    value = _raw_summary_value(row, column)
+    if value is None:
+        value = _raw_summary_value(fallback, column)
+    return _clean(value) if value is not None else ""
+
+
+def _raw_summary_value(row: pd.Series, column: str) -> object | None:
+    if row.empty or column not in row.index or pd.isna(row[column]):
+        return None
+    return row[column]
 
 
 def _to_bool(value: object) -> bool:

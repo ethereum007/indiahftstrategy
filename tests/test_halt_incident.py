@@ -20,6 +20,13 @@ def guard_summary(action="halt"):
                 "failed_check_reasons": "orders_sent: limit breached" if action == "halt" else "",
                 "strategy": "lead_lag_taker",
                 "market": "india_nse_index_derivatives",
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "orders_sent": 12,
@@ -48,6 +55,13 @@ def response_summary(ready=True):
                 "guard_failed_check_reasons": "orders_sent: limit breached",
                 "strategy": "lead_lag_taker",
                 "market": "india_nse_index_derivatives",
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "recommendation": "submit_cancel_and_flatten" if ready else "do_not_execute_response_until_inputs_fixed",
@@ -137,11 +151,21 @@ def test_halt_incident_accepts_completed_halt_with_export():
     assert report.summary.iloc[0]["incident_status"] == "halt_completed"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.iloc[0]["proof_refresh_required"])
+    assert bool(report.summary.iloc[0]["proof_refresh_provided"])
+    assert bool(report.summary.iloc[0]["proof_refresh_ready"])
+    assert report.summary.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
+    assert not bool(report.summary.iloc[0]["proof_refresh_mixed_identity"])
+    assert report.summary.iloc[0]["proof_source"] == "latest"
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"] == "orders_sent: limit breached"
     assert report.timeline.loc[0, "failed_check_names"] == "orders_sent"
     assert report.timeline.loc[0, "strategy"] == "lead_lag_taker"
+    assert report.timeline.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
+    assert bool(report.timeline.loc[1, "proof_refresh_ready"])
     assert report.timeline.loc[1, "market"] == "india_nse_index_derivatives"
+    assert report.timeline.loc[1, "proof_refresh_market"] == "india_nse_index_derivatives"
     assert report.timeline.loc[1, "guard_failed_check_names"] == "orders_sent"
     assert report.timeline["component"].tolist() == [
         "runtime_guard",

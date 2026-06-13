@@ -311,6 +311,9 @@
   optional reconciliation/runtime-session evidence into one fail-closed
   Arrow.money/iRage go/no-go artifact, blocking supplied or required runtime
   sessions when the scale-up guard halted.
+- Halt response and halt incident evidence now preserve runtime proof-refresh
+  fields from the guard through cancel/flatten packets, response summaries,
+  response config, incident timelines, and incident closure summaries.
 
 ## Test Gate
 
