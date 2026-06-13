@@ -125,6 +125,9 @@ def _steps(
     rows: list[dict[str, Any]] = [
         {
             "step": "telemetry",
+            "target_mode": _text(telemetry_row, "target_mode"),
+            "strategy": _text(telemetry_row, "strategy"),
+            "market": _text(telemetry_row, "market"),
             "status": "ready" if telemetry.ready else "blocked",
             "output_dir": str(telemetry.output_dir or ""),
             "failed_checks": int(telemetry_row.get("failed_checks", 0)),
@@ -134,6 +137,9 @@ def _steps(
         },
         {
             "step": "runtime_guard",
+            "target_mode": _identity_text(guard_row, telemetry_row, "target_mode"),
+            "strategy": _identity_text(guard_row, telemetry_row, "strategy"),
+            "market": _identity_text(guard_row, telemetry_row, "market"),
             "status": "halt" if guard.halted else "continue",
             "output_dir": str(guard.output_dir or ""),
             "failed_checks": int(guard_row.get("failed_checks", 0)),
@@ -147,6 +153,9 @@ def _steps(
         rows.append(
             {
                 "step": "halt_response",
+                "target_mode": _identity_text(response_row, guard_row, "target_mode"),
+                "strategy": _identity_text(response_row, guard_row, "strategy"),
+                "market": _identity_text(response_row, guard_row, "market"),
                 "status": "ready" if halt_response.ready else "blocked",
                 "output_dir": str(halt_response.output_dir or ""),
                 "failed_checks": int(response_row.get("failed_checks", 0)),
@@ -159,6 +168,9 @@ def _steps(
         rows.append(
             {
                 "step": "halt_response",
+                "target_mode": _identity_text(guard_row, telemetry_row, "target_mode"),
+                "strategy": _identity_text(guard_row, telemetry_row, "strategy"),
+                "market": _identity_text(guard_row, telemetry_row, "market"),
                 "status": "skipped",
                 "output_dir": "",
                 "failed_checks": 0,
@@ -198,6 +210,9 @@ def _summary(
                 "ready": ready,
                 "guard_action": str(guard_row.get("guard_action", "")),
                 "halted": bool(guard.halted),
+                "target_mode": _identity_text(guard_row, telemetry_row, "target_mode"),
+                "strategy": _identity_text(guard_row, telemetry_row, "strategy"),
+                "market": _identity_text(guard_row, telemetry_row, "market"),
                 "scenario_key": str(guard_row.get("scenario_key", telemetry_row.get("scenario_key", ""))),
                 "adapter": str(guard_row.get("adapter", telemetry_row.get("adapter", ""))),
                 "orders_sent": int(float(guard_row.get("orders_sent", telemetry_row.get("orders_sent", 0)))),
@@ -221,3 +236,8 @@ def _text(row: pd.Series, column: str) -> str:
     if pd.isna(value):
         return ""
     return str(value)
+
+
+def _identity_text(primary: pd.Series, fallback: pd.Series, column: str) -> str:
+    value = _text(primary, column).strip()
+    return value if value else _text(fallback, column)

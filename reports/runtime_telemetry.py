@@ -340,6 +340,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
         [
             {
                 "ready": ready,
+                "target_mode": row["target_mode"],
                 "strategy": row["strategy"],
                 "market": row["market"],
                 "scenario_key": row["scenario_key"],

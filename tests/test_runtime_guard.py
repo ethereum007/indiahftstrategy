@@ -74,6 +74,7 @@ def test_runtime_guard_continues_when_telemetry_is_inside_limits():
 
     assert not report.halted
     assert report.summary.iloc[0]["guard_action"] == "continue"
+    assert report.summary.iloc[0]["target_mode"] == "shadow"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert set(report.checks["passed"]) == {True}

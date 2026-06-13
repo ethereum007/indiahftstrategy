@@ -370,6 +370,7 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "failed_check_names": ";".join(failed_names),
                 "first_failed_reason": failed_reasons[0] if failed_reasons else "",
                 "failed_check_reasons": ";".join(failed_reasons),
+                "target_mode": row["target_mode"],
                 "strategy": row["strategy"],
                 "market": row["market"],
                 "scenario_key": row["scenario_key"],

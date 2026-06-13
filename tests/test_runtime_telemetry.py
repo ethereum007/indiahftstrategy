@@ -184,9 +184,13 @@ def test_runtime_telemetry_combines_operational_artifacts():
     )
 
     row = report.telemetry.iloc[0]
+    summary = report.summary.iloc[0]
     assert report.ready
     assert row["strategy"] == "lead_lag_taker"
     assert row["market"] == "india_nse_index_derivatives"
+    assert summary["target_mode"] == "shadow"
+    assert summary["strategy"] == "lead_lag_taker"
+    assert summary["market"] == "india_nse_index_derivatives"
     assert row["orders_sent"] == 4
     assert row["lifecycle_orders"] == 3
     assert row["replace_orders"] == 1

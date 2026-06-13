@@ -119,7 +119,12 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
     assert (out_dir / "runtime_session_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.loc[0, "guard_action"] == "continue"
+    assert report.summary.loc[0, "target_mode"] == "shadow"
+    assert report.summary.loc[0, "strategy"] == "surface_mm"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert report.steps["step"].tolist() == ["telemetry", "runtime_guard"]
+    assert set(report.steps["strategy"]) == {"surface_mm"}
+    assert set(report.steps["market"]) == {"india_nse_index_derivatives"}
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):
@@ -153,8 +158,13 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     assert not bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "halt_response_created"])
     assert bool(summary.loc[0, "halt_response_ready"])
+    assert summary.loc[0, "target_mode"] == "shadow"
+    assert summary.loc[0, "strategy"] == "surface_mm"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert summary.loc[0, "guard_failed_check_names"] == "open_order_count"
     assert steps.loc[1, "failed_check_names"] == "open_order_count"
+    assert set(steps["strategy"]) == {"surface_mm"}
+    assert set(steps["market"]) == {"india_nse_index_derivatives"}
     assert response.loc[0, "guard_failed_check_names"] == "open_order_count"
     assert summary.loc[0, "recommendation"] == "stop_routing_and_execute_halt_response"
     assert steps["step"].tolist() == ["telemetry", "runtime_guard", "halt_response"]
