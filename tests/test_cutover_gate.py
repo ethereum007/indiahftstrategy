@@ -26,6 +26,7 @@ def scaleup_summary(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    dispatch_failed_checks=0,
     route_required=None,
     route_provided=None,
     route_ready=None,
@@ -87,6 +88,7 @@ def scaleup_summary(
                 "broker_dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
                 "broker_dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
                 "broker_dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
+                "broker_dispatch_roundtrip_failed_checks": dispatch_failed_checks,
                 "broker_route_dispatch_roundtrip_required": route_required,
                 "broker_route_dispatch_roundtrip_provided": route_provided,
                 "broker_route_dispatch_roundtrip_ready": route_ready,
@@ -124,6 +126,7 @@ def scaleup_config(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    dispatch_failed_checks=0,
     route_required=None,
     route_provided=None,
     route_ready=None,
@@ -199,6 +202,7 @@ def scaleup_config(
                 "missing_request_acks": dispatch_missing_request_acks,
                 "rejected_orders": dispatch_rejected_orders,
                 "unmatched_acks": dispatch_unmatched_acks,
+                "failed_checks": dispatch_failed_checks,
                 "route_proof": {
                     "required": route_required,
                     "provided": route_provided,
@@ -244,6 +248,7 @@ def broker_readiness_summary(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    dispatch_failed_checks=0,
     route_required=None,
     route_provided=None,
     route_ready=None,
@@ -304,6 +309,7 @@ def broker_readiness_summary(
                 "dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
                 "dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
                 "dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
+                "dispatch_roundtrip_failed_checks": dispatch_failed_checks,
                 "route_dispatch_roundtrip_required": route_required,
                 "route_dispatch_roundtrip_provided": route_provided,
                 "route_dispatch_roundtrip_ready": route_ready,
@@ -424,6 +430,10 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert report.config["limits"]["max_orders_per_session"] == 10
     assert bool(summary["broker_dispatch_roundtrip_ready"])
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+    assert int(summary["scaleup_dispatch_roundtrip_failed_checks"]) == 0
+    assert int(summary["broker_dispatch_roundtrip_failed_checks"]) == 0
+    assert report.config["scaleup_dispatch_roundtrip"]["failed_checks"] == 0
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["failed_checks"] == 0
     assert bool(summary["broker_route_dispatch_roundtrip_ready"])
     assert report.config["scaleup_dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
@@ -546,6 +556,28 @@ def test_cutover_gate_blocks_bad_broker_dispatch_roundtrip_quality():
         "broker_dispatch_roundtrip_unmatched_acks",
     } <= failed
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["missing_request_acks"] == 1
+
+
+def test_cutover_gate_blocks_dispatch_roundtrip_failed_checks():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(dispatch_failed_checks=1),
+        scaleup_config=scaleup_config(dispatch_failed_checks=1),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(dispatch_failed_checks=1),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_dispatch_roundtrip_failed_checks",
+        "broker_dispatch_roundtrip_failed_checks",
+    } <= failed
+    assert int(report.summary.iloc[0]["scaleup_dispatch_roundtrip_failed_checks"]) == 1
+    assert int(report.summary.iloc[0]["broker_dispatch_roundtrip_failed_checks"]) == 1
+    assert report.config["scaleup_dispatch_roundtrip"]["failed_checks"] == 1
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["failed_checks"] == 1
 
 
 def test_cutover_gate_live_dryrun_requires_operator_review():
