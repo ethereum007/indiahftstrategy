@@ -28,6 +28,7 @@ REJECTED_ACK_STATUSES = {"reject", "rejected", "error", "failed", "denied", "blo
 class BrokerDispatchAckThresholds:
     require_dispatch_ready: bool = True
     require_all_acked: bool = True
+    require_dispatch_roundtrip: bool = False
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
     max_unmatched_acks: int = 0
@@ -128,6 +129,7 @@ def _acknowledgements(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.D
             {
                 "dispatch_batch_id": _text(order, "dispatch_batch_id"),
                 "dispatch_order_id": _text(order, "dispatch_order_id"),
+                "route_dispatch_roundtrip_batch_id": _text(order, "route_dispatch_roundtrip_batch_id"),
                 "source_order_id": _text(order, "source_order_id"),
                 "target_mode": _text(order, "target_mode"),
                 "strategy": _text(order, "strategy"),
@@ -172,7 +174,7 @@ def _checks(
     rejected = int(acknowledgements["rejected"].astype(bool).sum()) if orders else 0
     missing = int(acknowledgements["missing_ack"].astype(bool).sum()) if orders else 0
     duplicates = int(acknowledgements["duplicate_ack"].astype(bool).sum()) if orders else 0
-    return pd.DataFrame(
+    checks = pd.DataFrame(
         [
             _check(
                 "dispatch_ready",
@@ -216,6 +218,108 @@ def _checks(
             ),
         ]
     )
+    if _dispatch_roundtrip_required(dispatch_summary, thresholds) or _to_bool(
+        dispatch_summary.get("route_dispatch_roundtrip_provided", False)
+    ):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_dispatch_roundtrip_checks(dispatch_summary)),
+            ],
+            ignore_index=True,
+        )
+    return checks
+
+
+def _dispatch_roundtrip_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
+    target_mode = _identity_key(dispatch_summary.get("target_mode", ""))
+    strategy = _identity_key(dispatch_summary.get("strategy", ""))
+    market = _identity_key(dispatch_summary.get("market", ""))
+    scenario = _text(dispatch_summary, "scenario_key")
+    return [
+        _check(
+            "route_dispatch_roundtrip_provided",
+            _to_bool(dispatch_summary.get("route_dispatch_roundtrip_provided", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get("route_dispatch_roundtrip_provided", False)),
+            "ack reconciliation requires dispatch plan with route round-trip proof",
+        ),
+        _check(
+            "route_dispatch_roundtrip_ready",
+            _to_bool(dispatch_summary.get("route_dispatch_roundtrip_ready", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get("route_dispatch_roundtrip_ready", False)),
+            "dispatch route round-trip proof is not ready",
+        ),
+        _check(
+            "route_dispatch_roundtrip_target_mode_matches",
+            _identity_key(dispatch_summary.get("route_dispatch_roundtrip_target_mode", "")),
+            "==",
+            target_mode,
+            bool(
+                _identity_key(dispatch_summary.get("route_dispatch_roundtrip_target_mode", ""))
+                and _identity_key(dispatch_summary.get("route_dispatch_roundtrip_target_mode", "")) == target_mode
+            ),
+            "dispatch route round-trip target mode does not match acknowledgement target",
+        ),
+        _check(
+            "route_dispatch_roundtrip_strategy_matches",
+            _identity_key(dispatch_summary.get("route_dispatch_roundtrip_strategy", "")),
+            "==",
+            strategy,
+            bool(
+                _identity_key(dispatch_summary.get("route_dispatch_roundtrip_strategy", ""))
+                and _identity_key(dispatch_summary.get("route_dispatch_roundtrip_strategy", "")) == strategy
+            ),
+            "dispatch route round-trip strategy does not match acknowledgement strategy",
+        ),
+        _check(
+            "route_dispatch_roundtrip_market_matches",
+            _identity_key(dispatch_summary.get("route_dispatch_roundtrip_market", "")),
+            "==",
+            market,
+            bool(
+                _identity_key(dispatch_summary.get("route_dispatch_roundtrip_market", ""))
+                and _identity_key(dispatch_summary.get("route_dispatch_roundtrip_market", "")) == market
+            ),
+            "dispatch route round-trip market does not match acknowledgement market",
+        ),
+        _check(
+            "route_dispatch_roundtrip_scenario_matches",
+            _text(dispatch_summary, "route_dispatch_roundtrip_scenario_key"),
+            "==",
+            scenario,
+            bool(_text(dispatch_summary, "route_dispatch_roundtrip_scenario_key") and scenario)
+            and _text(dispatch_summary, "route_dispatch_roundtrip_scenario_key") == scenario,
+            "dispatch route round-trip scenario does not match acknowledgement scenario",
+        ),
+        _check(
+            "route_dispatch_roundtrip_missing_request_acks",
+            int(_number(dispatch_summary, "route_dispatch_roundtrip_missing_request_acks", 0.0)),
+            "<=",
+            0,
+            int(_number(dispatch_summary, "route_dispatch_roundtrip_missing_request_acks", 0.0)) <= 0,
+            "dispatch route round-trip has missing request acknowledgements",
+        ),
+        _check(
+            "route_dispatch_roundtrip_rejected_orders",
+            int(_number(dispatch_summary, "route_dispatch_roundtrip_rejected_orders", 0.0)),
+            "<=",
+            0,
+            int(_number(dispatch_summary, "route_dispatch_roundtrip_rejected_orders", 0.0)) <= 0,
+            "dispatch route round-trip has rejected orders",
+        ),
+        _check(
+            "route_dispatch_roundtrip_unmatched_acks",
+            int(_number(dispatch_summary, "route_dispatch_roundtrip_unmatched_acks", 0.0)),
+            "<=",
+            0,
+            int(_number(dispatch_summary, "route_dispatch_roundtrip_unmatched_acks", 0.0)) <= 0,
+            "dispatch route round-trip has unmatched acknowledgements",
+        ),
+    ]
 
 
 def _summary(
@@ -246,6 +350,45 @@ def _summary(
                 "rejected_orders": rejected,
                 "duplicate_ack_orders": duplicates,
                 "unmatched_acks": int(len(unmatched_acks)),
+                "route_dispatch_roundtrip_required": _to_bool(
+                    dispatch_summary.get("route_dispatch_roundtrip_required", False)
+                ),
+                "route_dispatch_roundtrip_provided": _to_bool(
+                    dispatch_summary.get("route_dispatch_roundtrip_provided", False)
+                ),
+                "route_dispatch_roundtrip_ready": _to_bool(
+                    dispatch_summary.get("route_dispatch_roundtrip_ready", False)
+                ),
+                "route_dispatch_roundtrip_target_mode": _identity_key(
+                    dispatch_summary.get("route_dispatch_roundtrip_target_mode", "")
+                ),
+                "route_dispatch_roundtrip_strategy": _identity_key(
+                    dispatch_summary.get("route_dispatch_roundtrip_strategy", "")
+                ),
+                "route_dispatch_roundtrip_market": _identity_key(
+                    dispatch_summary.get("route_dispatch_roundtrip_market", "")
+                ),
+                "route_dispatch_roundtrip_scenario_key": _text(
+                    dispatch_summary, "route_dispatch_roundtrip_scenario_key"
+                ),
+                "route_dispatch_roundtrip_batch_id": _text(
+                    dispatch_summary, "route_dispatch_roundtrip_batch_id"
+                ),
+                "route_dispatch_roundtrip_requests": int(
+                    _number(dispatch_summary, "route_dispatch_roundtrip_requests", 0.0)
+                ),
+                "route_dispatch_roundtrip_acked_orders": int(
+                    _number(dispatch_summary, "route_dispatch_roundtrip_acked_orders", 0.0)
+                ),
+                "route_dispatch_roundtrip_missing_request_acks": int(
+                    _number(dispatch_summary, "route_dispatch_roundtrip_missing_request_acks", 0.0)
+                ),
+                "route_dispatch_roundtrip_rejected_orders": int(
+                    _number(dispatch_summary, "route_dispatch_roundtrip_rejected_orders", 0.0)
+                ),
+                "route_dispatch_roundtrip_unmatched_acks": int(
+                    _number(dispatch_summary, "route_dispatch_roundtrip_unmatched_acks", 0.0)
+                ),
                 "ack_rate": acked / orders if orders else 0.0,
                 "failed_checks": failed,
                 "recommendation": "broker_dispatch_acknowledged" if passed else "investigate_broker_dispatch_acks",
@@ -269,6 +412,21 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
         "rejected_orders": int(summary["rejected_orders"]),
         "duplicate_ack_orders": int(summary["duplicate_ack_orders"]),
         "unmatched_acks": int(summary["unmatched_acks"]),
+        "route_dispatch_roundtrip": {
+            "required": _to_bool(summary["route_dispatch_roundtrip_required"]),
+            "provided": _to_bool(summary["route_dispatch_roundtrip_provided"]),
+            "ready": _to_bool(summary["route_dispatch_roundtrip_ready"]),
+            "target_mode": _text(summary, "route_dispatch_roundtrip_target_mode"),
+            "strategy": _text(summary, "route_dispatch_roundtrip_strategy"),
+            "market": _text(summary, "route_dispatch_roundtrip_market"),
+            "scenario_key": _text(summary, "route_dispatch_roundtrip_scenario_key"),
+            "dispatch_batch_id": _text(summary, "route_dispatch_roundtrip_batch_id"),
+            "requests": int(summary["route_dispatch_roundtrip_requests"]),
+            "acked_orders": int(summary["route_dispatch_roundtrip_acked_orders"]),
+            "missing_request_acks": int(summary["route_dispatch_roundtrip_missing_request_acks"]),
+            "rejected_orders": int(summary["route_dispatch_roundtrip_rejected_orders"]),
+            "unmatched_acks": int(summary["route_dispatch_roundtrip_unmatched_acks"]),
+        },
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
     }
@@ -344,6 +502,13 @@ def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     return frame.copy().reset_index(drop=True)
 
 
+def _dispatch_roundtrip_required(dispatch_summary: pd.Series, thresholds: BrokerDispatchAckThresholds) -> bool:
+    return bool(
+        thresholds.require_dispatch_roundtrip
+        or _identity_key(dispatch_summary.get("target_mode", "")) == "live_dryrun"
+    )
+
+
 def _validate_thresholds(thresholds: BrokerDispatchAckThresholds) -> None:
     if thresholds.max_duplicate_ack_orders < 0:
         raise ValueError("max_duplicate_ack_orders must be non-negative")
@@ -364,6 +529,21 @@ def _status_key(value: object) -> str:
     if pd.isna(value):
         return ""
     return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
+def _identity_key(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
+    if row.empty or column not in row.index:
+        return float(fallback)
+    value = pd.to_numeric(row[column], errors="coerce")
+    if pd.isna(value):
+        return float(fallback)
+    return float(value)
 
 
 def _to_bool(value: object) -> bool:

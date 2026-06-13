@@ -2099,6 +2099,7 @@ python -m hft_cli reconcile-broker-dispatch `
   --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
   --acks logs\broker_dispatch_acks.csv `
   --out runs\dispatch_acks\leadlag_shadow_live_dryrun `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -2116,8 +2117,9 @@ manifest.json
 The gate matches acknowledgements by `dispatch_order_id` with
 `source_order_id` fallback, accepts common broker success status names, and
 fails closed on unready dispatch plans, missing acknowledgements, rejected
-orders, duplicate acknowledgement rows, or acknowledgement rows that do not
-belong to the dispatch batch.
+orders, duplicate acknowledgement rows, dirty route round-trip proof for live
+dry-run dispatches, or acknowledgement rows that do not belong to the dispatch
+batch.
 
 ## Broker Dispatch Round-Trip Review
 
