@@ -1581,6 +1581,9 @@ Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
 for runtime guard, halt, and resume traceability.
+When proof-refresh evidence is supplied, scale-up also requires its
+strategy/market identity to match the evidence or explicit expected identity,
+and blocks summaries that report mixed proof-refresh identities.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
 broker readiness plus broker runtime-session evidence with a continuing runtime
 guard, and fails closed unless that runtime-session strategy and market match

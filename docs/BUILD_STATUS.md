@@ -127,7 +127,8 @@
   can be reused or must be rerun before promotion/scale-up, while failing
   closed on mixed strategy/market proof identities.
 - Experiment catalog, strategy evidence review, and controlled scale-up planning
-  can now require proof-refresh evidence before size increases.
+  can now require proof-refresh evidence before size increases, and scale-up
+  validates proof-refresh strategy/market identity against the promotion target.
 - Broker/vendor adapter scaffolding for normalized, Arrow.money-style, and
   iRage-style CSV exports.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
@@ -317,7 +318,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 407 tests.
+Current passing suite: 408 tests.
 
 ## Next Build Targets
 

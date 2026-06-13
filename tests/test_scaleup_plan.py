@@ -74,7 +74,13 @@ def exposure_summary(passed=True):
     )
 
 
-def proof_refresh_summary(ready=True, proof_source="latest"):
+def proof_refresh_summary(
+    ready=True,
+    proof_source="latest",
+    strategy="leadlag",
+    market="india_nse_index_derivatives",
+    mixed_identity=False,
+):
     return pd.DataFrame(
         [
             {
@@ -82,6 +88,9 @@ def proof_refresh_summary(ready=True, proof_source="latest"):
                 "drift_passed": proof_source == "baseline",
                 "fresh_proof_required": proof_source != "baseline",
                 "proof_source": proof_source if ready else "none",
+                "strategy": strategy,
+                "market": market,
+                "mixed_identity": mixed_identity,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "use_latest_calibrated_proof" if ready else "rerun_calibrated_proof_before_promotion",
             }
@@ -325,7 +334,36 @@ def test_scaleup_plan_accepts_required_ready_proof_refresh():
     assert report.summary.iloc[0]["proof_source"] == "latest"
     assert report.config["proof_freshness"]["required"]
     assert report.config["proof_freshness"]["ready"]
+    assert report.config["proof_freshness"]["strategy"] == "lead_lag_taker"
+    assert report.config["proof_freshness"]["market"] == "india_nse_index_derivatives"
     assert report.config["proof_freshness"]["proof_source"] == "latest"
+
+
+def test_scaleup_plan_blocks_mismatched_proof_refresh_identity():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True, strategy="leadlag", market="india_nse_index_derivatives"),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        proof_refresh_summary=proof_refresh_summary(
+            True,
+            proof_source="latest",
+            strategy="surface_mm",
+            market="us_options_regular",
+            mixed_identity=True,
+        ),
+        thresholds=ScaleUpThresholds(require_proof_refresh=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "proof_refresh_identity_consistent",
+        "proof_refresh_strategy_matches",
+        "proof_refresh_market_matches",
+    } <= failed
+    assert report.summary.iloc[0]["proof_refresh_strategy"] == "surface_mm"
+    assert report.summary.iloc[0]["proof_refresh_market"] == "us_options_regular"
+    assert report.config["proof_freshness"]["mixed_identity"]
 
 
 def test_scaleup_plan_accepts_required_instrument_metadata():

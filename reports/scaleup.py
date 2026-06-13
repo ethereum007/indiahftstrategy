@@ -214,6 +214,8 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
     evidence_strategy = _strategy_key(evidence.get("strategy", ""))
     evidence_market = _identity_key(evidence.get("market", ""))
+    expected_proof_strategy = _strategy_key(thresholds.expected_strategy) or evidence_strategy
+    expected_proof_market = _identity_key(thresholds.expected_market) or evidence_market
     checks = [
         _check("evidence_ready", _to_bool(evidence.get("ready", False)), "is", True, _to_bool(evidence.get("ready", False)), "strategy evidence review is not ready"),
         _check("shadow_comparison_accepted", _to_bool(shadow.get("accepted", False)), "is", True, _to_bool(shadow.get("accepted", False)), "shadow comparison is not accepted"),
@@ -291,6 +293,9 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         )
     if not proof_refresh.empty:
         proof_refresh_ready = _to_bool(proof_refresh.get("ready", False))
+        proof_refresh_strategy = _strategy_key(proof_refresh.get("strategy", ""))
+        proof_refresh_market = _identity_key(proof_refresh.get("market", ""))
+        proof_refresh_mixed_identity = _to_bool(proof_refresh.get("mixed_identity", False))
         checks.append(
             _check(
                 "proof_refresh_ready",
@@ -301,6 +306,38 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "proof refresh gate is not ready",
             )
         )
+        checks.append(
+            _check(
+                "proof_refresh_identity_consistent",
+                proof_refresh_mixed_identity,
+                "is",
+                False,
+                not proof_refresh_mixed_identity,
+                "proof refresh gate reported mixed strategy or market identity",
+            )
+        )
+        if expected_proof_strategy:
+            checks.append(
+                _check(
+                    "proof_refresh_strategy_matches",
+                    proof_refresh_strategy,
+                    "==",
+                    expected_proof_strategy,
+                    bool(proof_refresh_strategy and proof_refresh_strategy == expected_proof_strategy),
+                    "proof refresh strategy does not match scale-up strategy",
+                )
+            )
+        if expected_proof_market:
+            checks.append(
+                _check(
+                    "proof_refresh_market_matches",
+                    proof_refresh_market,
+                    "==",
+                    expected_proof_market,
+                    bool(proof_refresh_market and proof_refresh_market == expected_proof_market),
+                    "proof refresh market does not match scale-up market",
+                )
+            )
     if thresholds.require_instrument_metadata:
         checks.append(
             _check(
@@ -500,6 +537,15 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "observed_worst_adverse_slippage": _number(shadow, "worst_adverse_slippage"),
                 "proof_refresh_provided": not proof_refresh.empty,
                 "proof_refresh_ready": _to_bool(proof_refresh.get("ready", False)) if not proof_refresh.empty else False,
+                "proof_refresh_strategy": _strategy_key(proof_refresh.get("strategy", ""))
+                if not proof_refresh.empty
+                else "",
+                "proof_refresh_market": _identity_key(proof_refresh.get("market", ""))
+                if not proof_refresh.empty
+                else "",
+                "proof_refresh_mixed_identity": _to_bool(proof_refresh.get("mixed_identity", False))
+                if not proof_refresh.empty
+                else False,
                 "proof_source": str(proof_refresh.get("proof_source", "")) if not proof_refresh.empty else "",
                 "fresh_proof_required": _to_bool(proof_refresh.get("fresh_proof_required", False))
                 if not proof_refresh.empty
@@ -611,6 +657,9 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "max_orders_per_session": int(plan_row["max_orders_per_session"]),
                 "max_notional_per_session": float(plan_row["max_notional_per_session"]),
                 "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
+                "proof_refresh_strategy": str(plan_row["proof_refresh_strategy"]),
+                "proof_refresh_market": str(plan_row["proof_refresh_market"]),
+                "proof_refresh_mixed_identity": _to_bool(plan_row["proof_refresh_mixed_identity"]),
                 "proof_source": str(plan_row["proof_source"]),
                 "instrument_metadata_passed": _to_bool(plan_row["instrument_metadata_passed"]),
                 "instrument_parse_coverage": _jsonable(plan_row["instrument_parse_coverage"]),
@@ -685,6 +734,9 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "required": bool(thresholds.require_proof_refresh),
             "provided": _to_bool(plan_row["proof_refresh_provided"]),
             "ready": _to_bool(plan_row["proof_refresh_ready"]),
+            "strategy": str(plan_row["proof_refresh_strategy"]),
+            "market": str(plan_row["proof_refresh_market"]),
+            "mixed_identity": _to_bool(plan_row["proof_refresh_mixed_identity"]),
             "proof_source": str(plan_row["proof_source"]),
             "fresh_proof_required": _to_bool(plan_row["fresh_proof_required"]),
             "recommendation": str(plan_row["proof_refresh_recommendation"]),
