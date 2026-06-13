@@ -120,6 +120,14 @@ def dispatch_orders(*, dry_run=True, malformed_payload=False, route_roundtrip_ba
     return pd.DataFrame(rows)
 
 
+def dispatch_config(route_enable_dispatch_roundtrip_failed_checks=0):
+    return {
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+        }
+    }
+
+
 def write_dispatch(tmp_path, *, ready=True, state="armed_dry_run", route_roundtrip=True):
     dispatch = tmp_path / "dispatch"
     dispatch.mkdir()
@@ -130,6 +138,10 @@ def write_dispatch(tmp_path, *, ready=True, state="armed_dry_run", route_roundtr
         route_roundtrip_ready=route_roundtrip,
     ).to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
     dispatch_orders().to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
+    (dispatch / "broker_dispatch_config.json").write_text(
+        json.dumps(dispatch_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
     return dispatch
 
 
@@ -207,6 +219,25 @@ def test_broker_dispatch_send_blocks_route_enable_dispatch_roundtrip_failed_chec
     report = evaluate_broker_dispatch_send_packet(
         dispatch_summary=dispatch_summary(route_enable_dispatch_roundtrip_failed_checks=1),
         dispatch_orders=dispatch_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
+
+
+def test_broker_dispatch_send_reads_nested_route_enable_dispatch_roundtrip_failed_checks(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    (dispatch / "broker_dispatch_config.json").write_text(
+        json.dumps(dispatch_config(route_enable_dispatch_roundtrip_failed_checks=1), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=tmp_path / "dispatch_send",
     )
 
     assert not report.ready

@@ -2100,10 +2100,10 @@ carries route dispatch round-trip proof into the sender request envelope and
 expected acknowledgement rows, then fails closed if the dispatch plan is not
 ready and armed, target mode does not match, route round-trip proof is missing
 or dirty for live dry-run sending, route-enable dispatch round-trip failed
-checks are nonzero, any dispatch row or request carries a mismatched route
-proof batch id, the adapter is unknown, payload JSON is invalid, idempotency
-keys are not unique, request limits are exceeded, or any request is not
-dry-run-only.
+checks read from the dispatch config are nonzero, any dispatch row or request
+carries a mismatched route proof batch id, the adapter is unknown, payload JSON
+is invalid, idempotency keys are not unique, request limits are exceeded, or
+any request is not dry-run-only.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 

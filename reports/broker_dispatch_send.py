@@ -40,14 +40,16 @@ def evaluate_broker_dispatch_send_packet(
     *,
     dispatch_summary: pd.DataFrame,
     dispatch_orders: pd.DataFrame,
+    dispatch_config: dict[str, Any] | None = None,
     thresholds: BrokerDispatchSendThresholds | None = None,
 ) -> BrokerDispatchSendReport:
     thresholds = thresholds or BrokerDispatchSendThresholds()
     _validate_thresholds(thresholds)
     dispatch_summary = _require_nonempty(dispatch_summary, "dispatch_summary")
     dispatch_orders = _require_nonempty(dispatch_orders, "dispatch_orders")
+    dispatch_config = dispatch_config or {}
 
-    summary_row = dispatch_summary.iloc[0]
+    summary_row = _dispatch_summary_state(dispatch_summary.iloc[0], dispatch_config)
     requests = _request_rows(summary_row, dispatch_orders)
     expected_acks = _expected_ack_template(requests)
     checks = _checks(summary_row, dispatch_orders, requests, thresholds)
@@ -69,9 +71,16 @@ def write_broker_dispatch_send_packet(
     thresholds: BrokerDispatchSendThresholds | None = None,
 ) -> BrokerDispatchSendReport:
     dispatch = Path(dispatch_dir)
+    dispatch_config_path = dispatch / "broker_dispatch_config.json"
+    dispatch_config = (
+        json.loads(dispatch_config_path.read_text(encoding="utf-8"))
+        if dispatch_config_path.exists()
+        else {}
+    )
     report = evaluate_broker_dispatch_send_packet(
         dispatch_summary=_read_required(dispatch / "broker_dispatch_summary.csv", "broker_dispatch_summary"),
         dispatch_orders=_read_required(dispatch / "broker_dispatch_orders.csv", "broker_dispatch_orders"),
+        dispatch_config=dispatch_config,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -185,6 +194,19 @@ def _expected_ack_template(requests: pd.DataFrame) -> pd.DataFrame:
             for row in requests.itertuples(index=False)
         ]
     )
+
+
+def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
+    state = row.copy()
+    route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
+    if "failed_checks" in route_enable:
+        state["route_enable_dispatch_roundtrip_failed_checks"] = int(
+            _number_value(
+                route_enable.get("failed_checks"),
+                _number(state, "route_enable_dispatch_roundtrip_failed_checks", 0.0),
+            )
+        )
+    return state
 
 
 def _checks(
@@ -632,6 +654,13 @@ def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _number_value(value: object, fallback: float = 0.0) -> float:
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
+        return float(fallback)
+    return float(parsed)
 
 
 def _to_bool(value: object) -> bool:
