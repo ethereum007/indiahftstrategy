@@ -24,6 +24,11 @@ SUMMARY_FILES = {
     "dispatch_roundtrip": "broker_dispatch_roundtrip_summary.csv",
 }
 
+SUMMARY_FALLBACK_DIRS = {
+    "order_export": ("04_export", "03_export"),
+    "upload_pack": ("05_upload_pack", "04_upload_pack"),
+}
+
 
 @dataclass(frozen=True)
 class BrokerReadinessThresholds:
@@ -110,6 +115,18 @@ def write_broker_readiness_report(
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
     _validate_thresholds(thresholds)
+    input_paths = {
+        "schema_audit": _manifest_summary_input(schema_audit_dir, "schema_audit"),
+        "order_export": _manifest_summary_input(order_export_dir, "order_export"),
+        "mapping_draft": _manifest_summary_input(mapping_draft_dir, "mapping_draft"),
+        "mapped_orders": _manifest_summary_input(mapped_orders_dir, "mapped_orders"),
+        "upload_pack": _manifest_summary_input(upload_pack_dir, "upload_pack"),
+        "halt_export": _manifest_summary_input(halt_export_dir, "halt_export"),
+        "reconciliation": _manifest_summary_input(reconciliation_dir, "reconciliation"),
+        "runtime_session": _manifest_summary_input(runtime_session_dir, "runtime_session"),
+        "resume_gate": _manifest_summary_input(resume_dir, "resume_gate"),
+        "dispatch_roundtrip": _manifest_summary_input(dispatch_roundtrip_dir, "dispatch_roundtrip"),
+    }
     report = evaluate_broker_readiness(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),
@@ -136,18 +153,7 @@ def write_broker_readiness_report(
         out,
         run_type="broker_readiness",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={
-            "schema_audit": schema_audit_dir,
-            "order_export": order_export_dir,
-            "mapping_draft": mapping_draft_dir,
-            "mapped_orders": mapped_orders_dir,
-            "upload_pack": upload_pack_dir,
-            "halt_export": halt_export_dir,
-            "reconciliation": reconciliation_dir,
-            "runtime_session": runtime_session_dir,
-            "resume_gate": resume_dir,
-            "dispatch_roundtrip": dispatch_roundtrip_dir,
-        },
+        inputs=input_paths,
     )
     return BrokerReadinessReport(report.items, report.checks, report.summary, out)
 
@@ -681,15 +687,37 @@ def _route_dispatch_roundtrip_required(row: Any) -> bool:
 def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFrame | None:
     if path is None:
         return None
-    candidate = Path(path)
-    if candidate.is_dir():
-        candidate = candidate / SUMMARY_FILES[component]
+    candidate = _summary_path(path, component)
     if not candidate.exists():
         raise FileNotFoundError(f"{component} summary not found: {candidate}")
     frame = pd.read_csv(candidate)
     if frame.empty:
         raise ValueError(f"{component} summary is empty: {candidate}")
     return frame
+
+
+def _summary_path(path: str | Path, component: str) -> Path:
+    candidate = Path(path)
+    if not candidate.is_dir():
+        return candidate
+    direct = candidate / SUMMARY_FILES[component]
+    if direct.exists():
+        return direct
+    return next(
+        (
+            nested
+            for folder in SUMMARY_FALLBACK_DIRS.get(component, ())
+            if (nested := candidate / folder / SUMMARY_FILES[component]).exists()
+        ),
+        direct,
+    )
+
+
+def _manifest_summary_input(path: str | Path | None, component: str) -> Path | None:
+    if path is None:
+        return None
+    summary_path = _summary_path(path, component)
+    return summary_path if summary_path.exists() else Path(path)
 
 
 def _read_optional_config(path: str | Path | None, file_name: str) -> dict[str, Any]:

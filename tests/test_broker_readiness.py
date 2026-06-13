@@ -165,6 +165,10 @@ def dispatch_roundtrip_config(route_enable_dispatch_roundtrip_failed_checks=0):
     }
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def test_broker_readiness_accepts_ready_normalized_artifacts():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("normalized", True),
@@ -585,6 +589,56 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "schema_reviewed" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_broker_readiness_reads_launch_pipeline_export_and_upload_roots(tmp_path):
+    cases = [
+        ("leadlag", "04_export", "05_upload_pack"),
+        ("imbalance", "04_export", "05_upload_pack"),
+        ("parity", "04_export", "05_upload_pack"),
+        ("surface_mm", "03_export", "04_upload_pack"),
+    ]
+    for family, export_folder, upload_folder in cases:
+        case_dir = tmp_path / family
+        schema_dir = case_dir / "schema"
+        pipeline = case_dir / f"{family}_launch_pipeline"
+        export_dir = pipeline / export_folder
+        upload_dir = pipeline / upload_folder
+        out_dir = case_dir / "readiness"
+        schema_dir.mkdir(parents=True)
+        export_dir.mkdir(parents=True)
+        upload_dir.mkdir(parents=True)
+        schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+        order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+        upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+
+        code = main(
+            [
+                "review-broker-readiness",
+                "--adapter",
+                "normalized",
+                "--schema-audit",
+                str(schema_dir),
+                "--order-export",
+                str(pipeline),
+                "--upload-pack",
+                str(pipeline),
+                "--out",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+
+        summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert code == 0
+        assert bool(summary.loc[0, "ready"])
+        assert path_tail(manifest["inputs"]["order_export"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{export_folder}/broker_order_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{upload_folder}/broker_upload_summary.csv"
+        )
 
 
 def test_cli_broker_readiness_can_require_runtime_session(tmp_path):

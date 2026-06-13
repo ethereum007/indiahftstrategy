@@ -424,7 +424,8 @@
   evidence into one fail-closed Arrow.money/iRage go/no-go artifact, blocking
   supplied or required runtime sessions when the scale-up guard halted,
   retaining resume proof-refresh identity for post-halt restart review, and
-  carrying proved dry-run dispatch round-trip identity, route proof quality,
+  resolving launch pipeline export/upload roots while carrying proved dry-run
+  dispatch round-trip identity, route proof quality,
   failed-check count, route-enable dispatch round-trip failed-check count from
   the round-trip config, and acknowledgement quality into broker readiness.
 - Halt response and halt incident evidence now preserve runtime proof-refresh

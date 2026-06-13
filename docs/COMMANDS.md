@@ -1888,6 +1888,10 @@ normalized, Arrow.money, and iRage review templates carry `lifecycle_action`,
 `lifecycle_action_id`, `lifecycle_reason`, `lifecycle_message_count`,
 `quote_age_ns`, and `replaces_order_id` into the upload-shaped CSV for broker
 schema review.
+`--order-export` and `--upload-pack` may point at a launch-pipeline root;
+broker readiness resolves nested `04_export`/`05_upload_pack` or surface-MM
+`03_export`/`04_upload_pack` summaries and fingerprints the resolved files in
+the manifest.
 When `--runtime-session` is supplied, broker readiness requires the runtime
 guard to be continuing. `--require-runtime-session` makes that evidence
 mandatory before paper/shadow routing. Runtime-session target mode, strategy,
