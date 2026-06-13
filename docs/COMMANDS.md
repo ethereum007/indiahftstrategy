@@ -2001,6 +2001,7 @@ python -m hft_cli review-route-enable `
   --out runs\route_enable\leadlag_shadow_live_dryrun `
   --target-mode live_dryrun `
   --require-order-export `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -2016,10 +2017,12 @@ manifest.json
 
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
-and proof/resume context into one machine-readable artifact. It fails closed if
-cutover is not ready, the upload pack is not ready, the adapter or target mode
-does not match, the upload order count exceeds the cutover limit, or the
-optional order-export notional exceeds the cutover notional cap.
+proof/resume context, and dispatch round-trip proof into one machine-readable
+artifact. It fails closed if cutover is not ready, the upload pack is not
+ready, the adapter or target mode does not match, dispatch round-trip proof is
+missing or dirty for live dry-run routing, the upload order count exceeds the
+cutover limit, or the optional order-export notional exceeds the cutover
+notional cap.
 
 ## Broker Dispatch Plan
 

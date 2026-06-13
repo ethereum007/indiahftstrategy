@@ -276,9 +276,9 @@
   resume-gate proof, and operator strategy/market/limit acknowledgement agree
   in one manifest-backed authorization artifact.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
-  bounds order counts and optional export notional by cutover limits, and emits
-  the final machine-readable broker route-enable config without submitting
-  orders.
+  bounds order counts and optional export notional by cutover limits, rechecks
+  live-dry-run dispatch round-trip proof, and emits the final machine-readable
+  broker route-enable config without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, and fails closed on disabled routes or duplicate source
@@ -355,7 +355,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 472 tests.
+Current passing suite: 475 tests.
 
 ## Next Build Targets
 

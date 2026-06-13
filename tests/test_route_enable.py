@@ -11,7 +11,24 @@ from reports.route_enable import (
 )
 
 
-def cutover_summary(ready=True, max_orders=10, max_notional=100_000.0, adapter="arrow_money"):
+def cutover_summary(
+    ready=True,
+    max_orders=10,
+    max_notional=100_000.0,
+    adapter="arrow_money",
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode="live_dryrun",
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
+):
     return pd.DataFrame(
         [
             {
@@ -28,6 +45,19 @@ def cutover_summary(ready=True, max_orders=10, max_notional=100_000.0, adapter="
                 "proof_refresh_market": "india_nse_index_derivatives",
                 "broker_resume_gate_ready": False,
                 "broker_resume_proof_refresh_ready": False,
+                "broker_dispatch_roundtrip_required": True,
+                "broker_dispatch_roundtrip_provided": dispatch_provided,
+                "broker_dispatch_roundtrip_ready": dispatch_ready,
+                "broker_dispatch_roundtrip_target_mode": dispatch_target_mode,
+                "broker_dispatch_roundtrip_strategy": dispatch_strategy,
+                "broker_dispatch_roundtrip_market": dispatch_market,
+                "broker_dispatch_roundtrip_scenario_key": dispatch_scenario_key,
+                "broker_dispatch_roundtrip_batch_id": dispatch_batch_id,
+                "broker_dispatch_roundtrip_requests": dispatch_requests,
+                "broker_dispatch_roundtrip_acked_orders": dispatch_acked_orders,
+                "broker_dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
+                "broker_dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
+                "broker_dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "allow_live_dryrun_cutover" if ready else "keep_cutover_disabled",
             }
@@ -35,7 +65,23 @@ def cutover_summary(ready=True, max_orders=10, max_notional=100_000.0, adapter="
     )
 
 
-def cutover_config(max_orders=10, max_notional=100_000.0, adapter="arrow_money"):
+def cutover_config(
+    max_orders=10,
+    max_notional=100_000.0,
+    adapter="arrow_money",
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode="live_dryrun",
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
+):
     return {
         "schema_version": 1,
         "ready": True,
@@ -59,7 +105,22 @@ def cutover_config(max_orders=10, max_notional=100_000.0, adapter="arrow_money")
                 "provided": False,
                 "ready": False,
                 "proof_refresh_ready": False,
-            }
+            },
+            "dispatch_roundtrip": {
+                "required": True,
+                "provided": dispatch_provided,
+                "ready": dispatch_ready,
+                "target_mode": dispatch_target_mode,
+                "strategy": dispatch_strategy,
+                "market": dispatch_market,
+                "scenario_key": dispatch_scenario_key,
+                "dispatch_batch_id": dispatch_batch_id,
+                "requests": dispatch_requests,
+                "acked_orders": dispatch_acked_orders,
+                "missing_request_acks": dispatch_missing_request_acks,
+                "rejected_orders": dispatch_rejected_orders,
+                "unmatched_acks": dispatch_unmatched_acks,
+            },
         },
     }
 
@@ -103,16 +164,27 @@ def order_export_summary(ready=True, orders=2, adapter="arrow_money", total_noti
     )
 
 
-def write_inputs(root, *, cutover_ready=True, upload_ready=True, upload_orders=2, export_notional=25_000.0):
+def write_inputs(
+    root,
+    *,
+    cutover_ready=True,
+    upload_ready=True,
+    upload_orders=2,
+    export_notional=25_000.0,
+    dispatch=True,
+):
     cutover = root / "cutover"
     upload = root / "upload"
     export = root / "export"
     cutover.mkdir(parents=True)
     upload.mkdir()
     export.mkdir()
-    cutover_summary(ready=cutover_ready).to_csv(cutover / "cutover_summary.csv", index=False)
+    cutover_summary(ready=cutover_ready, dispatch_provided=dispatch, dispatch_ready=dispatch).to_csv(
+        cutover / "cutover_summary.csv",
+        index=False,
+    )
     (cutover / "cutover_config.json").write_text(
-        json.dumps(cutover_config(), indent=2) + "\n",
+        json.dumps(cutover_config(dispatch_provided=dispatch, dispatch_ready=dispatch), indent=2) + "\n",
         encoding="utf-8",
     )
     upload_summary(ready=upload_ready, orders=upload_orders).to_csv(upload / "broker_upload_summary.csv", index=False)
@@ -142,6 +214,61 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert report.summary.iloc[0]["recommendation"] == "enable_broker_route"
     assert report.config["route_enabled"]
     assert report.config["upload"]["output_file"] == "broker_upload_orders.csv"
+    assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
+    assert report.config["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+
+
+def test_route_enable_requires_cutover_dispatch_roundtrip():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(dispatch_provided=False, dispatch_ready=False),
+        cutover_config=cutover_config(dispatch_provided=False, dispatch_ready=False),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"cutover_dispatch_roundtrip_provided", "cutover_dispatch_roundtrip_ready"} <= failed
+    assert report.config["dispatch_roundtrip"]["required"]
+
+
+def test_route_enable_blocks_bad_cutover_dispatch_roundtrip_quality():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(
+            dispatch_ready=False,
+            dispatch_target_mode="shadow",
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_key="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+        ),
+        cutover_config=cutover_config(
+            dispatch_ready=False,
+            dispatch_target_mode="shadow",
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_key="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+        ),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "cutover_dispatch_roundtrip_ready",
+        "cutover_dispatch_roundtrip_target_mode_matches",
+        "cutover_dispatch_roundtrip_strategy_matches",
+        "cutover_dispatch_roundtrip_market_matches",
+        "cutover_dispatch_roundtrip_scenario_matches",
+        "cutover_dispatch_roundtrip_missing_request_acks",
+        "cutover_dispatch_roundtrip_rejected_orders",
+        "cutover_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    assert report.config["dispatch_roundtrip"]["missing_request_acks"] == 1
 
 
 def test_route_enable_blocks_order_count_and_notional_limit_breaches():
@@ -219,3 +346,31 @@ def test_cli_route_enable_fails_when_cutover_not_ready(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "cutover_ready" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_route_enable_can_require_dispatch_roundtrip(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path, dispatch=False)
+    out_dir = tmp_path / "route_enable"
+
+    code = main(
+        [
+            "review-route-enable",
+            "--cutover",
+            str(cutover),
+            "--upload-pack",
+            str(upload),
+            "--order-export",
+            str(export),
+            "--out",
+            str(out_dir),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "route_enable_summary.csv")
+    checks = pd.read_csv(out_dir / "route_enable_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "cutover_dispatch_roundtrip_provided" in failed
