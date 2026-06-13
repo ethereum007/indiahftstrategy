@@ -73,6 +73,9 @@ def test_market_portability_report_marks_us_options_portable_with_fee_model():
     parity_commands = report.matrix.set_index("strategy").loc["parity_box", "workflow_commands"]
     assert "plan-parity-orders" in parity_commands
     assert "pipeline-parity-launch" in parity_commands
+    surface_commands = report.matrix.set_index("strategy").loc["surface_market_making", "workflow_commands"]
+    assert "pipeline-surface-mm-research" in surface_commands
+    assert "pipeline-surface-mm-launch" in surface_commands
 
 
 def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):

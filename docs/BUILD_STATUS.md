@@ -157,9 +157,9 @@
   preflight before quote generation while retaining surface-MM strategy and
   market identity across nested evidence artifacts.
 - Strategy evidence review now supports a `surface_mm` profile that requires
-  surface-quality, quote-risk, and surface market-making research pipeline
-  artifacts with shared strategy and market identity before shadow scale-up
-  review.
+  surface-quality, quote-risk, surface market-making research pipeline, and
+  surface market-making launch pipeline artifacts with shared strategy and
+  market identity before shadow scale-up review.
 - Surface market-making launch pipeline that consumes a promoted surface
   research pipeline and first verifies upstream research readiness plus
   strategy/market identity before running quote-risk-enforced lifecycle

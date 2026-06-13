@@ -82,8 +82,9 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
-For surface market-making research, use the named profile so surface-quality
-and quote-risk proof are both mandatory before scale-up review:
+For surface market-making research, use the named profile so surface-quality,
+quote-risk, research-pipeline, and launch-pipeline proof are all mandatory
+before scale-up review:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `
@@ -164,8 +165,9 @@ python -m hft_cli review-strategy-evidence `
 The `leadlag` profile expands to `leadlag_edge_audit`,
 `leadlag_replay_walkforward`, `stress_report`, `promotion_report`, and
 `leadlag_order_plan`, and `leadlag_launch_pipeline`. The `surface_mm` profile
-expands to `surface_quality_report`, `quote_risk_report`, and
-`surface_mm_research_pipeline`. The `imbalance` profile expands to
+expands to `surface_quality_report`, `quote_risk_report`,
+`surface_mm_research_pipeline`, and `surface_mm_launch_pipeline`. The
+`imbalance` profile expands to
 `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
 `imbalance_research_pipeline`, `imbalance_order_plan`, and

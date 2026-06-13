@@ -168,6 +168,18 @@ def surface_mm_catalog_rows(*, commit="abc123", market="india_nse_index_derivati
                 "summary_candidate_scenario_key": f"strategy=surface_mm|market={market}|edge_ticks=2.0",
                 "parameters_json": parameters,
             },
+            {
+                "run_dir": "runs/surface_mm_launch_pipeline",
+                "run_type": "surface_mm_launch_pipeline",
+                "generated_at_utc": "2026-06-10T09:45:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "surface_mm_launch_pipeline_summary.csv",
+                "summary_strategy": "surface_mm",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
         ]
     )
 
@@ -652,6 +664,20 @@ def test_surface_mm_evidence_profile_fails_without_surface_quality():
     failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
     assert not review.ready
     assert "required_run_type:surface_quality_report" in failed
+
+
+def test_surface_mm_evidence_profile_fails_without_launch_pipeline():
+    catalog = surface_mm_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "surface_mm_launch_pipeline"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("surface_mm")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:surface_mm_launch_pipeline" in failed
 
 
 def test_imbalance_evidence_profile_requires_walkforward_promotion_and_pipeline_identity():

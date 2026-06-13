@@ -9,6 +9,7 @@ from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evi
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
 from reports.promotion import PromotionThresholds
+from reports.surface_mm_launch_pipeline import SurfaceMMLaunchPipelineConfig, write_surface_mm_launch_pipeline
 from reports.surface_quality import SurfaceQualityThresholds
 from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
 
@@ -125,6 +126,11 @@ def test_surface_mm_pipeline_artifacts_satisfy_surface_mm_evidence_profile(tmp_p
         proof_thresholds=ProofThresholds(min_net_pnl=-1_000_000.0, min_fills=1, min_maker_share=0.0),
         min_selection_median_net_pnl=-1_000_000.0,
         promotion_thresholds=PromotionThresholds(min_median_net_pnl=-1_000_000.0, min_median_fills=1),
+    )
+    write_surface_mm_launch_pipeline(
+        out_dir,
+        output_dir=out_dir / "06_launch_pipeline",
+        config=SurfaceMMLaunchPipelineConfig(adapter="normalized", mode="paper"),
     )
 
     catalog = catalog_experiment_runs([out_dir]).catalog

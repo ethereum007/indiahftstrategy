@@ -41,7 +41,12 @@ PARITY_REQUIRED_RUN_TYPES = (
     "parity_order_plan",
     "parity_launch_pipeline",
 )
-SURFACE_MM_REQUIRED_RUN_TYPES = ("surface_quality_report", "quote_risk_report", "surface_mm_research_pipeline")
+SURFACE_MM_REQUIRED_RUN_TYPES = (
+    "surface_quality_report",
+    "quote_risk_report",
+    "surface_mm_research_pipeline",
+    "surface_mm_launch_pipeline",
+)
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
