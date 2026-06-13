@@ -28,7 +28,34 @@ def cutover_summary(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    route_required=None,
+    route_provided=None,
+    route_ready=None,
+    route_target_mode=None,
+    route_strategy=None,
+    route_market=None,
+    route_scenario_key=None,
+    route_batch_id="BDP-0",
+    route_requests=None,
+    route_acked_orders=None,
+    route_missing_request_acks=None,
+    route_rejected_orders=None,
+    route_unmatched_acks=None,
 ):
+    route_required = dispatch_provided if route_required is None else route_required
+    route_provided = dispatch_provided if route_provided is None else route_provided
+    route_ready = dispatch_ready if route_ready is None else route_ready
+    route_target_mode = dispatch_target_mode if route_target_mode is None else route_target_mode
+    route_strategy = dispatch_strategy if route_strategy is None else route_strategy
+    route_market = dispatch_market if route_market is None else route_market
+    route_scenario_key = dispatch_scenario_key if route_scenario_key is None else route_scenario_key
+    route_requests = dispatch_requests if route_requests is None else route_requests
+    route_acked_orders = dispatch_acked_orders if route_acked_orders is None else route_acked_orders
+    route_missing_request_acks = (
+        dispatch_missing_request_acks if route_missing_request_acks is None else route_missing_request_acks
+    )
+    route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
+    route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
     return pd.DataFrame(
         [
             {
@@ -58,6 +85,19 @@ def cutover_summary(
                 "broker_dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
                 "broker_dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
                 "broker_dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
+                "broker_route_dispatch_roundtrip_required": route_required,
+                "broker_route_dispatch_roundtrip_provided": route_provided,
+                "broker_route_dispatch_roundtrip_ready": route_ready,
+                "broker_route_dispatch_roundtrip_target_mode": route_target_mode,
+                "broker_route_dispatch_roundtrip_strategy": route_strategy,
+                "broker_route_dispatch_roundtrip_market": route_market,
+                "broker_route_dispatch_roundtrip_scenario_key": route_scenario_key,
+                "broker_route_dispatch_roundtrip_batch_id": route_batch_id,
+                "broker_route_dispatch_roundtrip_requests": route_requests,
+                "broker_route_dispatch_roundtrip_acked_orders": route_acked_orders,
+                "broker_route_dispatch_roundtrip_missing_request_acks": route_missing_request_acks,
+                "broker_route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
+                "broker_route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "allow_live_dryrun_cutover" if ready else "keep_cutover_disabled",
             }
@@ -81,7 +121,34 @@ def cutover_config(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    route_required=None,
+    route_provided=None,
+    route_ready=None,
+    route_target_mode=None,
+    route_strategy=None,
+    route_market=None,
+    route_scenario_key=None,
+    route_batch_id="BDP-0",
+    route_requests=None,
+    route_acked_orders=None,
+    route_missing_request_acks=None,
+    route_rejected_orders=None,
+    route_unmatched_acks=None,
 ):
+    route_required = dispatch_provided if route_required is None else route_required
+    route_provided = dispatch_provided if route_provided is None else route_provided
+    route_ready = dispatch_ready if route_ready is None else route_ready
+    route_target_mode = dispatch_target_mode if route_target_mode is None else route_target_mode
+    route_strategy = dispatch_strategy if route_strategy is None else route_strategy
+    route_market = dispatch_market if route_market is None else route_market
+    route_scenario_key = dispatch_scenario_key if route_scenario_key is None else route_scenario_key
+    route_requests = dispatch_requests if route_requests is None else route_requests
+    route_acked_orders = dispatch_acked_orders if route_acked_orders is None else route_acked_orders
+    route_missing_request_acks = (
+        dispatch_missing_request_acks if route_missing_request_acks is None else route_missing_request_acks
+    )
+    route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
+    route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
     return {
         "schema_version": 1,
         "ready": True,
@@ -120,6 +187,21 @@ def cutover_config(
                 "missing_request_acks": dispatch_missing_request_acks,
                 "rejected_orders": dispatch_rejected_orders,
                 "unmatched_acks": dispatch_unmatched_acks,
+                "route_proof": {
+                    "required": route_required,
+                    "provided": route_provided,
+                    "ready": route_ready,
+                    "target_mode": route_target_mode,
+                    "strategy": route_strategy,
+                    "market": route_market,
+                    "scenario_key": route_scenario_key,
+                    "dispatch_batch_id": route_batch_id,
+                    "requests": route_requests,
+                    "acked_orders": route_acked_orders,
+                    "missing_request_acks": route_missing_request_acks,
+                    "rejected_orders": route_rejected_orders,
+                    "unmatched_acks": route_unmatched_acks,
+                },
             },
         },
     }
@@ -216,6 +298,9 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert report.config["upload"]["output_file"] == "broker_upload_orders.csv"
     assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
     assert report.config["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+    assert bool(report.summary.iloc[0]["route_dispatch_roundtrip_ready"])
+    assert report.config["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
+    assert report.config["dispatch_roundtrip"]["route_proof"]["requests"] == 2
 
 
 def test_route_enable_requires_cutover_dispatch_roundtrip():
@@ -229,6 +314,73 @@ def test_route_enable_requires_cutover_dispatch_roundtrip():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {"cutover_dispatch_roundtrip_provided", "cutover_dispatch_roundtrip_ready"} <= failed
     assert report.config["dispatch_roundtrip"]["required"]
+
+
+def test_route_enable_requires_cutover_route_dispatch_roundtrip():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(route_provided=False, route_ready=False),
+        cutover_config=cutover_config(route_provided=False, route_ready=False),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "cutover_route_dispatch_roundtrip_provided",
+        "cutover_route_dispatch_roundtrip_ready",
+    } <= failed
+    assert report.config["dispatch_roundtrip"]["route_proof"]["required"]
+    assert not report.config["dispatch_roundtrip"]["route_proof"]["provided"]
+
+
+def test_route_enable_blocks_bad_cutover_route_dispatch_roundtrip_quality():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(
+            route_ready=False,
+            route_target_mode="shadow",
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_scenario_key="wrong-scenario",
+            route_batch_id="",
+            route_requests=1,
+            route_acked_orders=1,
+            route_missing_request_acks=1,
+            route_rejected_orders=1,
+            route_unmatched_acks=1,
+        ),
+        cutover_config=cutover_config(
+            route_ready=False,
+            route_target_mode="shadow",
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_scenario_key="wrong-scenario",
+            route_batch_id="",
+            route_requests=1,
+            route_acked_orders=1,
+            route_missing_request_acks=1,
+            route_rejected_orders=1,
+            route_unmatched_acks=1,
+        ),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "cutover_route_dispatch_roundtrip_ready",
+        "cutover_route_dispatch_roundtrip_target_mode_matches",
+        "cutover_route_dispatch_roundtrip_strategy_matches",
+        "cutover_route_dispatch_roundtrip_market_matches",
+        "cutover_route_dispatch_roundtrip_scenario_matches",
+        "cutover_route_dispatch_roundtrip_batch_id_provided",
+        "cutover_route_dispatch_roundtrip_request_count_matches",
+        "cutover_route_dispatch_roundtrip_missing_request_acks",
+        "cutover_route_dispatch_roundtrip_rejected_orders",
+        "cutover_route_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    route_proof = report.config["dispatch_roundtrip"]["route_proof"]
+    assert route_proof["strategy"] == "surface_mm"
+    assert route_proof["missing_request_acks"] == 1
 
 
 def test_route_enable_blocks_bad_cutover_dispatch_roundtrip_quality():
