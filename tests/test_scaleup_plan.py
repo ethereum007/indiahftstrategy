@@ -112,6 +112,9 @@ def broker_readiness_summary(
     runtime_session_ready=False,
     runtime_guard_action="",
     runtime_guard_halted=False,
+    runtime_target_mode="shadow",
+    runtime_strategy="lead_lag_taker",
+    runtime_market="india_nse_index_derivatives",
 ):
     return pd.DataFrame(
         [
@@ -128,6 +131,9 @@ def broker_readiness_summary(
                 "runtime_session_ready": runtime_session_ready,
                 "runtime_guard_action": runtime_guard_action,
                 "runtime_guard_halted": runtime_guard_halted,
+                "runtime_target_mode": runtime_target_mode,
+                "runtime_strategy": runtime_strategy,
+                "runtime_market": runtime_market,
                 "recommendation": "dry_run_only_until_vendor_schema_review"
                 if ready and adapter != "normalized"
                 else "fix_broker_readiness_gaps",
@@ -359,8 +365,12 @@ def test_scaleup_plan_accepts_required_broker_readiness():
     assert report.config["broker_readiness"]["ready"]
     assert report.summary.iloc[0]["broker_runtime_session_ready"]
     assert report.summary.iloc[0]["broker_runtime_guard_action"] == "continue"
+    assert report.summary.iloc[0]["broker_runtime_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_runtime_market"] == "india_nse_index_derivatives"
     assert report.config["broker_readiness"]["runtime_session"]["provided"]
     assert report.config["broker_readiness"]["runtime_session"]["ready"]
+    assert report.config["broker_readiness"]["runtime_session"]["strategy"] == "lead_lag_taker"
+    assert report.config["broker_readiness"]["runtime_session"]["market"] == "india_nse_index_derivatives"
 
 
 def test_scaleup_plan_live_dryrun_requires_broker_readiness():
@@ -419,6 +429,34 @@ def test_scaleup_plan_live_dryrun_accepts_broker_runtime_guard_continue():
     assert report.config["broker_readiness"]["required"]
     assert report.config["broker_readiness"]["runtime_session"]["required"]
     assert report.config["broker_readiness"]["runtime_session"]["guard_action"] == "continue"
+    assert report.config["broker_readiness"]["runtime_session"]["target_mode"] == "shadow"
+    assert report.config["broker_readiness"]["runtime_session"]["strategy"] == "lead_lag_taker"
+    assert report.config["broker_readiness"]["runtime_session"]["market"] == "india_nse_index_derivatives"
+
+
+def test_scaleup_plan_live_dryrun_blocks_broker_runtime_identity_mismatch():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            runtime_session_provided=True,
+            runtime_session_ready=True,
+            runtime_guard_action="continue",
+            runtime_guard_halted=False,
+            runtime_strategy="imbalance",
+            runtime_market="us_equities_regular",
+        ),
+        thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"broker_runtime_strategy_matches", "broker_runtime_market_matches"} <= failed
+    assert report.summary.iloc[0]["broker_runtime_strategy"] == "imbalance"
+    assert report.summary.iloc[0]["broker_runtime_market"] == "us_equities_regular"
+    assert report.config["broker_readiness"]["runtime_session"]["strategy"] == "imbalance"
 
 
 def test_scaleup_plan_accepts_required_data_readiness():

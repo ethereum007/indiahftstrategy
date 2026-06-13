@@ -408,6 +408,10 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         runtime_session_ready = _to_bool(broker_readiness.get("runtime_session_ready", False))
         runtime_guard_action = str(broker_readiness.get("runtime_guard_action", "")).strip().lower()
         runtime_guard_halted = _to_bool(broker_readiness.get("runtime_guard_halted", False))
+        runtime_strategy = _strategy_key(broker_readiness.get("runtime_strategy", ""))
+        runtime_market = _identity_key(broker_readiness.get("runtime_market", ""))
+        expected_runtime_strategy = _strategy_key(thresholds.expected_strategy) or evidence_strategy
+        expected_runtime_market = _identity_key(thresholds.expected_market) or evidence_market
         checks.extend(
             [
                 _check(
@@ -433,6 +437,22 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                     "continue",
                     runtime_guard_action == "continue" and not runtime_guard_halted,
                     "broker runtime session guard is not continuing",
+                ),
+                _check(
+                    "broker_runtime_strategy_matches",
+                    runtime_strategy,
+                    "==",
+                    expected_runtime_strategy,
+                    bool(runtime_strategy and expected_runtime_strategy and runtime_strategy == expected_runtime_strategy),
+                    "broker runtime-session strategy does not match scale-up strategy",
+                ),
+                _check(
+                    "broker_runtime_market_matches",
+                    runtime_market,
+                    "==",
+                    expected_runtime_market,
+                    bool(runtime_market and expected_runtime_market and runtime_market == expected_runtime_market),
+                    "broker runtime-session market does not match scale-up market",
                 ),
             ]
         )
@@ -560,6 +580,15 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_runtime_guard_halted": _to_bool(broker_readiness.get("runtime_guard_halted", False))
                 if not broker_readiness.empty
                 else False,
+                "broker_runtime_target_mode": str(broker_readiness.get("runtime_target_mode", ""))
+                if not broker_readiness.empty
+                else "",
+                "broker_runtime_strategy": _strategy_key(broker_readiness.get("runtime_strategy", ""))
+                if not broker_readiness.empty
+                else "",
+                "broker_runtime_market": _identity_key(broker_readiness.get("runtime_market", ""))
+                if not broker_readiness.empty
+                else "",
             }
         ]
     )
@@ -602,6 +631,9 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_runtime_session_ready": _to_bool(plan_row["broker_runtime_session_ready"]),
                 "broker_runtime_guard_action": str(plan_row["broker_runtime_guard_action"]),
                 "broker_runtime_guard_halted": _to_bool(plan_row["broker_runtime_guard_halted"]),
+                "broker_runtime_target_mode": str(plan_row["broker_runtime_target_mode"]),
+                "broker_runtime_strategy": str(plan_row["broker_runtime_strategy"]),
+                "broker_runtime_market": str(plan_row["broker_runtime_market"]),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -693,6 +725,9 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                 "ready": _to_bool(plan_row["broker_runtime_session_ready"]),
                 "guard_action": str(plan_row["broker_runtime_guard_action"]),
                 "guard_halted": _to_bool(plan_row["broker_runtime_guard_halted"]),
+                "target_mode": str(plan_row["broker_runtime_target_mode"]),
+                "strategy": str(plan_row["broker_runtime_strategy"]),
+                "market": str(plan_row["broker_runtime_market"]),
             },
         },
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),

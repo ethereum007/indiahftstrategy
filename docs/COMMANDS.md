@@ -1395,7 +1395,9 @@ normalized, Arrow.money, and iRage review templates carry `lifecycle_action`,
 schema review.
 When `--runtime-session` is supplied, broker readiness requires the runtime
 guard to be continuing. `--require-runtime-session` makes that evidence
-mandatory before paper/shadow routing.
+mandatory before paper/shadow routing. Runtime-session target mode, strategy,
+and market identity are retained in the broker readiness summary for later
+scale-up continuity checks.
 
 Outputs:
 
@@ -1562,15 +1564,17 @@ point at the launch-pipeline root. In that case scale-up reads the nested
 launch summary and automatically includes nested broker-readiness evidence when
 present, so `--require-broker-readiness` can gate the pipeline folder directly.
 If broker readiness included runtime-session evidence, `scaleup_summary.csv`
-and `scaleup_config.json` retain the runtime guard action/halt status for the
-session that fed the broker gate.
+and `scaleup_config.json` retain the runtime guard action/halt status plus the
+runtime target mode, strategy, and market for the session that fed the broker
+gate.
 Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
 for runtime guard, halt, and resume traceability.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
 broker readiness plus broker runtime-session evidence with a continuing runtime
-guard.
+guard, and fails closed unless that runtime-session strategy and market match
+the scale-up identity.
 
 ## Runtime Telemetry Snapshot
 

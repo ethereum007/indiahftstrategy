@@ -214,8 +214,9 @@
   lifecycle-order, replace-order, delta, and vega kill-switch limits, carries
   strategy/market identity and broker runtime-session guard evidence into
   scale-up configs, automatically requires broker/runtime guard evidence for
-  live-dry-run targets, and can consume a settlement or surface-MM launch
-  pipeline root directly.
+  live-dry-run targets, fails closed on broker runtime-session strategy/market
+  mismatches, and can consume a settlement or surface-MM launch pipeline root
+  directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
@@ -235,8 +236,8 @@
   and first halt reasons.
 - Runtime session monitor that chains telemetry building, scale-up guard
   evaluation, and automatic halt-response planning into one manifest-backed
-  paper/shadow go/no-go artifact, preserving the guard halt trigger in the
-  top-level session summary.
+  paper/shadow go/no-go artifact, preserving the guard halt trigger and
+  strategy/market identity in the top-level session summary.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests, stamping guard failed check names and first halt reasons onto
@@ -311,7 +312,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 400 tests.
+Current passing suite: 401 tests.
 
 ## Next Build Targets
 
