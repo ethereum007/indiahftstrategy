@@ -408,6 +408,7 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     upload = config.get("upload", {}) or {}
     dispatch = config.get("dispatch_roundtrip", {}) or {}
+    route_proof = dispatch.get("route_proof", {}) or {}
     payload = _jsonable_row({"summary": row.to_dict(), "config": config})
     route_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return {
@@ -428,47 +429,49 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         "upload_output_file": _first_text(upload.get("output_file", "")),
         "route_enable_hash": route_hash,
         "dispatch_roundtrip_required": _to_bool(
-            dispatch.get("required", row.get("dispatch_roundtrip_required", False))
+            route_proof.get("required", row.get("route_dispatch_roundtrip_required", False))
         ),
         "dispatch_roundtrip_provided": _to_bool(
-            dispatch.get("provided", row.get("dispatch_roundtrip_provided", False))
+            route_proof.get("provided", row.get("route_dispatch_roundtrip_provided", False))
         ),
-        "dispatch_roundtrip_ready": _to_bool(dispatch.get("ready", row.get("dispatch_roundtrip_ready", False))),
+        "dispatch_roundtrip_ready": _to_bool(
+            route_proof.get("ready", row.get("route_dispatch_roundtrip_ready", False))
+        ),
         "dispatch_roundtrip_target_mode": _identity_key(
-            _first_text(dispatch.get("target_mode", ""), row.get("dispatch_roundtrip_target_mode", ""))
+            _first_text(route_proof.get("target_mode", ""), row.get("route_dispatch_roundtrip_target_mode", ""))
         ),
         "dispatch_roundtrip_strategy": _strategy_key(
-            _first_text(dispatch.get("strategy", ""), row.get("dispatch_roundtrip_strategy", ""))
+            _first_text(route_proof.get("strategy", ""), row.get("route_dispatch_roundtrip_strategy", ""))
         ),
         "dispatch_roundtrip_market": _identity_key(
-            _first_text(dispatch.get("market", ""), row.get("dispatch_roundtrip_market", ""))
+            _first_text(route_proof.get("market", ""), row.get("route_dispatch_roundtrip_market", ""))
         ),
         "dispatch_roundtrip_scenario_key": _first_text(
-            dispatch.get("scenario_key", ""),
-            row.get("dispatch_roundtrip_scenario_key", ""),
+            route_proof.get("scenario_key", ""),
+            row.get("route_dispatch_roundtrip_scenario_key", ""),
         ),
         "dispatch_roundtrip_batch_id": _first_text(
-            dispatch.get("dispatch_batch_id", ""),
-            row.get("dispatch_roundtrip_batch_id", ""),
+            route_proof.get("dispatch_batch_id", ""),
+            row.get("route_dispatch_roundtrip_batch_id", ""),
         ),
         "dispatch_roundtrip_requests": int(
-            _number_from(dispatch, "requests", _number(row, "dispatch_roundtrip_requests", 0.0))
+            _number_from(route_proof, "requests", _number(row, "route_dispatch_roundtrip_requests", 0.0))
         ),
         "dispatch_roundtrip_acked_orders": int(
-            _number_from(dispatch, "acked_orders", _number(row, "dispatch_roundtrip_acked_orders", 0.0))
+            _number_from(route_proof, "acked_orders", _number(row, "route_dispatch_roundtrip_acked_orders", 0.0))
         ),
         "dispatch_roundtrip_missing_request_acks": int(
             _number_from(
-                dispatch,
+                route_proof,
                 "missing_request_acks",
-                _number(row, "dispatch_roundtrip_missing_request_acks", 0.0),
+                _number(row, "route_dispatch_roundtrip_missing_request_acks", 0.0),
             )
         ),
         "dispatch_roundtrip_rejected_orders": int(
-            _number_from(dispatch, "rejected_orders", _number(row, "dispatch_roundtrip_rejected_orders", 0.0))
+            _number_from(route_proof, "rejected_orders", _number(row, "route_dispatch_roundtrip_rejected_orders", 0.0))
         ),
         "dispatch_roundtrip_unmatched_acks": int(
-            _number_from(dispatch, "unmatched_acks", _number(row, "dispatch_roundtrip_unmatched_acks", 0.0))
+            _number_from(route_proof, "unmatched_acks", _number(row, "route_dispatch_roundtrip_unmatched_acks", 0.0))
         ),
     }
 

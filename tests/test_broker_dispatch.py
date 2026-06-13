@@ -26,7 +26,32 @@ def route_summary(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    route_provided=None,
+    route_ready=None,
+    route_target_mode=None,
+    route_strategy=None,
+    route_market=None,
+    route_scenario_key=None,
+    route_batch_id="BDP-0",
+    route_requests=None,
+    route_acked_orders=None,
+    route_missing_request_acks=None,
+    route_rejected_orders=None,
+    route_unmatched_acks=None,
 ):
+    route_provided = dispatch_provided if route_provided is None else route_provided
+    route_ready = dispatch_ready if route_ready is None else route_ready
+    route_target_mode = dispatch_target_mode if route_target_mode is None else route_target_mode
+    route_strategy = dispatch_strategy if route_strategy is None else route_strategy
+    route_market = dispatch_market if route_market is None else route_market
+    route_scenario_key = dispatch_scenario_key if route_scenario_key is None else route_scenario_key
+    route_requests = dispatch_requests if route_requests is None else route_requests
+    route_acked_orders = dispatch_acked_orders if route_acked_orders is None else route_acked_orders
+    route_missing_request_acks = (
+        dispatch_missing_request_acks if route_missing_request_acks is None else route_missing_request_acks
+    )
+    route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
+    route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
     return pd.DataFrame(
         [
             {
@@ -53,6 +78,19 @@ def route_summary(
                 "dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
                 "dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
                 "dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
+                "route_dispatch_roundtrip_required": True,
+                "route_dispatch_roundtrip_provided": route_provided,
+                "route_dispatch_roundtrip_ready": route_ready,
+                "route_dispatch_roundtrip_target_mode": route_target_mode,
+                "route_dispatch_roundtrip_strategy": route_strategy,
+                "route_dispatch_roundtrip_market": route_market,
+                "route_dispatch_roundtrip_scenario_key": route_scenario_key,
+                "route_dispatch_roundtrip_batch_id": route_batch_id,
+                "route_dispatch_roundtrip_requests": route_requests,
+                "route_dispatch_roundtrip_acked_orders": route_acked_orders,
+                "route_dispatch_roundtrip_missing_request_acks": route_missing_request_acks,
+                "route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
+                "route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "enable_broker_route" if ready else "keep_broker_route_disabled",
             }
@@ -75,7 +113,32 @@ def route_config(
     dispatch_missing_request_acks=0,
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
+    route_provided=None,
+    route_ready=None,
+    route_target_mode=None,
+    route_strategy=None,
+    route_market=None,
+    route_scenario_key=None,
+    route_batch_id="BDP-0",
+    route_requests=None,
+    route_acked_orders=None,
+    route_missing_request_acks=None,
+    route_rejected_orders=None,
+    route_unmatched_acks=None,
 ):
+    route_provided = dispatch_provided if route_provided is None else route_provided
+    route_ready = dispatch_ready if route_ready is None else route_ready
+    route_target_mode = dispatch_target_mode if route_target_mode is None else route_target_mode
+    route_strategy = dispatch_strategy if route_strategy is None else route_strategy
+    route_market = dispatch_market if route_market is None else route_market
+    route_scenario_key = dispatch_scenario_key if route_scenario_key is None else route_scenario_key
+    route_requests = dispatch_requests if route_requests is None else route_requests
+    route_acked_orders = dispatch_acked_orders if route_acked_orders is None else route_acked_orders
+    route_missing_request_acks = (
+        dispatch_missing_request_acks if route_missing_request_acks is None else route_missing_request_acks
+    )
+    route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
+    route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
     return {
         "schema_version": 1,
         "route_enabled": enabled,
@@ -110,6 +173,21 @@ def route_config(
             "missing_request_acks": dispatch_missing_request_acks,
             "rejected_orders": dispatch_rejected_orders,
             "unmatched_acks": dispatch_unmatched_acks,
+            "route_proof": {
+                "required": True,
+                "provided": route_provided,
+                "ready": route_ready,
+                "target_mode": route_target_mode,
+                "strategy": route_strategy,
+                "market": route_market,
+                "scenario_key": route_scenario_key,
+                "dispatch_batch_id": route_batch_id,
+                "requests": route_requests,
+                "acked_orders": route_acked_orders,
+                "missing_request_acks": route_missing_request_acks,
+                "rejected_orders": route_rejected_orders,
+                "unmatched_acks": route_unmatched_acks,
+            },
         },
     }
 
@@ -180,9 +258,23 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert report.dispatch_orders["source_order_id"].tolist() == ["ORD-1", "ORD-2"]
     assert report.dispatch_orders["dispatch_batch_id"].nunique() == 1
     assert report.config["dry_run_only"]
-    assert report.dispatch_orders["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-1", "BDP-1"]
+    assert report.dispatch_orders["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.summary.iloc[0]["route_dispatch_roundtrip_ready"]
-    assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+    assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
+
+
+def test_broker_dispatch_requires_nested_route_dispatch_roundtrip():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(route_provided=False, route_ready=False),
+        route_enable_config=route_config(route_provided=False, route_ready=False),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_dispatch_roundtrip_provided", "route_dispatch_roundtrip_ready"} <= failed
+    assert report.config["route_dispatch_roundtrip"]["required"]
+    assert not report.config["route_dispatch_roundtrip"]["provided"]
 
 
 def test_broker_dispatch_requires_route_dispatch_roundtrip():

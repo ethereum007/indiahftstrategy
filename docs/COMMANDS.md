@@ -2056,10 +2056,11 @@ manifest.json
 This command still does not submit orders. It hashes the route-enable
 authorization and upload file, creates one dry-run dispatch row per upload
 order, and requires unique source order IDs, unique dispatch IDs, route-enabled
-state, matching target mode, clean route-enable dispatch round-trip proof for
+state, matching target mode, clean nested route proof from route-enable for
 live dry-run routing, and order counts within the approved route limits. The
-resulting `broker_dispatch_config.json` is the artifact a future Arrow.money or
-iRage sender can consume.
+resulting `broker_dispatch_orders.csv` carries the route proof batch id into
+each dry-run dispatch row, and `broker_dispatch_config.json` is the artifact a
+future Arrow.money or iRage sender can consume.
 
 ## Broker Dispatch Send Packet
 
