@@ -308,7 +308,7 @@ def _write_pipeline_outputs(
         blocked_reason=blocked_reason,
     )
     summary = _summary(stages, quotes, quote_review, sweep, selection, promotion)
-    config = _candidate_config(candidate_config, summary.iloc[0], stages)
+    config = _candidate_config(candidate_config, summary.iloc[0], stages, parameters)
     stages.to_csv(output_dir / "surface_mm_pipeline_stages.csv", index=False)
     summary.to_csv(output_dir / "surface_mm_pipeline_summary.csv", index=False)
     (output_dir / "candidate_config.json").write_text(
@@ -555,11 +555,17 @@ def _promotion_candidate_config(path: Path, promotion: PromotionReport) -> dict[
     return config
 
 
-def _candidate_config(source: dict[str, Any], summary: pd.Series, stages: pd.DataFrame) -> dict[str, Any]:
+def _candidate_config(
+    source: dict[str, Any],
+    summary: pd.Series,
+    stages: pd.DataFrame,
+    parameters: dict[str, Any],
+) -> dict[str, Any]:
     config = dict(source)
     config["schema_version"] = int(config.get("schema_version", 1))
     config["ready"] = _to_bool(summary.get("ready", False))
     config["strategy"] = "surface_mm"
+    config["market"] = str(parameters.get("market", config.get("market", "")))
     config["source_run_type"] = "surface_mm_research_pipeline"
     failed = list(config.get("failed_checks", []) or [])
     failed.extend(stages.loc[~stages["status"].map(_to_bool), "stage"].astype(str).tolist())

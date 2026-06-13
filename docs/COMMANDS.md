@@ -992,6 +992,8 @@ python -m hft_cli pipeline-surface-mm-launch `
   --out runs\surface_mm_launch_2026_06_10 `
   --mode shadow `
   --adapter arrow_money `
+  --expected-strategy surface_mm `
+  --expected-market india_nse_index_derivatives `
   --max-order-qty 75 `
   --max-notional 10000 `
   --price-band-pct 0.02 `
@@ -1025,6 +1027,10 @@ handoff when the generated quotes would exceed message, active-quote, churn, or
 OTR limits. Staging uses `00_quote_lifecycle\quote_lifecycle_route_orders.csv`
 so stale raw quote rows and unchanged repeated quotes are not routed, while
 replace metadata survives into `03_export\broker_orders.csv`.
+The root surface research preflight checks that the upstream research pipeline
+is ready and that its strategy/market identity matches `--expected-strategy`
+and `--expected-market` before any quote lifecycle or broker-prep artifacts are
+created.
 Use `--broker-runtime-session` and `--require-broker-runtime-session` to make
 the nested `05_broker_readiness` gate require a continuing runtime guard before
 surface-MM paper/shadow handoff.

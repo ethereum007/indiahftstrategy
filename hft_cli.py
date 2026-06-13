@@ -1404,6 +1404,9 @@ def main(argv: list[str] | None = None) -> int:
     surface_launch_pipeline.add_argument("--adapter", default="arrow_money")
     surface_launch_pipeline.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
     surface_launch_pipeline.add_argument("--route-tag", default=None)
+    surface_launch_pipeline.add_argument("--expected-strategy", default="surface_mm")
+    surface_launch_pipeline.add_argument("--expected-market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
+    surface_launch_pipeline.add_argument("--allow-unready-surface-pipeline", action="store_true")
     surface_launch_pipeline.add_argument("--max-order-qty", type=int, default=None)
     surface_launch_pipeline.add_argument("--max-notional", type=float, default=None)
     surface_launch_pipeline.add_argument("--price-band-pct", type=float, default=None)
@@ -3097,6 +3100,9 @@ def main(argv: list[str] | None = None) -> int:
                 adapter=args.adapter,
                 mode=args.mode,
                 route_tag=args.route_tag,
+                expected_strategy=args.expected_strategy,
+                expected_market=args.expected_market,
+                require_surface_pipeline_ready=not args.allow_unready_surface_pipeline,
                 max_order_qty=args.max_order_qty,
                 max_notional=args.max_notional,
                 price_band_pct=args.price_band_pct,

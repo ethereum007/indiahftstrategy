@@ -106,9 +106,10 @@
   selection, and promotion into one manifest-backed candidate run with an
   optional required market-portability preflight before quote generation.
 - Surface market-making launch pipeline that consumes a promoted surface
-  research pipeline and runs quote-risk-enforced lifecycle planning, staging,
-  launch bundling, broker export, upload-pack generation, and
-  broker-readiness/runtime-session checks.
+  research pipeline and first verifies upstream research readiness plus
+  strategy/market identity before running quote-risk-enforced lifecycle
+  planning, staging, launch bundling, broker export, upload-pack generation,
+  and broker-readiness/runtime-session checks.
 - Surface/theo markout analysis for option fills.
 - PnL decomposition reports by source and instrument, including strategy fills
   versus terminal flattening.
@@ -374,7 +375,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 523 tests.
+Current passing suite: 526 tests.
 
 ## Next Build Targets
 
