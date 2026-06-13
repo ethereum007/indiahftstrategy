@@ -6,12 +6,20 @@ from hft_cli import main
 from reports.resume import ResumeGateThresholds, evaluate_resume_gate, write_resume_gate_report
 
 
-def incident_summary(passed=True, scenario_key="trigger_ticks=2", adapter="arrow_money"):
+def incident_summary(
+    passed=True,
+    scenario_key="trigger_ticks=2",
+    adapter="arrow_money",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+):
     return pd.DataFrame(
         [
             {
                 "passed": passed,
                 "incident_status": "halt_completed" if passed else "halt_incomplete",
+                "strategy": strategy,
+                "market": market,
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "guard_failed_check_names": "open_order_count" if passed else "halt_execution_passed",
@@ -23,12 +31,21 @@ def incident_summary(passed=True, scenario_key="trigger_ticks=2", adapter="arrow
     )
 
 
-def scaleup_summary(ready=True, scenario_key="trigger_ticks=2", adapter="arrow_money", target_mode="shadow"):
+def scaleup_summary(
+    ready=True,
+    scenario_key="trigger_ticks=2",
+    adapter="arrow_money",
+    target_mode="shadow",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+):
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "target_mode": target_mode,
+                "strategy": strategy,
+                "market": market,
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "max_orders_per_session": 10,
@@ -40,13 +57,27 @@ def scaleup_summary(ready=True, scenario_key="trigger_ticks=2", adapter="arrow_m
     )
 
 
-def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money", target_mode="shadow"):
+def scaleup_config(
+    scenario_key="trigger_ticks=2",
+    adapter="arrow_money",
+    target_mode="shadow",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+):
     return {
         "schema_version": 1,
         "ready": True,
         "target_mode": target_mode,
+        "strategy": strategy,
+        "market": market,
         "scenario_key": scenario_key,
         "adapter": adapter,
+        "identity": {
+            "strategy": strategy,
+            "market": market,
+            "expected_strategy": strategy,
+            "expected_market": market,
+        },
         "limits": {
             "max_orders_per_session": 10,
             "max_notional_per_session": 100_000.0,
@@ -113,11 +144,17 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.authorization.iloc[0]["max_gross_notional"] == 2_000.0
     assert report.authorization.iloc[0]["max_abs_net_delta"] == 100.0
     assert report.authorization.iloc[0]["max_abs_net_vega"] == 250.0
+    assert report.authorization.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.authorization.iloc[0]["market"] == "india_nse_index_derivatives"
     assert report.authorization.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
     assert report.summary.iloc[0]["incident_guard_first_failed_reason"] == "open_order_count: limit breached"
     assert report.summary.iloc[0]["recommendation"] == "resume_with_scaleup_controls"
     assert report.config["incident"]["guard_failed_check_names"] == "open_order_count"
+    assert report.config["identity"]["strategy"] == "lead_lag_taker"
+    assert report.config["identity"]["incident_market"] == "india_nse_index_derivatives"
     assert report.config["ready"]
 
 
@@ -131,6 +168,18 @@ def test_resume_gate_blocks_scenario_mismatch():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "scenario_match" in failed
+
+
+def test_resume_gate_blocks_strategy_and_market_mismatch():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(strategy="leadlag", market="india_nse_index_derivatives"),
+        scaleup_summary=scaleup_summary(strategy="imbalance", market="us_equities_regular"),
+        scaleup_config=scaleup_config(strategy="imbalance", market="us_equities_regular"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"strategy_match", "market_match"} <= failed
 
 
 def test_resume_gate_can_require_operator_trigger_acknowledgment():

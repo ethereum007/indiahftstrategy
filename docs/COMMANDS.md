@@ -1726,8 +1726,9 @@ manifest.json
 ```
 
 `halt_response_summary.csv`, `halt_cancel_orders.csv`, and
-`halt_flatten_orders.csv` include the guard failed check names and first halt
-reason so emergency action files show why the cancel/flatten packet exists.
+`halt_flatten_orders.csv` include the guard failed check names, first halt
+reason, strategy, and market so emergency action files show why the
+cancel/flatten packet exists and which scaled strategy produced it.
 
 ## Halt Response Export
 
@@ -1822,8 +1823,9 @@ halt_incident_summary.csv
 manifest.json
 ```
 
-The timeline and summary retain guard-trigger fields so the incident closure
-record shows the failed guard checks that caused the halt.
+The timeline and summary retain guard-trigger, strategy, and market fields so
+the incident closure record shows both the failed guard checks that caused the
+halt and the scaled strategy context that produced them.
 
 ## Resume Gate
 
@@ -1852,8 +1854,10 @@ manifest.json
 ```
 
 `resume_authorization.csv`, `resume_summary.csv`, and `resume_config.json`
-retain the prior incident's guard-trigger fields so resume approval is tied
-back to the halt that was closed.
+retain the prior incident's guard-trigger, strategy, and market fields so
+resume approval is tied back to the exact halt that was closed. Strategy and
+market continuity are checked by default alongside scenario and adapter
+continuity.
 
 When the scale-up target mode is `live_dryrun`, the resume gate automatically
 requires both operator approval and acknowledgement of the prior guard trigger,

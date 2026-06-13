@@ -196,6 +196,8 @@ def _timeline_row(
         or _summary_text(summary, "failed_check_names"),
         "guard_first_failed_reason": _summary_text(summary, "guard_first_failed_reason")
         or _summary_text(summary, "first_failed_reason"),
+        "strategy": str(summary.get("strategy", "")),
+        "market": str(summary.get("market", "")),
         "scenario_key": str(summary.get("scenario_key", "")),
         "adapter": str(summary.get("adapter", "")),
         "recommendation": str(summary.get("recommendation", "")),
@@ -279,6 +281,8 @@ def _summary(
             {
                 "passed": passed,
                 "incident_status": status,
+                "strategy": str(guard.get("strategy", response.get("strategy", ""))),
+                "market": str(guard.get("market", response.get("market", ""))),
                 "scenario_key": str(guard.get("scenario_key", response.get("scenario_key", ""))),
                 "adapter": str(guard.get("adapter", response.get("adapter", ""))),
                 "guard_action": str(guard.get("guard_action", "")),

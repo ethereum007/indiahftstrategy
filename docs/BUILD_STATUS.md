@@ -240,7 +240,8 @@
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests, stamping guard failed check names and first halt reasons onto
-  the summary and action CSVs for operator review.
+  the summary and action CSVs for operator review while carrying strategy and
+  market identity into the emergency action packet.
 - Halt response export mapper that turns emergency cancel and flatten actions
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
   Arrow.money/iRage emergency schemas are finalized.
@@ -248,12 +249,12 @@
   acknowledgements, flatten fills, and final flat positions after a guard halt.
 - Halt incident review that combines guard, response, export, and execution
   evidence into one incident-closure timeline, check set, and summary with
-  guard trigger context carried through the review.
+  guard trigger plus strategy/market context carried through the review.
 - Post-halt resume gate that requires a closed incident, ready scale-up plan,
-  scenario/adapter continuity, optional operator approval, and emits
-  resume authorization/config artifacts carrying the incident guard trigger
-  that caused the prior halt, with automatic operator approval and guard-trigger
-  acknowledgement required for `live_dryrun` resumes.
+  scenario/adapter and strategy/market continuity, optional operator approval,
+  and emits resume authorization/config artifacts carrying the incident guard
+  trigger that caused the prior halt, with automatic operator approval and
+  guard-trigger acknowledgement required for `live_dryrun` resumes.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
@@ -310,7 +311,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 399 tests.
+Current passing suite: 400 tests.
 
 ## Next Build Targets
 

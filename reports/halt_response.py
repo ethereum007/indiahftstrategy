@@ -14,6 +14,8 @@ from reports.manifest import write_experiment_manifest
 CANCEL_COLUMNS = [
     "action_id",
     "action",
+    "strategy",
+    "market",
     "client_order_id",
     "broker_order_id",
     "instrument_id",
@@ -28,6 +30,8 @@ CANCEL_COLUMNS = [
 FLATTEN_COLUMNS = [
     "action_id",
     "action",
+    "strategy",
+    "market",
     "instrument_id",
     "side",
     "side_text",
@@ -87,6 +91,8 @@ def evaluate_halt_response(
     summary = _summary(guard_row, cancel_orders, flatten_orders, checks, guard_context)
     response_config = {
         **asdict(config),
+        "strategy": guard_context["strategy"],
+        "market": guard_context["market"],
         "guard_failed_checks": guard_context["failed_check_names"],
         "guard_failed_check_reasons": guard_context["failed_check_reasons"],
     }
@@ -167,6 +173,8 @@ def _cancel_actions(open_orders: pd.DataFrame, guard_context: dict[str, object])
     active = frame.loc[(~frame["status"].isin(TERMINAL_STATUSES)) & (frame["open_qty"] > 0)].copy()
     active["action_id"] = [f"CXL-{idx:06d}" for idx in range(len(active))]
     active["action"] = "cancel_order"
+    active["strategy"] = guard_context["strategy"]
+    active["market"] = guard_context["market"]
     active["reason"] = "guard_halt_open_order"
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
@@ -193,6 +201,8 @@ def _flatten_actions(
     active["order_type"] = str(config.default_order_type)
     active["time_in_force"] = str(config.default_time_in_force)
     active["reason"] = "flatten_residual_position"
+    active["strategy"] = guard_context["strategy"]
+    active["market"] = guard_context["market"]
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
     active["action"] = "flatten_position"
@@ -269,6 +279,8 @@ def _summary(
             {
                 "ready": ready,
                 "guard_action": str(guard_row.get("guard_action", "")),
+                "strategy": str(guard_context["strategy"]),
+                "market": str(guard_context["market"]),
                 "cancel_orders": int(len(cancel_orders)),
                 "flatten_orders": int(len(flatten_orders)),
                 "open_risk_items": action_count,
@@ -379,6 +391,8 @@ def _guard_halt_context(guard_row: pd.Series, guard_checks: pd.DataFrame) -> dic
     if not first_reason and reasons:
         first_reason = reasons[0]
     return {
+        "strategy": _clean(guard_row.get("strategy", "")),
+        "market": _clean(guard_row.get("market", "")),
         "failed_check_names": names,
         "failed_check_names_text": ";".join(names),
         "first_failed_reason": first_reason,

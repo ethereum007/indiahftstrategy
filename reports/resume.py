@@ -16,6 +16,8 @@ class ResumeGateThresholds:
     require_scaleup_ready: bool = True
     require_same_scenario: bool = True
     require_same_adapter: bool = True
+    require_same_strategy: bool = True
+    require_same_market: bool = True
     require_operator_approval: bool = False
     require_operator_guard_trigger_ack: bool = False
     max_failed_scaleup_checks: int = 0
@@ -121,6 +123,10 @@ def _checks(
     scaleup_scenario = str(scaleup.get("scenario_key", ""))
     incident_adapter = str(incident.get("adapter", ""))
     scaleup_adapter = str(scaleup.get("adapter", ""))
+    incident_strategy = _strategy_key(incident.get("strategy", ""))
+    scaleup_strategy = _strategy_key(_scaleup_identity(scaleup, scaleup_config, "strategy"))
+    incident_market = _identity_key(incident.get("market", ""))
+    scaleup_market = _identity_key(_scaleup_identity(scaleup, scaleup_config, "market"))
     scaleup_failed = _failed_scaleup_checks(scaleup, scaleup_checks)
     operator_approved = _operator_approved(operator_review)
     incident_guard_trigger = _text(incident, "guard_failed_check_names")
@@ -160,6 +166,24 @@ def _checks(
                 incident_adapter,
                 scaleup_adapter == incident_adapter or not thresholds.require_same_adapter,
                 "incident and scale-up adapters differ",
+            ),
+            _check(
+                "strategy_match",
+                scaleup_strategy,
+                "==",
+                incident_strategy,
+                bool(scaleup_strategy and incident_strategy and scaleup_strategy == incident_strategy)
+                or not thresholds.require_same_strategy,
+                "incident and scale-up strategy identities differ",
+            ),
+            _check(
+                "market_match",
+                scaleup_market,
+                "==",
+                incident_market,
+                bool(scaleup_market and incident_market and scaleup_market == incident_market)
+                or not thresholds.require_same_market,
+                "incident and scale-up market identities differ",
             ),
             _check(
                 "scaleup_failed_checks",
@@ -206,6 +230,10 @@ def _authorization(
             {
                 "ready": ready,
                 "target_mode": str(scaleup.get("target_mode", scaleup_config.get("target_mode", ""))),
+                "strategy": _strategy_key(_scaleup_identity(scaleup, scaleup_config, "strategy")),
+                "market": _identity_key(_scaleup_identity(scaleup, scaleup_config, "market")),
+                "incident_strategy": _strategy_key(incident.get("strategy", "")),
+                "incident_market": _identity_key(incident.get("market", "")),
                 "scenario_key": str(scaleup.get("scenario_key", scaleup_config.get("scenario_key", ""))),
                 "adapter": str(scaleup.get("adapter", scaleup_config.get("adapter", ""))),
                 "incident_status": str(incident.get("incident_status", "")),
@@ -240,6 +268,10 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
             {
                 "ready": ready,
                 "target_mode": str(authorization.get("target_mode", "")),
+                "strategy": str(authorization.get("strategy", "")),
+                "market": str(authorization.get("market", "")),
+                "incident_strategy": str(authorization.get("incident_strategy", "")),
+                "incident_market": str(authorization.get("incident_market", "")),
                 "scenario_key": str(authorization.get("scenario_key", "")),
                 "adapter": str(authorization.get("adapter", "")),
                 "incident_guard_failed_check_names": _text(authorization, "incident_guard_failed_check_names"),
@@ -265,8 +297,16 @@ def _config(
         "schema_version": 1,
         "ready": bool(authorization["ready"]),
         "target_mode": str(authorization["target_mode"]),
+        "strategy": str(authorization["strategy"]),
+        "market": str(authorization["market"]),
         "scenario_key": str(authorization["scenario_key"]),
         "adapter": str(authorization["adapter"]),
+        "identity": {
+            "strategy": str(authorization["strategy"]),
+            "market": str(authorization["market"]),
+            "incident_strategy": str(authorization.get("incident_strategy", "")),
+            "incident_market": str(authorization.get("incident_market", "")),
+        },
         "limits": scaleup_config.get("limits", {}),
         "kill_switches": scaleup_config.get("kill_switches", {}),
         "incident": {
@@ -373,6 +413,39 @@ def _target_mode(scaleup: pd.Series, scaleup_config: dict[str, Any]) -> str:
     return summary_mode or config_mode
 
 
+def _scaleup_identity(scaleup: pd.Series, scaleup_config: dict[str, Any], key: str) -> object:
+    identity = scaleup_config.get("identity", {}) or {}
+    if not isinstance(identity, dict):
+        identity = {}
+    return _first_text(scaleup.get(key, ""), scaleup_config.get(key, ""), identity.get(key, ""))
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    text = _object_text(value)
+    return text.lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        text = _object_text(value)
+        if text:
+            return text
+    return ""
+
+
 def _validate_thresholds(thresholds: ResumeGateThresholds) -> None:
     if thresholds.max_failed_scaleup_checks < 0:
         raise ValueError("max_failed_scaleup_checks must be non-negative")
@@ -399,7 +472,10 @@ def _nullable_number(value: object) -> float | None:
 def _text(row: pd.Series, column: str) -> str:
     if row.empty or column not in row.index:
         return ""
-    value = row[column]
+    return _object_text(row[column])
+
+
+def _object_text(value: object) -> str:
     if pd.isna(value):
         return ""
     return str(value)
