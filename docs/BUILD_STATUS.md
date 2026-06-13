@@ -260,7 +260,8 @@
   trigger that caused the prior halt, with automatic operator approval and
   guard-trigger acknowledgement required for `live_dryrun` resumes.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
-  bps shocks, including stressed PnL, cost bps, drawdown, and pass/fail gates.
+  bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
+  identity consistency, and pass/fail gates.
 - Surface quote runner that fits per-snapshot option smiles from chain/futures
   data and emits budgeted market-making quotes with marketability checks and
   manifests.
@@ -315,7 +316,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 404 tests.
+Current passing suite: 405 tests.
 
 ## Next Build Targets
 

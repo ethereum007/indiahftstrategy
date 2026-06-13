@@ -2306,3 +2306,7 @@ stress_results.csv
 stress_summary.csv
 manifest.json
 ```
+
+Stress reports retain strategy and market identity from replay summaries,
+scenario keys, or replay manifests. A stress bundle that mixes provided
+strategy or market identities fails even when all numeric stress scenarios pass.

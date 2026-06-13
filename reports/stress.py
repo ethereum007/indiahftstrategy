@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from itertools import product
 from pathlib import Path
@@ -53,6 +54,9 @@ def stress_replay_dirs(
         fills = _read_optional(run_dir / "fills.csv")
         equity = _read_optional(run_dir / "equity.csv")
         base = summary.iloc[0]
+        manifest = _read_manifest(run_dir)
+        strategy = _strategy_key(_first_identity(base, manifest, ("strategy", "strategy_name", "strategy_id")))
+        market = _identity_key(_first_identity(base, manifest, ("market", "market_profile", "market_name", "market_id")))
         for cost_multiplier, slippage_ticks, adverse_bps in product(
             config.cost_multipliers,
             config.slippage_ticks,
@@ -63,6 +67,8 @@ def stress_replay_dirs(
                     run_name=run_name,
                     run_dir=run_dir,
                     base=base,
+                    strategy=strategy,
+                    market=market,
                     fills=fills,
                     equity=equity,
                     config=config,
@@ -102,6 +108,8 @@ def _stress_row(
     run_name: str,
     run_dir: Path,
     base: pd.Series,
+    strategy: str,
+    market: str,
     fills: pd.DataFrame,
     equity: pd.DataFrame,
     config: StressConfig,
@@ -141,6 +149,8 @@ def _stress_row(
     return {
         "run": run_name,
         "run_dir": str(run_dir),
+        "strategy": strategy,
+        "market": market,
         "scenario": _scenario_name(cost_multiplier, slippage_ticks, adverse_bps),
         "cost_multiplier": cost_multiplier,
         "slippage_ticks": slippage_ticks,
@@ -226,11 +236,23 @@ def _stress_summary(results: pd.DataFrame) -> pd.DataFrame:
                 "passed_rows",
                 "failed_rows",
                 "all_scenarios_passed",
+                "strategy",
+                "strategy_count",
+                "missing_strategy_runs",
+                "market",
+                "market_count",
+                "missing_market_runs",
+                "mixed_identity",
                 "worst_stressed_net_pnl",
                 "median_stressed_net_pnl",
                 "worst_stressed_drawdown",
             ]
         )
+    strategies = _identity_values(results, "strategy", normalizer=_strategy_key)
+    markets = _identity_values(results, "market", normalizer=_identity_key)
+    missing_strategies = _missing_identity_count(results.drop_duplicates("run"), "strategy")
+    missing_markets = _missing_identity_count(results.drop_duplicates("run"), "market")
+    mixed_identity = bool((len(strategies) > 1) or (len(markets) > 1))
     return pd.DataFrame(
         [
             {
@@ -238,7 +260,14 @@ def _stress_summary(results: pd.DataFrame) -> pd.DataFrame:
                 "run_count": int(results["run"].nunique()),
                 "passed_rows": int(results["passed"].sum()),
                 "failed_rows": int((~results["passed"]).sum()),
-                "all_scenarios_passed": bool(results["passed"].all()),
+                "all_scenarios_passed": bool(results["passed"].all() and not mixed_identity),
+                "strategy": next(iter(strategies)) if len(strategies) == 1 else "",
+                "strategy_count": int(len(strategies)),
+                "missing_strategy_runs": missing_strategies,
+                "market": next(iter(markets)) if len(markets) == 1 else "",
+                "market_count": int(len(markets)),
+                "missing_market_runs": missing_markets,
+                "mixed_identity": mixed_identity,
                 "worst_stressed_net_pnl": float(results["stressed_net_pnl"].min()),
                 "median_stressed_net_pnl": float(results["stressed_net_pnl"].median()),
                 "worst_stressed_drawdown": float(results["stressed_max_drawdown"].max()),
@@ -289,6 +318,16 @@ def _read_optional(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _read_manifest(run_dir: Path) -> dict:
+    path = run_dir / "manifest.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
 def _float(row: pd.Series, column: str) -> float:
     return float(row[column]) if column in row and not pd.isna(row[column]) else 0.0
 
@@ -308,3 +347,89 @@ def _scenario_name(cost_multiplier: float, slippage_ticks: float, adverse_bps: f
 def _label_number(value: float) -> str:
     text = f"{float(value):g}"
     return text.replace("-", "m").replace(".", "p")
+
+
+def _first_identity(row: pd.Series, manifest: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = _text(row, key)
+        if value:
+            return value
+    parsed = _parse_scenario_key(_text(row, "scenario_key"))
+    for key in keys:
+        if key in parsed:
+            return parsed[key]
+    for section in ("parameters", "extra", "inputs"):
+        value = _find_json_key(manifest.get(section, {}), keys)
+        if value:
+            return value
+    return ""
+
+
+def _identity_values(frame: pd.DataFrame, column: str, *, normalizer) -> set[str]:
+    if frame.empty or column not in frame.columns:
+        return set()
+    return {value for value in frame[column].map(normalizer) if value}
+
+
+def _missing_identity_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty:
+        return 0
+    if column not in frame.columns:
+        return int(len(frame))
+    return int((frame[column].map(_identity_key) == "").sum())
+
+
+def _parse_scenario_key(value: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for part in value.split("|"):
+        if "=" not in part:
+            continue
+        key, item = part.split("=", 1)
+        key = key.strip()
+        item = item.strip()
+        if key and item:
+            parsed[key] = item
+    return parsed
+
+
+def _find_json_key(value: object, keys: tuple[str, ...]) -> str:
+    if isinstance(value, dict):
+        for key in keys:
+            item = value.get(key)
+            if isinstance(item, (str, int, float)) and str(item).strip():
+                return str(item)
+        for item in value.values():
+            found = _find_json_key(item, keys)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_json_key(item, keys)
+            if found:
+                return found
+    return ""
+
+
+def _text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row or pd.isna(row[column]):
+        return ""
+    return str(row[column]).strip()
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
