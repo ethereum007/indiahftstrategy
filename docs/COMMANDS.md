@@ -1619,10 +1619,11 @@ identity matching the scale-up identity.
 If broker readiness included dispatch round-trip evidence, scale-up also
 retains the proved dry-run target mode, strategy, market, scenario, dispatch
 batch, request count, accepted acknowledgements, failed-check count, and
-missing/rejected/unmatched ack counts, plus the nested route proof target,
-identity, batch, request, and ack quality fields. `--require-dispatch-roundtrip`
-fails closed unless that broker dry-run proof and its route proof are present,
-ready, identity-matched, count-matched, and clean.
+route-enable dispatch round-trip failed-check count, and missing, rejected, and
+unmatched acknowledgement counts, plus the nested route proof target, identity,
+batch, request, and ack quality fields. `--require-dispatch-roundtrip` fails
+closed unless that broker dry-run proof and its route proof are present, ready,
+identity-matched, count-matched, and clean.
 Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`

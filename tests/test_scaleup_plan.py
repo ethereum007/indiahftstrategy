@@ -160,6 +160,7 @@ def broker_readiness_summary(
     dispatch_roundtrip_rejected_orders=0,
     dispatch_roundtrip_unmatched_acks=0,
     dispatch_roundtrip_failed_checks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
     route_dispatch_roundtrip_required=None,
     route_dispatch_roundtrip_provided=None,
     route_dispatch_roundtrip_ready=None,
@@ -238,6 +239,7 @@ def broker_readiness_summary(
                 "dispatch_roundtrip_rejected_orders": dispatch_roundtrip_rejected_orders,
                 "dispatch_roundtrip_unmatched_acks": dispatch_roundtrip_unmatched_acks,
                 "dispatch_roundtrip_failed_checks": dispatch_roundtrip_failed_checks,
+                "route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
                 "route_dispatch_roundtrip_required": route_dispatch_roundtrip_required,
                 "route_dispatch_roundtrip_provided": route_dispatch_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_dispatch_roundtrip_ready,
@@ -622,7 +624,11 @@ def test_scaleup_plan_accepts_required_broker_dispatch_roundtrip():
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["ready"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
     assert report.summary.iloc[0]["broker_dispatch_roundtrip_failed_checks"] == 0
+    assert report.summary.iloc[0]["broker_route_enable_dispatch_roundtrip_failed_checks"] == 0
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["failed_checks"] == 0
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_enable_dispatch_roundtrip"][
+        "failed_checks"
+    ] == 0
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["provided"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["requests"] == 2
@@ -751,6 +757,30 @@ def test_scaleup_plan_blocks_broker_dispatch_roundtrip_failed_checks():
     assert "broker_dispatch_roundtrip_failed_checks" in failed
     assert report.summary.iloc[0]["broker_dispatch_roundtrip_failed_checks"] == 1
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["failed_checks"] == 1
+
+
+def test_scaleup_plan_blocks_broker_route_enable_dispatch_roundtrip_failed_checks():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            route_enable_dispatch_roundtrip_failed_checks=1,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "broker_route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert report.summary.iloc[0]["broker_route_enable_dispatch_roundtrip_failed_checks"] == 1
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_enable_dispatch_roundtrip"][
+        "failed_checks"
+    ] == 1
 
 
 def test_scaleup_plan_blocks_bad_broker_resume_proof_identity():
