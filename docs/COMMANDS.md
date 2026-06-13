@@ -2278,6 +2278,11 @@ proof_checks.csv
 proof_summary.csv
 ```
 
+Proof reports retain strategy and market identity from replay summaries,
+scenario keys, or replay manifests. A proof bundle that mixes provided strategy
+or market identities fails even when individual PnL, fill, regime, spread, and
+markout checks pass.
+
 ## Stress Replay
 
 Apply extra fee, slippage, and adverse-fill shocks to replay output folders:

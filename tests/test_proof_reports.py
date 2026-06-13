@@ -7,6 +7,8 @@ from reports.proof import ProofThresholds, evaluate_replay_dirs, write_proof_rep
 def write_run(
     path,
     *,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
     net_pnl=120.0,
     fills=12,
     turnover=6000.0,
@@ -23,6 +25,9 @@ def write_run(
     pd.DataFrame(
         [
             {
+                "strategy": strategy,
+                "market": market,
+                "scenario_key": f"strategy={strategy}|market={market}|trigger_ticks=2",
                 "net_pnl": net_pnl,
                 "total_costs": total_costs,
                 "orders_sent": 20,
@@ -72,6 +77,10 @@ def test_evaluate_replay_dirs_passes_explicit_proof_thresholds(tmp_path):
     )
 
     assert report.passed
+    assert report.metrics.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.metrics.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert report.metrics.iloc[0]["max_drawdown"] == 15.0
     assert report.metrics.iloc[0]["worst_regime_equity_change"] == 50.0
     assert report.metrics.iloc[0]["markout_mean"] == 4.0
@@ -94,6 +103,26 @@ def test_write_proof_report_outputs_metrics_checks_and_summary(tmp_path):
     assert (out_dir / "proof_checks.csv").exists()
     assert (out_dir / "proof_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_proof_report_blocks_mixed_strategy_or_market_runs(tmp_path):
+    leadlag = tmp_path / "leadlag_pass"
+    imbalance = tmp_path / "imbalance_pass"
+    write_run(leadlag, strategy="leadlag", market="india_nse_index_derivatives")
+    write_run(imbalance, strategy="imbalance", market="us_equities_regular")
+
+    report = evaluate_replay_dirs(
+        [leadlag, imbalance],
+        thresholds=ProofThresholds(min_net_pnl=1.0, min_fills=1),
+    )
+
+    assert not report.passed
+    summary = report.summary.iloc[0]
+    assert bool(summary["mixed_identity"])
+    assert int(summary["strategy_count"]) == 2
+    assert int(summary["market_count"]) == 2
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert {"same_strategy", "same_market"} <= failed
 
 
 def test_proof_report_fails_with_actionable_reasons(tmp_path):

@@ -157,7 +157,8 @@
   can fail closed before exposure, upload, or US portability work.
 - Proof-report gate for replay output folders, scoring PnL, fills, drawdown,
   OTR, regime robustness, spread capture, and markout quality against explicit
-  thresholds.
+  thresholds while carrying strategy/market identity and blocking mixed
+  identity proof bundles.
 - Lead-lag robustness sweep runner that replays trigger/latency grids, writes
   per-scenario artifacts, and aggregates proof pass rates plus robust scores.
 - Parity robustness sweep runner that replays depth/as-of/latency grids,
@@ -314,7 +315,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 403 tests.
+Current passing suite: 404 tests.
 
 ## Next Build Targets
 

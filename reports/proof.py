@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -68,7 +69,7 @@ def evaluate_replay_dirs(
         check_frames.append(_run_checks(metrics, thresholds))
 
     metrics_df = pd.DataFrame(metric_rows)
-    checks_df = pd.concat(check_frames, ignore_index=True, sort=False)
+    checks_df = pd.concat([*check_frames, _identity_checks(metrics_df)], ignore_index=True, sort=False)
     summary_df = _proof_summary(metrics_df, checks_df)
     return ProofReport(metrics=metrics_df, checks=checks_df, summary=summary_df)
 
@@ -98,10 +99,13 @@ def write_proof_report(
 def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | bool]:
     summary = _read_required(run_dir / "summary.csv")
     row = summary.iloc[0]
+    manifest = _read_manifest(run_dir)
     equity = _read_optional(run_dir / "equity.csv")
     equity_by_regime = _read_optional(run_dir / "equity_by_regime.csv")
     spread_summary = _read_optional(run_dir / "spread_summary.csv")
     markouts = _read_optional(run_dir / "markouts.csv")
+    strategy = _strategy_key(_first_identity(row, manifest, ("strategy", "strategy_name", "strategy_id")))
+    market = _identity_key(_first_identity(row, manifest, ("market", "market_profile", "market_name", "market_id")))
 
     net_pnl = _float(row, "net_pnl")
     fills = _int(row, "fills")
@@ -116,6 +120,8 @@ def _run_metrics(run_dir: Path, run_name: str) -> dict[str, float | int | str | 
 
     return {
         "run": run_name,
+        "strategy": strategy,
+        "market": market,
         "net_pnl": net_pnl,
         "fills": fills,
         "turnover": turnover,
@@ -205,19 +211,65 @@ def _check(
 
 
 def _proof_summary(metrics: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
-    failed_runs = checks.loc[~checks["passed"], "run"].drop_duplicates()
+    metric_runs = set(metrics["run"].astype(str))
+    failed_runs = checks.loc[
+        (~checks["passed"]) & checks["run"].astype(str).isin(metric_runs),
+        "run",
+    ].drop_duplicates()
+    strategies = _identity_values(metrics, "strategy", normalizer=_strategy_key)
+    markets = _identity_values(metrics, "market", normalizer=_identity_key)
+    missing_strategies = _missing_identity_count(metrics, "strategy")
+    missing_markets = _missing_identity_count(metrics, "market")
+    mixed_identity = bool((len(strategies) > 1) or (len(markets) > 1))
+    all_checks_passed = bool(checks["passed"].all()) if not checks.empty else False
     return pd.DataFrame(
         [
             {
                 "run_count": int(len(metrics)),
                 "passed_runs": int(len(metrics) - len(failed_runs)),
                 "failed_runs": int(len(failed_runs)),
-                "all_passed": bool(len(failed_runs) == 0),
+                "all_passed": bool(all_checks_passed and not mixed_identity),
+                "strategy": next(iter(strategies)) if len(strategies) == 1 else "",
+                "strategy_count": int(len(strategies)),
+                "missing_strategy_runs": missing_strategies,
+                "market": next(iter(markets)) if len(markets) == 1 else "",
+                "market_count": int(len(markets)),
+                "missing_market_runs": missing_markets,
+                "mixed_identity": mixed_identity,
                 "total_net_pnl": float(metrics["net_pnl"].sum()),
                 "total_fills": int(metrics["fills"].sum()),
                 "worst_drawdown": float(metrics["max_drawdown"].max(skipna=True)),
                 "worst_regime_equity_change": float(metrics["worst_regime_equity_change"].min(skipna=True)),
             }
+        ]
+    )
+
+
+def _identity_checks(metrics: pd.DataFrame) -> pd.DataFrame:
+    strategies = _identity_values(metrics, "strategy", normalizer=_strategy_key)
+    markets = _identity_values(metrics, "market", normalizer=_identity_key)
+    strategy_passed = len(strategies) <= 1
+    market_passed = len(markets) <= 1
+    return pd.DataFrame(
+        [
+            {
+                "run": "__proof__",
+                "check": "same_strategy",
+                "value": ";".join(sorted(strategies)) if strategies else "",
+                "operator": "count<=",
+                "threshold": 1,
+                "passed": strategy_passed,
+                "reason": "" if strategy_passed else "proof bundle mixes strategy identities",
+            },
+            {
+                "run": "__proof__",
+                "check": "same_market",
+                "value": ";".join(sorted(markets)) if markets else "",
+                "operator": "count<=",
+                "threshold": 1,
+                "passed": market_passed,
+                "reason": "" if market_passed else "proof bundle mixes market identities",
+            },
         ]
     )
 
@@ -238,6 +290,16 @@ def _read_optional(path: Path) -> pd.DataFrame:
         return pd.read_csv(path)
     except pd.errors.EmptyDataError:
         return pd.DataFrame()
+
+
+def _read_manifest(run_dir: Path) -> dict:
+    path = run_dir / "manifest.json"
+    if not path.exists():
+        return {}
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
 
 
 def _float(row: pd.Series, column: str) -> float:
@@ -289,3 +351,89 @@ def _markout_quality(markouts: pd.DataFrame) -> tuple[float, float]:
     else:
         return np.nan, np.nan
     return float(values.mean()), float((values > 0).mean())
+
+
+def _first_identity(row: pd.Series, manifest: dict, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = _text(row, key)
+        if value:
+            return value
+    parsed = _parse_scenario_key(_text(row, "scenario_key"))
+    for key in keys:
+        if key in parsed:
+            return parsed[key]
+    for section in ("parameters", "extra", "inputs"):
+        value = _find_json_key(manifest.get(section, {}), keys)
+        if value:
+            return value
+    return ""
+
+
+def _identity_values(frame: pd.DataFrame, column: str, *, normalizer) -> set[str]:
+    if frame.empty or column not in frame.columns:
+        return set()
+    return {value for value in frame[column].map(normalizer) if value}
+
+
+def _missing_identity_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty:
+        return 0
+    if column not in frame.columns:
+        return int(len(frame))
+    return int((frame[column].map(_identity_key) == "").sum())
+
+
+def _parse_scenario_key(value: str) -> dict[str, str]:
+    parsed: dict[str, str] = {}
+    for part in value.split("|"):
+        if "=" not in part:
+            continue
+        key, item = part.split("=", 1)
+        key = key.strip()
+        item = item.strip()
+        if key and item:
+            parsed[key] = item
+    return parsed
+
+
+def _find_json_key(value: object, keys: tuple[str, ...]) -> str:
+    if isinstance(value, dict):
+        for key in keys:
+            item = value.get(key)
+            if isinstance(item, (str, int, float)) and str(item).strip():
+                return str(item)
+        for item in value.values():
+            found = _find_json_key(item, keys)
+            if found:
+                return found
+    if isinstance(value, list):
+        for item in value:
+            found = _find_json_key(item, keys)
+            if found:
+                return found
+    return ""
+
+
+def _text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row or pd.isna(row[column]):
+        return ""
+    return str(row[column]).strip()
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
