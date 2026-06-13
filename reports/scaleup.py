@@ -46,6 +46,7 @@ class ScaleUpThresholds:
     require_data_readiness_comparison: bool = False
     require_broker_readiness: bool = False
     require_resume_gate: bool = False
+    require_dispatch_roundtrip: bool = False
     min_instrument_parse_coverage: float = 1.0
     expected_strategy: str | None = None
     expected_market: str | None = None
@@ -565,6 +566,98 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 ),
             ]
         )
+    dispatch_roundtrip_required = _dispatch_roundtrip_required(thresholds)
+    dispatch_roundtrip_provided = _to_bool(broker_readiness.get("dispatch_roundtrip_provided", False))
+    if dispatch_roundtrip_required:
+        checks.append(
+            _check(
+                "broker_dispatch_roundtrip_provided",
+                dispatch_roundtrip_provided,
+                "is",
+                True,
+                dispatch_roundtrip_provided,
+                "scale-up requires broker readiness with dry-run dispatch round-trip proof",
+            )
+        )
+    if not broker_readiness.empty and (dispatch_roundtrip_required or dispatch_roundtrip_provided):
+        dispatch_roundtrip_ready = _to_bool(broker_readiness.get("dispatch_roundtrip_ready", False))
+        dispatch_roundtrip_target_mode = _identity_key(broker_readiness.get("dispatch_roundtrip_target_mode", ""))
+        dispatch_roundtrip_strategy = _strategy_key(broker_readiness.get("dispatch_roundtrip_strategy", ""))
+        dispatch_roundtrip_market = _identity_key(broker_readiness.get("dispatch_roundtrip_market", ""))
+        dispatch_roundtrip_scenario = str(broker_readiness.get("dispatch_roundtrip_scenario_key", "")).strip()
+        expected_dispatch_strategy = _strategy_key(thresholds.expected_strategy) or evidence_strategy
+        expected_dispatch_market = _identity_key(thresholds.expected_market) or evidence_market
+        launch_scenario = str(launch.get("scenario_key", "")).strip()
+        checks.extend(
+            [
+                _check(
+                    "broker_dispatch_roundtrip_ready",
+                    dispatch_roundtrip_ready,
+                    "is",
+                    True,
+                    dispatch_roundtrip_ready,
+                    "broker dry-run dispatch round-trip proof is not ready",
+                ),
+                _check(
+                    "broker_dispatch_roundtrip_target_mode_matches",
+                    dispatch_roundtrip_target_mode,
+                    "==",
+                    thresholds.target_mode,
+                    bool(dispatch_roundtrip_target_mode and dispatch_roundtrip_target_mode == thresholds.target_mode),
+                    "broker dispatch round-trip target mode does not match scale-up target",
+                ),
+                _check(
+                    "broker_dispatch_roundtrip_strategy_matches",
+                    dispatch_roundtrip_strategy,
+                    "==",
+                    expected_dispatch_strategy,
+                    bool(
+                        dispatch_roundtrip_strategy
+                        and expected_dispatch_strategy
+                        and dispatch_roundtrip_strategy == expected_dispatch_strategy
+                    ),
+                    "broker dispatch round-trip strategy does not match scale-up strategy",
+                ),
+                _check(
+                    "broker_dispatch_roundtrip_market_matches",
+                    dispatch_roundtrip_market,
+                    "==",
+                    expected_dispatch_market,
+                    bool(
+                        dispatch_roundtrip_market
+                        and expected_dispatch_market
+                        and dispatch_roundtrip_market == expected_dispatch_market
+                    ),
+                    "broker dispatch round-trip market does not match scale-up market",
+                ),
+                _check(
+                    "broker_dispatch_roundtrip_scenario_matches",
+                    dispatch_roundtrip_scenario,
+                    "==",
+                    launch_scenario,
+                    bool(dispatch_roundtrip_scenario and launch_scenario and dispatch_roundtrip_scenario == launch_scenario),
+                    "broker dispatch round-trip scenario does not match launch scenario",
+                ),
+                _threshold_check(
+                    "broker_dispatch_roundtrip_missing_request_acks",
+                    _number(broker_readiness, "dispatch_roundtrip_missing_request_acks", 0.0),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_dispatch_roundtrip_rejected_orders",
+                    _number(broker_readiness, "dispatch_roundtrip_rejected_orders", 0.0),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_dispatch_roundtrip_unmatched_acks",
+                    _number(broker_readiness, "dispatch_roundtrip_unmatched_acks", 0.0),
+                    "<=",
+                    0,
+                ),
+            ]
+        )
     if thresholds.target_mode == "live_dryrun":
         runtime_session_provided = _to_bool(broker_readiness.get("runtime_session_provided", False))
         runtime_session_ready = _to_bool(broker_readiness.get("runtime_session_ready", False))
@@ -807,6 +900,67 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not broker_readiness.empty
                 else "",
+                "broker_dispatch_roundtrip_required": _dispatch_roundtrip_required(thresholds),
+                "broker_dispatch_roundtrip_provided": _to_bool(
+                    broker_readiness.get("dispatch_roundtrip_provided", False)
+                )
+                if not broker_readiness.empty
+                else False,
+                "broker_dispatch_roundtrip_ready": _to_bool(
+                    broker_readiness.get("dispatch_roundtrip_ready", False)
+                )
+                if not broker_readiness.empty
+                else False,
+                "broker_dispatch_roundtrip_target_mode": str(
+                    broker_readiness.get("dispatch_roundtrip_target_mode", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_dispatch_roundtrip_strategy": _strategy_key(
+                    broker_readiness.get("dispatch_roundtrip_strategy", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_dispatch_roundtrip_market": _identity_key(
+                    broker_readiness.get("dispatch_roundtrip_market", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_dispatch_roundtrip_scenario_key": str(
+                    broker_readiness.get("dispatch_roundtrip_scenario_key", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_dispatch_roundtrip_batch_id": str(
+                    broker_readiness.get("dispatch_roundtrip_batch_id", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_dispatch_roundtrip_requests": int(
+                    _number(broker_readiness, "dispatch_roundtrip_requests", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_dispatch_roundtrip_acked_orders": int(
+                    _number(broker_readiness, "dispatch_roundtrip_acked_orders", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_dispatch_roundtrip_missing_request_acks": int(
+                    _number(broker_readiness, "dispatch_roundtrip_missing_request_acks", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_dispatch_roundtrip_rejected_orders": int(
+                    _number(broker_readiness, "dispatch_roundtrip_rejected_orders", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_dispatch_roundtrip_unmatched_acks": int(
+                    _number(broker_readiness, "dispatch_roundtrip_unmatched_acks", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
             }
         ]
     )
@@ -874,6 +1028,35 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     plan_row["broker_resume_proof_refresh_strategy"]
                 ),
                 "broker_resume_proof_refresh_market": str(plan_row["broker_resume_proof_refresh_market"]),
+                "broker_dispatch_roundtrip_required": _to_bool(
+                    plan_row["broker_dispatch_roundtrip_required"]
+                ),
+                "broker_dispatch_roundtrip_provided": _to_bool(
+                    plan_row["broker_dispatch_roundtrip_provided"]
+                ),
+                "broker_dispatch_roundtrip_ready": _to_bool(plan_row["broker_dispatch_roundtrip_ready"]),
+                "broker_dispatch_roundtrip_target_mode": str(
+                    plan_row["broker_dispatch_roundtrip_target_mode"]
+                ),
+                "broker_dispatch_roundtrip_strategy": str(plan_row["broker_dispatch_roundtrip_strategy"]),
+                "broker_dispatch_roundtrip_market": str(plan_row["broker_dispatch_roundtrip_market"]),
+                "broker_dispatch_roundtrip_scenario_key": str(
+                    plan_row["broker_dispatch_roundtrip_scenario_key"]
+                ),
+                "broker_dispatch_roundtrip_batch_id": str(plan_row["broker_dispatch_roundtrip_batch_id"]),
+                "broker_dispatch_roundtrip_requests": int(plan_row["broker_dispatch_roundtrip_requests"]),
+                "broker_dispatch_roundtrip_acked_orders": int(
+                    plan_row["broker_dispatch_roundtrip_acked_orders"]
+                ),
+                "broker_dispatch_roundtrip_missing_request_acks": int(
+                    plan_row["broker_dispatch_roundtrip_missing_request_acks"]
+                ),
+                "broker_dispatch_roundtrip_rejected_orders": int(
+                    plan_row["broker_dispatch_roundtrip_rejected_orders"]
+                ),
+                "broker_dispatch_roundtrip_unmatched_acks": int(
+                    plan_row["broker_dispatch_roundtrip_unmatched_acks"]
+                ),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -991,6 +1174,21 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                 "proof_refresh_strategy": str(plan_row["broker_resume_proof_refresh_strategy"]),
                 "proof_refresh_market": str(plan_row["broker_resume_proof_refresh_market"]),
             },
+            "dispatch_roundtrip": {
+                "required": _to_bool(plan_row["broker_dispatch_roundtrip_required"]),
+                "provided": _to_bool(plan_row["broker_dispatch_roundtrip_provided"]),
+                "ready": _to_bool(plan_row["broker_dispatch_roundtrip_ready"]),
+                "target_mode": str(plan_row["broker_dispatch_roundtrip_target_mode"]),
+                "strategy": str(plan_row["broker_dispatch_roundtrip_strategy"]),
+                "market": str(plan_row["broker_dispatch_roundtrip_market"]),
+                "scenario_key": str(plan_row["broker_dispatch_roundtrip_scenario_key"]),
+                "dispatch_batch_id": str(plan_row["broker_dispatch_roundtrip_batch_id"]),
+                "requests": int(plan_row["broker_dispatch_roundtrip_requests"]),
+                "acked_orders": int(plan_row["broker_dispatch_roundtrip_acked_orders"]),
+                "missing_request_acks": int(plan_row["broker_dispatch_roundtrip_missing_request_acks"]),
+                "rejected_orders": int(plan_row["broker_dispatch_roundtrip_rejected_orders"]),
+                "unmatched_acks": int(plan_row["broker_dispatch_roundtrip_unmatched_acks"]),
+            },
         },
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
         "thresholds": asdict(thresholds),
@@ -1001,8 +1199,13 @@ def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
     return bool(
         thresholds.require_broker_readiness
         or thresholds.require_resume_gate
+        or thresholds.require_dispatch_roundtrip
         or thresholds.target_mode == "live_dryrun"
     )
+
+
+def _dispatch_roundtrip_required(thresholds: ScaleUpThresholds) -> bool:
+    return bool(thresholds.require_dispatch_roundtrip or thresholds.target_mode == "live_dryrun")
 
 
 def _strategy_key(value: object) -> str:

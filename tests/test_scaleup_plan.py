@@ -147,6 +147,18 @@ def broker_readiness_summary(
     resume_proof_refresh_ready=False,
     resume_proof_refresh_strategy="lead_lag_taker",
     resume_proof_refresh_market="india_nse_index_derivatives",
+    dispatch_roundtrip_provided=False,
+    dispatch_roundtrip_ready=False,
+    dispatch_roundtrip_target_mode="live_dryrun",
+    dispatch_roundtrip_strategy="lead_lag_taker",
+    dispatch_roundtrip_market="india_nse_index_derivatives",
+    dispatch_roundtrip_scenario_key="trigger_ticks=2",
+    dispatch_roundtrip_batch_id="BDP-1",
+    dispatch_roundtrip_requests=2,
+    dispatch_roundtrip_acked_orders=2,
+    dispatch_roundtrip_missing_request_acks=0,
+    dispatch_roundtrip_rejected_orders=0,
+    dispatch_roundtrip_unmatched_acks=0,
 ):
     return pd.DataFrame(
         [
@@ -175,6 +187,18 @@ def broker_readiness_summary(
                 "resume_proof_refresh_ready": resume_proof_refresh_ready,
                 "resume_proof_refresh_strategy": resume_proof_refresh_strategy,
                 "resume_proof_refresh_market": resume_proof_refresh_market,
+                "dispatch_roundtrip_provided": dispatch_roundtrip_provided,
+                "dispatch_roundtrip_ready": dispatch_roundtrip_ready,
+                "dispatch_roundtrip_target_mode": dispatch_roundtrip_target_mode,
+                "dispatch_roundtrip_strategy": dispatch_roundtrip_strategy,
+                "dispatch_roundtrip_market": dispatch_roundtrip_market,
+                "dispatch_roundtrip_scenario_key": dispatch_roundtrip_scenario_key,
+                "dispatch_roundtrip_batch_id": dispatch_roundtrip_batch_id,
+                "dispatch_roundtrip_requests": dispatch_roundtrip_requests,
+                "dispatch_roundtrip_acked_orders": dispatch_roundtrip_acked_orders,
+                "dispatch_roundtrip_missing_request_acks": dispatch_roundtrip_missing_request_acks,
+                "dispatch_roundtrip_rejected_orders": dispatch_roundtrip_rejected_orders,
+                "dispatch_roundtrip_unmatched_acks": dispatch_roundtrip_unmatched_acks,
                 "recommendation": "dry_run_only_until_vendor_schema_review"
                 if ready and adapter != "normalized"
                 else "fix_broker_readiness_gaps",
@@ -519,6 +543,65 @@ def test_scaleup_plan_accepts_required_broker_resume_gate():
     assert report.config["broker_readiness"]["resume_gate"]["proof_refresh_strategy"] == "lead_lag_taker"
 
 
+def test_scaleup_plan_accepts_required_broker_dispatch_roundtrip():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["broker_dispatch_roundtrip_required"]
+    assert report.summary.iloc[0]["broker_dispatch_roundtrip_provided"]
+    assert report.summary.iloc[0]["broker_dispatch_roundtrip_ready"]
+    assert report.summary.iloc[0]["broker_dispatch_roundtrip_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_dispatch_roundtrip_market"] == "india_nse_index_derivatives"
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["ready"]
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+
+
+def test_scaleup_plan_blocks_bad_broker_dispatch_roundtrip_quality():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=False,
+            dispatch_roundtrip_target_mode="shadow",
+            dispatch_roundtrip_strategy="imbalance",
+            dispatch_roundtrip_market="us_equities_regular",
+            dispatch_roundtrip_scenario_key="wrong-scenario",
+            dispatch_roundtrip_missing_request_acks=1,
+            dispatch_roundtrip_rejected_orders=1,
+            dispatch_roundtrip_unmatched_acks=1,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_dispatch_roundtrip_ready",
+        "broker_dispatch_roundtrip_strategy_matches",
+        "broker_dispatch_roundtrip_market_matches",
+        "broker_dispatch_roundtrip_scenario_matches",
+        "broker_dispatch_roundtrip_missing_request_acks",
+        "broker_dispatch_roundtrip_rejected_orders",
+        "broker_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["missing_request_acks"] == 1
+
+
 def test_scaleup_plan_blocks_bad_broker_resume_proof_identity():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(True),
@@ -552,9 +635,14 @@ def test_scaleup_plan_live_dryrun_requires_broker_readiness():
 
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
-    assert {"broker_readiness_available", "broker_runtime_session_provided"} <= failed
+    assert {
+        "broker_readiness_available",
+        "broker_runtime_session_provided",
+        "broker_dispatch_roundtrip_provided",
+    } <= failed
     assert report.config["broker_readiness"]["required"]
     assert report.config["broker_readiness"]["runtime_session"]["required"]
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
 
 
 def test_scaleup_plan_live_dryrun_blocks_halted_broker_runtime_session():
@@ -568,6 +656,8 @@ def test_scaleup_plan_live_dryrun_blocks_halted_broker_runtime_session():
             runtime_session_ready=False,
             runtime_guard_action="halt",
             runtime_guard_halted=True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
         ),
         thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
     )
@@ -588,6 +678,8 @@ def test_scaleup_plan_live_dryrun_accepts_broker_runtime_guard_continue():
             runtime_session_ready=True,
             runtime_guard_action="continue",
             runtime_guard_halted=False,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
         ),
         thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
     )
@@ -601,6 +693,9 @@ def test_scaleup_plan_live_dryrun_accepts_broker_runtime_guard_continue():
     assert report.config["broker_readiness"]["runtime_session"]["target_mode"] == "shadow"
     assert report.config["broker_readiness"]["runtime_session"]["strategy"] == "lead_lag_taker"
     assert report.config["broker_readiness"]["runtime_session"]["market"] == "india_nse_index_derivatives"
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["ready"]
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["acked_orders"] == 2
 
 
 def test_scaleup_plan_live_dryrun_blocks_broker_runtime_identity_mismatch():
@@ -616,6 +711,8 @@ def test_scaleup_plan_live_dryrun_blocks_broker_runtime_identity_mismatch():
             runtime_guard_halted=False,
             runtime_strategy="imbalance",
             runtime_market="us_equities_regular",
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
         ),
         thresholds=ScaleUpThresholds(target_mode="live_dryrun"),
     )
@@ -890,6 +987,34 @@ def test_cli_scaleup_plan_can_require_resume_gate(tmp_path):
     assert {"broker_readiness_available", "broker_resume_gate_provided"} <= failed
 
 
+def test_cli_scaleup_plan_can_require_dispatch_roundtrip(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {"broker_readiness_available", "broker_dispatch_roundtrip_provided"} <= failed
+
+
 def test_cli_scaleup_plan_live_dryrun_auto_requires_broker_runtime_evidence(tmp_path):
     evidence, shadow, launch, _ = write_inputs(tmp_path)
     out_dir = tmp_path / "scaleup"
@@ -916,7 +1041,11 @@ def test_cli_scaleup_plan_live_dryrun_auto_requires_broker_runtime_evidence(tmp_
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
-    assert {"broker_readiness_available", "broker_runtime_session_provided"} <= failed
+    assert {
+        "broker_readiness_available",
+        "broker_runtime_session_provided",
+        "broker_dispatch_roundtrip_provided",
+    } <= failed
 
 
 def test_cli_scaleup_plan_reads_settlement_launch_pipeline_outputs(tmp_path):

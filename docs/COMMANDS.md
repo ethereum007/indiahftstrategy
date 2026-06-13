@@ -1586,6 +1586,7 @@ python -m hft_cli plan-scaleup `
   --require-data-readiness-comparison `
   --require-broker-readiness `
   --require-resume-gate `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -1612,6 +1613,11 @@ resume authorization identity, prior incident identity, and resume
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless broker
 readiness supplied a ready resume gate with strategy/market and proof-refresh
 identity matching the scale-up identity.
+If broker readiness included dispatch round-trip evidence, scale-up also
+retains the proved dry-run target mode, strategy, market, scenario, dispatch
+batch, request count, accepted acknowledgements, and missing/rejected/unmatched
+ack counts. `--require-dispatch-roundtrip` fails closed unless that broker
+dry-run proof is present, ready, identity-matched, and clean.
 Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
@@ -1624,8 +1630,8 @@ accepted sessions used ready, non-mixed proof-refresh identity for the same
 strategy/market before writing a scale-up config.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
 broker readiness plus broker runtime-session evidence with a continuing runtime
-guard, and fails closed unless that runtime-session strategy and market match
-the scale-up identity.
+guard, broker dispatch round-trip proof with clean acknowledgements, and
+matching runtime/dispatch strategy-market identity.
 
 ## Runtime Telemetry Snapshot
 
