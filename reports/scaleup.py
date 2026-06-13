@@ -132,6 +132,8 @@ def write_scaleup_plan(
     evidence = _read_summary(evidence_dir, "strategy_evidence_summary.csv")
     shadow = _read_summary(shadow_comparison_dir, "shadow_session_comparison_summary.csv")
     launch = _read_summary(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch", "02_launch"))
+    surface_launch = _read_optional_summary(launch_dir, "surface_mm_launch_pipeline_summary.csv")
+    launch = _with_surface_launch_pipeline_identity(launch, surface_launch)
     exposure = _read_optional_summary(order_exposure_dir, "order_exposure_summary.csv") if order_exposure_dir else None
     proof_refresh = (
         _read_optional_summary(proof_refresh_dir, "proof_refresh_summary.csv") if proof_refresh_dir else None
@@ -255,6 +257,42 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "strategy evidence identity does not match expected market",
             )
         )
+    if _to_bool(launch.get("surface_launch_pipeline_provided", False)):
+        surface_launch_ready = _to_bool(launch.get("surface_launch_pipeline_ready", False))
+        surface_launch_strategy = _strategy_key(launch.get("surface_launch_strategy", ""))
+        surface_launch_market = _identity_key(launch.get("surface_launch_market", ""))
+        checks.append(
+            _check(
+                "surface_launch_pipeline_ready",
+                surface_launch_ready,
+                "is",
+                True,
+                surface_launch_ready,
+                "surface launch pipeline root summary is not ready",
+            )
+        )
+        if expected_proof_strategy:
+            checks.append(
+                _check(
+                    "surface_launch_strategy_matches",
+                    surface_launch_strategy,
+                    "==",
+                    expected_proof_strategy,
+                    bool(surface_launch_strategy and surface_launch_strategy == expected_proof_strategy),
+                    "surface launch pipeline strategy does not match scale-up strategy",
+                )
+            )
+        if expected_proof_market:
+            checks.append(
+                _check(
+                    "surface_launch_market_matches",
+                    surface_launch_market,
+                    "==",
+                    expected_proof_market,
+                    bool(surface_launch_market and surface_launch_market == expected_proof_market),
+                    "surface launch pipeline market does not match scale-up market",
+                )
+            )
     if thresholds.allowed_adapters:
         checks.append(
             _check(
@@ -898,6 +936,22 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "scenario_key": str(launch.get("scenario_key", "")),
                 "adapter": str(launch.get("adapter", "")),
                 "source_launch_mode": str(launch.get("mode", "")),
+                "surface_launch_pipeline_provided": _to_bool(
+                    launch.get("surface_launch_pipeline_provided", False)
+                ),
+                "surface_launch_pipeline_ready": _to_bool(launch.get("surface_launch_pipeline_ready", False)),
+                "surface_launch_strategy": _strategy_key(launch.get("surface_launch_strategy", "")),
+                "surface_launch_market": _identity_key(launch.get("surface_launch_market", "")),
+                "surface_launch_expected_strategy": _strategy_key(
+                    launch.get("surface_launch_expected_strategy", "")
+                ),
+                "surface_launch_expected_market": _identity_key(launch.get("surface_launch_expected_market", "")),
+                "surface_launch_failed_components": int(
+                    _number(launch, "surface_launch_failed_components", fallback=0.0)
+                ),
+                "surface_launch_skipped_components": int(
+                    _number(launch, "surface_launch_skipped_components", fallback=0.0)
+                ),
                 "max_scale_multiplier": float(thresholds.max_scale_multiplier),
                 "max_orders_per_session": scaled_orders,
                 "max_notional_per_session": scaled_notional,
@@ -1209,6 +1263,9 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "expected_market": str(plan_row["expected_market"]),
                 "scenario_key": str(plan_row["scenario_key"]),
                 "adapter": str(plan_row["adapter"]),
+                "surface_launch_pipeline_ready": _to_bool(plan_row["surface_launch_pipeline_ready"]),
+                "surface_launch_strategy": str(plan_row["surface_launch_strategy"]),
+                "surface_launch_market": str(plan_row["surface_launch_market"]),
                 "max_orders_per_session": int(plan_row["max_orders_per_session"]),
                 "max_notional_per_session": float(plan_row["max_notional_per_session"]),
                 "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
@@ -1352,6 +1409,16 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "market": str(plan_row["market"]),
             "expected_strategy": str(plan_row["expected_strategy"]),
             "expected_market": str(plan_row["expected_market"]),
+        },
+        "surface_launch_pipeline": {
+            "provided": _to_bool(plan_row["surface_launch_pipeline_provided"]),
+            "ready": _to_bool(plan_row["surface_launch_pipeline_ready"]),
+            "strategy": str(plan_row["surface_launch_strategy"]),
+            "market": str(plan_row["surface_launch_market"]),
+            "expected_strategy": str(plan_row["surface_launch_expected_strategy"]),
+            "expected_market": str(plan_row["surface_launch_expected_market"]),
+            "failed_components": int(plan_row["surface_launch_failed_components"]),
+            "skipped_components": int(plan_row["surface_launch_skipped_components"]),
         },
         "limits": {
             "max_orders_per_session": int(plan_row["max_orders_per_session"]),
@@ -1544,6 +1611,30 @@ def _read_optional_summary(path: str | Path, filename: str, *, fallback_dirs: tu
     if not file_path.exists():
         return pd.DataFrame()
     return _read_summary(file_path, filename)
+
+
+def _with_surface_launch_pipeline_identity(launch: pd.DataFrame, surface_launch: pd.DataFrame) -> pd.DataFrame:
+    out = launch.copy()
+    if surface_launch.empty:
+        out["surface_launch_pipeline_provided"] = False
+        out["surface_launch_pipeline_ready"] = False
+        out["surface_launch_strategy"] = ""
+        out["surface_launch_market"] = ""
+        out["surface_launch_expected_strategy"] = ""
+        out["surface_launch_expected_market"] = ""
+        out["surface_launch_failed_components"] = 0
+        out["surface_launch_skipped_components"] = 0
+        return out
+    row = surface_launch.iloc[0]
+    out["surface_launch_pipeline_provided"] = True
+    out["surface_launch_pipeline_ready"] = _to_bool(row.get("ready", False))
+    out["surface_launch_strategy"] = _strategy_key(row.get("strategy", ""))
+    out["surface_launch_market"] = _identity_key(row.get("market", ""))
+    out["surface_launch_expected_strategy"] = _strategy_key(row.get("expected_strategy", ""))
+    out["surface_launch_expected_market"] = _identity_key(row.get("expected_market", ""))
+    out["surface_launch_failed_components"] = int(_number(row, "failed_components", fallback=0.0))
+    out["surface_launch_skipped_components"] = int(_number(row, "skipped_components", fallback=0.0))
+    return out
 
 
 def _summary_path(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> Path:

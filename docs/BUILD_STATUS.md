@@ -229,6 +229,8 @@
   runtime-session guard, resume-gate, and dispatch round-trip evidence into
   scale-up configs, automatically requires broker/runtime guard and clean
   dispatch round-trip evidence plus nested route proof for live-dry-run targets,
+  consumes surface-MM launch pipeline root summaries for strategy/market
+  readiness continuity when a launch-pipeline folder is supplied directly,
   fails closed on broker runtime-session, broker resume-gate proof-refresh,
   dispatch round-trip failed checks, route-enable dispatch round-trip failed
   checks, dispatch route proof, or shadow proof-refresh strategy/market
@@ -375,7 +377,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 526 tests.
+Current passing suite: 527 tests.
 
 ## Next Build Targets
 

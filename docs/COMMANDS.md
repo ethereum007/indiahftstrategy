@@ -1631,6 +1631,10 @@ For settlement convergence or surface market-making handoffs, `--launch` may
 point at the launch-pipeline root. In that case scale-up reads the nested
 launch summary and automatically includes nested broker-readiness evidence when
 present, so `--require-broker-readiness` can gate the pipeline folder directly.
+For surface market-making launch roots, scale-up also reads
+`surface_mm_launch_pipeline_summary.csv` and fails closed if its ready status or
+strategy/market identity disagrees with the evidence or explicit expected
+identity.
 If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker

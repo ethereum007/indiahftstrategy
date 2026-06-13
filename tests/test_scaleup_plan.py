@@ -331,12 +331,40 @@ def write_settlement_pipeline(root, *, launch_ready=True, broker_ready=True):
     return pipeline
 
 
-def write_surface_launch_pipeline(root, *, launch_ready=True, broker_ready=True):
+def write_surface_launch_pipeline(
+    root,
+    *,
+    launch_ready=True,
+    broker_ready=True,
+    strategy="surface_mm",
+    market="india_nse_index_derivatives",
+):
     pipeline = root / "surface_launch_pipeline"
     launch = pipeline / "02_launch"
     broker = pipeline / "05_broker_readiness"
     launch.mkdir(parents=True, exist_ok=True)
     broker.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": launch_ready and broker_ready,
+                "adapter": "arrow_money",
+                "mode": "shadow",
+                "strategy": strategy,
+                "market": market,
+                "expected_strategy": strategy,
+                "expected_market": market,
+                "surface_pipeline_ready": True,
+                "surface_candidate_ready": True,
+                "require_surface_pipeline_ready": True,
+                "components": 7,
+                "ready_components": 7 if launch_ready and broker_ready else 6,
+                "failed_components": 0 if launch_ready and broker_ready else 1,
+                "skipped_components": 0,
+                "recommendation": "paper_or_shadow_handoff" if launch_ready and broker_ready else "keep_in_research",
+            }
+        ]
+    ).to_csv(pipeline / "surface_mm_launch_pipeline_summary.csv", index=False)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
     broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
     return pipeline
@@ -1259,7 +1287,7 @@ def test_cli_scaleup_plan_reads_settlement_launch_pipeline_outputs(tmp_path):
 
 
 def test_cli_scaleup_plan_reads_surface_launch_pipeline_outputs(tmp_path):
-    evidence, shadow, _, _ = write_inputs(tmp_path)
+    evidence, shadow, _, _ = write_inputs(tmp_path, strategy="surface_mm")
     pipeline = write_surface_launch_pipeline(tmp_path)
     out_dir = tmp_path / "scaleup"
 
@@ -1283,8 +1311,46 @@ def test_cli_scaleup_plan_reads_surface_launch_pipeline_outputs(tmp_path):
     config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
     assert code == 0
     assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "surface_launch_pipeline_ready"])
+    assert summary.loc[0, "surface_launch_strategy"] == "surface_mm"
     assert config["broker_readiness"]["provided"]
     assert config["broker_readiness"]["ready"]
+    assert config["surface_launch_pipeline"]["provided"]
+    assert config["surface_launch_pipeline"]["market"] == "india_nse_index_derivatives"
+
+
+def test_cli_scaleup_plan_blocks_surface_launch_pipeline_market_mismatch(tmp_path):
+    evidence, shadow, _, _ = write_inputs(tmp_path, strategy="surface_mm", market="india_nse_index_derivatives")
+    pipeline = write_surface_launch_pipeline(tmp_path, strategy="surface_mm", market="us_options_regular")
+    out_dir = tmp_path / "scaleup_surface_mismatch"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(pipeline),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--expected-strategy",
+            "surface_mm",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "surface_launch_market"] == "us_options_regular"
+    assert "surface_launch_market_matches" in failed
 
 
 def test_cli_scaleup_plan_can_require_data_readiness(tmp_path):
