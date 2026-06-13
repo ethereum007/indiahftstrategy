@@ -2065,6 +2065,7 @@ Prepare a non-submitting dry-run sender packet from an approved dispatch plan:
 python -m hft_cli prepare-broker-dispatch-send `
   --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
   --out runs\dispatch_send\leadlag_shadow_live_dryrun `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -2082,9 +2083,11 @@ manifest.json
 This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
+carries route dispatch round-trip proof into the sender request envelope and
 fails closed if the dispatch plan is not ready and armed, target mode does not
-match, the adapter is unknown, payload JSON is invalid, idempotency keys are
-not unique, request limits are exceeded, or any request is not dry-run-only.
+match, route round-trip proof is missing or dirty for live dry-run sending, the
+adapter is unknown, payload JSON is invalid, idempotency keys are not unique,
+request limits are exceeded, or any request is not dry-run-only.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 
