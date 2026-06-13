@@ -138,6 +138,15 @@ def broker_readiness_summary(
     runtime_target_mode="shadow",
     runtime_strategy="lead_lag_taker",
     runtime_market="india_nse_index_derivatives",
+    resume_gate_provided=False,
+    resume_gate_ready=False,
+    resume_strategy="lead_lag_taker",
+    resume_market="india_nse_index_derivatives",
+    resume_incident_strategy="lead_lag_taker",
+    resume_incident_market="india_nse_index_derivatives",
+    resume_proof_refresh_ready=False,
+    resume_proof_refresh_strategy="lead_lag_taker",
+    resume_proof_refresh_market="india_nse_index_derivatives",
 ):
     return pd.DataFrame(
         [
@@ -157,6 +166,15 @@ def broker_readiness_summary(
                 "runtime_target_mode": runtime_target_mode,
                 "runtime_strategy": runtime_strategy,
                 "runtime_market": runtime_market,
+                "resume_gate_provided": resume_gate_provided,
+                "resume_gate_ready": resume_gate_ready,
+                "resume_strategy": resume_strategy,
+                "resume_market": resume_market,
+                "resume_incident_strategy": resume_incident_strategy,
+                "resume_incident_market": resume_incident_market,
+                "resume_proof_refresh_ready": resume_proof_refresh_ready,
+                "resume_proof_refresh_strategy": resume_proof_refresh_strategy,
+                "resume_proof_refresh_market": resume_proof_refresh_market,
                 "recommendation": "dry_run_only_until_vendor_schema_review"
                 if ready and adapter != "normalized"
                 else "fix_broker_readiness_gaps",
@@ -473,6 +491,55 @@ def test_scaleup_plan_accepts_required_broker_readiness():
     assert report.config["broker_readiness"]["runtime_session"]["ready"]
     assert report.config["broker_readiness"]["runtime_session"]["strategy"] == "lead_lag_taker"
     assert report.config["broker_readiness"]["runtime_session"]["market"] == "india_nse_index_derivatives"
+
+
+def test_scaleup_plan_accepts_required_broker_resume_gate():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            resume_gate_provided=True,
+            resume_gate_ready=True,
+            resume_proof_refresh_ready=True,
+        ),
+        thresholds=ScaleUpThresholds(require_resume_gate=True),
+    )
+
+    assert report.ready
+    assert report.summary.iloc[0]["broker_resume_gate_required"]
+    assert report.summary.iloc[0]["broker_resume_gate_provided"]
+    assert report.summary.iloc[0]["broker_resume_gate_ready"]
+    assert report.summary.iloc[0]["broker_resume_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
+    assert report.config["broker_readiness"]["required"]
+    assert report.config["broker_readiness"]["resume_gate"]["required"]
+    assert report.config["broker_readiness"]["resume_gate"]["ready"]
+    assert report.config["broker_readiness"]["resume_gate"]["proof_refresh_strategy"] == "lead_lag_taker"
+
+
+def test_scaleup_plan_blocks_bad_broker_resume_proof_identity():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            resume_gate_provided=True,
+            resume_gate_ready=True,
+            resume_proof_refresh_ready=True,
+            resume_proof_refresh_strategy="surface_mm",
+            resume_proof_refresh_market="us_options_regular",
+        ),
+        thresholds=ScaleUpThresholds(require_resume_gate=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"broker_resume_proof_refresh_strategy_matches", "broker_resume_proof_refresh_market_matches"} <= failed
+    assert report.summary.iloc[0]["broker_resume_proof_refresh_strategy"] == "surface_mm"
+    assert report.config["broker_readiness"]["resume_gate"]["proof_refresh_market"] == "us_options_regular"
 
 
 def test_scaleup_plan_live_dryrun_requires_broker_readiness():
@@ -793,6 +860,34 @@ def test_cli_scaleup_plan_can_require_broker_readiness(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "broker_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_scaleup_plan_can_require_resume_gate(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-resume-gate",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {"broker_readiness_available", "broker_resume_gate_provided"} <= failed
 
 
 def test_cli_scaleup_plan_live_dryrun_auto_requires_broker_runtime_evidence(tmp_path):

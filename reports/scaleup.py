@@ -45,6 +45,7 @@ class ScaleUpThresholds:
     require_data_readiness: bool = False
     require_data_readiness_comparison: bool = False
     require_broker_readiness: bool = False
+    require_resume_gate: bool = False
     min_instrument_parse_coverage: float = 1.0
     expected_strategy: str | None = None
     expected_market: str | None = None
@@ -487,6 +488,83 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "broker readiness review is not ready",
             )
         )
+    resume_gate_provided = _to_bool(broker_readiness.get("resume_gate_provided", False))
+    if thresholds.require_resume_gate:
+        checks.append(
+            _check(
+                "broker_resume_gate_provided",
+                resume_gate_provided,
+                "is",
+                True,
+                resume_gate_provided,
+                "scale-up requires broker readiness with resume-gate authorization",
+            )
+        )
+    if not broker_readiness.empty and (thresholds.require_resume_gate or resume_gate_provided):
+        resume_gate_ready = _to_bool(broker_readiness.get("resume_gate_ready", False))
+        resume_strategy = _strategy_key(broker_readiness.get("resume_strategy", ""))
+        resume_market = _identity_key(broker_readiness.get("resume_market", ""))
+        resume_proof_ready = _to_bool(broker_readiness.get("resume_proof_refresh_ready", False))
+        resume_proof_strategy = _strategy_key(broker_readiness.get("resume_proof_refresh_strategy", ""))
+        resume_proof_market = _identity_key(broker_readiness.get("resume_proof_refresh_market", ""))
+        expected_resume_strategy = _strategy_key(thresholds.expected_strategy) or evidence_strategy
+        expected_resume_market = _identity_key(thresholds.expected_market) or evidence_market
+        checks.extend(
+            [
+                _check(
+                    "broker_resume_gate_ready",
+                    resume_gate_ready,
+                    "is",
+                    True,
+                    resume_gate_ready,
+                    "broker resume gate is not ready",
+                ),
+                _check(
+                    "broker_resume_strategy_matches",
+                    resume_strategy,
+                    "==",
+                    expected_resume_strategy,
+                    bool(resume_strategy and expected_resume_strategy and resume_strategy == expected_resume_strategy),
+                    "broker resume-gate strategy does not match scale-up strategy",
+                ),
+                _check(
+                    "broker_resume_market_matches",
+                    resume_market,
+                    "==",
+                    expected_resume_market,
+                    bool(resume_market and expected_resume_market and resume_market == expected_resume_market),
+                    "broker resume-gate market does not match scale-up market",
+                ),
+                _check(
+                    "broker_resume_proof_refresh_ready",
+                    resume_proof_ready,
+                    "is",
+                    True,
+                    resume_proof_ready,
+                    "broker resume-gate proof freshness is not ready",
+                ),
+                _check(
+                    "broker_resume_proof_refresh_strategy_matches",
+                    resume_proof_strategy,
+                    "==",
+                    expected_resume_strategy,
+                    bool(
+                        resume_proof_strategy
+                        and expected_resume_strategy
+                        and resume_proof_strategy == expected_resume_strategy
+                    ),
+                    "broker resume-gate proof strategy does not match scale-up strategy",
+                ),
+                _check(
+                    "broker_resume_proof_refresh_market_matches",
+                    resume_proof_market,
+                    "==",
+                    expected_resume_market,
+                    bool(resume_proof_market and expected_resume_market and resume_proof_market == expected_resume_market),
+                    "broker resume-gate proof market does not match scale-up market",
+                ),
+            ]
+        )
     if thresholds.target_mode == "live_dryrun":
         runtime_session_provided = _to_bool(broker_readiness.get("runtime_session_provided", False))
         runtime_session_ready = _to_bool(broker_readiness.get("runtime_session_ready", False))
@@ -693,6 +771,42 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_runtime_market": _identity_key(broker_readiness.get("runtime_market", ""))
                 if not broker_readiness.empty
                 else "",
+                "broker_resume_gate_required": thresholds.require_resume_gate,
+                "broker_resume_gate_provided": _to_bool(broker_readiness.get("resume_gate_provided", False))
+                if not broker_readiness.empty
+                else False,
+                "broker_resume_gate_ready": _to_bool(broker_readiness.get("resume_gate_ready", False))
+                if not broker_readiness.empty
+                else False,
+                "broker_resume_strategy": _strategy_key(broker_readiness.get("resume_strategy", ""))
+                if not broker_readiness.empty
+                else "",
+                "broker_resume_market": _identity_key(broker_readiness.get("resume_market", ""))
+                if not broker_readiness.empty
+                else "",
+                "broker_resume_incident_strategy": _strategy_key(
+                    broker_readiness.get("resume_incident_strategy", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_resume_incident_market": _identity_key(broker_readiness.get("resume_incident_market", ""))
+                if not broker_readiness.empty
+                else "",
+                "broker_resume_proof_refresh_ready": _to_bool(
+                    broker_readiness.get("resume_proof_refresh_ready", False)
+                )
+                if not broker_readiness.empty
+                else False,
+                "broker_resume_proof_refresh_strategy": _strategy_key(
+                    broker_readiness.get("resume_proof_refresh_strategy", "")
+                )
+                if not broker_readiness.empty
+                else "",
+                "broker_resume_proof_refresh_market": _identity_key(
+                    broker_readiness.get("resume_proof_refresh_market", "")
+                )
+                if not broker_readiness.empty
+                else "",
             }
         ]
     )
@@ -748,6 +862,18 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_runtime_target_mode": str(plan_row["broker_runtime_target_mode"]),
                 "broker_runtime_strategy": str(plan_row["broker_runtime_strategy"]),
                 "broker_runtime_market": str(plan_row["broker_runtime_market"]),
+                "broker_resume_gate_required": _to_bool(plan_row["broker_resume_gate_required"]),
+                "broker_resume_gate_provided": _to_bool(plan_row["broker_resume_gate_provided"]),
+                "broker_resume_gate_ready": _to_bool(plan_row["broker_resume_gate_ready"]),
+                "broker_resume_strategy": str(plan_row["broker_resume_strategy"]),
+                "broker_resume_market": str(plan_row["broker_resume_market"]),
+                "broker_resume_proof_refresh_ready": _to_bool(
+                    plan_row["broker_resume_proof_refresh_ready"]
+                ),
+                "broker_resume_proof_refresh_strategy": str(
+                    plan_row["broker_resume_proof_refresh_strategy"]
+                ),
+                "broker_resume_proof_refresh_market": str(plan_row["broker_resume_proof_refresh_market"]),
                 "failed_checks": failed,
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -853,6 +979,18 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                 "strategy": str(plan_row["broker_runtime_strategy"]),
                 "market": str(plan_row["broker_runtime_market"]),
             },
+            "resume_gate": {
+                "required": _to_bool(plan_row["broker_resume_gate_required"]),
+                "provided": _to_bool(plan_row["broker_resume_gate_provided"]),
+                "ready": _to_bool(plan_row["broker_resume_gate_ready"]),
+                "strategy": str(plan_row["broker_resume_strategy"]),
+                "market": str(plan_row["broker_resume_market"]),
+                "incident_strategy": str(plan_row["broker_resume_incident_strategy"]),
+                "incident_market": str(plan_row["broker_resume_incident_market"]),
+                "proof_refresh_ready": _to_bool(plan_row["broker_resume_proof_refresh_ready"]),
+                "proof_refresh_strategy": str(plan_row["broker_resume_proof_refresh_strategy"]),
+                "proof_refresh_market": str(plan_row["broker_resume_proof_refresh_market"]),
+            },
         },
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
         "thresholds": asdict(thresholds),
@@ -860,7 +998,11 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
 
 
 def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
-    return bool(thresholds.require_broker_readiness or thresholds.target_mode == "live_dryrun")
+    return bool(
+        thresholds.require_broker_readiness
+        or thresholds.require_resume_gate
+        or thresholds.target_mode == "live_dryrun"
+    )
 
 
 def _strategy_key(value: object) -> str:

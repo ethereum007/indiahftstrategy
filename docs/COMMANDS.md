@@ -1568,6 +1568,7 @@ python -m hft_cli plan-scaleup `
   --require-data-readiness `
   --require-data-readiness-comparison `
   --require-broker-readiness `
+  --require-resume-gate `
   --fail-on-breach
 ```
 
@@ -1589,6 +1590,11 @@ If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker
 gate.
+If broker readiness included resume-gate evidence, scale-up also retains the
+resume authorization identity, prior incident identity, and resume
+`proof_refresh_*` context. `--require-resume-gate` fails closed unless broker
+readiness supplied a ready resume gate with strategy/market and proof-refresh
+identity matching the scale-up identity.
 Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`

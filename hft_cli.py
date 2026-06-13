@@ -1086,6 +1086,7 @@ def main(argv: list[str] | None = None) -> int:
     scaleup.add_argument("--require-data-readiness", action="store_true")
     scaleup.add_argument("--require-data-readiness-comparison", action="store_true")
     scaleup.add_argument("--require-broker-readiness", action="store_true")
+    scaleup.add_argument("--require-resume-gate", action="store_true")
     scaleup.add_argument("--min-instrument-parse-coverage", type=float, default=1.0)
     scaleup.add_argument("--expected-strategy", default=None)
     scaleup.add_argument("--expected-market", default=None)
@@ -2610,6 +2611,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_data_readiness=args.require_data_readiness,
                 require_data_readiness_comparison=args.require_data_readiness_comparison,
                 require_broker_readiness=args.require_broker_readiness,
+                require_resume_gate=args.require_resume_gate,
                 min_instrument_parse_coverage=args.min_instrument_parse_coverage,
                 expected_strategy=args.expected_strategy,
                 expected_market=args.expected_market,
