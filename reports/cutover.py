@@ -82,6 +82,11 @@ def write_cutover_gate_report(
     thresholds = thresholds or CutoverGateThresholds()
     _validate_thresholds(thresholds)
     scaleup_config_path = scaleup / "scaleup_config.json" if scaleup.is_dir() else Path(scaleup_dir)
+    broker_readiness_summary_path = _summary_path(
+        broker,
+        "broker_readiness_summary.csv",
+        fallback_dirs=("06_broker_readiness", "05_broker_readiness"),
+    )
     if not scaleup_config_path.exists():
         raise FileNotFoundError(f"scale-up config not found: {scaleup_config_path}")
     scaleup_summary_path = (
@@ -94,7 +99,7 @@ def write_cutover_gate_report(
         scaleup_summary=_read_required(scaleup_summary_path, "scaleup_summary"),
         scaleup_config=json.loads(scaleup_config_path.read_text(encoding="utf-8")),
         scaleup_checks=_read_optional(scaleup_checks_path),
-        broker_readiness_summary=_read_required(_summary_path(broker, "broker_readiness_summary.csv"), "broker_readiness"),
+        broker_readiness_summary=_read_required(broker_readiness_summary_path, "broker_readiness"),
         runtime_session_summary=_read_optional(_summary_path(runtime_session_dir, "runtime_session_summary.csv"))
         if runtime_session_dir is not None
         else None,
@@ -107,7 +112,7 @@ def write_cutover_gate_report(
     report.checks.to_csv(out / "cutover_checks.csv", index=False)
     report.summary.to_csv(out / "cutover_summary.csv", index=False)
     (out / "cutover_config.json").write_text(json.dumps(report.config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    inputs: dict[str, Any] = {"scaleup": scaleup_config_path, "broker_readiness": broker}
+    inputs: dict[str, Any] = {"scaleup": scaleup_config_path, "broker_readiness": broker_readiness_summary_path}
     if runtime_session_dir is not None:
         inputs["runtime_session"] = Path(runtime_session_dir)
     if operator_review_path is not None:
@@ -1392,11 +1397,19 @@ def _read_optional(path: str | Path | None) -> pd.DataFrame:
     return pd.read_csv(file_path)
 
 
-def _summary_path(path: str | Path | None, filename: str) -> Path:
+def _summary_path(path: str | Path | None, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> Path:
     if path is None:
         return Path(filename)
     candidate = Path(path)
-    return candidate / filename if candidate.is_dir() else candidate
+    if not candidate.is_dir():
+        return candidate
+    direct = candidate / filename
+    if direct.exists():
+        return direct
+    return next(
+        (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
+        direct,
+    )
 
 
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:

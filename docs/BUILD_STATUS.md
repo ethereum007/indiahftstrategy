@@ -340,9 +340,10 @@
 - Cutover gate that authorizes the final paper/shadow/live-dryrun route only
   after scale-up, broker readiness, runtime-session guard, proof freshness,
   required dispatch round-trip proof plus nested route proof for live-dry-run,
-  dispatch round-trip and route-enable failed-check counters, optional broker
-  resume-gate proof, and operator strategy/market/limit acknowledgement agree in one
-  manifest-backed authorization artifact.
+  nested broker-readiness summaries from launch pipeline roots, dispatch
+  round-trip and route-enable failed-check counters, optional broker
+  resume-gate proof, and operator strategy/market/limit acknowledgement agree
+  in one manifest-backed authorization artifact.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
   live-dry-run dispatch round-trip proof, carried route-enable failed-check

@@ -385,6 +385,10 @@ def scaleup_checks(passed=True):
     return pd.DataFrame([{"check": "scaleup_ready", "passed": passed, "reason": "" if passed else "blocked"}])
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=True):
     scaleup = root / "scaleup"
     broker = root / "broker"
@@ -702,6 +706,44 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     assert catalog.catalog.iloc[0]["run_type"] == "cutover_gate"
     assert catalog.catalog.iloc[0]["summary_file"] == "cutover_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path):
+    cases = [
+        ("leadlag", "06_broker_readiness"),
+        ("surface_mm", "05_broker_readiness"),
+    ]
+    for family, broker_folder in cases:
+        case_dir = tmp_path / family
+        scaleup, _broker, _runtime, review_path = write_inputs(case_dir)
+        pipeline = case_dir / f"{family}_launch_pipeline"
+        broker_readiness = pipeline / broker_folder
+        out_dir = case_dir / "cutover"
+        broker_readiness.mkdir(parents=True)
+        broker_readiness_summary().to_csv(broker_readiness / "broker_readiness_summary.csv", index=False)
+
+        code = main(
+            [
+                "review-cutover-gate",
+                "--scaleup",
+                str(scaleup),
+                "--broker-readiness",
+                str(pipeline),
+                "--operator-review",
+                str(review_path),
+                "--out",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+
+        summary = pd.read_csv(out_dir / "cutover_summary.csv")
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert code == 0
+        assert bool(summary.loc[0, "ready"])
+        assert path_tail(manifest["inputs"]["broker_readiness"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{broker_folder}/broker_readiness_summary.csv"
+        )
 
 
 def test_cli_cutover_gate_fails_without_operator_review(tmp_path):
