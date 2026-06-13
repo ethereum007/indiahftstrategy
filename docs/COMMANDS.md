@@ -2491,7 +2491,9 @@ even if the explicit `--require-operator-approval` or
 When `--require-operator-trigger-ack` is set, the latest operator review row
 must include a matching `guard_failed_check_names`,
 `incident_guard_failed_check_names`, `ack_guard_failed_check_names`, or
-`acknowledged_guard_failed_check_names` value.
+`acknowledged_guard_failed_check_names` value. The manifest fingerprints the
+resolved incident summary, scale-up summary/config/checks, and optional
+operator-review file that formed the resume authorization.
 
 ## Cutover Gate
 

@@ -81,13 +81,18 @@ def write_resume_gate_report(
     incident = Path(incident_dir)
     scaleup = Path(scaleup_dir)
     thresholds = thresholds or ResumeGateThresholds()
+    incident_summary_path = incident / "halt_incident_summary.csv" if incident.is_dir() else incident
     scaleup_config_path = scaleup / "scaleup_config.json" if scaleup.is_dir() else Path(scaleup_dir)
     if not scaleup_config_path.exists():
         raise FileNotFoundError(f"scale-up config not found: {scaleup_config_path}")
-    scaleup_summary_path = scaleup / "scaleup_summary.csv" if scaleup.is_dir() else scaleup_config_path.with_name("scaleup_summary.csv")
-    scaleup_checks_path = scaleup / "scaleup_checks.csv" if scaleup.is_dir() else scaleup_config_path.with_name("scaleup_checks.csv")
+    scaleup_summary_path = (
+        scaleup / "scaleup_summary.csv" if scaleup.is_dir() else scaleup_config_path.with_name("scaleup_summary.csv")
+    )
+    scaleup_checks_path = (
+        scaleup / "scaleup_checks.csv" if scaleup.is_dir() else scaleup_config_path.with_name("scaleup_checks.csv")
+    )
     report = evaluate_resume_gate(
-        incident_summary=_read_required(incident / "halt_incident_summary.csv"),
+        incident_summary=_read_required(incident_summary_path),
         scaleup_summary=_read_required(scaleup_summary_path),
         scaleup_checks=_read_optional(scaleup_checks_path),
         scaleup_config=json.loads(scaleup_config_path.read_text(encoding="utf-8")),
@@ -100,7 +105,13 @@ def write_resume_gate_report(
     report.checks.to_csv(out / "resume_checks.csv", index=False)
     report.summary.to_csv(out / "resume_summary.csv", index=False)
     (out / "resume_config.json").write_text(json.dumps(report.config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    inputs: dict[str, Any] = {"incident": incident, "scaleup": scaleup_config_path}
+    inputs: dict[str, Any] = {
+        "incident_summary": incident_summary_path,
+        "scaleup_summary": scaleup_summary_path,
+        "scaleup_config": scaleup_config_path,
+    }
+    if scaleup_checks_path.exists():
+        inputs["scaleup_checks"] = scaleup_checks_path
     if operator_review_path is not None:
         inputs["operator_review"] = Path(operator_review_path)
     write_experiment_manifest(

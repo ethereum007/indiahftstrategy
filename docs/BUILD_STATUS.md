@@ -344,7 +344,8 @@
   operator approval, and emits resume authorization/config artifacts carrying
   the incident guard trigger and proof context from the prior halt, with
   automatic operator approval and guard-trigger acknowledgement required for
-  `live_dryrun` resumes.
+  `live_dryrun` resumes while fingerprinting resolved incident, scale-up, and
+  operator-review inputs.
 - Cutover gate that authorizes the final paper/shadow/live-dryrun route only
   after scale-up, broker readiness, runtime-session guard, proof freshness,
   required dispatch round-trip proof plus nested route proof for live-dry-run,

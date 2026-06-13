@@ -153,6 +153,10 @@ def operator_review(approved=True, guard_failed_check_names="open_order_count"):
     return pd.DataFrame([row])
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def write_inputs(root, *, incident_passed=True, scaleup_ready=True, target_mode="shadow"):
     incident = root / "incident"
     scaleup = root / "scaleup"
@@ -340,6 +344,21 @@ def test_write_resume_gate_outputs_artifacts(tmp_path):
     assert (out_dir / "resume_summary.csv").exists()
     assert (out_dir / "resume_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "incident_summary",
+        "scaleup_summary",
+        "scaleup_config",
+        "scaleup_checks",
+        "operator_review",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["incident_summary"]["path"]).endswith(
+        "/incident/halt_incident_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["scaleup_summary"]["path"]).endswith("/scaleup/scaleup_summary.csv")
+    assert path_tail(manifest["inputs"]["scaleup_config"]["path"]).endswith("/scaleup/scaleup_config.json")
+    assert path_tail(manifest["inputs"]["scaleup_checks"]["path"]).endswith("/scaleup/scaleup_checks.csv")
+    assert path_tail(manifest["inputs"]["operator_review"]["path"]).endswith("/operator_review.csv")
     saved_summary = pd.read_csv(out_dir / "resume_summary.csv")
     assert saved_summary.loc[0, "incident_guard_failed_check_names"] == "open_order_count"
     assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
