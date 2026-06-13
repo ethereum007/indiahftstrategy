@@ -2030,6 +2030,7 @@ proof/resume context, and dispatch round-trip proof into one machine-readable
 artifact. It fails closed if cutover is not ready, the upload pack is not
 ready, the adapter or target mode does not match, dispatch round-trip proof is
 missing, dirty, or has failed component checks for live dry-run routing, the
+carried route-enable dispatch round-trip failed-check counter is nonzero, the
 nested cutover route proof is missing, mismatched, or dirty, the upload order
 count exceeds the cutover limit, or the optional order-export notional exceeds
 the cutover notional cap.

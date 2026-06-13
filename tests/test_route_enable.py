@@ -29,6 +29,7 @@ def cutover_summary(
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
     dispatch_failed_checks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
     route_required=None,
     route_provided=None,
     route_ready=None,
@@ -87,6 +88,8 @@ def cutover_summary(
                 "broker_dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
                 "broker_dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
                 "broker_dispatch_roundtrip_failed_checks": dispatch_failed_checks,
+                "broker_route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+                "scaleup_route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
                 "broker_route_dispatch_roundtrip_required": route_required,
                 "broker_route_dispatch_roundtrip_provided": route_provided,
                 "broker_route_dispatch_roundtrip_ready": route_ready,
@@ -124,6 +127,7 @@ def cutover_config(
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
     dispatch_failed_checks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
     route_required=None,
     route_provided=None,
     route_ready=None,
@@ -191,6 +195,9 @@ def cutover_config(
                 "rejected_orders": dispatch_rejected_orders,
                 "unmatched_acks": dispatch_unmatched_acks,
                 "failed_checks": dispatch_failed_checks,
+                "route_enable_dispatch_roundtrip": {
+                    "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+                },
                 "route_proof": {
                     "required": route_required,
                     "provided": route_provided,
@@ -206,6 +213,11 @@ def cutover_config(
                     "rejected_orders": route_rejected_orders,
                     "unmatched_acks": route_unmatched_acks,
                 },
+            },
+        },
+        "scaleup_dispatch_roundtrip": {
+            "route_enable_dispatch_roundtrip": {
+                "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
             },
         },
     }
@@ -303,7 +315,9 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
     assert report.config["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
     assert int(report.summary.iloc[0]["dispatch_roundtrip_failed_checks"]) == 0
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert report.config["dispatch_roundtrip"]["failed_checks"] == 0
+    assert report.config["dispatch_roundtrip"]["route_enable_dispatch_roundtrip"]["failed_checks"] == 0
     assert bool(report.summary.iloc[0]["route_dispatch_roundtrip_ready"])
     assert report.config["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["dispatch_roundtrip"]["route_proof"]["requests"] == 2
@@ -441,6 +455,20 @@ def test_route_enable_blocks_dispatch_roundtrip_failed_checks():
     assert "cutover_dispatch_roundtrip_failed_checks" in failed
     assert int(report.summary.iloc[0]["dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["dispatch_roundtrip"]["failed_checks"] == 1
+
+
+def test_route_enable_blocks_route_enable_dispatch_roundtrip_failed_checks():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(route_enable_dispatch_roundtrip_failed_checks=1),
+        cutover_config=cutover_config(route_enable_dispatch_roundtrip_failed_checks=1),
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "cutover_route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert report.config["dispatch_roundtrip"]["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
 
 
 def test_route_enable_blocks_order_count_and_notional_limit_breaches():
