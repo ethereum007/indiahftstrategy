@@ -27,6 +27,7 @@ def route_summary(
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
     dispatch_failed_checks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
     route_provided=None,
     route_ready=None,
     route_target_mode=None,
@@ -80,6 +81,7 @@ def route_summary(
                 "dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
                 "dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
                 "dispatch_roundtrip_failed_checks": dispatch_failed_checks,
+                "route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_provided,
                 "route_dispatch_roundtrip_ready": route_ready,
@@ -116,6 +118,7 @@ def route_config(
     dispatch_rejected_orders=0,
     dispatch_unmatched_acks=0,
     dispatch_failed_checks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
     route_provided=None,
     route_ready=None,
     route_target_mode=None,
@@ -177,6 +180,9 @@ def route_config(
             "rejected_orders": dispatch_rejected_orders,
             "unmatched_acks": dispatch_unmatched_acks,
             "failed_checks": dispatch_failed_checks,
+            "route_enable_dispatch_roundtrip": {
+                "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+            },
             "route_proof": {
                 "required": True,
                 "provided": route_provided,
@@ -338,8 +344,22 @@ def test_broker_dispatch_blocks_bad_route_dispatch_roundtrip_quality():
 
 def test_broker_dispatch_blocks_route_enable_dispatch_roundtrip_failed_checks():
     report = evaluate_broker_dispatch_plan(
-        route_enable_summary=route_summary(dispatch_failed_checks=1),
-        route_enable_config=route_config(dispatch_failed_checks=1),
+        route_enable_summary=route_summary(route_enable_dispatch_roundtrip_failed_checks=1),
+        route_enable_config=route_config(route_enable_dispatch_roundtrip_failed_checks=1),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
+
+
+def test_broker_dispatch_reads_nested_route_enable_dispatch_roundtrip_failed_checks():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=route_config(route_enable_dispatch_roundtrip_failed_checks=1),
         upload_orders=upload_orders(),
     )
 

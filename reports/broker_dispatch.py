@@ -422,6 +422,7 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     upload = config.get("upload", {}) or {}
     dispatch = config.get("dispatch_roundtrip", {}) or {}
+    route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route_proof = dispatch.get("route_proof", {}) or {}
     payload = _jsonable_row({"summary": row.to_dict(), "config": config})
     route_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
@@ -489,9 +490,13 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         ),
         "route_enable_dispatch_roundtrip_failed_checks": int(
             _number_from(
-                dispatch,
+                route_enable,
                 "failed_checks",
-                _number(row, "dispatch_roundtrip_failed_checks", 0.0),
+                _number(
+                    row,
+                    "route_enable_dispatch_roundtrip_failed_checks",
+                    _number(row, "dispatch_roundtrip_failed_checks", 0.0),
+                ),
             )
         ),
     }
