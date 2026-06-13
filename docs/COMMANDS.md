@@ -374,6 +374,34 @@ proof/proof_checks.csv
 proof/proof_summary.csv
 ```
 
+## Parity / Box Candidate Promotion
+
+Promote a passed parity/box scan, edge audit, and replay sweep into the
+launch-compatible `promotion_report` shape. This bridge preserves the selected
+opportunity's executable leg prices so `plan-parity-orders` can generate the
+multi-leg order template without manually re-entering prices:
+
+```powershell
+python -m hft_cli promote-parity-candidate `
+  --scan runs\scan_2026_06_10 `
+  --edge-audit runs\parity_edge\2026_06_10 `
+  --sweep runs\parity_sweep_2026_06_10 `
+  --out runs\promotion\parity_box `
+  --min-candidate-net-edge 100 `
+  --min-passed-scenarios 1 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+promotion_candidate.csv
+promotion_checks.csv
+promotion_summary.csv
+candidate_config.json
+manifest.json
+```
+
 ## Parity / Box Order Plan
 
 Convert a promoted parity/box candidate into broker-neutral multi-leg

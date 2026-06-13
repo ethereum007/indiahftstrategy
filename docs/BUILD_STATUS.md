@@ -16,6 +16,9 @@
   work.
 - Parity/box scan outputs now preserve executable leg sides and touch prices
   for downstream multi-leg order planning.
+- Parity/box candidate promotion bridge converts passed scan, edge-audit, and
+  sweep evidence into launch-compatible promotion reports and candidate configs
+  while preserving selected leg prices and replay defaults.
 - Parity/box order-plan bridge converts promoted candidates into grouped
   broker-neutral multi-leg paper/shadow templates for synthetic/future and box
   directions, with quantity, price, notional, and strike/expiry gates.

@@ -70,6 +70,10 @@ from reports.leadlag_replay_walkforward import (
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
+from reports.parity_candidate_promotion import (
+    ParityCandidatePromotionThresholds,
+    write_parity_candidate_promotion,
+)
 from reports.parity_edge import ParityEdgeThresholds, write_parity_edge_audit
 from reports.parity_launch_pipeline import ParityLaunchPipelineConfig, write_parity_launch_pipeline
 from reports.parity_order_plan import ParityOrderPlanConfig, write_parity_order_plan
@@ -1043,6 +1047,25 @@ def main(argv: list[str] | None = None) -> int:
     parity_sweep.add_argument("--max-otr", type=float, default=None)
     parity_sweep.add_argument("--min-spread-net", type=float, default=None)
     parity_sweep.add_argument("--fail-on-breach", action="store_true")
+
+    parity_promotion = sub.add_parser(
+        "promote-parity-candidate",
+        help="Promote passed parity scan/audit/sweep evidence into a launch-compatible candidate.",
+    )
+    parity_promotion.add_argument("--scan", required=True)
+    parity_promotion.add_argument("--edge-audit", required=True)
+    parity_promotion.add_argument("--sweep", required=True)
+    parity_promotion.add_argument("--out", required=True)
+    parity_promotion.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
+    parity_promotion.add_argument("--allow-unpassed-edge", action="store_true")
+    parity_promotion.add_argument("--allow-empty-sweep-pass", action="store_true")
+    parity_promotion.add_argument("--min-total-opportunities", type=int, default=1)
+    parity_promotion.add_argument("--min-best-net-edge", type=float, default=0.0)
+    parity_promotion.add_argument("--min-candidate-net-edge", type=float, default=0.0)
+    parity_promotion.add_argument("--min-candidate-persistence-ticks", type=float, default=0.0)
+    parity_promotion.add_argument("--min-sweep-pass-rate", type=float, default=0.0)
+    parity_promotion.add_argument("--min-passed-scenarios", type=int, default=1)
+    parity_promotion.add_argument("--fail-on-breach", action="store_true")
 
     parity_orders = sub.add_parser(
         "plan-parity-orders",
@@ -2935,6 +2958,26 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.proof.passed else 0
+    if args.command == "promote-parity-candidate":
+        result = write_parity_candidate_promotion(
+            args.scan,
+            edge_audit_dir=args.edge_audit,
+            sweep_dir=args.sweep,
+            output_dir=args.out,
+            market=args.market,
+            thresholds=ParityCandidatePromotionThresholds(
+                require_edge_passed=not args.allow_unpassed_edge,
+                require_sweep_passed_scenario=not args.allow_empty_sweep_pass,
+                min_total_opportunities=args.min_total_opportunities,
+                min_best_net_edge=args.min_best_net_edge,
+                min_candidate_net_edge=args.min_candidate_net_edge,
+                min_candidate_persistence_ticks=args.min_candidate_persistence_ticks,
+                min_sweep_pass_rate=args.min_sweep_pass_rate,
+                min_passed_scenarios=args.min_passed_scenarios,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
     if args.command == "plan-parity-orders":
         result = write_parity_order_plan(
             args.promotion,
