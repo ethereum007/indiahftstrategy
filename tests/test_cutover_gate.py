@@ -44,6 +44,12 @@ def scaleup_summary(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy=None,
+    route_readiness_market=None,
+    route_ready_pairs=1,
+    route_gap_pairs=0,
 ):
     dispatch_target_mode = target_mode if dispatch_target_mode is None else dispatch_target_mode
     dispatch_strategy = strategy if dispatch_strategy is None else dispatch_strategy
@@ -62,6 +68,8 @@ def scaleup_summary(
     )
     route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
     route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
+    route_readiness_strategy = strategy if route_readiness_strategy is None else route_readiness_strategy
+    route_readiness_market = market if route_readiness_market is None else route_readiness_market
     return pd.DataFrame(
         [
             {
@@ -82,6 +90,16 @@ def scaleup_summary(
                 "broker_schema_status": broker_schema_status,
                 "broker_schema_reviewed": broker_schema_reviewed,
                 "broker_schema_review_mode": broker_schema_review_mode,
+                "route_readiness_required": target_mode == "live_dryrun",
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_route_ready_pairs": route_ready_pairs,
+                "route_readiness_gap_pairs": route_gap_pairs,
+                "route_readiness_recommendation": "eligible_for_live_dryrun_route_review"
+                if route_readiness_ready
+                else "complete_route_readiness_gaps",
                 "broker_dispatch_roundtrip_required": True,
                 "broker_dispatch_roundtrip_provided": dispatch_provided,
                 "broker_dispatch_roundtrip_ready": dispatch_ready,
@@ -152,6 +170,12 @@ def scaleup_config(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy=None,
+    route_readiness_market=None,
+    route_ready_pairs=1,
+    route_gap_pairs=0,
 ):
     dispatch_target_mode = target_mode if dispatch_target_mode is None else dispatch_target_mode
     dispatch_strategy = strategy if dispatch_strategy is None else dispatch_strategy
@@ -170,6 +194,8 @@ def scaleup_config(
     )
     route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
     route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
+    route_readiness_strategy = strategy if route_readiness_strategy is None else route_readiness_strategy
+    route_readiness_market = market if route_readiness_market is None else route_readiness_market
     return {
         "schema_version": 1,
         "ready": True,
@@ -198,6 +224,18 @@ def scaleup_config(
             "market": market,
             "mixed_identity": False,
             "proof_source": "latest",
+        },
+        "route_readiness": {
+            "required": target_mode == "live_dryrun",
+            "provided": route_readiness_provided,
+            "ready": route_readiness_ready,
+            "strategy": route_readiness_strategy,
+            "market": route_readiness_market,
+            "route_ready_pairs": route_ready_pairs,
+            "gap_pairs": route_gap_pairs,
+            "recommendation": "eligible_for_live_dryrun_route_review"
+            if route_readiness_ready
+            else "complete_route_readiness_gaps",
         },
         "broker_readiness": {
             "adapter_schema_status": broker_schema_status,
@@ -464,6 +502,12 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert summary["broker_schema_review_mode"] == "reviewed_vendor_mapping"
     assert report.config["broker_readiness"]["schema_reviewed"]
     assert report.config["broker_readiness"]["schema_review_mode"] == "reviewed_vendor_mapping"
+    assert bool(summary["scaleup_route_readiness_required"])
+    assert bool(summary["scaleup_route_readiness_ready"])
+    assert summary["scaleup_route_readiness_strategy"] == "lead_lag_taker"
+    assert report.config["scaleup_route_readiness"]["required"]
+    assert report.config["scaleup_route_readiness"]["ready"]
+    assert report.config["scaleup_route_readiness"]["market"] == "india_nse_index_derivatives"
     assert bool(summary["broker_dispatch_roundtrip_ready"])
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
     assert int(summary["scaleup_dispatch_roundtrip_failed_checks"]) == 0
@@ -479,6 +523,46 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert bool(summary["broker_route_dispatch_roundtrip_ready"])
     assert report.config["scaleup_dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
+
+
+def test_cutover_gate_live_dryrun_requires_route_readiness():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(route_readiness_provided=False, route_readiness_ready=False),
+        scaleup_config=scaleup_config(route_readiness_provided=False, route_readiness_ready=False),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"scaleup_route_readiness_provided", "scaleup_route_readiness_ready"} <= failed
+    assert report.config["scaleup_route_readiness"]["required"]
+    assert not report.config["scaleup_route_readiness"]["provided"]
+
+
+def test_cutover_gate_blocks_route_readiness_identity_mismatch():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+        ),
+        scaleup_config=scaleup_config(
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+        ),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"scaleup_route_readiness_strategy_matches", "scaleup_route_readiness_market_matches"} <= failed
+    assert report.summary.iloc[0]["scaleup_route_readiness_strategy"] == "surface_mm"
+    assert report.config["scaleup_route_readiness"]["market"] == "us_options_regular"
 
 
 def test_cutover_gate_live_dryrun_requires_dispatch_roundtrip():

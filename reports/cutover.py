@@ -14,6 +14,7 @@ from reports.manifest import write_experiment_manifest
 class CutoverGateThresholds:
     target_mode: str = "live_dryrun"
     require_scaleup_ready: bool = True
+    require_route_readiness: bool = False
     require_broker_readiness: bool = True
     require_runtime_session: bool = True
     require_runtime_guard_continue: bool = True
@@ -277,6 +278,51 @@ def _checks(
             "scale-up proof freshness market does not match cutover market",
         ),
     ]
+    route_readiness_required = _route_readiness_required(thresholds)
+    route_readiness_active = bool(route_readiness_required or scaleup["route_readiness_provided"])
+    if route_readiness_required:
+        checks.append(
+            _check(
+                "scaleup_route_readiness_provided",
+                scaleup["route_readiness_provided"],
+                "is",
+                True,
+                bool(scaleup["route_readiness_provided"]),
+                "cutover requires scale-up proof carrying route-readiness evidence",
+            )
+        )
+    if route_readiness_active:
+        checks.extend(
+            [
+                _check(
+                    "scaleup_route_readiness_ready",
+                    scaleup["route_readiness_ready"],
+                    "is",
+                    True,
+                    bool(scaleup["route_readiness_ready"]),
+                    "scale-up route-readiness evidence is not ready",
+                ),
+                _check(
+                    "scaleup_route_readiness_strategy_matches",
+                    scaleup["route_readiness_strategy"],
+                    "==",
+                    scaleup["strategy"],
+                    bool(
+                        scaleup["route_readiness_strategy"]
+                        and scaleup["route_readiness_strategy"] == scaleup["strategy"]
+                    ),
+                    "scale-up route-readiness strategy does not match cutover strategy",
+                ),
+                _check(
+                    "scaleup_route_readiness_market_matches",
+                    scaleup["route_readiness_market"],
+                    "==",
+                    scaleup["market"],
+                    bool(scaleup["route_readiness_market"] and scaleup["route_readiness_market"] == scaleup["market"]),
+                    "scale-up route-readiness market does not match cutover market",
+                ),
+            ]
+        )
     dispatch_roundtrip_required = _dispatch_roundtrip_required(thresholds)
     scaleup_dispatch_active = bool(
         dispatch_roundtrip_required
@@ -709,6 +755,14 @@ def _authorization(
                 "scaleup_broker_schema_status": scaleup["broker_schema_status"],
                 "scaleup_broker_schema_reviewed": scaleup["broker_schema_reviewed"],
                 "scaleup_broker_schema_review_mode": scaleup["broker_schema_review_mode"],
+                "scaleup_route_readiness_required": _route_readiness_required(thresholds),
+                "scaleup_route_readiness_provided": scaleup["route_readiness_provided"],
+                "scaleup_route_readiness_ready": scaleup["route_readiness_ready"],
+                "scaleup_route_readiness_strategy": scaleup["route_readiness_strategy"],
+                "scaleup_route_readiness_market": scaleup["route_readiness_market"],
+                "scaleup_route_readiness_route_ready_pairs": scaleup["route_readiness_route_ready_pairs"],
+                "scaleup_route_readiness_gap_pairs": scaleup["route_readiness_gap_pairs"],
+                "scaleup_route_readiness_recommendation": scaleup["route_readiness_recommendation"],
                 "broker_readiness_ready": broker["ready"],
                 "broker_schema_status": broker["schema_status"],
                 "broker_schema_reviewed": broker["schema_reviewed"],
@@ -835,6 +889,15 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "scaleup_broker_schema_status": str(authorization["scaleup_broker_schema_status"]),
                 "scaleup_broker_schema_reviewed": _to_bool(authorization["scaleup_broker_schema_reviewed"]),
                 "scaleup_broker_schema_review_mode": str(authorization["scaleup_broker_schema_review_mode"]),
+                "scaleup_route_readiness_required": _to_bool(authorization["scaleup_route_readiness_required"]),
+                "scaleup_route_readiness_provided": _to_bool(authorization["scaleup_route_readiness_provided"]),
+                "scaleup_route_readiness_ready": _to_bool(authorization["scaleup_route_readiness_ready"]),
+                "scaleup_route_readiness_strategy": str(authorization["scaleup_route_readiness_strategy"]),
+                "scaleup_route_readiness_market": str(authorization["scaleup_route_readiness_market"]),
+                "scaleup_route_readiness_route_ready_pairs": int(
+                    authorization["scaleup_route_readiness_route_ready_pairs"]
+                ),
+                "scaleup_route_readiness_gap_pairs": int(authorization["scaleup_route_readiness_gap_pairs"]),
                 "broker_readiness_ready": _to_bool(authorization["broker_readiness_ready"]),
                 "broker_schema_status": str(authorization["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(authorization["broker_schema_reviewed"]),
@@ -973,6 +1036,16 @@ def _config(
             "mixed_identity": _to_bool(authorization["proof_refresh_mixed_identity"]),
             "proof_source": str(authorization["proof_source"]),
         },
+        "scaleup_route_readiness": {
+            "required": _to_bool(authorization["scaleup_route_readiness_required"]),
+            "provided": _to_bool(authorization["scaleup_route_readiness_provided"]),
+            "ready": _to_bool(authorization["scaleup_route_readiness_ready"]),
+            "strategy": str(authorization["scaleup_route_readiness_strategy"]),
+            "market": str(authorization["scaleup_route_readiness_market"]),
+            "route_ready_pairs": int(authorization["scaleup_route_readiness_route_ready_pairs"]),
+            "gap_pairs": int(authorization["scaleup_route_readiness_gap_pairs"]),
+            "recommendation": str(authorization["scaleup_route_readiness_recommendation"]),
+        },
         "scaleup_dispatch_roundtrip": {
             "required": _to_bool(authorization["scaleup_dispatch_roundtrip_required"]),
             "provided": _to_bool(authorization["scaleup_dispatch_roundtrip_provided"]),
@@ -1090,6 +1163,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     proof = config.get("proof_freshness", {}) or {}
     identity = config.get("identity", {}) or {}
     broker_readiness = config.get("broker_readiness", {}) or {}
+    route_readiness = config.get("route_readiness", {}) or {}
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
@@ -1132,6 +1206,35 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
         "broker_schema_review_mode": _first_text(
             broker_readiness.get("schema_review_mode", ""),
             row.get("broker_schema_review_mode", ""),
+        ),
+        "route_readiness_required": _to_bool(
+            route_readiness.get("required", row.get("route_readiness_required", False))
+        ),
+        "route_readiness_provided": _to_bool(
+            route_readiness.get("provided", row.get("route_readiness_provided", False))
+        ),
+        "route_readiness_ready": _to_bool(
+            route_readiness.get("ready", row.get("route_readiness_ready", False))
+        ),
+        "route_readiness_strategy": _strategy_key(
+            _first_text(route_readiness.get("strategy", ""), row.get("route_readiness_strategy", ""))
+        ),
+        "route_readiness_market": _identity_key(
+            _first_text(route_readiness.get("market", ""), row.get("route_readiness_market", ""))
+        ),
+        "route_readiness_route_ready_pairs": int(
+            _number_from(
+                route_readiness,
+                "route_ready_pairs",
+                _number(row, "route_readiness_route_ready_pairs", 0.0),
+            )
+        ),
+        "route_readiness_gap_pairs": int(
+            _number_from(route_readiness, "gap_pairs", _number(row, "route_readiness_gap_pairs", 0.0))
+        ),
+        "route_readiness_recommendation": _first_text(
+            route_readiness.get("recommendation", ""),
+            row.get("route_readiness_recommendation", ""),
         ),
         "dispatch_roundtrip_required": _to_bool(
             dispatch.get("required", row.get("broker_dispatch_roundtrip_required", False))
@@ -1400,6 +1503,10 @@ def _operator_identity_ack_required(thresholds: CutoverGateThresholds) -> bool:
 
 def _operator_limits_ack_required(thresholds: CutoverGateThresholds) -> bool:
     return bool(thresholds.require_operator_limits_ack or thresholds.target_mode == "live_dryrun")
+
+
+def _route_readiness_required(thresholds: CutoverGateThresholds) -> bool:
+    return bool(thresholds.require_route_readiness or thresholds.target_mode == "live_dryrun")
 
 
 def _dispatch_roundtrip_required(thresholds: CutoverGateThresholds) -> bool:

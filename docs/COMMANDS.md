@@ -2577,6 +2577,7 @@ python -m hft_cli review-cutover-gate `
   --operator-review ops\cutover_review.csv `
   --out runs\cutover\leadlag_shadow_live_dryrun `
   --target-mode live_dryrun `
+  --require-route-readiness `
   --require-dispatch-roundtrip `
   --fail-on-breach
 ```
@@ -2591,20 +2592,21 @@ cutover_config.json
 manifest.json
 ```
 
-For `live_dryrun`, the cutover gate automatically requires operator approval,
-operator acknowledgement of the strategy/market identity, acknowledgement of
-the scale-up order/notional limits, a continuing runtime guard, and clean
-dispatch round-trip proof carried by both scale-up and broker readiness. It
-validates runtime and dispatch strategy/market/target-mode identity against the
-scale-up plan, requires matching clean route proof from both scale-up and
-broker readiness, rejects nonzero dispatch round-trip and route-enable
-dispatch round-trip failed-check counts, carries proof-refresh state, and
-validates any supplied broker resume-gate proof identity before broker routing
-is allowed. `--broker-readiness` may point at a broker-readiness folder or a
-launch-pipeline root; cutover resolves nested `06_broker_readiness` and
-`05_broker_readiness` summaries and fingerprints the resolved scale-up
-summary/config/checks, broker-readiness summary, optional runtime-session
-summary, and optional operator-review file in the manifest.
+For `live_dryrun`, the cutover gate automatically requires route-readiness
+proof retained in the scale-up plan, operator approval, operator
+acknowledgement of the strategy/market identity, acknowledgement of the
+scale-up order/notional limits, a continuing runtime guard, and clean dispatch
+round-trip proof carried by both scale-up and broker readiness. It validates
+runtime and dispatch strategy/market/target-mode identity against the scale-up
+plan, requires matching clean route proof from both scale-up and broker
+readiness, rejects nonzero dispatch round-trip and route-enable dispatch
+round-trip failed-check counts, carries proof-refresh state, and validates any
+supplied broker resume-gate proof identity before broker routing is allowed.
+`--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
+root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
+summaries and fingerprints the resolved scale-up summary/config/checks,
+broker-readiness summary, optional runtime-session summary, and optional
+operator-review file in the manifest.
 
 ## Route Enable Packet
 
