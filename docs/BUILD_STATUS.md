@@ -277,6 +277,12 @@
   checks that all passing required artifacts share the expected strategy and
   market identity, including runtime identity aliases from broker and shadow
   evidence.
+- Strategy evidence review supports an `ops_launch` profile, with
+  `broker_dryrun`, `launch_ops`, and `live_dryrun` aliases, that requires
+  scale-up, runtime telemetry, runtime guard, runtime-session, broker
+  readiness, cutover, route-enable, dispatch plan, non-submitting send packet,
+  dispatch acknowledgement, and broker dispatch round-trip artifacts before a
+  launch route is treated as operationally proven.
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness

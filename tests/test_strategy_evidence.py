@@ -393,6 +393,43 @@ def parity_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"
     )
 
 
+def ops_launch_catalog_rows(*, commit="abc123", strategy="lead_lag_taker", market="india_nse_index_derivatives"):
+    parameters = json.dumps({"strategy": strategy, "market": market})
+    run_types = [
+        ("scaleup_plan", "runs/scaleup", "scaleup_summary.csv"),
+        ("runtime_telemetry_snapshot", "runs/runtime_telemetry", "runtime_telemetry_summary.csv"),
+        ("runtime_guard", "runs/runtime_guard", "runtime_guard_summary.csv"),
+        ("runtime_session_monitor", "runs/runtime_session", "runtime_session_summary.csv"),
+        ("broker_readiness", "runs/broker_readiness", "broker_readiness_summary.csv"),
+        ("cutover_gate", "runs/cutover", "cutover_summary.csv"),
+        ("route_enable_packet", "runs/route_enable", "route_enable_summary.csv"),
+        ("broker_dispatch_plan", "runs/broker_dispatch", "broker_dispatch_summary.csv"),
+        ("broker_dispatch_send_packet", "runs/broker_dispatch_send", "broker_dispatch_send_summary.csv"),
+        ("broker_dispatch_ack_reconciliation", "runs/broker_dispatch_ack", "broker_dispatch_ack_summary.csv"),
+        ("broker_dispatch_roundtrip", "runs/broker_dispatch_roundtrip", "broker_dispatch_roundtrip_summary.csv"),
+    ]
+    rows = []
+    for index, (run_type, run_dir, summary_file) in enumerate(run_types):
+        row = {
+            "run_dir": run_dir,
+            "run_type": run_type,
+            "generated_at_utc": f"2026-06-10T10:{index:02d}:00Z",
+            "git_commit": commit,
+            "git_dirty": False,
+            "summary_status": True,
+            "summary_file": summary_file,
+            "parameters_json": parameters,
+        }
+        if run_type == "broker_readiness":
+            row["summary_runtime_strategy"] = strategy
+            row["summary_runtime_market"] = market
+        else:
+            row["summary_strategy"] = strategy
+            row["summary_market"] = market
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def test_strategy_evidence_passes_complete_clean_catalog():
     review = evaluate_strategy_evidence(
         catalog_rows(),
@@ -807,6 +844,55 @@ def test_parity_evidence_profile_fails_without_launch_pipeline():
     assert "required_run_type:parity_launch_pipeline" in failed
 
 
+def test_ops_launch_evidence_profile_requires_dryrun_chain_identity():
+    review = evaluate_strategy_evidence(
+        ops_launch_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("broker-dryrun"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="leadlag",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["ops_launch"])
+    assert set(review.evidence["latest_strategy"]) == {"lead_lag_taker"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    broker_item = review.evidence.loc[review.evidence["required_run_type"] == "broker_readiness"].iloc[0]
+    assert broker_item["latest_strategy"] == "lead_lag_taker"
+    assert broker_item["latest_market"] == "india_nse_index_derivatives"
+
+
+def test_ops_launch_evidence_profile_fails_without_cutover_gate():
+    catalog = ops_launch_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "cutover_gate"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("ops_launch")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:cutover_gate" in failed
+
+
+def test_ops_launch_evidence_profile_fails_without_dispatch_roundtrip():
+    catalog = ops_launch_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "broker_dispatch_roundtrip"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("ops_launch")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:broker_dispatch_roundtrip" in failed
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -973,6 +1059,37 @@ def test_cli_strategy_evidence_leadlag_profile(tmp_path):
     summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
     assert code == 0
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["leadlag"])
+    assert bool(summary.loc[0, "ready"])
+
+
+def test_cli_strategy_evidence_ops_launch_profile(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "ops_launch_evidence"
+    ops_launch_catalog_rows().to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "ops_launch",
+            "--require-same-strategy",
+            "--expected-strategy",
+            "lead_lag_taker",
+            "--require-same-market",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    assert code == 0
+    assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["ops_launch"])
     assert bool(summary.loc[0, "ready"])
 
 

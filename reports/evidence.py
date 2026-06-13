@@ -47,6 +47,19 @@ SURFACE_MM_REQUIRED_RUN_TYPES = (
     "surface_mm_research_pipeline",
     "surface_mm_launch_pipeline",
 )
+OPS_LAUNCH_REQUIRED_RUN_TYPES = (
+    "scaleup_plan",
+    "runtime_telemetry_snapshot",
+    "runtime_guard",
+    "runtime_session_monitor",
+    "broker_readiness",
+    "cutover_gate",
+    "route_enable_packet",
+    "broker_dispatch_plan",
+    "broker_dispatch_send_packet",
+    "broker_dispatch_ack_reconciliation",
+    "broker_dispatch_roundtrip",
+)
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
@@ -54,6 +67,7 @@ EVIDENCE_PROFILE_RUN_TYPES = {
     "settlement": SETTLEMENT_REQUIRED_RUN_TYPES,
     "parity": PARITY_REQUIRED_RUN_TYPES,
     "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
+    "ops_launch": OPS_LAUNCH_REQUIRED_RUN_TYPES,
 }
 EVIDENCE_PROFILE_ALIASES = {
     "lead_lag": "leadlag",
@@ -63,6 +77,12 @@ EVIDENCE_PROFILE_ALIASES = {
     "settlement_convergence": "settlement",
     "parity_box": "parity",
     "surface_market_making": "surface_mm",
+    "broker_dryrun": "ops_launch",
+    "broker_dry_run": "ops_launch",
+    "launch_ops": "ops_launch",
+    "live_dryrun": "ops_launch",
+    "live_dry_run": "ops_launch",
+    "ops_launch_readiness": "ops_launch",
 }
 
 

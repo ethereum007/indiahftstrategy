@@ -162,6 +162,23 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+After a strategy-specific launch pipeline has moved into scale-up,
+runtime-session, cutover, route-enable, and broker dry-run dispatch proof, use
+the operational launch profile to require the full non-submitting
+Arrow.money/iRage handoff chain before any live-dry-run route is trusted:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\leadlag_ops_launch `
+  --profile ops_launch `
+  --require-same-strategy `
+  --expected-strategy lead_lag_taker `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
 The `leadlag` profile expands to `leadlag_edge_audit`,
 `leadlag_replay_walkforward`, `stress_report`, `promotion_report`, and
 `leadlag_order_plan`, and `leadlag_launch_pipeline`. The `surface_mm` profile
@@ -175,9 +192,14 @@ expands to `surface_quality_report`, `quote_risk_report`,
 `parity_edge_audit`, `parity_sweep`, `promotion_report`,
 `parity_order_plan`, and `parity_launch_pipeline`. The `settlement` profile expands to
 `settlement_convergence_walkforward`, `promotion_report`,
-`settlement_order_plan`, and `settlement_launch_pipeline`. Explicit
-`--required-run-type` flags still override the profile for custom launch
-reviews.
+`settlement_order_plan`, and `settlement_launch_pipeline`. The `ops_launch`
+profile expands to `scaleup_plan`, `runtime_telemetry_snapshot`,
+`runtime_guard`, `runtime_session_monitor`, `broker_readiness`,
+`cutover_gate`, `route_enable_packet`, `broker_dispatch_plan`,
+`broker_dispatch_send_packet`, `broker_dispatch_ack_reconciliation`, and
+`broker_dispatch_roundtrip`; aliases include `broker_dryrun`, `launch_ops`,
+and `live_dryrun`. Explicit `--required-run-type` flags still override the
+profile for custom launch reviews.
 
 Outputs:
 
