@@ -61,6 +61,7 @@ from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.quote_lifecycle import QuoteLifecycleThresholds, write_quote_lifecycle_plan
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
+from reports.route_enable import RouteEnableThresholds, write_route_enable_packet
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_session import write_runtime_session_monitor
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
@@ -1215,6 +1216,19 @@ def main(argv: list[str] | None = None) -> int:
     cutover_gate.add_argument("--allow-missing-operator-limits-ack", action="store_true")
     cutover_gate.add_argument("--max-failed-scaleup-checks", type=int, default=0)
     cutover_gate.add_argument("--fail-on-breach", action="store_true")
+
+    route_enable = sub.add_parser("review-route-enable", help="Build a broker route-enable packet after cutover.")
+    route_enable.add_argument("--cutover", required=True)
+    route_enable.add_argument("--upload-pack", required=True)
+    route_enable.add_argument("--out", required=True)
+    route_enable.add_argument("--order-export", default=None)
+    route_enable.add_argument("--target-mode", default="live_dryrun", choices=["paper", "shadow", "live_dryrun"])
+    route_enable.add_argument("--allow-unready-cutover", action="store_true")
+    route_enable.add_argument("--allow-unready-upload", action="store_true")
+    route_enable.add_argument("--require-order-export", action="store_true")
+    route_enable.add_argument("--allow-adapter-mismatch", action="store_true")
+    route_enable.add_argument("--min-orders", type=int, default=1)
+    route_enable.add_argument("--fail-on-breach", action="store_true")
 
     stress = sub.add_parser("stress-replay", help="Stress replay outputs for extra costs and slippage.")
     stress.add_argument("--runs", nargs="+", required=True)
@@ -2787,6 +2801,23 @@ def main(argv: list[str] | None = None) -> int:
                 require_operator_identity_ack=not args.allow_missing_operator_identity_ack,
                 require_operator_limits_ack=not args.allow_missing_operator_limits_ack,
                 max_failed_scaleup_checks=args.max_failed_scaleup_checks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "review-route-enable":
+        result = write_route_enable_packet(
+            cutover_dir=args.cutover,
+            upload_pack_dir=args.upload_pack,
+            order_export_dir=args.order_export,
+            output_dir=args.out,
+            thresholds=RouteEnableThresholds(
+                target_mode=args.target_mode,
+                require_cutover_ready=not args.allow_unready_cutover,
+                require_upload_ready=not args.allow_unready_upload,
+                require_order_export_ready=args.require_order_export,
+                require_adapter_match=not args.allow_adapter_mismatch,
+                min_orders=args.min_orders,
             ),
         )
         print(result.summary.to_string(index=False))

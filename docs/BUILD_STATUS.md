@@ -273,6 +273,10 @@
   after scale-up, broker readiness, runtime-session guard, proof freshness,
   optional broker resume-gate proof, and operator strategy/market/limit
   acknowledgement agree in one manifest-backed authorization artifact.
+- Route-enable packet that consumes ready cutover and broker upload evidence,
+  bounds order counts and optional export notional by cutover limits, and emits
+  the final machine-readable broker route-enable config without submitting
+  orders.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -334,7 +338,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 439 tests.
+Current passing suite: 444 tests.
 
 ## Next Build Targets
 

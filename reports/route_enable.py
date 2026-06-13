@@ -1,0 +1,519 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from reports.manifest import write_experiment_manifest
+
+
+@dataclass(frozen=True)
+class RouteEnableThresholds:
+    target_mode: str = "live_dryrun"
+    require_cutover_ready: bool = True
+    require_upload_ready: bool = True
+    require_order_export_ready: bool = False
+    require_adapter_match: bool = True
+    min_orders: int = 1
+
+
+@dataclass(frozen=True)
+class RouteEnableReport:
+    packet: pd.DataFrame
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    config: dict[str, Any]
+    output_dir: Path | None = None
+
+    @property
+    def ready(self) -> bool:
+        return bool(self.summary.iloc[0]["ready"]) if not self.summary.empty else False
+
+
+def evaluate_route_enable_packet(
+    *,
+    cutover_summary: pd.DataFrame,
+    cutover_config: dict[str, Any] | None = None,
+    upload_summary: pd.DataFrame,
+    order_export_summary: pd.DataFrame | None = None,
+    thresholds: RouteEnableThresholds | None = None,
+) -> RouteEnableReport:
+    thresholds = thresholds or RouteEnableThresholds()
+    _validate_thresholds(thresholds)
+    cutover_summary = _require_nonempty(cutover_summary, "cutover_summary")
+    upload_summary = _require_nonempty(upload_summary, "upload_summary")
+    order_export_summary = _optional_frame(order_export_summary)
+    cutover_config = cutover_config or {}
+
+    state = {
+        "cutover": _cutover_state(cutover_summary.iloc[0], cutover_config),
+        "upload": _upload_state(upload_summary.iloc[0]),
+        "order_export": _order_export_state(order_export_summary),
+    }
+    checks = _checks(state, thresholds)
+    packet = _packet(state, thresholds, checks)
+    summary = _summary(packet.iloc[0], checks)
+    config = _config(packet.iloc[0], thresholds, checks)
+    return RouteEnableReport(packet=packet, checks=checks, summary=summary, config=config)
+
+
+def write_route_enable_packet(
+    *,
+    cutover_dir: str | Path,
+    upload_pack_dir: str | Path,
+    output_dir: str | Path,
+    order_export_dir: str | Path | None = None,
+    thresholds: RouteEnableThresholds | None = None,
+) -> RouteEnableReport:
+    cutover = Path(cutover_dir)
+    upload = Path(upload_pack_dir)
+    cutover_config_path = cutover / "cutover_config.json" if cutover.is_dir() else Path(cutover_dir)
+    if not cutover_config_path.exists():
+        raise FileNotFoundError(f"cutover config not found: {cutover_config_path}")
+    cutover_summary_path = (
+        cutover / "cutover_summary.csv" if cutover.is_dir() else cutover_config_path.with_name("cutover_summary.csv")
+    )
+    report = evaluate_route_enable_packet(
+        cutover_summary=_read_required(cutover_summary_path, "cutover_summary"),
+        cutover_config=json.loads(cutover_config_path.read_text(encoding="utf-8")),
+        upload_summary=_read_required(_summary_path(upload, "broker_upload_summary.csv"), "broker_upload_summary"),
+        order_export_summary=_read_optional(_summary_path(order_export_dir, "broker_order_summary.csv"))
+        if order_export_dir is not None
+        else None,
+        thresholds=thresholds,
+    )
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    report.packet.to_csv(out / "route_enable_packet.csv", index=False)
+    report.checks.to_csv(out / "route_enable_checks.csv", index=False)
+    report.summary.to_csv(out / "route_enable_summary.csv", index=False)
+    (out / "route_enable_config.json").write_text(
+        json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    inputs: dict[str, Any] = {"cutover": cutover_config_path, "upload_pack": upload}
+    if order_export_dir is not None:
+        inputs["order_export"] = Path(order_export_dir)
+    write_experiment_manifest(
+        out,
+        run_type="route_enable_packet",
+        parameters={"thresholds": asdict(thresholds or RouteEnableThresholds())},
+        inputs=inputs,
+    )
+    return RouteEnableReport(report.packet, report.checks, report.summary, report.config, out)
+
+
+def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds) -> pd.DataFrame:
+    cutover = state["cutover"]
+    upload = state["upload"]
+    order_export = state["order_export"]
+    target_mode = _identity_key(thresholds.target_mode)
+    upload_orders = int(upload["orders"])
+    max_orders = int(cutover["max_orders_per_session"])
+    max_notional = float(cutover["max_notional_per_session"])
+    export_notional = float(order_export["total_notional"])
+    checks = [
+        _check(
+            "cutover_ready",
+            cutover["ready"],
+            "is",
+            True,
+            bool(cutover["ready"]) or not thresholds.require_cutover_ready,
+            "cutover gate is not ready",
+        ),
+        _check(
+            "target_mode_matches",
+            cutover["target_mode"],
+            "==",
+            target_mode,
+            bool(cutover["target_mode"] and cutover["target_mode"] == target_mode),
+            "cutover target mode does not match route-enable target mode",
+        ),
+        _check(
+            "upload_ready",
+            upload["ready"],
+            "is",
+            True,
+            bool(upload["ready"]) or not thresholds.require_upload_ready,
+            "broker upload pack is not ready",
+        ),
+        _check(
+            "upload_orders_min",
+            upload_orders,
+            ">=",
+            thresholds.min_orders,
+            upload_orders >= thresholds.min_orders,
+            "broker upload pack does not contain enough orders",
+        ),
+        _check(
+            "upload_orders_within_cutover_limit",
+            upload_orders,
+            "<=",
+            max_orders,
+            upload_orders <= max_orders,
+            "broker upload order count exceeds cutover limit",
+        ),
+        _check(
+            "upload_adapter_matches",
+            upload["adapter"],
+            "==",
+            cutover["adapter"],
+            (not thresholds.require_adapter_match) or upload["adapter"] == cutover["adapter"],
+            "broker upload adapter does not match cutover adapter",
+        ),
+    ]
+    if thresholds.require_order_export_ready:
+        checks.append(
+            _check(
+                "order_export_provided",
+                order_export["provided"],
+                "is",
+                True,
+                bool(order_export["provided"]),
+                "order export summary is required but missing",
+            )
+        )
+    if order_export["provided"]:
+        checks.extend(
+            [
+                _check(
+                    "order_export_ready",
+                    order_export["ready"],
+                    "is",
+                    True,
+                    bool(order_export["ready"]) or not thresholds.require_order_export_ready,
+                    "order export is not ready",
+                ),
+                _check(
+                    "order_export_adapter_matches",
+                    order_export["adapter"],
+                    "==",
+                    cutover["adapter"],
+                    (not thresholds.require_adapter_match) or order_export["adapter"] == cutover["adapter"],
+                    "order export adapter does not match cutover adapter",
+                ),
+                _check(
+                    "order_export_orders_match_upload",
+                    order_export["orders"],
+                    "==",
+                    upload_orders,
+                    int(order_export["orders"]) == upload_orders,
+                    "order export and upload pack order counts differ",
+                ),
+                _check(
+                    "order_export_notional_within_cutover_limit",
+                    export_notional,
+                    "<=",
+                    max_notional,
+                    export_notional <= max_notional,
+                    "order export notional exceeds cutover limit",
+                ),
+            ]
+        )
+    return pd.DataFrame(checks)
+
+
+def _packet(
+    state: dict[str, dict[str, Any]],
+    thresholds: RouteEnableThresholds,
+    checks: pd.DataFrame,
+) -> pd.DataFrame:
+    cutover = state["cutover"]
+    upload = state["upload"]
+    order_export = state["order_export"]
+    ready = bool(checks["passed"].astype(bool).all()) if not checks.empty else False
+    return pd.DataFrame(
+        [
+            {
+                "route_enabled": ready,
+                "route_state": "enabled" if ready else "disabled",
+                "target_mode": cutover["target_mode"],
+                "strategy": cutover["strategy"],
+                "market": cutover["market"],
+                "scenario_key": cutover["scenario_key"],
+                "adapter": cutover["adapter"],
+                "max_orders_per_session": int(cutover["max_orders_per_session"]),
+                "max_notional_per_session": float(cutover["max_notional_per_session"]),
+                "stop_loss": cutover["stop_loss"],
+                "upload_ready": upload["ready"],
+                "upload_orders": int(upload["orders"]),
+                "upload_output_file": upload["output_file"],
+                "upload_recommendation": upload["recommendation"],
+                "adapter_schema_status": upload["schema_status"],
+                "order_export_provided": order_export["provided"],
+                "order_export_ready": order_export["ready"],
+                "order_export_orders": int(order_export["orders"]),
+                "order_export_total_notional": float(order_export["total_notional"]),
+                "order_export_max_order_notional": float(order_export["max_order_notional"]),
+                "proof_refresh_ready": cutover["proof_refresh_ready"],
+                "proof_refresh_strategy": cutover["proof_refresh_strategy"],
+                "proof_refresh_market": cutover["proof_refresh_market"],
+                "broker_resume_gate_ready": cutover["broker_resume_gate_ready"],
+                "broker_resume_proof_refresh_ready": cutover["broker_resume_proof_refresh_ready"],
+                "failed_checks": int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1,
+                "threshold_target_mode": thresholds.target_mode,
+            }
+        ]
+    )
+
+
+def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    ready = failed == 0
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "target_mode": str(packet["target_mode"]),
+                "strategy": str(packet["strategy"]),
+                "market": str(packet["market"]),
+                "scenario_key": str(packet["scenario_key"]),
+                "adapter": str(packet["adapter"]),
+                "route_state": "enabled" if ready else "disabled",
+                "upload_orders": int(packet["upload_orders"]),
+                "max_orders_per_session": int(packet["max_orders_per_session"]),
+                "max_notional_per_session": float(packet["max_notional_per_session"]),
+                "order_export_total_notional": float(packet["order_export_total_notional"]),
+                "adapter_schema_status": str(packet["adapter_schema_status"]),
+                "proof_refresh_ready": _to_bool(packet["proof_refresh_ready"]),
+                "broker_resume_gate_ready": _to_bool(packet["broker_resume_gate_ready"]),
+                "broker_resume_proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
+                "failed_checks": failed,
+                "recommendation": "enable_broker_route" if ready else "keep_broker_route_disabled",
+            }
+        ]
+    )
+
+
+def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.DataFrame) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "route_enabled": _to_bool(packet["route_enabled"]),
+        "route_state": str(packet["route_state"]),
+        "target_mode": str(packet["target_mode"]),
+        "strategy": str(packet["strategy"]),
+        "market": str(packet["market"]),
+        "scenario_key": str(packet["scenario_key"]),
+        "adapter": str(packet["adapter"]),
+        "limits": {
+            "max_orders_per_session": int(packet["max_orders_per_session"]),
+            "max_notional_per_session": float(packet["max_notional_per_session"]),
+            "stop_loss": _jsonable(packet["stop_loss"]),
+        },
+        "upload": {
+            "ready": _to_bool(packet["upload_ready"]),
+            "orders": int(packet["upload_orders"]),
+            "output_file": str(packet["upload_output_file"]),
+            "adapter_schema_status": str(packet["adapter_schema_status"]),
+            "recommendation": str(packet["upload_recommendation"]),
+        },
+        "order_export": {
+            "provided": _to_bool(packet["order_export_provided"]),
+            "ready": _to_bool(packet["order_export_ready"]),
+            "orders": int(packet["order_export_orders"]),
+            "total_notional": float(packet["order_export_total_notional"]),
+            "max_order_notional": float(packet["order_export_max_order_notional"]),
+        },
+        "proof_freshness": {
+            "ready": _to_bool(packet["proof_refresh_ready"]),
+            "strategy": str(packet["proof_refresh_strategy"]),
+            "market": str(packet["proof_refresh_market"]),
+        },
+        "broker_resume_gate": {
+            "ready": _to_bool(packet["broker_resume_gate_ready"]),
+            "proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
+        },
+        "thresholds": asdict(thresholds),
+        "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+    }
+
+
+def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
+    limits = config.get("limits", {}) or {}
+    proof = config.get("proof_freshness", {}) or {}
+    resume = (config.get("broker_readiness", {}) or {}).get("resume_gate", {}) or {}
+    return {
+        "ready": _to_bool(row.get("ready", config.get("ready", False))),
+        "target_mode": _identity_key(_first_text(row.get("target_mode", ""), config.get("target_mode", ""))),
+        "strategy": _strategy_key(_first_text(row.get("strategy", ""), config.get("strategy", ""))),
+        "market": _identity_key(_first_text(row.get("market", ""), config.get("market", ""))),
+        "scenario_key": _first_text(row.get("scenario_key", ""), config.get("scenario_key", "")),
+        "adapter": _first_text(row.get("adapter", ""), config.get("adapter", "")),
+        "max_orders_per_session": int(
+            _number_from(limits, "max_orders_per_session", _number(row, "max_orders_per_session", 0.0))
+        ),
+        "max_notional_per_session": float(
+            _number_from(limits, "max_notional_per_session", _number(row, "max_notional_per_session", 0.0))
+        ),
+        "stop_loss": _nullable_number(limits.get("stop_loss")),
+        "proof_refresh_ready": _to_bool(proof.get("ready", row.get("proof_refresh_ready", False))),
+        "proof_refresh_strategy": _strategy_key(
+            _first_text(proof.get("strategy", ""), row.get("proof_refresh_strategy", ""))
+        ),
+        "proof_refresh_market": _identity_key(_first_text(proof.get("market", ""), row.get("proof_refresh_market", ""))),
+        "broker_resume_gate_ready": _to_bool(resume.get("ready", row.get("broker_resume_gate_ready", False))),
+        "broker_resume_proof_refresh_ready": _to_bool(
+            resume.get("proof_refresh_ready", row.get("broker_resume_proof_refresh_ready", False))
+        ),
+    }
+
+
+def _upload_state(row: pd.Series) -> dict[str, Any]:
+    return {
+        "ready": _to_bool(row.get("ready", False)),
+        "adapter": _first_text(row.get("adapter", "")),
+        "schema_status": _first_text(row.get("adapter_schema_status", "")),
+        "orders": int(_number(row, "orders", 0.0)),
+        "output_file": _first_text(row.get("output_file", "")),
+        "recommendation": _first_text(row.get("recommendation", "")),
+    }
+
+
+def _order_export_state(summary: pd.DataFrame) -> dict[str, Any]:
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    return {
+        "provided": not summary.empty,
+        "ready": _to_bool(row.get("ready", False)),
+        "adapter": _first_text(row.get("adapter", "")),
+        "orders": int(_number(row, "orders", 0.0)),
+        "total_notional": float(_number(row, "total_notional", 0.0)),
+        "max_order_notional": float(_number(row, "max_order_notional", 0.0)),
+    }
+
+
+def _read_required(path: str | Path, name: str) -> pd.DataFrame:
+    file_path = Path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"required route-enable input not found: {file_path}")
+    frame = pd.read_csv(file_path)
+    if frame.empty:
+        raise ValueError(f"required route-enable input is empty: {name}")
+    return frame
+
+
+def _read_optional(path: str | Path | None) -> pd.DataFrame:
+    if path is None:
+        return pd.DataFrame()
+    file_path = Path(path)
+    if not file_path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(file_path)
+
+
+def _summary_path(path: str | Path | None, filename: str) -> Path:
+    if path is None:
+        return Path(filename)
+    candidate = Path(path)
+    return candidate / filename if candidate.is_dir() else candidate
+
+
+def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
+    return pd.DataFrame() if frame is None else frame.copy().reset_index(drop=True)
+
+
+def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:
+    if frame.empty:
+        raise ValueError(f"{name} is empty")
+    return frame.copy().reset_index(drop=True)
+
+
+def _validate_thresholds(thresholds: RouteEnableThresholds) -> None:
+    if thresholds.target_mode not in {"paper", "shadow", "live_dryrun"}:
+        raise ValueError("target_mode must be paper, shadow, or live_dryrun")
+    if thresholds.min_orders <= 0:
+        raise ValueError("min_orders must be positive")
+
+
+def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
+    if row.empty or column not in row.index:
+        return float(fallback)
+    value = pd.to_numeric(row[column], errors="coerce")
+    if pd.isna(value):
+        return float(fallback)
+    return float(value)
+
+
+def _number_from(mapping: dict[str, Any], key: str, fallback: float) -> float:
+    value = mapping.get(key, fallback)
+    if value is None or _is_missing(value):
+        return float(fallback)
+    return float(value)
+
+
+def _nullable_number(value: object) -> float | None:
+    if value is None or _is_missing(value):
+        return None
+    return float(value)
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        text = _object_text(value)
+        if text:
+            return text
+    return ""
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    return _object_text(value).lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _object_text(value: object) -> str:
+    if _is_missing(value):
+        return ""
+    return str(value).strip()
+
+
+def _to_bool(value: object) -> bool:
+    if _is_missing(value):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "approved", "ready", "passed", "enabled"}
+    return bool(value)
+
+
+def _is_missing(value: object) -> bool:
+    try:
+        return bool(pd.isna(value))
+    except (TypeError, ValueError):
+        return False
+
+
+def _jsonable(value: object) -> object:
+    if _is_missing(value):
+        return None
+    return value
+
+
+def _check(
+    name: str,
+    value: object,
+    operator: str,
+    threshold: object,
+    passed: bool,
+    reason: str,
+) -> dict[str, object]:
+    return {
+        "check": name,
+        "value": value,
+        "operator": operator,
+        "threshold": threshold,
+        "passed": bool(passed),
+        "reason": "" if passed else reason,
+    }

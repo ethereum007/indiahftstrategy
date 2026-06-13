@@ -94,7 +94,7 @@ manifest.json
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
 shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
-cutover, halt-response, and resume summaries,
+cutover, route-enable, halt-response, and resume summaries,
 so those run types can be promoted into explicit `--required-run-type`
 evidence gates.
 
@@ -1970,6 +1970,39 @@ of the scale-up order/notional limits. It also requires the runtime guard to be
 continuing, validates runtime strategy/market/target-mode identity against the
 scale-up plan, carries proof-refresh state, and validates any supplied broker
 resume-gate proof identity before broker routing is allowed.
+
+## Route Enable Packet
+
+Convert a ready cutover authorization plus broker upload evidence into the
+final broker route-enable packet:
+
+```powershell
+python -m hft_cli review-route-enable `
+  --cutover runs\cutover\leadlag_shadow_live_dryrun `
+  --upload-pack runs\uploads\leadlag_shadow_arrow `
+  --order-export runs\exports\leadlag_shadow_arrow `
+  --out runs\route_enable\leadlag_shadow_live_dryrun `
+  --target-mode live_dryrun `
+  --require-order-export `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+route_enable_packet.csv
+route_enable_checks.csv
+route_enable_summary.csv
+route_enable_config.json
+manifest.json
+```
+
+The packet does not submit orders. It carries the approved target mode,
+strategy, market, scenario, adapter, order limit, notional limit, upload file,
+and proof/resume context into one machine-readable artifact. It fails closed if
+cutover is not ready, the upload pack is not ready, the adapter or target mode
+does not match, the upload order count exceeds the cutover limit, or the
+optional order-export notional exceeds the cutover notional cap.
 
 ## Calibration
 
