@@ -1368,9 +1368,9 @@ manifest.json
 ## Broker Integration Readiness
 
 Combine adapter schema review, broker-neutral export, mapped/upload files,
-optional halt-export, optional reconciliation, and optional runtime-session
-evidence into one go/no-go record before Arrow.money/iRage paper or shadow
-routing:
+optional halt-export, optional reconciliation, optional runtime-session, and
+optional resume-gate evidence into one go/no-go record before Arrow.money/iRage
+paper or shadow routing:
 
 ```powershell
 python -m hft_cli review-broker-readiness `
@@ -1381,10 +1381,12 @@ python -m hft_cli review-broker-readiness `
   --mapped-orders runs\exports\leadlag_shadow_arrow_mapped `
   --upload-pack runs\uploads\leadlag_shadow_arrow `
   --runtime-session runs\runtime_sessions\leadlag_shadow_latest `
+  --resume-gate runs\resume\leadlag_shadow_latest `
   --out runs\broker_readiness\leadlag_shadow_arrow `
   --require-mapping-draft `
   --require-mapped-orders `
   --require-runtime-session `
+  --require-resume-gate `
   --fail-on-breach
 ```
 
@@ -1400,6 +1402,11 @@ guard to be continuing. `--require-runtime-session` makes that evidence
 mandatory before paper/shadow routing. Runtime-session target mode, strategy,
 and market identity are retained in the broker readiness summary for later
 scale-up continuity checks.
+When `--resume-gate` is supplied, broker readiness retains the resume
+authorization's strategy/market identity, incident identity, and
+`proof_refresh_*` context. `--require-resume-gate` fails closed unless
+`resume_summary.csv` is present and ready, which is useful for post-halt restart
+reviews.
 
 Outputs:
 

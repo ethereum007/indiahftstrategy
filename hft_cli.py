@@ -992,6 +992,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--halt-export", default=None)
     broker_readiness.add_argument("--reconciliation", default=None)
     broker_readiness.add_argument("--runtime-session", default=None)
+    broker_readiness.add_argument("--resume-gate", default=None)
     broker_readiness.add_argument("--allow-placeholder-schema", action="store_true")
     broker_readiness.add_argument("--allow-adapter-mismatch", action="store_true")
     broker_readiness.add_argument("--skip-schema-audit", action="store_true")
@@ -1002,6 +1003,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--require-halt-export", action="store_true")
     broker_readiness.add_argument("--require-reconciliation", action="store_true")
     broker_readiness.add_argument("--require-runtime-session", action="store_true")
+    broker_readiness.add_argument("--require-resume-gate", action="store_true")
     broker_readiness.add_argument("--fail-on-breach", action="store_true")
 
     shadow_session = sub.add_parser("shadow-session-report", help="Gate a full paper/shadow session after reconciliation.")
@@ -2500,6 +2502,7 @@ def main(argv: list[str] | None = None) -> int:
             halt_export_dir=args.halt_export,
             reconciliation_dir=args.reconciliation,
             runtime_session_dir=args.runtime_session,
+            resume_dir=args.resume_gate,
             thresholds=BrokerReadinessThresholds(
                 adapter=args.adapter,
                 require_reviewed_schema=not args.allow_placeholder_schema,
@@ -2511,6 +2514,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_halt_export=args.require_halt_export,
                 require_reconciliation=args.require_reconciliation,
                 require_runtime_session=args.require_runtime_session,
+                require_resume_gate=args.require_resume_gate,
                 require_adapter_match=not args.allow_adapter_mismatch,
             ),
         )

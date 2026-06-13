@@ -309,9 +309,10 @@
   emits a reviewed-mapping draft for market-data normalization.
 - Broker integration readiness report that combines schema audit, broker order
   export, mapping draft, mapped orders, upload pack, optional halt export, and
-  optional reconciliation/runtime-session evidence into one fail-closed
-  Arrow.money/iRage go/no-go artifact, blocking supplied or required runtime
-  sessions when the scale-up guard halted.
+  optional reconciliation/runtime-session/resume-gate evidence into one
+  fail-closed Arrow.money/iRage go/no-go artifact, blocking supplied or
+  required runtime sessions when the scale-up guard halted and retaining
+  resume proof-refresh identity for post-halt restart review.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -324,7 +325,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 419 tests.
+Current passing suite: 422 tests.
 
 ## Next Build Targets
 

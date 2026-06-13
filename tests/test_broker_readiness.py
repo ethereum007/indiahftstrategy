@@ -75,6 +75,28 @@ def runtime_session_summary(adapter="normalized", ready=True, halted=False):
     )
 
 
+def resume_summary(adapter="normalized", ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "strategy": "surface_mm",
+                "market": "india_nse_index_derivatives",
+                "incident_strategy": "surface_mm",
+                "incident_market": "india_nse_index_derivatives",
+                "proof_refresh_ready": ready,
+                "proof_refresh_strategy": "surface_mm",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "incident_proof_refresh_strategy": "surface_mm",
+                "incident_proof_refresh_market": "india_nse_index_derivatives",
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "resume_with_scaleup_controls" if ready else "keep_trading_disabled",
+            }
+        ]
+    )
+
+
 def test_broker_readiness_accepts_ready_normalized_artifacts():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("normalized", True),
@@ -112,6 +134,29 @@ def test_broker_readiness_accepts_required_runtime_session():
     assert summary["runtime_target_mode"] == "shadow"
     assert summary["runtime_strategy"] == "surface_mm"
     assert summary["runtime_market"] == "india_nse_index_derivatives"
+
+
+def test_broker_readiness_accepts_required_resume_gate():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        resume_summary=resume_summary("normalized", ready=True),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_resume_gate=True),
+    )
+
+    assert report.ready
+    resume_item = report.items.loc[report.items["component"] == "resume_gate"].iloc[0]
+    assert bool(resume_item["ready"])
+    assert resume_item["resume_strategy"] == "surface_mm"
+    assert resume_item["resume_proof_refresh_strategy"] == "surface_mm"
+    summary = report.summary.iloc[0]
+    assert bool(summary["resume_gate_provided"])
+    assert bool(summary["resume_gate_ready"])
+    assert bool(summary["resume_proof_refresh_ready"])
+    assert summary["resume_strategy"] == "surface_mm"
+    assert summary["resume_incident_market"] == "india_nse_index_derivatives"
+    assert summary["resume_proof_refresh_market"] == "india_nse_index_derivatives"
 
 
 def test_broker_readiness_blocks_halted_runtime_session():
@@ -174,29 +219,52 @@ def test_broker_readiness_fails_when_required_runtime_session_is_missing():
     assert "runtime_session_provided" in failed
 
 
+def test_broker_readiness_fails_when_required_resume_gate_is_missing():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_resume_gate=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "resume_gate_provided" in failed
+
+
 def test_write_broker_readiness_outputs_artifacts(tmp_path):
     schema_dir = tmp_path / "schema"
     export_dir = tmp_path / "export"
     upload_dir = tmp_path / "upload"
+    resume_dir = tmp_path / "resume"
     out_dir = tmp_path / "readiness"
     schema_dir.mkdir()
     export_dir.mkdir()
     upload_dir.mkdir()
+    resume_dir.mkdir()
     schema_summary("arrow_money", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
     order_export_summary("arrow_money", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary("arrow_money", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    resume_summary("arrow_money", True).to_csv(resume_dir / "resume_summary.csv", index=False)
 
     report = write_broker_readiness_report(
         output_dir=out_dir,
         schema_audit_dir=schema_dir,
         order_export_dir=export_dir,
         upload_pack_dir=upload_dir,
-        thresholds=BrokerReadinessThresholds(adapter="arrow_money", require_reviewed_schema=False),
+        resume_dir=resume_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_resume_gate=True,
+        ),
     )
 
     assert report.ready
     assert report.output_dir == out_dir
     assert report.summary.iloc[0]["recommendation"] == "dry_run_only_until_vendor_schema_review"
+    assert report.summary.iloc[0]["resume_strategy"] == "surface_mm"
+    assert bool(report.summary.iloc[0]["resume_gate_ready"])
     assert (out_dir / "broker_readiness_items.csv").exists()
     assert (out_dir / "broker_readiness_checks.csv").exists()
     assert (out_dir / "broker_readiness_summary.csv").exists()
@@ -272,3 +340,38 @@ def test_cli_broker_readiness_can_require_runtime_session(tmp_path):
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert "runtime_session_provided" in failed
+
+
+def test_cli_broker_readiness_can_require_resume_gate(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, upload_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--adapter",
+            "normalized",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--out",
+            str(out_dir),
+            "--require-resume-gate",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "resume_gate_provided" in failed
