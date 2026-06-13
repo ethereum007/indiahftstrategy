@@ -12,6 +12,19 @@ from reports.manifest import write_experiment_manifest
 
 
 DEFAULT_REQUIRED_RUN_TYPES = ("proof_report", "stress_report", "promotion_report")
+SURFACE_MM_REQUIRED_RUN_TYPES = ("surface_quality_report", "quote_risk_report", "surface_mm_research_pipeline")
+EVIDENCE_PROFILE_RUN_TYPES = {
+    "default": DEFAULT_REQUIRED_RUN_TYPES,
+    "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
+}
+
+
+def evidence_profile_run_types(profile: str | None = None) -> tuple[str, ...]:
+    key = _normalize_identity(profile or "default")
+    if key not in EVIDENCE_PROFILE_RUN_TYPES:
+        profiles = ", ".join(sorted(EVIDENCE_PROFILE_RUN_TYPES))
+        raise ValueError(f"unknown evidence profile {profile!r}; expected one of: {profiles}")
+    return EVIDENCE_PROFILE_RUN_TYPES[key]
 
 
 @dataclass(frozen=True)

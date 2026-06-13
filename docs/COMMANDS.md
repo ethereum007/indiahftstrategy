@@ -82,6 +82,26 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+For surface market-making research, use the named profile so surface-quality
+and quote-risk proof are both mandatory before scale-up review:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\surface_mm_shadow `
+  --profile surface_mm `
+  --require-same-strategy `
+  --expected-strategy surface_mm `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
+The `surface_mm` profile expands to `surface_quality_report`,
+`quote_risk_report`, and `surface_mm_research_pipeline`. Explicit
+`--required-run-type` flags still override the profile for custom launch
+reviews.
+
 Outputs:
 
 ```text
@@ -93,8 +113,9 @@ manifest.json
 
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
-shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
-cutover, route-enable, broker-dispatch, broker-dispatch-send,
+shadow-session, scale-up, surface-quality, quote-risk, quote-lifecycle,
+runtime guard, runtime-session, cutover, route-enable, broker-dispatch,
+broker-dispatch-send,
 broker-dispatch-ack, broker-dispatch-roundtrip, halt-response, and resume
 summaries, so those run types can be promoted into explicit
 `--required-run-type` evidence gates.

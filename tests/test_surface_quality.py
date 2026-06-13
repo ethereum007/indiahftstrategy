@@ -128,10 +128,14 @@ def test_write_surface_quality_report_outputs_artifacts_and_manifest(tmp_path):
 
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.passed
+    assert report.summary.iloc[0]["strategy"] == "surface_mm"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert (out_dir / "surface_quality_details.csv").exists()
     assert (out_dir / "surface_quality_summary.csv").exists()
     assert (out_dir / "surface_quality_checks.csv").exists()
     assert manifest["run_type"] == "surface_quality_report"
+    assert manifest["parameters"]["strategy"] == "surface_mm"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
 
 
 def test_unified_cli_review_surface_quality_dispatches(tmp_path):

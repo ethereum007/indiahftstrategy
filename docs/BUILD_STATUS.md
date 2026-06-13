@@ -109,6 +109,10 @@
   review, replay sweep proof, scenario selection, and promotion into one
   manifest-backed candidate run with an optional required market-portability
   preflight before quote generation.
+- Strategy evidence review now supports a `surface_mm` profile that requires
+  surface-quality, quote-risk, and surface market-making research pipeline
+  artifacts with shared strategy and market identity before shadow scale-up
+  review.
 - Surface market-making launch pipeline that consumes a promoted surface
   research pipeline and first verifies upstream research readiness plus
   strategy/market identity before running quote-risk-enforced lifecycle
@@ -382,7 +386,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 537 tests.
+Current passing suite: 540 tests.
 
 ## Next Build Targets
 

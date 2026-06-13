@@ -4,7 +4,9 @@ import pandas as pd
 
 from hft_cli import main
 from reports.evidence import (
+    EVIDENCE_PROFILE_RUN_TYPES,
     EvidenceThresholds,
+    evidence_profile_run_types,
     evaluate_strategy_evidence,
     write_strategy_evidence_review,
 )
@@ -43,6 +45,47 @@ def catalog_rows(*, dirty=False, commit="abc123", strategy="leadlag", market="in
                 "summary_file": "promotion_summary.csv",
                 "summary_candidate_scenario_key": f"strategy={strategy}|market={market}|trigger_ticks=2",
                 "parameters_json": json.dumps({"thresholds": {}}),
+            },
+        ]
+    )
+
+
+def surface_mm_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
+    parameters = json.dumps({"strategy": "surface_mm", "market": market})
+    return pd.DataFrame(
+        [
+            {
+                "run_dir": "runs/surface_quality",
+                "run_type": "surface_quality_report",
+                "generated_at_utc": "2026-06-10T09:30:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "surface_quality_summary.csv",
+                "summary_strategy": "surface_mm",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/quote_risk",
+                "run_type": "quote_risk_report",
+                "generated_at_utc": "2026-06-10T09:35:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "quote_risk_summary.csv",
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/surface_mm_pipeline",
+                "run_type": "surface_mm_research_pipeline",
+                "generated_at_utc": "2026-06-10T09:40:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "surface_mm_pipeline_summary.csv",
+                "summary_candidate_scenario_key": f"strategy=surface_mm|market={market}|edge_ticks=2.0",
+                "parameters_json": parameters,
             },
         ]
     )
@@ -213,6 +256,39 @@ def test_strategy_evidence_blocks_mixed_strategy_artifacts():
     assert int(review.summary.iloc[0]["strategy_count"]) == 2
 
 
+def test_surface_mm_evidence_profile_requires_surface_quality_and_identity():
+    review = evaluate_strategy_evidence(
+        surface_mm_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("surface-mm"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="surface_market_making",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["surface_mm"])
+    assert set(review.evidence["latest_strategy"]) == {"surface_mm"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["strategy"] == "surface_mm"
+
+
+def test_surface_mm_evidence_profile_fails_without_surface_quality():
+    catalog = surface_mm_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "surface_quality_report"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("surface_mm")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:surface_quality_report" in failed
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -256,6 +332,37 @@ def test_cli_strategy_evidence_can_fail_on_breach(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "failed_checks"]) == 1
+
+
+def test_cli_strategy_evidence_surface_mm_profile(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "surface_mm_evidence"
+    surface_mm_catalog_rows().to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "surface_mm",
+            "--require-same-strategy",
+            "--expected-strategy",
+            "surface_mm",
+            "--require-same-market",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    assert code == 0
+    assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["surface_mm"])
+    assert bool(summary.loc[0, "ready"])
 
 
 def test_cli_strategy_evidence_can_require_strategy_identity(tmp_path):

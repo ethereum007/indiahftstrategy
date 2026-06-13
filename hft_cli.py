@@ -30,7 +30,7 @@ from reports.data_readiness_comparison import (
     write_data_readiness_comparison,
 )
 from reports.data_readiness import DataReadinessThresholds, write_data_readiness_report
-from reports.evidence import EvidenceThresholds, write_strategy_evidence_review
+from reports.evidence import EvidenceThresholds, evidence_profile_run_types, write_strategy_evidence_review
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.halt_execution import HaltExecutionThresholds, write_halt_execution_report
@@ -780,6 +780,7 @@ def main(argv: list[str] | None = None) -> int:
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
     evidence.add_argument("--out", required=True)
+    evidence.add_argument("--profile", default=None)
     evidence.add_argument("--required-run-type", action="append", dest="required_run_types")
     evidence.add_argument("--min-passed-per-type", type=int, default=1)
     evidence.add_argument("--allow-dirty-git", action="store_true")
@@ -1354,6 +1355,7 @@ def main(argv: list[str] | None = None) -> int:
     surface_quality.add_argument("--horizon-ns", nargs="+", required=True, type=int)
     surface_quality.add_argument("--no-filter-session", action="store_true")
     surface_quality.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
+    surface_quality.add_argument("--strategy", default="surface_mm")
     surface_quality.add_argument("--min-observations", type=int, default=1)
     surface_quality.add_argument("--min-instruments", type=int, default=1)
     surface_quality.add_argument("--min-mae-improvement", type=float, default=0.0)
@@ -2369,13 +2371,14 @@ def main(argv: list[str] | None = None) -> int:
         print(result.summary.to_string(index=False))
         return 0
     if args.command == "review-strategy-evidence":
+        required_run_types = (
+            tuple(args.required_run_types) if args.required_run_types else evidence_profile_run_types(args.profile)
+        )
         result = write_strategy_evidence_review(
             args.catalog,
             output_dir=args.out,
             thresholds=EvidenceThresholds(
-                required_run_types=tuple(args.required_run_types)
-                if args.required_run_types
-                else EvidenceThresholds().required_run_types,
+                required_run_types=required_run_types,
                 min_passed_per_type=args.min_passed_per_type,
                 allow_dirty_git=args.allow_dirty_git,
                 require_same_git_commit=args.require_same_git_commit,
@@ -3081,6 +3084,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             filter_session=not args.no_filter_session,
             market=args.market,
+            strategy=args.strategy,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0

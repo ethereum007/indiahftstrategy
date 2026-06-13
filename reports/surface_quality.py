@@ -132,6 +132,7 @@ def write_surface_quality_report(
     timestamp_tz: str | None = None,
     filter_session: bool = True,
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
+    strategy: str = "surface_mm",
 ) -> SurfaceQualityReport:
     quotes_file = Path(quotes_path)
     chain_file = Path(chain_path)
@@ -150,10 +151,13 @@ def write_surface_quality_report(
     thresholds = thresholds or SurfaceQualityThresholds()
     horizons = [int(horizon) for horizon in horizons_ns]
     report = evaluate_surface_quality(quotes, chain, horizons_ns=horizons, thresholds=thresholds)
+    summary = report.summary.copy()
+    summary["strategy"] = strategy
+    summary["market"] = market
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.details.to_csv(out / "surface_quality_details.csv", index=False)
-    report.summary.to_csv(out / "surface_quality_summary.csv", index=False)
+    summary.to_csv(out / "surface_quality_summary.csv", index=False)
     report.checks.to_csv(out / "surface_quality_checks.csv", index=False)
     write_experiment_manifest(
         out,
@@ -165,10 +169,11 @@ def write_surface_quality_report(
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
             "market": market,
+            "strategy": strategy,
         },
         inputs={"quotes": quotes_file, "chain": chain_file},
     )
-    return SurfaceQualityReport(report.details, report.summary, report.checks, out)
+    return SurfaceQualityReport(report.details, summary, report.checks, out)
 
 
 def _quote_values(quotes: pd.DataFrame) -> pd.DataFrame:
