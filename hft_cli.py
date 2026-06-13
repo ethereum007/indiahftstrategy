@@ -573,6 +573,7 @@ def main(argv: list[str] | None = None) -> int:
     proof_refresh.add_argument("--calibrated-replay", default=None)
     proof_refresh.add_argument("--out", required=True)
     proof_refresh.add_argument("--strategy", default=None)
+    proof_refresh.add_argument("--market", default=None)
     proof_refresh.add_argument("--require-calibrated-replay", action="store_true")
     proof_refresh.add_argument("--fail-on-breach", action="store_true")
 
@@ -1986,6 +1987,7 @@ def main(argv: list[str] | None = None) -> int:
             thresholds=ProofRefreshThresholds(
                 require_calibrated_replay_when_drift_fails=args.require_calibrated_replay,
                 expected_strategy=args.strategy,
+                expected_market=args.market,
             ),
         )
         print(result.summary.to_string(index=False))

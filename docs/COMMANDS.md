@@ -1985,6 +1985,7 @@ python -m hft_cli review-proof-refresh `
   --latest-proof runs\proof\leadlag_shadow_calibrated `
   --calibrated-replay runs\calibrated_replay\leadlag_shadow_latest `
   --strategy leadlag `
+  --market india_nse_index_derivatives `
   --require-calibrated-replay `
   --out runs\proof_refresh\leadlag_shadow_latest `
   --fail-on-breach
@@ -1998,6 +1999,11 @@ proof_refresh_checks.csv
 proof_refresh_summary.csv
 manifest.json
 ```
+
+The gate records strategy/market identity from baseline proof, latest proof,
+and calibrated replay summaries. Mixed available strategy or market identities
+fail closed, and `--strategy`/`--market` enforce the expected target when those
+identities are present.
 
 ## Adapter Schema Audit
 

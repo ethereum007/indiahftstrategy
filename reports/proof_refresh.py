@@ -12,6 +12,7 @@ from reports.manifest import write_experiment_manifest
 class ProofRefreshThresholds:
     require_calibrated_replay_when_drift_fails: bool = False
     expected_strategy: str | None = None
+    expected_market: str | None = None
 
 
 @dataclass(frozen=True)
@@ -42,6 +43,14 @@ def evaluate_proof_refresh(
     calibrated_available = calibrated_replay_summary is not None and not calibrated_replay_summary.empty
     calibrated_ready = _frame_bool(calibrated_replay_summary, "ready") if calibrated_available else False
     calibrated_strategy = _frame_str(calibrated_replay_summary, "strategy") if calibrated_available else ""
+    identities = _input_identities(
+        baseline_proof_summary=baseline_proof_summary,
+        latest_proof_summary=latest_proof_summary if latest_available else None,
+        calibrated_replay_summary=calibrated_replay_summary if calibrated_available else None,
+    )
+    strategies = _identity_values(identities, "strategy", normalizer=_strategy_key)
+    markets = _identity_values(identities, "market", normalizer=_identity_key)
+    mixed_identity = bool((len(strategies) > 1) or (len(markets) > 1))
 
     checks = _checks(
         drift_passed=drift_passed,
@@ -51,6 +60,7 @@ def evaluate_proof_refresh(
         calibrated_available=calibrated_available,
         calibrated_ready=calibrated_ready,
         calibrated_strategy=calibrated_strategy,
+        identities=identities,
         thresholds=thresholds,
     )
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
@@ -62,6 +72,9 @@ def evaluate_proof_refresh(
             {
                 "action": recommendation,
                 "proof_source": proof_source,
+                "strategy": _single_identity(strategies),
+                "market": _single_identity(markets),
+                "mixed_identity": mixed_identity,
                 "fresh_proof_required": not drift_passed,
                 "reason": _reason(ready, drift_passed, latest_available, latest_passed, calibrated_ready),
             }
@@ -81,7 +94,19 @@ def evaluate_proof_refresh(
                 and thresholds.require_calibrated_replay_when_drift_fails,
                 "calibrated_replay_available": calibrated_available,
                 "calibrated_replay_ready": calibrated_ready,
-                "strategy": calibrated_strategy,
+                "strategy": _single_identity(strategies),
+                "strategy_count": int(len(strategies)),
+                "missing_strategy_sources": _missing_identity_count(identities, "strategy"),
+                "expected_strategy": _strategy_key(thresholds.expected_strategy)
+                if thresholds.expected_strategy is not None
+                else "",
+                "market": _single_identity(markets),
+                "market_count": int(len(markets)),
+                "missing_market_sources": _missing_identity_count(identities, "market"),
+                "expected_market": _identity_key(thresholds.expected_market)
+                if thresholds.expected_market is not None
+                else "",
+                "mixed_identity": mixed_identity,
                 "failed_checks": failed_checks,
                 "recommendation": recommendation,
             }
@@ -139,75 +164,124 @@ def _checks(
     calibrated_available: bool,
     calibrated_ready: bool,
     calibrated_strategy: str,
+    identities: pd.DataFrame,
     thresholds: ProofRefreshThresholds,
 ) -> pd.DataFrame:
     if drift_passed:
-        return pd.DataFrame(
-            [
+        checks = [
+            _check(
+                "reusable_proof_passed",
+                baseline_passed or latest_passed,
+                "is",
+                True,
+                baseline_passed or latest_passed,
+                "neither baseline nor latest proof passed under reusable fill-model assumptions",
+            )
+        ]
+    else:
+        checks = [
+            _check(
+                "latest_proof_available",
+                latest_available,
+                "is",
+                True,
+                latest_available,
+                "fill-model drift failed, so a fresh/latest proof report is required",
+            ),
+            _check(
+                "latest_proof_passed",
+                latest_passed,
+                "is",
+                True,
+                latest_passed,
+                "latest proof report did not pass",
+            ),
+        ]
+        if thresholds.require_calibrated_replay_when_drift_fails:
+            checks.extend(
+                [
+                    _check(
+                        "calibrated_replay_available",
+                        calibrated_available,
+                        "is",
+                        True,
+                        calibrated_available,
+                        "fill-model drift failed, so a calibrated replay plan is required",
+                    ),
+                    _check(
+                        "calibrated_replay_ready",
+                        calibrated_ready,
+                        "is",
+                        True,
+                        calibrated_ready,
+                        "calibrated replay plan is not ready",
+                    ),
+                ]
+            )
+        if thresholds.expected_strategy is not None:
+            expected = _strategy_key(thresholds.expected_strategy)
+            actual = _strategy_key(calibrated_strategy) if calibrated_strategy else ""
+            checks.append(
                 _check(
-                    "reusable_proof_passed",
-                    baseline_passed or latest_passed,
-                    "is",
-                    True,
-                    baseline_passed or latest_passed,
-                    "neither baseline nor latest proof passed under reusable fill-model assumptions",
+                    "calibrated_replay_strategy_matches",
+                    actual,
+                    "==",
+                    expected,
+                    bool(actual) and actual == expected,
+                    "calibrated replay plan strategy does not match expected strategy",
                 )
-            ]
-        )
+            )
 
-    checks = [
+    checks.extend(_identity_checks(identities, thresholds))
+    return pd.DataFrame(checks)
+
+
+def _identity_checks(identities: pd.DataFrame, thresholds: ProofRefreshThresholds) -> list[dict[str, object]]:
+    strategies = _identity_values(identities, "strategy", normalizer=_strategy_key)
+    markets = _identity_values(identities, "market", normalizer=_identity_key)
+    rows = [
         _check(
-            "latest_proof_available",
-            latest_available,
-            "is",
-            True,
-            latest_available,
-            "fill-model drift failed, so a fresh/latest proof report is required",
+            "same_strategy",
+            ";".join(sorted(strategies)) if strategies else "",
+            "count<=",
+            1,
+            len(strategies) <= 1,
+            "proof refresh inputs mix strategy identities",
         ),
         _check(
-            "latest_proof_passed",
-            latest_passed,
-            "is",
-            True,
-            latest_passed,
-            "latest proof report did not pass",
+            "same_market",
+            ";".join(sorted(markets)) if markets else "",
+            "count<=",
+            1,
+            len(markets) <= 1,
+            "proof refresh inputs mix market identities",
         ),
     ]
-    if thresholds.require_calibrated_replay_when_drift_fails:
-        checks.extend(
-            [
-                _check(
-                    "calibrated_replay_available",
-                    calibrated_available,
-                    "is",
-                    True,
-                    calibrated_available,
-                    "fill-model drift failed, so a calibrated replay plan is required",
-                ),
-                _check(
-                    "calibrated_replay_ready",
-                    calibrated_ready,
-                    "is",
-                    True,
-                    calibrated_ready,
-                    "calibrated replay plan is not ready",
-                ),
-            ]
-        )
     if thresholds.expected_strategy is not None:
         expected = _strategy_key(thresholds.expected_strategy)
-        actual = _strategy_key(calibrated_strategy) if calibrated_strategy else ""
-        checks.append(
+        rows.append(
             _check(
-                "calibrated_replay_strategy_matches",
-                actual,
+                "expected_strategy",
+                ";".join(sorted(strategies)) if strategies else "",
                 "==",
                 expected,
-                bool(actual) and actual == expected,
-                "calibrated replay plan strategy does not match expected strategy",
+                not strategies or strategies == {expected},
+                "available proof refresh strategies do not match expected strategy",
             )
         )
-    return pd.DataFrame(checks)
+    if thresholds.expected_market is not None:
+        expected = _identity_key(thresholds.expected_market)
+        rows.append(
+            _check(
+                "expected_market",
+                ";".join(sorted(markets)) if markets else "",
+                "==",
+                expected,
+                not markets or markets == {expected},
+                "available proof refresh markets do not match expected market",
+            )
+        )
+    return rows
 
 
 def _proof_source(drift_passed: bool, baseline_passed: bool, latest_passed: bool, ready: bool) -> str:
@@ -294,8 +368,84 @@ def _frame_str(frame: pd.DataFrame | None, column: str) -> str:
     return str(value)
 
 
-def _strategy_key(strategy: str) -> str:
-    return strategy.strip().lower().replace("-", "_")
+def _input_identities(
+    *,
+    baseline_proof_summary: pd.DataFrame,
+    latest_proof_summary: pd.DataFrame | None,
+    calibrated_replay_summary: pd.DataFrame | None,
+) -> pd.DataFrame:
+    rows = [
+        _identity_row("baseline_proof", baseline_proof_summary),
+    ]
+    if latest_proof_summary is not None and not latest_proof_summary.empty:
+        rows.append(_identity_row("latest_proof", latest_proof_summary))
+    if calibrated_replay_summary is not None and not calibrated_replay_summary.empty:
+        rows.append(_identity_row("calibrated_replay", calibrated_replay_summary))
+    return pd.DataFrame(rows)
+
+
+def _identity_row(source: str, frame: pd.DataFrame) -> dict[str, str]:
+    row = frame.iloc[0] if frame is not None and not frame.empty else pd.Series(dtype=object)
+    return {
+        "source": source,
+        "strategy": _strategy_key(_first_identity(row, ("strategy", "strategy_name", "strategy_id"))),
+        "market": _identity_key(_first_identity(row, ("market", "market_profile", "market_name", "market_id"))),
+    }
+
+
+def _identity_values(frame: pd.DataFrame, column: str, *, normalizer) -> set[str]:
+    if frame.empty or column not in frame.columns:
+        return set()
+    return {value for value in frame[column].map(normalizer) if value}
+
+
+def _missing_identity_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty:
+        return 0
+    if column not in frame.columns:
+        return int(len(frame))
+    return int((frame[column].map(_identity_key) == "").sum())
+
+
+def _single_identity(values: set[str]) -> str:
+    return next(iter(values)) if len(values) == 1 else ""
+
+
+def _first_identity(row: pd.Series, keys: tuple[str, ...]) -> str:
+    for key in keys:
+        value = _text(row, key)
+        if value:
+            return value
+    return ""
+
+
+def _text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row or pd.isna(row[column]):
+        return ""
+    return str(row[column]).strip()
+
+
+def _strategy_key(strategy: object) -> str:
+    key = _identity_key(strategy)
+    aliases = {
+        "lead_lag": "leadlag",
+        "lead_lag_taker": "leadlag",
+        "leadlag_taker": "leadlag",
+        "leadlag_replay": "leadlag",
+        "microprice": "imbalance",
+        "microprice_imbalance": "imbalance",
+        "order_book_imbalance": "imbalance",
+        "obi": "imbalance",
+        "surface": "surface_mm",
+        "surface_market_making": "surface_mm",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _check(

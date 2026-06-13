@@ -23,7 +23,7 @@ def write_drift(path, *, passed):
     )
 
 
-def write_proof(path, *, passed):
+def write_proof(path, *, passed, strategy="leadlag", market="india_nse_index_derivatives"):
     write_summary(
         path,
         "proof_summary.csv",
@@ -32,6 +32,10 @@ def write_proof(path, *, passed):
             "passed_runs": 1 if passed else 0,
             "failed_runs": 0 if passed else 1,
             "all_passed": passed,
+            "strategy": strategy,
+            "strategy_count": 1 if strategy else 0,
+            "market": market,
+            "market_count": 1 if market else 0,
             "total_net_pnl": 10.0 if passed else -1.0,
             "total_fills": 10,
         },
@@ -121,6 +125,66 @@ def test_proof_refresh_accepts_latest_calibrated_proof_when_drift_fails(tmp_path
     assert report.summary.iloc[0]["recommendation"] == "use_latest_calibrated_proof"
 
 
+def test_proof_refresh_blocks_mixed_strategy_and_market_identities(tmp_path):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    latest = tmp_path / "latest_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=True)
+    write_proof(
+        baseline,
+        passed=True,
+        strategy="leadlag",
+        market="india_nse_index_derivatives",
+    )
+    write_proof(
+        latest,
+        passed=True,
+        strategy="surface_mm",
+        market="us_options_regular",
+    )
+
+    report = write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        latest_proof_path=latest,
+        output_dir=out_dir,
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"same_strategy", "same_market"} <= failed
+    assert bool(report.summary.iloc[0]["mixed_identity"])
+    assert report.summary.iloc[0]["strategy_count"] == 2
+    assert report.summary.iloc[0]["market_count"] == 2
+    assert report.summary.iloc[0]["proof_source"] == "none"
+
+
+def test_proof_refresh_blocks_wrong_expected_market(tmp_path):
+    drift = tmp_path / "drift"
+    baseline = tmp_path / "baseline_proof"
+    out_dir = tmp_path / "refresh"
+    write_drift(drift, passed=True)
+    write_proof(
+        baseline,
+        passed=True,
+        strategy="leadlag",
+        market="us_options_regular",
+    )
+
+    report = write_proof_refresh_report(
+        drift_path=drift,
+        baseline_proof_path=baseline,
+        output_dir=out_dir,
+        thresholds=ProofRefreshThresholds(expected_market="india_nse_index_derivatives"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "expected_market" in failed
+    assert report.summary.iloc[0]["expected_market"] == "india_nse_index_derivatives"
+
+
 def test_cli_proof_refresh_fails_on_unready_calibrated_replay(tmp_path):
     drift = tmp_path / "drift"
     baseline = tmp_path / "baseline_proof"
@@ -147,6 +211,8 @@ def test_cli_proof_refresh_fails_on_unready_calibrated_replay(tmp_path):
             str(out_dir),
             "--strategy",
             "leadlag",
+            "--market",
+            "india_nse_index_derivatives",
             "--require-calibrated-replay",
             "--fail-on-breach",
         ]
