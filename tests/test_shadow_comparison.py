@@ -31,6 +31,13 @@ def session_rows():
                 "runtime_target_mode": "shadow",
                 "runtime_strategy": "lead_lag_taker",
                 "runtime_market": "india_nse_index_derivatives",
+                "runtime_proof_refresh_required": True,
+                "runtime_proof_refresh_provided": True,
+                "runtime_proof_refresh_ready": True,
+                "runtime_proof_refresh_strategy": "lead_lag_taker",
+                "runtime_proof_refresh_market": "india_nse_index_derivatives",
+                "runtime_proof_refresh_mixed_identity": False,
+                "runtime_proof_source": "latest",
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.03,
                 "avg_latency_ns": 100,
@@ -55,6 +62,13 @@ def session_rows():
                 "runtime_target_mode": "shadow",
                 "runtime_strategy": "lead_lag_taker",
                 "runtime_market": "india_nse_index_derivatives",
+                "runtime_proof_refresh_required": True,
+                "runtime_proof_refresh_provided": True,
+                "runtime_proof_refresh_ready": True,
+                "runtime_proof_refresh_strategy": "lead_lag_taker",
+                "runtime_proof_refresh_market": "india_nse_index_derivatives",
+                "runtime_proof_refresh_mixed_identity": False,
+                "runtime_proof_source": "latest",
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 120,
@@ -72,6 +86,11 @@ def write_session_dir(
     runtime_halted=False,
     runtime_strategy="lead_lag_taker",
     runtime_market="india_nse_index_derivatives",
+    proof_refresh_required=True,
+    proof_refresh_ready=True,
+    proof_refresh_strategy="lead_lag_taker",
+    proof_refresh_market="india_nse_index_derivatives",
+    proof_refresh_mixed_identity=False,
 ):
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
@@ -88,6 +107,13 @@ def write_session_dir(
                 "runtime_target_mode": "shadow",
                 "runtime_strategy": runtime_strategy,
                 "runtime_market": runtime_market,
+                "runtime_proof_refresh_required": proof_refresh_required,
+                "runtime_proof_refresh_provided": proof_refresh_required,
+                "runtime_proof_refresh_ready": proof_refresh_ready,
+                "runtime_proof_refresh_strategy": proof_refresh_strategy,
+                "runtime_proof_refresh_market": proof_refresh_market,
+                "runtime_proof_refresh_mixed_identity": proof_refresh_mixed_identity,
+                "runtime_proof_source": "latest" if proof_refresh_required else "",
                 "recommendation": "continue_shadow_or_promote" if accepted else "hold_in_research",
             }
         ]
@@ -111,6 +137,13 @@ def write_session_dir(
                 "runtime_target_mode": "shadow",
                 "runtime_strategy": runtime_strategy,
                 "runtime_market": runtime_market,
+                "runtime_proof_refresh_required": proof_refresh_required,
+                "runtime_proof_refresh_provided": proof_refresh_required,
+                "runtime_proof_refresh_ready": proof_refresh_ready,
+                "runtime_proof_refresh_strategy": proof_refresh_strategy,
+                "runtime_proof_refresh_market": proof_refresh_market,
+                "runtime_proof_refresh_mixed_identity": proof_refresh_mixed_identity,
+                "runtime_proof_source": "latest" if proof_refresh_required else "",
                 "runtime_failed_checks": 1 if runtime_halted else 0,
                 "order_fill_rate": fill_rate,
                 "max_adverse_slippage": 0.04,
@@ -140,6 +173,9 @@ def test_compare_shadow_sessions_accepts_consistent_sessions():
     assert report.summary.iloc[0]["runtime_sessions_provided"] == 2
     assert report.summary.iloc[0]["accepted_runtime_sessions"] == 2
     assert report.summary.iloc[0]["runtime_halted_sessions"] == 0
+    assert report.summary.iloc[0]["runtime_proof_refresh_sessions"] == 2
+    assert report.summary.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["recommendation"] == "eligible_for_controlled_paper_scaleup"
 
 
@@ -169,6 +205,49 @@ def test_compare_shadow_sessions_blocks_mixed_runtime_identity():
     assert {"same_runtime_strategy", "same_runtime_market"} <= failed
     assert int(report.summary.iloc[0]["strategy_count"]) == 2
     assert int(report.summary.iloc[0]["market_count"]) == 2
+
+
+def test_compare_shadow_sessions_blocks_bad_runtime_proof_refresh_evidence():
+    rows = session_rows()
+    rows.loc[1, "runtime_proof_refresh_ready"] = False
+    rows.loc[1, "runtime_proof_refresh_strategy"] = "surface_mm"
+    rows.loc[1, "runtime_proof_refresh_market"] = "us_options_regular"
+    rows.loc[1, "runtime_proof_refresh_mixed_identity"] = True
+
+    report = compare_shadow_sessions(rows)
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {
+        "runtime_proof_refresh_ready",
+        "runtime_proof_refresh_identity_consistent",
+        "same_runtime_proof_refresh_strategy",
+        "same_runtime_proof_refresh_market",
+    } <= failed
+    assert int(report.summary.iloc[0]["runtime_proof_refresh_ready_sessions"]) == 1
+    assert int(report.summary.iloc[0]["proof_refresh_strategy_count"]) == 2
+
+
+def test_write_shadow_session_comparison_carries_runtime_proof_refresh_evidence(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    write_session_dir(day1, fill_rate=1.0)
+    write_session_dir(day2, fill_rate=0.9)
+
+    report = write_shadow_session_comparison(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["2026-06-10", "2026-06-11"],
+        thresholds=ShadowComparisonThresholds(min_sessions=2, min_median_order_fill_rate=0.9),
+    )
+
+    runs = pd.read_csv(out_dir / "shadow_session_runs.csv")
+    summary = pd.read_csv(out_dir / "shadow_session_comparison_summary.csv")
+    assert report.accepted
+    assert "runtime_proof_refresh_strategy" in runs.columns
+    assert summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
+    assert int(summary.loc[0, "runtime_proof_refresh_sessions"]) == 2
 
 
 def test_write_shadow_session_comparison_outputs_artifacts(tmp_path):

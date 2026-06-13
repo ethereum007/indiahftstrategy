@@ -63,7 +63,23 @@ def compare_shadow_sessions(
         if column not in runs.columns:
             runs[column] = False
         runs[column] = runs[column].map(_to_bool)
-    for column in ("runtime_target_mode", "runtime_strategy", "runtime_market"):
+    for column in (
+        "runtime_proof_refresh_required",
+        "runtime_proof_refresh_provided",
+        "runtime_proof_refresh_ready",
+        "runtime_proof_refresh_mixed_identity",
+    ):
+        if column not in runs.columns:
+            runs[column] = False
+        runs[column] = runs[column].map(_to_bool)
+    for column in (
+        "runtime_target_mode",
+        "runtime_strategy",
+        "runtime_market",
+        "runtime_proof_refresh_strategy",
+        "runtime_proof_refresh_market",
+        "runtime_proof_source",
+    ):
         if column not in runs.columns:
             runs[column] = ""
         runs[column] = runs[column].fillna("").astype(str)
@@ -139,6 +155,42 @@ def _read_sessions(session_dirs: list[str | Path], *, labels: list[str] | None) 
             "runtime_market": _identity_key(
                 summary.get("runtime_market", summary.get("market", metrics.get("runtime_market", metrics.get("market", ""))))
             ),
+            "runtime_proof_refresh_required": _to_bool(
+                summary.get(
+                    "runtime_proof_refresh_required",
+                    metrics.get("runtime_proof_refresh_required", False),
+                )
+            ),
+            "runtime_proof_refresh_provided": _to_bool(
+                summary.get(
+                    "runtime_proof_refresh_provided",
+                    metrics.get("runtime_proof_refresh_provided", False),
+                )
+            ),
+            "runtime_proof_refresh_ready": _to_bool(
+                summary.get("runtime_proof_refresh_ready", metrics.get("runtime_proof_refresh_ready", False))
+            ),
+            "runtime_proof_refresh_strategy": _strategy_key(
+                summary.get(
+                    "runtime_proof_refresh_strategy",
+                    metrics.get("runtime_proof_refresh_strategy", ""),
+                )
+            ),
+            "runtime_proof_refresh_market": _identity_key(
+                summary.get(
+                    "runtime_proof_refresh_market",
+                    metrics.get("runtime_proof_refresh_market", ""),
+                )
+            ),
+            "runtime_proof_refresh_mixed_identity": _to_bool(
+                summary.get(
+                    "runtime_proof_refresh_mixed_identity",
+                    metrics.get("runtime_proof_refresh_mixed_identity", False),
+                )
+            ),
+            "runtime_proof_source": str(
+                summary.get("runtime_proof_source", metrics.get("runtime_proof_source", ""))
+            ),
             "runtime_failed_checks": _number(metrics, "runtime_failed_checks", fallback=0.0),
             "max_adverse_slippage": _number(metrics, "max_adverse_slippage"),
             "avg_latency_ns": _number(metrics, "avg_latency_ns"),
@@ -156,8 +208,26 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
         if session_count
         else pd.DataFrame()
     )
+    proof_refresh_runs = (
+        runtime_runs.loc[
+            runtime_runs["runtime_proof_refresh_required"].astype(bool)
+            | runtime_runs["runtime_proof_refresh_provided"].astype(bool)
+        ]
+        if not runtime_runs.empty
+        else pd.DataFrame()
+    )
     runtime_strategies = _identity_values(runtime_runs, "runtime_strategy", normalizer=_strategy_key)
     runtime_markets = _identity_values(runtime_runs, "runtime_market", normalizer=_identity_key)
+    proof_refresh_strategies = _identity_values(
+        proof_refresh_runs,
+        "runtime_proof_refresh_strategy",
+        normalizer=_strategy_key,
+    )
+    proof_refresh_markets = _identity_values(
+        proof_refresh_runs,
+        "runtime_proof_refresh_market",
+        normalizer=_identity_key,
+    )
     fill_rates = pd.to_numeric(runs["order_fill_rate"], errors="coerce")
     slippage = pd.to_numeric(runs["max_adverse_slippage"], errors="coerce")
     return pd.DataFrame(
@@ -191,6 +261,43 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "runtime_sessions_provided": int(runs["runtime_session_provided"].sum()),
                 "accepted_runtime_sessions": int(len(runtime_runs)),
                 "runtime_halted_sessions": int(runs["runtime_guard_halted"].sum()),
+                "runtime_proof_refresh_sessions": int(len(proof_refresh_runs)),
+                "runtime_proof_refresh_required_sessions": int(
+                    proof_refresh_runs["runtime_proof_refresh_required"].sum()
+                )
+                if not proof_refresh_runs.empty
+                else 0,
+                "runtime_proof_refresh_provided_sessions": int(
+                    proof_refresh_runs["runtime_proof_refresh_provided"].sum()
+                )
+                if not proof_refresh_runs.empty
+                else 0,
+                "runtime_proof_refresh_ready_sessions": int(
+                    proof_refresh_runs["runtime_proof_refresh_ready"].sum()
+                )
+                if not proof_refresh_runs.empty
+                else 0,
+                "runtime_proof_refresh_mixed_identity_sessions": int(
+                    proof_refresh_runs["runtime_proof_refresh_mixed_identity"].sum()
+                )
+                if not proof_refresh_runs.empty
+                else 0,
+                "proof_refresh_strategy": next(iter(proof_refresh_strategies))
+                if len(proof_refresh_strategies) == 1
+                else "",
+                "proof_refresh_strategy_count": int(len(proof_refresh_strategies)),
+                "missing_proof_refresh_strategy_sessions": _missing_identity_count(
+                    proof_refresh_runs,
+                    "runtime_proof_refresh_strategy",
+                ),
+                "proof_refresh_market": next(iter(proof_refresh_markets))
+                if len(proof_refresh_markets) == 1
+                else "",
+                "proof_refresh_market_count": int(len(proof_refresh_markets)),
+                "missing_proof_refresh_market_sessions": _missing_identity_count(
+                    proof_refresh_runs,
+                    "runtime_proof_refresh_market",
+                ),
                 "total_runtime_failed_checks": int(
                     pd.to_numeric(runs["runtime_failed_checks"], errors="coerce").sum(skipna=True)
                 ),
@@ -267,6 +374,55 @@ def _checks(row: pd.Series, thresholds: ShadowComparisonThresholds) -> pd.DataFr
             thresholds.max_runtime_halted_sessions,
         ),
     ]
+    proof_refresh_sessions = int(row["runtime_proof_refresh_sessions"])
+    if proof_refresh_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "runtime_proof_refresh_provided",
+                    row["runtime_proof_refresh_provided_sessions"],
+                    ">=",
+                    row["runtime_proof_refresh_required_sessions"],
+                    int(row["runtime_proof_refresh_provided_sessions"])
+                    >= int(row["runtime_proof_refresh_required_sessions"]),
+                    "accepted runtime sessions require proof refresh but some did not provide it",
+                ),
+                _check(
+                    "runtime_proof_refresh_ready",
+                    row["runtime_proof_refresh_ready_sessions"],
+                    "==",
+                    proof_refresh_sessions,
+                    int(row["runtime_proof_refresh_ready_sessions"]) == proof_refresh_sessions,
+                    "accepted runtime proof-refresh evidence is not ready for every session",
+                ),
+                _check(
+                    "runtime_proof_refresh_identity_consistent",
+                    row["runtime_proof_refresh_mixed_identity_sessions"],
+                    "==",
+                    0,
+                    int(row["runtime_proof_refresh_mixed_identity_sessions"]) == 0,
+                    "accepted runtime proof-refresh evidence reported mixed identity",
+                ),
+                _check(
+                    "same_runtime_proof_refresh_strategy",
+                    row["proof_refresh_strategy_count"],
+                    "==",
+                    1,
+                    int(row["proof_refresh_strategy_count"]) == 1
+                    and int(row["missing_proof_refresh_strategy_sessions"]) == 0,
+                    "runtime proof-refresh strategy identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_runtime_proof_refresh_market",
+                    row["proof_refresh_market_count"],
+                    "==",
+                    1,
+                    int(row["proof_refresh_market_count"]) == 1
+                    and int(row["missing_proof_refresh_market_sessions"]) == 0,
+                    "runtime proof-refresh market identity is missing or mixed across shadow sessions",
+                ),
+            ]
+        )
     if thresholds.min_worst_order_fill_rate is not None:
         checks.append(
             _threshold_check("worst_order_fill_rate", row["worst_order_fill_rate"], ">=", thresholds.min_worst_order_fill_rate)

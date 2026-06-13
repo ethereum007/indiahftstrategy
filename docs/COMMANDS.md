@@ -1511,7 +1511,9 @@ manifest.json
 When runtime-session evidence is present, the comparison gate fails closed if
 accepted sessions mix runtime strategy or market identities. The comparison
 summary exposes `strategy`, `market`, and missing/mixed identity counts for the
-experiment catalog and strategy-evidence review.
+experiment catalog and strategy-evidence review. Accepted sessions with runtime
+proof-refresh evidence must also have ready, non-mixed proof-refresh identity
+for the same strategy/market across the comparison set.
 
 ## Controlled Scale-Up Plan
 

@@ -196,8 +196,8 @@
   proof-refresh state.
 - Multi-session shadow comparison gate for requiring repeated accepted
   paper/shadow sessions with consistent scenario keys, fill rates, slippage,
-  runtime strategy/market identity, mismatch, reconciliation quality, and zero
-  halted runtime monitors before scale-up.
+  runtime strategy/market and proof-refresh identity, mismatch, reconciliation
+  quality, and zero halted runtime monitors before scale-up.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -320,7 +320,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 414 tests.
+Current passing suite: 416 tests.
 
 ## Next Build Targets
 
