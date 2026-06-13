@@ -15,6 +15,7 @@ from reports.manifest import write_experiment_manifest
 class StrategyPortabilitySpec:
     strategy: str
     family: str
+    evidence_profile: str
     data_requirements: tuple[str, ...]
     workflow_commands: tuple[str, ...]
     portable_market_types: tuple[str, ...]
@@ -49,6 +50,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
     "microprice_imbalance": StrategyPortabilitySpec(
         strategy="microprice_imbalance",
         family="single_instrument_tob",
+        evidence_profile="imbalance",
         data_requirements=("top_of_book_ticks", "forward_mid_labels", "explicit_fees"),
         workflow_commands=(
             "walkforward-imbalance-edge",
@@ -64,6 +66,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
     "lead_lag_taker": StrategyPortabilitySpec(
         strategy="lead_lag_taker",
         family="cross_instrument_latency",
+        evidence_profile="leadlag",
         data_requirements=("paired_top_of_book_ticks", "lead_lag_measurement", "explicit_fees"),
         workflow_commands=(
             "measure-leadlag",
@@ -79,6 +82,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
     "parity_box": StrategyPortabilitySpec(
         strategy="parity_box",
         family="options_relative_value",
+        evidence_profile="parity",
         data_requirements=("option_chain_snapshots", "futures_or_forward", "explicit_fees"),
         workflow_commands=(
             "scan-parity-box",
@@ -95,6 +99,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
     "surface_market_making": StrategyPortabilitySpec(
         strategy="surface_market_making",
         family="options_liquidity_provision",
+        evidence_profile="surface_mm",
         data_requirements=("option_chain_snapshots", "futures_or_forward", "vol_surface", "explicit_fees"),
         workflow_commands=(
             "quote-surface",
@@ -110,6 +115,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
     "settlement_convergence": StrategyPortabilitySpec(
         strategy="settlement_convergence",
         family="expiry_settlement_microstructure",
+        evidence_profile="settlement",
         data_requirements=("index_ticks", "expiring_option_chain", "india_settlement_window"),
         workflow_commands=(
             "audit-settlement-convergence",
@@ -123,6 +129,18 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
         notes="India-specific running-average settlement workflow; US requires a separate settlement model",
     ),
 }
+
+_PAIR_COLUMNS = (
+    "market",
+    "strategy",
+    "status",
+    "blocker",
+    "next_gate",
+    "strategy_evidence_profile",
+    "strategy_evidence_gate",
+    "ops_evidence_profile",
+    "ops_evidence_gate",
+)
 
 
 def build_market_portability_report(
@@ -201,6 +219,10 @@ def _matrix_row(
     return {
         "strategy": spec.strategy,
         "family": spec.family,
+        "strategy_evidence_profile": spec.evidence_profile,
+        "strategy_evidence_gate": f"review-strategy-evidence --profile {spec.evidence_profile}",
+        "ops_evidence_profile": "ops_launch",
+        "ops_evidence_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
         "market": profile.name,
         "country": profile.country,
         "currency": profile.currency,
@@ -220,9 +242,9 @@ def _matrix_row(
 
 def _gaps(matrix: pd.DataFrame) -> pd.DataFrame:
     if matrix.empty:
-        return pd.DataFrame(columns=["market", "strategy", "status", "blocker", "next_gate"])
+        return pd.DataFrame(columns=_PAIR_COLUMNS)
     gaps = matrix.loc[matrix["status"].isin(["blocked", "needs_fee_model"])].copy()
-    return gaps[["market", "strategy", "status", "blocker", "next_gate"]].reset_index(drop=True)
+    return gaps[[column for column in _PAIR_COLUMNS if column in gaps.columns]].reset_index(drop=True)
 
 
 def _summary(matrix: pd.DataFrame, gaps: pd.DataFrame) -> pd.DataFrame:
@@ -289,11 +311,7 @@ def _config(
 def _pair_records(frame: pd.DataFrame) -> list[dict[str, object]]:
     if frame.empty:
         return []
-    columns = [
-        column
-        for column in ("market", "strategy", "status", "blocker", "next_gate")
-        if column in frame.columns
-    ]
+    columns = [column for column in _PAIR_COLUMNS if column in frame.columns]
     return [_jsonable_row(row) for row in frame[columns].to_dict(orient="records")]
 
 

@@ -297,8 +297,9 @@ manifest.json
 US rows are marked `needs_fee_model` unless explicit fees are acknowledged.
 India-specific settlement convergence remains blocked for US profiles until a
 separate US settlement/microstructure model is implemented. The config JSON
-records ready strategy/market pairs, gap pairs, and next gates for downstream
-US research planning.
+records ready strategy/market pairs, gap pairs, next gates, the matching
+strategy-evidence profile command, and the file-provenance-gated `ops_launch`
+review command for downstream US research planning.
 
 ## Instrument Metadata Report
 

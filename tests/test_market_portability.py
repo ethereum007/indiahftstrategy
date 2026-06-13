@@ -26,6 +26,12 @@ def test_market_portability_report_gates_us_research_on_explicit_fees():
     assert "pipeline-imbalance-launch" in rows.loc[
         ("microprice_imbalance", "india_nse_index_derivatives"), "workflow_commands"
     ]
+    assert rows.loc[
+        ("microprice_imbalance", "india_nse_index_derivatives"), "strategy_evidence_profile"
+    ] == "imbalance"
+    assert rows.loc[
+        ("microprice_imbalance", "india_nse_index_derivatives"), "ops_evidence_profile"
+    ] == "ops_launch"
     assert rows.loc[("microprice_imbalance", "us_equities_regular"), "status"] == "needs_fee_model"
     assert rows.loc[("settlement_convergence", "us_options_regular"), "status"] == "blocked"
     assert (
@@ -44,7 +50,17 @@ def test_market_portability_config_records_ready_gap_and_next_gate_pairs():
     )
 
     assert report.config["ready"]
-    assert {"market", "strategy", "status", "blocker", "next_gate"} <= set(report.config["gap_pairs"][0])
+    assert {
+        "market",
+        "strategy",
+        "status",
+        "blocker",
+        "next_gate",
+        "strategy_evidence_profile",
+        "strategy_evidence_gate",
+        "ops_evidence_profile",
+        "ops_evidence_gate",
+    } <= set(report.config["gap_pairs"][0])
     assert report.config["ready_pairs"] == [
         {
             "market": "india_nse_index_derivatives",
@@ -52,6 +68,10 @@ def test_market_portability_config_records_ready_gap_and_next_gate_pairs():
             "status": "india_ready",
             "blocker": "",
             "next_gate": "run_walkforward_and_paper_shadow_gates",
+            "strategy_evidence_profile": "imbalance",
+            "strategy_evidence_gate": "review-strategy-evidence --profile imbalance",
+            "ops_evidence_profile": "ops_launch",
+            "ops_evidence_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
         }
     ]
     assert "run_market_profile_report_with_fee_assumptions" in report.config["next_gates"]
@@ -105,6 +125,10 @@ def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):
             "status": "portable_research",
             "blocker": "",
             "next_gate": "run_walkforward_and_paper_shadow_gates",
+            "strategy_evidence_profile": "leadlag",
+            "strategy_evidence_gate": "review-strategy-evidence --profile leadlag",
+            "ops_evidence_profile": "ops_launch",
+            "ops_evidence_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
         }
     ]
     assert "plan-leadlag-orders" in report.matrix.loc[0, "workflow_commands"]
@@ -133,5 +157,7 @@ def test_cli_market_portability_report_writes_selected_strategy(tmp_path):
     assert code == 0
     assert matrix.loc[0, "strategy"] == "surface_market_making"
     assert matrix.loc[0, "status"] == "portable_research"
+    assert matrix.loc[0, "strategy_evidence_gate"] == "review-strategy-evidence --profile surface_mm"
+    assert matrix.loc[0, "ops_evidence_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
     assert bool(summary.loc[0, "ready"])
     assert (out_dir / "market_portability_config.json").exists()
