@@ -2132,6 +2132,7 @@ python -m hft_cli review-broker-dispatch-roundtrip `
   --send runs\dispatch_send\leadlag_shadow_live_dryrun `
   --ack runs\dispatch_acks\leadlag_shadow_live_dryrun `
   --out runs\dispatch_roundtrip\leadlag_shadow_live_dryrun `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -2149,8 +2150,9 @@ This gate proves the broker dry-run bridge as a whole. It joins dispatch rows
 to sender requests and acknowledgement rows, then fails closed unless the
 dispatch plan, non-submitting sender packet, and acknowledgement reconciliation
 all pass with matching strategy/market/scenario/adapter identity, disabled
-live submission, dry-run-only requests, one request per dispatch order, and an
-accepted acknowledgement for every request.
+live submission, dry-run-only requests, consistent route round-trip proof,
+one request per dispatch order, and an accepted acknowledgement for every
+request.
 
 ## Calibration
 

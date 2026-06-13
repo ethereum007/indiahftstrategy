@@ -8,7 +8,21 @@ from reports.broker_dispatch_roundtrip import (
 from reports.catalog import catalog_experiment_runs
 
 
-def dispatch_summary(ready=True):
+def dispatch_summary(
+    ready=True,
+    route_roundtrip_provided=True,
+    route_roundtrip_ready=True,
+    route_roundtrip_target_mode="live_dryrun",
+    route_roundtrip_strategy="lead_lag_taker",
+    route_roundtrip_market="india_nse_index_derivatives",
+    route_roundtrip_scenario_key="trigger_ticks=2",
+    route_roundtrip_batch_id="BDP-0",
+    route_roundtrip_requests=2,
+    route_roundtrip_acked_orders=2,
+    route_roundtrip_missing_request_acks=0,
+    route_roundtrip_rejected_orders=0,
+    route_roundtrip_unmatched_acks=0,
+):
     return pd.DataFrame(
         [
             {
@@ -22,18 +36,32 @@ def dispatch_summary(ready=True):
                 "dispatch_orders": 2,
                 "dispatch_batch_id": "BDP-1",
                 "dry_run_only": True,
+                "route_dispatch_roundtrip_required": True,
+                "route_dispatch_roundtrip_provided": route_roundtrip_provided,
+                "route_dispatch_roundtrip_ready": route_roundtrip_ready,
+                "route_dispatch_roundtrip_target_mode": route_roundtrip_target_mode,
+                "route_dispatch_roundtrip_strategy": route_roundtrip_strategy,
+                "route_dispatch_roundtrip_market": route_roundtrip_market,
+                "route_dispatch_roundtrip_scenario_key": route_roundtrip_scenario_key,
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
+                "route_dispatch_roundtrip_requests": route_roundtrip_requests,
+                "route_dispatch_roundtrip_acked_orders": route_roundtrip_acked_orders,
+                "route_dispatch_roundtrip_missing_request_acks": route_roundtrip_missing_request_acks,
+                "route_dispatch_roundtrip_rejected_orders": route_roundtrip_rejected_orders,
+                "route_dispatch_roundtrip_unmatched_acks": route_roundtrip_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
             }
         ]
     )
 
 
-def dispatch_orders():
+def dispatch_orders(route_roundtrip_batch_id="BDP-0"):
     return pd.DataFrame(
         [
             {
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-1",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "source_order_id": "ORD-1",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -45,6 +73,7 @@ def dispatch_orders():
             {
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-2",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "source_order_id": "ORD-2",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -57,7 +86,23 @@ def dispatch_orders():
     )
 
 
-def send_summary(ready=True, strategy="lead_lag_taker", submission_enabled=False):
+def send_summary(
+    ready=True,
+    strategy="lead_lag_taker",
+    submission_enabled=False,
+    route_roundtrip_provided=True,
+    route_roundtrip_ready=True,
+    route_roundtrip_target_mode="live_dryrun",
+    route_roundtrip_strategy="lead_lag_taker",
+    route_roundtrip_market="india_nse_index_derivatives",
+    route_roundtrip_scenario_key="trigger_ticks=2",
+    route_roundtrip_batch_id="BDP-0",
+    route_roundtrip_requests=2,
+    route_roundtrip_acked_orders=2,
+    route_roundtrip_missing_request_acks=0,
+    route_roundtrip_rejected_orders=0,
+    route_roundtrip_unmatched_acks=0,
+):
     return pd.DataFrame(
         [
             {
@@ -73,19 +118,33 @@ def send_summary(ready=True, strategy="lead_lag_taker", submission_enabled=False
                 "requests": 2,
                 "dry_run_only": True,
                 "submission_enabled": submission_enabled,
+                "route_dispatch_roundtrip_required": True,
+                "route_dispatch_roundtrip_provided": route_roundtrip_provided,
+                "route_dispatch_roundtrip_ready": route_roundtrip_ready,
+                "route_dispatch_roundtrip_target_mode": route_roundtrip_target_mode,
+                "route_dispatch_roundtrip_strategy": route_roundtrip_strategy,
+                "route_dispatch_roundtrip_market": route_roundtrip_market,
+                "route_dispatch_roundtrip_scenario_key": route_roundtrip_scenario_key,
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
+                "route_dispatch_roundtrip_requests": route_roundtrip_requests,
+                "route_dispatch_roundtrip_acked_orders": route_roundtrip_acked_orders,
+                "route_dispatch_roundtrip_missing_request_acks": route_roundtrip_missing_request_acks,
+                "route_dispatch_roundtrip_rejected_orders": route_roundtrip_rejected_orders,
+                "route_dispatch_roundtrip_unmatched_acks": route_roundtrip_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
             }
         ]
     )
 
 
-def send_requests(submission_enabled=False):
+def send_requests(submission_enabled=False, route_roundtrip_batch_id="BDP-0"):
     return pd.DataFrame(
         [
             {
                 "request_id": "BDR-1",
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-1",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "source_order_id": "ORD-1",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -102,6 +161,7 @@ def send_requests(submission_enabled=False):
                 "request_id": "BDR-2",
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-2",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "source_order_id": "ORD-2",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -118,7 +178,25 @@ def send_requests(submission_enabled=False):
     )
 
 
-def ack_summary(passed=True, strategy="lead_lag_taker", acked_orders=2, missing=0, rejected=0):
+def ack_summary(
+    passed=True,
+    strategy="lead_lag_taker",
+    acked_orders=2,
+    missing=0,
+    rejected=0,
+    route_roundtrip_provided=True,
+    route_roundtrip_ready=True,
+    route_roundtrip_target_mode="live_dryrun",
+    route_roundtrip_strategy="lead_lag_taker",
+    route_roundtrip_market="india_nse_index_derivatives",
+    route_roundtrip_scenario_key="trigger_ticks=2",
+    route_roundtrip_batch_id="BDP-0",
+    route_roundtrip_requests=2,
+    route_roundtrip_acked_orders=2,
+    route_roundtrip_missing_request_acks=0,
+    route_roundtrip_rejected_orders=0,
+    route_roundtrip_unmatched_acks=0,
+):
     return pd.DataFrame(
         [
             {
@@ -134,6 +212,19 @@ def ack_summary(passed=True, strategy="lead_lag_taker", acked_orders=2, missing=
                 "rejected_orders": rejected,
                 "duplicate_ack_orders": 0,
                 "unmatched_acks": 0,
+                "route_dispatch_roundtrip_required": True,
+                "route_dispatch_roundtrip_provided": route_roundtrip_provided,
+                "route_dispatch_roundtrip_ready": route_roundtrip_ready,
+                "route_dispatch_roundtrip_target_mode": route_roundtrip_target_mode,
+                "route_dispatch_roundtrip_strategy": route_roundtrip_strategy,
+                "route_dispatch_roundtrip_market": route_roundtrip_market,
+                "route_dispatch_roundtrip_scenario_key": route_roundtrip_scenario_key,
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
+                "route_dispatch_roundtrip_requests": route_roundtrip_requests,
+                "route_dispatch_roundtrip_acked_orders": route_roundtrip_acked_orders,
+                "route_dispatch_roundtrip_missing_request_acks": route_roundtrip_missing_request_acks,
+                "route_dispatch_roundtrip_rejected_orders": route_roundtrip_rejected_orders,
+                "route_dispatch_roundtrip_unmatched_acks": route_roundtrip_unmatched_acks,
                 "ack_rate": acked_orders / 2,
                 "failed_checks": 0 if passed else 1,
             }
@@ -141,12 +232,13 @@ def ack_summary(passed=True, strategy="lead_lag_taker", acked_orders=2, missing=
     )
 
 
-def acknowledgements(missing_second=False, rejected_second=False):
+def acknowledgements(missing_second=False, rejected_second=False, route_roundtrip_batch_id="BDP-0"):
     return pd.DataFrame(
         [
             {
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-1",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "source_order_id": "ORD-1",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -163,6 +255,7 @@ def acknowledgements(missing_second=False, rejected_second=False):
             {
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-2",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "source_order_id": "ORD-2",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -213,7 +306,59 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert report.summary.iloc[0]["recommendation"] == "broker_dry_run_roundtrip_proved"
     assert report.orders["request_id"].tolist() == ["BDR-1", "BDR-2"]
     assert report.orders["acked"].tolist() == [True, True]
+    assert report.orders["dispatch_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
+    assert report.orders["request_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
+    assert report.orders["ack_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert int(report.summary.iloc[0]["missing_request_acks"]) == 0
+    assert bool(report.summary.iloc[0]["route_dispatch_roundtrip_ready"])
+    assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
+
+
+def test_broker_dispatch_roundtrip_requires_route_roundtrip_proof():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(route_roundtrip_provided=False, route_roundtrip_ready=False),
+        dispatch_orders=dispatch_orders(route_roundtrip_batch_id=""),
+        send_summary=send_summary(route_roundtrip_provided=False, route_roundtrip_ready=False),
+        send_requests=send_requests(route_roundtrip_batch_id=""),
+        ack_summary=ack_summary(route_roundtrip_provided=False, route_roundtrip_ready=False),
+        acknowledgements=acknowledgements(route_roundtrip_batch_id=""),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_dispatch_roundtrip_provided", "route_dispatch_roundtrip_ready"} <= failed
+    assert report.config["route_dispatch_roundtrip"]["required"]
+
+
+def test_broker_dispatch_roundtrip_blocks_dirty_route_roundtrip_chain():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(route_roundtrip_batch_id="BDP-X"),
+        send_requests=send_requests(route_roundtrip_batch_id="BDP-X"),
+        ack_summary=ack_summary(
+            route_roundtrip_ready=False,
+            route_roundtrip_target_mode="shadow",
+            route_roundtrip_batch_id="BDP-0",
+            route_roundtrip_acked_orders=1,
+            route_roundtrip_missing_request_acks=1,
+            route_roundtrip_rejected_orders=1,
+            route_roundtrip_unmatched_acks=1,
+        ),
+        acknowledgements=acknowledgements(route_roundtrip_batch_id="BDP-0"),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_dispatch_roundtrip_ready",
+        "route_dispatch_roundtrip_identity_match",
+        "route_dispatch_roundtrip_batch_consistent",
+        "route_dispatch_roundtrip_request_counts_match",
+        "route_dispatch_roundtrip_missing_request_acks",
+        "route_dispatch_roundtrip_rejected_orders",
+        "route_dispatch_roundtrip_unmatched_acks",
+    } <= failed
 
 
 def test_broker_dispatch_roundtrip_blocks_identity_submission_and_missing_acks():

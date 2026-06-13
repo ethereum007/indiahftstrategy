@@ -294,7 +294,8 @@
   dirty-proof, or unmatched acknowledgement rows.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
-  identity, request-count, submission-disabled, and accepted-ack checks.
+  identity, route round-trip proof consistency, request-count,
+  submission-disabled, and accepted-ack checks.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -358,7 +359,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 484 tests.
+Current passing suite: 486 tests.
 
 ## Next Build Targets
 
