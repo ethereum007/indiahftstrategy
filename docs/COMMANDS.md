@@ -98,7 +98,7 @@ python -m hft_cli review-strategy-evidence `
 ```
 
 For lead-lag taker research, use the named profile after the measured edge,
-replay walk-forward, stress, and promotion artifacts are present:
+replay walk-forward, stress, promotion, and order-plan artifacts are present:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `
@@ -145,8 +145,9 @@ python -m hft_cli review-strategy-evidence `
 ```
 
 The `leadlag` profile expands to `leadlag_edge_audit`,
-`leadlag_replay_walkforward`, `stress_report`, and `promotion_report`. The
-`surface_mm` profile expands to `surface_quality_report`, `quote_risk_report`, and
+`leadlag_replay_walkforward`, `stress_report`, `promotion_report`, and
+`leadlag_order_plan`. The `surface_mm` profile expands to
+`surface_quality_report`, `quote_risk_report`, and
 `surface_mm_research_pipeline`. The `imbalance` profile expands to
 `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
@@ -478,6 +479,51 @@ promotion_checks.csv
 promotion_summary.csv
 candidate_config.json
 manifest.json
+```
+
+## Lead-Lag Order Plan
+
+Convert a promoted lead-lag candidate into broker-neutral paper/shadow order
+templates. The plan emits both signal-conditioned paths: buy the laggard after
+an upward leader innovation and sell the laggard after a downward leader
+innovation.
+
+```powershell
+python -m hft_cli plan-leadlag-orders `
+  --promotion runs\promotion\leadlag_2026_06_10 `
+  --out runs\orders\leadlag_2026_06_10 `
+  --laggard-instrument-id NIFTY_20260610_25000C `
+  --reference-price 10.00 `
+  --entry-offset-ticks 1 `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --price-band-pct 0.02 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+leadlag_order_candidates.csv
+leadlag_order_checks.csv
+leadlag_order_summary.csv
+manifest.json
+```
+
+The generated `leadlag_order_candidates.csv` uses the broker-neutral `orders`
+schema and carries `SIGNAL_TEMPLATE` lifecycle metadata, so it can be staged
+for Arrow.money/iRage paper or shadow routing without losing the trigger
+intent:
+
+```powershell
+python -m hft_cli stage-orders `
+  --orders runs\orders\leadlag_2026_06_10\leadlag_order_candidates.csv `
+  --out runs\stage\leadlag_2026_06_10 `
+  --source orders `
+  --adapter arrow_money `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --fail-on-reject
 ```
 
 ## Microprice Imbalance Edge Audit

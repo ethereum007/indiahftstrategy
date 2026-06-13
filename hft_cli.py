@@ -59,6 +59,7 @@ from reports.leadlag_candidate_promotion import (
     write_leadlag_candidate_promotion,
 )
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
+from reports.leadlag_order_plan import LeadLagOrderPlanConfig, write_leadlag_order_plan
 from reports.leadlag_replay_walkforward import (
     LeadLagReplayWalkForwardThresholds,
     write_leadlag_replay_walkforward,
@@ -344,6 +345,26 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_promotion.add_argument("--max-worst-drawdown", type=float, default=None)
     leadlag_promotion.add_argument("--min-median-markout-mean", type=float, default=None)
     leadlag_promotion.add_argument("--fail-on-breach", action="store_true")
+
+    leadlag_orders = sub.add_parser(
+        "plan-leadlag-orders",
+        help="Create broker-neutral paper/shadow order templates from a promoted lead-lag candidate.",
+    )
+    leadlag_orders.add_argument("--promotion", required=True)
+    leadlag_orders.add_argument("--out", required=True)
+    leadlag_orders.add_argument("--laggard-instrument-id", default="LAGGARD")
+    leadlag_orders.add_argument("--qty", type=int, default=None)
+    leadlag_orders.add_argument("--reference-price", type=float, default=None)
+    leadlag_orders.add_argument("--buy-limit-price", type=float, default=None)
+    leadlag_orders.add_argument("--sell-limit-price", type=float, default=None)
+    leadlag_orders.add_argument("--entry-offset-ticks", type=float, default=0.0)
+    leadlag_orders.add_argument("--tick-size", type=float, default=None)
+    leadlag_orders.add_argument("--max-order-qty", type=int, default=None)
+    leadlag_orders.add_argument("--max-notional", type=float, default=None)
+    leadlag_orders.add_argument("--price-band-pct", type=float, default=None)
+    leadlag_orders.add_argument("--output-file", default="leadlag_order_candidates.csv")
+    leadlag_orders.add_argument("--allow-unready-promotion", action="store_true")
+    leadlag_orders.add_argument("--fail-on-breach", action="store_true")
 
     imbalance_replay = sub.add_parser("replay-imbalance", help="Replay microprice/order-book imbalance strategy.")
     imbalance_replay.add_argument("--ticks", required=True)
@@ -1881,6 +1902,27 @@ def main(argv: list[str] | None = None) -> int:
                 min_total_net_pnl=args.min_total_net_pnl,
                 max_worst_drawdown=args.max_worst_drawdown,
                 min_median_markout_mean=args.min_median_markout_mean,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "plan-leadlag-orders":
+        result = write_leadlag_order_plan(
+            args.promotion,
+            output_dir=args.out,
+            config=LeadLagOrderPlanConfig(
+                laggard_instrument_id=args.laggard_instrument_id,
+                require_promotion_ready=not args.allow_unready_promotion,
+                qty=args.qty,
+                reference_price=args.reference_price,
+                buy_limit_price=args.buy_limit_price,
+                sell_limit_price=args.sell_limit_price,
+                entry_offset_ticks=args.entry_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                output_filename=args.output_file,
             ),
         )
         print(result.summary.to_string(index=False))

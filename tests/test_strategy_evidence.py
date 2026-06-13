@@ -103,6 +103,18 @@ def leadlag_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives
                 "summary_candidate_scenario_key": f"strategy=lead_lag_taker|market={market}|trigger_ticks=2",
                 "parameters_json": parameters,
             },
+            {
+                "run_dir": "runs/leadlag_orders",
+                "run_type": "leadlag_order_plan",
+                "generated_at_utc": "2026-06-10T09:45:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "leadlag_order_summary.csv",
+                "summary_strategy": "lead_lag_taker",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
         ]
     )
 
@@ -474,6 +486,20 @@ def test_leadlag_evidence_profile_fails_without_replay_walkforward():
     failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
     assert not review.ready
     assert "required_run_type:leadlag_replay_walkforward" in failed
+
+
+def test_leadlag_evidence_profile_fails_without_order_plan():
+    catalog = leadlag_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "leadlag_order_plan"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("leadlag")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:leadlag_order_plan" in failed
 
 
 def test_surface_mm_evidence_profile_requires_surface_quality_and_identity():
