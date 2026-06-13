@@ -94,9 +94,9 @@ manifest.json
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
 shadow-session, scale-up, quote-lifecycle, runtime guard, runtime-session,
-cutover, route-enable, broker-dispatch, broker-dispatch-ack, halt-response,
-and resume summaries, so those run types can be promoted into explicit
-`--required-run-type` evidence gates.
+cutover, route-enable, broker-dispatch, broker-dispatch-send,
+broker-dispatch-ack, halt-response, and resume summaries, so those run types
+can be promoted into explicit `--required-run-type` evidence gates.
 
 Use `--require-same-strategy` and `--require-same-market` before scale-up to
 fail closed when required proof, stress, promotion, broker, or shadow artifacts
@@ -2034,6 +2034,35 @@ order, and requires unique source order IDs, unique dispatch IDs, route-enabled
 state, matching target mode, and order counts within the approved route limits.
 The resulting `broker_dispatch_config.json` is the artifact a future
 Arrow.money/iRage sender can consume.
+
+## Broker Dispatch Send Packet
+
+Prepare a non-submitting dry-run sender packet from an approved dispatch plan:
+
+```powershell
+python -m hft_cli prepare-broker-dispatch-send `
+  --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
+  --out runs\dispatch_send\leadlag_shadow_live_dryrun `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+broker_dispatch_send_requests.csv
+broker_dispatch_expected_acks.csv
+broker_dispatch_send_checks.csv
+broker_dispatch_send_summary.csv
+broker_dispatch_send_config.json
+manifest.json
+```
+
+This packet still does not submit orders. It creates adapter-scoped endpoint
+names, dry-run request envelopes, payload hashes, unique idempotency keys, and
+an acknowledgement-log template while forcing `submission_enabled=false`. It
+fails closed if the dispatch plan is not ready and armed, target mode does not
+match, the adapter is unknown, payload JSON is invalid, idempotency keys are
+not unique, request limits are exceeded, or any request is not dry-run-only.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 

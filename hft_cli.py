@@ -22,6 +22,7 @@ from data.loaders import load_tick_csv
 from reports.catalog import write_experiment_catalog
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
+from reports.broker_dispatch_send import BrokerDispatchSendThresholds, write_broker_dispatch_send_packet
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
@@ -1243,6 +1244,19 @@ def main(argv: list[str] | None = None) -> int:
     broker_dispatch.add_argument("--min-orders", type=int, default=1)
     broker_dispatch.add_argument("--max-orders", type=int, default=None)
     broker_dispatch.add_argument("--fail-on-breach", action="store_true")
+
+    dispatch_send = sub.add_parser(
+        "prepare-broker-dispatch-send",
+        help="Prepare a non-submitting dry-run broker dispatch send packet.",
+    )
+    dispatch_send.add_argument("--dispatch", required=True)
+    dispatch_send.add_argument("--out", required=True)
+    dispatch_send.add_argument("--target-mode", default="live_dryrun", choices=["paper", "shadow", "live_dryrun"])
+    dispatch_send.add_argument("--allow-unready-dispatch", action="store_true")
+    dispatch_send.add_argument("--allow-unarmed-dispatch", action="store_true")
+    dispatch_send.add_argument("--allow-non-dry-run", action="store_true")
+    dispatch_send.add_argument("--max-requests", type=int, default=None)
+    dispatch_send.add_argument("--fail-on-breach", action="store_true")
 
     dispatch_ack = sub.add_parser(
         "reconcile-broker-dispatch",
@@ -2862,6 +2876,20 @@ def main(argv: list[str] | None = None) -> int:
                 require_dry_run=not args.allow_non_dry_run,
                 min_orders=args.min_orders,
                 max_orders=args.max_orders,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "prepare-broker-dispatch-send":
+        result = write_broker_dispatch_send_packet(
+            dispatch_dir=args.dispatch,
+            output_dir=args.out,
+            thresholds=BrokerDispatchSendThresholds(
+                target_mode=args.target_mode,
+                require_dispatch_ready=not args.allow_unready_dispatch,
+                require_armed_dispatch=not args.allow_unarmed_dispatch,
+                require_dry_run=not args.allow_non_dry_run,
+                max_requests=args.max_requests,
             ),
         )
         print(result.summary.to_string(index=False))
