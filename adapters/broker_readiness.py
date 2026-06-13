@@ -199,6 +199,9 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "dispatch_roundtrip_unmatched_acks": int(_number(row, "unmatched_acks", 0.0))
         if component == "dispatch_roundtrip" and provided
         else 0,
+        "dispatch_roundtrip_failed_checks": int(failed_checks)
+        if component == "dispatch_roundtrip" and provided and not pd.isna(failed_checks)
+        else 0,
         "route_dispatch_roundtrip_required": _dispatch_bool(component, row, "route_dispatch_roundtrip_required"),
         "route_dispatch_roundtrip_provided": _dispatch_bool(component, row, "route_dispatch_roundtrip_provided"),
         "route_dispatch_roundtrip_ready": _dispatch_bool(component, row, "route_dispatch_roundtrip_ready"),
@@ -465,6 +468,9 @@ def _summary(
                 "dispatch_roundtrip_unmatched_acks": int(
                     _number(dispatch_item, "dispatch_roundtrip_unmatched_acks", 0.0)
                 ),
+                "dispatch_roundtrip_failed_checks": int(
+                    _number(dispatch_item, "dispatch_roundtrip_failed_checks", 0.0)
+                ),
                 "route_dispatch_roundtrip_required": _item_bool(dispatch_item, "route_dispatch_roundtrip_required"),
                 "route_dispatch_roundtrip_provided": _item_bool(dispatch_item, "route_dispatch_roundtrip_provided"),
                 "route_dispatch_roundtrip_ready": _item_bool(dispatch_item, "route_dispatch_roundtrip_ready"),
@@ -536,7 +542,7 @@ def _component_ready(component: str, row: pd.Series) -> bool:
     if component == "resume_gate":
         return _to_bool(row.get("ready", False))
     if component == "dispatch_roundtrip":
-        return _to_bool(row.get("passed", False))
+        return _to_bool(row.get("passed", False)) and int(_number(row, "failed_checks", 0.0)) <= 0
     return _to_bool(row.get("ready", False))
 
 
