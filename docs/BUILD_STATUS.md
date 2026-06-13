@@ -361,27 +361,32 @@
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries broker schema review status/mode plus
-  live-dry-run nested route proof from route-enable, and fails closed on disabled routes, nested route-enable
+  live-dry-run nested route proof from route-enable, and fails closed on
+  disabled routes, nested route-enable
   dispatch round-trip failed checks, dirty route proof, duplicate source order
   IDs, or unresolved upload-order files while resolving launch pipeline upload
-  roots without sending orders.
+  roots and fingerprinting the route-enable summary/config plus upload CSV
+  without sending orders.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route round-trip proof tags, and acknowledgement templates while
   carrying broker schema review status/mode and route-enable dispatch
-  round-trip failed-check counters from the dispatch config, validating route proof batch continuity, forcing live
+  round-trip failed-check counters from the dispatch config, validating route
+  proof batch continuity, forcing live
   submission off, and fingerprinting exact dispatch input files.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
-  broker schema review status/mode, route round-trip proof, and route-enable failed-check counters from the
-  dispatch config, validates acknowledgement-log proof batch continuity, and
+  broker schema review status/mode, route round-trip proof, and route-enable
+  failed-check counters from the dispatch config, validates acknowledgement-log
+  proof batch continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch and ack
   log inputs.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, raw ack-log route proof consistency, route-enable failed-check
-  counters and broker schema review status/mode from upstream configs, request-count, submission-disabled, and
+  counters and broker schema review status/mode from upstream configs,
+  request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market

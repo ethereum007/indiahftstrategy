@@ -433,6 +433,14 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     assert (out_dir / "broker_dispatch_summary.csv").exists()
     assert (out_dir / "broker_dispatch_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {"route_enable_summary", "route_enable_config", "upload_orders"} <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["route_enable_summary"]["path"]).endswith(
+        "/route_enable/route_enable_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["route_enable_config"]["path"]).endswith(
+        "/route_enable/route_enable_config.json"
+    )
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_plan"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_summary.csv"
@@ -474,6 +482,12 @@ def test_cli_broker_dispatch_reads_launch_pipeline_upload_roots(tmp_path):
         assert code == 0
         assert bool(summary.loc[0, "ready"])
         assert len(dispatch) == 2
+        assert path_tail(manifest["inputs"]["route_enable_summary"]["path"]).endswith(
+            f"/{family}/route_enable/route_enable_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["route_enable_config"]["path"]).endswith(
+            f"/{family}/route_enable/route_enable_config.json"
+        )
         assert path_tail(manifest["inputs"]["upload_orders"]["path"]).endswith(
             f"/{family}_launch_pipeline/{upload_folder}/broker_upload_orders.csv"
         )

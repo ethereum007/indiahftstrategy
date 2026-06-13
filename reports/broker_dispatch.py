@@ -102,7 +102,11 @@ def write_broker_dispatch_plan(
         out,
         run_type="broker_dispatch_plan",
         parameters={"thresholds": asdict(thresholds or BrokerDispatchThresholds())},
-        inputs={"route_enable": route_config_path, "upload_orders": upload_file},
+        inputs={
+            "route_enable_summary": route_summary_path,
+            "route_enable_config": route_config_path,
+            "upload_orders": upload_file,
+        },
     )
     return BrokerDispatchReport(report.dispatch_orders, report.checks, report.summary, report.config, out)
 
