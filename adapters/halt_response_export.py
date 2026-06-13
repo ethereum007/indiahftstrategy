@@ -119,7 +119,11 @@ def write_halt_response_export(
     report.checks.to_csv(out / "halt_response_export_checks.csv", index=False)
     report.summary.to_csv(out / "halt_response_export_summary.csv", index=False)
     report.schema.to_csv(out / "halt_response_export_schema.csv", index=False)
-    inputs: dict[str, Any] = {"halt_response": halt_dir}
+    inputs: dict[str, Any] = {
+        "halt_response_summary": halt_summary_path,
+        "halt_cancel_orders": cancel_path,
+        "halt_flatten_orders": flatten_path,
+    }
     if cancel_mapping_path is not None:
         inputs["cancel_mapping"] = Path(cancel_mapping_path)
     if flatten_mapping_path is not None:

@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -6,6 +8,10 @@ from reports.halt_incident import (
     evaluate_halt_incident,
     write_halt_incident_report,
 )
+
+
+def path_tail(value):
+    return str(value).replace("\\", "/")
 
 
 def guard_summary(action="halt"):
@@ -205,6 +211,32 @@ def test_write_halt_incident_report_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_incident_checks.csv").exists()
     assert (out_dir / "halt_incident_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "guard_summary",
+        "guard_checks",
+        "halt_response_summary",
+        "halt_response_checks",
+        "halt_export_summary",
+        "halt_export_checks",
+        "halt_execution_summary",
+        "halt_execution_checks",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["guard_summary"]["path"]).endswith(
+        "/guard/runtime_guard_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["guard_checks"]["path"]).endswith(
+        "/guard/runtime_guard_checks.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_response_summary"]["path"]).endswith(
+        "/response/halt_response_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_export_summary"]["path"]).endswith(
+        "/export/halt_response_export_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_execution_summary"]["path"]).endswith(
+        "/execution/halt_execution_summary.csv"
+    )
 
 
 def test_cli_halt_incident_can_require_export(tmp_path):

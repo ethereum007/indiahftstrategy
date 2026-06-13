@@ -156,11 +156,12 @@ def write_halt_response_plan(
         out,
         run_type="halt_response_plan",
         parameters={"config": asdict(config)},
-        inputs={
-            "guard": guard,
-            "open_orders": open_orders_path,
-            "positions": positions_path,
-        },
+        inputs=_manifest_inputs(
+            guard_summary_path=guard_summary_path,
+            guard_checks_path=guard_checks_path,
+            open_orders_path=open_orders_path,
+            positions_path=positions_path,
+        ),
     )
     return HaltResponseReport(
         report.cancel_orders,
@@ -170,6 +171,23 @@ def write_halt_response_plan(
         report.config,
         out,
     )
+
+
+def _manifest_inputs(
+    *,
+    guard_summary_path: Path,
+    guard_checks_path: Path | None,
+    open_orders_path: str | Path | None,
+    positions_path: str | Path | None,
+) -> dict[str, Any]:
+    inputs: dict[str, Any] = {"guard_summary": guard_summary_path}
+    if guard_checks_path is not None and guard_checks_path.exists():
+        inputs["guard_checks"] = guard_checks_path
+    if open_orders_path is not None:
+        inputs["open_orders"] = Path(open_orders_path)
+    if positions_path is not None:
+        inputs["positions"] = Path(positions_path)
+    return inputs
 
 
 def _cancel_actions(open_orders: pd.DataFrame, guard_context: dict[str, object]) -> pd.DataFrame:

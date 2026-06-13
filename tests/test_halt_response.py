@@ -6,6 +6,10 @@ from hft_cli import main
 from reports.halt_response import evaluate_halt_response, write_halt_response_plan
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def guard_summary(action="halt"):
     return pd.DataFrame(
         [
@@ -174,6 +178,16 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     assert saved_summary.loc[0, "guard_failed_check_names"] == "orders_sent"
     assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
     assert bool(saved_summary.loc[0, "proof_refresh_ready"])
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {"guard_summary", "guard_checks", "open_orders", "positions"} <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["guard_summary"]["path"]).endswith(
+        "/guard/runtime_guard_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["guard_checks"]["path"]).endswith(
+        "/guard/runtime_guard_checks.csv"
+    )
+    assert path_tail(manifest["inputs"]["open_orders"]["path"]).endswith("/open_orders.csv")
+    assert path_tail(manifest["inputs"]["positions"]["path"]).endswith("/positions.csv")
 
 
 def test_cli_halt_response_can_fail_on_missing_flatten_price(tmp_path):

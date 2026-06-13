@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -6,6 +8,10 @@ from reports.halt_execution import (
     evaluate_halt_execution,
     write_halt_execution_report,
 )
+
+
+def path_tail(value):
+    return str(value).replace("\\", "/")
 
 
 def halt_summary(ready=True):
@@ -146,6 +152,27 @@ def test_write_halt_execution_report_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_execution_checks.csv").exists()
     assert (out_dir / "halt_execution_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "halt_response_summary",
+        "halt_cancel_orders",
+        "halt_flatten_orders",
+        "cancel_acks",
+        "flatten_fills",
+        "positions",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["halt_response_summary"]["path"]).endswith(
+        "/halt/halt_response_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_cancel_orders"]["path"]).endswith(
+        "/halt/halt_cancel_orders.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_flatten_orders"]["path"]).endswith(
+        "/halt/halt_flatten_orders.csv"
+    )
+    assert path_tail(manifest["inputs"]["cancel_acks"]["path"]).endswith("/cancel_acks.csv")
+    assert path_tail(manifest["inputs"]["flatten_fills"]["path"]).endswith("/flatten_fills.csv")
+    assert path_tail(manifest["inputs"]["positions"]["path"]).endswith("/positions.csv")
 
 
 def test_cli_halt_execution_fails_on_residual_position(tmp_path):

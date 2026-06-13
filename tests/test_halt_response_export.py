@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from adapters.halt_response_export import (
@@ -6,6 +8,10 @@ from adapters.halt_response_export import (
     write_halt_response_export,
 )
 from hft_cli import main
+
+
+def path_tail(value):
+    return str(value).replace("\\", "/")
 
 
 def halt_summary(ready=True, adapter="arrow_money"):
@@ -146,6 +152,25 @@ def test_write_halt_response_export_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_response_export_summary.csv").exists()
     assert (out_dir / "halt_response_export_schema.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "halt_response_summary",
+        "halt_cancel_orders",
+        "halt_flatten_orders",
+        "cancel_mapping",
+        "flatten_mapping",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["halt_response_summary"]["path"]).endswith(
+        "/halt/halt_response_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_cancel_orders"]["path"]).endswith(
+        "/halt/halt_cancel_orders.csv"
+    )
+    assert path_tail(manifest["inputs"]["halt_flatten_orders"]["path"]).endswith(
+        "/halt/halt_flatten_orders.csv"
+    )
+    assert path_tail(manifest["inputs"]["cancel_mapping"]["path"]).endswith("/cancel_mapping.csv")
+    assert path_tail(manifest["inputs"]["flatten_mapping"]["path"]).endswith("/flatten_mapping.csv")
 
 
 def test_cli_halt_response_export_fails_on_missing_required_mapping(tmp_path):

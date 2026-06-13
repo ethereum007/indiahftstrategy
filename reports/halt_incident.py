@@ -109,15 +109,23 @@ def write_halt_incident_report(
     execution = Path(halt_execution_dir)
     export = Path(halt_export_dir) if halt_export_dir is not None else None
     thresholds = thresholds or HaltIncidentThresholds()
+    guard_summary_path = guard / "runtime_guard_summary.csv"
+    guard_checks_path = guard / "runtime_guard_checks.csv"
+    response_summary_path = response / "halt_response_summary.csv"
+    response_checks_path = response / "halt_response_checks.csv"
+    export_summary_path = export / "halt_response_export_summary.csv" if export else None
+    export_checks_path = export / "halt_response_export_checks.csv" if export else None
+    execution_summary_path = execution / "halt_execution_summary.csv"
+    execution_checks_path = execution / "halt_execution_checks.csv"
     report = evaluate_halt_incident(
-        guard_summary=_read_required(guard / "runtime_guard_summary.csv"),
-        guard_checks=_read_optional(guard / "runtime_guard_checks.csv"),
-        halt_response_summary=_read_required(response / "halt_response_summary.csv"),
-        halt_response_checks=_read_optional(response / "halt_response_checks.csv"),
-        halt_export_summary=_read_optional(export / "halt_response_export_summary.csv") if export else None,
-        halt_export_checks=_read_optional(export / "halt_response_export_checks.csv") if export else None,
-        halt_execution_summary=_read_required(execution / "halt_execution_summary.csv"),
-        halt_execution_checks=_read_optional(execution / "halt_execution_checks.csv"),
+        guard_summary=_read_required(guard_summary_path),
+        guard_checks=_read_optional(guard_checks_path),
+        halt_response_summary=_read_required(response_summary_path),
+        halt_response_checks=_read_optional(response_checks_path),
+        halt_export_summary=_read_optional(export_summary_path) if export_summary_path else None,
+        halt_export_checks=_read_optional(export_checks_path) if export_checks_path else None,
+        halt_execution_summary=_read_required(execution_summary_path),
+        halt_execution_checks=_read_optional(execution_checks_path),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -125,13 +133,16 @@ def write_halt_incident_report(
     report.timeline.to_csv(out / "halt_incident_timeline.csv", index=False)
     report.checks.to_csv(out / "halt_incident_checks.csv", index=False)
     report.summary.to_csv(out / "halt_incident_summary.csv", index=False)
-    inputs = {
-        "guard": guard,
-        "halt_response": response,
-        "halt_execution": execution,
-    }
-    if export is not None:
-        inputs["halt_export"] = export
+    inputs = _manifest_inputs(
+        guard_summary_path=guard_summary_path,
+        guard_checks_path=guard_checks_path,
+        response_summary_path=response_summary_path,
+        response_checks_path=response_checks_path,
+        export_summary_path=export_summary_path,
+        export_checks_path=export_checks_path,
+        execution_summary_path=execution_summary_path,
+        execution_checks_path=execution_checks_path,
+    )
     write_experiment_manifest(
         out,
         run_type="halt_incident_review",
@@ -139,6 +150,34 @@ def write_halt_incident_report(
         inputs=inputs,
     )
     return HaltIncidentReport(report.timeline, report.checks, report.summary, out)
+
+
+def _manifest_inputs(
+    *,
+    guard_summary_path: Path,
+    guard_checks_path: Path,
+    response_summary_path: Path,
+    response_checks_path: Path,
+    export_summary_path: Path | None,
+    export_checks_path: Path | None,
+    execution_summary_path: Path,
+    execution_checks_path: Path,
+) -> dict[str, Path]:
+    inputs = {
+        "guard_summary": guard_summary_path,
+        "halt_response_summary": response_summary_path,
+        "halt_execution_summary": execution_summary_path,
+    }
+    for name, path in {
+        "guard_checks": guard_checks_path,
+        "halt_response_checks": response_checks_path,
+        "halt_export_summary": export_summary_path,
+        "halt_export_checks": export_checks_path,
+        "halt_execution_checks": execution_checks_path,
+    }.items():
+        if path is not None and path.exists():
+            inputs[name] = path
+    return inputs
 
 
 def _timeline(

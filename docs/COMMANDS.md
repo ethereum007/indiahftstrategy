@@ -2358,6 +2358,8 @@ cancel/flatten packet exists and which scaled strategy produced it. They also
 retain `proof_refresh_*` and `proof_source` fields from the runtime guard so a
 halt packet can be tied back to the fresh proof state that authorized the
 runtime session.
+The manifest fingerprints the resolved runtime guard summary/check files plus
+the open-order and position snapshots used to create the cancel/flatten packet.
 
 ## Halt Response Export
 
@@ -2385,6 +2387,9 @@ target_column,source_column,default_value,required,transform
 If no mapping is supplied for an action type, the broker-neutral action file is
 passed through unchanged. This keeps the halt workflow usable before the real
 Arrow.money/iRage emergency action schemas arrive.
+The manifest fingerprints the exact halt-response summary, cancel actions,
+flatten actions, and any cancel/flatten mapping files used for the broker
+export.
 
 Outputs:
 
@@ -2427,6 +2432,10 @@ halt_execution_summary.csv
 manifest.json
 ```
 
+The manifest fingerprints the halt-response summary/action files plus the
+cancel acknowledgement, flatten fill, and final-position snapshots supplied for
+execution reconciliation.
+
 ## Halt Incident Review
 
 Combine runtime guard, halt response, optional halt export, and halt execution
@@ -2456,6 +2465,8 @@ The timeline and summary retain guard-trigger, strategy, market, and
 `proof_refresh_*` fields so the incident closure record shows both the failed
 guard checks that caused the halt and the proof-freshness context that fed the
 scaled runtime.
+The manifest fingerprints each component summary/check file from the guard,
+halt response, optional halt export, and halt execution folders.
 
 ## Resume Gate
 

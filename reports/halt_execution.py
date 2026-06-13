@@ -110,12 +110,12 @@ def write_halt_execution_report(
         out,
         run_type="halt_execution_reconciliation",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={
-            "halt_response": halt_dir,
-            "cancel_acks": cancel_acks_path,
-            "flatten_fills": flatten_fills_path,
-            "positions": positions_path,
-        },
+        inputs=_manifest_inputs(
+            halt_response_dir=halt_dir,
+            cancel_acks_path=cancel_acks_path,
+            flatten_fills_path=flatten_fills_path,
+            positions_path=positions_path,
+        ),
     )
     return HaltExecutionReport(
         report.cancel_execution,
@@ -125,6 +125,27 @@ def write_halt_execution_report(
         report.summary,
         out,
     )
+
+
+def _manifest_inputs(
+    *,
+    halt_response_dir: Path,
+    cancel_acks_path: str | Path | None,
+    flatten_fills_path: str | Path | None,
+    positions_path: str | Path | None,
+) -> dict[str, Path]:
+    inputs = {
+        "halt_response_summary": halt_response_dir / "halt_response_summary.csv",
+        "halt_cancel_orders": halt_response_dir / "halt_cancel_orders.csv",
+        "halt_flatten_orders": halt_response_dir / "halt_flatten_orders.csv",
+    }
+    if cancel_acks_path is not None:
+        inputs["cancel_acks"] = Path(cancel_acks_path)
+    if flatten_fills_path is not None:
+        inputs["flatten_fills"] = Path(flatten_fills_path)
+    if positions_path is not None:
+        inputs["positions"] = Path(positions_path)
+    return inputs
 
 
 def _cancel_execution(cancel_actions: pd.DataFrame, cancel_acks: pd.DataFrame) -> pd.DataFrame:
