@@ -863,6 +863,35 @@ surface_quote_summary.csv
 manifest.json
 ```
 
+## Surface Quality Review
+
+Check that fitted surface theoretical values beat current option mids against
+future chain mids before spending replay or routing cycles:
+
+```powershell
+python -m hft_cli review-surface-quality `
+  --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
+  --chain data\chain.csv `
+  --out runs\surface_quotes_2026_06_10\surface_quality `
+  --horizon-ns 1000000000 `
+  --min-mae-improvement 0 `
+  --min-improvement-rate 0.55 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+surface_quality_details.csv
+surface_quality_summary.csv
+surface_quality_checks.csv
+manifest.json
+```
+
+This is the surface-replay sanity gate: if the fitted theo cannot beat the
+current mid as a predictor of future option mids, the market-making workflow
+should remain in research.
+
 ## Surface Quote Review
 
 Gate generated market-making quotes before replay or live routing:
@@ -952,6 +981,9 @@ python -m hft_cli pipeline-surface-mm-research `
   --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
   --require-market-portability `
   --require-data-readiness-comparison `
+  --surface-quality-horizon-ns 1000000000 `
+  --require-surface-quality `
+  --min-surface-quality-improvement-rate 0.55 `
   --max-market-spread-ticks 20 `
   --max-quotes-per-snapshot 20 `
   --quote-ttl-ns 500000000 1000000000 2000000000 `
@@ -967,6 +999,7 @@ Outputs:
 
 ```text
 01_quotes\surface_quotes.csv
+02_surface_quality\surface_quality_summary.csv
 02_quote_review\quote_risk_summary.csv
 03_sweep\sweep_summary.csv
 04_selection\selection_summary.csv

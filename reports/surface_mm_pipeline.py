@@ -13,6 +13,7 @@ from reports.manifest import write_experiment_manifest
 from reports.proof import ProofThresholds
 from reports.promotion import PromotionReport, PromotionThresholds, write_promotion_report
 from reports.quote_risk import QuoteRiskReport, QuoteRiskThresholds, write_quote_risk_report
+from reports.surface_quality import SurfaceQualityReport, SurfaceQualityThresholds, write_surface_quality_report
 from reports.sweeps import SweepComparison, write_sweep_comparison
 from strategies.run_surface_mm_sweep import SurfaceMMSweepResult, run_surface_mm_sweep
 from strategies.run_surface_quotes import SurfaceQuoteRunResult, run_surface_quote_generation
@@ -27,6 +28,7 @@ class SurfaceMMResearchPipelineReport:
     summary: pd.DataFrame
     candidate_config: dict[str, Any]
     quotes: SurfaceQuoteRunResult | None = None
+    surface_quality: SurfaceQualityReport | None = None
     quote_review: QuoteRiskReport | None = None
     sweep: SurfaceMMSweepResult | None = None
     selection: SweepComparison | None = None
@@ -61,6 +63,9 @@ def write_surface_mm_research_pipeline(
     max_market_spread_ticks: float | None = None,
     max_quotes_per_snapshot: int | None = None,
     max_snapshots: int | None = None,
+    surface_quality_horizon_ns_values: list[int] | None = None,
+    surface_quality_thresholds: SurfaceQualityThresholds | None = None,
+    require_surface_quality: bool = False,
     quote_risk_thresholds: QuoteRiskThresholds | None = None,
     quote_ttl_ns_values: list[int],
     order_latency_us_values: list[float],
@@ -78,14 +83,19 @@ def write_surface_mm_research_pipeline(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     quotes_dir = out / "01_quotes"
+    surface_quality_dir = out / "02_surface_quality"
     quote_review_dir = out / "02_quote_review"
     sweep_dir = out / "03_sweep"
     selection_dir = out / "04_selection"
     promotion_dir = out / "05_promotion"
 
     quote_risk_thresholds = quote_risk_thresholds or QuoteRiskThresholds()
+    surface_quality_thresholds = surface_quality_thresholds or SurfaceQualityThresholds()
     proof_thresholds = proof_thresholds or ProofThresholds()
     promotion_thresholds = promotion_thresholds or PromotionThresholds()
+    resolved_surface_quality_horizons = surface_quality_horizon_ns_values
+    if require_surface_quality and resolved_surface_quality_horizons is None:
+        resolved_surface_quality_horizons = markout_horizon_ns_values
     market_portability_config = _read_market_portability_config(market_portability_dir)
     portability_stage = _market_portability_stage(
         market_portability_config,
@@ -110,6 +120,9 @@ def write_surface_mm_research_pipeline(
         max_market_spread_ticks=max_market_spread_ticks,
         max_quotes_per_snapshot=max_quotes_per_snapshot,
         max_snapshots=max_snapshots,
+        surface_quality_horizon_ns_values=resolved_surface_quality_horizons,
+        surface_quality_thresholds=surface_quality_thresholds,
+        require_surface_quality=require_surface_quality,
         quote_risk_thresholds=quote_risk_thresholds,
         quote_ttl_ns_values=quote_ttl_ns_values,
         order_latency_us_values=order_latency_us_values,
@@ -128,6 +141,7 @@ def write_surface_mm_research_pipeline(
         return _write_pipeline_outputs(
             output_dir=out,
             quotes=None,
+            surface_quality=None,
             quote_review=None,
             sweep=None,
             selection=None,
@@ -163,6 +177,38 @@ def write_surface_mm_research_pipeline(
         max_quotes_per_snapshot=max_quotes_per_snapshot,
         max_snapshots=max_snapshots,
     )
+    surface_quality = None
+    if resolved_surface_quality_horizons is not None:
+        surface_quality = write_surface_quality_report(
+            quotes_dir / "surface_quotes.csv",
+            chain_path,
+            output_dir=surface_quality_dir,
+            horizons_ns=resolved_surface_quality_horizons,
+            thresholds=surface_quality_thresholds,
+            timestamp_unit=timestamp_unit,
+            timestamp_tz=timestamp_tz,
+            filter_session=filter_session,
+            market=market,
+        )
+        if require_surface_quality and not surface_quality.passed:
+            return _write_pipeline_outputs(
+                output_dir=out,
+                quotes=quotes,
+                surface_quality=surface_quality,
+                quote_review=None,
+                sweep=None,
+                selection=None,
+                promotion=None,
+                candidate_config=_blocked_candidate_config("surface_quality"),
+                chain_path=Path(chain_path),
+                futures_path=Path(futures_path),
+                data_readiness_comparison_dir=Path(data_readiness_comparison_dir)
+                if data_readiness_comparison_dir is not None
+                else None,
+                market_portability_dir=Path(market_portability_dir) if market_portability_dir is not None else None,
+                parameters=parameters,
+                portability_stage=portability_stage,
+            )
     quote_review = write_quote_risk_report(
         quotes_dir / "surface_quotes.csv",
         output_dir=quote_review_dir,
@@ -174,6 +220,7 @@ def write_surface_mm_research_pipeline(
         return _write_pipeline_outputs(
             output_dir=out,
             quotes=quotes,
+            surface_quality=surface_quality,
             quote_review=quote_review,
             sweep=None,
             selection=None,
@@ -213,6 +260,7 @@ def write_surface_mm_research_pipeline(
         return _write_pipeline_outputs(
             output_dir=out,
             quotes=quotes,
+            surface_quality=surface_quality,
             quote_review=quote_review,
             sweep=sweep,
             selection=None,
@@ -242,6 +290,7 @@ def write_surface_mm_research_pipeline(
         return _write_pipeline_outputs(
             output_dir=out,
             quotes=quotes,
+            surface_quality=surface_quality,
             quote_review=quote_review,
             sweep=sweep,
             selection=selection,
@@ -265,6 +314,7 @@ def write_surface_mm_research_pipeline(
     return _write_pipeline_outputs(
         output_dir=out,
         quotes=quotes,
+        surface_quality=surface_quality,
         quote_review=quote_review,
         sweep=sweep,
         selection=selection,
@@ -285,6 +335,7 @@ def _write_pipeline_outputs(
     *,
     output_dir: Path,
     quotes: SurfaceQuoteRunResult | None,
+    surface_quality: SurfaceQualityReport | None,
     quote_review: QuoteRiskReport | None,
     sweep: SurfaceMMSweepResult | None,
     selection: SweepComparison | None,
@@ -300,6 +351,7 @@ def _write_pipeline_outputs(
 ) -> SurfaceMMResearchPipelineReport:
     stages = _stages(
         quotes,
+        surface_quality,
         quote_review,
         sweep,
         selection,
@@ -307,7 +359,7 @@ def _write_pipeline_outputs(
         portability_stage=portability_stage,
         blocked_reason=blocked_reason,
     )
-    summary = _summary(stages, quotes, quote_review, sweep, selection, promotion)
+    summary = _summary(stages, quotes, surface_quality, quote_review, sweep, selection, promotion)
     config = _candidate_config(candidate_config, summary.iloc[0], stages, parameters)
     stages.to_csv(output_dir / "surface_mm_pipeline_stages.csv", index=False)
     summary.to_csv(output_dir / "surface_mm_pipeline_summary.csv", index=False)
@@ -323,6 +375,7 @@ def _write_pipeline_outputs(
             "chain": chain_path,
             "futures": futures_path,
             "quotes": output_dir / "01_quotes",
+            "surface_quality": output_dir / "02_surface_quality",
             "quote_review": output_dir / "02_quote_review",
             "sweep": output_dir / "03_sweep",
             "selection": output_dir / "04_selection",
@@ -336,6 +389,7 @@ def _write_pipeline_outputs(
         summary=summary,
         candidate_config=config,
         quotes=quotes,
+        surface_quality=surface_quality,
         quote_review=quote_review,
         sweep=sweep,
         selection=selection,
@@ -346,6 +400,7 @@ def _write_pipeline_outputs(
 
 def _stages(
     quotes: SurfaceQuoteRunResult | None,
+    surface_quality: SurfaceQualityReport | None,
     quote_review: QuoteRiskReport | None,
     sweep: SurfaceMMSweepResult | None,
     selection: SweepComparison | None,
@@ -357,12 +412,16 @@ def _stages(
     rows = []
     if portability_stage is not None:
         rows.append(portability_stage)
+    quote_review_blocked_reason = "quote_generation_not_ready"
+    if surface_quality is not None and not surface_quality.passed:
+        quote_review_blocked_reason = "surface_quality_not_ready"
     rows.extend(
         [
             _quote_stage(quotes) if quotes is not None else _skipped_stage("quote_generation", blocked_reason),
+            _surface_quality_stage(surface_quality) if surface_quality is not None else None,
             _stage_row("quote_review", quote_review.output_dir, quote_review.summary, "all_passed")
             if quote_review is not None
-            else _skipped_stage("quote_review", "quote_generation_not_ready"),
+            else _skipped_stage("quote_review", quote_review_blocked_reason),
             _sweep_stage(sweep) if sweep is not None else _skipped_stage("sweep", "quote_review_not_ready"),
             _selection_stage(selection) if selection is not None else _skipped_stage("selection", "sweep_not_ready"),
             _stage_row("promotion", promotion.output_dir, promotion.summary, "ready")
@@ -370,7 +429,7 @@ def _stages(
             else _skipped_stage("promotion", "selection_not_ready"),
         ]
     )
-    return pd.DataFrame(rows)
+    return pd.DataFrame([row for row in rows if row is not None])
 
 
 def _quote_stage(quotes: SurfaceQuoteRunResult) -> dict[str, Any]:
@@ -384,6 +443,21 @@ def _quote_stage(quotes: SurfaceQuoteRunResult) -> dict[str, Any]:
         "output_dir": str(quotes.output_dir or ""),
         "failed_checks": 0 if quote_count > 0 else 1,
         "recommendation": "quotes_generated" if quote_count > 0 else "no_surface_quotes_generated",
+    }
+
+
+def _surface_quality_stage(surface_quality: SurfaceQualityReport) -> dict[str, Any]:
+    row = surface_quality.summary.iloc[0] if not surface_quality.summary.empty else pd.Series(dtype=object)
+    return {
+        "stage": "surface_quality",
+        "status": bool(surface_quality.passed),
+        "status_column": "all_passed",
+        "skipped": False,
+        "output_dir": str(surface_quality.output_dir or ""),
+        "failed_checks": _int(row, "failed_checks"),
+        "recommendation": str(row.get("recommendation", "")),
+        "mae_improvement": _float(row, "mae_improvement"),
+        "relative_mae_improvement": _float(row, "relative_mae_improvement"),
     }
 
 
@@ -444,6 +518,7 @@ def _skipped_stage(stage: str, reason: str) -> dict[str, Any]:
 def _summary(
     stages: pd.DataFrame,
     quotes: SurfaceQuoteRunResult | None,
+    surface_quality: SurfaceQualityReport | None,
     quote_review: QuoteRiskReport | None,
     sweep: SurfaceMMSweepResult | None,
     selection: SweepComparison | None,
@@ -451,6 +526,11 @@ def _summary(
 ) -> pd.DataFrame:
     ready = bool(stages["status"].map(_to_bool).all()) if not stages.empty else False
     quote_row = quotes.summary.iloc[0] if quotes is not None and not quotes.summary.empty else pd.Series(dtype=object)
+    quality_row = (
+        surface_quality.summary.iloc[0]
+        if surface_quality is not None and not surface_quality.summary.empty
+        else pd.Series(dtype=object)
+    )
     review_row = (
         quote_review.summary.iloc[0]
         if quote_review is not None and not quote_review.summary.empty
@@ -471,12 +551,16 @@ def _summary(
                 "skipped_stages": int(stages["skipped"].map(_to_bool).sum()) if not stages.empty else 0,
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_researching",
                 "quote_generation_passed": quotes is not None and _int(quote_row, "quotes") > 0,
+                "surface_quality_passed": bool(surface_quality.passed) if surface_quality is not None else False,
                 "quote_review_passed": bool(quote_review.passed) if quote_review is not None else False,
                 "sweep_proof_passed": bool(sweep.proof.passed) if sweep is not None else False,
                 "selection_has_scenario": bool(selection.has_selection) if selection is not None else False,
                 "promotion_ready": bool(promotion.ready) if promotion is not None else False,
                 "candidate_scenario_key": str(promotion_row.get("candidate_scenario_key", "")),
                 "quotes": _int(quote_row, "quotes"),
+                "surface_quality_observations": _int(quality_row, "observations"),
+                "surface_quality_mae_improvement": _float(quality_row, "mae_improvement"),
+                "surface_quality_relative_mae_improvement": _float(quality_row, "relative_mae_improvement"),
                 "marketable_quotes": _int(review_row, "marketable_quotes"),
                 "sweep_scenarios": _int(sweep_row, "scenario_count"),
                 "sweep_pass_rate": _float(sweep_row, "pass_rate"),

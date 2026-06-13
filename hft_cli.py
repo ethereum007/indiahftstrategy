@@ -97,6 +97,7 @@ from reports.surface_mm_launch_pipeline import (
     SurfaceMMLaunchPipelineConfig,
     write_surface_mm_launch_pipeline,
 )
+from reports.surface_quality import SurfaceQualityThresholds, write_surface_quality_report
 from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
@@ -1343,6 +1344,24 @@ def main(argv: list[str] | None = None) -> int:
     surface_quote.add_argument("--max-quotes-per-snapshot", type=int, default=None)
     surface_quote.add_argument("--max-snapshots", type=int, default=None)
 
+    surface_quality = sub.add_parser(
+        "review-surface-quality",
+        help="Check whether surface theo values beat current mids against future chain mids.",
+    )
+    surface_quality.add_argument("--quotes", required=True)
+    surface_quality.add_argument("--chain", required=True)
+    surface_quality.add_argument("--out", required=True)
+    surface_quality.add_argument("--horizon-ns", nargs="+", required=True, type=int)
+    surface_quality.add_argument("--no-filter-session", action="store_true")
+    surface_quality.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
+    surface_quality.add_argument("--min-observations", type=int, default=1)
+    surface_quality.add_argument("--min-instruments", type=int, default=1)
+    surface_quality.add_argument("--min-mae-improvement", type=float, default=0.0)
+    surface_quality.add_argument("--min-relative-mae-improvement", type=float, default=None)
+    surface_quality.add_argument("--min-improvement-rate", type=float, default=None)
+    surface_quality.add_argument("--max-theo-mae", type=float, default=None)
+    surface_quality.add_argument("--fail-on-breach", action="store_true")
+
     surface_pipeline = sub.add_parser(
         "pipeline-surface-mm-research",
         help="Run surface quote generation, review, sweep proof, selection, and promotion.",
@@ -1366,6 +1385,14 @@ def main(argv: list[str] | None = None) -> int:
     surface_pipeline.add_argument("--max-market-spread-ticks", type=float, default=None)
     surface_pipeline.add_argument("--max-quotes-per-snapshot", type=int, default=None)
     surface_pipeline.add_argument("--max-snapshots", type=int, default=None)
+    surface_pipeline.add_argument("--surface-quality-horizon-ns", nargs="+", default=None, type=int)
+    surface_pipeline.add_argument("--require-surface-quality", action="store_true")
+    surface_pipeline.add_argument("--min-surface-quality-observations", type=int, default=1)
+    surface_pipeline.add_argument("--min-surface-quality-instruments", type=int, default=1)
+    surface_pipeline.add_argument("--min-surface-quality-mae-improvement", type=float, default=0.0)
+    surface_pipeline.add_argument("--min-surface-quality-relative-improvement", type=float, default=None)
+    surface_pipeline.add_argument("--min-surface-quality-improvement-rate", type=float, default=None)
+    surface_pipeline.add_argument("--max-surface-quality-theo-mae", type=float, default=None)
     surface_pipeline.add_argument("--min-quotes", type=int, default=1)
     surface_pipeline.add_argument("--min-instruments", type=int, default=1)
     surface_pipeline.add_argument("--max-marketable-quotes", type=int, default=0)
@@ -3034,6 +3061,25 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 0
+    if args.command == "review-surface-quality":
+        result = write_surface_quality_report(
+            args.quotes,
+            args.chain,
+            output_dir=args.out,
+            horizons_ns=args.horizon_ns,
+            thresholds=SurfaceQualityThresholds(
+                min_observations=args.min_observations,
+                min_instruments=args.min_instruments,
+                min_mae_improvement=args.min_mae_improvement,
+                min_relative_mae_improvement=args.min_relative_mae_improvement,
+                min_improvement_rate=args.min_improvement_rate,
+                max_theo_mae=args.max_theo_mae,
+            ),
+            filter_session=not args.no_filter_session,
+            market=args.market,
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.passed else 0
     if args.command == "pipeline-surface-mm-research":
         result = write_surface_mm_research_pipeline(
             chain_path=args.chain,
@@ -3055,6 +3101,16 @@ def main(argv: list[str] | None = None) -> int:
             max_market_spread_ticks=args.max_market_spread_ticks,
             max_quotes_per_snapshot=args.max_quotes_per_snapshot,
             max_snapshots=args.max_snapshots,
+            surface_quality_horizon_ns_values=args.surface_quality_horizon_ns,
+            require_surface_quality=args.require_surface_quality,
+            surface_quality_thresholds=SurfaceQualityThresholds(
+                min_observations=args.min_surface_quality_observations,
+                min_instruments=args.min_surface_quality_instruments,
+                min_mae_improvement=args.min_surface_quality_mae_improvement,
+                min_relative_mae_improvement=args.min_surface_quality_relative_improvement,
+                min_improvement_rate=args.min_surface_quality_improvement_rate,
+                max_theo_mae=args.max_surface_quality_theo_mae,
+            ),
             quote_risk_thresholds=QuoteRiskThresholds(
                 min_quotes=args.min_quotes,
                 min_instruments=args.min_instruments,

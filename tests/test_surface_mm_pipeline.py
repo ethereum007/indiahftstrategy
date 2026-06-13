@@ -7,6 +7,7 @@ from hft_cli import main
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
 from reports.promotion import PromotionThresholds
+from reports.surface_quality import SurfaceQualityThresholds
 from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
 
 
@@ -128,6 +129,37 @@ def test_surface_mm_pipeline_blocks_nonportable_market_pair(tmp_path):
     assert "market_portability" in config["failed_checks"]
 
 
+def test_surface_mm_pipeline_blocks_failed_surface_quality(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    out_dir = tmp_path / "surface_pipeline_quality_blocked"
+
+    report = write_surface_mm_research_pipeline(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        edge_ticks=0.0,
+        max_market_spread_ticks=20.0,
+        max_quotes_per_snapshot=4,
+        surface_quality_horizon_ns_values=[1_000_000_000],
+        require_surface_quality=True,
+        surface_quality_thresholds=SurfaceQualityThresholds(min_mae_improvement=1_000_000.0),
+        quote_ttl_ns_values=[2_000_000_000],
+        order_latency_us_values=[0.0],
+        fill_depth_fraction_values=[1.0],
+        markout_horizon_ns_values=[1_000_000_000],
+    )
+
+    stages = report.stages.set_index("stage")
+    config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert report.surface_quality is not None
+    assert not bool(stages.loc["surface_quality", "status"])
+    assert bool(stages.loc["quote_review", "skipped"])
+    assert stages.loc["quote_review", "recommendation"] == "surface_quality_not_ready"
+    assert "surface_quality" in config["failed_checks"]
+    assert (out_dir / "02_surface_quality" / "surface_quality_summary.csv").exists()
+
+
 def test_cli_surface_mm_research_pipeline_fails_closed_without_data_readiness(tmp_path):
     chain_path, futures_path = write_surface_inputs(tmp_path)
     out_dir = tmp_path / "surface_pipeline_cli"
@@ -164,6 +196,44 @@ def test_cli_surface_mm_research_pipeline_fails_closed_without_data_readiness(tm
     assert not bool(stages.loc[stages["stage"] == "quote_review", "status"].iloc[0])
     assert bool(stages.loc[stages["stage"] == "sweep", "skipped"].iloc[0])
     assert "quote_review" in config["failed_checks"]
+
+
+def test_cli_surface_mm_research_pipeline_requires_surface_quality(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    out_dir = tmp_path / "surface_pipeline_cli_quality"
+
+    code = main(
+        [
+            "pipeline-surface-mm-research",
+            "--chain",
+            str(chain_path),
+            "--futures",
+            str(futures_path),
+            "--out",
+            str(out_dir),
+            "--edge-ticks",
+            "0",
+            "--max-market-spread-ticks",
+            "20",
+            "--max-quotes-per-snapshot",
+            "4",
+            "--surface-quality-horizon-ns",
+            "1000000000",
+            "--require-surface-quality",
+            "--min-surface-quality-mae-improvement",
+            "1000000",
+            "--quote-ttl-ns",
+            "2000000000",
+            "--fill-depth-fraction",
+            "1",
+            "--fail-on-breach",
+        ]
+    )
+
+    stages = pd.read_csv(out_dir / "surface_mm_pipeline_stages.csv")
+    assert code == 2
+    assert not bool(stages.loc[stages["stage"] == "surface_quality", "status"].iloc[0])
+    assert bool(stages.loc[stages["stage"] == "quote_review", "skipped"].iloc[0])
 
 
 def test_cli_surface_mm_pipeline_requires_market_portability(tmp_path):

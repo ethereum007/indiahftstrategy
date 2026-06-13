@@ -65,6 +65,7 @@ SUMMARY_FILES = [
     "halt_execution_summary.csv",
     "halt_incident_summary.csv",
     "resume_summary.csv",
+    "surface_quality_summary.csv",
     "quote_risk_summary.csv",
     "quote_lifecycle_summary.csv",
     "order_exposure_summary.csv",

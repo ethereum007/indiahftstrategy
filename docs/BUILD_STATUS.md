@@ -90,6 +90,9 @@
   options surface work.
 - Surface-driven market-making quote generation with inventory skew and quote
   budget controls.
+- Surface quality review that checks whether fitted theoretical values beat
+  current option mids against future chain mids before replay, sweep, or paper
+  routing work.
 - Surface quote-risk review can require accepted multi-day vendor
   data-readiness comparison evidence before quotes move into replay or
   paper-routing workflows.
@@ -102,9 +105,10 @@
 - Direct surface market-making replay can require the same quote-risk review
   and emits blocked replay artifacts instead of simulating unreviewed quotes.
 - End-to-end surface market-making research pipeline that chains quote
-  generation, quote-risk/data-readiness review, replay sweep proof, scenario
-  selection, and promotion into one manifest-backed candidate run with an
-  optional required market-portability preflight before quote generation.
+  generation, optional surface-quality replay, quote-risk/data-readiness
+  review, replay sweep proof, scenario selection, and promotion into one
+  manifest-backed candidate run with an optional required market-portability
+  preflight before quote generation.
 - Surface market-making launch pipeline that consumes a promoted surface
   research pipeline and first verifies upstream research readiness plus
   strategy/market identity before running quote-risk-enforced lifecycle
@@ -377,7 +381,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 527 tests.
+Current passing suite: 533 tests.
 
 ## Next Build Targets
 
