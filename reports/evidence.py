@@ -334,6 +334,8 @@ def _summary_columns(keys: tuple[str, ...]) -> tuple[str, ...]:
     columns: list[str] = []
     for key in keys:
         columns.append(f"summary_{key}")
+        columns.append(f"summary_runtime_{key}")
+        columns.append(f"summary_broker_runtime_{key}")
     if "market" in keys:
         columns.extend(["summary_market_key", "summary_market_profile_name"])
     return tuple(dict.fromkeys(columns))

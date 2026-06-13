@@ -206,7 +206,8 @@
   requires successful proof, stress, promotion, broker-readiness, shadow, or
   user-selected run types before scale-up decisions, with optional fail-closed
   checks that all passing required artifacts share the expected strategy and
-  market identity.
+  market identity, including runtime identity aliases from broker and shadow
+  evidence.
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness
@@ -313,7 +314,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 402 tests.
+Current passing suite: 403 tests.
 
 ## Next Build Targets
 

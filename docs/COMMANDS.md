@@ -101,6 +101,8 @@ Use `--require-same-strategy` and `--require-same-market` before scale-up to
 fail closed when required proof, stress, promotion, broker, or shadow artifacts
 come from different strategy or market identities. Pair them with
 `--expected-strategy` and `--expected-market` when the scale-up target is known.
+The identity check also recognizes runtime identity aliases retained by
+broker-readiness, shadow-session, and runtime-session summaries.
 
 ## Market Profile Report
 

@@ -138,6 +138,46 @@ def test_strategy_evidence_can_require_broker_readiness_gate():
     assert "broker_readiness" in set(review.evidence["required_run_type"])
 
 
+def test_strategy_evidence_reads_broker_runtime_identity_aliases():
+    catalog = pd.concat(
+        [
+            catalog_rows(),
+            pd.DataFrame(
+                [
+                    {
+                        "run_dir": "runs/broker_readiness",
+                        "run_type": "broker_readiness",
+                        "generated_at_utc": "2026-06-10T09:50:00Z",
+                        "git_commit": "abc123",
+                        "git_dirty": False,
+                        "summary_status": True,
+                        "summary_file": "broker_readiness_summary.csv",
+                        "summary_runtime_strategy": "lead_lag_taker",
+                        "summary_runtime_market": "india_nse_index_derivatives",
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=("proof_report", "stress_report", "promotion_report", "broker_readiness"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="leadlag",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    broker_item = review.evidence.loc[review.evidence["required_run_type"] == "broker_readiness"].iloc[0]
+    assert broker_item["latest_strategy"] == "lead_lag_taker"
+    assert broker_item["latest_market"] == "india_nse_index_derivatives"
+
+
 def test_strategy_evidence_can_require_same_strategy_and_market():
     review = evaluate_strategy_evidence(
         catalog_rows(),
