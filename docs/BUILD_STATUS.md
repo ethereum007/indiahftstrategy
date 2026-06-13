@@ -353,7 +353,8 @@
   supplied or required runtime sessions when the scale-up guard halted,
   retaining resume proof-refresh identity for post-halt restart review, and
   carrying proved dry-run dispatch round-trip identity, route proof quality,
-  failed-check count, and acknowledgement quality into broker readiness.
+  failed-check count, route-enable dispatch round-trip failed-check count, and
+  acknowledgement quality into broker readiness.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -366,7 +367,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 506 tests.
+Current passing suite: 507 tests.
 
 ## Next Build Targets
 

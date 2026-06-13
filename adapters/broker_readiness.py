@@ -202,6 +202,11 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "dispatch_roundtrip_failed_checks": int(failed_checks)
         if component == "dispatch_roundtrip" and provided and not pd.isna(failed_checks)
         else 0,
+        "route_enable_dispatch_roundtrip_failed_checks": int(
+            _number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
+        )
+        if component == "dispatch_roundtrip" and provided
+        else 0,
         "route_dispatch_roundtrip_required": _dispatch_bool(component, row, "route_dispatch_roundtrip_required"),
         "route_dispatch_roundtrip_provided": _dispatch_bool(component, row, "route_dispatch_roundtrip_provided"),
         "route_dispatch_roundtrip_ready": _dispatch_bool(component, row, "route_dispatch_roundtrip_ready"),
@@ -287,6 +292,16 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                 )
             )
         if row.component == "dispatch_roundtrip" and bool(row.provided):
+            checks.append(
+                _check(
+                    "route_enable_dispatch_roundtrip_failed_checks",
+                    int(row.route_enable_dispatch_roundtrip_failed_checks),
+                    "<=",
+                    0,
+                    int(row.route_enable_dispatch_roundtrip_failed_checks) <= 0,
+                    "route-enable dispatch round-trip has failed component checks",
+                )
+            )
             route_required = _route_dispatch_roundtrip_required(row)
             if route_required:
                 checks.append(
@@ -470,6 +485,9 @@ def _summary(
                 ),
                 "dispatch_roundtrip_failed_checks": int(
                     _number(dispatch_item, "dispatch_roundtrip_failed_checks", 0.0)
+                ),
+                "route_enable_dispatch_roundtrip_failed_checks": int(
+                    _number(dispatch_item, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
                 ),
                 "route_dispatch_roundtrip_required": _item_bool(dispatch_item, "route_dispatch_roundtrip_required"),
                 "route_dispatch_roundtrip_provided": _item_bool(dispatch_item, "route_dispatch_roundtrip_provided"),

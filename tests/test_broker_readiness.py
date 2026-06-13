@@ -113,6 +113,7 @@ def dispatch_roundtrip_summary(
     route_missing_request_acks=0,
     route_rejected_orders=0,
     route_unmatched_acks=0,
+    route_enable_dispatch_roundtrip_failed_checks=0,
 ):
     return pd.DataFrame(
         [
@@ -144,6 +145,7 @@ def dispatch_roundtrip_summary(
                 "route_dispatch_roundtrip_missing_request_acks": route_missing_request_acks,
                 "route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
                 "route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
+                "route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
                 "failed_checks": (0 if passed else 1) if failed_checks is None else failed_checks,
                 "recommendation": "broker_dry_run_roundtrip_proved"
                 if passed
@@ -237,6 +239,7 @@ def test_broker_readiness_accepts_required_dispatch_roundtrip():
     assert int(summary["dispatch_roundtrip_requests"]) == 2
     assert int(summary["dispatch_roundtrip_missing_request_acks"]) == 0
     assert int(summary["dispatch_roundtrip_failed_checks"]) == 0
+    assert int(summary["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert bool(summary["route_dispatch_roundtrip_provided"])
     assert bool(summary["route_dispatch_roundtrip_ready"])
     assert summary["route_dispatch_roundtrip_batch_id"] == "BDP-0"
@@ -367,6 +370,27 @@ def test_broker_readiness_fails_for_inconsistent_dispatch_roundtrip_failed_check
     assert int(report.summary.iloc[0]["dispatch_roundtrip_failed_checks"]) == 1
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "dispatch_roundtrip_ready" in failed
+
+
+def test_broker_readiness_fails_for_route_enable_dispatch_roundtrip_failed_checks():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary(
+            "normalized",
+            True,
+            route_enable_dispatch_roundtrip_failed_checks=1,
+        ),
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert int(item["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enable_dispatch_roundtrip_failed_checks" in failed
 
 
 def test_broker_readiness_fails_closed_for_placeholder_broker_schema():
