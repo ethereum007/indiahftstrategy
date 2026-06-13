@@ -697,8 +697,13 @@ def _authorization(
                 "proof_refresh_market": scaleup["proof_refresh_market"],
                 "proof_refresh_mixed_identity": scaleup["proof_refresh_mixed_identity"],
                 "proof_source": scaleup["proof_source"],
+                "scaleup_broker_schema_status": scaleup["broker_schema_status"],
+                "scaleup_broker_schema_reviewed": scaleup["broker_schema_reviewed"],
+                "scaleup_broker_schema_review_mode": scaleup["broker_schema_review_mode"],
                 "broker_readiness_ready": broker["ready"],
                 "broker_schema_status": broker["schema_status"],
+                "broker_schema_reviewed": broker["schema_reviewed"],
+                "broker_schema_review_mode": broker["schema_review_mode"],
                 "broker_recommendation": broker["recommendation"],
                 "runtime_session_provided": runtime["provided"],
                 "runtime_session_ready": runtime["ready"],
@@ -818,7 +823,13 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "proof_refresh_ready": _to_bool(authorization["proof_refresh_ready"]),
                 "proof_refresh_strategy": str(authorization["proof_refresh_strategy"]),
                 "proof_refresh_market": str(authorization["proof_refresh_market"]),
+                "scaleup_broker_schema_status": str(authorization["scaleup_broker_schema_status"]),
+                "scaleup_broker_schema_reviewed": _to_bool(authorization["scaleup_broker_schema_reviewed"]),
+                "scaleup_broker_schema_review_mode": str(authorization["scaleup_broker_schema_review_mode"]),
                 "broker_readiness_ready": _to_bool(authorization["broker_readiness_ready"]),
+                "broker_schema_status": str(authorization["broker_schema_status"]),
+                "broker_schema_reviewed": _to_bool(authorization["broker_schema_reviewed"]),
+                "broker_schema_review_mode": str(authorization["broker_schema_review_mode"]),
                 "runtime_session_ready": _to_bool(authorization["runtime_session_ready"]),
                 "runtime_guard_action": str(authorization["runtime_guard_action"]),
                 "runtime_guard_halted": _to_bool(authorization["runtime_guard_halted"]),
@@ -990,6 +1001,8 @@ def _config(
         "broker_readiness": {
             "ready": _to_bool(authorization["broker_readiness_ready"]),
             "adapter_schema_status": str(authorization["broker_schema_status"]),
+            "schema_reviewed": _to_bool(authorization["broker_schema_reviewed"]),
+            "schema_review_mode": str(authorization["broker_schema_review_mode"]),
             "recommendation": str(authorization["broker_recommendation"]),
             "resume_gate": {
                 "provided": _to_bool(authorization["broker_resume_gate_provided"]),
@@ -1067,7 +1080,8 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
     identity = config.get("identity", {}) or {}
-    dispatch = (config.get("broker_readiness", {}) or {}).get("dispatch_roundtrip", {}) or {}
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
     strategy = _strategy_key(_first_text(row.get("strategy", ""), config.get("strategy", ""), identity.get("strategy", "")))
@@ -1099,6 +1113,17 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
             proof.get("mixed_identity", row.get("proof_refresh_mixed_identity", False))
         ),
         "proof_source": _first_text(proof.get("proof_source", ""), row.get("proof_source", "")),
+        "broker_schema_status": _first_text(
+            broker_readiness.get("adapter_schema_status", ""),
+            row.get("broker_schema_status", ""),
+        ),
+        "broker_schema_reviewed": _to_bool(
+            broker_readiness.get("schema_reviewed", row.get("broker_schema_reviewed", False))
+        ),
+        "broker_schema_review_mode": _first_text(
+            broker_readiness.get("schema_review_mode", ""),
+            row.get("broker_schema_review_mode", ""),
+        ),
         "dispatch_roundtrip_required": _to_bool(
             dispatch.get("required", row.get("broker_dispatch_roundtrip_required", False))
         ),
@@ -1245,6 +1270,8 @@ def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:
         "ready": _to_bool(row.get("ready", False)),
         "adapter": _first_text(row.get("adapter", "")),
         "schema_status": _first_text(row.get("adapter_schema_status", "")),
+        "schema_reviewed": _to_bool(row.get("schema_reviewed", False)),
+        "schema_review_mode": _first_text(row.get("schema_review_mode", "")),
         "recommendation": _first_text(row.get("recommendation", "")),
         "runtime_session_provided": _to_bool(row.get("runtime_session_provided", False)),
         "runtime_session_ready": _to_bool(row.get("runtime_session_ready", False)),

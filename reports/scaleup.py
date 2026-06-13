@@ -1112,6 +1112,12 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_schema_status": str(broker_readiness.get("adapter_schema_status", ""))
                 if not broker_readiness.empty
                 else "",
+                "broker_schema_reviewed": _to_bool(broker_readiness.get("schema_reviewed", False))
+                if not broker_readiness.empty
+                else False,
+                "broker_schema_review_mode": str(broker_readiness.get("schema_review_mode", ""))
+                if not broker_readiness.empty
+                else "",
                 "broker_readiness_recommendation": str(broker_readiness.get("recommendation", ""))
                 if not broker_readiness.empty
                 else "",
@@ -1363,6 +1369,8 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
+                "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
+                "broker_schema_review_mode": str(plan_row["broker_schema_review_mode"]),
                 "broker_runtime_session_required": _to_bool(plan_row["broker_runtime_session_required"]),
                 "broker_runtime_session_provided": _to_bool(plan_row["broker_runtime_session_provided"]),
                 "broker_runtime_session_ready": _to_bool(plan_row["broker_runtime_session_ready"]),
@@ -1573,6 +1581,8 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "provided": _to_bool(plan_row["broker_readiness_provided"]),
             "ready": _to_bool(plan_row["broker_readiness_ready"]),
             "adapter_schema_status": str(plan_row["broker_schema_status"]),
+            "schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
+            "schema_review_mode": str(plan_row["broker_schema_review_mode"]),
             "recommendation": str(plan_row["broker_readiness_recommendation"]),
             "runtime_session": {
                 "required": _to_bool(plan_row["broker_runtime_session_required"]),

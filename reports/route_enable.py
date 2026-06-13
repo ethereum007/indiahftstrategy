@@ -484,6 +484,9 @@ def _packet(
                 "upload_output_file": upload["output_file"],
                 "upload_recommendation": upload["recommendation"],
                 "adapter_schema_status": upload["schema_status"],
+                "broker_schema_status": cutover["broker_schema_status"],
+                "broker_schema_reviewed": cutover["broker_schema_reviewed"],
+                "broker_schema_review_mode": cutover["broker_schema_review_mode"],
                 "order_export_provided": order_export["provided"],
                 "order_export_ready": order_export["ready"],
                 "order_export_orders": int(order_export["orders"]),
@@ -549,6 +552,9 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "max_notional_per_session": float(packet["max_notional_per_session"]),
                 "order_export_total_notional": float(packet["order_export_total_notional"]),
                 "adapter_schema_status": str(packet["adapter_schema_status"]),
+                "broker_schema_status": str(packet["broker_schema_status"]),
+                "broker_schema_reviewed": _to_bool(packet["broker_schema_reviewed"]),
+                "broker_schema_review_mode": str(packet["broker_schema_review_mode"]),
                 "proof_refresh_ready": _to_bool(packet["proof_refresh_ready"]),
                 "broker_resume_gate_ready": _to_bool(packet["broker_resume_gate_ready"]),
                 "broker_resume_proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
@@ -604,6 +610,11 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             "output_file": str(packet["upload_output_file"]),
             "adapter_schema_status": str(packet["adapter_schema_status"]),
             "recommendation": str(packet["upload_recommendation"]),
+        },
+        "broker_readiness": {
+            "adapter_schema_status": str(packet["broker_schema_status"]),
+            "schema_reviewed": _to_bool(packet["broker_schema_reviewed"]),
+            "schema_review_mode": str(packet["broker_schema_review_mode"]),
         },
         "order_export": {
             "provided": _to_bool(packet["order_export_provided"]),
@@ -663,8 +674,9 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
 def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
-    resume = (config.get("broker_readiness", {}) or {}).get("resume_gate", {}) or {}
-    dispatch = (config.get("broker_readiness", {}) or {}).get("dispatch_roundtrip", {}) or {}
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    resume = broker_readiness.get("resume_gate", {}) or {}
+    dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
     broker_route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     scaleup_dispatch = config.get("scaleup_dispatch_roundtrip", {}) or {}
     scaleup_route_enable = scaleup_dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
@@ -688,6 +700,17 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             _first_text(proof.get("strategy", ""), row.get("proof_refresh_strategy", ""))
         ),
         "proof_refresh_market": _identity_key(_first_text(proof.get("market", ""), row.get("proof_refresh_market", ""))),
+        "broker_schema_status": _first_text(
+            broker_readiness.get("adapter_schema_status", ""),
+            row.get("broker_schema_status", ""),
+        ),
+        "broker_schema_reviewed": _to_bool(
+            broker_readiness.get("schema_reviewed", row.get("broker_schema_reviewed", False))
+        ),
+        "broker_schema_review_mode": _first_text(
+            broker_readiness.get("schema_review_mode", ""),
+            row.get("broker_schema_review_mode", ""),
+        ),
         "broker_resume_gate_ready": _to_bool(resume.get("ready", row.get("broker_resume_gate_ready", False))),
         "broker_resume_proof_refresh_ready": _to_bool(
             resume.get("proof_refresh_ready", row.get("broker_resume_proof_refresh_ready", False))

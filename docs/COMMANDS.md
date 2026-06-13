@@ -1912,7 +1912,9 @@ schemas are still placeholders. Without it, placeholder schemas fail closed
 unless schema audit, order-mapping draft, and mapped-order export artifacts are
 all supplied and ready for the same adapter; in that case the readiness summary
 records `schema_review_mode=reviewed_vendor_mapping` and can emit
-`broker_integration_ready`.
+`broker_integration_ready`. Scale-up, cutover, and route-enable artifacts carry
+`schema_reviewed` and `schema_review_mode` forward so downstream route decisions
+can distinguish reviewed vendor mappings from unreviewed placeholders.
 When broker-neutral exports contain quote lifecycle fields, the built-in
 normalized, Arrow.money, and iRage review templates carry `lifecycle_action`,
 `lifecycle_action_id`, `lifecycle_reason`, `lifecycle_message_count`,

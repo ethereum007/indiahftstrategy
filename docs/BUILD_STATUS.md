@@ -438,8 +438,9 @@
   post-halt restart review, and resolving launch pipeline export/upload roots
   while carrying proved dry-run dispatch round-trip identity, route proof
   quality, failed-check count, route-enable dispatch round-trip failed-check
-  count from the round-trip config, and acknowledgement quality into broker
-  readiness.
+  count from the round-trip config, acknowledgement quality, and schema
+  review mode into broker readiness, scale-up, cutover, and route-enable
+  handoff artifacts.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.

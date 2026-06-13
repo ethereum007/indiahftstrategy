@@ -43,6 +43,9 @@ def cutover_summary(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -72,6 +75,9 @@ def cutover_summary(
                 "proof_refresh_ready": True,
                 "proof_refresh_strategy": "lead_lag_taker",
                 "proof_refresh_market": "india_nse_index_derivatives",
+                "broker_schema_status": broker_schema_status,
+                "broker_schema_reviewed": broker_schema_reviewed,
+                "broker_schema_review_mode": broker_schema_review_mode,
                 "broker_resume_gate_ready": False,
                 "broker_resume_proof_refresh_ready": False,
                 "broker_dispatch_roundtrip_required": True,
@@ -141,6 +147,9 @@ def cutover_config(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -175,6 +184,9 @@ def cutover_config(
             "market": "india_nse_index_derivatives",
         },
         "broker_readiness": {
+            "adapter_schema_status": broker_schema_status,
+            "schema_reviewed": broker_schema_reviewed,
+            "schema_review_mode": broker_schema_review_mode,
             "resume_gate": {
                 "provided": False,
                 "ready": False,
@@ -316,6 +328,10 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert report.summary.iloc[0]["recommendation"] == "enable_broker_route"
     assert report.config["route_enabled"]
     assert report.config["upload"]["output_file"] == "broker_upload_orders.csv"
+    assert bool(report.summary.iloc[0]["broker_schema_reviewed"])
+    assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
+    assert report.config["broker_readiness"]["schema_reviewed"]
+    assert report.config["broker_readiness"]["schema_review_mode"] == "reviewed_vendor_mapping"
     assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
     assert report.config["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
     assert int(report.summary.iloc[0]["dispatch_roundtrip_failed_checks"]) == 0

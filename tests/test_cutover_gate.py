@@ -41,6 +41,9 @@ def scaleup_summary(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     dispatch_target_mode = target_mode if dispatch_target_mode is None else dispatch_target_mode
     dispatch_strategy = strategy if dispatch_strategy is None else dispatch_strategy
@@ -76,6 +79,9 @@ def scaleup_summary(
                 "proof_refresh_market": market,
                 "proof_refresh_mixed_identity": False,
                 "proof_source": "latest",
+                "broker_schema_status": broker_schema_status,
+                "broker_schema_reviewed": broker_schema_reviewed,
+                "broker_schema_review_mode": broker_schema_review_mode,
                 "broker_dispatch_roundtrip_required": True,
                 "broker_dispatch_roundtrip_provided": dispatch_provided,
                 "broker_dispatch_roundtrip_ready": dispatch_ready,
@@ -143,6 +149,9 @@ def scaleup_config(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    broker_schema_status="placeholder_normalized_pending_vendor_schema",
+    broker_schema_reviewed=True,
+    broker_schema_review_mode="reviewed_vendor_mapping",
 ):
     dispatch_target_mode = target_mode if dispatch_target_mode is None else dispatch_target_mode
     dispatch_strategy = strategy if dispatch_strategy is None else dispatch_strategy
@@ -191,6 +200,9 @@ def scaleup_config(
             "proof_source": "latest",
         },
         "broker_readiness": {
+            "adapter_schema_status": broker_schema_status,
+            "schema_reviewed": broker_schema_reviewed,
+            "schema_review_mode": broker_schema_review_mode,
             "dispatch_roundtrip": {
                 "required": True,
                 "provided": dispatch_provided,
@@ -269,6 +281,8 @@ def broker_readiness_summary(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    schema_reviewed=True,
+    schema_review_mode="reviewed_vendor_mapping",
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -290,6 +304,8 @@ def broker_readiness_summary(
                 "ready": ready,
                 "adapter": adapter,
                 "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+                "schema_reviewed": schema_reviewed,
+                "schema_review_mode": schema_review_mode,
                 "runtime_session_provided": True,
                 "runtime_session_ready": runtime_ready,
                 "runtime_guard_action": "halt" if runtime_halted else "continue",
@@ -332,7 +348,9 @@ def broker_readiness_summary(
                 "route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
                 "route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
-                "recommendation": "dry_run_only_until_vendor_schema_review" if ready else "fix_broker_readiness_gaps",
+                "recommendation": "broker_integration_ready"
+                if ready and schema_reviewed
+                else ("dry_run_only_until_vendor_schema_review" if ready else "fix_broker_readiness_gaps"),
             }
         ]
     )
@@ -440,6 +458,12 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert summary["recommendation"] == "allow_live_dryrun_cutover"
     assert report.config["runtime_session"]["guard_action"] == "continue"
     assert report.config["limits"]["max_orders_per_session"] == 10
+    assert bool(summary["scaleup_broker_schema_reviewed"])
+    assert summary["scaleup_broker_schema_review_mode"] == "reviewed_vendor_mapping"
+    assert bool(summary["broker_schema_reviewed"])
+    assert summary["broker_schema_review_mode"] == "reviewed_vendor_mapping"
+    assert report.config["broker_readiness"]["schema_reviewed"]
+    assert report.config["broker_readiness"]["schema_review_mode"] == "reviewed_vendor_mapping"
     assert bool(summary["broker_dispatch_roundtrip_ready"])
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
     assert int(summary["scaleup_dispatch_roundtrip_failed_checks"]) == 0

@@ -174,7 +174,13 @@ def broker_readiness_summary(
     route_dispatch_roundtrip_missing_request_acks=None,
     route_dispatch_roundtrip_rejected_orders=None,
     route_dispatch_roundtrip_unmatched_acks=None,
+    schema_reviewed=None,
+    schema_review_mode=None,
 ):
+    if schema_reviewed is None:
+        schema_reviewed = adapter == "normalized"
+    if schema_review_mode is None:
+        schema_review_mode = "native_schema" if adapter == "normalized" else "placeholder_unreviewed"
     if route_dispatch_roundtrip_required is None:
         route_dispatch_roundtrip_required = dispatch_roundtrip_provided
     if route_dispatch_roundtrip_provided is None:
@@ -207,6 +213,8 @@ def broker_readiness_summary(
                 "adapter_schema_status": "placeholder_normalized_pending_vendor_schema"
                 if adapter != "normalized"
                 else "native_normalized",
+                "schema_reviewed": schema_reviewed,
+                "schema_review_mode": schema_review_mode,
                 "required_components": 3,
                 "provided_components": 3,
                 "failed_checks": 0 if ready else 1,
@@ -253,9 +261,13 @@ def broker_readiness_summary(
                 "route_dispatch_roundtrip_missing_request_acks": route_dispatch_roundtrip_missing_request_acks,
                 "route_dispatch_roundtrip_rejected_orders": route_dispatch_roundtrip_rejected_orders,
                 "route_dispatch_roundtrip_unmatched_acks": route_dispatch_roundtrip_unmatched_acks,
-                "recommendation": "dry_run_only_until_vendor_schema_review"
-                if ready and adapter != "normalized"
-                else "fix_broker_readiness_gaps",
+                "recommendation": "broker_integration_ready"
+                if ready and bool(schema_reviewed)
+                else (
+                    "dry_run_only_until_vendor_schema_review"
+                    if ready and adapter != "normalized"
+                    else "fix_broker_readiness_gaps"
+                ),
             }
         ]
     )
@@ -617,14 +629,20 @@ def test_scaleup_plan_accepts_required_broker_readiness():
             runtime_session_ready=True,
             runtime_guard_action="continue",
             runtime_guard_halted=False,
+            schema_reviewed=True,
+            schema_review_mode="reviewed_vendor_mapping",
         ),
         thresholds=ScaleUpThresholds(require_broker_readiness=True),
     )
 
     assert report.ready
     assert report.summary.iloc[0]["broker_readiness_ready"]
+    assert report.summary.iloc[0]["broker_schema_reviewed"]
+    assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
     assert report.config["broker_readiness"]["required"]
     assert report.config["broker_readiness"]["ready"]
+    assert report.config["broker_readiness"]["schema_reviewed"]
+    assert report.config["broker_readiness"]["schema_review_mode"] == "reviewed_vendor_mapping"
     assert report.summary.iloc[0]["broker_runtime_session_ready"]
     assert report.summary.iloc[0]["broker_runtime_guard_action"] == "continue"
     assert report.summary.iloc[0]["broker_runtime_strategy"] == "lead_lag_taker"
