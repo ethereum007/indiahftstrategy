@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -65,10 +66,15 @@ def evaluate_broker_readiness(
     runtime_session_summary: pd.DataFrame | None = None,
     resume_summary: pd.DataFrame | None = None,
     dispatch_roundtrip_summary: pd.DataFrame | None = None,
+    dispatch_roundtrip_config: dict[str, Any] | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
     _validate_thresholds(thresholds)
+    dispatch_roundtrip = _dispatch_roundtrip_frame(
+        dispatch_roundtrip_summary,
+        dispatch_roundtrip_config or {},
+    )
     summaries = {
         "schema_audit": _optional_frame(schema_audit_summary),
         "order_export": _optional_frame(order_export_summary),
@@ -79,7 +85,7 @@ def evaluate_broker_readiness(
         "reconciliation": _optional_frame(reconciliation_summary),
         "runtime_session": _optional_frame(runtime_session_summary),
         "resume_gate": _optional_frame(resume_summary),
-        "dispatch_roundtrip": _optional_frame(dispatch_roundtrip_summary),
+        "dispatch_roundtrip": dispatch_roundtrip,
     }
     items = _items(summaries, thresholds)
     checks = _checks(items, thresholds)
@@ -115,6 +121,10 @@ def write_broker_readiness_report(
         runtime_session_summary=_read_optional_summary(runtime_session_dir, "runtime_session"),
         resume_summary=_read_optional_summary(resume_dir, "resume_gate"),
         dispatch_roundtrip_summary=_read_optional_summary(dispatch_roundtrip_dir, "dispatch_roundtrip"),
+        dispatch_roundtrip_config=_read_optional_config(
+            dispatch_roundtrip_dir,
+            "broker_dispatch_roundtrip_config.json",
+        ),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -144,6 +154,21 @@ def write_broker_readiness_report(
 
 def _items(summaries: dict[str, pd.DataFrame], thresholds: BrokerReadinessThresholds) -> pd.DataFrame:
     return pd.DataFrame([_item(component, frame, thresholds) for component, frame in summaries.items()])
+
+
+def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, Any]) -> pd.DataFrame:
+    frame = _optional_frame(summary)
+    if frame.empty:
+        return frame
+    route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
+    if "failed_checks" in route_enable:
+        frame.loc[0, "route_enable_dispatch_roundtrip_failed_checks"] = int(
+            _number_value(
+                route_enable.get("failed_checks"),
+                _number(frame.iloc[0], "route_enable_dispatch_roundtrip_failed_checks", 0.0),
+            )
+        )
+    return frame
 
 
 def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> dict[str, Any]:
@@ -667,6 +692,17 @@ def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFr
     return frame
 
 
+def _read_optional_config(path: str | Path | None, file_name: str) -> dict[str, Any]:
+    if path is None:
+        return {}
+    candidate = Path(path)
+    if candidate.is_dir():
+        candidate = candidate / file_name
+    if not candidate.exists():
+        return {}
+    return json.loads(candidate.read_text(encoding="utf-8"))
+
+
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
     return pd.DataFrame() if frame is None else frame.copy().reset_index(drop=True)
 
@@ -680,6 +716,13 @@ def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _number_value(value: object, fallback: float = 0.0) -> float:
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
+        return float(fallback)
+    return float(parsed)
 
 
 def _identity_key(value: object) -> str:

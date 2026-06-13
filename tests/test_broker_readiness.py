@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from adapters.broker_readiness import (
@@ -153,6 +155,14 @@ def dispatch_roundtrip_summary(
             }
         ]
     )
+
+
+def dispatch_roundtrip_config(route_enable_dispatch_roundtrip_failed_checks=0):
+    return {
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+        }
+    }
 
 
 def test_broker_readiness_accepts_ready_normalized_artifacts():
@@ -393,6 +403,50 @@ def test_broker_readiness_fails_for_route_enable_dispatch_roundtrip_failed_check
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
 
 
+def test_broker_readiness_reads_dispatch_roundtrip_config_route_enable_failed_checks(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    roundtrip_dir = tmp_path / "roundtrip"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    dispatch_roundtrip_summary("normalized", True).to_csv(
+        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
+        index=False,
+    )
+    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(
+            dispatch_roundtrip_config(route_enable_dispatch_roundtrip_failed_checks=1),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert int(item["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+
+
 def test_broker_readiness_fails_closed_for_placeholder_broker_schema():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),
@@ -464,6 +518,10 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     dispatch_roundtrip_summary("arrow_money", True).to_csv(
         roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
         index=False,
+    )
+    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
+        encoding="utf-8",
     )
 
     report = write_broker_readiness_report(
