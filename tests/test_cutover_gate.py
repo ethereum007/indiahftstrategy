@@ -14,7 +14,22 @@ def scaleup_summary(
     market="india_nse_index_derivatives",
     adapter="arrow_money",
     failed_checks=0,
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode=None,
+    dispatch_strategy=None,
+    dispatch_market=None,
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
 ):
+    dispatch_target_mode = target_mode if dispatch_target_mode is None else dispatch_target_mode
+    dispatch_strategy = strategy if dispatch_strategy is None else dispatch_strategy
+    dispatch_market = market if dispatch_market is None else dispatch_market
     return pd.DataFrame(
         [
             {
@@ -32,6 +47,19 @@ def scaleup_summary(
                 "proof_refresh_market": market,
                 "proof_refresh_mixed_identity": False,
                 "proof_source": "latest",
+                "broker_dispatch_roundtrip_required": True,
+                "broker_dispatch_roundtrip_provided": dispatch_provided,
+                "broker_dispatch_roundtrip_ready": dispatch_ready,
+                "broker_dispatch_roundtrip_target_mode": dispatch_target_mode,
+                "broker_dispatch_roundtrip_strategy": dispatch_strategy,
+                "broker_dispatch_roundtrip_market": dispatch_market,
+                "broker_dispatch_roundtrip_scenario_key": dispatch_scenario_key,
+                "broker_dispatch_roundtrip_batch_id": dispatch_batch_id,
+                "broker_dispatch_roundtrip_requests": dispatch_requests,
+                "broker_dispatch_roundtrip_acked_orders": dispatch_acked_orders,
+                "broker_dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
+                "broker_dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
+                "broker_dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
                 "failed_checks": failed_checks if ready else max(1, failed_checks),
                 "recommendation": "scale_up_with_controls" if ready else "do_not_scale",
             }
@@ -44,7 +72,22 @@ def scaleup_config(
     strategy="lead_lag_taker",
     market="india_nse_index_derivatives",
     adapter="arrow_money",
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode=None,
+    dispatch_strategy=None,
+    dispatch_market=None,
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
 ):
+    dispatch_target_mode = target_mode if dispatch_target_mode is None else dispatch_target_mode
+    dispatch_strategy = strategy if dispatch_strategy is None else dispatch_strategy
+    dispatch_market = market if dispatch_market is None else dispatch_market
     return {
         "schema_version": 1,
         "ready": True,
@@ -74,6 +117,23 @@ def scaleup_config(
             "mixed_identity": False,
             "proof_source": "latest",
         },
+        "broker_readiness": {
+            "dispatch_roundtrip": {
+                "required": True,
+                "provided": dispatch_provided,
+                "ready": dispatch_ready,
+                "target_mode": dispatch_target_mode,
+                "strategy": dispatch_strategy,
+                "market": dispatch_market,
+                "scenario_key": dispatch_scenario_key,
+                "dispatch_batch_id": dispatch_batch_id,
+                "requests": dispatch_requests,
+                "acked_orders": dispatch_acked_orders,
+                "missing_request_acks": dispatch_missing_request_acks,
+                "rejected_orders": dispatch_rejected_orders,
+                "unmatched_acks": dispatch_unmatched_acks,
+            }
+        },
     }
 
 
@@ -90,6 +150,18 @@ def broker_readiness_summary(
     resume_strategy="lead_lag_taker",
     resume_market="india_nse_index_derivatives",
     resume_proof_ready=True,
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode="live_dryrun",
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
 ):
     return pd.DataFrame(
         [
@@ -111,6 +183,18 @@ def broker_readiness_summary(
                 "resume_proof_refresh_ready": resume_proof_ready,
                 "resume_proof_refresh_strategy": resume_strategy,
                 "resume_proof_refresh_market": resume_market,
+                "dispatch_roundtrip_provided": dispatch_provided,
+                "dispatch_roundtrip_ready": dispatch_ready,
+                "dispatch_roundtrip_target_mode": dispatch_target_mode,
+                "dispatch_roundtrip_strategy": dispatch_strategy,
+                "dispatch_roundtrip_market": dispatch_market,
+                "dispatch_roundtrip_scenario_key": dispatch_scenario_key,
+                "dispatch_roundtrip_batch_id": dispatch_batch_id,
+                "dispatch_roundtrip_requests": dispatch_requests,
+                "dispatch_roundtrip_acked_orders": dispatch_acked_orders,
+                "dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
+                "dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
+                "dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "dry_run_only_until_vendor_schema_review" if ready else "fix_broker_readiness_gaps",
             }
@@ -165,20 +249,31 @@ def scaleup_checks(passed=True):
     return pd.DataFrame([{"check": "scaleup_ready", "passed": passed, "reason": "" if passed else "blocked"}])
 
 
-def write_inputs(root, *, target_mode="live_dryrun", operator=True):
+def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=True):
     scaleup = root / "scaleup"
     broker = root / "broker"
     runtime = root / "runtime"
     scaleup.mkdir(parents=True)
     broker.mkdir()
     runtime.mkdir()
-    scaleup_summary(target_mode=target_mode).to_csv(scaleup / "scaleup_summary.csv", index=False)
+    scaleup_summary(target_mode=target_mode, dispatch_provided=dispatch, dispatch_ready=dispatch).to_csv(
+        scaleup / "scaleup_summary.csv",
+        index=False,
+    )
     scaleup_checks().to_csv(scaleup / "scaleup_checks.csv", index=False)
     (scaleup / "scaleup_config.json").write_text(
-        json.dumps(scaleup_config(target_mode=target_mode), indent=2) + "\n",
+        json.dumps(
+            scaleup_config(target_mode=target_mode, dispatch_provided=dispatch, dispatch_ready=dispatch),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    broker_readiness_summary(target_mode=target_mode).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    broker_readiness_summary(
+        target_mode=target_mode,
+        dispatch_provided=dispatch,
+        dispatch_ready=dispatch,
+    ).to_csv(broker / "broker_readiness_summary.csv", index=False)
     runtime_session_summary(target_mode=target_mode).to_csv(runtime / "runtime_session_summary.csv", index=False)
     review_path = root / "operator_review.csv"
     if operator:
@@ -205,6 +300,63 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert summary["recommendation"] == "allow_live_dryrun_cutover"
     assert report.config["runtime_session"]["guard_action"] == "continue"
     assert report.config["limits"]["max_orders_per_session"] == 10
+    assert bool(summary["broker_dispatch_roundtrip_ready"])
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+
+
+def test_cutover_gate_live_dryrun_requires_dispatch_roundtrip():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(dispatch_provided=False, dispatch_ready=False),
+        scaleup_config=scaleup_config(dispatch_provided=False, dispatch_ready=False),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(dispatch_provided=False, dispatch_ready=False),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_dispatch_roundtrip_provided",
+        "scaleup_dispatch_roundtrip_ready",
+        "broker_dispatch_roundtrip_provided",
+        "broker_dispatch_roundtrip_ready",
+    } <= failed
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
+
+
+def test_cutover_gate_blocks_bad_broker_dispatch_roundtrip_quality():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(
+            dispatch_ready=False,
+            dispatch_target_mode="shadow",
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_key="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+        ),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_dispatch_roundtrip_ready",
+        "broker_dispatch_roundtrip_target_mode_matches",
+        "broker_dispatch_roundtrip_strategy_matches",
+        "broker_dispatch_roundtrip_market_matches",
+        "broker_dispatch_roundtrip_scenario_matches",
+        "broker_dispatch_roundtrip_missing_request_acks",
+        "broker_dispatch_roundtrip_rejected_orders",
+        "broker_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    assert report.config["broker_readiness"]["dispatch_roundtrip"]["missing_request_acks"] == 1
 
 
 def test_cutover_gate_live_dryrun_requires_operator_review():
@@ -317,3 +469,35 @@ def test_cli_cutover_gate_fails_without_operator_review(tmp_path):
     checks = pd.read_csv(out_dir / "cutover_checks.csv")
     assert not bool(summary.loc[0, "ready"])
     assert "operator_approved" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_cutover_gate_can_require_dispatch_roundtrip(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path, target_mode="shadow", dispatch=False)
+    out_dir = tmp_path / "cutover"
+
+    code = main(
+        [
+            "review-cutover-gate",
+            "--scaleup",
+            str(scaleup),
+            "--broker-readiness",
+            str(broker),
+            "--runtime-session",
+            str(runtime),
+            "--operator-review",
+            str(review_path),
+            "--out",
+            str(out_dir),
+            "--target-mode",
+            "shadow",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "cutover_summary.csv")
+    checks = pd.read_csv(out_dir / "cutover_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {"scaleup_dispatch_roundtrip_provided", "broker_dispatch_roundtrip_provided"} <= failed

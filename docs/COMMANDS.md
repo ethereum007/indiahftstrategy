@@ -1966,6 +1966,7 @@ python -m hft_cli review-cutover-gate `
   --operator-review ops\cutover_review.csv `
   --out runs\cutover\leadlag_shadow_live_dryrun `
   --target-mode live_dryrun `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -1980,9 +1981,10 @@ manifest.json
 ```
 
 For `live_dryrun`, the cutover gate automatically requires operator approval,
-operator acknowledgement of the strategy/market identity, and acknowledgement
-of the scale-up order/notional limits. It also requires the runtime guard to be
-continuing, validates runtime strategy/market/target-mode identity against the
+operator acknowledgement of the strategy/market identity, acknowledgement of
+the scale-up order/notional limits, a continuing runtime guard, and clean
+dispatch round-trip proof carried by both scale-up and broker readiness. It
+validates runtime and dispatch strategy/market/target-mode identity against the
 scale-up plan, carries proof-refresh state, and validates any supplied broker
 resume-gate proof identity before broker routing is allowed.
 

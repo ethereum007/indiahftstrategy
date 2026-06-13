@@ -18,6 +18,7 @@ class CutoverGateThresholds:
     require_runtime_session: bool = True
     require_runtime_guard_continue: bool = True
     require_resume_gate: bool = False
+    require_dispatch_roundtrip: bool = False
     require_operator_approval: bool = True
     require_operator_identity_ack: bool = True
     require_operator_limits_ack: bool = True
@@ -262,6 +263,53 @@ def _checks(
             "scale-up proof freshness market does not match cutover market",
         ),
     ]
+    dispatch_roundtrip_required = _dispatch_roundtrip_required(thresholds)
+    scaleup_dispatch_active = bool(
+        dispatch_roundtrip_required
+        or scaleup["dispatch_roundtrip_required"]
+        or scaleup["dispatch_roundtrip_provided"]
+    )
+    broker_dispatch_active = bool(dispatch_roundtrip_required or broker["dispatch_roundtrip_provided"])
+    if dispatch_roundtrip_required:
+        checks.extend(
+            [
+                _check(
+                    "scaleup_dispatch_roundtrip_provided",
+                    scaleup["dispatch_roundtrip_provided"],
+                    "is",
+                    True,
+                    bool(scaleup["dispatch_roundtrip_provided"]),
+                    "cutover requires scale-up proof carrying dry-run dispatch round-trip evidence",
+                ),
+                _check(
+                    "broker_dispatch_roundtrip_provided",
+                    broker["dispatch_roundtrip_provided"],
+                    "is",
+                    True,
+                    bool(broker["dispatch_roundtrip_provided"]),
+                    "cutover requires broker readiness with dry-run dispatch round-trip proof",
+                ),
+            ]
+        )
+    if scaleup_dispatch_active:
+        checks.extend(_dispatch_roundtrip_checks("scaleup", scaleup, scaleup, target_mode))
+    if broker_dispatch_active:
+        checks.extend(_dispatch_roundtrip_checks("broker", broker, scaleup, target_mode))
+    if scaleup_dispatch_active and broker_dispatch_active:
+        checks.append(
+            _check(
+                "dispatch_roundtrip_batch_matches",
+                broker["dispatch_roundtrip_batch_id"],
+                "==",
+                scaleup["dispatch_roundtrip_batch_id"],
+                bool(
+                    broker["dispatch_roundtrip_batch_id"]
+                    and scaleup["dispatch_roundtrip_batch_id"]
+                    and broker["dispatch_roundtrip_batch_id"] == scaleup["dispatch_roundtrip_batch_id"]
+                ),
+                "scale-up and broker readiness dispatch round-trip batches differ",
+            )
+        )
     resume_active = bool(thresholds.require_resume_gate or broker["resume_gate_provided"])
     if thresholds.require_resume_gate:
         checks.append(
@@ -367,6 +415,93 @@ def _checks(
     return pd.DataFrame(checks)
 
 
+def _dispatch_roundtrip_checks(
+    prefix: str,
+    source: dict[str, Any],
+    scaleup: dict[str, Any],
+    target_mode: str,
+) -> list[dict[str, object]]:
+    label = prefix.replace("_", " ")
+    return [
+        _check(
+            f"{prefix}_dispatch_roundtrip_ready",
+            source["dispatch_roundtrip_ready"],
+            "is",
+            True,
+            bool(source["dispatch_roundtrip_ready"]),
+            f"{label} dry-run dispatch round-trip proof is not ready",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_target_mode_matches",
+            source["dispatch_roundtrip_target_mode"],
+            "==",
+            target_mode,
+            bool(source["dispatch_roundtrip_target_mode"] and source["dispatch_roundtrip_target_mode"] == target_mode),
+            f"{label} dispatch round-trip target mode does not match cutover target",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_strategy_matches",
+            source["dispatch_roundtrip_strategy"],
+            "==",
+            scaleup["strategy"],
+            bool(
+                source["dispatch_roundtrip_strategy"]
+                and scaleup["strategy"]
+                and source["dispatch_roundtrip_strategy"] == scaleup["strategy"]
+            ),
+            f"{label} dispatch round-trip strategy does not match cutover strategy",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_market_matches",
+            source["dispatch_roundtrip_market"],
+            "==",
+            scaleup["market"],
+            bool(
+                source["dispatch_roundtrip_market"]
+                and scaleup["market"]
+                and source["dispatch_roundtrip_market"] == scaleup["market"]
+            ),
+            f"{label} dispatch round-trip market does not match cutover market",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_scenario_matches",
+            source["dispatch_roundtrip_scenario_key"],
+            "==",
+            scaleup["scenario_key"],
+            bool(
+                source["dispatch_roundtrip_scenario_key"]
+                and scaleup["scenario_key"]
+                and source["dispatch_roundtrip_scenario_key"] == scaleup["scenario_key"]
+            ),
+            f"{label} dispatch round-trip scenario does not match cutover scenario",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_missing_request_acks",
+            source["dispatch_roundtrip_missing_request_acks"],
+            "<=",
+            0,
+            int(source["dispatch_roundtrip_missing_request_acks"]) <= 0,
+            f"{label} dispatch round-trip has missing request acknowledgements",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_rejected_orders",
+            source["dispatch_roundtrip_rejected_orders"],
+            "<=",
+            0,
+            int(source["dispatch_roundtrip_rejected_orders"]) <= 0,
+            f"{label} dispatch round-trip has rejected orders",
+        ),
+        _check(
+            f"{prefix}_dispatch_roundtrip_unmatched_acks",
+            source["dispatch_roundtrip_unmatched_acks"],
+            "<=",
+            0,
+            int(source["dispatch_roundtrip_unmatched_acks"]) <= 0,
+            f"{label} dispatch round-trip has unmatched acknowledgements",
+        ),
+    ]
+
+
 def _authorization(
     scaleup: dict[str, Any],
     broker: dict[str, Any],
@@ -411,6 +546,36 @@ def _authorization(
                 "broker_resume_proof_refresh_ready": broker["resume_proof_refresh_ready"],
                 "broker_resume_proof_refresh_strategy": broker["resume_proof_refresh_strategy"],
                 "broker_resume_proof_refresh_market": broker["resume_proof_refresh_market"],
+                "scaleup_dispatch_roundtrip_required": scaleup["dispatch_roundtrip_required"],
+                "scaleup_dispatch_roundtrip_provided": scaleup["dispatch_roundtrip_provided"],
+                "scaleup_dispatch_roundtrip_ready": scaleup["dispatch_roundtrip_ready"],
+                "scaleup_dispatch_roundtrip_target_mode": scaleup["dispatch_roundtrip_target_mode"],
+                "scaleup_dispatch_roundtrip_strategy": scaleup["dispatch_roundtrip_strategy"],
+                "scaleup_dispatch_roundtrip_market": scaleup["dispatch_roundtrip_market"],
+                "scaleup_dispatch_roundtrip_scenario_key": scaleup["dispatch_roundtrip_scenario_key"],
+                "scaleup_dispatch_roundtrip_batch_id": scaleup["dispatch_roundtrip_batch_id"],
+                "scaleup_dispatch_roundtrip_requests": scaleup["dispatch_roundtrip_requests"],
+                "scaleup_dispatch_roundtrip_acked_orders": scaleup["dispatch_roundtrip_acked_orders"],
+                "scaleup_dispatch_roundtrip_missing_request_acks": scaleup[
+                    "dispatch_roundtrip_missing_request_acks"
+                ],
+                "scaleup_dispatch_roundtrip_rejected_orders": scaleup["dispatch_roundtrip_rejected_orders"],
+                "scaleup_dispatch_roundtrip_unmatched_acks": scaleup["dispatch_roundtrip_unmatched_acks"],
+                "broker_dispatch_roundtrip_required": _dispatch_roundtrip_required(thresholds),
+                "broker_dispatch_roundtrip_provided": broker["dispatch_roundtrip_provided"],
+                "broker_dispatch_roundtrip_ready": broker["dispatch_roundtrip_ready"],
+                "broker_dispatch_roundtrip_target_mode": broker["dispatch_roundtrip_target_mode"],
+                "broker_dispatch_roundtrip_strategy": broker["dispatch_roundtrip_strategy"],
+                "broker_dispatch_roundtrip_market": broker["dispatch_roundtrip_market"],
+                "broker_dispatch_roundtrip_scenario_key": broker["dispatch_roundtrip_scenario_key"],
+                "broker_dispatch_roundtrip_batch_id": broker["dispatch_roundtrip_batch_id"],
+                "broker_dispatch_roundtrip_requests": broker["dispatch_roundtrip_requests"],
+                "broker_dispatch_roundtrip_acked_orders": broker["dispatch_roundtrip_acked_orders"],
+                "broker_dispatch_roundtrip_missing_request_acks": broker[
+                    "dispatch_roundtrip_missing_request_acks"
+                ],
+                "broker_dispatch_roundtrip_rejected_orders": broker["dispatch_roundtrip_rejected_orders"],
+                "broker_dispatch_roundtrip_unmatched_acks": broker["dispatch_roundtrip_unmatched_acks"],
                 "operator_review_provided": operator["provided"],
                 "operator_approval_required": _operator_approval_required(thresholds),
                 "operator_identity_ack_required": _operator_identity_ack_required(thresholds),
@@ -449,6 +614,42 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_resume_gate_ready": _to_bool(authorization["broker_resume_gate_ready"]),
                 "broker_resume_proof_refresh_ready": _to_bool(
                     authorization["broker_resume_proof_refresh_ready"]
+                ),
+                "scaleup_dispatch_roundtrip_required": _to_bool(
+                    authorization["scaleup_dispatch_roundtrip_required"]
+                ),
+                "scaleup_dispatch_roundtrip_provided": _to_bool(
+                    authorization["scaleup_dispatch_roundtrip_provided"]
+                ),
+                "scaleup_dispatch_roundtrip_ready": _to_bool(
+                    authorization["scaleup_dispatch_roundtrip_ready"]
+                ),
+                "broker_dispatch_roundtrip_required": _to_bool(
+                    authorization["broker_dispatch_roundtrip_required"]
+                ),
+                "broker_dispatch_roundtrip_provided": _to_bool(
+                    authorization["broker_dispatch_roundtrip_provided"]
+                ),
+                "broker_dispatch_roundtrip_ready": _to_bool(
+                    authorization["broker_dispatch_roundtrip_ready"]
+                ),
+                "broker_dispatch_roundtrip_batch_id": str(
+                    authorization["broker_dispatch_roundtrip_batch_id"]
+                ),
+                "broker_dispatch_roundtrip_requests": int(
+                    authorization["broker_dispatch_roundtrip_requests"]
+                ),
+                "broker_dispatch_roundtrip_acked_orders": int(
+                    authorization["broker_dispatch_roundtrip_acked_orders"]
+                ),
+                "broker_dispatch_roundtrip_missing_request_acks": int(
+                    authorization["broker_dispatch_roundtrip_missing_request_acks"]
+                ),
+                "broker_dispatch_roundtrip_rejected_orders": int(
+                    authorization["broker_dispatch_roundtrip_rejected_orders"]
+                ),
+                "broker_dispatch_roundtrip_unmatched_acks": int(
+                    authorization["broker_dispatch_roundtrip_unmatched_acks"]
                 ),
                 "operator_review_provided": _to_bool(authorization["operator_review_provided"]),
                 "operator_approval_required": _to_bool(authorization["operator_approval_required"]),
@@ -489,6 +690,21 @@ def _config(
             "mixed_identity": _to_bool(authorization["proof_refresh_mixed_identity"]),
             "proof_source": str(authorization["proof_source"]),
         },
+        "scaleup_dispatch_roundtrip": {
+            "required": _to_bool(authorization["scaleup_dispatch_roundtrip_required"]),
+            "provided": _to_bool(authorization["scaleup_dispatch_roundtrip_provided"]),
+            "ready": _to_bool(authorization["scaleup_dispatch_roundtrip_ready"]),
+            "target_mode": str(authorization["scaleup_dispatch_roundtrip_target_mode"]),
+            "strategy": str(authorization["scaleup_dispatch_roundtrip_strategy"]),
+            "market": str(authorization["scaleup_dispatch_roundtrip_market"]),
+            "scenario_key": str(authorization["scaleup_dispatch_roundtrip_scenario_key"]),
+            "dispatch_batch_id": str(authorization["scaleup_dispatch_roundtrip_batch_id"]),
+            "requests": int(authorization["scaleup_dispatch_roundtrip_requests"]),
+            "acked_orders": int(authorization["scaleup_dispatch_roundtrip_acked_orders"]),
+            "missing_request_acks": int(authorization["scaleup_dispatch_roundtrip_missing_request_acks"]),
+            "rejected_orders": int(authorization["scaleup_dispatch_roundtrip_rejected_orders"]),
+            "unmatched_acks": int(authorization["scaleup_dispatch_roundtrip_unmatched_acks"]),
+        },
         "broker_readiness": {
             "ready": _to_bool(authorization["broker_readiness_ready"]),
             "adapter_schema_status": str(authorization["broker_schema_status"]),
@@ -503,6 +719,21 @@ def _config(
                 ),
                 "proof_refresh_strategy": str(authorization["broker_resume_proof_refresh_strategy"]),
                 "proof_refresh_market": str(authorization["broker_resume_proof_refresh_market"]),
+            },
+            "dispatch_roundtrip": {
+                "required": _to_bool(authorization["broker_dispatch_roundtrip_required"]),
+                "provided": _to_bool(authorization["broker_dispatch_roundtrip_provided"]),
+                "ready": _to_bool(authorization["broker_dispatch_roundtrip_ready"]),
+                "target_mode": str(authorization["broker_dispatch_roundtrip_target_mode"]),
+                "strategy": str(authorization["broker_dispatch_roundtrip_strategy"]),
+                "market": str(authorization["broker_dispatch_roundtrip_market"]),
+                "scenario_key": str(authorization["broker_dispatch_roundtrip_scenario_key"]),
+                "dispatch_batch_id": str(authorization["broker_dispatch_roundtrip_batch_id"]),
+                "requests": int(authorization["broker_dispatch_roundtrip_requests"]),
+                "acked_orders": int(authorization["broker_dispatch_roundtrip_acked_orders"]),
+                "missing_request_acks": int(authorization["broker_dispatch_roundtrip_missing_request_acks"]),
+                "rejected_orders": int(authorization["broker_dispatch_roundtrip_rejected_orders"]),
+                "unmatched_acks": int(authorization["broker_dispatch_roundtrip_unmatched_acks"]),
             },
         },
         "runtime_session": {
@@ -533,6 +764,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
     identity = config.get("identity", {}) or {}
+    dispatch = (config.get("broker_readiness", {}) or {}).get("dispatch_roundtrip", {}) or {}
     strategy = _strategy_key(_first_text(row.get("strategy", ""), config.get("strategy", ""), identity.get("strategy", "")))
     market = _identity_key(_first_text(row.get("market", ""), config.get("market", ""), identity.get("market", "")))
     proof_strategy = _strategy_key(_first_text(proof.get("strategy", ""), row.get("proof_refresh_strategy", "")))
@@ -562,6 +794,67 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
             proof.get("mixed_identity", row.get("proof_refresh_mixed_identity", False))
         ),
         "proof_source": _first_text(proof.get("proof_source", ""), row.get("proof_source", "")),
+        "dispatch_roundtrip_required": _to_bool(
+            dispatch.get("required", row.get("broker_dispatch_roundtrip_required", False))
+        ),
+        "dispatch_roundtrip_provided": _to_bool(
+            dispatch.get("provided", row.get("broker_dispatch_roundtrip_provided", False))
+        ),
+        "dispatch_roundtrip_ready": _to_bool(
+            dispatch.get("ready", row.get("broker_dispatch_roundtrip_ready", False))
+        ),
+        "dispatch_roundtrip_target_mode": _identity_key(
+            _first_text(dispatch.get("target_mode", ""), row.get("broker_dispatch_roundtrip_target_mode", ""))
+        ),
+        "dispatch_roundtrip_strategy": _strategy_key(
+            _first_text(dispatch.get("strategy", ""), row.get("broker_dispatch_roundtrip_strategy", ""))
+        ),
+        "dispatch_roundtrip_market": _identity_key(
+            _first_text(dispatch.get("market", ""), row.get("broker_dispatch_roundtrip_market", ""))
+        ),
+        "dispatch_roundtrip_scenario_key": _first_text(
+            dispatch.get("scenario_key", ""),
+            row.get("broker_dispatch_roundtrip_scenario_key", ""),
+        ),
+        "dispatch_roundtrip_batch_id": _first_text(
+            dispatch.get("dispatch_batch_id", ""),
+            row.get("broker_dispatch_roundtrip_batch_id", ""),
+        ),
+        "dispatch_roundtrip_requests": int(
+            _number_from(
+                dispatch,
+                "requests",
+                _number(row, "broker_dispatch_roundtrip_requests", 0.0),
+            )
+        ),
+        "dispatch_roundtrip_acked_orders": int(
+            _number_from(
+                dispatch,
+                "acked_orders",
+                _number(row, "broker_dispatch_roundtrip_acked_orders", 0.0),
+            )
+        ),
+        "dispatch_roundtrip_missing_request_acks": int(
+            _number_from(
+                dispatch,
+                "missing_request_acks",
+                _number(row, "broker_dispatch_roundtrip_missing_request_acks", 0.0),
+            )
+        ),
+        "dispatch_roundtrip_rejected_orders": int(
+            _number_from(
+                dispatch,
+                "rejected_orders",
+                _number(row, "broker_dispatch_roundtrip_rejected_orders", 0.0),
+            )
+        ),
+        "dispatch_roundtrip_unmatched_acks": int(
+            _number_from(
+                dispatch,
+                "unmatched_acks",
+                _number(row, "broker_dispatch_roundtrip_unmatched_acks", 0.0),
+            )
+        ),
     }
 
 
@@ -587,6 +880,20 @@ def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:
         "resume_proof_refresh_ready": _to_bool(row.get("resume_proof_refresh_ready", False)),
         "resume_proof_refresh_strategy": _strategy_key(row.get("resume_proof_refresh_strategy", "")),
         "resume_proof_refresh_market": _identity_key(row.get("resume_proof_refresh_market", "")),
+        "dispatch_roundtrip_provided": _to_bool(row.get("dispatch_roundtrip_provided", False)),
+        "dispatch_roundtrip_ready": _to_bool(row.get("dispatch_roundtrip_ready", False)),
+        "dispatch_roundtrip_target_mode": _identity_key(row.get("dispatch_roundtrip_target_mode", "")),
+        "dispatch_roundtrip_strategy": _strategy_key(row.get("dispatch_roundtrip_strategy", "")),
+        "dispatch_roundtrip_market": _identity_key(row.get("dispatch_roundtrip_market", "")),
+        "dispatch_roundtrip_scenario_key": _first_text(row.get("dispatch_roundtrip_scenario_key", "")),
+        "dispatch_roundtrip_batch_id": _first_text(row.get("dispatch_roundtrip_batch_id", "")),
+        "dispatch_roundtrip_requests": int(_number(row, "dispatch_roundtrip_requests", 0.0)),
+        "dispatch_roundtrip_acked_orders": int(_number(row, "dispatch_roundtrip_acked_orders", 0.0)),
+        "dispatch_roundtrip_missing_request_acks": int(
+            _number(row, "dispatch_roundtrip_missing_request_acks", 0.0)
+        ),
+        "dispatch_roundtrip_rejected_orders": int(_number(row, "dispatch_roundtrip_rejected_orders", 0.0)),
+        "dispatch_roundtrip_unmatched_acks": int(_number(row, "dispatch_roundtrip_unmatched_acks", 0.0)),
     }
 
 
@@ -654,6 +961,10 @@ def _operator_identity_ack_required(thresholds: CutoverGateThresholds) -> bool:
 
 def _operator_limits_ack_required(thresholds: CutoverGateThresholds) -> bool:
     return bool(thresholds.require_operator_limits_ack or thresholds.target_mode == "live_dryrun")
+
+
+def _dispatch_roundtrip_required(thresholds: CutoverGateThresholds) -> bool:
+    return bool(thresholds.require_dispatch_roundtrip or thresholds.target_mode == "live_dryrun")
 
 
 def _read_required(path: str | Path, name: str) -> pd.DataFrame:
