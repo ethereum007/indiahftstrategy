@@ -203,6 +203,12 @@ def _checks(
     submission_disabled = bool((~requests["submission_enabled"].astype(bool)).all()) if not requests.empty else False
     unique_idempotency = int(requests["idempotency_key"].nunique()) if not requests.empty else 0
     payloads_valid = bool(requests["payload_valid"].astype(bool).all()) if not requests.empty else False
+    route_roundtrip_active = _dispatch_roundtrip_required(thresholds) or _to_bool(
+        dispatch_summary.get("route_dispatch_roundtrip_provided", False)
+    )
+    route_batch_id = _text(dispatch_summary, "route_dispatch_roundtrip_batch_id")
+    order_route_batches = _unique_text_values(dispatch_orders, "route_dispatch_roundtrip_batch_id")
+    request_route_batches = _unique_text_values(requests, "route_dispatch_roundtrip_batch_id")
     checks = pd.DataFrame(
         [
             _check(
@@ -289,6 +295,36 @@ def _checks(
             [
                 checks,
                 pd.DataFrame(_dispatch_roundtrip_checks(dispatch_summary, target_mode)),
+                pd.DataFrame(
+                    [
+                        _check(
+                            "dispatch_order_route_roundtrip_batch_matches",
+                            "|".join(order_route_batches),
+                            "==",
+                            route_batch_id,
+                            bool(
+                                route_batch_id
+                                and len(order_route_batches) == 1
+                                and order_route_batches[0] == route_batch_id
+                            ),
+                            "dispatch order route proof batch ids do not match dispatch summary",
+                        ),
+                        _check(
+                            "request_route_roundtrip_batch_matches",
+                            "|".join(request_route_batches),
+                            "==",
+                            route_batch_id,
+                            bool(
+                                route_batch_id
+                                and len(request_route_batches) == 1
+                                and request_route_batches[0] == route_batch_id
+                            ),
+                            "sender request route proof batch ids do not match dispatch summary",
+                        ),
+                    ]
+                )
+                if route_roundtrip_active
+                else pd.DataFrame(),
             ],
             ignore_index=True,
         )
@@ -349,6 +385,14 @@ def _dispatch_roundtrip_checks(dispatch_summary: pd.Series, target_mode: str) ->
             bool(_text(dispatch_summary, "route_dispatch_roundtrip_scenario_key") and scenario)
             and _text(dispatch_summary, "route_dispatch_roundtrip_scenario_key") == scenario,
             "dispatch route round-trip scenario does not match sender scenario",
+        ),
+        _check(
+            "route_dispatch_roundtrip_batch_id_provided",
+            _text(dispatch_summary, "route_dispatch_roundtrip_batch_id"),
+            "is not",
+            "",
+            bool(_text(dispatch_summary, "route_dispatch_roundtrip_batch_id")),
+            "dispatch route round-trip proof batch id is missing",
         ),
         _check(
             "route_dispatch_roundtrip_missing_request_acks",
@@ -538,6 +582,13 @@ def _first_order_text(frame: pd.DataFrame, column: str) -> str:
     values = frame[column].dropna().astype(str).str.strip()
     values = values.loc[values != ""]
     return str(values.iloc[0]) if not values.empty else ""
+
+
+def _unique_text_values(frame: pd.DataFrame, column: str) -> list[str]:
+    if frame.empty or column not in frame.columns:
+        return []
+    values = frame[column].dropna().astype(str).str.strip()
+    return sorted(set(values.loc[values != ""]))
 
 
 def _text(row: pd.Series, column: str) -> str:

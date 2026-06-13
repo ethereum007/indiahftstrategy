@@ -2090,9 +2090,10 @@ names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
 carries route dispatch round-trip proof into the sender request envelope and
 fails closed if the dispatch plan is not ready and armed, target mode does not
-match, route round-trip proof is missing or dirty for live dry-run sending, the
-adapter is unknown, payload JSON is invalid, idempotency keys are not unique,
-request limits are exceeded, or any request is not dry-run-only.
+match, route round-trip proof is missing or dirty for live dry-run sending, any
+dispatch row or request carries a mismatched route proof batch id, the adapter
+is unknown, payload JSON is invalid, idempotency keys are not unique, request
+limits are exceeded, or any request is not dry-run-only.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 

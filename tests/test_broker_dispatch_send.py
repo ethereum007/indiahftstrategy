@@ -63,7 +63,7 @@ def dispatch_summary(
     )
 
 
-def dispatch_orders(*, dry_run=True, malformed_payload=False):
+def dispatch_orders(*, dry_run=True, malformed_payload=False, route_roundtrip_batch_id="BDP-0"):
     payloads = [
         {
             "exchange": "NFO",
@@ -111,7 +111,7 @@ def dispatch_orders(*, dry_run=True, malformed_payload=False):
                 "source_payload_hash": f"hash-{index}",
                 "upload_file_hash": "upload-hash",
                 "route_enable_hash": "route-hash",
-                "route_dispatch_roundtrip_batch_id": "BDP-0",
+                "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
                 "order_payload_json": payload_json,
             }
         )
@@ -196,6 +196,19 @@ def test_broker_dispatch_send_blocks_bad_route_roundtrip_quality():
         "route_dispatch_roundtrip_unmatched_acks",
     } <= failed
     assert report.config["route_dispatch_roundtrip"]["missing_request_acks"] == 1
+
+
+def test_broker_dispatch_send_blocks_route_roundtrip_batch_mismatch():
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(route_roundtrip_batch_id="BDP-0"),
+        dispatch_orders=dispatch_orders(route_roundtrip_batch_id="BDP-OLD"),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"dispatch_order_route_roundtrip_batch_matches", "request_route_roundtrip_batch_matches"} <= failed
+    assert report.summary.iloc[0]["route_dispatch_roundtrip_batch_id"] == "BDP-0"
+    assert report.requests["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-OLD", "BDP-OLD"]
 
 
 def test_broker_dispatch_send_packet_blocks_unready_non_dry_run_and_bad_payloads():
