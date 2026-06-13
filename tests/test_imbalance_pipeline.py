@@ -3,6 +3,8 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.catalog import catalog_experiment_runs
+from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evidence_profile_run_types
 from reports.imbalance_edge_selection import ImbalanceEdgeSelectionThresholds
 from reports.imbalance_edge_walkforward import ImbalanceEdgeWalkForwardThresholds
 from reports.imbalance_pipeline import write_imbalance_research_pipeline
@@ -83,9 +85,23 @@ def test_imbalance_research_pipeline_promotes_candidate_end_to_end(tmp_path):
     )
 
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    edge_summary = pd.read_csv(out_dir / "edge_walkforward" / "imbalance_edge_walkforward_summary.csv")
+    replay_summary = pd.read_csv(out_dir / "replay_walkforward" / "imbalance_replay_walkforward_summary.csv")
+    promotion_summary = pd.read_csv(out_dir / "promotion" / "promotion_summary.csv")
     assert report.ready
     assert report.replay is not None
     assert report.promotion is not None
+    assert report.summary.loc[0, "strategy"] == "imbalance"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert edge_summary.loc[0, "strategy"] == "imbalance"
+    assert edge_summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert replay_summary.loc[0, "strategy"] == "imbalance"
+    assert replay_summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert promotion_summary.loc[0, "strategy"] == "imbalance"
+    assert promotion_summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "imbalance"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert int(report.summary.loc[0, "edge_selectable_scenarios"]) >= 1
     assert int(report.summary.loc[0, "replay_total_fills"]) >= 2
     assert set(report.stages["stage"]) == {"edge_walkforward", "replay_walkforward", "promotion"}
@@ -98,6 +114,54 @@ def test_imbalance_research_pipeline_promotes_candidate_end_to_end(tmp_path):
     assert (out_dir / "imbalance_pipeline_stages.csv").exists()
     assert (out_dir / "imbalance_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_imbalance_pipeline_artifacts_satisfy_imbalance_evidence_profile(tmp_path):
+    fold_a = tmp_path / "fold_a.csv"
+    fold_b = tmp_path / "fold_b.csv"
+    out_dir = tmp_path / "pipeline_evidence"
+    write_ticks(fold_a, "2026-06-10")
+    write_ticks(fold_b, "2026-06-11")
+
+    write_imbalance_research_pipeline(
+        [fold_a, fold_b],
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        entry_imbalance_values=[0.6, 0.7],
+        min_microprice_edge_ticks_values=[0.25],
+        forward_horizon_ns_values=[100_000],
+        min_signals=2,
+        min_direction_count=2,
+        min_mean_forward_edge_ticks=1.0,
+        min_win_rate=0.5,
+        cooloff_ns=100_000,
+        selection_thresholds=ImbalanceEdgeSelectionThresholds(min_sweeps=2, min_median_usable_signals=2),
+        edge_walkforward_thresholds=ImbalanceEdgeWalkForwardThresholds(min_folds=2, min_passed_sweeps=2),
+        proof_thresholds=ProofThresholds(min_net_pnl=0.0, min_fills=1),
+        replay_walkforward_thresholds=ImbalanceReplayWalkForwardThresholds(
+            min_folds=2,
+            min_proof_pass_rate=1.0,
+            min_total_fills=2,
+        ),
+    )
+
+    catalog = catalog_experiment_runs([out_dir]).catalog
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("microprice_imbalance"),
+            allow_dirty_git=True,
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="imbalance",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(evidence_profile_run_types("imbalance"))
+    assert review.summary.loc[0, "strategy"] == "imbalance"
+    assert review.summary.loc[0, "market"] == "india_nse_index_derivatives"
 
 
 def test_imbalance_research_pipeline_can_require_data_readiness_comparison(tmp_path):

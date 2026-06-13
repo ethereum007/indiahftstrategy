@@ -58,6 +58,10 @@
   replay-proof walk-forward, and candidate promotion in one manifest-backed
   command with stage-level readiness evidence plus optional required
   market-portability and multi-day data-readiness comparison preflights.
+- Strategy evidence review supports an `imbalance` profile that requires
+  imbalance edge walk-forward, replay walk-forward, promotion, and research
+  pipeline artifacts with shared strategy and market identity before shadow
+  scale-up review.
 - Microprice/order-book imbalance robustness sweep across entry threshold,
   microprice edge, hold timer, feed latency, and order latency, with per-run
   replay artifacts, proof gate, pass rate, and robust score summary.
@@ -388,7 +392,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 541 tests.
+Current passing suite: 545 tests.
 
 ## Next Build Targets
 

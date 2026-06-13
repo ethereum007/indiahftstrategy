@@ -127,6 +127,7 @@ def write_imbalance_research_pipeline(
         input_dir=data_readiness_comparison_dir,
     )
     parameters = _parameters(
+        strategy="imbalance",
         entry_imbalance_values=entry_imbalance_values,
         min_microprice_edge_ticks_values=min_microprice_edge_ticks_values,
         forward_horizon_ns_values=forward_horizon_ns_values,
@@ -338,6 +339,8 @@ def _write_pipeline_outputs(
         blocked_reason=blocked_reason,
     )
     summary = _summary(stages, edge, replay, promotion)
+    summary["strategy"] = "imbalance"
+    summary["market"] = str(parameters.get("market", ""))
     config = _candidate_config(candidate_config, summary.iloc[0], stages)
 
     stages.to_csv(output_dir / "imbalance_pipeline_stages.csv", index=False)
@@ -461,6 +464,8 @@ def _summary(
 def _candidate_config(source: dict[str, Any], summary: pd.Series, stages: pd.DataFrame) -> dict[str, Any]:
     config = dict(source)
     config["ready"] = bool(summary["ready"])
+    config["strategy"] = "imbalance"
+    config["market"] = str(summary.get("market", config.get("market", "")))
     config["source_run_type"] = "imbalance_research_pipeline"
     failed = list(config.get("failed_checks", []) or [])
     failed.extend(stages.loc[~stages["status"].map(_to_bool), "stage"].astype(str).tolist())

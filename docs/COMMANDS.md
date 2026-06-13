@@ -97,10 +97,28 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+For microprice/order-book imbalance research, use the named profile so edge
+walk-forward, replay walk-forward, promotion, and the top-level research
+pipeline are all present before scale-up review:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\imbalance_shadow `
+  --profile imbalance `
+  --require-same-strategy `
+  --expected-strategy microprice_imbalance `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
 The `surface_mm` profile expands to `surface_quality_report`,
-`quote_risk_report`, and `surface_mm_research_pipeline`. Explicit
-`--required-run-type` flags still override the profile for custom launch
-reviews.
+`quote_risk_report`, and `surface_mm_research_pipeline`. The `imbalance`
+profile expands to `imbalance_edge_walkforward`,
+`imbalance_replay_walkforward`, `promotion_report`, and
+`imbalance_research_pipeline`. Explicit `--required-run-type` flags still
+override the profile for custom launch reviews.
 
 Outputs:
 

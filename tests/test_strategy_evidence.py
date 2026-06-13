@@ -91,6 +91,63 @@ def surface_mm_catalog_rows(*, commit="abc123", market="india_nse_index_derivati
     )
 
 
+def imbalance_catalog_rows(*, commit="abc123", market="india_nse_index_derivatives"):
+    parameters = json.dumps({"strategy": "imbalance", "market": market})
+    return pd.DataFrame(
+        [
+            {
+                "run_dir": "runs/imbalance_edge",
+                "run_type": "imbalance_edge_walkforward",
+                "generated_at_utc": "2026-06-10T09:30:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "imbalance_edge_walkforward_summary.csv",
+                "summary_strategy": "imbalance",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/imbalance_replay",
+                "run_type": "imbalance_replay_walkforward",
+                "generated_at_utc": "2026-06-10T09:35:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "imbalance_replay_walkforward_summary.csv",
+                "summary_strategy": "imbalance",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/imbalance_promotion",
+                "run_type": "promotion_report",
+                "generated_at_utc": "2026-06-10T09:40:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "promotion_summary.csv",
+                "summary_strategy": "imbalance",
+                "summary_market": market,
+                "summary_candidate_scenario_key": f"strategy=imbalance|market={market}|entry_imbalance=0.6",
+                "parameters_json": parameters,
+            },
+            {
+                "run_dir": "runs/imbalance_pipeline",
+                "run_type": "imbalance_research_pipeline",
+                "generated_at_utc": "2026-06-10T09:45:00Z",
+                "git_commit": commit,
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": "imbalance_pipeline_summary.csv",
+                "summary_strategy": "imbalance",
+                "summary_market": market,
+                "parameters_json": parameters,
+            },
+        ]
+    )
+
+
 def test_strategy_evidence_passes_complete_clean_catalog():
     review = evaluate_strategy_evidence(
         catalog_rows(),
@@ -289,6 +346,39 @@ def test_surface_mm_evidence_profile_fails_without_surface_quality():
     assert "required_run_type:surface_quality_report" in failed
 
 
+def test_imbalance_evidence_profile_requires_walkforward_promotion_and_pipeline_identity():
+    review = evaluate_strategy_evidence(
+        imbalance_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("microprice-imbalance"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="microprice_imbalance",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["imbalance"])
+    assert set(review.evidence["latest_strategy"]) == {"imbalance"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["strategy"] == "imbalance"
+
+
+def test_imbalance_evidence_profile_fails_without_replay_walkforward():
+    catalog = imbalance_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "imbalance_replay_walkforward"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("imbalance")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:imbalance_replay_walkforward" in failed
+
+
 def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -362,6 +452,37 @@ def test_cli_strategy_evidence_surface_mm_profile(tmp_path):
     summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
     assert code == 0
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["surface_mm"])
+    assert bool(summary.loc[0, "ready"])
+
+
+def test_cli_strategy_evidence_imbalance_profile(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "imbalance_evidence"
+    imbalance_catalog_rows().to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "imbalance",
+            "--require-same-strategy",
+            "--expected-strategy",
+            "microprice_imbalance",
+            "--require-same-market",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    assert code == 0
+    assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["imbalance"])
     assert bool(summary.loc[0, "ready"])
 
 

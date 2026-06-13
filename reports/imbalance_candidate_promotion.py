@@ -172,12 +172,15 @@ def _candidate_row(row: pd.Series, candidate_config: dict[str, Any]) -> dict[str
 def _summary(candidate: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
-    key = str(candidate.iloc[0]["scenario_key"]) if not candidate.empty else ""
+    row = candidate.iloc[0] if not candidate.empty else pd.Series(dtype=object)
+    key = str(row.get("scenario_key", ""))
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "candidate_scenario_key": key,
+                "strategy": str(row.get("strategy", "")),
+                "market": str(row.get("market", "")),
                 "checks": int(len(checks)),
                 "failed_checks": failed,
                 "recommendation": "paper_or_shadow_candidate" if ready else "keep_in_research",

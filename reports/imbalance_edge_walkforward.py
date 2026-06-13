@@ -124,7 +124,7 @@ def write_imbalance_edge_walkforward(
         thresholds=selection_thresholds,
     )
     checks = _checks(folds, selection, walkforward_thresholds)
-    summary = _summary(folds, selection, checks)
+    summary = _summary(folds, selection, checks, market=market)
     candidate_config = _candidate_config(selection, checks, summary.iloc[0], tick_size=tick_size, market=market)
 
     folds.to_csv(out / "imbalance_edge_walkforward_folds.csv", index=False)
@@ -153,6 +153,7 @@ def write_imbalance_edge_walkforward(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "strategy": "imbalance",
             "market": market,
             "sweep_thresholds": asdict(sweep_thresholds),
             "selection_thresholds": asdict(selection_thresholds),
@@ -262,6 +263,8 @@ def _summary(
     folds: pd.DataFrame,
     selection: ImbalanceEdgeSelectionReport,
     checks: pd.DataFrame,
+    *,
+    market: str,
 ) -> pd.DataFrame:
     passed = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -271,6 +274,8 @@ def _summary(
             {
                 "passed": passed,
                 "failed_checks": failed,
+                "strategy": "imbalance",
+                "market": market,
                 "recommendation": "run_imbalance_replay_sweep" if passed else "keep_researching",
                 "fold_count": int(len(folds)),
                 "passed_sweeps": int(folds["passed"].map(_to_bool).sum()) if not folds.empty else 0,

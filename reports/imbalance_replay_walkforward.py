@@ -165,6 +165,8 @@ def write_imbalance_replay_walkforward(
     folds = _merge_proof_metrics(pd.DataFrame(fold_rows), proof)
     checks = _checks(folds, thresholds)
     summary = _summary(folds, checks)
+    summary["strategy"] = "imbalance"
+    summary["market"] = replay_params["market"]
     config = _candidate_config(
         candidate,
         candidate_path,
@@ -189,6 +191,7 @@ def write_imbalance_replay_walkforward(
             "timestamp_unit": timestamp_unit,
             "timestamp_tz": timestamp_tz,
             "filter_session": filter_session,
+            "strategy": "imbalance",
             "market": replay_params["market"],
             "instrument_id": instrument_id,
             "instrument_kind": instrument_kind,
