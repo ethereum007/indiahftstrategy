@@ -69,6 +69,7 @@ STRATEGY_SPECS: dict[str, StrategyPortabilitySpec] = {
             "walkforward-leadlag-replay",
             "promote-leadlag-candidate",
             "plan-leadlag-orders",
+            "pipeline-leadlag-launch",
         ),
         portable_market_types=("equity", "options", "derivatives"),
         notes="portable to US pairs once paired feeds share a normalized clock",

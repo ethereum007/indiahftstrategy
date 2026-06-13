@@ -20,10 +20,10 @@
 - Lead-lag edge audit that gates measured relationships on events,
   correlation, laggard update rate, update latency, and latency-curve PnL
   before replay/sweep promotion.
-- Lead-lag edge, replay, replay walk-forward, promotion, order-plan, and
-  sweep artifacts retain `lead_lag_taker` plus market-profile identity for
-  proof/catalog review, and non-India lead-lag replay can use explicit generic
-  fee assumptions instead of NSE costs.
+- Lead-lag edge, replay, replay walk-forward, promotion, order-plan,
+  launch-pipeline, and sweep artifacts retain `lead_lag_taker` plus
+  market-profile identity for proof/catalog review, and non-India lead-lag
+  replay can use explicit generic fee assumptions instead of NSE costs.
 - Lead-lag replay walk-forward runner replays paired leader/laggard folds,
   aggregates proof gates, and writes a replay-ready candidate config with
   inherited market and generic fee assumptions.
@@ -34,10 +34,13 @@
   paper/shadow trigger templates for both upward leader buy-laggard and
   downward leader sell-laggard paths, with quantity, notional, and price-band
   gates before staging.
+- Lead-lag launch pipeline runs promoted candidates through order planning,
+  staging, launch bundle creation, broker export, upload pack, and broker
+  readiness review for Arrow.money/iRage-style paper or shadow handoff.
 - Strategy evidence review supports a `leadlag` profile that requires measured
-  lead-lag edge, replay walk-forward, stress, promotion, and order-plan
-  artifacts with shared strategy and market identity before shadow scale-up
-  review.
+  lead-lag edge, replay walk-forward, stress, promotion, order-plan, and
+  launch-pipeline artifacts with shared strategy and market identity before
+  shadow scale-up review.
 - Microprice/order-book imbalance edge audit that scans top-of-book ticks for
   imbalance/microprice signals and gates forward-mid response, direction
   coverage, and win rate before replay/sweep work.

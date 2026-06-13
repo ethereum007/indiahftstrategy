@@ -510,6 +510,13 @@ def test_catalog_experiment_runs_recognizes_scaleup_calibration_and_data_ops_sta
             "ready",
         ),
         (
+            "leadlag_launch_pipeline",
+            "leadlag_launch_pipeline",
+            "leadlag_launch_pipeline_summary.csv",
+            {"ready": True, "components": 6, "failed_components": 0},
+            "ready",
+        ),
+        (
             "settlement_order",
             "settlement_order_plan",
             "settlement_order_summary.csv",

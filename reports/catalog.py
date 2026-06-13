@@ -16,6 +16,7 @@ SUMMARY_FILES = [
     "leadlag_edge_summary.csv",
     "leadlag_replay_walkforward_summary.csv",
     "leadlag_order_summary.csv",
+    "leadlag_launch_pipeline_summary.csv",
     "imbalance_edge_summary.csv",
     "imbalance_edge_sweep_summary.csv",
     "imbalance_edge_selection_summary.csv",

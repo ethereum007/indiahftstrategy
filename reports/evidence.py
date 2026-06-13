@@ -18,6 +18,7 @@ LEADLAG_REQUIRED_RUN_TYPES = (
     "stress_report",
     "promotion_report",
     "leadlag_order_plan",
+    "leadlag_launch_pipeline",
 )
 IMBALANCE_REQUIRED_RUN_TYPES = (
     "imbalance_edge_walkforward",

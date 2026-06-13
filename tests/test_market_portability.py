@@ -95,6 +95,7 @@ def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):
         }
     ]
     assert "plan-leadlag-orders" in report.matrix.loc[0, "workflow_commands"]
+    assert "pipeline-leadlag-launch" in report.matrix.loc[0, "workflow_commands"]
     assert (out_dir / "manifest.json").exists()
 
 

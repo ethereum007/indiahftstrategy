@@ -59,6 +59,7 @@ from reports.leadlag_candidate_promotion import (
     write_leadlag_candidate_promotion,
 )
 from reports.leadlag_edge import LeadLagEdgeThresholds, write_leadlag_edge_audit
+from reports.leadlag_launch_pipeline import LeadLagLaunchPipelineConfig, write_leadlag_launch_pipeline
 from reports.leadlag_order_plan import LeadLagOrderPlanConfig, write_leadlag_order_plan
 from reports.leadlag_replay_walkforward import (
     LeadLagReplayWalkForwardThresholds,
@@ -365,6 +366,44 @@ def main(argv: list[str] | None = None) -> int:
     leadlag_orders.add_argument("--output-file", default="leadlag_order_candidates.csv")
     leadlag_orders.add_argument("--allow-unready-promotion", action="store_true")
     leadlag_orders.add_argument("--fail-on-breach", action="store_true")
+
+    leadlag_pipeline = sub.add_parser(
+        "pipeline-leadlag-launch",
+        help="Run promoted lead-lag candidate through order plan, staging, launch, export, and upload pack.",
+    )
+    leadlag_pipeline.add_argument("--promotion", required=True)
+    leadlag_pipeline.add_argument("--out", required=True)
+    leadlag_pipeline.add_argument("--adapter", default="arrow_money")
+    leadlag_pipeline.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
+    leadlag_pipeline.add_argument("--route-tag", default=None)
+    leadlag_pipeline.add_argument("--laggard-instrument-id", default="LAGGARD")
+    leadlag_pipeline.add_argument("--qty", type=int, default=None)
+    leadlag_pipeline.add_argument("--reference-price", type=float, default=None)
+    leadlag_pipeline.add_argument("--buy-limit-price", type=float, default=None)
+    leadlag_pipeline.add_argument("--sell-limit-price", type=float, default=None)
+    leadlag_pipeline.add_argument("--entry-offset-ticks", type=float, default=0.0)
+    leadlag_pipeline.add_argument("--tick-size", type=float, default=None)
+    leadlag_pipeline.add_argument("--max-order-qty", type=int, default=None)
+    leadlag_pipeline.add_argument("--max-notional", type=float, default=None)
+    leadlag_pipeline.add_argument("--price-band-pct", type=float, default=None)
+    leadlag_pipeline.add_argument("--max-orders", type=int, default=None)
+    leadlag_pipeline.add_argument("--contract-multiplier", type=float, default=1.0)
+    leadlag_pipeline.add_argument("--product", default="MIS")
+    leadlag_pipeline.add_argument("--exchange", default="NFO")
+    leadlag_pipeline.add_argument("--broker-schema-audit", default=None)
+    leadlag_pipeline.add_argument("--broker-mapping-draft", default=None)
+    leadlag_pipeline.add_argument("--broker-mapped-orders", default=None)
+    leadlag_pipeline.add_argument("--broker-halt-export", default=None)
+    leadlag_pipeline.add_argument("--broker-reconciliation", default=None)
+    leadlag_pipeline.add_argument("--broker-runtime-session", default=None)
+    leadlag_pipeline.add_argument("--require-broker-schema-audit", action="store_true")
+    leadlag_pipeline.add_argument("--require-broker-mapping-draft", action="store_true")
+    leadlag_pipeline.add_argument("--require-broker-mapped-orders", action="store_true")
+    leadlag_pipeline.add_argument("--require-broker-halt-export", action="store_true")
+    leadlag_pipeline.add_argument("--require-broker-reconciliation", action="store_true")
+    leadlag_pipeline.add_argument("--require-broker-runtime-session", action="store_true")
+    leadlag_pipeline.add_argument("--allow-placeholder-schema", action="store_true")
+    leadlag_pipeline.add_argument("--fail-on-breach", action="store_true")
 
     imbalance_replay = sub.add_parser("replay-imbalance", help="Replay microprice/order-book imbalance strategy.")
     imbalance_replay.add_argument("--ticks", required=True)
@@ -1923,6 +1962,45 @@ def main(argv: list[str] | None = None) -> int:
                 max_notional=args.max_notional,
                 price_band_pct=args.price_band_pct,
                 output_filename=args.output_file,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-leadlag-launch":
+        result = write_leadlag_launch_pipeline(
+            args.promotion,
+            output_dir=args.out,
+            config=LeadLagLaunchPipelineConfig(
+                adapter=args.adapter,
+                mode=args.mode,
+                route_tag=args.route_tag,
+                laggard_instrument_id=args.laggard_instrument_id,
+                qty=args.qty,
+                reference_price=args.reference_price,
+                buy_limit_price=args.buy_limit_price,
+                sell_limit_price=args.sell_limit_price,
+                entry_offset_ticks=args.entry_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                broker_schema_audit_dir=args.broker_schema_audit,
+                broker_mapping_draft_dir=args.broker_mapping_draft,
+                broker_mapped_orders_dir=args.broker_mapped_orders,
+                broker_halt_export_dir=args.broker_halt_export,
+                broker_reconciliation_dir=args.broker_reconciliation,
+                broker_runtime_session_dir=args.broker_runtime_session,
+                require_broker_schema_audit=args.require_broker_schema_audit,
+                require_broker_mapping_draft=args.require_broker_mapping_draft,
+                require_broker_mapped_orders=args.require_broker_mapped_orders,
+                require_broker_halt_export=args.require_broker_halt_export,
+                require_broker_reconciliation=args.require_broker_reconciliation,
+                require_broker_runtime_session=args.require_broker_runtime_session,
             ),
         )
         print(result.summary.to_string(index=False))

@@ -98,7 +98,8 @@ python -m hft_cli review-strategy-evidence `
 ```
 
 For lead-lag taker research, use the named profile after the measured edge,
-replay walk-forward, stress, promotion, and order-plan artifacts are present:
+replay walk-forward, stress, promotion, order-plan, and launch-pipeline
+artifacts are present:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `
@@ -146,8 +147,8 @@ python -m hft_cli review-strategy-evidence `
 
 The `leadlag` profile expands to `leadlag_edge_audit`,
 `leadlag_replay_walkforward`, `stress_report`, `promotion_report`, and
-`leadlag_order_plan`. The `surface_mm` profile expands to
-`surface_quality_report`, `quote_risk_report`, and
+`leadlag_order_plan`, and `leadlag_launch_pipeline`. The `surface_mm` profile
+expands to `surface_quality_report`, `quote_risk_report`, and
 `surface_mm_research_pipeline`. The `imbalance` profile expands to
 `imbalance_edge_walkforward`,
 `imbalance_replay_walkforward`, `promotion_report`, and
@@ -524,6 +525,41 @@ python -m hft_cli stage-orders `
   --max-order-qty 75 `
   --max-notional 10000 `
   --fail-on-reject
+```
+
+Run the promoted lead-lag candidate through the full paper/shadow handoff
+chain in one command:
+
+```powershell
+python -m hft_cli pipeline-leadlag-launch `
+  --promotion runs\promotion\leadlag_2026_06_10 `
+  --out runs\pipelines\leadlag_shadow `
+  --adapter arrow_money `
+  --mode shadow `
+  --route-tag leadlag_shadow `
+  --laggard-instrument-id NIFTY_20260610_25000C `
+  --reference-price 10.00 `
+  --max-order-qty 75 `
+  --max-notional 10000 `
+  --max-orders 2 `
+  --broker-runtime-session runs\runtime_sessions\leadlag_shadow_latest `
+  --require-broker-runtime-session `
+  --allow-placeholder-schema `
+  --fail-on-breach
+```
+
+Pipeline outputs:
+
+```text
+01_order_plan\...
+02_staged_orders\...
+03_launch\...
+04_export\...
+05_upload_pack\...
+06_broker_readiness\...
+leadlag_launch_pipeline_components.csv
+leadlag_launch_pipeline_summary.csv
+manifest.json
 ```
 
 ## Microprice Imbalance Edge Audit
