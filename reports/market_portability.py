@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
@@ -34,6 +36,7 @@ class MarketPortabilityReport:
     gaps: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
+    config: dict[str, Any] | None = None
 
     @property
     def ready(self) -> bool:
@@ -112,7 +115,8 @@ def build_market_portability_report(
     matrix = pd.DataFrame(rows)
     gaps = _gaps(matrix)
     summary = _summary(matrix, gaps)
-    return MarketPortabilityReport(matrix=matrix, gaps=gaps, summary=summary)
+    report_config = _config(matrix, gaps, summary, config)
+    return MarketPortabilityReport(matrix=matrix, gaps=gaps, summary=summary, config=report_config)
 
 
 def write_market_portability_report(
@@ -127,13 +131,17 @@ def write_market_portability_report(
     report.matrix.to_csv(out / "market_portability_matrix.csv", index=False)
     report.gaps.to_csv(out / "market_portability_gaps.csv", index=False)
     report.summary.to_csv(out / "market_portability_summary.csv", index=False)
+    (out / "market_portability_config.json").write_text(
+        json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="market_portability_report",
         parameters={"config": asdict(config)},
         inputs={},
     )
-    return MarketPortabilityReport(report.matrix, report.gaps, report.summary, out)
+    return MarketPortabilityReport(report.matrix, report.gaps, report.summary, out, report.config)
 
 
 def _matrix_row(
@@ -229,6 +237,42 @@ def _summary(matrix: pd.DataFrame, gaps: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _config(
+    matrix: pd.DataFrame,
+    gaps: pd.DataFrame,
+    summary: pd.DataFrame,
+    report_config: MarketPortabilityReportConfig,
+) -> dict[str, Any]:
+    summary_row = summary.iloc[0].to_dict() if not summary.empty else {}
+    ready_rows = (
+        matrix.loc[matrix["status"].isin(["india_ready", "portable_research"])]
+        if not matrix.empty
+        else matrix
+    )
+    return {
+        "schema_version": 1,
+        "ready": bool(summary_row.get("ready", False)),
+        "requested_markets": list(report_config.markets),
+        "requested_strategies": list(report_config.strategies) or sorted(STRATEGY_SPECS),
+        "explicit_fee_model": bool(report_config.explicit_fee_model),
+        "summary": _jsonable_row(summary_row),
+        "ready_pairs": _pair_records(ready_rows),
+        "gap_pairs": _pair_records(gaps),
+        "next_gates": sorted(set(gaps["next_gate"].astype(str))) if not gaps.empty else [],
+    }
+
+
+def _pair_records(frame: pd.DataFrame) -> list[dict[str, object]]:
+    if frame.empty:
+        return []
+    columns = [
+        column
+        for column in ("market", "strategy", "status", "blocker", "next_gate")
+        if column in frame.columns
+    ]
+    return [_jsonable_row(row) for row in frame[columns].to_dict(orient="records")]
+
+
 def _market_type(profile: MarketProfile) -> str:
     name = profile.name.lower()
     if "options" in name:
@@ -252,3 +296,21 @@ def _validate_config(config: MarketPortabilityReportConfig) -> None:
     unknown = [name for name in config.strategies if name not in STRATEGY_SPECS]
     if unknown:
         raise ValueError(f"unknown strategies: {unknown}; known strategies: {sorted(STRATEGY_SPECS)}")
+
+
+def _jsonable_row(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable(value) for key, value in row.items()}
+
+
+def _jsonable(value: object) -> object:
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value

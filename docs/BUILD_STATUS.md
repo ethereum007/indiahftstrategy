@@ -153,7 +153,9 @@
   before cross-market research runs.
 - Market portability report that maps each strategy workflow across India and
   US market profiles, flags explicit fee-model requirements, and keeps
-  India-specific settlement mechanics blocked until a separate US model exists.
+  India-specific settlement mechanics blocked until a separate US model
+  exists, while emitting a machine-readable ready/gap config for downstream US
+  research planning.
 - Instrument metadata coverage report that parses option symbols across
   internal, settlement, NSE compact, and OCC formats, emits unparsed gaps, and
   can fail closed before exposure, upload, or US portability work.
@@ -370,7 +372,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 515 tests.
+Current passing suite: 516 tests.
 
 ## Next Build Targets
 

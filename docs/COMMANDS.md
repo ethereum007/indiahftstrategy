@@ -153,12 +153,15 @@ Outputs:
 market_portability_matrix.csv
 market_portability_gaps.csv
 market_portability_summary.csv
+market_portability_config.json
 manifest.json
 ```
 
 US rows are marked `needs_fee_model` unless explicit fees are acknowledged.
 India-specific settlement convergence remains blocked for US profiles until a
-separate US settlement/microstructure model is implemented.
+separate US settlement/microstructure model is implemented. The config JSON
+records ready strategy/market pairs, gap pairs, and next gates for downstream
+US research planning.
 
 ## Instrument Metadata Report
 
