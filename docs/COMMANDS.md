@@ -2168,6 +2168,9 @@ market-making handoffs, `--export` and `--upload-pack` may point at the
 launch-pipeline root; telemetry will read the nested broker export and
 upload-pack summaries from that folder. Upload-pack summaries carry
 `lifecycle_orders` and `replace_orders` into runtime guardrails.
+`runtime_telemetry_sources.csv` records the resolved CSV path for each supplied
+source, and `manifest.json` fingerprints those resolved files for audit
+traceability.
 Telemetry carries the scale-up `strategy` and `market` identities from
 `scaleup_config.json`; missing identity fails closed before guard evaluation.
 When scale-up required proof-refresh evidence, telemetry also carries

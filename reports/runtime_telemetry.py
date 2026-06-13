@@ -56,6 +56,7 @@ def evaluate_runtime_telemetry(
     open_orders: pd.DataFrame | None = None,
     positions: pd.DataFrame | None = None,
     snapshot_ts_ns: int | float | None = None,
+    source_paths: dict[str, str | Path | None] | None = None,
 ) -> RuntimeTelemetryReport:
     export_summary = _optional_frame(export_summary)
     upload_summary = _optional_frame(upload_summary)
@@ -79,6 +80,7 @@ def evaluate_runtime_telemetry(
         snapshot_ts_ns=snapshot_ts_ns,
     )
     sources = _sources(
+        source_paths=source_paths,
         export_summary=export_summary,
         upload_summary=upload_summary,
         reconciliation_summary=reconciliation_summary,
@@ -108,18 +110,41 @@ def write_runtime_telemetry_snapshot(
 ) -> RuntimeTelemetryReport:
     scaleup_file = _scaleup_config_path(scaleup_dir)
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
-    export_summary = _read_optional_summary(export_dir, "broker_order_summary.csv", fallback_dirs=("04_export", "03_export"))
-    upload_summary = _read_optional_summary(
+    export_summary, export_summary_path = _read_optional_summary_with_path(
+        export_dir,
+        "broker_order_summary.csv",
+        fallback_dirs=("04_export", "03_export"),
+    )
+    upload_summary, upload_summary_path = _read_optional_summary_with_path(
         upload_pack_dir,
         "broker_upload_summary.csv",
         fallback_dirs=("05_upload_pack", "04_upload_pack"),
     )
-    reconciliation_summary = _read_optional_summary(reconciliation_dir, "reconciliation_summary.csv")
-    reconciliation_checks = _read_optional_summary(reconciliation_dir, "reconciliation_checks.csv")
-    instrument_metadata_summary = _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")
+    reconciliation_summary, reconciliation_summary_path = _read_optional_summary_with_path(
+        reconciliation_dir,
+        "reconciliation_summary.csv",
+    )
+    reconciliation_checks, reconciliation_checks_path = _read_optional_summary_with_path(
+        reconciliation_dir,
+        "reconciliation_checks.csv",
+    )
+    instrument_metadata_summary, instrument_metadata_summary_path = _read_optional_summary_with_path(
+        instrument_metadata_dir,
+        "instrument_metadata_summary.csv",
+    )
     pnl_snapshot = _read_optional_csv(pnl_path)
     open_orders = _read_optional_csv(open_orders_path)
     positions = _read_optional_csv(positions_path)
+    source_paths = {
+        "export_summary": export_summary_path,
+        "upload_summary": upload_summary_path,
+        "reconciliation_summary": reconciliation_summary_path,
+        "reconciliation_checks": reconciliation_checks_path,
+        "instrument_metadata_summary": instrument_metadata_summary_path,
+        "pnl_snapshot": Path(pnl_path) if pnl_path is not None else None,
+        "open_orders": Path(open_orders_path) if open_orders_path is not None else None,
+        "positions": Path(positions_path) if positions_path is not None else None,
+    }
 
     report = evaluate_runtime_telemetry(
         scaleup_config,
@@ -132,6 +157,7 @@ def write_runtime_telemetry_snapshot(
         open_orders=open_orders,
         positions=positions,
         snapshot_ts_ns=snapshot_ts_ns,
+        source_paths=source_paths,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -139,20 +165,24 @@ def write_runtime_telemetry_snapshot(
     report.sources.to_csv(out / "runtime_telemetry_sources.csv", index=False)
     report.checks.to_csv(out / "runtime_telemetry_checks.csv", index=False)
     report.summary.to_csv(out / "runtime_telemetry_summary.csv", index=False)
+    manifest_inputs: dict[str, Any] = {"scaleup": scaleup_file}
+    for name, value in {
+        "export": export_summary_path,
+        "upload_pack": upload_summary_path,
+        "reconciliation_summary": reconciliation_summary_path,
+        "reconciliation_checks": reconciliation_checks_path,
+        "instrument_metadata": instrument_metadata_summary_path,
+        "pnl": pnl_path,
+        "open_orders": open_orders_path,
+        "positions": positions_path,
+    }.items():
+        if value is not None:
+            manifest_inputs[name] = value
     write_experiment_manifest(
         out,
         run_type="runtime_telemetry_snapshot",
         parameters={"snapshot_ts_ns": snapshot_ts_ns},
-        inputs={
-            "scaleup": scaleup_file,
-            "export": export_dir,
-            "upload_pack": upload_pack_dir,
-            "reconciliation": reconciliation_dir,
-            "instrument_metadata": instrument_metadata_dir,
-            "pnl": pnl_path,
-            "open_orders": open_orders_path,
-            "positions": positions_path,
-        },
+        inputs=manifest_inputs,
     )
     return RuntimeTelemetryReport(report.telemetry, report.sources, report.checks, report.summary, out)
 
@@ -273,12 +303,17 @@ def _telemetry(
     return pd.DataFrame([row])
 
 
-def _sources(**frames: pd.DataFrame) -> pd.DataFrame:
+def _sources(
+    source_paths: dict[str, str | Path | None] | None = None,
+    **frames: pd.DataFrame,
+) -> pd.DataFrame:
+    source_paths = source_paths or {}
     return pd.DataFrame(
         [
             {
                 "source": name,
                 "provided": not frame.empty,
+                "path": _source_path(source_paths.get(name)),
                 "rows": int(len(frame)),
                 "columns": ";".join(frame.columns.astype(str).tolist()) if not frame.empty else "",
             }
@@ -557,19 +592,38 @@ def _read_optional_summary(
     *,
     fallback_dirs: tuple[str, ...] = (),
 ) -> pd.DataFrame | None:
+    frame, _ = _read_optional_summary_with_path(path, filename, fallback_dirs=fallback_dirs)
+    return frame
+
+
+def _read_optional_summary_with_path(
+    path: str | Path | None,
+    filename: str,
+    *,
+    fallback_dirs: tuple[str, ...] = (),
+) -> tuple[pd.DataFrame | None, Path | None]:
     if path is None:
-        return None
+        return None, None
+    candidate = _optional_summary_path(path, filename, fallback_dirs=fallback_dirs)
+    return _read_optional_csv(candidate), candidate
+
+
+def _optional_summary_path(
+    path: str | Path,
+    filename: str,
+    *,
+    fallback_dirs: tuple[str, ...] = (),
+) -> Path:
     candidate = Path(path)
-    if candidate.is_dir():
-        direct = candidate / filename
-        if direct.exists():
-            candidate = direct
-        else:
-            candidate = next(
-                (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
-                direct,
-            )
-    return _read_optional_csv(candidate)
+    if not candidate.is_dir():
+        return candidate
+    direct = candidate / filename
+    if direct.exists():
+        return direct
+    return next(
+        (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
+        direct,
+    )
 
 
 def _read_optional_csv(path: str | Path | None) -> pd.DataFrame | None:
@@ -586,6 +640,12 @@ def _read_optional_csv(path: str | Path | None) -> pd.DataFrame | None:
 
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
     return pd.DataFrame() if frame is None else frame.copy().reset_index(drop=True)
+
+
+def _source_path(path: str | Path | None) -> str:
+    if path is None:
+        return ""
+    return str(Path(path).resolve())
 
 
 def _first_row(frame: pd.DataFrame) -> pd.Series:

@@ -201,6 +201,10 @@ def positions():
     )
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def test_runtime_telemetry_combines_operational_artifacts():
     report = evaluate_runtime_telemetry(
         scaleup_config(),
@@ -491,6 +495,14 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     assert (out_dir / "runtime_telemetry_checks.csv").exists()
     assert (out_dir / "runtime_telemetry_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    sources = pd.read_csv(out_dir / "runtime_telemetry_sources.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    export_source = sources.loc[sources["source"] == "export_summary", "path"].iloc[0]
+    upload_source = sources.loc[sources["source"] == "upload_summary", "path"].iloc[0]
+    assert path_tail(export_source).endswith("/export/broker_order_summary.csv")
+    assert path_tail(upload_source).endswith("/upload/broker_upload_summary.csv")
+    assert path_tail(manifest["inputs"]["export"]["path"]).endswith("/export/broker_order_summary.csv")
+    assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith("/upload/broker_upload_summary.csv")
 
 
 def test_cli_runtime_telemetry_reads_settlement_pipeline_export(tmp_path):
@@ -523,6 +535,8 @@ def test_cli_runtime_telemetry_reads_settlement_pipeline_export(tmp_path):
     assert bool(summary.loc[0, "ready"])
     assert int(telemetry.loc[0, "orders_sent"]) == 4
     assert bool(sources.loc[sources["source"] == "export_summary", "provided"].iloc[0])
+    export_source = sources.loc[sources["source"] == "export_summary", "path"].iloc[0]
+    assert path_tail(export_source).endswith("/settlement_pipeline/04_export/broker_order_summary.csv")
 
 
 def test_cli_runtime_telemetry_reads_surface_pipeline_export(tmp_path):
@@ -563,6 +577,69 @@ def test_cli_runtime_telemetry_reads_surface_pipeline_export(tmp_path):
     assert int(telemetry.loc[0, "replace_orders"]) == 1
     assert bool(sources.loc[sources["source"] == "export_summary", "provided"].iloc[0])
     assert bool(sources.loc[sources["source"] == "upload_summary", "provided"].iloc[0])
+    export_source = sources.loc[sources["source"] == "export_summary", "path"].iloc[0]
+    upload_source = sources.loc[sources["source"] == "upload_summary", "path"].iloc[0]
+    assert path_tail(export_source).endswith("/surface_launch_pipeline/03_export/broker_order_summary.csv")
+    assert path_tail(upload_source).endswith("/surface_launch_pipeline/04_upload_pack/broker_upload_summary.csv")
+
+
+def test_cli_runtime_telemetry_records_strategy_pipeline_source_paths(tmp_path):
+    cases = [
+        ("leadlag", "lead_lag_taker"),
+        ("imbalance", "imbalance"),
+        ("parity", "parity"),
+    ]
+    for family, strategy in cases:
+        case_dir = tmp_path / family
+        scaleup_dir = case_dir / "scaleup"
+        pipeline_dir = case_dir / f"{family}_launch_pipeline"
+        export_dir = pipeline_dir / "04_export"
+        upload_dir = pipeline_dir / "05_upload_pack"
+        out_dir = case_dir / "telemetry"
+        scaleup_dir.mkdir(parents=True)
+        export_dir.mkdir(parents=True)
+        upload_dir.mkdir(parents=True)
+        (scaleup_dir / "scaleup_config.json").write_text(
+            json.dumps(scaleup_config(strategy=strategy), indent=2) + "\n",
+            encoding="utf-8",
+        )
+        export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
+        upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+
+        code = main(
+            [
+                "build-runtime-telemetry",
+                "--scaleup",
+                str(scaleup_dir),
+                "--export",
+                str(pipeline_dir),
+                "--upload-pack",
+                str(pipeline_dir),
+                "--out",
+                str(out_dir),
+                "--fail-on-breach",
+            ]
+        )
+
+        summary = pd.read_csv(out_dir / "runtime_telemetry_summary.csv")
+        sources = pd.read_csv(out_dir / "runtime_telemetry_sources.csv")
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        export_source = sources.loc[sources["source"] == "export_summary", "path"].iloc[0]
+        upload_source = sources.loc[sources["source"] == "upload_summary", "path"].iloc[0]
+        assert code == 0
+        assert bool(summary.loc[0, "ready"])
+        assert path_tail(export_source).endswith(
+            f"/{family}_launch_pipeline/04_export/broker_order_summary.csv"
+        )
+        assert path_tail(upload_source).endswith(
+            f"/{family}_launch_pipeline/05_upload_pack/broker_upload_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["export"]["path"]).endswith(
+            f"/{family}_launch_pipeline/04_export/broker_order_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith(
+            f"/{family}_launch_pipeline/05_upload_pack/broker_upload_summary.csv"
+        )
 
 
 def test_cli_runtime_telemetry_can_fail_on_missing_identity(tmp_path):

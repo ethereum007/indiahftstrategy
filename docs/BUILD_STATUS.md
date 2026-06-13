@@ -303,7 +303,8 @@
   notional from marks or total notional columns, derives net delta/vega from
   total or unit Greek position columns, carries scale-up strategy/market and
   proof-refresh freshness identity plus broker resume-gate proof identity, and
-  can consume launch pipeline roots for broker export and upload-pack evidence.
+  can consume launch pipeline roots for broker export and upload-pack evidence
+  while recording resolved source CSV paths and manifest fingerprints.
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
   against `scaleup_config.json` limits, kill switches, telemetry freshness,
   lifecycle/replace message controls, open-order quantity/notional/age,
