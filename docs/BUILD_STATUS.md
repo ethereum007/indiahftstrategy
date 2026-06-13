@@ -191,8 +191,9 @@
 - Shadow-session acceptance report that combines launch, export,
   reconciliation, and optional runtime-session monitor artifacts into one
   go/no-go record for paper/shadow promotion decisions, carrying runtime
-  strategy/market identity and blocking supplied or required sessions when the
-  runtime guard halted.
+  strategy/market and proof-refresh identity, blocking supplied or required
+  sessions when the runtime guard halted, and failing closed on bad runtime
+  proof-refresh state.
 - Multi-session shadow comparison gate for requiring repeated accepted
   paper/shadow sessions with consistent scenario keys, fill rates, slippage,
   runtime strategy/market identity, mismatch, reconciliation quality, and zero
@@ -243,7 +244,7 @@
 - Runtime session monitor that chains telemetry building, scale-up guard
   evaluation, and automatic halt-response planning into one manifest-backed
   paper/shadow go/no-go artifact, preserving the guard halt trigger and
-  strategy/market identity in the top-level session summary.
+  strategy/market plus proof-refresh identity in the top-level session summary.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests, stamping guard failed check names and first halt reasons onto
@@ -319,7 +320,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 411 tests.
+Current passing suite: 414 tests.
 
 ## Next Build Targets
 

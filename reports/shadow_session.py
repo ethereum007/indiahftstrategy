@@ -144,6 +144,23 @@ def _metrics(
                 "runtime_target_mode": _text(runtime, "target_mode"),
                 "runtime_strategy": _text(runtime, "strategy"),
                 "runtime_market": _text(runtime, "market"),
+                "runtime_proof_refresh_required": _to_bool(runtime.get("proof_refresh_required", False))
+                if not runtime.empty
+                else False,
+                "runtime_proof_refresh_provided": _to_bool(runtime.get("proof_refresh_provided", False))
+                if not runtime.empty
+                else False,
+                "runtime_proof_refresh_ready": _to_bool(runtime.get("proof_refresh_ready", False))
+                if not runtime.empty
+                else False,
+                "runtime_proof_refresh_strategy": _text(runtime, "proof_refresh_strategy"),
+                "runtime_proof_refresh_market": _text(runtime, "proof_refresh_market"),
+                "runtime_proof_refresh_mixed_identity": _to_bool(
+                    runtime.get("proof_refresh_mixed_identity", False)
+                )
+                if not runtime.empty
+                else False,
+                "runtime_proof_source": _text(runtime, "proof_source"),
                 "runtime_failed_steps": _number(runtime, "failed_steps") if not runtime.empty else 0.0,
                 "runtime_failed_checks": runtime_failed,
                 "scenario_key": launch_scenario,
@@ -256,6 +273,45 @@ def _checks(row: pd.Series, thresholds: ShadowSessionThresholds) -> pd.DataFrame
                 ),
             ]
         )
+        if bool(row["runtime_proof_refresh_required"]) or bool(row["runtime_proof_refresh_provided"]):
+            checks.extend(
+                [
+                    _check(
+                        "runtime_proof_refresh_ready",
+                        row["runtime_proof_refresh_ready"],
+                        "is",
+                        True,
+                        bool(row["runtime_proof_refresh_ready"]),
+                        "runtime proof-refresh evidence is not ready",
+                    ),
+                    _check(
+                        "runtime_proof_refresh_identity_consistent",
+                        row["runtime_proof_refresh_mixed_identity"],
+                        "is",
+                        False,
+                        not bool(row["runtime_proof_refresh_mixed_identity"]),
+                        "runtime proof-refresh evidence reports mixed identity",
+                    ),
+                    _check(
+                        "runtime_proof_refresh_strategy_matches",
+                        row["runtime_proof_refresh_strategy"],
+                        "==",
+                        row["runtime_strategy"],
+                        bool(row["runtime_proof_refresh_strategy"])
+                        and row["runtime_proof_refresh_strategy"] == row["runtime_strategy"],
+                        "runtime proof-refresh strategy does not match runtime strategy",
+                    ),
+                    _check(
+                        "runtime_proof_refresh_market_matches",
+                        row["runtime_proof_refresh_market"],
+                        "==",
+                        row["runtime_market"],
+                        bool(row["runtime_proof_refresh_market"])
+                        and row["runtime_proof_refresh_market"] == row["runtime_market"],
+                        "runtime proof-refresh market does not match runtime market",
+                    ),
+                ]
+            )
     return pd.DataFrame(checks)
 
 
@@ -277,6 +333,13 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "runtime_target_mode": row["runtime_target_mode"],
                 "runtime_strategy": row["runtime_strategy"],
                 "runtime_market": row["runtime_market"],
+                "runtime_proof_refresh_required": bool(row["runtime_proof_refresh_required"]),
+                "runtime_proof_refresh_provided": bool(row["runtime_proof_refresh_provided"]),
+                "runtime_proof_refresh_ready": bool(row["runtime_proof_refresh_ready"]),
+                "runtime_proof_refresh_strategy": row["runtime_proof_refresh_strategy"],
+                "runtime_proof_refresh_market": row["runtime_proof_refresh_market"],
+                "runtime_proof_refresh_mixed_identity": bool(row["runtime_proof_refresh_mixed_identity"]),
+                "runtime_proof_source": row["runtime_proof_source"],
                 "runtime_failed_checks": int(row["runtime_failed_checks"]),
                 "total_failed_component_checks": int(row["total_failed_component_checks"]),
                 "failed_checks": failed_checks,

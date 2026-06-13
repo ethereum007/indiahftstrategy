@@ -6,7 +6,7 @@ from hft_cli import main
 from reports.runtime_session import write_runtime_session_monitor
 
 
-def scaleup_config(**kill_switch_overrides):
+def scaleup_config(require_proof_refresh=False, **kill_switch_overrides):
     kill_switches = {
         "max_total_failed_component_checks": 0,
         "max_total_unmatched_fills": 0,
@@ -19,7 +19,7 @@ def scaleup_config(**kill_switch_overrides):
         "max_abs_net_position_qty": 100,
     }
     kill_switches.update(kill_switch_overrides)
-    return {
+    config = {
         "schema_version": 1,
         "ready": True,
         "target_mode": "shadow",
@@ -40,6 +40,18 @@ def scaleup_config(**kill_switch_overrides):
         },
         "kill_switches": kill_switches,
     }
+    if require_proof_refresh:
+        config["proof_freshness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": "surface_mm",
+            "market": "india_nse_index_derivatives",
+            "mixed_identity": False,
+            "proof_source": "latest",
+            "fresh_proof_required": True,
+        }
+    return config
 
 
 def write_scaleup_dir(path, config=None):
@@ -125,6 +137,32 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
     assert report.steps["step"].tolist() == ["telemetry", "runtime_guard"]
     assert set(report.steps["strategy"]) == {"surface_mm"}
     assert set(report.steps["market"]) == {"india_nse_index_derivatives"}
+
+
+def test_runtime_session_monitor_carries_proof_refresh_state(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    write_scaleup_dir(scaleup_dir, scaleup_config(require_proof_refresh=True))
+
+    report = write_runtime_session_monitor(
+        scaleup_dir=scaleup_dir,
+        output_dir=out_dir,
+        snapshot_ts_ns=1_000,
+        as_of_ts_ns=1_500,
+        max_telemetry_age_ns=1_000,
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(summary["proof_refresh_required"])
+    assert bool(summary["proof_refresh_provided"])
+    assert bool(summary["proof_refresh_ready"])
+    assert summary["proof_refresh_strategy"] == "surface_mm"
+    assert summary["proof_refresh_market"] == "india_nse_index_derivatives"
+    assert not bool(summary["proof_refresh_mixed_identity"])
+    assert summary["proof_source"] == "latest"
+    assert set(report.steps["proof_refresh_strategy"]) == {"surface_mm"}
+    assert set(report.steps["proof_refresh_market"]) == {"india_nse_index_derivatives"}
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):

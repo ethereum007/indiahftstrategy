@@ -60,7 +60,14 @@ def reconciliation_summary(passed=True, *, fill_rate=1.0, unmatched=0, mismatche
     )
 
 
-def runtime_session_summary(ready=True):
+def runtime_session_summary(
+    ready=True,
+    proof_refresh_required=False,
+    proof_refresh_ready=True,
+    proof_refresh_strategy="lead_lag_taker",
+    proof_refresh_market="india_nse_index_derivatives",
+    proof_refresh_mixed_identity=False,
+):
     return pd.DataFrame(
         [
             {
@@ -73,6 +80,13 @@ def runtime_session_summary(ready=True):
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "orders_sent": 2,
+                "proof_refresh_required": proof_refresh_required,
+                "proof_refresh_provided": proof_refresh_required,
+                "proof_refresh_ready": proof_refresh_ready,
+                "proof_refresh_strategy": proof_refresh_strategy,
+                "proof_refresh_market": proof_refresh_market,
+                "proof_refresh_mixed_identity": proof_refresh_mixed_identity,
+                "proof_source": "latest" if proof_refresh_required else "",
                 "telemetry_ready": ready,
                 "failed_steps": 0 if ready else 1,
                 "failed_checks": 0 if ready else 1,
@@ -151,6 +165,55 @@ def test_evaluate_shadow_session_accepts_runtime_guard_continue_evidence():
     assert row["runtime_market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+
+
+def test_evaluate_shadow_session_carries_runtime_proof_refresh_evidence():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(True, proof_refresh_required=True),
+    )
+
+    row = report.metrics.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.accepted
+    assert bool(row["runtime_proof_refresh_required"])
+    assert bool(row["runtime_proof_refresh_ready"])
+    assert row["runtime_proof_refresh_strategy"] == "lead_lag_taker"
+    assert summary["runtime_proof_source"] == "latest"
+    assert bool(summary["runtime_proof_refresh_provided"])
+
+
+def test_evaluate_shadow_session_blocks_bad_runtime_proof_refresh_evidence():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(
+            True,
+            proof_refresh_required=True,
+            proof_refresh_ready=False,
+            proof_refresh_strategy="surface_mm",
+            proof_refresh_market="us_options_regular",
+            proof_refresh_mixed_identity=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {
+        "runtime_proof_refresh_ready",
+        "runtime_proof_refresh_identity_consistent",
+        "runtime_proof_refresh_strategy_matches",
+        "runtime_proof_refresh_market_matches",
+    } <= failed
 
 
 def test_evaluate_shadow_session_blocks_halted_runtime_guard():

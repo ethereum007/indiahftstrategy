@@ -133,6 +133,13 @@ def _steps(
             "failed_checks": int(telemetry_row.get("failed_checks", 0)),
             "failed_check_names": _text(telemetry_row, "failed_check_names"),
             "first_failed_reason": _text(telemetry_row, "first_failed_reason"),
+            "proof_refresh_required": _bool_text(telemetry_row, "proof_refresh_required"),
+            "proof_refresh_provided": _bool_text(telemetry_row, "proof_refresh_provided"),
+            "proof_refresh_ready": _bool_text(telemetry_row, "proof_refresh_ready"),
+            "proof_refresh_strategy": _text(telemetry_row, "proof_refresh_strategy"),
+            "proof_refresh_market": _text(telemetry_row, "proof_refresh_market"),
+            "proof_refresh_mixed_identity": _bool_text(telemetry_row, "proof_refresh_mixed_identity"),
+            "proof_source": _text(telemetry_row, "proof_source"),
             "recommendation": str(telemetry_row.get("recommendation", "")),
         },
         {
@@ -145,6 +152,17 @@ def _steps(
             "failed_checks": int(guard_row.get("failed_checks", 0)),
             "failed_check_names": _text(guard_row, "failed_check_names"),
             "first_failed_reason": _text(guard_row, "first_failed_reason"),
+            "proof_refresh_required": _identity_bool(guard_row, telemetry_row, "proof_refresh_required"),
+            "proof_refresh_provided": _identity_bool(guard_row, telemetry_row, "proof_refresh_provided"),
+            "proof_refresh_ready": _identity_bool(guard_row, telemetry_row, "proof_refresh_ready"),
+            "proof_refresh_strategy": _identity_text(guard_row, telemetry_row, "proof_refresh_strategy"),
+            "proof_refresh_market": _identity_text(guard_row, telemetry_row, "proof_refresh_market"),
+            "proof_refresh_mixed_identity": _identity_bool(
+                guard_row,
+                telemetry_row,
+                "proof_refresh_mixed_identity",
+            ),
+            "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
             "recommendation": str(guard_row.get("recommendation", "")),
         },
     ]
@@ -161,6 +179,17 @@ def _steps(
                 "failed_checks": int(response_row.get("failed_checks", 0)),
                 "failed_check_names": _text(response_row, "guard_failed_check_names"),
                 "first_failed_reason": _text(response_row, "guard_first_failed_reason"),
+                "proof_refresh_required": _identity_bool(guard_row, telemetry_row, "proof_refresh_required"),
+                "proof_refresh_provided": _identity_bool(guard_row, telemetry_row, "proof_refresh_provided"),
+                "proof_refresh_ready": _identity_bool(guard_row, telemetry_row, "proof_refresh_ready"),
+                "proof_refresh_strategy": _identity_text(guard_row, telemetry_row, "proof_refresh_strategy"),
+                "proof_refresh_market": _identity_text(guard_row, telemetry_row, "proof_refresh_market"),
+                "proof_refresh_mixed_identity": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "proof_refresh_mixed_identity",
+                ),
+                "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
                 "recommendation": str(response_row.get("recommendation", "")),
             }
         )
@@ -176,6 +205,17 @@ def _steps(
                 "failed_checks": 0,
                 "failed_check_names": _text(guard_row, "failed_check_names"),
                 "first_failed_reason": _text(guard_row, "first_failed_reason"),
+                "proof_refresh_required": _identity_bool(guard_row, telemetry_row, "proof_refresh_required"),
+                "proof_refresh_provided": _identity_bool(guard_row, telemetry_row, "proof_refresh_provided"),
+                "proof_refresh_ready": _identity_bool(guard_row, telemetry_row, "proof_refresh_ready"),
+                "proof_refresh_strategy": _identity_text(guard_row, telemetry_row, "proof_refresh_strategy"),
+                "proof_refresh_market": _identity_text(guard_row, telemetry_row, "proof_refresh_market"),
+                "proof_refresh_mixed_identity": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "proof_refresh_mixed_identity",
+                ),
+                "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
                 "recommendation": "manual_halt_response_required" if not plan_halt_response else "not_created",
             }
         )
@@ -220,6 +260,17 @@ def _summary(
                 "realized_pnl": float(guard_row.get("realized_pnl", telemetry_row.get("realized_pnl", 0.0))),
                 "guard_failed_check_names": _text(guard_row, "failed_check_names"),
                 "guard_first_failed_reason": _text(guard_row, "first_failed_reason"),
+                "proof_refresh_required": _identity_bool(guard_row, telemetry_row, "proof_refresh_required"),
+                "proof_refresh_provided": _identity_bool(guard_row, telemetry_row, "proof_refresh_provided"),
+                "proof_refresh_ready": _identity_bool(guard_row, telemetry_row, "proof_refresh_ready"),
+                "proof_refresh_strategy": _identity_text(guard_row, telemetry_row, "proof_refresh_strategy"),
+                "proof_refresh_market": _identity_text(guard_row, telemetry_row, "proof_refresh_market"),
+                "proof_refresh_mixed_identity": _identity_bool(
+                    guard_row,
+                    telemetry_row,
+                    "proof_refresh_mixed_identity",
+                ),
+                "proof_source": _identity_text(guard_row, telemetry_row, "proof_source"),
                 "telemetry_ready": bool(telemetry.ready),
                 "halt_response_created": halt_response is not None,
                 "halt_response_ready": response_ready,
@@ -241,3 +292,21 @@ def _text(row: pd.Series, column: str) -> str:
 def _identity_text(primary: pd.Series, fallback: pd.Series, column: str) -> str:
     value = _text(primary, column).strip()
     return value if value else _text(fallback, column)
+
+
+def _identity_bool(primary: pd.Series, fallback: pd.Series, column: str) -> bool:
+    if column in primary and not pd.isna(primary.get(column)):
+        return _to_bool(primary.get(column))
+    return _bool_text(fallback, column)
+
+
+def _bool_text(row: pd.Series, column: str) -> bool:
+    return _to_bool(row.get(column, False))
+
+
+def _to_bool(value: object) -> bool:
+    if value is None or pd.isna(value):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "passed", "ready", "continue"}
+    return bool(value)

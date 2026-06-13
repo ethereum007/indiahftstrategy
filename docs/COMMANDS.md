@@ -1474,7 +1474,10 @@ acceptance by default. Use `--require-runtime-session` to fail closed until the
 paper/shadow monitor evidence is present. Runtime-session target mode,
 strategy, and market are retained in the shadow session metrics and summary so
 later comparison and evidence-review gates can prove which strategy was
-actually monitored.
+actually monitored. If the runtime session includes proof-refresh evidence, the
+shadow-session gate retains its ready/source/identity fields and fails closed
+when the runtime proof-refresh evidence is unready, mixed, or for a different
+strategy/market.
 
 ## Shadow Session Comparison
 
@@ -1716,7 +1719,9 @@ manifest.json
 top-level go/no-go artifact while preserving the detailed telemetry, guard, and
 halt-response evidence folders. The session summary carries
 `guard_failed_check_names` and `guard_first_failed_reason` when the runtime
-guard blocks routing.
+guard blocks routing, plus `proof_refresh_*` fields from telemetry/guard so
+shadow-session and broker-readiness reviews can trace the proof freshness state
+that fed the monitor.
 
 ## Halt Response Plan
 
