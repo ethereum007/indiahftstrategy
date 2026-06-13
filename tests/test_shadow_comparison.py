@@ -28,6 +28,9 @@ def session_rows():
                 "runtime_session_provided": True,
                 "runtime_guard_action": "continue",
                 "runtime_guard_halted": False,
+                "runtime_target_mode": "shadow",
+                "runtime_strategy": "lead_lag_taker",
+                "runtime_market": "india_nse_index_derivatives",
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.03,
                 "avg_latency_ns": 100,
@@ -49,6 +52,9 @@ def session_rows():
                 "runtime_session_provided": True,
                 "runtime_guard_action": "continue",
                 "runtime_guard_halted": False,
+                "runtime_target_mode": "shadow",
+                "runtime_strategy": "lead_lag_taker",
+                "runtime_market": "india_nse_index_derivatives",
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 120,
@@ -64,6 +70,8 @@ def write_session_dir(
     scenario_key="trigger_ticks=2",
     fill_rate=1.0,
     runtime_halted=False,
+    runtime_strategy="lead_lag_taker",
+    runtime_market="india_nse_index_derivatives",
 ):
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
@@ -75,6 +83,11 @@ def write_session_dir(
                 "adapter": "arrow_money",
                 "order_fill_rate": fill_rate,
                 "failed_checks": 0 if accepted else 1,
+                "strategy": runtime_strategy,
+                "market": runtime_market,
+                "runtime_target_mode": "shadow",
+                "runtime_strategy": runtime_strategy,
+                "runtime_market": runtime_market,
                 "recommendation": "continue_shadow_or_promote" if accepted else "hold_in_research",
             }
         ]
@@ -95,6 +108,9 @@ def write_session_dir(
                 "runtime_session_provided": True,
                 "runtime_guard_action": "halt" if runtime_halted else "continue",
                 "runtime_guard_halted": runtime_halted,
+                "runtime_target_mode": "shadow",
+                "runtime_strategy": runtime_strategy,
+                "runtime_market": runtime_market,
                 "runtime_failed_checks": 1 if runtime_halted else 0,
                 "order_fill_rate": fill_rate,
                 "max_adverse_slippage": 0.04,
@@ -119,7 +135,10 @@ def test_compare_shadow_sessions_accepts_consistent_sessions():
     assert report.accepted
     assert report.summary.iloc[0]["session_count"] == 2
     assert report.summary.iloc[0]["scenario_key"] == "trigger_ticks=2"
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["runtime_sessions_provided"] == 2
+    assert report.summary.iloc[0]["accepted_runtime_sessions"] == 2
     assert report.summary.iloc[0]["runtime_halted_sessions"] == 0
     assert report.summary.iloc[0]["recommendation"] == "eligible_for_controlled_paper_scaleup"
 
@@ -136,6 +155,20 @@ def test_compare_shadow_sessions_blocks_runtime_halted_sessions():
     assert not report.accepted
     assert report.summary.iloc[0]["runtime_halted_sessions"] == 1
     assert "runtime_halted_sessions" in failed
+
+
+def test_compare_shadow_sessions_blocks_mixed_runtime_identity():
+    rows = session_rows()
+    rows.loc[1, "runtime_strategy"] = "imbalance"
+    rows.loc[1, "runtime_market"] = "us_equities_regular"
+
+    report = compare_shadow_sessions(rows)
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {"same_runtime_strategy", "same_runtime_market"} <= failed
+    assert int(report.summary.iloc[0]["strategy_count"]) == 2
+    assert int(report.summary.iloc[0]["market_count"]) == 2
 
 
 def test_write_shadow_session_comparison_outputs_artifacts(tmp_path):

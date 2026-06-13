@@ -141,6 +141,9 @@ def _metrics(
                 "runtime_session_ready": _to_bool(runtime.get("ready", False)) if not runtime.empty else False,
                 "runtime_guard_action": str(runtime.get("guard_action", "")) if not runtime.empty else "",
                 "runtime_guard_halted": _to_bool(runtime.get("halted", False)) if not runtime.empty else False,
+                "runtime_target_mode": _text(runtime, "target_mode"),
+                "runtime_strategy": _text(runtime, "strategy"),
+                "runtime_market": _text(runtime, "market"),
                 "runtime_failed_steps": _number(runtime, "failed_steps") if not runtime.empty else 0.0,
                 "runtime_failed_checks": runtime_failed,
                 "scenario_key": launch_scenario,
@@ -266,9 +269,14 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "scenario_key": row["scenario_key"],
                 "mode": row["mode"],
                 "adapter": row["adapter"],
+                "strategy": row["runtime_strategy"],
+                "market": row["runtime_market"],
                 "order_fill_rate": float(row["order_fill_rate"]),
                 "runtime_session_provided": bool(row["runtime_session_provided"]),
                 "runtime_guard_action": row["runtime_guard_action"],
+                "runtime_target_mode": row["runtime_target_mode"],
+                "runtime_strategy": row["runtime_strategy"],
+                "runtime_market": row["runtime_market"],
                 "runtime_failed_checks": int(row["runtime_failed_checks"]),
                 "total_failed_component_checks": int(row["total_failed_component_checks"]),
                 "failed_checks": failed_checks,
@@ -366,6 +374,12 @@ def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:
 
 def _number(row: pd.Series, column: str) -> float:
     return float(row[column]) if column in row and not pd.isna(row[column]) else np.nan
+
+
+def _text(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row or pd.isna(row[column]):
+        return ""
+    return str(row[column]).strip()
 
 
 def _to_bool(value: object) -> bool:

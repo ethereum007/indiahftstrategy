@@ -187,12 +187,13 @@
   adverse slippage, latency, pass/fail checks, and manifests.
 - Shadow-session acceptance report that combines launch, export,
   reconciliation, and optional runtime-session monitor artifacts into one
-  go/no-go record for paper/shadow promotion decisions, blocking supplied or
-  required sessions when the runtime guard halted.
+  go/no-go record for paper/shadow promotion decisions, carrying runtime
+  strategy/market identity and blocking supplied or required sessions when the
+  runtime guard halted.
 - Multi-session shadow comparison gate for requiring repeated accepted
   paper/shadow sessions with consistent scenario keys, fill rates, slippage,
-  mismatch, reconciliation quality, and zero halted runtime monitors before
-  scale-up.
+  runtime strategy/market identity, mismatch, reconciliation quality, and zero
+  halted runtime monitors before scale-up.
 - Experiment manifests for replay, sweep, proof, and selection outputs,
   capturing parameters, input hashes, artifact hashes, git state, and runtime
   package versions.
@@ -312,7 +313,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 401 tests.
+Current passing suite: 402 tests.
 
 ## Next Build Targets
 

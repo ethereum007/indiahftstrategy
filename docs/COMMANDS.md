@@ -1469,7 +1469,10 @@ manifest.json
 
 When `--runtime-session` is supplied, a halted runtime guard blocks session
 acceptance by default. Use `--require-runtime-session` to fail closed until the
-paper/shadow monitor evidence is present.
+paper/shadow monitor evidence is present. Runtime-session target mode,
+strategy, and market are retained in the shadow session metrics and summary so
+later comparison and evidence-review gates can prove which strategy was
+actually monitored.
 
 ## Shadow Session Comparison
 
@@ -1499,6 +1502,11 @@ shadow_session_comparison_checks.csv
 shadow_session_comparison_summary.csv
 manifest.json
 ```
+
+When runtime-session evidence is present, the comparison gate fails closed if
+accepted sessions mix runtime strategy or market identities. The comparison
+summary exposes `strategy`, `market`, and missing/mixed identity counts for the
+experiment catalog and strategy-evidence review.
 
 ## Controlled Scale-Up Plan
 

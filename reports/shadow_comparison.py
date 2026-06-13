@@ -14,6 +14,7 @@ class ShadowComparisonThresholds:
     min_sessions: int = 1
     min_acceptance_rate: float = 1.0
     require_same_scenario: bool = True
+    require_same_runtime_identity: bool = True
     min_median_order_fill_rate: float = 0.0
     min_worst_order_fill_rate: float | None = None
     max_total_failed_component_checks: int = 0
@@ -62,6 +63,10 @@ def compare_shadow_sessions(
         if column not in runs.columns:
             runs[column] = False
         runs[column] = runs[column].map(_to_bool)
+    for column in ("runtime_target_mode", "runtime_strategy", "runtime_market"):
+        if column not in runs.columns:
+            runs[column] = ""
+        runs[column] = runs[column].fillna("").astype(str)
     summary = _summary(runs)
     checks = _checks(summary.iloc[0], thresholds)
     summary["accepted"] = bool(checks["passed"].all()) if not checks.empty else False
@@ -127,6 +132,13 @@ def _read_sessions(session_dirs: list[str | Path], *, labels: list[str] | None) 
             "runtime_session_provided": _to_bool(metrics.get("runtime_session_provided", False)),
             "runtime_guard_action": str(metrics.get("runtime_guard_action", "")),
             "runtime_guard_halted": _to_bool(metrics.get("runtime_guard_halted", False)),
+            "runtime_target_mode": str(summary.get("runtime_target_mode", metrics.get("runtime_target_mode", ""))),
+            "runtime_strategy": _strategy_key(
+                summary.get("runtime_strategy", summary.get("strategy", metrics.get("runtime_strategy", metrics.get("strategy", ""))))
+            ),
+            "runtime_market": _identity_key(
+                summary.get("runtime_market", summary.get("market", metrics.get("runtime_market", metrics.get("market", ""))))
+            ),
             "runtime_failed_checks": _number(metrics, "runtime_failed_checks", fallback=0.0),
             "max_adverse_slippage": _number(metrics, "max_adverse_slippage"),
             "avg_latency_ns": _number(metrics, "avg_latency_ns"),
@@ -139,6 +151,13 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
     session_count = int(len(runs))
     accepted_sessions = int(runs["accepted"].sum()) if session_count else 0
     scenario_count = int(runs["scenario_key"].nunique()) if session_count else 0
+    runtime_runs = (
+        runs.loc[runs["runtime_session_provided"].astype(bool) & runs["accepted"].astype(bool)]
+        if session_count
+        else pd.DataFrame()
+    )
+    runtime_strategies = _identity_values(runtime_runs, "runtime_strategy", normalizer=_strategy_key)
+    runtime_markets = _identity_values(runtime_runs, "runtime_market", normalizer=_identity_key)
     fill_rates = pd.to_numeric(runs["order_fill_rate"], errors="coerce")
     slippage = pd.to_numeric(runs["max_adverse_slippage"], errors="coerce")
     return pd.DataFrame(
@@ -150,6 +169,12 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "acceptance_rate": accepted_sessions / session_count if session_count else 0.0,
                 "scenario_count": scenario_count,
                 "scenario_key": _single_or_mixed(runs["scenario_key"]) if session_count else "",
+                "strategy": next(iter(runtime_strategies)) if len(runtime_strategies) == 1 else "",
+                "strategy_count": int(len(runtime_strategies)),
+                "missing_strategy_sessions": _missing_identity_count(runtime_runs, "runtime_strategy"),
+                "market": next(iter(runtime_markets)) if len(runtime_markets) == 1 else "",
+                "market_count": int(len(runtime_markets)),
+                "missing_market_sessions": _missing_identity_count(runtime_runs, "runtime_market"),
                 "median_order_fill_rate": float(fill_rates.median(skipna=True)) if fill_rates.notna().any() else np.nan,
                 "worst_order_fill_rate": float(fill_rates.min(skipna=True)) if fill_rates.notna().any() else np.nan,
                 "total_orders": float(pd.to_numeric(runs["orders"], errors="coerce").sum(skipna=True)),
@@ -164,6 +189,7 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                     pd.to_numeric(runs["overfilled_orders"], errors="coerce").sum(skipna=True)
                 ),
                 "runtime_sessions_provided": int(runs["runtime_session_provided"].sum()),
+                "accepted_runtime_sessions": int(len(runtime_runs)),
                 "runtime_halted_sessions": int(runs["runtime_guard_halted"].sum()),
                 "total_runtime_failed_checks": int(
                     pd.to_numeric(runs["runtime_failed_checks"], errors="coerce").sum(skipna=True)
@@ -188,6 +214,26 @@ def _checks(row: pd.Series, thresholds: ShadowComparisonThresholds) -> pd.DataFr
             1,
             (not thresholds.require_same_scenario) or int(row["scenario_count"]) <= 1,
             "shadow sessions used multiple scenario keys",
+        ),
+        _check(
+            "same_runtime_strategy",
+            row["strategy_count"],
+            "<=",
+            1,
+            (not thresholds.require_same_runtime_identity)
+            or int(row["accepted_runtime_sessions"]) == 0
+            or (int(row["strategy_count"]) == 1 and int(row["missing_strategy_sessions"]) == 0),
+            "runtime-session strategy identity is missing or mixed across shadow sessions",
+        ),
+        _check(
+            "same_runtime_market",
+            row["market_count"],
+            "<=",
+            1,
+            (not thresholds.require_same_runtime_identity)
+            or int(row["accepted_runtime_sessions"]) == 0
+            or (int(row["market_count"]) == 1 and int(row["missing_market_sessions"]) == 0),
+            "runtime-session market identity is missing or mixed across shadow sessions",
         ),
         _threshold_check(
             "median_order_fill_rate",
@@ -315,6 +361,39 @@ def _single_or_mixed(values: pd.Series) -> str:
     if len(unique) == 1:
         return unique[0]
     return "MIXED"
+
+
+def _identity_values(frame: pd.DataFrame, column: str, *, normalizer) -> set[str]:
+    if frame.empty or column not in frame.columns:
+        return set()
+    return {value for value in frame[column].map(normalizer) if value}
+
+
+def _missing_identity_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty:
+        return 0
+    if column not in frame.columns:
+        return int(len(frame))
+    return int((frame[column].map(_identity_key) == "").sum())
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _number(row: pd.Series, column: str, fallback: float = np.nan) -> float:

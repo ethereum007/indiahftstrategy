@@ -67,6 +67,9 @@ def runtime_session_summary(ready=True):
                 "ready": ready,
                 "guard_action": "continue" if ready else "halt",
                 "halted": not ready,
+                "target_mode": "shadow",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "orders_sent": 2,
@@ -144,6 +147,10 @@ def test_evaluate_shadow_session_accepts_runtime_guard_continue_evidence():
     assert report.accepted
     assert bool(row["runtime_session_provided"])
     assert row["runtime_guard_action"] == "continue"
+    assert row["runtime_strategy"] == "lead_lag_taker"
+    assert row["runtime_market"] == "india_nse_index_derivatives"
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
 
 
 def test_evaluate_shadow_session_blocks_halted_runtime_guard():
