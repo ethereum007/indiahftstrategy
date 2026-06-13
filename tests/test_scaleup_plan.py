@@ -310,6 +310,35 @@ def data_readiness_comparison_summary(accepted=True):
     )
 
 
+def route_readiness_summary(
+    ready=True,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "strategy": strategy,
+                "market": market,
+                "strategy_count": 1,
+                "market_count": 1,
+                "pair_count": 1,
+                "route_ready_pairs": 1 if ready else 0,
+                "gap_pairs": 0 if ready else 1,
+                "strategy_evidence_ready_pairs": 1,
+                "ops_evidence_ready_pairs": 1 if ready else 0,
+                "portability_blocked_pairs": 0,
+                "ops_file_provenance_blocked_pairs": 0 if ready else 1,
+                "require_ops_file_inputs": True,
+                "recommendation": "eligible_for_live_dryrun_route_review"
+                if ready
+                else "complete_route_readiness_gaps",
+            }
+        ]
+    )
+
+
 def write_inputs(
     root,
     *,
@@ -903,10 +932,13 @@ def test_scaleup_plan_live_dryrun_requires_broker_readiness():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
+        "route_readiness_available",
         "broker_readiness_available",
         "broker_runtime_session_provided",
         "broker_dispatch_roundtrip_provided",
     } <= failed
+    assert report.config["route_readiness"]["required"]
+    assert not report.config["route_readiness"]["provided"]
     assert report.config["broker_readiness"]["required"]
     assert report.config["broker_readiness"]["runtime_session"]["required"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
@@ -917,6 +949,7 @@ def test_scaleup_plan_live_dryrun_blocks_halted_broker_runtime_session():
         evidence_summary=evidence_summary(True),
         shadow_comparison_summary=shadow_summary(True),
         launch_summary=launch_summary(True),
+        route_readiness_summary=route_readiness_summary(True),
         broker_readiness_summary=broker_readiness_summary(
             False,
             runtime_session_provided=True,
@@ -939,6 +972,7 @@ def test_scaleup_plan_live_dryrun_accepts_broker_runtime_guard_continue():
         evidence_summary=evidence_summary(True),
         shadow_comparison_summary=shadow_summary(True),
         launch_summary=launch_summary(True),
+        route_readiness_summary=route_readiness_summary(True),
         broker_readiness_summary=broker_readiness_summary(
             True,
             runtime_session_provided=True,
@@ -963,6 +997,9 @@ def test_scaleup_plan_live_dryrun_accepts_broker_runtime_guard_continue():
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["required"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["ready"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["acked_orders"] == 2
+    assert report.config["route_readiness"]["required"]
+    assert report.config["route_readiness"]["ready"]
+    assert report.config["route_readiness"]["strategy"] == "lead_lag_taker"
 
 
 def test_scaleup_plan_live_dryrun_blocks_broker_runtime_identity_mismatch():
@@ -970,6 +1007,7 @@ def test_scaleup_plan_live_dryrun_blocks_broker_runtime_identity_mismatch():
         evidence_summary=evidence_summary(True),
         shadow_comparison_summary=shadow_summary(True),
         launch_summary=launch_summary(True),
+        route_readiness_summary=route_readiness_summary(True),
         broker_readiness_summary=broker_readiness_summary(
             True,
             runtime_session_provided=True,
@@ -990,6 +1028,41 @@ def test_scaleup_plan_live_dryrun_blocks_broker_runtime_identity_mismatch():
     assert report.summary.iloc[0]["broker_runtime_strategy"] == "imbalance"
     assert report.summary.iloc[0]["broker_runtime_market"] == "us_equities_regular"
     assert report.config["broker_readiness"]["runtime_session"]["strategy"] == "imbalance"
+
+
+def test_scaleup_plan_can_require_route_readiness():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        thresholds=ScaleUpThresholds(require_route_readiness=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_readiness_available" in failed
+    assert report.config["route_readiness"]["required"]
+    assert not report.config["route_readiness"]["provided"]
+
+
+def test_scaleup_plan_blocks_route_readiness_identity_mismatch():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        route_readiness_summary=route_readiness_summary(
+            True,
+            strategy="surface_mm",
+            market="us_options_regular",
+        ),
+        thresholds=ScaleUpThresholds(require_route_readiness=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_readiness_strategy_matches", "route_readiness_market_matches"} <= failed
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "surface_mm"
+    assert report.config["route_readiness"]["market"] == "us_options_regular"
 
 
 def test_scaleup_plan_accepts_required_data_readiness():
@@ -1103,6 +1176,32 @@ def test_write_scaleup_plan_outputs_artifacts(tmp_path):
     )
     assert path_tail(manifest["inputs"]["instrument_metadata"]["path"]).endswith(
         "/metadata/instrument_metadata_summary.csv"
+    )
+
+
+def test_write_scaleup_plan_fingerprints_route_readiness_input(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    route = tmp_path / "route_readiness"
+    route.mkdir()
+    route_readiness_summary(True).to_csv(route / "route_readiness_summary.csv", index=False)
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        route_readiness_dir=route,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_route_readiness=True),
+    )
+
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert config["route_readiness"]["required"]
+    assert config["route_readiness"]["ready"]
+    assert path_tail(manifest["inputs"]["route_readiness"]["path"]).endswith(
+        "/route_readiness/route_readiness_summary.csv"
     )
 
 
@@ -1245,6 +1344,33 @@ def test_cli_scaleup_plan_can_require_broker_readiness(tmp_path):
     assert "broker_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
 
 
+def test_cli_scaleup_plan_can_require_route_readiness(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--out",
+            str(out_dir),
+            "--require-route-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "route_readiness_available" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
 def test_cli_scaleup_plan_can_require_resume_gate(tmp_path):
     evidence, shadow, launch, _ = write_inputs(tmp_path)
     out_dir = tmp_path / "scaleup"
@@ -1328,6 +1454,7 @@ def test_cli_scaleup_plan_live_dryrun_auto_requires_broker_runtime_evidence(tmp_
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert {
+        "route_readiness_available",
         "broker_readiness_available",
         "broker_runtime_session_provided",
         "broker_dispatch_roundtrip_provided",

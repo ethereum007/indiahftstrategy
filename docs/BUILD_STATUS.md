@@ -298,17 +298,19 @@
 - Controlled scale-up plan report that combines strategy evidence, shadow
   comparison, launch, optional exposure summaries, proof freshness, and
   instrument metadata coverage, single-day and multi-day data-readiness
-  evidence, and broker-readiness evidence into explicit order, open-order
-  notional and age, position notional, adapter, telemetry-freshness,
+  evidence, route-readiness evidence, and broker-readiness evidence into
+  explicit order, open-order notional and age, position notional, adapter,
+  telemetry-freshness,
   lifecycle-order, replace-order, delta, and vega kill-switch limits, carries
   strategy/market identity, direct and shadow proof-refresh state, and broker
   runtime-session guard, resume-gate, and dispatch round-trip evidence into
   scale-up configs, automatically requires broker/runtime guard and clean
-  dispatch round-trip evidence plus nested route proof for live-dry-run targets,
-  consumes lead-lag, imbalance, parity-box, settlement, and surface-MM launch
-  pipeline root summaries for strategy/market readiness continuity when a
-  launch-pipeline folder is supplied directly, fingerprints the resolved input
-  summary CSVs and nested broker-readiness proof in the manifest, fails closed
+  dispatch round-trip evidence plus route-readiness proof and nested route
+  proof for live-dry-run targets, consumes lead-lag, imbalance, parity-box,
+  settlement, and surface-MM launch pipeline root summaries for strategy/market
+  readiness continuity when a launch-pipeline folder is supplied directly,
+  fingerprints the resolved input summary CSVs plus route-readiness and nested
+  broker-readiness proof in the manifest, fails closed
   on broker runtime-session, broker resume-gate proof-refresh, dispatch
   round-trip failed checks, route-enable dispatch round-trip failed checks,
   dispatch route proof, launch-pipeline identity mismatches, or shadow

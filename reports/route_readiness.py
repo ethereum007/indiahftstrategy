@@ -285,6 +285,10 @@ def _summary(
             [
                 {
                     "ready": False,
+                    "strategy": "",
+                    "market": "",
+                    "strategy_count": 0,
+                    "market_count": 0,
                     "pair_count": 0,
                     "route_ready_pairs": 0,
                     "gap_pairs": 0,
@@ -300,10 +304,18 @@ def _summary(
     route_ready = int(pairs["route_ready"].astype(bool).sum())
     gap_count = int(len(gaps))
     ready = bool(route_ready > 0 and gap_count == 0)
+    route_pairs = pairs.loc[pairs["route_ready"].astype(bool)]
+    identity_pairs = route_pairs if not route_pairs.empty else pairs
+    strategies = sorted(set(identity_pairs["strategy"].astype(str))) if "strategy" in identity_pairs else []
+    markets = sorted(set(identity_pairs["market"].astype(str))) if "market" in identity_pairs else []
     return pd.DataFrame(
         [
             {
                 "ready": ready,
+                "strategy": strategies[0] if len(strategies) == 1 else "",
+                "market": markets[0] if len(markets) == 1 else "",
+                "strategy_count": int(len(strategies)),
+                "market_count": int(len(markets)),
                 "pair_count": int(len(pairs)),
                 "route_ready_pairs": route_ready,
                 "gap_pairs": gap_count,

@@ -2124,6 +2124,7 @@ python -m hft_cli plan-scaleup `
   --proof-refresh runs\proof_refresh\leadlag_shadow_latest `
   --data-readiness runs\data_readiness\india_nse_2026_06_10 `
   --data-readiness-comparison runs\data_readiness\india_nse_comparison `
+  --route-readiness runs\evidence\leadlag_route_readiness `
   --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
   --out runs\scaleup\leadlag_shadow `
   --target-mode shadow `
@@ -2154,6 +2155,7 @@ python -m hft_cli plan-scaleup `
   --require-proof-refresh `
   --require-data-readiness `
   --require-data-readiness-comparison `
+  --require-route-readiness `
   --require-broker-readiness `
   --require-resume-gate `
   --require-dispatch-roundtrip `
@@ -2186,8 +2188,12 @@ runtime target mode, strategy, and market for the session that fed the broker
 gate.
 `manifest.json` fingerprints the resolved evidence, shadow-comparison, launch,
 launch-pipeline, proof-refresh, metadata, data-readiness, exposure, and
-broker-readiness summary CSVs rather than only the input folders, so scale-up
-handoffs can prove the exact records behind each recommendation.
+route-readiness, and broker-readiness summary CSVs rather than only the input
+folders, so scale-up handoffs can prove the exact records behind each
+recommendation.
+Use `--route-readiness` with `--require-route-readiness` to fail closed unless
+the market-portability, strategy-evidence, and file-provenance-gated
+`ops_launch` evidence chain has accepted the exact strategy/market route.
 If broker readiness included resume-gate evidence, scale-up also retains the
 resume authorization identity, prior incident identity, and resume
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless broker
@@ -2212,9 +2218,10 @@ comparison carried runtime proof-refresh evidence, scale-up validates that
 accepted sessions used ready, non-mixed proof-refresh identity for the same
 strategy/market before writing a scale-up config.
 When `--target-mode live_dryrun` is used, scale-up automatically requires
-broker readiness plus broker runtime-session evidence with a continuing runtime
-guard, broker dispatch round-trip proof with clean acknowledgements, matching
-route proof, and matching runtime/dispatch strategy-market identity.
+route readiness, broker readiness plus broker runtime-session evidence with a
+continuing runtime guard, broker dispatch round-trip proof with clean
+acknowledgements, matching route proof, and matching runtime/dispatch
+strategy-market identity.
 
 ## Runtime Telemetry Snapshot
 

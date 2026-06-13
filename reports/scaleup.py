@@ -53,6 +53,7 @@ class ScaleUpThresholds:
     require_instrument_metadata: bool = False
     require_data_readiness: bool = False
     require_data_readiness_comparison: bool = False
+    require_route_readiness: bool = False
     require_broker_readiness: bool = False
     require_resume_gate: bool = False
     require_dispatch_roundtrip: bool = False
@@ -86,6 +87,7 @@ def evaluate_scaleup_plan(
     instrument_metadata_summary: pd.DataFrame | None = None,
     data_readiness_summary: pd.DataFrame | None = None,
     data_readiness_comparison_summary: pd.DataFrame | None = None,
+    route_readiness_summary: pd.DataFrame | None = None,
     broker_readiness_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
@@ -101,6 +103,7 @@ def evaluate_scaleup_plan(
     data_readiness_comparison = (
         data_readiness_comparison_summary if data_readiness_comparison_summary is not None else pd.DataFrame()
     )
+    route_readiness = route_readiness_summary if route_readiness_summary is not None else pd.DataFrame()
     broker_readiness = broker_readiness_summary if broker_readiness_summary is not None else pd.DataFrame()
 
     rows = {
@@ -114,6 +117,7 @@ def evaluate_scaleup_plan(
         "data_readiness_comparison": data_readiness_comparison.iloc[0]
         if not data_readiness_comparison.empty
         else pd.Series(dtype=object),
+        "route_readiness": route_readiness.iloc[0] if not route_readiness.empty else pd.Series(dtype=object),
         "broker_readiness": broker_readiness.iloc[0] if not broker_readiness.empty else pd.Series(dtype=object),
     }
     checks = _checks(rows, thresholds)
@@ -135,6 +139,7 @@ def write_scaleup_plan(
     instrument_metadata_dir: str | Path | None = None,
     data_readiness_dir: str | Path | None = None,
     data_readiness_comparison_dir: str | Path | None = None,
+    route_readiness_dir: str | Path | None = None,
     broker_readiness_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
@@ -150,6 +155,7 @@ def write_scaleup_plan(
         data_readiness_comparison_dir,
         "data_readiness_comparison_summary.csv",
     )
+    route_readiness_path = _optional_summary_input(route_readiness_dir, "route_readiness_summary.csv")
 
     evidence = _read_summary(evidence_path, "strategy_evidence_summary.csv")
     shadow = _read_summary(shadow_path, "shadow_session_comparison_summary.csv")
@@ -187,6 +193,11 @@ def write_scaleup_plan(
         if data_readiness_comparison_path
         else None
     )
+    route_readiness = (
+        _read_optional_summary(route_readiness_path, "route_readiness_summary.csv")
+        if route_readiness_path
+        else None
+    )
     thresholds = thresholds or ScaleUpThresholds()
     report = evaluate_scaleup_plan(
         evidence_summary=evidence,
@@ -197,6 +208,7 @@ def write_scaleup_plan(
         instrument_metadata_summary=instrument_metadata,
         data_readiness_summary=data_readiness,
         data_readiness_comparison_summary=data_readiness_comparison,
+        route_readiness_summary=route_readiness,
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
     )
@@ -223,6 +235,8 @@ def write_scaleup_plan(
         inputs["data_readiness"] = data_readiness_path
     if data_readiness_comparison_path is not None:
         inputs["data_readiness_comparison"] = data_readiness_comparison_path
+    if route_readiness_path is not None:
+        inputs["route_readiness"] = route_readiness_path
     if broker_readiness_path is not None:
         inputs["broker_readiness"] = broker_readiness_path
     write_experiment_manifest(
@@ -243,6 +257,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     instrument_metadata = rows["instrument_metadata"]
     data_readiness = rows["data_readiness"]
     data_readiness_comparison = rows["data_readiness_comparison"]
+    route_readiness = rows["route_readiness"]
     broker_readiness = rows["broker_readiness"]
     adapter = str(launch.get("adapter", ""))
     scenario_match = str(launch.get("scenario_key", "")) == str(shadow.get("scenario_key", launch.get("scenario_key", "")))
@@ -571,6 +586,56 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "data readiness comparison is not accepted",
             )
         )
+    route_readiness_required = _route_readiness_required(thresholds)
+    if route_readiness_required:
+        checks.append(
+            _check(
+                "route_readiness_available",
+                not route_readiness.empty,
+                "is",
+                True,
+                not route_readiness.empty,
+                "route readiness review is required but no summary was supplied",
+            )
+        )
+    if not route_readiness.empty:
+        route_ready = _to_bool(route_readiness.get("ready", False))
+        route_strategy = _strategy_key(route_readiness.get("strategy", ""))
+        route_market = _identity_key(route_readiness.get("market", ""))
+        expected_route_strategy = _strategy_key(thresholds.expected_strategy) or evidence_strategy
+        expected_route_market = _identity_key(thresholds.expected_market) or evidence_market
+        checks.append(
+            _check(
+                "route_readiness_ready",
+                route_ready,
+                "is",
+                True,
+                route_ready,
+                "route readiness review is not ready",
+            )
+        )
+        if expected_route_strategy:
+            checks.append(
+                _check(
+                    "route_readiness_strategy_matches",
+                    route_strategy,
+                    "==",
+                    expected_route_strategy,
+                    bool(route_strategy and route_strategy == expected_route_strategy),
+                    "route readiness strategy does not match scale-up strategy",
+                )
+            )
+        if expected_route_market:
+            checks.append(
+                _check(
+                    "route_readiness_market_matches",
+                    route_market,
+                    "==",
+                    expected_route_market,
+                    bool(route_market and route_market == expected_route_market),
+                    "route readiness market does not match scale-up market",
+                )
+            )
     broker_readiness_required = _broker_readiness_required(thresholds)
     if broker_readiness_required:
         checks.append(
@@ -983,6 +1048,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
     instrument_metadata = rows["instrument_metadata"]
     data_readiness = rows["data_readiness"]
     data_readiness_comparison = rows["data_readiness_comparison"]
+    route_readiness = rows["route_readiness"]
     broker_readiness = rows["broker_readiness"]
     accepted_orders = int(_number(launch, "accepted_orders", fallback=0.0))
     launch_notional = _number(launch, "total_notional", fallback=0.0)
@@ -1126,6 +1192,28 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                     data_readiness_comparison.get("recommendation", "")
                 )
                 if not data_readiness_comparison.empty
+                else "",
+                "route_readiness_required": _route_readiness_required(thresholds),
+                "route_readiness_provided": not route_readiness.empty,
+                "route_readiness_ready": _to_bool(route_readiness.get("ready", False))
+                if not route_readiness.empty
+                else False,
+                "route_readiness_strategy": _strategy_key(route_readiness.get("strategy", ""))
+                if not route_readiness.empty
+                else "",
+                "route_readiness_market": _identity_key(route_readiness.get("market", ""))
+                if not route_readiness.empty
+                else "",
+                "route_readiness_route_ready_pairs": int(
+                    _number(route_readiness, "route_ready_pairs", fallback=0.0)
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_gap_pairs": int(_number(route_readiness, "gap_pairs", fallback=0.0))
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_recommendation": str(route_readiness.get("recommendation", ""))
+                if not route_readiness.empty
                 else "",
                 "broker_readiness_provided": not broker_readiness.empty,
                 "broker_readiness_ready": _to_bool(broker_readiness.get("ready", False))
@@ -1389,6 +1477,13 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "data_readiness_comparison_ready_rate": _jsonable(
                     plan_row["data_readiness_comparison_ready_rate"]
                 ),
+                "route_readiness_required": _to_bool(plan_row["route_readiness_required"]),
+                "route_readiness_provided": _to_bool(plan_row["route_readiness_provided"]),
+                "route_readiness_ready": _to_bool(plan_row["route_readiness_ready"]),
+                "route_readiness_strategy": str(plan_row["route_readiness_strategy"]),
+                "route_readiness_market": str(plan_row["route_readiness_market"]),
+                "route_readiness_route_ready_pairs": int(plan_row["route_readiness_route_ready_pairs"]),
+                "route_readiness_gap_pairs": int(plan_row["route_readiness_gap_pairs"]),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
@@ -1598,6 +1693,16 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "failed_checks": int(plan_row["data_readiness_comparison_failed_checks"]),
             "recommendation": str(plan_row["data_readiness_comparison_recommendation"]),
         },
+        "route_readiness": {
+            "required": _to_bool(plan_row["route_readiness_required"]),
+            "provided": _to_bool(plan_row["route_readiness_provided"]),
+            "ready": _to_bool(plan_row["route_readiness_ready"]),
+            "strategy": str(plan_row["route_readiness_strategy"]),
+            "market": str(plan_row["route_readiness_market"]),
+            "route_ready_pairs": int(plan_row["route_readiness_route_ready_pairs"]),
+            "gap_pairs": int(plan_row["route_readiness_gap_pairs"]),
+            "recommendation": str(plan_row["route_readiness_recommendation"]),
+        },
         "broker_readiness": {
             "required": _broker_readiness_required(thresholds),
             "provided": _to_bool(plan_row["broker_readiness_provided"]),
@@ -1677,6 +1782,10 @@ def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:
         or thresholds.require_dispatch_roundtrip
         or thresholds.target_mode == "live_dryrun"
     )
+
+
+def _route_readiness_required(thresholds: ScaleUpThresholds) -> bool:
+    return bool(thresholds.require_route_readiness or thresholds.target_mode == "live_dryrun")
 
 
 def _dispatch_roundtrip_required(thresholds: ScaleUpThresholds) -> bool:

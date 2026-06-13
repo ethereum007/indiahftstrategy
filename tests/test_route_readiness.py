@@ -59,6 +59,8 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert row["route_ready"]
     assert row["status"] == "ready_for_live_dryrun_route_review"
     assert row["next_gate"] == "live_dryrun_route_review"
+    assert review.summary.iloc[0]["strategy"] == "microprice_imbalance"
+    assert review.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert review.config["route_ready_pairs"][0]["strategy"] == "microprice_imbalance"
 
 
