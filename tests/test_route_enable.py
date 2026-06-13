@@ -262,6 +262,10 @@ def order_export_summary(ready=True, orders=2, adapter="arrow_money", total_noti
     )
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def write_inputs(
     root,
     *,
@@ -519,6 +523,53 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert catalog.catalog.iloc[0]["run_type"] == "route_enable_packet"
     assert catalog.catalog.iloc[0]["summary_file"] == "route_enable_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_cli_route_enable_reads_launch_pipeline_upload_and_export_roots(tmp_path):
+    cases = [
+        ("leadlag", "04_export", "05_upload_pack"),
+        ("imbalance", "04_export", "05_upload_pack"),
+        ("parity", "04_export", "05_upload_pack"),
+        ("surface_mm", "03_export", "04_upload_pack"),
+    ]
+    for family, export_folder, upload_folder in cases:
+        case_dir = tmp_path / family
+        cutover, _upload, _export = write_inputs(case_dir)
+        pipeline = case_dir / f"{family}_launch_pipeline"
+        export_dir = pipeline / export_folder
+        upload_dir = pipeline / upload_folder
+        out_dir = case_dir / "route_enable"
+        export_dir.mkdir(parents=True)
+        upload_dir.mkdir(parents=True)
+        upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+        order_export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
+
+        code = main(
+            [
+                "review-route-enable",
+                "--cutover",
+                str(cutover),
+                "--upload-pack",
+                str(pipeline),
+                "--order-export",
+                str(pipeline),
+                "--out",
+                str(out_dir),
+                "--require-order-export",
+                "--fail-on-breach",
+            ]
+        )
+
+        summary = pd.read_csv(out_dir / "route_enable_summary.csv")
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert code == 0
+        assert bool(summary.loc[0, "ready"])
+        assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{upload_folder}/broker_upload_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["order_export"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{export_folder}/broker_order_summary.csv"
+        )
 
 
 def test_cli_route_enable_fails_when_cutover_not_ready(tmp_path):

@@ -72,6 +72,20 @@ def write_route_enable_packet(
     cutover = Path(cutover_dir)
     upload = Path(upload_pack_dir)
     cutover_config_path = cutover / "cutover_config.json" if cutover.is_dir() else Path(cutover_dir)
+    upload_summary_path = _summary_path(
+        upload,
+        "broker_upload_summary.csv",
+        fallback_dirs=("05_upload_pack", "04_upload_pack"),
+    )
+    order_export_summary_path = (
+        _summary_path(
+            order_export_dir,
+            "broker_order_summary.csv",
+            fallback_dirs=("04_export", "03_export"),
+        )
+        if order_export_dir is not None
+        else None
+    )
     if not cutover_config_path.exists():
         raise FileNotFoundError(f"cutover config not found: {cutover_config_path}")
     cutover_summary_path = (
@@ -80,10 +94,10 @@ def write_route_enable_packet(
     report = evaluate_route_enable_packet(
         cutover_summary=_read_required(cutover_summary_path, "cutover_summary"),
         cutover_config=json.loads(cutover_config_path.read_text(encoding="utf-8")),
-        upload_summary=_read_required(_summary_path(upload, "broker_upload_summary.csv"), "broker_upload_summary"),
-        order_export_summary=_read_optional(_summary_path(order_export_dir, "broker_order_summary.csv"))
-        if order_export_dir is not None
-        else None,
+        upload_summary=_read_required(upload_summary_path, "broker_upload_summary"),
+        order_export_summary=(
+            _read_optional(order_export_summary_path) if order_export_summary_path is not None else None
+        ),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -95,9 +109,11 @@ def write_route_enable_packet(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    inputs: dict[str, Any] = {"cutover": cutover_config_path, "upload_pack": upload}
-    if order_export_dir is not None:
-        inputs["order_export"] = Path(order_export_dir)
+    inputs: dict[str, Any] = {"cutover": cutover_config_path, "upload_pack": upload_summary_path}
+    if order_export_summary_path is not None:
+        inputs["order_export"] = (
+            order_export_summary_path if order_export_summary_path.exists() else Path(order_export_dir)
+        )
     write_experiment_manifest(
         out,
         run_type="route_enable_packet",
@@ -866,11 +882,19 @@ def _read_optional(path: str | Path | None) -> pd.DataFrame:
     return pd.read_csv(file_path)
 
 
-def _summary_path(path: str | Path | None, filename: str) -> Path:
+def _summary_path(path: str | Path | None, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> Path:
     if path is None:
         return Path(filename)
     candidate = Path(path)
-    return candidate / filename if candidate.is_dir() else candidate
+    if not candidate.is_dir():
+        return candidate
+    direct = candidate / filename
+    if direct.exists():
+        return direct
+    return next(
+        (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
+        direct,
+    )
 
 
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:

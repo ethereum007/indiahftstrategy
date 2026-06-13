@@ -2534,7 +2534,10 @@ missing, dirty, or has failed component checks for live dry-run routing, the
 carried route-enable dispatch round-trip failed-check counter is nonzero, the
 nested cutover route proof is missing, mismatched, or dirty, the upload order
 count exceeds the cutover limit, or the optional order-export notional exceeds
-the cutover notional cap.
+the cutover notional cap. `--upload-pack` and `--order-export` may point at a
+launch-pipeline root; route-enable resolves nested `05_upload_pack`/`04_export`
+or surface-MM `04_upload_pack`/`03_export` summaries and fingerprints the
+resolved files in the manifest.
 
 ## Broker Dispatch Plan
 
