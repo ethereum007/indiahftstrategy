@@ -6,6 +6,10 @@ from hft_cli import main
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def evidence_summary(ready=True, strategy="lead_lag_taker", market="india_nse_index_derivatives"):
     return pd.DataFrame(
         [
@@ -1081,6 +1085,25 @@ def test_write_scaleup_plan_outputs_artifacts(tmp_path):
     assert (out_dir / "scaleup_checks.csv").exists()
     assert (out_dir / "scaleup_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "evidence",
+        "shadow_comparison",
+        "launch",
+        "order_exposure",
+        "instrument_metadata",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["evidence"]["path"]).endswith("/evidence/strategy_evidence_summary.csv")
+    assert path_tail(manifest["inputs"]["shadow_comparison"]["path"]).endswith(
+        "/shadow/shadow_session_comparison_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["launch"]["path"]).endswith("/launch/launch_summary.csv")
+    assert path_tail(manifest["inputs"]["order_exposure"]["path"]).endswith(
+        "/exposure/order_exposure_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["instrument_metadata"]["path"]).endswith(
+        "/metadata/instrument_metadata_summary.csv"
+    )
 
 
 def test_cli_scaleup_plan_can_fail_on_breach(tmp_path):
@@ -1408,6 +1431,7 @@ def test_cli_scaleup_plan_reads_strategy_launch_pipeline_roots(tmp_path):
 
         summary = pd.read_csv(out_dir / "scaleup_summary.csv")
         config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert code == 0
         assert bool(summary.loc[0, "ready"])
         assert bool(summary.loc[0, "launch_pipeline_ready"])
@@ -1417,6 +1441,15 @@ def test_cli_scaleup_plan_reads_strategy_launch_pipeline_roots(tmp_path):
         assert config["launch_pipeline"]["family"] == family
         assert config["broker_readiness"]["provided"]
         assert config["broker_readiness"]["ready"]
+        assert path_tail(manifest["inputs"]["launch"]["path"]).endswith(
+            f"/{family}_launch_pipeline/03_launch/launch_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["launch_pipeline"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{summary_file}"
+        )
+        assert path_tail(manifest["inputs"]["broker_readiness"]["path"]).endswith(
+            f"/{family}_launch_pipeline/06_broker_readiness/broker_readiness_summary.csv"
+        )
 
 
 def test_cli_scaleup_plan_direct_launch_summary_file_ignores_pipeline_detector(tmp_path):

@@ -2141,6 +2141,10 @@ If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker
 gate.
+`manifest.json` fingerprints the resolved evidence, shadow-comparison, launch,
+launch-pipeline, proof-refresh, metadata, data-readiness, exposure, and
+broker-readiness summary CSVs rather than only the input folders, so scale-up
+handoffs can prove the exact records behind each recommendation.
 If broker readiness included resume-gate evidence, scale-up also retains the
 resume authorization identity, prior incident identity, and resume
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless broker

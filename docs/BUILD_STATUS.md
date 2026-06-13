@@ -300,11 +300,13 @@
   dispatch round-trip evidence plus nested route proof for live-dry-run targets,
   consumes lead-lag, imbalance, parity-box, settlement, and surface-MM launch
   pipeline root summaries for strategy/market readiness continuity when a
-  launch-pipeline folder is supplied directly, fails closed on broker
-  runtime-session, broker resume-gate proof-refresh, dispatch round-trip failed
-  checks, route-enable dispatch round-trip failed checks, dispatch route proof,
-  launch-pipeline identity mismatches, or shadow proof-refresh strategy/market
-  mismatches, and can consume these launch pipeline roots directly.
+  launch-pipeline folder is supplied directly, fingerprints the resolved input
+  summary CSVs and nested broker-readiness proof in the manifest, fails closed
+  on broker runtime-session, broker resume-gate proof-refresh, dispatch
+  round-trip failed checks, route-enable dispatch round-trip failed checks,
+  dispatch route proof, launch-pipeline identity mismatches, or shadow
+  proof-refresh strategy/market mismatches, and can consume these launch
+  pipeline roots directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with

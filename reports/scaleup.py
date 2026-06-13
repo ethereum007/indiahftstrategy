@@ -138,33 +138,53 @@ def write_scaleup_plan(
     broker_readiness_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
-    evidence = _read_summary(evidence_dir, "strategy_evidence_summary.csv")
-    shadow = _read_summary(shadow_comparison_dir, "shadow_session_comparison_summary.csv")
-    launch = _read_summary(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch", "02_launch"))
-    launch = _with_launch_pipeline_identity(launch, _read_launch_pipeline_summary(launch_dir))
-    exposure = _read_optional_summary(order_exposure_dir, "order_exposure_summary.csv") if order_exposure_dir else None
+    evidence_path = _summary_path(evidence_dir, "strategy_evidence_summary.csv")
+    shadow_path = _summary_path(shadow_comparison_dir, "shadow_session_comparison_summary.csv")
+    launch_path = _summary_path(launch_dir, "launch_summary.csv", fallback_dirs=("03_launch", "02_launch"))
+    launch_pipeline_path = _launch_pipeline_summary_path(launch_dir)
+    exposure_path = _optional_summary_input(order_exposure_dir, "order_exposure_summary.csv")
+    proof_refresh_path = _optional_summary_input(proof_refresh_dir, "proof_refresh_summary.csv")
+    instrument_metadata_path = _optional_summary_input(instrument_metadata_dir, "instrument_metadata_summary.csv")
+    data_readiness_path = _optional_summary_input(data_readiness_dir, "data_readiness_summary.csv")
+    data_readiness_comparison_path = _optional_summary_input(
+        data_readiness_comparison_dir,
+        "data_readiness_comparison_summary.csv",
+    )
+
+    evidence = _read_summary(evidence_path, "strategy_evidence_summary.csv")
+    shadow = _read_summary(shadow_path, "shadow_session_comparison_summary.csv")
+    launch = _read_summary(launch_path, "launch_summary.csv")
+    launch = _with_launch_pipeline_identity(
+        launch,
+        _read_launch_pipeline_summary(launch_pipeline_path) if launch_pipeline_path is not None else None,
+    )
+    exposure = _read_optional_summary(exposure_path, "order_exposure_summary.csv") if exposure_path else None
     proof_refresh = (
-        _read_optional_summary(proof_refresh_dir, "proof_refresh_summary.csv") if proof_refresh_dir else None
+        _read_optional_summary(proof_refresh_path, "proof_refresh_summary.csv") if proof_refresh_path else None
     )
     instrument_metadata = (
-        _read_optional_summary(instrument_metadata_dir, "instrument_metadata_summary.csv")
-        if instrument_metadata_dir
+        _read_optional_summary(instrument_metadata_path, "instrument_metadata_summary.csv")
+        if instrument_metadata_path
         else None
     )
     resolved_broker_readiness_dir = broker_readiness_dir or _auto_broker_readiness_dir(launch_dir)
+    broker_readiness_path = _optional_summary_input(
+        resolved_broker_readiness_dir,
+        "broker_readiness_summary.csv",
+    )
     broker_readiness = (
-        _read_optional_summary(resolved_broker_readiness_dir, "broker_readiness_summary.csv")
-        if resolved_broker_readiness_dir
+        _read_optional_summary(broker_readiness_path, "broker_readiness_summary.csv")
+        if broker_readiness_path
         else None
     )
     data_readiness = (
-        _read_optional_summary(data_readiness_dir, "data_readiness_summary.csv")
-        if data_readiness_dir
+        _read_optional_summary(data_readiness_path, "data_readiness_summary.csv")
+        if data_readiness_path
         else None
     )
     data_readiness_comparison = (
-        _read_optional_summary(data_readiness_comparison_dir, "data_readiness_comparison_summary.csv")
-        if data_readiness_comparison_dir
+        _read_optional_summary(data_readiness_comparison_path, "data_readiness_comparison_summary.csv")
+        if data_readiness_comparison_path
         else None
     )
     thresholds = thresholds or ScaleUpThresholds()
@@ -187,22 +207,24 @@ def write_scaleup_plan(
     report.summary.to_csv(out / "scaleup_summary.csv", index=False)
     (out / "scaleup_config.json").write_text(json.dumps(report.config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     inputs: dict[str, Any] = {
-        "evidence": Path(evidence_dir),
-        "shadow_comparison": Path(shadow_comparison_dir),
-        "launch": Path(launch_dir),
+        "evidence": evidence_path,
+        "shadow_comparison": shadow_path,
+        "launch": launch_path,
     }
-    if order_exposure_dir is not None:
-        inputs["order_exposure"] = Path(order_exposure_dir)
-    if proof_refresh_dir is not None:
-        inputs["proof_refresh"] = Path(proof_refresh_dir)
-    if instrument_metadata_dir is not None:
-        inputs["instrument_metadata"] = Path(instrument_metadata_dir)
-    if data_readiness_dir is not None:
-        inputs["data_readiness"] = Path(data_readiness_dir)
-    if data_readiness_comparison_dir is not None:
-        inputs["data_readiness_comparison"] = Path(data_readiness_comparison_dir)
-    if resolved_broker_readiness_dir is not None:
-        inputs["broker_readiness"] = Path(resolved_broker_readiness_dir)
+    if launch_pipeline_path is not None:
+        inputs["launch_pipeline"] = launch_pipeline_path
+    if exposure_path is not None:
+        inputs["order_exposure"] = exposure_path
+    if proof_refresh_path is not None:
+        inputs["proof_refresh"] = proof_refresh_path
+    if instrument_metadata_path is not None:
+        inputs["instrument_metadata"] = instrument_metadata_path
+    if data_readiness_path is not None:
+        inputs["data_readiness"] = data_readiness_path
+    if data_readiness_comparison_path is not None:
+        inputs["data_readiness_comparison"] = data_readiness_comparison_path
+    if broker_readiness_path is not None:
+        inputs["broker_readiness"] = broker_readiness_path
     write_experiment_manifest(
         out,
         run_type="scaleup_plan",
@@ -1702,6 +1724,34 @@ def _read_optional_summary(path: str | Path, filename: str, *, fallback_dirs: tu
     if not file_path.exists():
         return pd.DataFrame()
     return _read_summary(file_path, filename)
+
+
+def _optional_summary_input(
+    path: str | Path | None,
+    filename: str,
+    *,
+    fallback_dirs: tuple[str, ...] = (),
+) -> Path | None:
+    if path is None:
+        return None
+    file_path = _summary_path(path, filename, fallback_dirs=fallback_dirs)
+    return file_path if file_path.exists() else Path(path)
+
+
+def _launch_pipeline_summary_path(path: str | Path) -> Path | None:
+    candidate = Path(path)
+    if candidate.is_file():
+        return candidate if candidate.name in {filename for _, filename in LAUNCH_PIPELINE_SUMMARIES} else None
+
+    found: list[Path] = []
+    for _, filename in LAUNCH_PIPELINE_SUMMARIES:
+        file_path = _summary_path(path, filename)
+        if file_path.exists():
+            found.append(file_path)
+    if len(found) > 1:
+        files = ", ".join(file.name for file in found)
+        raise ValueError(f"multiple launch pipeline summaries found: {files}")
+    return found[0] if found else None
 
 
 def _read_launch_pipeline_summary(path: str | Path) -> tuple[str, str, pd.DataFrame] | None:
