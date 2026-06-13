@@ -48,6 +48,9 @@ def evaluate_broker_dispatch_roundtrip(
     send_requests: pd.DataFrame,
     ack_summary: pd.DataFrame,
     acknowledgements: pd.DataFrame,
+    dispatch_config: dict[str, Any] | None = None,
+    send_config: dict[str, Any] | None = None,
+    ack_config: dict[str, Any] | None = None,
     thresholds: BrokerDispatchRoundTripThresholds | None = None,
 ) -> BrokerDispatchRoundTripReport:
     thresholds = thresholds or BrokerDispatchRoundTripThresholds()
@@ -58,21 +61,24 @@ def evaluate_broker_dispatch_roundtrip(
     send_requests = _require_nonempty(send_requests, "send_requests")
     ack_summary = _require_nonempty(ack_summary, "ack_summary")
     acknowledgements = _require_nonempty(acknowledgements, "acknowledgements")
+    dispatch_row = _component_summary_state(dispatch_summary.iloc[0], dispatch_config or {})
+    send_row = _component_summary_state(send_summary.iloc[0], send_config or {})
+    ack_row = _component_summary_state(ack_summary.iloc[0], ack_config or {})
 
     orders = _roundtrip_orders(dispatch_orders, send_requests, acknowledgements)
     checks = _checks(
-        dispatch_summary.iloc[0],
-        send_summary.iloc[0],
-        ack_summary.iloc[0],
+        dispatch_row,
+        send_row,
+        ack_row,
         dispatch_orders,
         send_requests,
         orders,
         thresholds,
     )
     summary = _summary(
-        dispatch_summary.iloc[0],
-        send_summary.iloc[0],
-        ack_summary.iloc[0],
+        dispatch_row,
+        send_row,
+        ack_row,
         orders,
         checks,
         thresholds,
@@ -102,6 +108,9 @@ def write_broker_dispatch_roundtrip(
             ack / "broker_dispatch_acknowledgements.csv",
             "broker_dispatch_acknowledgements",
         ),
+        dispatch_config=_read_optional_json(dispatch / "broker_dispatch_config.json"),
+        send_config=_read_optional_json(send / "broker_dispatch_send_config.json"),
+        ack_config=_read_optional_json(ack / "broker_dispatch_ack_config.json"),
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -173,6 +182,19 @@ def _roundtrip_orders(
             }
         )
     return pd.DataFrame(rows)
+
+
+def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
+    state = row.copy()
+    route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
+    if "failed_checks" in route_enable:
+        state["route_enable_dispatch_roundtrip_failed_checks"] = int(
+            _number_value(
+                route_enable.get("failed_checks"),
+                _number(state, "route_enable_dispatch_roundtrip_failed_checks", 0.0),
+            )
+        )
+    return state
 
 
 def _checks(
@@ -716,6 +738,13 @@ def _read_required(path: str | Path, name: str) -> pd.DataFrame:
     return frame
 
 
+def _read_optional_json(path: str | Path) -> dict[str, Any]:
+    file_path = Path(path)
+    if not file_path.exists():
+        return {}
+    return json.loads(file_path.read_text(encoding="utf-8"))
+
+
 def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:
     if frame.empty:
         raise ValueError(f"{name} is empty")
@@ -757,6 +786,13 @@ def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _number_value(value: object, fallback: float = 0.0) -> float:
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
+        return float(fallback)
+    return float(parsed)
 
 
 def _to_bool(value: object) -> bool:

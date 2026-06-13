@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -293,6 +295,14 @@ def acknowledgements(
     )
 
 
+def route_enable_config(route_enable_dispatch_roundtrip_failed_checks=0):
+    return {
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+        }
+    }
+
+
 def write_inputs(tmp_path, *, missing_ack=False):
     dispatch = tmp_path / "dispatch"
     send = tmp_path / "send"
@@ -302,13 +312,25 @@ def write_inputs(tmp_path, *, missing_ack=False):
     ack.mkdir()
     dispatch_summary().to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
     dispatch_orders().to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
+    (dispatch / "broker_dispatch_config.json").write_text(
+        json.dumps(route_enable_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
     send_summary().to_csv(send / "broker_dispatch_send_summary.csv", index=False)
     send_requests().to_csv(send / "broker_dispatch_send_requests.csv", index=False)
+    (send / "broker_dispatch_send_config.json").write_text(
+        json.dumps(route_enable_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
     ack_summary(passed=not missing_ack, acked_orders=1 if missing_ack else 2, missing=1 if missing_ack else 0).to_csv(
         ack / "broker_dispatch_ack_summary.csv",
         index=False,
     )
     acknowledgements(missing_second=missing_ack).to_csv(ack / "broker_dispatch_acknowledgements.csv", index=False)
+    (ack / "broker_dispatch_ack_config.json").write_text(
+        json.dumps(route_enable_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
     return dispatch, send, ack
 
 
@@ -416,6 +438,40 @@ def test_broker_dispatch_roundtrip_blocks_route_enable_dispatch_roundtrip_failed
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
+
+
+def test_broker_dispatch_roundtrip_reads_nested_route_enable_dispatch_roundtrip_failed_checks(tmp_path):
+    config_files = {
+        "dispatch": "broker_dispatch_config.json",
+        "send": "broker_dispatch_send_config.json",
+        "ack": "broker_dispatch_ack_config.json",
+    }
+    for component, config_file in config_files.items():
+        root = tmp_path / component
+        root.mkdir()
+        dispatch, send, ack = write_inputs(root)
+        component_dir = {"dispatch": dispatch, "send": send, "ack": ack}[component]
+        (component_dir / config_file).write_text(
+            json.dumps(
+                route_enable_config(route_enable_dispatch_roundtrip_failed_checks=1),
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+        report = write_broker_dispatch_roundtrip(
+            dispatch_dir=dispatch,
+            send_dir=send,
+            ack_dir=ack,
+            output_dir=root / "roundtrip",
+        )
+
+        assert not report.passed
+        failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+        assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+        assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+        assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
 
 
 def test_broker_dispatch_roundtrip_blocks_identity_submission_and_missing_acks():

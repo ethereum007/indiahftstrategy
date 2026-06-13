@@ -304,7 +304,8 @@
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, raw ack-log route proof consistency, route-enable failed-check
-  counters, request-count, submission-disabled, and accepted-ack checks.
+  counters from upstream configs, request-count, submission-disabled, and
+  accepted-ack checks.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -369,7 +370,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 513 tests.
+Current passing suite: 514 tests.
 
 ## Next Build Targets
 
