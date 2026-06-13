@@ -193,6 +193,8 @@ def _telemetry(
     row = {
         "snapshot_ts_ns": _first_number(snapshot_ts_ns, _number(pnl, "ts_ns"), _number(pnl, "timestamp_ns"), np.nan),
         "target_mode": str(scaleup_config.get("target_mode", "")),
+        "strategy": _strategy_key(_scaleup_identity(scaleup_config, "strategy")),
+        "market": _identity_key(_scaleup_identity(scaleup_config, "market")),
         "scenario_key": str(_first_value(export.get("scenario_key", np.nan), scaleup_config.get("scenario_key", ""))),
         "adapter": str(_first_value(export.get("adapter", np.nan), scaleup_config.get("adapter", ""))),
         "orders_sent": int(orders_sent),
@@ -258,6 +260,8 @@ def _sources(**frames: pd.DataFrame) -> pd.DataFrame:
 
 def _checks(row: pd.Series) -> pd.DataFrame:
     checks = [
+        _check("strategy_present", row["strategy"], "not_empty", True, bool(str(row["strategy"]).strip()), "strategy identity is missing"),
+        _check("market_present", row["market"], "not_empty", True, bool(str(row["market"]).strip()), "market identity is missing"),
         _check("scenario_key_present", row["scenario_key"], "not_empty", True, bool(str(row["scenario_key"]).strip()), "scenario_key is missing"),
         _check("adapter_present", row["adapter"], "not_empty", True, bool(str(row["adapter"]).strip()), "adapter is missing"),
     ]
@@ -336,6 +340,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
         [
             {
                 "ready": ready,
+                "strategy": row["strategy"],
+                "market": row["market"],
                 "scenario_key": row["scenario_key"],
                 "adapter": row["adapter"],
                 "orders_sent": int(row["orders_sent"]),
@@ -432,6 +438,37 @@ def _first_value(*values: object) -> object:
         if not pd.isna(value) and str(value).strip():
             return value
     return ""
+
+
+def _scaleup_identity(scaleup_config: dict[str, Any], key: str) -> object:
+    identity = scaleup_config.get("identity", {}) or {}
+    if not isinstance(identity, dict):
+        identity = {}
+    return _first_value(scaleup_config.get(key, ""), identity.get(key, ""))
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
 def _failed_checks(checks: pd.DataFrame) -> int:

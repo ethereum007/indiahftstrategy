@@ -23,8 +23,16 @@ def scaleup_config(**kill_switch_overrides):
         "schema_version": 1,
         "ready": True,
         "target_mode": "shadow",
+        "strategy": "surface_mm",
+        "market": "india_nse_index_derivatives",
         "scenario_key": "surface_mm:demo",
         "adapter": "arrow_money",
+        "identity": {
+            "strategy": "surface_mm",
+            "market": "india_nse_index_derivatives",
+            "expected_strategy": "surface_mm",
+            "expected_market": "india_nse_index_derivatives",
+        },
         "limits": {
             "max_orders_per_session": 10,
             "max_notional_per_session": 100_000.0,

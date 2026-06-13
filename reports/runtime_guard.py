@@ -103,6 +103,10 @@ def _metrics(
             {
                 "scaleup_ready": bool(scaleup_config.get("ready", False)),
                 "target_mode": str(scaleup_config.get("target_mode", "")),
+                "strategy": _strategy_key(_value(latest, "strategy", "")),
+                "expected_strategy": _strategy_key(_scaleup_identity(scaleup_config, "strategy")),
+                "market": _identity_key(_value(latest, "market", "")),
+                "expected_market": _identity_key(_scaleup_identity(scaleup_config, "market")),
                 "scenario_key": str(_value(latest, "scenario_key", scaleup_config.get("scenario_key", ""))),
                 "expected_scenario_key": str(scaleup_config.get("scenario_key", "")),
                 "adapter": str(_value(latest, "adapter", scaleup_config.get("adapter", ""))),
@@ -198,6 +202,22 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
             True,
             bool(row["scaleup_ready"]),
             "scale-up config is not ready",
+        ),
+        _check(
+            "strategy_match",
+            row["strategy"],
+            "==",
+            row["expected_strategy"],
+            bool(str(row["expected_strategy"]).strip()) and row["strategy"] == row["expected_strategy"],
+            "telemetry strategy does not match scale-up config",
+        ),
+        _check(
+            "market_match",
+            row["market"],
+            "==",
+            row["expected_market"],
+            bool(str(row["expected_market"]).strip()) and row["market"] == row["expected_market"],
+            "telemetry market does not match scale-up config",
         ),
         _check(
             "scenario_match",
@@ -350,6 +370,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "failed_check_names": ";".join(failed_names),
                 "first_failed_reason": failed_reasons[0] if failed_reasons else "",
                 "failed_check_reasons": ";".join(failed_reasons),
+                "strategy": row["strategy"],
+                "market": row["market"],
                 "scenario_key": row["scenario_key"],
                 "adapter": row["adapter"],
                 "orders_sent": row["orders_sent"],
@@ -447,6 +469,48 @@ def _manual_halt(scaleup_config: dict[str, Any]) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _scaleup_identity(scaleup_config: dict[str, Any], key: str) -> object:
+    identity = scaleup_config.get("identity", {}) or {}
+    if not isinstance(identity, dict):
+        identity = {}
+    return _first_value(scaleup_config.get(key, ""), identity.get(key, ""))
+
+
+def _strategy_key(value: object) -> str:
+    key = _identity_key(value)
+    aliases = {
+        "leadlag": "lead_lag_taker",
+        "lead_lag": "lead_lag_taker",
+        "leadlag_taker": "lead_lag_taker",
+        "microprice_imbalance": "imbalance",
+        "surface_market_making": "surface_mm",
+        "parity_box": "parity",
+    }
+    return aliases.get(key, key)
+
+
+def _identity_key(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _first_value(*values: object) -> object:
+    for value in values:
+        try:
+            missing = bool(pd.isna(value))
+        except (TypeError, ValueError):
+            missing = False
+        if not missing and str(value).strip():
+            return value
+    return ""
 
 
 def _value(row: pd.Series, column: str, fallback: object = "") -> object:

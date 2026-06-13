@@ -6,13 +6,27 @@ from hft_cli import main
 from reports.runtime_telemetry import evaluate_runtime_telemetry, write_runtime_telemetry_snapshot
 
 
-def scaleup_config(scenario_key="trigger_ticks=2", adapter="arrow_money", require_instrument_metadata=False):
+def scaleup_config(
+    scenario_key="trigger_ticks=2",
+    adapter="arrow_money",
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    require_instrument_metadata=False,
+):
     config = {
         "schema_version": 1,
         "ready": True,
         "target_mode": "shadow",
+        "strategy": strategy,
+        "market": market,
         "scenario_key": scenario_key,
         "adapter": adapter,
+        "identity": {
+            "strategy": strategy,
+            "market": market,
+            "expected_strategy": strategy,
+            "expected_market": market,
+        },
         "limits": {
             "max_orders_per_session": 10,
             "max_notional_per_session": 100_000.0,
@@ -171,6 +185,8 @@ def test_runtime_telemetry_combines_operational_artifacts():
 
     row = report.telemetry.iloc[0]
     assert report.ready
+    assert row["strategy"] == "lead_lag_taker"
+    assert row["market"] == "india_nse_index_derivatives"
     assert row["orders_sent"] == 4
     assert row["lifecycle_orders"] == 3
     assert row["replace_orders"] == 1
@@ -307,6 +323,8 @@ def test_runtime_telemetry_defaults_to_scaleup_config_without_optional_inputs():
 
     row = report.telemetry.iloc[0]
     assert report.ready
+    assert row["strategy"] == "lead_lag_taker"
+    assert row["market"] == "india_nse_index_derivatives"
     assert row["scenario_key"] == "trigger_ticks=2"
     assert row["adapter"] == "arrow_money"
     assert row["orders_sent"] == 0
@@ -460,7 +478,7 @@ def test_cli_runtime_telemetry_can_fail_on_missing_identity(tmp_path):
     out_dir = tmp_path / "telemetry"
     scaleup_dir.mkdir()
     (scaleup_dir / "scaleup_config.json").write_text(
-        json.dumps(scaleup_config(scenario_key="", adapter=""), indent=2) + "\n",
+        json.dumps(scaleup_config(scenario_key="", adapter="", strategy="", market=""), indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -476,5 +494,8 @@ def test_cli_runtime_telemetry_can_fail_on_missing_identity(tmp_path):
     )
 
     summary = pd.read_csv(out_dir / "runtime_telemetry_summary.csv")
+    checks = pd.read_csv(out_dir / "runtime_telemetry_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert {"strategy_present", "market_present", "scenario_key_present", "adapter_present"} <= failed

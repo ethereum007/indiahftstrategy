@@ -223,15 +223,16 @@
   quantity/price or broker notional fields, derives stale open-order age from
   broker age fields or active order timestamps, derives live gross/net position
   notional from marks or total notional columns, derives net delta/vega from
-  total or unit Greek position columns, and can consume settlement or surface-MM
-  launch pipeline roots for broker export and upload-pack evidence.
+  total or unit Greek position columns, carries scale-up strategy/market
+  identity, and can consume settlement or surface-MM launch pipeline roots for
+  broker export and upload-pack evidence.
 - Runtime scale-up guard that evaluates live or paper telemetry snapshots
   against `scaleup_config.json` limits, kill switches, telemetry freshness,
   lifecycle/replace message controls, open-order quantity/notional/age,
   position-inventory notional/delta/vega limits, and required instrument
-  metadata continuity, accepts telemetry output folders directly, and returns
-  explicit continue/halt decisions with failed check names and first halt
-  reasons.
+  metadata plus strategy/market continuity, accepts telemetry output folders
+  directly, and returns explicit continue/halt decisions with failed check names
+  and first halt reasons.
 - Runtime session monitor that chains telemetry building, scale-up guard
   evaluation, and automatic halt-response planning into one manifest-backed
   paper/shadow go/no-go artifact, preserving the guard halt trigger in the
@@ -309,7 +310,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 398 tests.
+Current passing suite: 399 tests.
 
 ## Next Build Targets
 

@@ -11,8 +11,16 @@ def scaleup_config(**overrides):
         "schema_version": 1,
         "ready": True,
         "target_mode": "shadow",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
         "scenario_key": "trigger_ticks=2",
         "adapter": "arrow_money",
+        "identity": {
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "expected_strategy": "lead_lag_taker",
+            "expected_market": "india_nse_index_derivatives",
+        },
         "limits": {
             "max_orders_per_session": 10,
             "max_notional_per_session": 100_000.0,
@@ -44,6 +52,8 @@ def instrument_metadata_config():
 
 def telemetry(**overrides):
     row = {
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
         "scenario_key": "trigger_ticks=2",
         "adapter": "arrow_money",
         "orders_sent": 4,
@@ -64,8 +74,24 @@ def test_runtime_guard_continues_when_telemetry_is_inside_limits():
 
     assert not report.halted
     assert report.summary.iloc[0]["guard_action"] == "continue"
+    assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert set(report.checks["passed"]) == {True}
     assert report.metrics.iloc[0]["max_orders_per_session"] == 10
+
+
+def test_runtime_guard_halts_on_strategy_or_market_mismatch():
+    report = evaluate_runtime_guard(
+        scaleup_config(),
+        telemetry(strategy="imbalance", market="us_equities_regular"),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"strategy_match", "market_match"} <= failed
+    summary = report.summary.iloc[0]
+    assert summary["strategy"] == "imbalance"
+    assert summary["market"] == "us_equities_regular"
 
 
 def test_runtime_guard_halts_on_limit_and_kill_switch_breaches():
