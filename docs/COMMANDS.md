@@ -2134,10 +2134,10 @@ The gate matches acknowledgements by `dispatch_order_id` with
 `source_order_id` fallback, accepts common broker success status names, and
 fails closed on unready dispatch plans, missing acknowledgements, rejected
 orders, duplicate acknowledgement rows, dirty route round-trip proof for live
-dry-run dispatches, nonzero route-enable dispatch round-trip failed checks,
-dispatch rows or acknowledgement rows that carry a stale route proof batch id,
-missing acknowledgement route proof tags, or acknowledgement rows that do not
-belong to the dispatch batch.
+dry-run dispatches, nonzero route-enable dispatch round-trip failed checks read
+from the dispatch config, dispatch rows or acknowledgement rows that carry a
+stale route proof batch id, missing acknowledgement route proof tags, or
+acknowledgement rows that do not belong to the dispatch batch.
 
 ## Broker Dispatch Round-Trip Review
 

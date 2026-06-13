@@ -297,10 +297,10 @@
   submission off.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
-  route round-trip proof and route-enable failed-check counters, validates
-  acknowledgement-log proof batch continuity, and fails closed on missing,
-  rejected, duplicate, dirty-proof, stale-proof, or unmatched acknowledgement
-  rows.
+  route round-trip proof and route-enable failed-check counters from the
+  dispatch config, validates acknowledgement-log proof batch continuity, and
+  fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
+  unmatched acknowledgement rows.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, raw ack-log route proof consistency, route-enable failed-check
@@ -369,7 +369,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 512 tests.
+Current passing suite: 513 tests.
 
 ## Next Build Targets
 

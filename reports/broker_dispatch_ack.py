@@ -53,17 +53,20 @@ def evaluate_broker_dispatch_acknowledgements(
     dispatch_summary: pd.DataFrame,
     dispatch_orders: pd.DataFrame,
     broker_acks: pd.DataFrame,
+    dispatch_config: dict[str, Any] | None = None,
     thresholds: BrokerDispatchAckThresholds | None = None,
 ) -> BrokerDispatchAckReport:
     thresholds = thresholds or BrokerDispatchAckThresholds()
     _validate_thresholds(thresholds)
     dispatch_summary = _require_nonempty(dispatch_summary, "dispatch_summary")
     dispatch_orders = _require_nonempty(dispatch_orders, "dispatch_orders")
+    dispatch_config = dispatch_config or {}
     broker_acks = _normalize_acks(broker_acks)
+    summary_row = _dispatch_summary_state(dispatch_summary.iloc[0], dispatch_config)
     acknowledgements = _acknowledgements(dispatch_orders, broker_acks)
     unmatched = _unmatched_acks(dispatch_orders, broker_acks)
-    checks = _checks(dispatch_summary.iloc[0], acknowledgements, unmatched, thresholds)
-    summary = _summary(dispatch_summary.iloc[0], acknowledgements, unmatched, checks)
+    checks = _checks(summary_row, acknowledgements, unmatched, thresholds)
+    summary = _summary(summary_row, acknowledgements, unmatched, checks)
     config = _config(summary.iloc[0], thresholds, checks)
     return BrokerDispatchAckReport(
         acknowledgements=acknowledgements,
@@ -85,10 +88,17 @@ def write_broker_dispatch_acknowledgements(
     acks = Path(acks_path)
     if not acks.exists():
         raise FileNotFoundError(f"broker acknowledgement file not found: {acks}")
+    dispatch_config_path = dispatch / "broker_dispatch_config.json"
+    dispatch_config = (
+        json.loads(dispatch_config_path.read_text(encoding="utf-8"))
+        if dispatch_config_path.exists()
+        else {}
+    )
     report = evaluate_broker_dispatch_acknowledgements(
         dispatch_summary=_read_required(dispatch / "broker_dispatch_summary.csv", "broker_dispatch_summary"),
         dispatch_orders=_read_required(dispatch / "broker_dispatch_orders.csv", "broker_dispatch_orders"),
         broker_acks=pd.read_csv(acks),
+        dispatch_config=dispatch_config,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -166,6 +176,19 @@ def _unmatched_acks(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.Dat
     if "source_order_id" in acks.columns:
         matched = matched | acks["source_order_id"].astype(str).isin(source_ids)
     return acks.loc[~matched].reset_index(drop=True)
+
+
+def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
+    state = row.copy()
+    route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
+    if "failed_checks" in route_enable:
+        state["route_enable_dispatch_roundtrip_failed_checks"] = int(
+            _number_value(
+                route_enable.get("failed_checks"),
+                _number(state, "route_enable_dispatch_roundtrip_failed_checks", 0.0),
+            )
+        )
+    return state
 
 
 def _checks(
@@ -554,6 +577,13 @@ def _latest_number(frame: pd.DataFrame, column: str) -> float:
         return float("nan")
     values = pd.to_numeric(frame[column], errors="coerce").dropna()
     return float(values.iloc[-1]) if not values.empty else float("nan")
+
+
+def _number_value(value: object, fallback: float = 0.0) -> float:
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
+        return float(fallback)
+    return float(parsed)
 
 
 def _unique_text_values(frame: pd.DataFrame, column: str) -> list[str]:

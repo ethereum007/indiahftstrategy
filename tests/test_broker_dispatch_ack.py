@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -151,6 +153,14 @@ def _route_batch_id(value, index):
     return value
 
 
+def dispatch_config(route_enable_dispatch_roundtrip_failed_checks=0):
+    return {
+        "route_enable_dispatch_roundtrip": {
+            "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
+        }
+    }
+
+
 def write_inputs(
     tmp_path,
     *,
@@ -166,6 +176,10 @@ def write_inputs(
         route_roundtrip_ready=route_roundtrip,
     ).to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
     dispatch_orders().to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
+    (dispatch / "broker_dispatch_config.json").write_text(
+        json.dumps(dispatch_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
     acks = tmp_path / "broker_dispatch_acks.csv"
     ack_rows(ack_statuses).to_csv(acks, index=False)
     return dispatch, acks
@@ -239,6 +253,26 @@ def test_broker_dispatch_ack_blocks_route_enable_dispatch_roundtrip_failed_check
         dispatch_summary=dispatch_summary(route_enable_dispatch_roundtrip_failed_checks=1),
         dispatch_orders=dispatch_orders(),
         broker_acks=ack_rows(),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
+    assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
+
+
+def test_broker_dispatch_ack_reads_nested_route_enable_dispatch_roundtrip_failed_checks(tmp_path):
+    dispatch, acks = write_inputs(tmp_path)
+    (dispatch / "broker_dispatch_config.json").write_text(
+        json.dumps(dispatch_config(route_enable_dispatch_roundtrip_failed_checks=1), indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        acks_path=acks,
+        output_dir=tmp_path / "dispatch_acks",
     )
 
     assert not report.passed
