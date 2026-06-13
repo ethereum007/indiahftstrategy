@@ -2035,6 +2035,7 @@ python -m hft_cli plan-broker-dispatch `
   --upload-pack runs\uploads\leadlag_shadow_arrow `
   --out runs\dispatch\leadlag_shadow_live_dryrun `
   --target-mode live_dryrun `
+  --require-dispatch-roundtrip `
   --fail-on-breach
 ```
 
@@ -2051,9 +2052,10 @@ manifest.json
 This command still does not submit orders. It hashes the route-enable
 authorization and upload file, creates one dry-run dispatch row per upload
 order, and requires unique source order IDs, unique dispatch IDs, route-enabled
-state, matching target mode, and order counts within the approved route limits.
-The resulting `broker_dispatch_config.json` is the artifact a future
-Arrow.money/iRage sender can consume.
+state, matching target mode, clean route-enable dispatch round-trip proof for
+live dry-run routing, and order counts within the approved route limits. The
+resulting `broker_dispatch_config.json` is the artifact a future Arrow.money or
+iRage sender can consume.
 
 ## Broker Dispatch Send Packet
 

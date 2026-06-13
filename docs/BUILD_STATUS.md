@@ -281,8 +281,9 @@
   broker route-enable config without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
-  dry-run dispatch IDs, and fails closed on disabled routes or duplicate source
-  order IDs without sending orders.
+  dry-run dispatch IDs, carries live-dry-run dispatch round-trip proof, and
+  fails closed on disabled routes, dirty route proof, or duplicate source order
+  IDs without sending orders.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, and acknowledgement templates while forcing live submission off.
@@ -355,7 +356,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 475 tests.
+Current passing suite: 478 tests.
 
 ## Next Build Targets
 

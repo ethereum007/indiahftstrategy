@@ -11,7 +11,22 @@ from reports.broker_dispatch import (
 from reports.catalog import catalog_experiment_runs
 
 
-def route_summary(ready=True, upload_orders=2):
+def route_summary(
+    ready=True,
+    upload_orders=2,
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode="live_dryrun",
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
+):
     return pd.DataFrame(
         [
             {
@@ -25,6 +40,19 @@ def route_summary(ready=True, upload_orders=2):
                 "upload_orders": upload_orders,
                 "max_orders_per_session": 10,
                 "max_notional_per_session": 100_000.0,
+                "dispatch_roundtrip_required": True,
+                "dispatch_roundtrip_provided": dispatch_provided,
+                "dispatch_roundtrip_ready": dispatch_ready,
+                "dispatch_roundtrip_target_mode": dispatch_target_mode,
+                "dispatch_roundtrip_strategy": dispatch_strategy,
+                "dispatch_roundtrip_market": dispatch_market,
+                "dispatch_roundtrip_scenario_key": dispatch_scenario_key,
+                "dispatch_roundtrip_batch_id": dispatch_batch_id,
+                "dispatch_roundtrip_requests": dispatch_requests,
+                "dispatch_roundtrip_acked_orders": dispatch_acked_orders,
+                "dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks,
+                "dispatch_roundtrip_rejected_orders": dispatch_rejected_orders,
+                "dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "enable_broker_route" if ready else "keep_broker_route_disabled",
             }
@@ -32,7 +60,22 @@ def route_summary(ready=True, upload_orders=2):
     )
 
 
-def route_config(enabled=True, upload_orders=2):
+def route_config(
+    enabled=True,
+    upload_orders=2,
+    dispatch_provided=True,
+    dispatch_ready=True,
+    dispatch_target_mode="live_dryrun",
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario_key="trigger_ticks=2",
+    dispatch_batch_id="BDP-1",
+    dispatch_requests=2,
+    dispatch_acked_orders=2,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
+):
     return {
         "schema_version": 1,
         "route_enabled": enabled,
@@ -52,6 +95,21 @@ def route_config(enabled=True, upload_orders=2):
             "orders": upload_orders,
             "output_file": "broker_upload_orders.csv",
             "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+        },
+        "dispatch_roundtrip": {
+            "required": True,
+            "provided": dispatch_provided,
+            "ready": dispatch_ready,
+            "target_mode": dispatch_target_mode,
+            "strategy": dispatch_strategy,
+            "market": dispatch_market,
+            "scenario_key": dispatch_scenario_key,
+            "dispatch_batch_id": dispatch_batch_id,
+            "requests": dispatch_requests,
+            "acked_orders": dispatch_acked_orders,
+            "missing_request_acks": dispatch_missing_request_acks,
+            "rejected_orders": dispatch_rejected_orders,
+            "unmatched_acks": dispatch_unmatched_acks,
         },
     }
 
@@ -88,14 +146,17 @@ def upload_orders(duplicate=False):
     )
 
 
-def write_inputs(root, *, route_ready=True, duplicate=False):
+def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True):
     route = root / "route_enable"
     upload = root / "upload"
     route.mkdir(parents=True)
     upload.mkdir()
-    route_summary(route_ready).to_csv(route / "route_enable_summary.csv", index=False)
+    route_summary(route_ready, dispatch_provided=dispatch, dispatch_ready=dispatch).to_csv(
+        route / "route_enable_summary.csv",
+        index=False,
+    )
     (route / "route_enable_config.json").write_text(
-        json.dumps(route_config(route_ready), indent=2) + "\n",
+        json.dumps(route_config(route_ready, dispatch_provided=dispatch, dispatch_ready=dispatch), indent=2) + "\n",
         encoding="utf-8",
     )
     upload_orders(duplicate).to_csv(upload / "broker_upload_orders.csv", index=False)
@@ -119,6 +180,62 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert report.dispatch_orders["source_order_id"].tolist() == ["ORD-1", "ORD-2"]
     assert report.dispatch_orders["dispatch_batch_id"].nunique() == 1
     assert report.config["dry_run_only"]
+    assert report.dispatch_orders["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-1", "BDP-1"]
+    assert report.summary.iloc[0]["route_dispatch_roundtrip_ready"]
+    assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-1"
+
+
+def test_broker_dispatch_requires_route_dispatch_roundtrip():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(dispatch_provided=False, dispatch_ready=False),
+        route_enable_config=route_config(dispatch_provided=False, dispatch_ready=False),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_dispatch_roundtrip_provided", "route_dispatch_roundtrip_ready"} <= failed
+    assert report.config["route_dispatch_roundtrip"]["required"]
+
+
+def test_broker_dispatch_blocks_bad_route_dispatch_roundtrip_quality():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(
+            dispatch_ready=False,
+            dispatch_target_mode="shadow",
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_key="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+        ),
+        route_enable_config=route_config(
+            dispatch_ready=False,
+            dispatch_target_mode="shadow",
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_key="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+        ),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_dispatch_roundtrip_ready",
+        "route_dispatch_roundtrip_target_mode_matches",
+        "route_dispatch_roundtrip_strategy_matches",
+        "route_dispatch_roundtrip_market_matches",
+        "route_dispatch_roundtrip_scenario_matches",
+        "route_dispatch_roundtrip_missing_request_acks",
+        "route_dispatch_roundtrip_rejected_orders",
+        "route_dispatch_roundtrip_unmatched_acks",
+    } <= failed
+    assert report.config["route_dispatch_roundtrip"]["missing_request_acks"] == 1
 
 
 def test_broker_dispatch_blocks_duplicate_source_order_ids():
@@ -189,3 +306,29 @@ def test_cli_broker_dispatch_fails_on_disabled_route(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "route_enabled" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_broker_dispatch_can_require_dispatch_roundtrip(tmp_path):
+    route, upload = write_inputs(tmp_path, dispatch=False)
+    out_dir = tmp_path / "dispatch"
+
+    code = main(
+        [
+            "plan-broker-dispatch",
+            "--route-enable",
+            str(route),
+            "--upload-pack",
+            str(upload),
+            "--out",
+            str(out_dir),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "route_dispatch_roundtrip_provided" in failed
