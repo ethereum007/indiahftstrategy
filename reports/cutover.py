@@ -544,6 +544,14 @@ def _dispatch_roundtrip_checks(
             int(source["dispatch_roundtrip_failed_checks"]) <= 0,
             f"{label} dispatch round-trip has failed component checks",
         ),
+        _check(
+            f"{prefix}_route_enable_dispatch_roundtrip_failed_checks",
+            source["route_enable_dispatch_roundtrip_failed_checks"],
+            "<=",
+            0,
+            int(source["route_enable_dispatch_roundtrip_failed_checks"]) <= 0,
+            f"{label} route-enable dispatch round-trip has failed component checks",
+        ),
     ]
 
 
@@ -717,6 +725,9 @@ def _authorization(
                 "scaleup_dispatch_roundtrip_rejected_orders": scaleup["dispatch_roundtrip_rejected_orders"],
                 "scaleup_dispatch_roundtrip_unmatched_acks": scaleup["dispatch_roundtrip_unmatched_acks"],
                 "scaleup_dispatch_roundtrip_failed_checks": scaleup["dispatch_roundtrip_failed_checks"],
+                "scaleup_route_enable_dispatch_roundtrip_failed_checks": scaleup[
+                    "route_enable_dispatch_roundtrip_failed_checks"
+                ],
                 "scaleup_route_dispatch_roundtrip_required": _route_dispatch_roundtrip_active(
                     _dispatch_roundtrip_required(thresholds),
                     scaleup,
@@ -751,6 +762,9 @@ def _authorization(
                 "broker_dispatch_roundtrip_rejected_orders": broker["dispatch_roundtrip_rejected_orders"],
                 "broker_dispatch_roundtrip_unmatched_acks": broker["dispatch_roundtrip_unmatched_acks"],
                 "broker_dispatch_roundtrip_failed_checks": broker["dispatch_roundtrip_failed_checks"],
+                "broker_route_enable_dispatch_roundtrip_failed_checks": broker[
+                    "route_enable_dispatch_roundtrip_failed_checks"
+                ],
                 "broker_route_dispatch_roundtrip_required": _route_dispatch_roundtrip_active(
                     _dispatch_roundtrip_required(thresholds),
                     broker,
@@ -850,6 +864,12 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_dispatch_roundtrip_failed_checks": int(
                     authorization["broker_dispatch_roundtrip_failed_checks"]
                 ),
+                "scaleup_route_enable_dispatch_roundtrip_failed_checks": int(
+                    authorization["scaleup_route_enable_dispatch_roundtrip_failed_checks"]
+                ),
+                "broker_route_enable_dispatch_roundtrip_failed_checks": int(
+                    authorization["broker_route_enable_dispatch_roundtrip_failed_checks"]
+                ),
                 "scaleup_route_dispatch_roundtrip_required": _to_bool(
                     authorization["scaleup_route_dispatch_roundtrip_required"]
                 ),
@@ -943,6 +963,9 @@ def _config(
             "rejected_orders": int(authorization["scaleup_dispatch_roundtrip_rejected_orders"]),
             "unmatched_acks": int(authorization["scaleup_dispatch_roundtrip_unmatched_acks"]),
             "failed_checks": int(authorization["scaleup_dispatch_roundtrip_failed_checks"]),
+            "route_enable_dispatch_roundtrip": {
+                "failed_checks": int(authorization["scaleup_route_enable_dispatch_roundtrip_failed_checks"]),
+            },
             "route_proof": {
                 "required": _to_bool(authorization["scaleup_route_dispatch_roundtrip_required"]),
                 "provided": _to_bool(authorization["scaleup_route_dispatch_roundtrip_provided"]),
@@ -989,6 +1012,9 @@ def _config(
                 "rejected_orders": int(authorization["broker_dispatch_roundtrip_rejected_orders"]),
                 "unmatched_acks": int(authorization["broker_dispatch_roundtrip_unmatched_acks"]),
                 "failed_checks": int(authorization["broker_dispatch_roundtrip_failed_checks"]),
+                "route_enable_dispatch_roundtrip": {
+                    "failed_checks": int(authorization["broker_route_enable_dispatch_roundtrip_failed_checks"]),
+                },
                 "route_proof": {
                     "required": _to_bool(authorization["broker_route_dispatch_roundtrip_required"]),
                     "provided": _to_bool(authorization["broker_route_dispatch_roundtrip_provided"]),
@@ -1037,6 +1063,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     proof = config.get("proof_freshness", {}) or {}
     identity = config.get("identity", {}) or {}
     dispatch = (config.get("broker_readiness", {}) or {}).get("dispatch_roundtrip", {}) or {}
+    route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
     strategy = _strategy_key(_first_text(row.get("strategy", ""), config.get("strategy", ""), identity.get("strategy", "")))
     market = _identity_key(_first_text(row.get("market", ""), config.get("market", ""), identity.get("market", "")))
@@ -1133,6 +1160,13 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
                 dispatch,
                 "failed_checks",
                 _number(row, "broker_dispatch_roundtrip_failed_checks", 0.0),
+            )
+        ),
+        "route_enable_dispatch_roundtrip_failed_checks": int(
+            _number_from(
+                route_enable,
+                "failed_checks",
+                _number(row, "broker_route_enable_dispatch_roundtrip_failed_checks", 0.0),
             )
         ),
         "route_dispatch_roundtrip_required": _to_bool(
@@ -1236,6 +1270,9 @@ def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:
         "dispatch_roundtrip_rejected_orders": int(_number(row, "dispatch_roundtrip_rejected_orders", 0.0)),
         "dispatch_roundtrip_unmatched_acks": int(_number(row, "dispatch_roundtrip_unmatched_acks", 0.0)),
         "dispatch_roundtrip_failed_checks": int(_number(row, "dispatch_roundtrip_failed_checks", 0.0)),
+        "route_enable_dispatch_roundtrip_failed_checks": int(
+            _number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
+        ),
         "route_dispatch_roundtrip_required": _to_bool(row.get("route_dispatch_roundtrip_required", False)),
         "route_dispatch_roundtrip_provided": _to_bool(row.get("route_dispatch_roundtrip_provided", False)),
         "route_dispatch_roundtrip_ready": _to_bool(row.get("route_dispatch_roundtrip_ready", False)),

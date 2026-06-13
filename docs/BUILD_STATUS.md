@@ -275,8 +275,8 @@
 - Cutover gate that authorizes the final paper/shadow/live-dryrun route only
   after scale-up, broker readiness, runtime-session guard, proof freshness,
   required dispatch round-trip proof plus nested route proof for live-dry-run,
-  dispatch round-trip failed-check counters, optional broker resume-gate proof,
-  and operator strategy/market/limit acknowledgement agree in one
+  dispatch round-trip and route-enable failed-check counters, optional broker
+  resume-gate proof, and operator strategy/market/limit acknowledgement agree in one
   manifest-backed authorization artifact.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
@@ -368,7 +368,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 508 tests.
+Current passing suite: 509 tests.
 
 ## Next Build Targets
 
