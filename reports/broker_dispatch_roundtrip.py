@@ -158,6 +158,11 @@ def _roundtrip_orders(
                 "request_dry_run_only": _to_bool(request.get("dry_run_only", False)) if not request.empty else False,
                 "ack_row_present": not ack.empty,
                 "ack_route_roundtrip_batch_id": _text(ack, "route_dispatch_roundtrip_batch_id"),
+                "ack_dispatch_order_route_roundtrip_batch_id": _text(
+                    ack,
+                    "dispatch_order_route_roundtrip_batch_id",
+                ),
+                "ack_raw_route_roundtrip_batch_ids": _text(ack, "ack_route_dispatch_roundtrip_batch_ids"),
                 "ack_count": int(_number(ack, "ack_count", 0.0)) if not ack.empty else 0,
                 "ack_status": _text(ack, "ack_status"),
                 "broker_order_id": _text(ack, "broker_order_id"),
@@ -622,14 +627,19 @@ def _route_roundtrip_batch_ids(rows: tuple[pd.Series, ...], roundtrip_orders: pd
         "dispatch_route_roundtrip_batch_id",
         "request_route_roundtrip_batch_id",
         "ack_route_roundtrip_batch_id",
+        "ack_dispatch_order_route_roundtrip_batch_id",
+        "ack_raw_route_roundtrip_batch_ids",
     ):
         if column in roundtrip_orders.columns:
-            batch_ids.update(
-                str(value).strip()
-                for value in roundtrip_orders[column].dropna().astype(str)
-                if str(value).strip()
-            )
+            for value in roundtrip_orders[column].dropna().astype(str):
+                batch_ids.update(_split_batch_ids(value))
     return batch_ids
+
+
+def _split_batch_ids(value: object) -> set[str]:
+    if pd.isna(value):
+        return set()
+    return {item.strip() for item in str(value).split("|") if item.strip()}
 
 
 def _route_roundtrip_request_counts_match(rows: tuple[pd.Series, ...]) -> bool:

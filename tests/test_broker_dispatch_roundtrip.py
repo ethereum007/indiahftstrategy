@@ -232,13 +232,25 @@ def ack_summary(
     )
 
 
-def acknowledgements(missing_second=False, rejected_second=False, route_roundtrip_batch_id="BDP-0"):
+def acknowledgements(
+    missing_second=False,
+    rejected_second=False,
+    route_roundtrip_batch_id="BDP-0",
+    ack_route_roundtrip_batch_ids=None,
+):
+    raw_route_batch_ids = (
+        route_roundtrip_batch_id
+        if ack_route_roundtrip_batch_ids is None
+        else ack_route_roundtrip_batch_ids
+    )
     return pd.DataFrame(
         [
             {
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-1",
                 "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
+                "dispatch_order_route_roundtrip_batch_id": route_roundtrip_batch_id,
+                "ack_route_dispatch_roundtrip_batch_ids": raw_route_batch_ids,
                 "source_order_id": "ORD-1",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -256,6 +268,8 @@ def acknowledgements(missing_second=False, rejected_second=False, route_roundtri
                 "dispatch_batch_id": "BDP-1",
                 "dispatch_order_id": "DSP-2",
                 "route_dispatch_roundtrip_batch_id": route_roundtrip_batch_id,
+                "dispatch_order_route_roundtrip_batch_id": route_roundtrip_batch_id,
+                "ack_route_dispatch_roundtrip_batch_ids": raw_route_batch_ids,
                 "source_order_id": "ORD-2",
                 "target_mode": "live_dryrun",
                 "strategy": "lead_lag_taker",
@@ -309,6 +323,7 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert report.orders["dispatch_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.orders["request_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.orders["ack_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
+    assert report.orders["ack_raw_route_roundtrip_batch_ids"].tolist() == ["BDP-0", "BDP-0"]
     assert int(report.summary.iloc[0]["missing_request_acks"]) == 0
     assert bool(report.summary.iloc[0]["route_dispatch_roundtrip_ready"])
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
@@ -359,6 +374,23 @@ def test_broker_dispatch_roundtrip_blocks_dirty_route_roundtrip_chain():
         "route_dispatch_roundtrip_rejected_orders",
         "route_dispatch_roundtrip_unmatched_acks",
     } <= failed
+
+
+def test_broker_dispatch_roundtrip_blocks_raw_ack_route_batch_mismatch():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(ack_route_roundtrip_batch_ids="BDP-OLD"),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_dispatch_roundtrip_batch_consistent" in failed
+    assert report.orders["ack_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
+    assert report.orders["ack_raw_route_roundtrip_batch_ids"].tolist() == ["BDP-OLD", "BDP-OLD"]
 
 
 def test_broker_dispatch_roundtrip_blocks_identity_submission_and_missing_acks():
