@@ -439,6 +439,7 @@ def test_strategy_evidence_passes_complete_clean_catalog():
     assert review.ready
     assert set(review.evidence["required_run_type"]) == {"proof_report", "stress_report", "promotion_report"}
     assert set(review.evidence["passed"]) == {True}
+    assert review.summary.iloc[0]["evidence_profile"] == "default"
     assert review.summary.iloc[0]["recommendation"] == "eligible_for_shadow_scaleup_review"
 
 
@@ -486,6 +487,7 @@ def test_strategy_evidence_can_require_proof_refresh_gate():
 
     assert review.ready
     assert "proof_refresh_gate" in set(review.evidence["required_run_type"])
+    assert review.summary.iloc[0]["evidence_profile"] == "custom"
 
 
 def test_strategy_evidence_can_require_broker_readiness_gate():
@@ -860,6 +862,8 @@ def test_ops_launch_evidence_profile_requires_dryrun_chain_identity():
     assert set(review.evidence["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["ops_launch"])
     assert set(review.evidence["latest_strategy"]) == {"lead_lag_taker"}
     assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["evidence_profile"] == "ops_launch"
+    assert review.summary.iloc[0]["recommendation"] == "eligible_for_live_dryrun_route_review"
     broker_item = review.evidence.loc[review.evidence["required_run_type"] == "broker_readiness"].iloc[0]
     assert broker_item["latest_strategy"] == "lead_lag_taker"
     assert broker_item["latest_market"] == "india_nse_index_derivatives"
@@ -877,6 +881,8 @@ def test_ops_launch_evidence_profile_fails_without_cutover_gate():
     failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
     assert not review.ready
     assert "required_run_type:cutover_gate" in failed
+    assert review.summary.iloc[0]["evidence_profile"] == "ops_launch"
+    assert review.summary.iloc[0]["recommendation"] == "ops_launch_evidence_incomplete"
 
 
 def test_ops_launch_evidence_profile_fails_without_dispatch_roundtrip():
@@ -1091,6 +1097,8 @@ def test_cli_strategy_evidence_ops_launch_profile(tmp_path):
     assert code == 0
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["ops_launch"])
     assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "evidence_profile"] == "ops_launch"
+    assert summary.loc[0, "recommendation"] == "eligible_for_live_dryrun_route_review"
 
 
 def test_cli_strategy_evidence_can_require_strategy_identity(tmp_path):

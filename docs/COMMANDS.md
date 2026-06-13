@@ -201,6 +201,10 @@ profile expands to `scaleup_plan`, `runtime_telemetry_snapshot`,
 and `live_dryrun`. Explicit `--required-run-type` flags still override the
 profile for custom launch reviews.
 
+`strategy_evidence_summary.csv` records the inferred `evidence_profile`. Ready
+strategy profiles recommend `eligible_for_shadow_scaleup_review`, while a ready
+`ops_launch` profile recommends `eligible_for_live_dryrun_route_review`.
+
 Outputs:
 
 ```text

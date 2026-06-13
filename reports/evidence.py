@@ -294,6 +294,7 @@ def _summary(
     thresholds: EvidenceThresholds,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
+    profile = _profile_identity(thresholds.required_run_types)
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     passed_required = int(evidence["passed"].astype(bool).sum()) if not evidence.empty else 0
     passed_required_rows = _passed_required_rows(catalog, evidence)
@@ -304,7 +305,8 @@ def _summary(
             {
                 "ready": ready,
                 "failed_checks": failed,
-                "recommendation": "eligible_for_shadow_scaleup_review" if ready else "evidence_incomplete",
+                "recommendation": _recommendation(profile, ready),
+                "evidence_profile": profile,
                 "run_count": int(len(catalog)),
                 "required_run_types": ";".join(thresholds.required_run_types),
                 "passed_required_run_types": passed_required,
@@ -327,6 +329,19 @@ def _summary(
             }
         ]
     )
+
+
+def _profile_identity(required_run_types: tuple[str, ...]) -> str:
+    for profile, run_types in EVIDENCE_PROFILE_RUN_TYPES.items():
+        if tuple(required_run_types) == tuple(run_types):
+            return profile
+    return "custom"
+
+
+def _recommendation(profile: str, ready: bool) -> str:
+    if profile == "ops_launch":
+        return "eligible_for_live_dryrun_route_review" if ready else "ops_launch_evidence_incomplete"
+    return "eligible_for_shadow_scaleup_review" if ready else "evidence_incomplete"
 
 
 def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
