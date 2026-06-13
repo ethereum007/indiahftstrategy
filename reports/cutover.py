@@ -95,14 +95,17 @@ def write_cutover_gate_report(
     scaleup_checks_path = (
         scaleup / "scaleup_checks.csv" if scaleup.is_dir() else scaleup_config_path.with_name("scaleup_checks.csv")
     )
+    runtime_session_summary_path = (
+        _summary_path(runtime_session_dir, "runtime_session_summary.csv")
+        if runtime_session_dir is not None
+        else None
+    )
     report = evaluate_cutover_gate(
         scaleup_summary=_read_required(scaleup_summary_path, "scaleup_summary"),
         scaleup_config=json.loads(scaleup_config_path.read_text(encoding="utf-8")),
         scaleup_checks=_read_optional(scaleup_checks_path),
         broker_readiness_summary=_read_required(broker_readiness_summary_path, "broker_readiness"),
-        runtime_session_summary=_read_optional(_summary_path(runtime_session_dir, "runtime_session_summary.csv"))
-        if runtime_session_dir is not None
-        else None,
+        runtime_session_summary=_read_optional(runtime_session_summary_path),
         operator_review=_read_optional(operator_review_path),
         thresholds=thresholds,
     )
@@ -112,9 +115,15 @@ def write_cutover_gate_report(
     report.checks.to_csv(out / "cutover_checks.csv", index=False)
     report.summary.to_csv(out / "cutover_summary.csv", index=False)
     (out / "cutover_config.json").write_text(json.dumps(report.config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    inputs: dict[str, Any] = {"scaleup": scaleup_config_path, "broker_readiness": broker_readiness_summary_path}
-    if runtime_session_dir is not None:
-        inputs["runtime_session"] = Path(runtime_session_dir)
+    inputs: dict[str, Any] = {
+        "scaleup_summary": scaleup_summary_path,
+        "scaleup_config": scaleup_config_path,
+        "broker_readiness_summary": broker_readiness_summary_path,
+    }
+    if scaleup_checks_path.exists():
+        inputs["scaleup_checks"] = scaleup_checks_path
+    if runtime_session_summary_path is not None:
+        inputs["runtime_session_summary"] = runtime_session_summary_path
     if operator_review_path is not None:
         inputs["operator_review"] = Path(operator_review_path)
     write_experiment_manifest(

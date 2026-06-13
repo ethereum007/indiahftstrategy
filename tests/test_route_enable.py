@@ -535,6 +535,12 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert (out_dir / "route_enable_summary.csv").exists()
     assert (out_dir / "route_enable_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {"cutover_summary", "cutover_config", "upload_pack", "order_export"} <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["cutover_summary"]["path"]).endswith("/cutover/cutover_summary.csv")
+    assert path_tail(manifest["inputs"]["cutover_config"]["path"]).endswith("/cutover/cutover_config.json")
+    assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith("/upload/broker_upload_summary.csv")
+    assert path_tail(manifest["inputs"]["order_export"]["path"]).endswith("/export/broker_order_summary.csv")
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "route_enable_packet"
     assert catalog.catalog.iloc[0]["summary_file"] == "route_enable_summary.csv"
@@ -580,6 +586,12 @@ def test_cli_route_enable_reads_launch_pipeline_upload_and_export_roots(tmp_path
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert code == 0
         assert bool(summary.loc[0, "ready"])
+        assert path_tail(manifest["inputs"]["cutover_summary"]["path"]).endswith(
+            f"/{family}/cutover/cutover_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["cutover_config"]["path"]).endswith(
+            f"/{family}/cutover/cutover_config.json"
+        )
         assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith(
             f"/{family}_launch_pipeline/{upload_folder}/broker_upload_summary.csv"
         )

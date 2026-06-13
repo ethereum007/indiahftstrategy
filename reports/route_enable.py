@@ -109,7 +109,11 @@ def write_route_enable_packet(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    inputs: dict[str, Any] = {"cutover": cutover_config_path, "upload_pack": upload_summary_path}
+    inputs: dict[str, Any] = {
+        "cutover_summary": cutover_summary_path,
+        "cutover_config": cutover_config_path,
+        "upload_pack": upload_summary_path,
+    }
     if order_export_summary_path is not None:
         inputs["order_export"] = (
             order_export_summary_path if order_export_summary_path.exists() else Path(order_export_dir)

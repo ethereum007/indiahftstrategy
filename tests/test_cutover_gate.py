@@ -726,6 +726,25 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     assert (out_dir / "cutover_summary.csv").exists()
     assert (out_dir / "cutover_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert {
+        "scaleup_summary",
+        "scaleup_config",
+        "scaleup_checks",
+        "broker_readiness_summary",
+        "runtime_session_summary",
+        "operator_review",
+    } <= set(manifest["inputs"])
+    assert path_tail(manifest["inputs"]["scaleup_summary"]["path"]).endswith("/scaleup/scaleup_summary.csv")
+    assert path_tail(manifest["inputs"]["scaleup_config"]["path"]).endswith("/scaleup/scaleup_config.json")
+    assert path_tail(manifest["inputs"]["scaleup_checks"]["path"]).endswith("/scaleup/scaleup_checks.csv")
+    assert path_tail(manifest["inputs"]["broker_readiness_summary"]["path"]).endswith(
+        "/broker/broker_readiness_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["runtime_session_summary"]["path"]).endswith(
+        "/runtime/runtime_session_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["operator_review"]["path"]).endswith("/operator_review.csv")
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "cutover_gate"
     assert catalog.catalog.iloc[0]["summary_file"] == "cutover_summary.csv"
@@ -765,7 +784,16 @@ def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path)
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert code == 0
         assert bool(summary.loc[0, "ready"])
-        assert path_tail(manifest["inputs"]["broker_readiness"]["path"]).endswith(
+        assert path_tail(manifest["inputs"]["scaleup_summary"]["path"]).endswith(
+            f"/{family}/scaleup/scaleup_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["scaleup_config"]["path"]).endswith(
+            f"/{family}/scaleup/scaleup_config.json"
+        )
+        assert path_tail(manifest["inputs"]["scaleup_checks"]["path"]).endswith(
+            f"/{family}/scaleup/scaleup_checks.csv"
+        )
+        assert path_tail(manifest["inputs"]["broker_readiness_summary"]["path"]).endswith(
             f"/{family}_launch_pipeline/{broker_folder}/broker_readiness_summary.csv"
         )
 
