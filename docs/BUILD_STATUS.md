@@ -259,10 +259,11 @@
   evidence into one incident-closure timeline, check set, and summary with
   guard trigger plus strategy/market context carried through the review.
 - Post-halt resume gate that requires a closed incident, ready scale-up plan,
-  scenario/adapter and strategy/market continuity, optional operator approval,
-  and emits resume authorization/config artifacts carrying the incident guard
-  trigger that caused the prior halt, with automatic operator approval and
-  guard-trigger acknowledgement required for `live_dryrun` resumes.
+  scenario/adapter, strategy/market, and proof-refresh continuity, optional
+  operator approval, and emits resume authorization/config artifacts carrying
+  the incident guard trigger and proof context from the prior halt, with
+  automatic operator approval and guard-trigger acknowledgement required for
+  `live_dryrun` resumes.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -323,7 +324,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 418 tests.
+Current passing suite: 419 tests.
 
 ## Next Build Targets
 

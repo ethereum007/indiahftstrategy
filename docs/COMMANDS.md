@@ -1891,10 +1891,12 @@ manifest.json
 ```
 
 `resume_authorization.csv`, `resume_summary.csv`, and `resume_config.json`
-retain the prior incident's guard-trigger, strategy, and market fields so
-resume approval is tied back to the exact halt that was closed. Strategy and
-market continuity are checked by default alongside scenario and adapter
-continuity.
+retain the prior incident's guard-trigger, strategy, market, and proof-refresh
+fields so resume approval is tied back to the exact halt that was closed.
+Strategy, market, and proof-refresh identity continuity are checked by default
+alongside scenario and adapter continuity. If the incident or new scale-up plan
+contains proof freshness, the resume gate also requires the new scale-up proof
+to be provided, ready, non-mixed, and strategy/market-matched to the incident.
 
 When the scale-up target mode is `live_dryrun`, the resume gate automatically
 requires both operator approval and acknowledgement of the prior guard trigger,

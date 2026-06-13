@@ -18,6 +18,9 @@ class ResumeGateThresholds:
     require_same_adapter: bool = True
     require_same_strategy: bool = True
     require_same_market: bool = True
+    require_ready_proof_refresh: bool = True
+    require_same_proof_refresh_strategy: bool = True
+    require_same_proof_refresh_market: bool = True
     require_operator_approval: bool = False
     require_operator_guard_trigger_ack: bool = False
     max_failed_scaleup_checks: int = 0
@@ -127,6 +130,9 @@ def _checks(
     scaleup_strategy = _strategy_key(_scaleup_identity(scaleup, scaleup_config, "strategy"))
     incident_market = _identity_key(incident.get("market", ""))
     scaleup_market = _identity_key(_scaleup_identity(scaleup, scaleup_config, "market"))
+    incident_proof = _incident_proof_refresh(incident)
+    scaleup_proof = _scaleup_proof_refresh(scaleup, scaleup_config)
+    proof_active = _proof_refresh_active(incident_proof) or _proof_refresh_active(scaleup_proof)
     scaleup_failed = _failed_scaleup_checks(scaleup, scaleup_checks)
     operator_approved = _operator_approved(operator_review)
     incident_guard_trigger = _text(incident, "guard_failed_check_names")
@@ -186,6 +192,58 @@ def _checks(
                 "incident and scale-up market identities differ",
             ),
             _check(
+                "proof_refresh_ready",
+                scaleup_proof["ready"] if proof_active else "inactive",
+                "is",
+                True,
+                (
+                    not proof_active
+                    or not thresholds.require_ready_proof_refresh
+                    or bool(scaleup_proof["provided"] and scaleup_proof["ready"])
+                ),
+                "resume scale-up proof freshness is missing or not ready",
+            ),
+            _check(
+                "proof_refresh_identity_consistent",
+                scaleup_proof["mixed_identity"] if proof_active else "inactive",
+                "is",
+                False,
+                not proof_active or not bool(scaleup_proof["mixed_identity"]),
+                "resume scale-up proof freshness has mixed strategy or market identity",
+            ),
+            _check(
+                "proof_refresh_strategy_match",
+                scaleup_proof["strategy"] if proof_active else "inactive",
+                "==",
+                incident_proof["strategy"] if proof_active else "inactive",
+                (
+                    not proof_active
+                    or not thresholds.require_same_proof_refresh_strategy
+                    or bool(
+                        scaleup_proof["strategy"]
+                        and incident_proof["strategy"]
+                        and scaleup_proof["strategy"] == incident_proof["strategy"]
+                    )
+                ),
+                "incident and scale-up proof-refresh strategy identities differ",
+            ),
+            _check(
+                "proof_refresh_market_match",
+                scaleup_proof["market"] if proof_active else "inactive",
+                "==",
+                incident_proof["market"] if proof_active else "inactive",
+                (
+                    not proof_active
+                    or not thresholds.require_same_proof_refresh_market
+                    or bool(
+                        scaleup_proof["market"]
+                        and incident_proof["market"]
+                        and scaleup_proof["market"] == incident_proof["market"]
+                    )
+                ),
+                "incident and scale-up proof-refresh market identities differ",
+            ),
+            _check(
                 "scaleup_failed_checks",
                 scaleup_failed,
                 "<=",
@@ -225,6 +283,8 @@ def _authorization(
     kill_switches = scaleup_config.get("kill_switches", {}) or {}
     operator_approval_required = _operator_approval_required(scaleup, scaleup_config, thresholds)
     operator_trigger_ack_required = _operator_trigger_ack_required(scaleup, scaleup_config, thresholds)
+    incident_proof = _incident_proof_refresh(incident)
+    scaleup_proof = _scaleup_proof_refresh(scaleup, scaleup_config)
     return pd.DataFrame(
         [
             {
@@ -234,6 +294,20 @@ def _authorization(
                 "market": _identity_key(_scaleup_identity(scaleup, scaleup_config, "market")),
                 "incident_strategy": _strategy_key(incident.get("strategy", "")),
                 "incident_market": _identity_key(incident.get("market", "")),
+                "proof_refresh_required": bool(scaleup_proof["required"]),
+                "proof_refresh_provided": bool(scaleup_proof["provided"]),
+                "proof_refresh_ready": bool(scaleup_proof["ready"]),
+                "proof_refresh_strategy": str(scaleup_proof["strategy"]),
+                "proof_refresh_market": str(scaleup_proof["market"]),
+                "proof_refresh_mixed_identity": bool(scaleup_proof["mixed_identity"]),
+                "proof_source": str(scaleup_proof["proof_source"]),
+                "incident_proof_refresh_required": bool(incident_proof["required"]),
+                "incident_proof_refresh_provided": bool(incident_proof["provided"]),
+                "incident_proof_refresh_ready": bool(incident_proof["ready"]),
+                "incident_proof_refresh_strategy": str(incident_proof["strategy"]),
+                "incident_proof_refresh_market": str(incident_proof["market"]),
+                "incident_proof_refresh_mixed_identity": bool(incident_proof["mixed_identity"]),
+                "incident_proof_source": str(incident_proof["proof_source"]),
                 "scenario_key": str(scaleup.get("scenario_key", scaleup_config.get("scenario_key", ""))),
                 "adapter": str(scaleup.get("adapter", scaleup_config.get("adapter", ""))),
                 "incident_status": str(incident.get("incident_status", "")),
@@ -272,6 +346,19 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "market": str(authorization.get("market", "")),
                 "incident_strategy": str(authorization.get("incident_strategy", "")),
                 "incident_market": str(authorization.get("incident_market", "")),
+                "proof_refresh_required": _to_bool(authorization.get("proof_refresh_required", False)),
+                "proof_refresh_provided": _to_bool(authorization.get("proof_refresh_provided", False)),
+                "proof_refresh_ready": _to_bool(authorization.get("proof_refresh_ready", False)),
+                "proof_refresh_strategy": str(authorization.get("proof_refresh_strategy", "")),
+                "proof_refresh_market": str(authorization.get("proof_refresh_market", "")),
+                "proof_refresh_mixed_identity": _to_bool(
+                    authorization.get("proof_refresh_mixed_identity", False)
+                ),
+                "proof_source": str(authorization.get("proof_source", "")),
+                "incident_proof_refresh_strategy": str(
+                    authorization.get("incident_proof_refresh_strategy", "")
+                ),
+                "incident_proof_refresh_market": str(authorization.get("incident_proof_refresh_market", "")),
                 "scenario_key": str(authorization.get("scenario_key", "")),
                 "adapter": str(authorization.get("adapter", "")),
                 "incident_guard_failed_check_names": _text(authorization, "incident_guard_failed_check_names"),
@@ -306,6 +393,26 @@ def _config(
             "market": str(authorization["market"]),
             "incident_strategy": str(authorization.get("incident_strategy", "")),
             "incident_market": str(authorization.get("incident_market", "")),
+        },
+        "proof_freshness": {
+            "required": _to_bool(authorization.get("proof_refresh_required", False)),
+            "provided": _to_bool(authorization.get("proof_refresh_provided", False)),
+            "ready": _to_bool(authorization.get("proof_refresh_ready", False)),
+            "strategy": str(authorization.get("proof_refresh_strategy", "")),
+            "market": str(authorization.get("proof_refresh_market", "")),
+            "mixed_identity": _to_bool(authorization.get("proof_refresh_mixed_identity", False)),
+            "proof_source": str(authorization.get("proof_source", "")),
+            "incident": {
+                "required": _to_bool(authorization.get("incident_proof_refresh_required", False)),
+                "provided": _to_bool(authorization.get("incident_proof_refresh_provided", False)),
+                "ready": _to_bool(authorization.get("incident_proof_refresh_ready", False)),
+                "strategy": str(authorization.get("incident_proof_refresh_strategy", "")),
+                "market": str(authorization.get("incident_proof_refresh_market", "")),
+                "mixed_identity": _to_bool(
+                    authorization.get("incident_proof_refresh_mixed_identity", False)
+                ),
+                "proof_source": str(authorization.get("incident_proof_source", "")),
+            },
         },
         "limits": scaleup_config.get("limits", {}),
         "kill_switches": scaleup_config.get("kill_switches", {}),
@@ -418,6 +525,68 @@ def _scaleup_identity(scaleup: pd.Series, scaleup_config: dict[str, Any], key: s
     if not isinstance(identity, dict):
         identity = {}
     return _first_text(scaleup.get(key, ""), scaleup_config.get(key, ""), identity.get(key, ""))
+
+
+def _incident_proof_refresh(incident: pd.Series) -> dict[str, object]:
+    raw_strategy = _text(incident, "proof_refresh_strategy")
+    raw_market = _text(incident, "proof_refresh_market")
+    return {
+        "active": _proof_refresh_fields_active(incident),
+        "required": _to_bool(incident.get("proof_refresh_required", False)),
+        "provided": _to_bool(incident.get("proof_refresh_provided", False)),
+        "ready": _to_bool(incident.get("proof_refresh_ready", False)),
+        "strategy": _strategy_key(_first_text(raw_strategy, incident.get("strategy", ""))),
+        "market": _identity_key(_first_text(raw_market, incident.get("market", ""))),
+        "mixed_identity": _to_bool(incident.get("proof_refresh_mixed_identity", False)),
+        "proof_source": _text(incident, "proof_source"),
+    }
+
+
+def _scaleup_proof_refresh(scaleup: pd.Series, scaleup_config: dict[str, Any]) -> dict[str, object]:
+    proof = scaleup_config.get("proof_freshness", {}) or {}
+    if not isinstance(proof, dict):
+        proof = {}
+    raw_strategy = _first_text(proof.get("strategy", ""), scaleup.get("proof_refresh_strategy", ""))
+    raw_market = _first_text(proof.get("market", ""), scaleup.get("proof_refresh_market", ""))
+    return {
+        "active": _proof_refresh_mapping_active(proof) or _proof_refresh_fields_active(scaleup),
+        "required": _to_bool(proof.get("required", scaleup.get("proof_refresh_required", False))),
+        "provided": _to_bool(proof.get("provided", scaleup.get("proof_refresh_provided", False))),
+        "ready": _to_bool(proof.get("ready", scaleup.get("proof_refresh_ready", False))),
+        "strategy": _strategy_key(_first_text(raw_strategy, _scaleup_identity(scaleup, scaleup_config, "strategy"))),
+        "market": _identity_key(_first_text(raw_market, _scaleup_identity(scaleup, scaleup_config, "market"))),
+        "mixed_identity": _to_bool(
+            proof.get("mixed_identity", scaleup.get("proof_refresh_mixed_identity", False))
+        ),
+        "proof_source": _first_text(proof.get("proof_source", ""), scaleup.get("proof_source", "")),
+    }
+
+
+def _proof_refresh_active(state: dict[str, object]) -> bool:
+    return bool(state.get("active") or state.get("required") or state.get("provided") or state.get("ready"))
+
+
+def _proof_refresh_mapping_active(proof: dict[str, Any]) -> bool:
+    bool_columns = ("required", "provided", "ready", "mixed_identity")
+    text_columns = ("strategy", "market", "proof_source")
+    return any(_to_bool(proof.get(column, False)) for column in bool_columns) or any(
+        _object_text(proof.get(column, "")).strip() for column in text_columns
+    )
+
+
+def _proof_refresh_fields_active(row: pd.Series) -> bool:
+    return any(
+        _to_bool(row.get(column, False))
+        for column in (
+            "proof_refresh_required",
+            "proof_refresh_provided",
+            "proof_refresh_ready",
+            "proof_refresh_mixed_identity",
+        )
+    ) or any(
+        _text(row, column).strip()
+        for column in ("proof_refresh_strategy", "proof_refresh_market", "proof_source")
+    )
 
 
 def _strategy_key(value: object) -> str:

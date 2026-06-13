@@ -12,7 +12,12 @@ def incident_summary(
     adapter="arrow_money",
     strategy="lead_lag_taker",
     market="india_nse_index_derivatives",
+    proof_strategy=None,
+    proof_market=None,
+    proof_ready=True,
 ):
+    proof_strategy = strategy if proof_strategy is None else proof_strategy
+    proof_market = market if proof_market is None else proof_market
     return pd.DataFrame(
         [
             {
@@ -20,6 +25,13 @@ def incident_summary(
                 "incident_status": "halt_completed" if passed else "halt_incomplete",
                 "strategy": strategy,
                 "market": market,
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": proof_ready,
+                "proof_refresh_strategy": proof_strategy,
+                "proof_refresh_market": proof_market,
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "guard_failed_check_names": "open_order_count" if passed else "halt_execution_passed",
@@ -38,7 +50,13 @@ def scaleup_summary(
     target_mode="shadow",
     strategy="lead_lag_taker",
     market="india_nse_index_derivatives",
+    proof_strategy=None,
+    proof_market=None,
+    proof_ready=True,
+    proof_mixed_identity=False,
 ):
+    proof_strategy = strategy if proof_strategy is None else proof_strategy
+    proof_market = market if proof_market is None else proof_market
     return pd.DataFrame(
         [
             {
@@ -46,6 +64,12 @@ def scaleup_summary(
                 "target_mode": target_mode,
                 "strategy": strategy,
                 "market": market,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": proof_ready,
+                "proof_refresh_strategy": proof_strategy,
+                "proof_refresh_market": proof_market,
+                "proof_refresh_mixed_identity": proof_mixed_identity,
+                "proof_source": "latest",
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "max_orders_per_session": 10,
@@ -63,7 +87,13 @@ def scaleup_config(
     target_mode="shadow",
     strategy="lead_lag_taker",
     market="india_nse_index_derivatives",
+    proof_strategy=None,
+    proof_market=None,
+    proof_ready=True,
+    proof_mixed_identity=False,
 ):
+    proof_strategy = strategy if proof_strategy is None else proof_strategy
+    proof_market = market if proof_market is None else proof_market
     return {
         "schema_version": 1,
         "ready": True,
@@ -77,6 +107,17 @@ def scaleup_config(
             "market": market,
             "expected_strategy": strategy,
             "expected_market": market,
+        },
+        "proof_freshness": {
+            "required": True,
+            "provided": True,
+            "ready": proof_ready,
+            "strategy": proof_strategy,
+            "market": proof_market,
+            "mixed_identity": proof_mixed_identity,
+            "proof_source": "latest",
+            "fresh_proof_required": False,
+            "recommendation": "reuse_latest_calibrated_proof",
         },
         "limits": {
             "max_orders_per_session": 10,
@@ -147,14 +188,22 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.authorization.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.authorization.iloc[0]["market"] == "india_nse_index_derivatives"
     assert report.authorization.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
+    assert report.authorization.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.authorization.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
+    assert report.authorization.iloc[0]["incident_proof_refresh_strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.iloc[0]["proof_refresh_ready"])
+    assert report.summary.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["incident_proof_refresh_market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
     assert report.summary.iloc[0]["incident_guard_first_failed_reason"] == "open_order_count: limit breached"
     assert report.summary.iloc[0]["recommendation"] == "resume_with_scaleup_controls"
     assert report.config["incident"]["guard_failed_check_names"] == "open_order_count"
     assert report.config["identity"]["strategy"] == "lead_lag_taker"
     assert report.config["identity"]["incident_market"] == "india_nse_index_derivatives"
+    assert report.config["proof_freshness"]["strategy"] == "lead_lag_taker"
+    assert report.config["proof_freshness"]["incident"]["market"] == "india_nse_index_derivatives"
     assert report.config["ready"]
 
 
@@ -180,6 +229,26 @@ def test_resume_gate_blocks_strategy_and_market_mismatch():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {"strategy_match", "market_match"} <= failed
+
+
+def test_resume_gate_blocks_proof_refresh_identity_mismatch():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(
+            proof_strategy="surface_mm",
+            proof_market="us_options_regular",
+        ),
+        scaleup_config=scaleup_config(
+            proof_strategy="surface_mm",
+            proof_market="us_options_regular",
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"proof_refresh_strategy_match", "proof_refresh_market_match"} <= failed
+    assert report.authorization.iloc[0]["strategy"] == "lead_lag_taker"
+    assert report.authorization.iloc[0]["proof_refresh_strategy"] == "surface_mm"
 
 
 def test_resume_gate_can_require_operator_trigger_acknowledgment():
@@ -273,6 +342,8 @@ def test_write_resume_gate_outputs_artifacts(tmp_path):
     assert (out_dir / "manifest.json").exists()
     saved_summary = pd.read_csv(out_dir / "resume_summary.csv")
     assert saved_summary.loc[0, "incident_guard_failed_check_names"] == "open_order_count"
+    assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
+    assert bool(saved_summary.loc[0, "proof_refresh_ready"])
 
 
 def test_cli_resume_gate_fails_when_operator_approval_required(tmp_path):
