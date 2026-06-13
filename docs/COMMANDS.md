@@ -921,6 +921,8 @@ Gate generated market-making quotes before replay or live routing:
 python -m hft_cli review-quotes `
   --quotes runs\surface_quotes_2026_06_10\surface_quotes.csv `
   --out runs\surface_quotes_2026_06_10\quote_review `
+  --strategy surface_mm `
+  --market india_nse_index_derivatives `
   --data-readiness-comparison runs\vendor_data\arrow_ticks_batch\comparison `
   --require-data-readiness-comparison `
   --min-quotes 20 `
@@ -943,7 +945,10 @@ manifest.json
 When `--require-data-readiness-comparison` is set, quote review fails closed
 unless the supplied comparison summary is present and accepted. This keeps
 surface market-making quotes from moving into replay or paper routing on
-unproven vendor market data.
+unproven vendor market data. The review summary and manifest retain strategy
+and market identity so catalog evidence can verify that surface-quality,
+quote-risk, and surface market-making pipeline artifacts all belong to the same
+research track.
 
 ## Surface Quote Lifecycle Plan
 

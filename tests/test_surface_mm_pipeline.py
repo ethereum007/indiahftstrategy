@@ -4,6 +4,8 @@ import pandas as pd
 
 from engine.surface import black76_price
 from hft_cli import main
+from reports.catalog import catalog_experiment_runs
+from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence, evidence_profile_run_types
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
 from reports.proof import ProofThresholds
 from reports.promotion import PromotionThresholds
@@ -74,8 +76,16 @@ def test_surface_mm_research_pipeline_promotes_candidate(tmp_path):
     )
 
     config = json.loads((out_dir / "candidate_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    quote_review_summary = pd.read_csv(out_dir / "02_quote_review" / "quote_risk_summary.csv")
     assert report.ready
     assert report.promotion is not None
+    assert report.summary.loc[0, "strategy"] == "surface_mm"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert quote_review_summary.loc[0, "strategy"] == "surface_mm"
+    assert quote_review_summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert manifest["parameters"]["strategy"] == "surface_mm"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
     assert int(report.summary.loc[0, "quotes"]) >= 1
     assert bool(report.summary.loc[0, "sweep_proof_passed"])
     assert bool(report.summary.loc[0, "promotion_ready"])
@@ -92,6 +102,48 @@ def test_surface_mm_research_pipeline_promotes_candidate(tmp_path):
     assert (out_dir / "surface_mm_pipeline_stages.csv").exists()
     assert (out_dir / "surface_mm_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_surface_mm_pipeline_artifacts_satisfy_surface_mm_evidence_profile(tmp_path):
+    chain_path, futures_path = write_surface_inputs(tmp_path)
+    out_dir = tmp_path / "surface_pipeline_with_quality"
+
+    write_surface_mm_research_pipeline(
+        chain_path=chain_path,
+        futures_path=futures_path,
+        output_dir=out_dir,
+        edge_ticks=0.0,
+        max_market_spread_ticks=20.0,
+        max_quotes_per_snapshot=4,
+        surface_quality_horizon_ns_values=[1_000_000_000],
+        require_surface_quality=True,
+        surface_quality_thresholds=SurfaceQualityThresholds(min_mae_improvement=-1_000_000.0),
+        quote_ttl_ns_values=[2_000_000_000],
+        order_latency_us_values=[0.0],
+        fill_depth_fraction_values=[1.0],
+        markout_horizon_ns_values=[1_000_000_000],
+        proof_thresholds=ProofThresholds(min_net_pnl=-1_000_000.0, min_fills=1, min_maker_share=0.0),
+        min_selection_median_net_pnl=-1_000_000.0,
+        promotion_thresholds=PromotionThresholds(min_median_net_pnl=-1_000_000.0, min_median_fills=1),
+    )
+
+    catalog = catalog_experiment_runs([out_dir]).catalog
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("surface_mm"),
+            allow_dirty_git=True,
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="surface_mm",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(evidence_profile_run_types("surface_mm"))
+    assert review.summary.loc[0, "strategy"] == "surface_mm"
+    assert review.summary.loc[0, "market"] == "india_nse_index_derivatives"
 
 
 def test_surface_mm_pipeline_blocks_nonportable_market_pair(tmp_path):

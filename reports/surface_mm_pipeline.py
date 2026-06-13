@@ -104,6 +104,7 @@ def write_surface_mm_research_pipeline(
         expected_market=market,
     )
     parameters = _parameters(
+        strategy="surface_mm",
         market=market,
         require_market_portability=require_market_portability,
         require_data_readiness_comparison=require_data_readiness_comparison,
@@ -189,6 +190,7 @@ def write_surface_mm_research_pipeline(
             timestamp_tz=timestamp_tz,
             filter_session=filter_session,
             market=market,
+            strategy="surface_mm",
         )
         if require_surface_quality and not surface_quality.passed:
             return _write_pipeline_outputs(
@@ -215,6 +217,8 @@ def write_surface_mm_research_pipeline(
         thresholds=quote_risk_thresholds,
         data_readiness_comparison_dir=data_readiness_comparison_dir,
         require_data_readiness_comparison=require_data_readiness_comparison,
+        strategy="surface_mm",
+        market=market,
     )
     if not quote_review.passed:
         return _write_pipeline_outputs(
@@ -360,6 +364,8 @@ def _write_pipeline_outputs(
         blocked_reason=blocked_reason,
     )
     summary = _summary(stages, quotes, surface_quality, quote_review, sweep, selection, promotion)
+    summary["strategy"] = "surface_mm"
+    summary["market"] = str(parameters.get("market", ""))
     config = _candidate_config(candidate_config, summary.iloc[0], stages, parameters)
     stages.to_csv(output_dir / "surface_mm_pipeline_stages.csv", index=False)
     summary.to_csv(output_dir / "surface_mm_pipeline_summary.csv", index=False)

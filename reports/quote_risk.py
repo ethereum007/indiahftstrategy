@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
 from reports.manifest import write_experiment_manifest
 
 
@@ -86,6 +87,8 @@ def quote_risk_review_parameters(summary: pd.DataFrame, input_dir: str | Path | 
             "quotes": 0,
             "marketable_quotes": 0,
             "min_quote_edge": 0.0,
+            "strategy": "",
+            "market": "",
         }
     row = summary.iloc[0]
     return {
@@ -95,6 +98,8 @@ def quote_risk_review_parameters(summary: pd.DataFrame, input_dir: str | Path | 
         "quotes": _int(row, "quotes"),
         "marketable_quotes": _int(row, "marketable_quotes"),
         "min_quote_edge": _float(row, "min_quote_edge"),
+        "strategy": str(row.get("strategy", "")),
+        "market": str(row.get("market", "")),
     }
 
 
@@ -119,6 +124,8 @@ def write_quote_risk_report(
     thresholds: QuoteRiskThresholds | None = None,
     data_readiness_comparison_dir: str | Path | None = None,
     require_data_readiness_comparison: bool = False,
+    strategy: str = "surface_mm",
+    market: str = INDIA_NSE_INDEX_DERIVATIVES.name,
 ) -> QuoteRiskReport:
     quotes_file = Path(quotes_path)
     if not quotes_file.exists():
@@ -127,6 +134,8 @@ def write_quote_risk_report(
     thresholds = thresholds or QuoteRiskThresholds()
     report = evaluate_quote_risk(quotes, thresholds=thresholds)
     summary = report.summary.copy()
+    summary["strategy"] = strategy
+    summary["market"] = market
     checks = report.checks.copy()
     comparison_summary = _read_data_readiness_comparison_summary(data_readiness_comparison_dir)
     comparison_check = _data_readiness_comparison_check(
@@ -151,6 +160,8 @@ def write_quote_risk_report(
         parameters={
             "thresholds": asdict(thresholds),
             "require_data_readiness_comparison": bool(require_data_readiness_comparison),
+            "strategy": strategy,
+            "market": market,
             "data_readiness_comparison": _comparison_parameters(
                 comparison_summary,
                 data_readiness_comparison_dir,

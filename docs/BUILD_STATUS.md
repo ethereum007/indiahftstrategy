@@ -95,7 +95,8 @@
   routing work.
 - Surface quote-risk review can require accepted multi-day vendor
   data-readiness comparison evidence before quotes move into replay or
-  paper-routing workflows.
+  paper-routing workflows, and stamps strategy/market identity for catalog
+  evidence review.
 - Broker-neutral staging for surface quotes can require a passed quote-risk
   review, blocking all orders before Arrow.money/iRage preparation when quote
   hygiene evidence is missing or failed.
@@ -108,7 +109,8 @@
   generation, optional surface-quality replay, quote-risk/data-readiness
   review, replay sweep proof, scenario selection, and promotion into one
   manifest-backed candidate run with an optional required market-portability
-  preflight before quote generation.
+  preflight before quote generation while retaining surface-MM strategy and
+  market identity across nested evidence artifacts.
 - Strategy evidence review now supports a `surface_mm` profile that requires
   surface-quality, quote-risk, and surface market-making research pipeline
   artifacts with shared strategy and market identity before shadow scale-up
@@ -386,7 +388,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 540 tests.
+Current passing suite: 541 tests.
 
 ## Next Build Targets
 

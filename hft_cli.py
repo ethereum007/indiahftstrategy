@@ -1469,6 +1469,8 @@ def main(argv: list[str] | None = None) -> int:
     quote_review = sub.add_parser("review-quotes", help="Review generated surface quotes for MM risk hygiene.")
     quote_review.add_argument("--quotes", required=True)
     quote_review.add_argument("--out", required=True)
+    quote_review.add_argument("--strategy", default="surface_mm")
+    quote_review.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
     quote_review.add_argument("--min-quotes", type=int, default=1)
     quote_review.add_argument("--min-instruments", type=int, default=1)
     quote_review.add_argument("--max-marketable-quotes", type=int, default=0)
@@ -3215,6 +3217,8 @@ def main(argv: list[str] | None = None) -> int:
             ),
             data_readiness_comparison_dir=args.data_readiness_comparison,
             require_data_readiness_comparison=args.require_data_readiness_comparison,
+            strategy=args.strategy,
+            market=args.market,
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.passed else 0

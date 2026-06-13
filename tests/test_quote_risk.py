@@ -120,10 +120,15 @@ def test_write_quote_risk_report_outputs_checks_summary_and_manifest(tmp_path):
     )
 
     assert report.output_dir == out_dir
+    assert report.summary.loc[0, "strategy"] == "surface_mm"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert (out_dir / "quote_risk_summary.csv").exists()
     assert (out_dir / "quote_risk_checks.csv").exists()
     assert (out_dir / "quote_risk_by_instrument.csv").exists()
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["parameters"]["strategy"] == "surface_mm"
+    assert manifest["parameters"]["market"] == "india_nse_index_derivatives"
 
 
 def test_write_quote_risk_report_can_require_data_readiness_comparison(tmp_path):
@@ -174,6 +179,9 @@ def test_unified_cli_review_quotes_can_fail_on_breach(tmp_path):
     )
 
     assert code == 2
+    summary = pd.read_csv(out_dir / "quote_risk_summary.csv")
+    assert summary.loc[0, "strategy"] == "surface_mm"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert (out_dir / "quote_risk_checks.csv").exists()
     assert (out_dir / "manifest.json").exists()
 
