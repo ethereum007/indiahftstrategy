@@ -2732,7 +2732,8 @@ status/mode, route-readiness proof, `shadow_broker_*`, and
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
 surface-MM `04_upload_pack` upload-order files and fingerprints the resolved
-route-enable summary, route-enable config, and upload CSV in the manifest.
+route-enable summary, route-enable config, route-enable manifest when present,
+and upload CSV in the manifest.
 
 ## Broker Dispatch Send Packet
 

@@ -80,6 +80,7 @@ def write_broker_dispatch_plan(
         if route_dir.is_dir()
         else route_config_path.with_name("route_enable_summary.csv")
     )
+    route_manifest_path = _sidecar_path(route_enable_dir, "manifest.json")
     route_config = json.loads(route_config_path.read_text(encoding="utf-8"))
     upload_file = _upload_orders_path(upload_dir, route_config, upload_orders_path)
     upload_bytes = upload_file.read_bytes()
@@ -99,15 +100,18 @@ def write_broker_dispatch_plan(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    inputs: dict[str, Any] = {
+        "route_enable_summary": route_summary_path,
+        "route_enable_config": route_config_path,
+        "upload_orders": upload_file,
+    }
+    if route_manifest_path is not None:
+        inputs["route_enable_manifest"] = route_manifest_path
     write_experiment_manifest(
         out,
         run_type="broker_dispatch_plan",
         parameters={"thresholds": asdict(thresholds or BrokerDispatchThresholds())},
-        inputs={
-            "route_enable_summary": route_summary_path,
-            "route_enable_config": route_config_path,
-            "upload_orders": upload_file,
-        },
+        inputs=inputs,
     )
     return BrokerDispatchReport(report.dispatch_orders, report.checks, report.summary, report.config, out)
 
@@ -1420,6 +1424,17 @@ def _read_required(path: str | Path, name: str) -> pd.DataFrame:
     if frame.empty:
         raise ValueError(f"required broker dispatch input is empty: {name}")
     return frame
+
+
+def _sidecar_path(path: str | Path | None, filename: str) -> Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_dir():
+        file_path = candidate / filename
+    else:
+        file_path = candidate if candidate.name == filename else candidate.with_name(filename)
+    return file_path if file_path.exists() else None
 
 
 def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:

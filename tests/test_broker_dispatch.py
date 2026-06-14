@@ -389,6 +389,21 @@ def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True, rout
         + "\n",
         encoding="utf-8",
     )
+    (route / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "route_enable_packet",
+                "inputs": {
+                    "cutover_manifest": {
+                        "path": str(route / "cutover_manifest.json"),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     upload_orders(duplicate).to_csv(upload / "broker_upload_orders.csv", index=False)
     return route, upload
 
@@ -768,12 +783,17 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     assert (out_dir / "broker_dispatch_config.json").exists()
     assert (out_dir / "manifest.json").exists()
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert {"route_enable_summary", "route_enable_config", "upload_orders"} <= set(manifest["inputs"])
+    assert {"route_enable_summary", "route_enable_config", "route_enable_manifest", "upload_orders"} <= set(
+        manifest["inputs"]
+    )
     assert path_tail(manifest["inputs"]["route_enable_summary"]["path"]).endswith(
         "/route_enable/route_enable_summary.csv"
     )
     assert path_tail(manifest["inputs"]["route_enable_config"]["path"]).endswith(
         "/route_enable/route_enable_config.json"
+    )
+    assert path_tail(manifest["inputs"]["route_enable_manifest"]["path"]).endswith(
+        "/route_enable/manifest.json"
     )
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_plan"
@@ -821,6 +841,9 @@ def test_cli_broker_dispatch_reads_launch_pipeline_upload_roots(tmp_path):
         )
         assert path_tail(manifest["inputs"]["route_enable_config"]["path"]).endswith(
             f"/{family}/route_enable/route_enable_config.json"
+        )
+        assert path_tail(manifest["inputs"]["route_enable_manifest"]["path"]).endswith(
+            f"/{family}/route_enable/manifest.json"
         )
         assert path_tail(manifest["inputs"]["upload_orders"]["path"]).endswith(
             f"/{family}_launch_pipeline/{upload_folder}/broker_upload_orders.csv"
