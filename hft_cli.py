@@ -1612,6 +1612,7 @@ def main(argv: list[str] | None = None) -> int:
     dispatch_roundtrip.add_argument("--allow-submission-enabled", action="store_true")
     dispatch_roundtrip.add_argument("--allow-missing-request-acks", action="store_true")
     dispatch_roundtrip.add_argument("--allow-rejections", action="store_true")
+    dispatch_roundtrip.add_argument("--require-route-readiness", action="store_true")
     dispatch_roundtrip.add_argument("--require-dispatch-roundtrip", action="store_true")
     dispatch_roundtrip.add_argument("--max-duplicate-ack-orders", type=int, default=0)
     dispatch_roundtrip.add_argument("--max-unmatched-acks", type=int, default=0)
@@ -3631,6 +3632,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_identity_match=not args.allow_identity_mismatch,
                 require_submission_disabled=not args.allow_submission_enabled,
                 require_all_requests_acked=not args.allow_missing_request_acks,
+                require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,

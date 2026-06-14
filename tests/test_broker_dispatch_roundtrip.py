@@ -29,10 +29,25 @@ def dispatch_summary(
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
     route_enable_dispatch_roundtrip_failed_checks=0,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
 ):
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return pd.DataFrame(
         [
             {
@@ -49,6 +64,14 @@ def dispatch_summary(
                 "dispatch_orders": 2,
                 "dispatch_batch_id": "BDP-1",
                 "dry_run_only": True,
+                "route_readiness_required": route_readiness_required,
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
+                "route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "route_readiness_recommendation": route_readiness_recommendation,
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_roundtrip_ready,
@@ -117,10 +140,25 @@ def send_summary(
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
     route_enable_dispatch_roundtrip_failed_checks=0,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
 ):
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return pd.DataFrame(
         [
             {
@@ -139,6 +177,14 @@ def send_summary(
                 "requests": 2,
                 "dry_run_only": True,
                 "submission_enabled": submission_enabled,
+                "route_readiness_required": route_readiness_required,
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
+                "route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "route_readiness_recommendation": route_readiness_recommendation,
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_roundtrip_ready,
@@ -219,10 +265,25 @@ def ack_summary(
     route_roundtrip_rejected_orders=0,
     route_roundtrip_unmatched_acks=0,
     route_enable_dispatch_roundtrip_failed_checks=0,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
 ):
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return pd.DataFrame(
         [
             {
@@ -241,6 +302,14 @@ def ack_summary(
                 "rejected_orders": rejected,
                 "duplicate_ack_orders": 0,
                 "unmatched_acks": 0,
+                "route_readiness_required": route_readiness_required,
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
+                "route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "route_readiness_recommendation": route_readiness_recommendation,
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_roundtrip_ready,
@@ -319,15 +388,40 @@ def acknowledgements(
 
 def route_enable_config(
     route_enable_dispatch_roundtrip_failed_checks=0,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
 ):
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return {
         "broker_readiness": {
             "adapter_schema_status": broker_schema_status,
             "schema_reviewed": broker_schema_reviewed,
             "schema_review_mode": broker_schema_review_mode,
+        },
+        "route_readiness": {
+            "required": route_readiness_required,
+            "provided": route_readiness_provided,
+            "ready": route_readiness_ready,
+            "strategy": route_readiness_strategy,
+            "market": route_readiness_market,
+            "route_ready_pairs": route_readiness_route_ready_pairs,
+            "gap_pairs": route_readiness_gap_pairs,
+            "recommendation": route_readiness_recommendation,
         },
         "route_enable_dispatch_roundtrip": {
             "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
@@ -335,32 +429,65 @@ def route_enable_config(
     }
 
 
-def write_inputs(tmp_path, *, missing_ack=False):
+def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
     dispatch = tmp_path / "dispatch"
     send = tmp_path / "send"
     ack = tmp_path / "ack"
     dispatch.mkdir()
     send.mkdir()
     ack.mkdir()
-    dispatch_summary().to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
+    dispatch_summary(
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    ).to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
     dispatch_orders().to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
     (dispatch / "broker_dispatch_config.json").write_text(
-        json.dumps(route_enable_config(), indent=2) + "\n",
+        json.dumps(
+            route_enable_config(
+                route_readiness_provided=route_readiness,
+                route_readiness_ready=route_readiness,
+            ),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    send_summary().to_csv(send / "broker_dispatch_send_summary.csv", index=False)
+    send_summary(
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    ).to_csv(send / "broker_dispatch_send_summary.csv", index=False)
     send_requests().to_csv(send / "broker_dispatch_send_requests.csv", index=False)
     (send / "broker_dispatch_send_config.json").write_text(
-        json.dumps(route_enable_config(), indent=2) + "\n",
+        json.dumps(
+            route_enable_config(
+                route_readiness_provided=route_readiness,
+                route_readiness_ready=route_readiness,
+            ),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
-    ack_summary(passed=not missing_ack, acked_orders=1 if missing_ack else 2, missing=1 if missing_ack else 0).to_csv(
+    ack_summary(
+        passed=not missing_ack,
+        acked_orders=1 if missing_ack else 2,
+        missing=1 if missing_ack else 0,
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    ).to_csv(
         ack / "broker_dispatch_ack_summary.csv",
         index=False,
     )
     acknowledgements(missing_second=missing_ack).to_csv(ack / "broker_dispatch_acknowledgements.csv", index=False)
     (ack / "broker_dispatch_ack_config.json").write_text(
-        json.dumps(route_enable_config(), indent=2) + "\n",
+        json.dumps(
+            route_enable_config(
+                route_readiness_provided=route_readiness,
+                route_readiness_ready=route_readiness,
+            ),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return dispatch, send, ack
@@ -394,6 +521,45 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 0
+    assert bool(report.summary.iloc[0]["route_readiness_required"])
+    assert bool(report.summary.iloc[0]["route_readiness_ready"])
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
+    assert report.config["route_readiness"]["required"]
+    assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_broker_dispatch_roundtrip_requires_route_readiness():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(route_readiness_provided=False, route_readiness_ready=False),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(route_readiness_provided=False, route_readiness_ready=False),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(route_readiness_provided=False, route_readiness_ready=False),
+        acknowledgements=acknowledgements(),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_readiness_provided", "route_readiness_ready"} <= failed
+    assert report.config["route_readiness"]["required"]
+    assert not report.config["route_readiness"]["provided"]
+
+
+def test_broker_dispatch_roundtrip_blocks_route_readiness_identity_mismatch():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(route_readiness_strategy="surface_mm"),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(route_readiness_market="us_options_regular"),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(route_readiness_strategy="lead_lag_taker"),
+        acknowledgements=acknowledgements(),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "route_readiness_identity_match" in failed
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "surface_mm"
+    assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
 
 
 def test_broker_dispatch_roundtrip_requires_route_roundtrip_proof():
@@ -597,3 +763,31 @@ def test_cli_broker_dispatch_roundtrip_fails_on_missing_ack(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
     assert "missing_request_acks" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_broker_dispatch_roundtrip_can_require_route_readiness(tmp_path):
+    dispatch, send, ack = write_inputs(tmp_path, route_readiness=False)
+    out_dir = tmp_path / "roundtrip"
+
+    code = main(
+        [
+            "review-broker-dispatch-roundtrip",
+            "--dispatch",
+            str(dispatch),
+            "--send",
+            str(send),
+            "--ack",
+            str(ack),
+            "--out",
+            str(out_dir),
+            "--require-route-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_roundtrip_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_roundtrip_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "passed"])
+    assert "route_readiness_provided" in failed

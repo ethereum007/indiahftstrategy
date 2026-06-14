@@ -2792,6 +2792,7 @@ python -m hft_cli review-broker-dispatch-roundtrip `
   --send runs\dispatch_send\leadlag_shadow_live_dryrun `
   --ack runs\dispatch_acks\leadlag_shadow_live_dryrun `
   --out runs\dispatch_roundtrip\leadlag_shadow_live_dryrun `
+  --require-route-readiness `
   --require-dispatch-roundtrip `
   --fail-on-breach
 ```
@@ -2811,13 +2812,16 @@ to sender requests and acknowledgement rows, including the raw ack-log route
 proof tag recorded by the acknowledgement reconciler, then fails closed unless
 the dispatch plan, non-submitting sender packet, and acknowledgement
 reconciliation all pass with matching strategy/market/scenario/adapter
-identity, disabled live submission, dry-run-only requests, consistent route
-round-trip proof, zero carried route-enable dispatch round-trip failed checks
-from upstream configs, one request per dispatch order, and an accepted
-acknowledgement for every request. The manifest fingerprints the exact
+identity, disabled live submission, dry-run-only requests, consistent
+route-readiness proof, consistent route round-trip proof, zero carried
+route-enable dispatch round-trip failed checks from upstream configs, one
+request per dispatch order, and an accepted acknowledgement for every request.
+`--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
+keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
 files that formed the proof, and the final summary/config retain the broker
-schema review status/mode reconciled from the component configs.
+schema review status/mode plus route-readiness proof reconciled from the
+component configs.
 
 ## Calibration
 

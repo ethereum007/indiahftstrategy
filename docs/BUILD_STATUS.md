@@ -411,8 +411,9 @@
   log inputs.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
-  identity, raw ack-log route proof consistency, route-enable failed-check
-  counters and broker schema review status/mode from upstream configs,
+  identity, route-readiness consistency, raw ack-log route proof consistency,
+  route-enable failed-check counters and broker schema review status/mode from
+  upstream configs,
   request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
