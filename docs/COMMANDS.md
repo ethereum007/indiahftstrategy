@@ -3092,6 +3092,7 @@ Outputs:
 03_diagnostics\diagnostic_summary.csv
 04_data_readiness\data_readiness_summary.csv
 vendor_market_data_pipeline_components.csv
+vendor_market_data_pipeline_config.json
 vendor_market_data_pipeline_summary.csv
 manifest.json
 ```
@@ -3100,7 +3101,8 @@ The pipeline summary carries the raw source file hash, header hash, mapping
 hash, mapping source, and component manifest paths. The root manifest
 fingerprints the intake, mapped-data, and data-readiness manifests, so reruns
 can prove whether a changed Arrow.money/iRage file, header, or mapping is the
-reason readiness changed.
+reason readiness changed. `vendor_market_data_pipeline_config.json` is the
+machine-readable handoff for strategy research or future vendor adapters.
 
 For multi-day onboarding, run each raw file through the same pipeline and
 compare data-readiness evidence before walk-forward research:
@@ -3126,13 +3128,16 @@ Batch outputs:
 datasets\<label>\vendor_market_data_pipeline_summary.csv
 comparison\data_readiness_comparison_summary.csv
 vendor_market_data_batch_datasets.csv
+vendor_market_data_batch_config.json
 vendor_market_data_batch_summary.csv
 manifest.json
 ```
 
 The batch summary adds `unique_source_files`, `unique_header_fingerprints`, and
 `mapping_sources`; the batch manifest fingerprints each dataset pipeline
-manifest plus the comparison manifest.
+manifest plus the comparison manifest. `vendor_market_data_batch_config.json`
+keeps the accepted dataset list, comparison thresholds, and per-dataset
+fingerprints together for walk-forward research handoff.
 
 ## Order Staging
 

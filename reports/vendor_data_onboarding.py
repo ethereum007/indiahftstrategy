@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -148,6 +149,11 @@ def write_vendor_market_data_pipeline(
     )
     components.to_csv(out / "vendor_market_data_pipeline_components.csv", index=False)
     summary.to_csv(out / "vendor_market_data_pipeline_summary.csv", index=False)
+    pipeline_config = _pipeline_config(summary.iloc[0], components, thresholds, config)
+    (out / "vendor_market_data_pipeline_config.json").write_text(
+        json.dumps(pipeline_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     inputs: dict[str, Any] = {
         "input": source_file,
         "mapping": mapping_file,
@@ -251,6 +257,11 @@ def write_vendor_market_data_batch_pipeline(
     summary = _batch_summary(datasets, comparison, config)
     datasets.to_csv(out / "vendor_market_data_batch_datasets.csv", index=False)
     summary.to_csv(out / "vendor_market_data_batch_summary.csv", index=False)
+    batch_config = _batch_config(summary.iloc[0], datasets, thresholds, config)
+    (out / "vendor_market_data_batch_config.json").write_text(
+        json.dumps(batch_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     inputs: dict[str, Any] = {"inputs": paths}
     if mapping_path is not None:
         inputs["mapping"] = mapping_path
@@ -421,6 +432,118 @@ def _batch_summary(
     )
 
 
+def _pipeline_config(
+    row: pd.Series,
+    components: pd.DataFrame,
+    thresholds: DataReadinessThresholds,
+    config: VendorMarketDataPipelineConfig,
+) -> dict[str, Any]:
+    component_rows = [
+        {
+            "component": str(item.get("component", "")),
+            "ready": _truthy(item.get("ready", False)),
+            "status": str(item.get("status", "")),
+            "output_dir": str(item.get("output_dir", "")),
+            "rows": int(_number_from_value(item.get("rows", 0))),
+            "failed_checks": int(_number_from_value(item.get("failed_checks", 0))),
+            "recommendation": str(item.get("recommendation", "")),
+        }
+        for item in components.to_dict(orient="records")
+    ]
+    return {
+        "schema_version": 1,
+        "ready": _truthy(row.get("ready", False)),
+        "adapter": _text(row, "adapter"),
+        "kind": _text(row, "kind"),
+        "market": config.market,
+        "source": {
+            "path": _text(row, "input_path"),
+            "file_sha256": _text(row, "source_file_sha256"),
+            "header_sha256": _text(row, "source_header_sha256"),
+            "columns": int(_number(row, "source_columns", fallback=0.0)),
+        },
+        "mapping": {
+            "path": _text(row, "mapping_path"),
+            "source": _text(row, "mapping_source"),
+            "draft_sha256": _text(row, "mapping_draft_sha256"),
+            "coverage": _number(row, "mapping_coverage", fallback=0.0),
+            "min_coverage": float(config.min_mapping_coverage),
+        },
+        "normalized": {
+            "output_file": _text(row, "normalized_output_file"),
+            "input_rows": int(_number(row, "input_rows", fallback=0.0)),
+            "rows": int(_number(row, "normalized_rows", fallback=0.0)),
+            "timestamp_unit": config.timestamp_unit,
+            "timestamp_tz": config.timestamp_tz,
+            "filter_session": bool(config.filter_session),
+        },
+        "diagnostics": {
+            "rows": int(_number(row, "diagnostic_rows", fallback=0.0)),
+        },
+        "data_readiness": {
+            "ready": _truthy(row.get("data_readiness_ready", False)),
+            "manifest_path": _text(row, "data_readiness_manifest_path"),
+            "thresholds": asdict(thresholds),
+        },
+        "component_manifests": {
+            "vendor_intake": _text(row, "vendor_intake_manifest_path"),
+            "mapped_data": _text(row, "mapped_data_manifest_path"),
+            "data_readiness": _text(row, "data_readiness_manifest_path"),
+        },
+        "components": component_rows,
+        "failed_components": int(_number(row, "failed_components", fallback=0.0)),
+        "recommendation": _text(row, "recommendation"),
+    }
+
+
+def _batch_config(
+    row: pd.Series,
+    datasets: pd.DataFrame,
+    thresholds: DataReadinessComparisonThresholds,
+    config: VendorMarketDataPipelineConfig,
+) -> dict[str, Any]:
+    dataset_rows = [
+        {
+            "dataset": str(item.get("dataset", "")),
+            "ready": _truthy(item.get("ready", False)),
+            "input_path": str(item.get("input_path", "")),
+            "pipeline_dir": str(item.get("pipeline_dir", "")),
+            "data_readiness_dir": str(item.get("data_readiness_dir", "")),
+            "normalized_rows": int(_number_from_value(item.get("normalized_rows", 0))),
+            "failed_components": int(_number_from_value(item.get("failed_components", 0))),
+            "source_file_sha256": str(item.get("source_file_sha256", "")),
+            "source_header_sha256": str(item.get("source_header_sha256", "")),
+            "mapping_draft_sha256": str(item.get("mapping_draft_sha256", "")),
+            "mapping_source": str(item.get("mapping_source", "")),
+            "data_readiness_manifest_path": str(item.get("data_readiness_manifest_path", "")),
+            "recommendation": str(item.get("recommendation", "")),
+        }
+        for item in datasets.to_dict(orient="records")
+    ]
+    return {
+        "schema_version": 1,
+        "ready": _truthy(row.get("ready", False)),
+        "adapter": config.adapter,
+        "kind": config.kind,
+        "market": config.market,
+        "dataset_count": int(_number(row, "dataset_count", fallback=0.0)),
+        "ready_datasets": int(_number(row, "ready_datasets", fallback=0.0)),
+        "failed_datasets": int(_number(row, "failed_datasets", fallback=0.0)),
+        "ready_rate": _number(row, "ready_rate", fallback=0.0),
+        "unique_source_files": int(_number(row, "unique_source_files", fallback=0.0)),
+        "unique_header_fingerprints": int(_number(row, "unique_header_fingerprints", fallback=0.0)),
+        "mapping_sources": _text(row, "mapping_sources"),
+        "comparison": {
+            "accepted": _truthy(row.get("comparison_accepted", False)),
+            "ready_rate": _number(row, "comparison_ready_rate", fallback=0.0),
+            "failed_checks": int(_number(row, "comparison_failed_checks", fallback=0.0)),
+            "thresholds": asdict(thresholds),
+        },
+        "datasets": dataset_rows,
+        "recommendation": _text(row, "recommendation"),
+    }
+
+
 def _diagnostics_ready(diagnostics: DiagnosticResult) -> bool:
     row = _diagnostic_overall(diagnostics)
     return int(_number(row, "rows", fallback=0.0)) > 0
@@ -458,6 +581,21 @@ def _text(row: pd.Series, column: str, fallback: str = "") -> str:
     if pd.isna(value):
         return fallback
     return str(value).strip()
+
+
+def _number_from_value(value: object, fallback: float = 0.0) -> float:
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
+        return float(fallback)
+    return float(parsed)
+
+
+def _truthy(value: object) -> bool:
+    if pd.isna(value):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "ready", "passed", "accepted"}
+    return bool(value)
 
 
 def _manifest_path(directory: Path) -> str:

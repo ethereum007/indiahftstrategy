@@ -214,7 +214,8 @@
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
   source, header, mapping, component-manifest, and comparison fingerprints for
-  repeatable vendor data proof.
+  repeatable vendor data proof, plus JSON handoff configs for strategy research
+  and future vendor adapters.
 - Multi-dataset data-readiness comparison gate that requires repeated clean
   market-data days before walk-forward research or strategy evidence review.
 - Market profile layer for India NSE index derivatives and US regular-hours

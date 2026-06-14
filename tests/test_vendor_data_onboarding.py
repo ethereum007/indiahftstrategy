@@ -56,6 +56,7 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     summary = report.summary.iloc[0]
     components = report.components.set_index("component")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads((out_dir / "vendor_market_data_pipeline_config.json").read_text(encoding="utf-8"))
     assert report.ready
     assert summary["normalized_rows"] == 2
     assert summary["mapping_coverage"] == 1.0
@@ -67,6 +68,14 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert "vendor_intake_source_profile" in manifest["inputs"]
     assert "mapped_data_manifest" in manifest["inputs"]
     assert "data_readiness_manifest" in manifest["inputs"]
+    assert config["ready"]
+    assert config["source"]["file_sha256"] == summary["source_file_sha256"]
+    assert config["source"]["header_sha256"] == summary["source_header_sha256"]
+    assert config["mapping"]["source"] == "vendor_intake_draft"
+    assert config["mapping"]["draft_sha256"] == summary["mapping_draft_sha256"]
+    assert config["data_readiness"]["ready"]
+    assert config["data_readiness"]["thresholds"]["min_tick_rows"] == 2
+    assert config["component_manifests"]["vendor_intake"].endswith("manifest.json")
     assert components.loc["vendor_intake", "ready"]
     assert components.loc["data_readiness", "ready"]
     assert (out_dir / "01_vendor_intake" / "vendor_mapping_draft.csv").exists()
@@ -98,6 +107,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
 
     summary = report.summary.iloc[0]
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads((out_dir / "vendor_market_data_batch_config.json").read_text(encoding="utf-8"))
     assert report.ready
     assert summary["dataset_count"] == 2
     assert summary["unique_source_files"] == 2
@@ -110,6 +120,14 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert "dataset_manifests" in manifest["inputs"]
     assert len(manifest["inputs"]["dataset_manifests"]) == 2
     assert "comparison_manifest" in manifest["inputs"]
+    assert config["ready"]
+    assert config["dataset_count"] == 2
+    assert config["unique_source_files"] == 2
+    assert config["unique_header_fingerprints"] == 1
+    assert config["comparison"]["accepted"]
+    assert config["comparison"]["thresholds"]["min_datasets"] == 2
+    assert len(config["datasets"]) == 2
+    assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
     assert manifest["run_type"] == "vendor_market_data_batch_pipeline"
