@@ -424,7 +424,8 @@
   broker schema review status/mode, route-readiness proof, route round-trip
   proof, and route-enable failed-check counters from the dispatch config,
   validates route-readiness identity, send-stage shadow broker-readiness
-  aggregates, and acknowledgement-log proof batch continuity, and
+  aggregates, broker-readiness-carried shadow broker proof, and
+  acknowledgement-log proof batch continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch and ack
   log inputs.
@@ -510,7 +511,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 677 tests.
+Current passing suite: 679 tests.
 
 ## Next Build Targets
 
