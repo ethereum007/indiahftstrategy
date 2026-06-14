@@ -402,11 +402,13 @@
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries broker schema review status/mode plus
   route-readiness proof, live-dry-run nested route proof, and route-carried
-  shadow broker-readiness aggregates from route-enable, and fails closed on
-  disabled routes, nested route-enable dispatch round-trip failed checks, dirty
-  route proof, duplicate source order IDs, or unresolved upload-order files
-  while resolving launch pipeline upload roots and fingerprinting the
-  route-enable summary/config plus upload CSV without sending orders.
+  shadow broker-readiness aggregates plus broker-readiness-carried shadow
+  broker proof from route-enable as `route_broker_shadow_broker_*`, and fails
+  closed on disabled routes, nested route-enable dispatch round-trip failed
+  checks, dirty route proof, duplicate source order IDs, dirty carried shadow
+  broker proof, or unresolved upload-order files while resolving launch pipeline
+  upload roots and fingerprinting the route-enable summary/config plus upload
+  CSV without sending orders.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route-readiness proof, route round-trip proof tags, and
@@ -506,7 +508,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 673 tests.
+Current passing suite: 675 tests.
 
 ## Next Build Targets
 

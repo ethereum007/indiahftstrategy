@@ -2716,13 +2716,15 @@ order, and requires unique source order IDs, unique dispatch IDs, route-enabled
 state, matching target mode, clean route-readiness proof from route-enable,
 clean nested route proof from route-enable for live dry-run routing, zero
 nested route-enable dispatch round-trip failed checks, any route-carried shadow
-broker-readiness aggregate to remain clean and identity-consistent, and order
-counts within the approved route limits. `--require-route-readiness` is automatic for
-`--target-mode live_dryrun`; the explicit flag keeps paper/shadow dispatch
-plans equally strict. The resulting
+broker-readiness aggregate and broker-readiness-carried shadow broker proof to
+remain clean and identity-consistent, and order counts within the approved route
+limits. `--require-route-readiness` is automatic for `--target-mode
+live_dryrun`; the explicit flag keeps paper/shadow dispatch plans equally
+strict. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, while the summary/config carry the broker schema review
-status/mode and route-readiness proof from route-enable.
+status/mode, route-readiness proof, `shadow_broker_*`, and
+`route_broker_shadow_broker_*` proof from route-enable.
 `broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
