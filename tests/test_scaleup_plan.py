@@ -252,6 +252,29 @@ def broker_readiness_summary(
     route_dispatch_roundtrip_missing_request_acks=None,
     route_dispatch_roundtrip_rejected_orders=None,
     route_dispatch_roundtrip_unmatched_acks=None,
+    shadow_broker_readiness_provided=False,
+    shadow_broker_readiness_sessions=0,
+    shadow_broker_readiness_ready_sessions=None,
+    shadow_broker_adapter="",
+    shadow_broker_adapter_count=0,
+    shadow_broker_route_readiness_sessions=0,
+    shadow_broker_route_readiness_ready_sessions=None,
+    shadow_broker_route_readiness_strategy="",
+    shadow_broker_route_readiness_market="",
+    shadow_broker_route_readiness_gap_pairs=0,
+    shadow_broker_dispatch_roundtrip_sessions=0,
+    shadow_broker_dispatch_roundtrip_ready_sessions=None,
+    shadow_broker_dispatch_roundtrip_strategy="",
+    shadow_broker_dispatch_roundtrip_market="",
+    shadow_broker_dispatch_roundtrip_scenario_count=0,
+    shadow_broker_dispatch_roundtrip_missing_request_acks=0,
+    shadow_broker_dispatch_roundtrip_rejected_orders=0,
+    shadow_broker_dispatch_roundtrip_unmatched_acks=0,
+    shadow_broker_route_dispatch_roundtrip_sessions=0,
+    shadow_broker_route_dispatch_roundtrip_ready_sessions=None,
+    shadow_broker_route_dispatch_roundtrip_strategy="",
+    shadow_broker_route_dispatch_roundtrip_market="",
+    shadow_broker_route_dispatch_roundtrip_scenario_count=0,
     schema_reviewed=None,
     schema_review_mode=None,
 ):
@@ -283,6 +306,14 @@ def broker_readiness_summary(
         route_dispatch_roundtrip_rejected_orders = dispatch_roundtrip_rejected_orders
     if route_dispatch_roundtrip_unmatched_acks is None:
         route_dispatch_roundtrip_unmatched_acks = dispatch_roundtrip_unmatched_acks
+    if shadow_broker_readiness_ready_sessions is None:
+        shadow_broker_readiness_ready_sessions = shadow_broker_readiness_sessions
+    if shadow_broker_route_readiness_ready_sessions is None:
+        shadow_broker_route_readiness_ready_sessions = shadow_broker_route_readiness_sessions
+    if shadow_broker_dispatch_roundtrip_ready_sessions is None:
+        shadow_broker_dispatch_roundtrip_ready_sessions = shadow_broker_dispatch_roundtrip_sessions
+    if shadow_broker_route_dispatch_roundtrip_ready_sessions is None:
+        shadow_broker_route_dispatch_roundtrip_ready_sessions = shadow_broker_route_dispatch_roundtrip_sessions
     return pd.DataFrame(
         [
             {
@@ -339,6 +370,47 @@ def broker_readiness_summary(
                 "route_dispatch_roundtrip_missing_request_acks": route_dispatch_roundtrip_missing_request_acks,
                 "route_dispatch_roundtrip_rejected_orders": route_dispatch_roundtrip_rejected_orders,
                 "route_dispatch_roundtrip_unmatched_acks": route_dispatch_roundtrip_unmatched_acks,
+                "shadow_broker_readiness_provided": shadow_broker_readiness_provided,
+                "shadow_broker_readiness_sessions": shadow_broker_readiness_sessions,
+                "shadow_broker_readiness_ready_sessions": shadow_broker_readiness_ready_sessions,
+                "shadow_broker_adapter": shadow_broker_adapter,
+                "shadow_broker_adapter_count": shadow_broker_adapter_count,
+                "shadow_broker_route_readiness_sessions": shadow_broker_route_readiness_sessions,
+                "shadow_broker_route_readiness_ready_sessions": shadow_broker_route_readiness_ready_sessions,
+                "shadow_broker_route_readiness_strategy": shadow_broker_route_readiness_strategy,
+                "shadow_broker_route_readiness_market": shadow_broker_route_readiness_market,
+                "shadow_broker_route_readiness_gap_pairs": shadow_broker_route_readiness_gap_pairs,
+                "shadow_broker_dispatch_roundtrip_sessions": shadow_broker_dispatch_roundtrip_sessions,
+                "shadow_broker_dispatch_roundtrip_ready_sessions": (
+                    shadow_broker_dispatch_roundtrip_ready_sessions
+                ),
+                "shadow_broker_dispatch_roundtrip_strategy": shadow_broker_dispatch_roundtrip_strategy,
+                "shadow_broker_dispatch_roundtrip_market": shadow_broker_dispatch_roundtrip_market,
+                "shadow_broker_dispatch_roundtrip_scenario_count": (
+                    shadow_broker_dispatch_roundtrip_scenario_count
+                ),
+                "shadow_broker_dispatch_roundtrip_missing_request_acks": (
+                    shadow_broker_dispatch_roundtrip_missing_request_acks
+                ),
+                "shadow_broker_dispatch_roundtrip_rejected_orders": (
+                    shadow_broker_dispatch_roundtrip_rejected_orders
+                ),
+                "shadow_broker_dispatch_roundtrip_unmatched_acks": (
+                    shadow_broker_dispatch_roundtrip_unmatched_acks
+                ),
+                "shadow_broker_route_dispatch_roundtrip_sessions": (
+                    shadow_broker_route_dispatch_roundtrip_sessions
+                ),
+                "shadow_broker_route_dispatch_roundtrip_ready_sessions": (
+                    shadow_broker_route_dispatch_roundtrip_ready_sessions
+                ),
+                "shadow_broker_route_dispatch_roundtrip_strategy": (
+                    shadow_broker_route_dispatch_roundtrip_strategy
+                ),
+                "shadow_broker_route_dispatch_roundtrip_market": shadow_broker_route_dispatch_roundtrip_market,
+                "shadow_broker_route_dispatch_roundtrip_scenario_count": (
+                    shadow_broker_route_dispatch_roundtrip_scenario_count
+                ),
                 "recommendation": "broker_integration_ready"
                 if ready and bool(schema_reviewed)
                 else (
@@ -915,6 +987,123 @@ def test_scaleup_plan_accepts_required_broker_dispatch_roundtrip():
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["provided"]
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["route_proof"]["requests"] == 2
+
+
+def test_scaleup_plan_carries_broker_readiness_shadow_broker_proof():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            shadow_broker_readiness_provided=True,
+            shadow_broker_readiness_sessions=2,
+            shadow_broker_readiness_ready_sessions=2,
+            shadow_broker_adapter="arrow_money",
+            shadow_broker_adapter_count=1,
+            shadow_broker_route_readiness_sessions=2,
+            shadow_broker_route_readiness_ready_sessions=2,
+            shadow_broker_route_readiness_strategy="lead_lag_taker",
+            shadow_broker_route_readiness_market="india_nse_index_derivatives",
+            shadow_broker_route_readiness_gap_pairs=0,
+            shadow_broker_dispatch_roundtrip_sessions=2,
+            shadow_broker_dispatch_roundtrip_ready_sessions=2,
+            shadow_broker_dispatch_roundtrip_strategy="lead_lag_taker",
+            shadow_broker_dispatch_roundtrip_market="india_nse_index_derivatives",
+            shadow_broker_dispatch_roundtrip_scenario_count=1,
+            shadow_broker_route_dispatch_roundtrip_sessions=2,
+            shadow_broker_route_dispatch_roundtrip_ready_sessions=2,
+            shadow_broker_route_dispatch_roundtrip_strategy="lead_lag_taker",
+            shadow_broker_route_dispatch_roundtrip_market="india_nse_index_derivatives",
+            shadow_broker_route_dispatch_roundtrip_scenario_count=1,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert summary["broker_shadow_broker_readiness_provided"]
+    assert int(summary["broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert summary["broker_shadow_broker_adapter"] == "arrow_money"
+    assert summary["broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(summary["broker_shadow_broker_dispatch_roundtrip_scenario_count"]) == 1
+    assert int(summary["broker_shadow_broker_route_dispatch_roundtrip_sessions"]) == 2
+    shadow_proof = report.config["broker_readiness"]["shadow_broker_readiness"]
+    assert shadow_proof["provided"]
+    assert shadow_proof["adapter"] == "arrow_money"
+    assert shadow_proof["route_readiness"]["market"] == "india_nse_index_derivatives"
+    assert shadow_proof["dispatch_roundtrip"]["sessions"] == 2
+    assert shadow_proof["route_dispatch_roundtrip"]["scenario_count"] == 1
+
+
+def test_scaleup_plan_blocks_dirty_broker_readiness_shadow_broker_proof():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            shadow_broker_readiness_provided=True,
+            shadow_broker_readiness_sessions=2,
+            shadow_broker_readiness_ready_sessions=1,
+            shadow_broker_adapter="irage",
+            shadow_broker_adapter_count=2,
+            shadow_broker_route_readiness_sessions=2,
+            shadow_broker_route_readiness_ready_sessions=1,
+            shadow_broker_route_readiness_strategy="surface_mm",
+            shadow_broker_route_readiness_market="us_options_regular",
+            shadow_broker_route_readiness_gap_pairs=2,
+            shadow_broker_dispatch_roundtrip_sessions=2,
+            shadow_broker_dispatch_roundtrip_ready_sessions=1,
+            shadow_broker_dispatch_roundtrip_strategy="surface_mm",
+            shadow_broker_dispatch_roundtrip_market="us_options_regular",
+            shadow_broker_dispatch_roundtrip_scenario_count=2,
+            shadow_broker_dispatch_roundtrip_missing_request_acks=1,
+            shadow_broker_dispatch_roundtrip_rejected_orders=1,
+            shadow_broker_dispatch_roundtrip_unmatched_acks=1,
+            shadow_broker_route_dispatch_roundtrip_sessions=2,
+            shadow_broker_route_dispatch_roundtrip_ready_sessions=1,
+            shadow_broker_route_dispatch_roundtrip_strategy="surface_mm",
+            shadow_broker_route_dispatch_roundtrip_market="us_options_regular",
+            shadow_broker_route_dispatch_roundtrip_scenario_count=2,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_shadow_broker_readiness_ready",
+        "broker_shadow_broker_adapter_matches",
+        "broker_shadow_broker_adapter_consistent",
+        "broker_shadow_broker_route_readiness_ready",
+        "broker_shadow_broker_route_readiness_strategy_matches",
+        "broker_shadow_broker_route_readiness_market_matches",
+        "broker_shadow_broker_route_readiness_gap_pairs",
+        "broker_shadow_broker_dispatch_roundtrip_ready",
+        "broker_shadow_broker_dispatch_roundtrip_strategy_matches",
+        "broker_shadow_broker_dispatch_roundtrip_market_matches",
+        "broker_shadow_broker_dispatch_roundtrip_scenario_consistent",
+        "broker_shadow_broker_dispatch_roundtrip_missing_request_acks",
+        "broker_shadow_broker_dispatch_roundtrip_rejected_orders",
+        "broker_shadow_broker_dispatch_roundtrip_unmatched_acks",
+        "broker_shadow_broker_route_dispatch_roundtrip_ready",
+        "broker_shadow_broker_route_dispatch_roundtrip_strategy_matches",
+        "broker_shadow_broker_route_dispatch_roundtrip_market_matches",
+        "broker_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary["broker_shadow_broker_adapter"] == "irage"
+    assert int(summary["broker_shadow_broker_route_readiness_gap_pairs"]) == 2
+    shadow_proof = report.config["broker_readiness"]["shadow_broker_readiness"]
+    assert shadow_proof["adapter"] == "irage"
+    assert shadow_proof["dispatch_roundtrip"]["max_rejected_orders"] == 1
 
 
 def test_scaleup_plan_blocks_missing_broker_dispatch_route_proof():

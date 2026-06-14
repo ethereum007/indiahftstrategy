@@ -320,12 +320,14 @@
   readiness continuity when a launch-pipeline folder is supplied directly,
   fingerprints the resolved input summary CSVs plus route-readiness and nested
   broker-readiness proof in the manifest, consumes multi-day shadow-comparison
-  broker-readiness route/dispatch proof when present, fails closed
+  broker-readiness route/dispatch proof and broker-readiness-carried shadow
+  broker proof when present, fails closed
   on broker runtime-session, broker resume-gate proof-refresh, dispatch
   round-trip failed checks, route-enable dispatch round-trip failed checks,
-  dispatch route proof, launch-pipeline identity mismatches, or shadow
-  proof-refresh or shadow broker-readiness strategy/market mismatches, and can
-  consume these launch pipeline roots directly.
+  dispatch route proof, launch-pipeline identity mismatches, dirty
+  broker-carried shadow broker proof, or shadow proof-refresh or shadow
+  broker-readiness strategy/market mismatches, and can consume these launch
+  pipeline roots directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with
@@ -485,7 +487,9 @@
   quality, failed-check count, route-enable dispatch round-trip failed-check
   count from the round-trip config, shadow broker-readiness aggregate,
   acknowledgement quality, and schema review mode into broker readiness,
-  scale-up, cutover, and route-enable handoff artifacts.
+  scale-up, cutover, and route-enable handoff artifacts, with scale-up now
+  preserving broker-readiness-carried shadow proof separately as
+  `broker_shadow_broker_*` fields.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -498,7 +502,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 667 tests.
+Current passing suite: 669 tests.
 
 ## Next Build Targets
 

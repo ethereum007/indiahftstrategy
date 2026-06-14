@@ -2223,6 +2223,10 @@ unmatched acknowledgement counts, plus the nested route proof target, identity,
 batch, request, and ack quality fields. `--require-dispatch-roundtrip` fails
 closed unless that broker dry-run proof and its route proof are present, ready,
 identity-matched, count-matched, and clean.
+If broker readiness carried dispatch round-trip shadow broker-readiness proof,
+scale-up revalidates it and retains the separate `broker_shadow_broker_*`
+fields so broker-stage proof can be audited independently from the
+shadow-session comparison aggregate.
 If the shadow-session comparison carries broker-readiness evidence, scale-up
 also verifies that accepted sessions all carried ready broker proof for one
 adapter, one route-readiness strategy/market, and one broker dispatch
