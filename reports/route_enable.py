@@ -879,6 +879,7 @@ def _packet(
                     "shadow_broker_route_dispatch_roundtrip_scenario_count"
                 ],
                 **_broker_shadow_broker_packet_fields(cutover),
+                **_vendor_market_data_batch_packet_fields(cutover),
                 "broker_resume_gate_ready": cutover["broker_resume_gate_ready"],
                 "broker_resume_proof_refresh_ready": cutover["broker_resume_proof_refresh_ready"],
                 "dispatch_roundtrip_required": _dispatch_roundtrip_required(thresholds),
@@ -988,6 +989,27 @@ def _broker_shadow_broker_packet_fields(cutover: dict[str, Any]) -> dict[str, An
     }
 
 
+def _vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> dict[str, Any]:
+    vendor = cutover["vendor_market_data_batch"]
+    return {
+        "cutover_vendor_market_data_batch_provided": vendor["provided"],
+        "cutover_vendor_market_data_batch_ready": vendor["ready"],
+        "cutover_vendor_market_data_batch_adapter": vendor["adapter"],
+        "cutover_vendor_market_data_batch_kind": vendor["kind"],
+        "cutover_vendor_market_data_batch_market": vendor["market"],
+        "cutover_vendor_market_data_batch_dataset_count": vendor["dataset_count"],
+        "cutover_vendor_market_data_batch_ready_datasets": vendor["ready_datasets"],
+        "cutover_vendor_market_data_batch_failed_datasets": vendor["failed_datasets"],
+        "cutover_vendor_market_data_batch_ready_rate": vendor["ready_rate"],
+        "cutover_vendor_market_data_batch_unique_source_files": vendor["unique_source_files"],
+        "cutover_vendor_market_data_batch_unique_header_fingerprints": vendor["unique_header_fingerprints"],
+        "cutover_vendor_market_data_batch_mapping_sources": vendor["mapping_sources"],
+        "cutover_vendor_market_data_batch_comparison_accepted": vendor["comparison_accepted"],
+        "cutover_vendor_market_data_batch_comparison_failed_checks": vendor["comparison_failed_checks"],
+        "cutover_vendor_market_data_batch_datasets_json": json.dumps(vendor["datasets"], sort_keys=True),
+    }
+
+
 def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -1066,6 +1088,7 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     packet["shadow_broker_route_dispatch_roundtrip_scenario_count"]
                 ),
                 **_broker_shadow_broker_summary_fields(packet),
+                **_vendor_market_data_batch_summary_fields(packet),
                 "broker_resume_gate_ready": _to_bool(packet["broker_resume_gate_ready"]),
                 "broker_resume_proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
                 "dispatch_roundtrip_required": _to_bool(packet["dispatch_roundtrip_required"]),
@@ -1171,6 +1194,45 @@ def _broker_shadow_broker_summary_fields(packet: pd.Series) -> dict[str, Any]:
     }
 
 
+def _vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[str, Any]:
+    return {
+        "cutover_vendor_market_data_batch_provided": _to_bool(
+            packet["cutover_vendor_market_data_batch_provided"]
+        ),
+        "cutover_vendor_market_data_batch_ready": _to_bool(packet["cutover_vendor_market_data_batch_ready"]),
+        "cutover_vendor_market_data_batch_adapter": str(packet["cutover_vendor_market_data_batch_adapter"]),
+        "cutover_vendor_market_data_batch_kind": str(packet["cutover_vendor_market_data_batch_kind"]),
+        "cutover_vendor_market_data_batch_market": str(packet["cutover_vendor_market_data_batch_market"]),
+        "cutover_vendor_market_data_batch_dataset_count": int(
+            packet["cutover_vendor_market_data_batch_dataset_count"]
+        ),
+        "cutover_vendor_market_data_batch_ready_datasets": int(
+            packet["cutover_vendor_market_data_batch_ready_datasets"]
+        ),
+        "cutover_vendor_market_data_batch_failed_datasets": int(
+            packet["cutover_vendor_market_data_batch_failed_datasets"]
+        ),
+        "cutover_vendor_market_data_batch_ready_rate": _jsonable(
+            packet["cutover_vendor_market_data_batch_ready_rate"]
+        ),
+        "cutover_vendor_market_data_batch_unique_source_files": int(
+            packet["cutover_vendor_market_data_batch_unique_source_files"]
+        ),
+        "cutover_vendor_market_data_batch_unique_header_fingerprints": int(
+            packet["cutover_vendor_market_data_batch_unique_header_fingerprints"]
+        ),
+        "cutover_vendor_market_data_batch_mapping_sources": str(
+            packet["cutover_vendor_market_data_batch_mapping_sources"]
+        ),
+        "cutover_vendor_market_data_batch_comparison_accepted": _to_bool(
+            packet["cutover_vendor_market_data_batch_comparison_accepted"]
+        ),
+        "cutover_vendor_market_data_batch_comparison_failed_checks": int(
+            packet["cutover_vendor_market_data_batch_comparison_failed_checks"]
+        ),
+    }
+
+
 def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.DataFrame) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -1254,6 +1316,7 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             },
         },
         "cutover_broker_shadow_broker_readiness": _broker_shadow_broker_config(packet),
+        "cutover_vendor_market_data_batch": _vendor_market_data_batch_config(packet),
         "broker_resume_gate": {
             "ready": _to_bool(packet["broker_resume_gate_ready"]),
             "proof_refresh_ready": _to_bool(packet["broker_resume_proof_refresh_ready"]),
@@ -1339,6 +1402,63 @@ def _broker_shadow_broker_config(packet: pd.Series) -> dict[str, Any]:
     }
 
 
+def _vendor_market_data_batch_config(packet: pd.Series) -> dict[str, Any]:
+    return {
+        "provided": _to_bool(packet["cutover_vendor_market_data_batch_provided"]),
+        "ready": _to_bool(packet["cutover_vendor_market_data_batch_ready"]),
+        "adapter": str(packet["cutover_vendor_market_data_batch_adapter"]),
+        "kind": str(packet["cutover_vendor_market_data_batch_kind"]),
+        "market": str(packet["cutover_vendor_market_data_batch_market"]),
+        "dataset_count": int(packet["cutover_vendor_market_data_batch_dataset_count"]),
+        "ready_datasets": int(packet["cutover_vendor_market_data_batch_ready_datasets"]),
+        "failed_datasets": int(packet["cutover_vendor_market_data_batch_failed_datasets"]),
+        "ready_rate": _jsonable(packet["cutover_vendor_market_data_batch_ready_rate"]),
+        "unique_source_files": int(packet["cutover_vendor_market_data_batch_unique_source_files"]),
+        "unique_header_fingerprints": int(
+            packet["cutover_vendor_market_data_batch_unique_header_fingerprints"]
+        ),
+        "mapping_sources": str(packet["cutover_vendor_market_data_batch_mapping_sources"]),
+        "comparison": {
+            "accepted": _to_bool(packet["cutover_vendor_market_data_batch_comparison_accepted"]),
+            "failed_checks": int(packet["cutover_vendor_market_data_batch_comparison_failed_checks"]),
+        },
+        "datasets": _json_list(packet["cutover_vendor_market_data_batch_datasets_json"]),
+    }
+
+
+def _vendor_market_data_batch_state(vendor: dict[str, Any]) -> dict[str, Any]:
+    comparison = vendor.get("comparison", {}) or {}
+    datasets = vendor.get("datasets") or []
+    return {
+        "provided": _to_bool(vendor.get("provided", False)),
+        "ready": _to_bool(vendor.get("ready", False)),
+        "adapter": _first_text(vendor.get("adapter", "")),
+        "kind": _first_text(vendor.get("kind", "")),
+        "market": _identity_key(vendor.get("market", "")),
+        "dataset_count": int(_number_from(vendor, "dataset_count", 0.0)),
+        "ready_datasets": int(_number_from(vendor, "ready_datasets", 0.0)),
+        "failed_datasets": int(_number_from(vendor, "failed_datasets", 0.0)),
+        "ready_rate": _number_from(vendor, "ready_rate", 0.0),
+        "unique_source_files": int(_number_from(vendor, "unique_source_files", 0.0)),
+        "unique_header_fingerprints": int(_number_from(vendor, "unique_header_fingerprints", 0.0)),
+        "mapping_sources": _first_text(vendor.get("mapping_sources", "")),
+        "comparison_accepted": _to_bool(comparison.get("accepted", False)),
+        "comparison_failed_checks": int(_number_from(comparison, "failed_checks", 0.0)),
+        "datasets": [
+            {
+                "dataset": _first_text(item.get("dataset", "")),
+                "ready": _to_bool(item.get("ready", False)),
+                "source_file_sha256": _first_text(item.get("source_file_sha256", "")),
+                "source_header_sha256": _first_text(item.get("source_header_sha256", "")),
+                "mapping_draft_sha256": _first_text(item.get("mapping_draft_sha256", "")),
+                "mapping_source": _first_text(item.get("mapping_source", "")),
+            }
+            for item in datasets
+            if isinstance(item, dict)
+        ],
+    }
+
+
 def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
@@ -1352,6 +1472,7 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     shadow_broker_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
     shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
     broker_shadow_broker = config.get("scaleup_broker_shadow_broker_readiness", {}) or {}
+    vendor_market_data_batch = config.get("scaleup_vendor_market_data_batch", {}) or {}
     scaleup_dispatch = config.get("scaleup_dispatch_roundtrip", {}) or {}
     scaleup_route_enable = scaleup_dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
@@ -1548,6 +1669,7 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             )
         ),
         **_broker_shadow_broker_state_fields(row, broker_shadow_broker),
+        "vendor_market_data_batch": _vendor_market_data_batch_state(vendor_market_data_batch),
         "broker_schema_status": _first_text(
             broker_readiness.get("adapter_schema_status", ""),
             row.get("broker_schema_status", ""),
@@ -2043,6 +2165,14 @@ def _jsonable(value: object) -> object:
     if _is_missing(value):
         return None
     return value
+
+
+def _json_list(value: object) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _check(

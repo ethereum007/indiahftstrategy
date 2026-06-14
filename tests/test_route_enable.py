@@ -343,6 +343,45 @@ def shadow_broker_config(
     }
 
 
+def vendor_market_data_batch_config():
+    return {
+        "provided": True,
+        "ready": True,
+        "adapter": "arrow_money",
+        "kind": "ticks",
+        "market": "india_nse_index_derivatives",
+        "dataset_count": 2,
+        "ready_datasets": 2,
+        "failed_datasets": 0,
+        "ready_rate": 1.0,
+        "unique_source_files": 2,
+        "unique_header_fingerprints": 1,
+        "mapping_sources": "vendor_intake_draft",
+        "comparison": {
+            "accepted": True,
+            "failed_checks": 0,
+        },
+        "datasets": [
+            {
+                "dataset": "nifty_day1",
+                "ready": True,
+                "source_file_sha256": "a" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "vendor_intake_draft",
+            },
+            {
+                "dataset": "nifty_day2",
+                "ready": True,
+                "source_file_sha256": "d" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "vendor_intake_draft",
+            },
+        ],
+    }
+
+
 def upload_summary(ready=True, orders=2, adapter="arrow_money"):
     return pd.DataFrame(
         [
@@ -600,6 +639,36 @@ def test_route_enable_carries_cutover_broker_shadow_broker_readiness():
     assert report.config["cutover_broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
         "india_nse_index_derivatives"
     )
+
+
+def test_route_enable_carries_cutover_vendor_market_data_batch():
+    config = cutover_config()
+    config["scaleup_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    summary = report.summary.iloc[0]
+    vendor = report.config["cutover_vendor_market_data_batch"]
+    assert report.ready
+    assert summary["cutover_vendor_market_data_batch_provided"]
+    assert summary["cutover_vendor_market_data_batch_ready"]
+    assert summary["cutover_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["cutover_vendor_market_data_batch_kind"] == "ticks"
+    assert int(summary["cutover_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary["cutover_vendor_market_data_batch_unique_source_files"]) == 2
+    assert int(summary["cutover_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["cutover_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+    assert len(vendor["datasets"]) == 2
+    assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
 def test_route_enable_blocks_bad_cutover_broker_shadow_broker_readiness():

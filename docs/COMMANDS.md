@@ -2679,7 +2679,8 @@ manifest.json
 
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,
-proof/resume context, and dispatch round-trip proof into one machine-readable
+proof/resume context, dispatch round-trip proof, and any cutover-carried vendor
+market-data batch provenance into one machine-readable
 artifact. It fails closed if cutover is not ready, the upload pack is not
 ready, the adapter or target mode does not match, cutover route-readiness proof
 is missing, unready, or for a different strategy/market, dispatch round-trip
@@ -2691,7 +2692,11 @@ shadow broker proof is mixed or dirty, the upload order count exceeds the
 cutover limit, or the optional order-export notional exceeds the cutover
 notional cap. `--require-route-readiness` is automatic for `--target-mode
 live_dryrun`; the explicit flag keeps paper/shadow route reviews equally
-strict. `--upload-pack` and `--order-export` may point at a launch-pipeline
+strict. If `cutover_config.json` retained Arrow.money/iRage vendor market-data
+batch evidence, route-enable carries the dataset/header/mapping proof into
+`route_enable_summary.csv` and `route_enable_config.json` as
+`cutover_vendor_market_data_batch_*` audit fields. `--upload-pack` and
+`--order-export` may point at a launch-pipeline
 root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
 summary, cutover config, cutover manifest when present, upload summary, and

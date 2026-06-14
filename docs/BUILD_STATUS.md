@@ -398,8 +398,9 @@
   cutover route-readiness proof, live-dry-run dispatch round-trip proof,
   carried route-enable failed-check counters, nested route proof, and
   cutover-carried shadow broker-readiness aggregates plus
-  broker-readiness-carried shadow broker proof, resolves broker upload/export
-  summaries from launch pipeline roots, fingerprints resolved
+  broker-readiness-carried shadow broker proof, carries cutover-retained vendor
+  market-data batch dataset/header/mapping provenance, resolves broker
+  upload/export summaries from launch pipeline roots, fingerprints resolved
   cutover/upload/export inputs, and emits the final machine-readable broker
   route-enable config without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
@@ -508,8 +509,9 @@
   broker-readiness inputs, preserving broker-readiness-carried shadow proof
   separately as `broker_shadow_broker_*` fields and cutover preserving them as
   `scaleup_broker_shadow_broker_*` authorization/config fields, with
-  route-enable fingerprinting the cutover manifest and carrying the same proof
-  as `cutover_broker_shadow_broker_*`.
+  route-enable fingerprinting the cutover manifest, carrying the same proof as
+  `cutover_broker_shadow_broker_*`, and preserving cutover-retained vendor
+  market-data batch provenance as `cutover_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -522,7 +524,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 683 tests.
+Current passing suite: 686 tests.
 
 ## Next Build Targets
 
