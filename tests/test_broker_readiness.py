@@ -997,6 +997,21 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
         json.dumps(roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
     )
+    (roundtrip_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_roundtrip",
+                "inputs": {
+                    "dispatch_manifest": {"path": "dispatch.json"},
+                    "send_manifest": {"path": "send.json"},
+                    "ack_manifest": {"path": "ack.json"},
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
     report = write_broker_readiness_report(
         output_dir=out_dir,
@@ -1042,6 +1057,9 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     )
     assert path_tail(manifest["inputs"]["dispatch_roundtrip_config"]["path"]).endswith(
         "/roundtrip/broker_dispatch_roundtrip_config.json"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_roundtrip_manifest"]["path"]).endswith(
+        "/roundtrip/manifest.json"
     )
 
 

@@ -123,6 +123,10 @@ def write_broker_readiness_report(
         dispatch_roundtrip_dir,
         "broker_dispatch_roundtrip_config.json",
     )
+    dispatch_roundtrip_manifest_path = _manifest_config_input(
+        dispatch_roundtrip_dir,
+        "manifest.json",
+    )
     input_paths = {
         "schema_audit": _manifest_summary_input(schema_audit_dir, "schema_audit"),
         "order_export": _manifest_summary_input(order_export_dir, "order_export"),
@@ -137,6 +141,8 @@ def write_broker_readiness_report(
     }
     if dispatch_roundtrip_config_path is not None:
         input_paths["dispatch_roundtrip_config"] = dispatch_roundtrip_config_path
+    if dispatch_roundtrip_manifest_path is not None:
+        input_paths["dispatch_roundtrip_manifest"] = dispatch_roundtrip_manifest_path
     report = evaluate_broker_readiness(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),

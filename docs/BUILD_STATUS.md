@@ -493,8 +493,8 @@
   post-halt restart review, and resolving launch pipeline export/upload roots
   while carrying proved dry-run dispatch round-trip identity, route proof
   quality, failed-check count, route-enable dispatch round-trip failed-check
-  count from the round-trip config, shadow broker-readiness aggregate,
-  broker-readiness-carried shadow broker aggregate,
+  count from the round-trip config, round-trip manifest provenance, shadow
+  broker-readiness aggregate, broker-readiness-carried shadow broker aggregate,
   acknowledgement quality, schema review mode, and a structured
   `broker_readiness_config.json` handoff into broker readiness,
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
