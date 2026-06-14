@@ -2822,8 +2822,9 @@ the explicit flag keeps paper/shadow acknowledgement reviews equally strict.
 It carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
 `route_broker_shadow_broker_readiness` into the ack summary/config. The manifest
-fingerprints the exact dispatch summary, dispatch orders, dispatch config, and
-broker acknowledgement log files used in the reconciliation.
+fingerprints the exact dispatch summary, dispatch orders, dispatch config,
+dispatch manifest when present, and broker acknowledgement log files used in the
+reconciliation.
 
 ## Broker Dispatch Round-Trip Review
 

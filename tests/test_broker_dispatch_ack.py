@@ -314,6 +314,21 @@ def write_inputs(
         + "\n",
         encoding="utf-8",
     )
+    (dispatch / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_plan",
+                "inputs": {
+                    "route_enable_manifest": {
+                        "path": str(dispatch / "route_enable_manifest.json"),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     acks = tmp_path / "broker_dispatch_acks.csv"
     ack_rows(ack_statuses).to_csv(acks, index=False)
     return dispatch, acks
@@ -712,6 +727,9 @@ def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path)
     )
     assert path_tail(manifest["inputs"]["dispatch_config"]["path"]).endswith(
         "/broker_dispatch_config.json"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_manifest"]["path"]).endswith(
+        "/manifest.json"
     )
     assert path_tail(manifest["inputs"]["broker_acks"]["path"]).endswith("/broker_dispatch_acks.csv")
     catalog = catalog_experiment_runs([out_dir])

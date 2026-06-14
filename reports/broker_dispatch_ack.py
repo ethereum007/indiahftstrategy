@@ -92,6 +92,7 @@ def write_broker_dispatch_acknowledgements(
     dispatch_config_path = dispatch / "broker_dispatch_config.json"
     dispatch_summary_path = dispatch / "broker_dispatch_summary.csv"
     dispatch_orders_path = dispatch / "broker_dispatch_orders.csv"
+    dispatch_manifest_path = dispatch / "manifest.json"
     dispatch_config = (
         json.loads(dispatch_config_path.read_text(encoding="utf-8"))
         if dispatch_config_path.exists()
@@ -122,6 +123,7 @@ def write_broker_dispatch_acknowledgements(
             dispatch_summary=dispatch_summary_path,
             dispatch_orders=dispatch_orders_path,
             dispatch_config=dispatch_config_path,
+            dispatch_manifest=dispatch_manifest_path,
             broker_acks=acks,
         ),
     )

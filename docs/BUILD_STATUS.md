@@ -427,8 +427,8 @@
   aggregates, broker-readiness-carried shadow broker proof, and
   acknowledgement-log proof batch continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
-  unmatched acknowledgement rows while fingerprinting exact dispatch and ack
-  log inputs.
+  unmatched acknowledgement rows while fingerprinting exact dispatch, dispatch
+  manifest, and ack log inputs.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, route-readiness consistency, raw ack-log route proof consistency,
