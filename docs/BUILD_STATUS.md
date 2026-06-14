@@ -497,6 +497,7 @@
   acknowledgement quality, schema review mode, and a structured
   `broker_readiness_config.json` handoff into broker readiness,
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
+  fingerprinting the broker-readiness JSON sidecar when present,
   preserving broker-readiness-carried shadow proof separately as
   `broker_shadow_broker_*` fields and cutover preserving them as
   `scaleup_broker_shadow_broker_*` authorization/config fields, with

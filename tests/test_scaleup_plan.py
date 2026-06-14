@@ -594,6 +594,18 @@ def write_strategy_launch_pipeline(
     ).to_csv(pipeline / summary_file, index=False)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
     broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": broker_ready,
+                "adapter": "arrow_money",
+                "dispatch_roundtrip": {"ready": broker_ready},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return pipeline
 
 
@@ -1933,6 +1945,9 @@ def test_cli_scaleup_plan_reads_strategy_launch_pipeline_roots(tmp_path):
         )
         assert path_tail(manifest["inputs"]["broker_readiness"]["path"]).endswith(
             f"/{family}_launch_pipeline/06_broker_readiness/broker_readiness_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["broker_readiness_config"]["path"]).endswith(
+            f"/{family}_launch_pipeline/06_broker_readiness/broker_readiness_config.json"
         )
 
 

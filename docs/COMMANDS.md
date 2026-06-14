@@ -2206,9 +2206,9 @@ runtime target mode, strategy, and market for the session that fed the broker
 gate.
 `manifest.json` fingerprints the resolved evidence, shadow-comparison, launch,
 launch-pipeline, proof-refresh, metadata, data-readiness, exposure, and
-route-readiness, and broker-readiness summary CSVs rather than only the input
-folders, so scale-up handoffs can prove the exact records behind each
-recommendation.
+route-readiness, broker-readiness summary CSVs, and broker-readiness config
+JSON sidecars rather than only the input folders, so scale-up handoffs can prove
+the exact records behind each recommendation.
 Use `--route-readiness` with `--require-route-readiness` to fail closed unless
 the market-portability, strategy-evidence, and file-provenance-gated
 `ops_launch` evidence chain has accepted the exact strategy/market route.

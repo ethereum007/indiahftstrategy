@@ -178,6 +178,10 @@ def write_scaleup_plan(
         resolved_broker_readiness_dir,
         "broker_readiness_summary.csv",
     )
+    broker_readiness_config_path = _optional_sidecar_input(
+        resolved_broker_readiness_dir,
+        "broker_readiness_config.json",
+    )
     broker_readiness = (
         _read_optional_summary(broker_readiness_path, "broker_readiness_summary.csv")
         if broker_readiness_path
@@ -239,6 +243,8 @@ def write_scaleup_plan(
         inputs["route_readiness"] = route_readiness_path
     if broker_readiness_path is not None:
         inputs["broker_readiness"] = broker_readiness_path
+    if broker_readiness_config_path is not None:
+        inputs["broker_readiness_config"] = broker_readiness_config_path
     write_experiment_manifest(
         out,
         run_type="scaleup_plan",
@@ -2625,6 +2631,14 @@ def _optional_summary_input(
         return None
     file_path = _summary_path(path, filename, fallback_dirs=fallback_dirs)
     return file_path if file_path.exists() else Path(path)
+
+
+def _optional_sidecar_input(path: str | Path | None, filename: str) -> Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    file_path = candidate / filename if candidate.is_dir() else candidate.with_name(filename)
+    return file_path if file_path.exists() else None
 
 
 def _launch_pipeline_summary_path(path: str | Path) -> Path | None:
