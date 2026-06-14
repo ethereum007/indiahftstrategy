@@ -88,6 +88,11 @@ def write_cutover_gate_report(
         "broker_readiness_summary.csv",
         fallback_dirs=("06_broker_readiness", "05_broker_readiness"),
     )
+    broker_readiness_config_path = _sidecar_path(
+        broker,
+        "broker_readiness_config.json",
+        fallback_dirs=("06_broker_readiness", "05_broker_readiness"),
+    )
     if not scaleup_config_path.exists():
         raise FileNotFoundError(f"scale-up config not found: {scaleup_config_path}")
     scaleup_summary_path = (
@@ -121,6 +126,8 @@ def write_cutover_gate_report(
         "scaleup_config": scaleup_config_path,
         "broker_readiness_summary": broker_readiness_summary_path,
     }
+    if broker_readiness_config_path is not None:
+        inputs["broker_readiness_config"] = broker_readiness_config_path
     if scaleup_checks_path.exists():
         inputs["scaleup_checks"] = scaleup_checks_path
     if runtime_session_summary_path is not None:
@@ -2487,6 +2494,22 @@ def _summary_path(path: str | Path | None, filename: str, *, fallback_dirs: tupl
         (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
         direct,
     )
+
+
+def _sidecar_path(path: str | Path | None, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_dir():
+        direct = candidate / filename
+        if direct.exists():
+            return direct
+        return next(
+            (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
+            None,
+        )
+    file_path = candidate if candidate.name == filename else candidate.with_name(filename)
+    return file_path if file_path.exists() else None
 
 
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:

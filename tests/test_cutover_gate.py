@@ -526,6 +526,18 @@ def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=Tru
         dispatch_provided=dispatch,
         dispatch_ready=dispatch,
     ).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": dispatch,
+                "adapter": "arrow_money",
+                "dispatch_roundtrip": {"ready": dispatch, "target_mode": target_mode},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     runtime_session_summary(target_mode=target_mode).to_csv(runtime / "runtime_session_summary.csv", index=False)
     review_path = root / "operator_review.csv"
     if operator:
@@ -1056,6 +1068,7 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
         "scaleup_config",
         "scaleup_checks",
         "broker_readiness_summary",
+        "broker_readiness_config",
         "runtime_session_summary",
         "operator_review",
     } <= set(manifest["inputs"])
@@ -1064,6 +1077,9 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     assert path_tail(manifest["inputs"]["scaleup_checks"]["path"]).endswith("/scaleup/scaleup_checks.csv")
     assert path_tail(manifest["inputs"]["broker_readiness_summary"]["path"]).endswith(
         "/broker/broker_readiness_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["broker_readiness_config"]["path"]).endswith(
+        "/broker/broker_readiness_config.json"
     )
     assert path_tail(manifest["inputs"]["runtime_session_summary"]["path"]).endswith(
         "/runtime/runtime_session_summary.csv"
@@ -1088,6 +1104,10 @@ def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path)
         out_dir = case_dir / "cutover"
         broker_readiness.mkdir(parents=True)
         broker_readiness_summary().to_csv(broker_readiness / "broker_readiness_summary.csv", index=False)
+        (broker_readiness / "broker_readiness_config.json").write_text(
+            json.dumps({"ready": True, "adapter": "arrow_money"}, indent=2) + "\n",
+            encoding="utf-8",
+        )
 
         code = main(
             [
@@ -1119,6 +1139,9 @@ def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path)
         )
         assert path_tail(manifest["inputs"]["broker_readiness_summary"]["path"]).endswith(
             f"/{family}_launch_pipeline/{broker_folder}/broker_readiness_summary.csv"
+        )
+        assert path_tail(manifest["inputs"]["broker_readiness_config"]["path"]).endswith(
+            f"/{family}_launch_pipeline/{broker_folder}/broker_readiness_config.json"
         )
 
 

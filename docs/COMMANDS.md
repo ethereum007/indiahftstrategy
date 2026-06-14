@@ -2635,8 +2635,9 @@ identity before broker routing is allowed.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,
-broker-readiness summary, optional runtime-session summary, and optional
-operator-review file in the manifest.
+broker-readiness summary, broker-readiness config sidecar when present,
+optional runtime-session summary, and optional operator-review file in the
+manifest.
 
 ## Route Enable Packet
 
