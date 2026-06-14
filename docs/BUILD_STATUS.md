@@ -414,9 +414,11 @@
   hashes, route-readiness proof, route round-trip proof tags, and
   acknowledgement templates while carrying broker schema review status/mode
   route-enable dispatch round-trip failed-check counters, and dispatch-carried
-  shadow broker-readiness aggregates from the dispatch config, validating
-  route-readiness identity and route proof batch continuity, forcing live
-  submission off, and fingerprinting exact dispatch input files.
+  shadow broker-readiness aggregates plus broker-readiness-carried shadow
+  broker proof from the dispatch config as `route_broker_shadow_broker_*`,
+  validating route-readiness identity, carried shadow proof quality, and route
+  proof batch continuity, forcing live submission off, and fingerprinting exact
+  dispatch input files.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip
@@ -508,7 +510,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 675 tests.
+Current passing suite: 677 tests.
 
 ## Next Build Targets
 

@@ -2765,13 +2765,15 @@ or identity-mismatched, route round-trip proof is missing or dirty for live
 dry-run sending, route-enable dispatch round-trip failed checks read from the
 dispatch config are nonzero, any dispatch row or request carries a mismatched
 route proof batch id, any dispatch-carried shadow broker-readiness aggregate is
+mixed or dirty, any dispatch-carried broker-readiness shadow broker proof is
 mixed or dirty, the adapter is unknown, payload JSON is invalid, idempotency
 keys are not unique, request limits are exceeded, or any request is not
 dry-run-only. `--require-route-readiness` is automatic for `--target-mode
 live_dryrun`; the explicit flag keeps paper/shadow sender packets equally
-strict. It also carries the dispatch config broker schema review status/mode
-route-readiness proof, and dispatch-carried shadow broker-readiness proof into
-the sender summary/config. The manifest fingerprints the exact dispatch
+strict. It also carries the dispatch config broker schema review status/mode,
+route-readiness proof, `shadow_broker_readiness`, and
+`route_broker_shadow_broker_readiness` into the sender summary/config. The
+manifest fingerprints the exact dispatch
 summary, dispatch orders, and dispatch config files consumed by the sender
 packet.
 
