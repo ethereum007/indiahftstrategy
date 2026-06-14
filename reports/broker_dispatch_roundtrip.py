@@ -376,7 +376,124 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
                 _number(state, "shadow_broker_route_dispatch_roundtrip_scenario_count", 0.0),
             )
         )
+    route_broker_shadow = config.get("route_broker_shadow_broker_readiness", {}) or {}
+    if route_broker_shadow:
+        _apply_shadow_broker_readiness_config(
+            state,
+            route_broker_shadow,
+            field_prefix="route_broker_shadow_broker",
+        )
     return state
+
+
+def _apply_shadow_broker_readiness_config(
+    state: pd.Series,
+    readiness: dict[str, Any],
+    *,
+    field_prefix: str,
+) -> None:
+    route = readiness.get("route_readiness", {}) or {}
+    dispatch = readiness.get("dispatch_roundtrip", {}) or {}
+    route_dispatch = readiness.get("route_dispatch_roundtrip", {}) or {}
+    state[f"{field_prefix}_readiness_provided"] = _to_bool(
+        readiness.get("provided", state.get(f"{field_prefix}_readiness_provided", False))
+    )
+    state[f"{field_prefix}_readiness_sessions"] = int(
+        _number_value(readiness.get("sessions"), _number(state, f"{field_prefix}_readiness_sessions", 0.0))
+    )
+    state[f"{field_prefix}_readiness_ready_sessions"] = int(
+        _number_value(
+            readiness.get("ready_sessions"),
+            _number(state, f"{field_prefix}_readiness_ready_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_adapter"] = _object_text(
+        readiness.get("adapter", _text(state, f"{field_prefix}_adapter"))
+    )
+    state[f"{field_prefix}_adapter_count"] = int(
+        _number_value(readiness.get("adapter_count"), _number(state, f"{field_prefix}_adapter_count", 0.0))
+    )
+    state[f"{field_prefix}_route_readiness_sessions"] = int(
+        _number_value(route.get("sessions"), _number(state, f"{field_prefix}_route_readiness_sessions", 0.0))
+    )
+    state[f"{field_prefix}_route_readiness_ready_sessions"] = int(
+        _number_value(
+            route.get("ready_sessions"),
+            _number(state, f"{field_prefix}_route_readiness_ready_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_route_readiness_strategy"] = _object_text(
+        route.get("strategy", _text(state, f"{field_prefix}_route_readiness_strategy"))
+    )
+    state[f"{field_prefix}_route_readiness_market"] = _object_text(
+        route.get("market", _text(state, f"{field_prefix}_route_readiness_market"))
+    )
+    state[f"{field_prefix}_route_readiness_gap_pairs"] = int(
+        _number_value(route.get("max_gap_pairs"), _number(state, f"{field_prefix}_route_readiness_gap_pairs", 0.0))
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_sessions"] = int(
+        _number_value(dispatch.get("sessions"), _number(state, f"{field_prefix}_dispatch_roundtrip_sessions", 0.0))
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_ready_sessions"] = int(
+        _number_value(
+            dispatch.get("ready_sessions"),
+            _number(state, f"{field_prefix}_dispatch_roundtrip_ready_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_strategy"] = _object_text(
+        dispatch.get("strategy", _text(state, f"{field_prefix}_dispatch_roundtrip_strategy"))
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_market"] = _object_text(
+        dispatch.get("market", _text(state, f"{field_prefix}_dispatch_roundtrip_market"))
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_scenario_count"] = int(
+        _number_value(
+            dispatch.get("scenario_count"),
+            _number(state, f"{field_prefix}_dispatch_roundtrip_scenario_count", 0.0),
+        )
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_missing_request_acks"] = int(
+        _number_value(
+            dispatch.get("max_missing_request_acks"),
+            _number(state, f"{field_prefix}_dispatch_roundtrip_missing_request_acks", 0.0),
+        )
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_rejected_orders"] = int(
+        _number_value(
+            dispatch.get("max_rejected_orders"),
+            _number(state, f"{field_prefix}_dispatch_roundtrip_rejected_orders", 0.0),
+        )
+    )
+    state[f"{field_prefix}_dispatch_roundtrip_unmatched_acks"] = int(
+        _number_value(
+            dispatch.get("max_unmatched_acks"),
+            _number(state, f"{field_prefix}_dispatch_roundtrip_unmatched_acks", 0.0),
+        )
+    )
+    state[f"{field_prefix}_route_dispatch_roundtrip_sessions"] = int(
+        _number_value(
+            route_dispatch.get("sessions"),
+            _number(state, f"{field_prefix}_route_dispatch_roundtrip_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_route_dispatch_roundtrip_ready_sessions"] = int(
+        _number_value(
+            route_dispatch.get("ready_sessions"),
+            _number(state, f"{field_prefix}_route_dispatch_roundtrip_ready_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_route_dispatch_roundtrip_strategy"] = _object_text(
+        route_dispatch.get("strategy", _text(state, f"{field_prefix}_route_dispatch_roundtrip_strategy"))
+    )
+    state[f"{field_prefix}_route_dispatch_roundtrip_market"] = _object_text(
+        route_dispatch.get("market", _text(state, f"{field_prefix}_route_dispatch_roundtrip_market"))
+    )
+    state[f"{field_prefix}_route_dispatch_roundtrip_scenario_count"] = int(
+        _number_value(
+            route_dispatch.get("scenario_count"),
+            _number(state, f"{field_prefix}_route_dispatch_roundtrip_scenario_count", 0.0),
+        )
+    )
 
 
 def _checks(
@@ -565,6 +682,20 @@ def _checks(
             [
                 checks,
                 pd.DataFrame(_shadow_broker_readiness_checks(dispatch_summary, send_summary, ack_summary)),
+            ],
+            ignore_index=True,
+        )
+    if _route_broker_shadow_broker_readiness_active(dispatch_summary, send_summary, ack_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(
+                    _route_broker_shadow_broker_readiness_checks(
+                        dispatch_summary,
+                        send_summary,
+                        ack_summary,
+                    )
+                ),
             ],
             ignore_index=True,
         )
@@ -875,6 +1006,194 @@ def _shadow_broker_readiness_checks(*rows: pd.Series) -> list[dict[str, object]]
     ]
 
 
+def _route_broker_shadow_broker_readiness_active(*rows: pd.Series) -> bool:
+    prefix = "route_broker_shadow_broker"
+    session_columns = (
+        f"{prefix}_readiness_sessions",
+        f"{prefix}_route_readiness_sessions",
+        f"{prefix}_dispatch_roundtrip_sessions",
+        f"{prefix}_route_dispatch_roundtrip_sessions",
+    )
+    return bool(
+        any(_to_bool(row.get(f"{prefix}_readiness_provided", False)) for row in rows)
+        or any(_shadow_counter_max(rows, column) > 0 for column in session_columns)
+    )
+
+
+def _route_broker_shadow_broker_readiness_checks(*rows: pd.Series) -> list[dict[str, object]]:
+    source_prefix = "route_broker_shadow_broker"
+    provided = bool(
+        rows
+        and all(
+            _to_bool(row.get(f"{source_prefix}_readiness_provided", False))
+            and int(_number(row, f"{source_prefix}_readiness_sessions", 0.0)) > 0
+            for row in rows
+        )
+    )
+    checks = [
+        _check(
+            "broker_shadow_broker_readiness_provided",
+            provided,
+            "is",
+            True,
+            provided,
+            "broker-readiness shadow broker proof is not provided by every component",
+        )
+    ]
+    projected_rows = tuple(_shadow_broker_projection(row, source_prefix=source_prefix) for row in rows)
+    for check in _shadow_broker_readiness_checks(*projected_rows):
+        renamed = dict(check)
+        renamed["check"] = str(renamed["check"]).replace(
+            "shadow_broker",
+            "broker_shadow_broker",
+        )
+        if "reason" in renamed:
+            renamed["reason"] = str(renamed["reason"]).replace(
+                "shadow broker",
+                "broker-readiness shadow broker",
+            )
+        checks.append(renamed)
+    return checks
+
+
+def _shadow_broker_projection(row: pd.Series, *, source_prefix: str) -> pd.Series:
+    mapped = row.copy()
+    for suffix in (
+        "readiness_sessions",
+        "readiness_ready_sessions",
+        "adapter",
+        "adapter_count",
+        "route_readiness_sessions",
+        "route_readiness_ready_sessions",
+        "route_readiness_strategy",
+        "route_readiness_market",
+        "route_readiness_gap_pairs",
+        "dispatch_roundtrip_sessions",
+        "dispatch_roundtrip_ready_sessions",
+        "dispatch_roundtrip_strategy",
+        "dispatch_roundtrip_market",
+        "dispatch_roundtrip_scenario_count",
+        "dispatch_roundtrip_missing_request_acks",
+        "dispatch_roundtrip_rejected_orders",
+        "dispatch_roundtrip_unmatched_acks",
+        "route_dispatch_roundtrip_sessions",
+        "route_dispatch_roundtrip_ready_sessions",
+        "route_dispatch_roundtrip_strategy",
+        "route_dispatch_roundtrip_market",
+        "route_dispatch_roundtrip_scenario_count",
+    ):
+        mapped[f"shadow_broker_{suffix}"] = row.get(f"{source_prefix}_{suffix}", "")
+    return mapped
+
+
+def _prefixed_shadow_broker_summary_fields(
+    rows: tuple[pd.Series, ...],
+    *,
+    source_prefix: str,
+    output_prefix: str,
+) -> dict[str, object]:
+    return {
+        f"{output_prefix}_readiness_provided": _prefixed_shadow_broker_readiness_provided(
+            rows,
+            source_prefix=source_prefix,
+        ),
+        f"{output_prefix}_readiness_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_readiness_sessions",
+        ),
+        f"{output_prefix}_readiness_ready_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_readiness_ready_sessions",
+        ),
+        f"{output_prefix}_adapter": _prefixed_shadow_adapter_value(rows, source_prefix=source_prefix),
+        f"{output_prefix}_adapter_count": _shadow_counter_max(rows, f"{source_prefix}_adapter_count"),
+        f"{output_prefix}_route_readiness_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_route_readiness_sessions",
+        ),
+        f"{output_prefix}_route_readiness_ready_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_route_readiness_ready_sessions",
+        ),
+        f"{output_prefix}_route_readiness_strategy": _prefixed_shadow_identity_value(
+            rows,
+            source_prefix=source_prefix,
+            proof_name="route_readiness",
+            column="strategy",
+        ),
+        f"{output_prefix}_route_readiness_market": _prefixed_shadow_identity_value(
+            rows,
+            source_prefix=source_prefix,
+            proof_name="route_readiness",
+            column="market",
+        ),
+        f"{output_prefix}_route_readiness_gap_pairs": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_route_readiness_gap_pairs",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_dispatch_roundtrip_sessions",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_ready_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_dispatch_roundtrip_ready_sessions",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_strategy": _prefixed_shadow_identity_value(
+            rows,
+            source_prefix=source_prefix,
+            proof_name="dispatch_roundtrip",
+            column="strategy",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_market": _prefixed_shadow_identity_value(
+            rows,
+            source_prefix=source_prefix,
+            proof_name="dispatch_roundtrip",
+            column="market",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_scenario_count": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_dispatch_roundtrip_scenario_count",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_missing_request_acks": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_dispatch_roundtrip_missing_request_acks",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_rejected_orders": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_dispatch_roundtrip_rejected_orders",
+        ),
+        f"{output_prefix}_dispatch_roundtrip_unmatched_acks": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_dispatch_roundtrip_unmatched_acks",
+        ),
+        f"{output_prefix}_route_dispatch_roundtrip_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_route_dispatch_roundtrip_sessions",
+        ),
+        f"{output_prefix}_route_dispatch_roundtrip_ready_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_route_dispatch_roundtrip_ready_sessions",
+        ),
+        f"{output_prefix}_route_dispatch_roundtrip_strategy": _prefixed_shadow_identity_value(
+            rows,
+            source_prefix=source_prefix,
+            proof_name="route_dispatch_roundtrip",
+            column="strategy",
+        ),
+        f"{output_prefix}_route_dispatch_roundtrip_market": _prefixed_shadow_identity_value(
+            rows,
+            source_prefix=source_prefix,
+            proof_name="route_dispatch_roundtrip",
+            column="market",
+        ),
+        f"{output_prefix}_route_dispatch_roundtrip_scenario_count": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_route_dispatch_roundtrip_scenario_count",
+        ),
+    }
+
+
 def _summary(
     dispatch_summary: pd.Series,
     send_summary: pd.Series,
@@ -1024,6 +1343,11 @@ def _summary(
                     proof_rows,
                     "shadow_broker_route_dispatch_roundtrip_scenario_count",
                 ),
+                **_prefixed_shadow_broker_summary_fields(
+                    proof_rows,
+                    source_prefix="route_broker_shadow_broker",
+                    output_prefix="broker_shadow_broker",
+                ),
                 "route_dispatch_roundtrip_required": _dispatch_roundtrip_required(dispatch_summary, thresholds),
                 "route_dispatch_roundtrip_provided": _route_roundtrip_provided(*proof_rows),
                 "route_dispatch_roundtrip_ready": all(
@@ -1077,6 +1401,40 @@ def _summary(
             }
         ]
     )
+
+
+def _prefixed_shadow_broker_config(summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
+    return {
+        "provided": _to_bool(summary[f"{field_prefix}_readiness_provided"]),
+        "sessions": int(summary[f"{field_prefix}_readiness_sessions"]),
+        "ready_sessions": int(summary[f"{field_prefix}_readiness_ready_sessions"]),
+        "adapter": _text(summary, f"{field_prefix}_adapter"),
+        "adapter_count": int(summary[f"{field_prefix}_adapter_count"]),
+        "route_readiness": {
+            "sessions": int(summary[f"{field_prefix}_route_readiness_sessions"]),
+            "ready_sessions": int(summary[f"{field_prefix}_route_readiness_ready_sessions"]),
+            "strategy": _text(summary, f"{field_prefix}_route_readiness_strategy"),
+            "market": _text(summary, f"{field_prefix}_route_readiness_market"),
+            "max_gap_pairs": int(summary[f"{field_prefix}_route_readiness_gap_pairs"]),
+        },
+        "dispatch_roundtrip": {
+            "sessions": int(summary[f"{field_prefix}_dispatch_roundtrip_sessions"]),
+            "ready_sessions": int(summary[f"{field_prefix}_dispatch_roundtrip_ready_sessions"]),
+            "strategy": _text(summary, f"{field_prefix}_dispatch_roundtrip_strategy"),
+            "market": _text(summary, f"{field_prefix}_dispatch_roundtrip_market"),
+            "scenario_count": int(summary[f"{field_prefix}_dispatch_roundtrip_scenario_count"]),
+            "max_missing_request_acks": int(summary[f"{field_prefix}_dispatch_roundtrip_missing_request_acks"]),
+            "max_rejected_orders": int(summary[f"{field_prefix}_dispatch_roundtrip_rejected_orders"]),
+            "max_unmatched_acks": int(summary[f"{field_prefix}_dispatch_roundtrip_unmatched_acks"]),
+        },
+        "route_dispatch_roundtrip": {
+            "sessions": int(summary[f"{field_prefix}_route_dispatch_roundtrip_sessions"]),
+            "ready_sessions": int(summary[f"{field_prefix}_route_dispatch_roundtrip_ready_sessions"]),
+            "strategy": _text(summary, f"{field_prefix}_route_dispatch_roundtrip_strategy"),
+            "market": _text(summary, f"{field_prefix}_route_dispatch_roundtrip_market"),
+            "scenario_count": int(summary[f"{field_prefix}_route_dispatch_roundtrip_scenario_count"]),
+        },
+    }
 
 
 def _config(
@@ -1148,6 +1506,10 @@ def _config(
                 "scenario_count": int(summary["shadow_broker_route_dispatch_roundtrip_scenario_count"]),
             },
         },
+        "broker_shadow_broker_readiness": _prefixed_shadow_broker_config(
+            summary,
+            field_prefix="broker_shadow_broker",
+        ),
         "route_dispatch_roundtrip": {
             "required": _to_bool(summary["route_dispatch_roundtrip_required"]),
             "provided": _to_bool(summary["route_dispatch_roundtrip_provided"]),
@@ -1336,6 +1698,17 @@ def _shadow_broker_readiness_provided(*rows: pd.Series) -> bool:
     return bool(rows and all(int(_number(row, "shadow_broker_readiness_sessions", 0.0)) > 0 for row in rows))
 
 
+def _prefixed_shadow_broker_readiness_provided(rows: tuple[pd.Series, ...], *, source_prefix: str) -> bool:
+    return bool(
+        rows
+        and all(
+            _to_bool(row.get(f"{source_prefix}_readiness_provided", False))
+            and int(_number(row, f"{source_prefix}_readiness_sessions", 0.0)) > 0
+            for row in rows
+        )
+    )
+
+
 def _shadow_counter_max(rows: tuple[pd.Series, ...], column: str) -> int:
     return max(int(_number(row, column, 0.0)) for row in rows) if rows else 0
 
@@ -1377,8 +1750,31 @@ def _shadow_adapter_value(rows: tuple[pd.Series, ...]) -> str:
     return ""
 
 
+def _prefixed_shadow_adapter_value(rows: tuple[pd.Series, ...], *, source_prefix: str) -> str:
+    for row in rows:
+        adapter = _identity_key(row.get(f"{source_prefix}_adapter", ""))
+        if adapter:
+            return adapter
+    return ""
+
+
 def _shadow_identity_value(rows: tuple[pd.Series, ...], proof_name: str, column: str) -> str:
     proof_column = f"shadow_broker_{proof_name}_{column}"
+    for row in rows:
+        value = _identity_key(row.get(proof_column, ""))
+        if value:
+            return value
+    return ""
+
+
+def _prefixed_shadow_identity_value(
+    rows: tuple[pd.Series, ...],
+    *,
+    source_prefix: str,
+    proof_name: str,
+    column: str,
+) -> str:
+    proof_column = f"{source_prefix}_{proof_name}_{column}"
     for row in rows:
         value = _identity_key(row.get(proof_column, ""))
         if value:

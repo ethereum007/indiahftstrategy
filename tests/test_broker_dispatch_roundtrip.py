@@ -677,6 +677,108 @@ def test_broker_dispatch_roundtrip_blocks_dirty_shadow_broker_readiness():
     assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
 
 
+def test_broker_dispatch_roundtrip_carries_broker_shadow_broker_readiness():
+    config = route_enable_config()
+    config["route_broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(),
+    }
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=config,
+        send_config=config,
+        ack_config=config,
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    assert bool(summary["broker_shadow_broker_readiness_provided"])
+    assert int(summary["broker_shadow_broker_readiness_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert summary["broker_shadow_broker_adapter"] == "arrow_money"
+    assert summary["broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert summary["broker_shadow_broker_dispatch_roundtrip_scenario_count"] == 1
+    assert report.config["broker_shadow_broker_readiness"]["provided"]
+    assert report.config["broker_shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert report.config["broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
+    assert report.config["broker_shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
+    assert report.config["broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
+        "india_nse_index_derivatives"
+    )
+
+
+def test_broker_dispatch_roundtrip_blocks_dirty_broker_shadow_broker_readiness():
+    clean_config = route_enable_config()
+    clean_config["route_broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(),
+    }
+    bad_config = route_enable_config()
+    bad_config["route_broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(
+            ready_sessions=1,
+            adapter="irage",
+            adapter_count=2,
+            route_ready_sessions=1,
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_gap_pairs=2,
+            dispatch_ready_sessions=1,
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_count=2,
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+            route_dispatch_ready_sessions=1,
+            route_dispatch_strategy="surface_mm",
+            route_dispatch_market="us_options_regular",
+            route_dispatch_scenario_count=2,
+        ),
+    }
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=clean_config,
+        send_config=clean_config,
+        ack_config=bad_config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_shadow_broker_readiness_ready",
+        "broker_shadow_broker_adapter_match",
+        "broker_shadow_broker_adapter_consistent",
+        "broker_shadow_broker_route_readiness_ready",
+        "broker_shadow_broker_route_readiness_identity_match",
+        "broker_shadow_broker_route_readiness_gap_pairs",
+        "broker_shadow_broker_dispatch_roundtrip_ready",
+        "broker_shadow_broker_dispatch_roundtrip_identity_match",
+        "broker_shadow_broker_dispatch_roundtrip_scenario_consistent",
+        "broker_shadow_broker_dispatch_roundtrip_missing_request_acks",
+        "broker_shadow_broker_dispatch_roundtrip_rejected_orders",
+        "broker_shadow_broker_dispatch_roundtrip_unmatched_acks",
+        "broker_shadow_broker_route_dispatch_roundtrip_ready",
+        "broker_shadow_broker_route_dispatch_roundtrip_identity_match",
+        "broker_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+    } <= failed
+    assert report.summary.iloc[0]["broker_shadow_broker_adapter"] == "arrow_money"
+    assert report.config["broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
+
+
 def test_broker_dispatch_roundtrip_requires_route_readiness():
     report = evaluate_broker_dispatch_roundtrip(
         dispatch_summary=dispatch_summary(route_readiness_provided=False, route_readiness_ready=False),
