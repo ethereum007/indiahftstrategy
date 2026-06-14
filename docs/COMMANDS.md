@@ -2673,15 +2673,16 @@ is missing, unready, or for a different strategy/market, dispatch round-trip
 proof is missing, dirty, or has failed component checks for live dry-run
 routing, the carried route-enable dispatch round-trip failed-check counter is
 nonzero, the nested cutover route proof is missing, mismatched, or dirty, any
-cutover-carried shadow broker-readiness aggregate is mixed or dirty, the upload
-order count exceeds the cutover limit, or the optional order-export notional
-exceeds the cutover notional cap. `--require-route-readiness` is
-automatic for `--target-mode live_dryrun`; the explicit flag keeps paper/shadow
-route reviews equally strict. `--upload-pack` and `--order-export` may point at a
-launch-pipeline root; route-enable resolves nested `05_upload_pack`/`04_export`
-or surface-MM `04_upload_pack`/`03_export` summaries and fingerprints the
-resolved cutover summary, cutover config, upload summary, and optional order
-export summary in the manifest.
+cutover-carried shadow broker-readiness aggregate or broker-readiness-carried
+shadow broker proof is mixed or dirty, the upload order count exceeds the
+cutover limit, or the optional order-export notional exceeds the cutover
+notional cap. `--require-route-readiness` is automatic for `--target-mode
+live_dryrun`; the explicit flag keeps paper/shadow route reviews equally
+strict. `--upload-pack` and `--order-export` may point at a launch-pipeline
+root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
+`04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
+summary, cutover config, upload summary, and optional order export summary in
+the manifest.
 
 ## Broker Dispatch Plan
 

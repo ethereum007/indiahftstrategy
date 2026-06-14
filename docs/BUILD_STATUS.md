@@ -393,8 +393,9 @@
   bounds order counts and optional export notional by cutover limits, rechecks
   cutover route-readiness proof, live-dry-run dispatch round-trip proof,
   carried route-enable failed-check counters, nested route proof, and
-  cutover-carried shadow broker-readiness aggregates, resolves broker
-  upload/export summaries from launch pipeline roots, fingerprints resolved
+  cutover-carried shadow broker-readiness aggregates plus
+  broker-readiness-carried shadow broker proof, resolves broker upload/export
+  summaries from launch pipeline roots, fingerprints resolved
   cutover/upload/export inputs, and emits the final machine-readable broker
   route-enable config without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
@@ -491,7 +492,8 @@
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
   preserving broker-readiness-carried shadow proof separately as
   `broker_shadow_broker_*` fields and cutover preserving them as
-  `scaleup_broker_shadow_broker_*` authorization/config fields.
+  `scaleup_broker_shadow_broker_*` authorization/config fields, with
+  route-enable carrying the same proof as `cutover_broker_shadow_broker_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -504,7 +506,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 671 tests.
+Current passing suite: 673 tests.
 
 ## Next Build Targets
 

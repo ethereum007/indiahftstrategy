@@ -555,6 +555,99 @@ def test_route_enable_blocks_bad_cutover_shadow_broker_readiness():
     assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
 
 
+def test_route_enable_carries_cutover_broker_shadow_broker_readiness():
+    config = cutover_config()
+    config["scaleup_broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(),
+    }
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert summary["cutover_broker_shadow_broker_readiness_provided"]
+    assert int(summary["cutover_broker_shadow_broker_readiness_sessions"]) == 2
+    assert int(summary["cutover_broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert summary["cutover_broker_shadow_broker_adapter"] == "arrow_money"
+    assert summary["cutover_broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert summary["cutover_broker_shadow_broker_dispatch_roundtrip_scenario_count"] == 1
+    assert report.config["cutover_broker_shadow_broker_readiness"]["provided"]
+    assert report.config["cutover_broker_shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert report.config["cutover_broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
+    assert report.config["cutover_broker_shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
+    assert report.config["cutover_broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
+        "india_nse_index_derivatives"
+    )
+
+
+def test_route_enable_blocks_bad_cutover_broker_shadow_broker_readiness():
+    config = cutover_config()
+    config["scaleup_broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(
+            ready_sessions=1,
+            adapter="irage",
+            adapter_count=2,
+            route_ready_sessions=1,
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_gap_pairs=2,
+            dispatch_ready_sessions=1,
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_count=2,
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+            route_dispatch_ready_sessions=1,
+            route_dispatch_strategy="surface_mm",
+            route_dispatch_market="us_options_regular",
+            route_dispatch_scenario_count=2,
+        ),
+    }
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "cutover_broker_shadow_broker_readiness_ready",
+        "cutover_broker_shadow_broker_adapter_matches",
+        "cutover_broker_shadow_broker_adapter_consistent",
+        "cutover_broker_shadow_broker_route_readiness_ready",
+        "cutover_broker_shadow_broker_route_readiness_strategy_matches",
+        "cutover_broker_shadow_broker_route_readiness_market_matches",
+        "cutover_broker_shadow_broker_route_readiness_gap_pairs",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_ready",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_strategy_matches",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_market_matches",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_scenario_consistent",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_missing_request_acks",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_rejected_orders",
+        "cutover_broker_shadow_broker_dispatch_roundtrip_unmatched_acks",
+        "cutover_broker_shadow_broker_route_dispatch_roundtrip_ready",
+        "cutover_broker_shadow_broker_route_dispatch_roundtrip_strategy_matches",
+        "cutover_broker_shadow_broker_route_dispatch_roundtrip_market_matches",
+        "cutover_broker_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+    } <= failed
+    assert report.config["cutover_broker_shadow_broker_readiness"]["adapter"] == "irage"
+    assert report.config["cutover_broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
+    assert report.config["cutover_broker_shadow_broker_readiness"]["dispatch_roundtrip"][
+        "max_rejected_orders"
+    ] == 1
+
+
 def test_route_enable_live_dryrun_requires_cutover_route_readiness():
     report = evaluate_route_enable_packet(
         cutover_summary=cutover_summary(route_readiness_provided=False, route_readiness_ready=False),
