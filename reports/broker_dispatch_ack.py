@@ -367,7 +367,126 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
             route_broker_shadow,
             field_prefix="route_broker_shadow_broker",
         )
+    vendor_market_data_batch = (
+        config.get("dispatch_vendor_market_data_batch", {})
+        or config.get("route_vendor_market_data_batch", {})
+        or {}
+    )
+    if vendor_market_data_batch:
+        _apply_vendor_market_data_batch_config(
+            state,
+            vendor_market_data_batch,
+            field_prefix="ack_vendor_market_data_batch",
+            fallback_prefix="route_vendor_market_data_batch",
+        )
+    else:
+        _copy_vendor_market_data_batch_fields(
+            state,
+            source_prefix="route_vendor_market_data_batch",
+            field_prefix="ack_vendor_market_data_batch",
+        )
     return state
+
+
+def _apply_vendor_market_data_batch_config(
+    state: pd.Series,
+    vendor: dict[str, Any],
+    *,
+    field_prefix: str,
+    fallback_prefix: str,
+) -> None:
+    comparison = vendor.get("comparison", {}) or {}
+    state[f"{field_prefix}_provided"] = _to_bool(
+        vendor.get("provided", state.get(f"{fallback_prefix}_provided", False))
+    )
+    state[f"{field_prefix}_ready"] = _to_bool(
+        vendor.get("ready", state.get(f"{fallback_prefix}_ready", False))
+    )
+    state[f"{field_prefix}_adapter"] = _object_text(
+        vendor.get("adapter", state.get(f"{fallback_prefix}_adapter", ""))
+    )
+    state[f"{field_prefix}_kind"] = _object_text(vendor.get("kind", state.get(f"{fallback_prefix}_kind", "")))
+    state[f"{field_prefix}_market"] = _object_text(
+        vendor.get("market", state.get(f"{fallback_prefix}_market", ""))
+    )
+    state[f"{field_prefix}_dataset_count"] = int(
+        _number_value(
+            vendor.get("dataset_count"),
+            _number(state, f"{fallback_prefix}_dataset_count", 0.0),
+        )
+    )
+    state[f"{field_prefix}_ready_datasets"] = int(
+        _number_value(
+            vendor.get("ready_datasets"),
+            _number(state, f"{fallback_prefix}_ready_datasets", 0.0),
+        )
+    )
+    state[f"{field_prefix}_failed_datasets"] = int(
+        _number_value(
+            vendor.get("failed_datasets"),
+            _number(state, f"{fallback_prefix}_failed_datasets", 0.0),
+        )
+    )
+    state[f"{field_prefix}_ready_rate"] = _number_value(
+        vendor.get("ready_rate"),
+        _number(state, f"{fallback_prefix}_ready_rate", 0.0),
+    )
+    state[f"{field_prefix}_unique_source_files"] = int(
+        _number_value(
+            vendor.get("unique_source_files"),
+            _number(state, f"{fallback_prefix}_unique_source_files", 0.0),
+        )
+    )
+    state[f"{field_prefix}_unique_header_fingerprints"] = int(
+        _number_value(
+            vendor.get("unique_header_fingerprints"),
+            _number(state, f"{fallback_prefix}_unique_header_fingerprints", 0.0),
+        )
+    )
+    state[f"{field_prefix}_mapping_sources"] = _object_text(
+        vendor.get("mapping_sources", state.get(f"{fallback_prefix}_mapping_sources", ""))
+    )
+    state[f"{field_prefix}_comparison_accepted"] = _to_bool(
+        comparison.get("accepted", state.get(f"{fallback_prefix}_comparison_accepted", False))
+    )
+    state[f"{field_prefix}_comparison_failed_checks"] = int(
+        _number_value(
+            comparison.get("failed_checks"),
+            _number(state, f"{fallback_prefix}_comparison_failed_checks", 0.0),
+        )
+    )
+    datasets = vendor.get("datasets")
+    state[f"{field_prefix}_datasets_json"] = (
+        json.dumps(_vendor_market_data_batch_datasets(datasets), sort_keys=True)
+        if isinstance(datasets, list)
+        else _text(state, f"{fallback_prefix}_datasets_json")
+    )
+
+
+def _copy_vendor_market_data_batch_fields(
+    state: pd.Series,
+    *,
+    source_prefix: str,
+    field_prefix: str,
+) -> None:
+    for suffix in (
+        "provided",
+        "ready",
+        "adapter",
+        "kind",
+        "market",
+        "dataset_count",
+        "ready_datasets",
+        "failed_datasets",
+        "ready_rate",
+        "unique_source_files",
+        "unique_header_fingerprints",
+        "mapping_sources",
+        "comparison_accepted",
+        "comparison_failed_checks",
+        "datasets_json",
+    ):
+        state[f"{field_prefix}_{suffix}"] = state.get(f"{source_prefix}_{suffix}", "")
 
 
 def _apply_shadow_broker_readiness_config(
@@ -1223,6 +1342,10 @@ def _summary(
                     dispatch_summary,
                     field_prefix="route_broker_shadow_broker",
                 ),
+                **_vendor_market_data_batch_summary_fields(
+                    dispatch_summary,
+                    field_prefix="ack_vendor_market_data_batch",
+                ),
                 "route_dispatch_roundtrip_required": _to_bool(
                     dispatch_summary.get("route_dispatch_roundtrip_required", False)
                 ),
@@ -1307,6 +1430,56 @@ def _prefixed_shadow_broker_config(summary: pd.Series, *, field_prefix: str) -> 
     }
 
 
+def _vendor_market_data_batch_summary_fields(dispatch_summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
+    return {
+        f"{field_prefix}_provided": _to_bool(dispatch_summary.get(f"{field_prefix}_provided", False)),
+        f"{field_prefix}_ready": _to_bool(dispatch_summary.get(f"{field_prefix}_ready", False)),
+        f"{field_prefix}_adapter": _identity_key(dispatch_summary.get(f"{field_prefix}_adapter", "")),
+        f"{field_prefix}_kind": _text(dispatch_summary, f"{field_prefix}_kind"),
+        f"{field_prefix}_market": _identity_key(dispatch_summary.get(f"{field_prefix}_market", "")),
+        f"{field_prefix}_dataset_count": int(_number(dispatch_summary, f"{field_prefix}_dataset_count", 0.0)),
+        f"{field_prefix}_ready_datasets": int(_number(dispatch_summary, f"{field_prefix}_ready_datasets", 0.0)),
+        f"{field_prefix}_failed_datasets": int(_number(dispatch_summary, f"{field_prefix}_failed_datasets", 0.0)),
+        f"{field_prefix}_ready_rate": _number(dispatch_summary, f"{field_prefix}_ready_rate", 0.0),
+        f"{field_prefix}_unique_source_files": int(
+            _number(dispatch_summary, f"{field_prefix}_unique_source_files", 0.0)
+        ),
+        f"{field_prefix}_unique_header_fingerprints": int(
+            _number(dispatch_summary, f"{field_prefix}_unique_header_fingerprints", 0.0)
+        ),
+        f"{field_prefix}_mapping_sources": _text(dispatch_summary, f"{field_prefix}_mapping_sources"),
+        f"{field_prefix}_comparison_accepted": _to_bool(
+            dispatch_summary.get(f"{field_prefix}_comparison_accepted", False)
+        ),
+        f"{field_prefix}_comparison_failed_checks": int(
+            _number(dispatch_summary, f"{field_prefix}_comparison_failed_checks", 0.0)
+        ),
+        f"{field_prefix}_datasets_json": _text(dispatch_summary, f"{field_prefix}_datasets_json"),
+    }
+
+
+def _vendor_market_data_batch_config(summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
+    return {
+        "provided": _to_bool(summary[f"{field_prefix}_provided"]),
+        "ready": _to_bool(summary[f"{field_prefix}_ready"]),
+        "adapter": _text(summary, f"{field_prefix}_adapter"),
+        "kind": _text(summary, f"{field_prefix}_kind"),
+        "market": _text(summary, f"{field_prefix}_market"),
+        "dataset_count": int(summary[f"{field_prefix}_dataset_count"]),
+        "ready_datasets": int(summary[f"{field_prefix}_ready_datasets"]),
+        "failed_datasets": int(summary[f"{field_prefix}_failed_datasets"]),
+        "ready_rate": _jsonable(summary[f"{field_prefix}_ready_rate"]),
+        "unique_source_files": int(summary[f"{field_prefix}_unique_source_files"]),
+        "unique_header_fingerprints": int(summary[f"{field_prefix}_unique_header_fingerprints"]),
+        "mapping_sources": _text(summary, f"{field_prefix}_mapping_sources"),
+        "comparison": {
+            "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),
+            "failed_checks": int(summary[f"{field_prefix}_comparison_failed_checks"]),
+        },
+        "datasets": _json_list(summary[f"{field_prefix}_datasets_json"]),
+    }
+
+
 def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks: pd.DataFrame) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -1373,6 +1546,10 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
         "route_broker_shadow_broker_readiness": _prefixed_shadow_broker_config(
             summary,
             field_prefix="route_broker_shadow_broker",
+        ),
+        "ack_vendor_market_data_batch": _vendor_market_data_batch_config(
+            summary,
+            field_prefix="ack_vendor_market_data_batch",
         ),
         "route_dispatch_roundtrip": {
             "required": _to_bool(summary["route_dispatch_roundtrip_required"]),
@@ -1560,6 +1737,52 @@ def _to_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "passed", "ready", "accepted"}
     return bool(value)
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+def _vendor_market_data_batch_datasets(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "dataset": _object_text(item.get("dataset", "")),
+                "ready": _to_bool(item.get("ready", False)),
+                "source_file_sha256": _object_text(item.get("source_file_sha256", "")),
+                "source_header_sha256": _object_text(item.get("source_header_sha256", "")),
+                "mapping_draft_sha256": _object_text(item.get("mapping_draft_sha256", "")),
+                "mapping_source": _object_text(item.get("mapping_source", "")),
+            }
+        )
+    return rows
+
+
+def _json_list(value: object) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _check(

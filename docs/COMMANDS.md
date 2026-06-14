@@ -2843,7 +2843,11 @@ the dispatch batch. `--require-route-readiness` is automatic for `live_dryrun`;
 the explicit flag keeps paper/shadow acknowledgement reviews equally strict.
 It carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
-`route_broker_shadow_broker_readiness` into the ack summary/config. The manifest
+`route_broker_shadow_broker_readiness` into the ack summary/config. If the
+dispatch config retained Arrow.money/iRage vendor market-data batch evidence,
+the ack gate preserves the dataset/header/mapping proof as
+`ack_vendor_market_data_batch_*` fields and a nested
+`ack_vendor_market_data_batch` config block. The manifest
 fingerprints the exact dispatch summary, dispatch orders, dispatch config,
 dispatch manifest when present, and broker acknowledgement log files used in the
 reconciliation.
