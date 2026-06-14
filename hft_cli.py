@@ -1590,6 +1590,7 @@ def main(argv: list[str] | None = None) -> int:
     dispatch_ack.add_argument("--allow-unready-dispatch", action="store_true")
     dispatch_ack.add_argument("--allow-missing-acks", action="store_true")
     dispatch_ack.add_argument("--allow-rejections", action="store_true")
+    dispatch_ack.add_argument("--require-route-readiness", action="store_true")
     dispatch_ack.add_argument("--require-dispatch-roundtrip", action="store_true")
     dispatch_ack.add_argument("--max-duplicate-ack-orders", type=int, default=0)
     dispatch_ack.add_argument("--max-unmatched-acks", type=int, default=0)
@@ -3607,6 +3608,7 @@ def main(argv: list[str] | None = None) -> int:
             thresholds=BrokerDispatchAckThresholds(
                 require_dispatch_ready=not args.allow_unready_dispatch,
                 require_all_acked=not args.allow_missing_acks,
+                require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,

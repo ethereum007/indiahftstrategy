@@ -28,6 +28,7 @@ REJECTED_ACK_STATUSES = {"reject", "rejected", "error", "failed", "denied", "blo
 class BrokerDispatchAckThresholds:
     require_dispatch_ready: bool = True
     require_all_acked: bool = True
+    require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
@@ -66,7 +67,7 @@ def evaluate_broker_dispatch_acknowledgements(
     acknowledgements = _acknowledgements(dispatch_orders, broker_acks)
     unmatched = _unmatched_acks(dispatch_orders, broker_acks)
     checks = _checks(summary_row, acknowledgements, unmatched, thresholds)
-    summary = _summary(summary_row, acknowledgements, unmatched, checks)
+    summary = _summary(summary_row, acknowledgements, unmatched, checks, thresholds)
     config = _config(summary.iloc[0], thresholds, checks)
     return BrokerDispatchAckReport(
         acknowledgements=acknowledgements,
@@ -212,6 +213,35 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
                 _number(state, "route_enable_dispatch_roundtrip_failed_checks", 0.0),
             )
         )
+    route_readiness = config.get("route_readiness", {}) or {}
+    if route_readiness:
+        state["route_readiness_required"] = _to_bool(
+            route_readiness.get("required", state.get("route_readiness_required", False))
+        )
+        state["route_readiness_provided"] = _to_bool(
+            route_readiness.get("provided", state.get("route_readiness_provided", False))
+        )
+        state["route_readiness_ready"] = _to_bool(
+            route_readiness.get("ready", state.get("route_readiness_ready", False))
+        )
+        state["route_readiness_strategy"] = _object_text(
+            route_readiness.get("strategy", _text(state, "route_readiness_strategy"))
+        )
+        state["route_readiness_market"] = _object_text(
+            route_readiness.get("market", _text(state, "route_readiness_market"))
+        )
+        state["route_readiness_route_ready_pairs"] = int(
+            _number_value(
+                route_readiness.get("route_ready_pairs"),
+                _number(state, "route_readiness_route_ready_pairs", 0.0),
+            )
+        )
+        state["route_readiness_gap_pairs"] = int(
+            _number_value(route_readiness.get("gap_pairs"), _number(state, "route_readiness_gap_pairs", 0.0))
+        )
+        state["route_readiness_recommendation"] = _object_text(
+            route_readiness.get("recommendation", _text(state, "route_readiness_recommendation"))
+        )
     return state
 
 
@@ -227,6 +257,10 @@ def _checks(
     rejected = int(acknowledgements["rejected"].astype(bool).sum()) if orders else 0
     missing = int(acknowledgements["missing_ack"].astype(bool).sum()) if orders else 0
     duplicates = int(acknowledgements["duplicate_ack"].astype(bool).sum()) if orders else 0
+    route_readiness_required = _route_readiness_required(dispatch_summary, thresholds)
+    route_readiness_active = bool(
+        route_readiness_required or _to_bool(dispatch_summary.get("route_readiness_provided", False))
+    )
     checks = pd.DataFrame(
         [
             _check(
@@ -269,8 +303,24 @@ def _checks(
                 int(len(unmatched_acks)) <= thresholds.max_unmatched_acks,
                 "broker acknowledgement file contains unmatched rows",
             ),
+            _check(
+                "route_readiness_provided",
+                _to_bool(dispatch_summary.get("route_readiness_provided", False)),
+                "is",
+                True,
+                _to_bool(dispatch_summary.get("route_readiness_provided", False)) or not route_readiness_required,
+                "ack reconciliation requires dispatch plan with route-readiness proof",
+            ),
         ]
     )
+    if route_readiness_active:
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_route_readiness_checks(dispatch_summary)),
+            ],
+            ignore_index=True,
+        )
     if _dispatch_roundtrip_required(dispatch_summary, thresholds) or _to_bool(
         dispatch_summary.get("route_dispatch_roundtrip_provided", False)
     ):
@@ -283,6 +333,45 @@ def _checks(
             ignore_index=True,
         )
     return checks
+
+
+def _route_readiness_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
+    strategy = _identity_key(dispatch_summary.get("strategy", ""))
+    market = _identity_key(dispatch_summary.get("market", ""))
+    return [
+        _check(
+            "route_readiness_ready",
+            _to_bool(dispatch_summary.get("route_readiness_ready", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get("route_readiness_ready", False)),
+            "dispatch route-readiness proof is not ready",
+        ),
+        _check(
+            "route_readiness_strategy_matches",
+            _identity_key(dispatch_summary.get("route_readiness_strategy", "")),
+            "==",
+            strategy,
+            bool(
+                _identity_key(dispatch_summary.get("route_readiness_strategy", ""))
+                and strategy
+                and _identity_key(dispatch_summary.get("route_readiness_strategy", "")) == strategy
+            ),
+            "dispatch route-readiness strategy does not match acknowledgement strategy",
+        ),
+        _check(
+            "route_readiness_market_matches",
+            _identity_key(dispatch_summary.get("route_readiness_market", "")),
+            "==",
+            market,
+            bool(
+                _identity_key(dispatch_summary.get("route_readiness_market", ""))
+                and market
+                and _identity_key(dispatch_summary.get("route_readiness_market", "")) == market
+            ),
+            "dispatch route-readiness market does not match acknowledgement market",
+        ),
+    ]
 
 
 def _dispatch_roundtrip_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
@@ -438,6 +527,7 @@ def _summary(
     acknowledgements: pd.DataFrame,
     unmatched_acks: pd.DataFrame,
     checks: pd.DataFrame,
+    thresholds: BrokerDispatchAckThresholds,
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     passed = failed == 0
@@ -464,6 +554,16 @@ def _summary(
                 "rejected_orders": rejected,
                 "duplicate_ack_orders": duplicates,
                 "unmatched_acks": int(len(unmatched_acks)),
+                "route_readiness_required": _route_readiness_required(dispatch_summary, thresholds),
+                "route_readiness_provided": _to_bool(dispatch_summary.get("route_readiness_provided", False)),
+                "route_readiness_ready": _to_bool(dispatch_summary.get("route_readiness_ready", False)),
+                "route_readiness_strategy": _identity_key(dispatch_summary.get("route_readiness_strategy", "")),
+                "route_readiness_market": _identity_key(dispatch_summary.get("route_readiness_market", "")),
+                "route_readiness_route_ready_pairs": int(
+                    _number(dispatch_summary, "route_readiness_route_ready_pairs", 0.0)
+                ),
+                "route_readiness_gap_pairs": int(_number(dispatch_summary, "route_readiness_gap_pairs", 0.0)),
+                "route_readiness_recommendation": _text(dispatch_summary, "route_readiness_recommendation"),
                 "route_dispatch_roundtrip_required": _to_bool(
                     dispatch_summary.get("route_dispatch_roundtrip_required", False)
                 ),
@@ -534,6 +634,16 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
         "rejected_orders": int(summary["rejected_orders"]),
         "duplicate_ack_orders": int(summary["duplicate_ack_orders"]),
         "unmatched_acks": int(summary["unmatched_acks"]),
+        "route_readiness": {
+            "required": _to_bool(summary["route_readiness_required"]),
+            "provided": _to_bool(summary["route_readiness_provided"]),
+            "ready": _to_bool(summary["route_readiness_ready"]),
+            "strategy": _text(summary, "route_readiness_strategy"),
+            "market": _text(summary, "route_readiness_market"),
+            "route_ready_pairs": int(summary["route_readiness_route_ready_pairs"]),
+            "gap_pairs": int(summary["route_readiness_gap_pairs"]),
+            "recommendation": _text(summary, "route_readiness_recommendation"),
+        },
         "route_dispatch_roundtrip": {
             "required": _to_bool(summary["route_dispatch_roundtrip_required"]),
             "provided": _to_bool(summary["route_dispatch_roundtrip_provided"]),
@@ -657,6 +767,14 @@ def _dispatch_roundtrip_required(dispatch_summary: pd.Series, thresholds: Broker
     return bool(
         thresholds.require_dispatch_roundtrip
         or _identity_key(dispatch_summary.get("target_mode", "")) == "live_dryrun"
+    )
+
+
+def _route_readiness_required(dispatch_summary: pd.Series, thresholds: BrokerDispatchAckThresholds) -> bool:
+    return bool(
+        thresholds.require_route_readiness
+        or _identity_key(dispatch_summary.get("target_mode", "")) == "live_dryrun"
+        or _to_bool(dispatch_summary.get("route_readiness_required", False))
     )
 
 

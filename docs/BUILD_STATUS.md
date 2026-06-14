@@ -402,9 +402,10 @@
   submission off, and fingerprinting exact dispatch input files.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
-  broker schema review status/mode, route round-trip proof, and route-enable
-  failed-check counters from the dispatch config, validates acknowledgement-log
-  proof batch continuity, and
+  broker schema review status/mode, route-readiness proof, route round-trip
+  proof, and route-enable failed-check counters from the dispatch config,
+  validates route-readiness identity and acknowledgement-log proof batch
+  continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch and ack
   log inputs.
