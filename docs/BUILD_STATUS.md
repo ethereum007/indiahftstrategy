@@ -418,7 +418,7 @@
   broker proof from the dispatch config as `route_broker_shadow_broker_*`,
   validating route-readiness identity, carried shadow proof quality, and route
   proof batch continuity, forcing live submission off, and fingerprinting exact
-  dispatch input files.
+  dispatch input files plus the dispatch manifest when present.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip

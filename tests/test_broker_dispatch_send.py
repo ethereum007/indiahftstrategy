@@ -275,6 +275,21 @@ def write_dispatch(tmp_path, *, ready=True, state="armed_dry_run", route_roundtr
         + "\n",
         encoding="utf-8",
     )
+    (dispatch / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_plan",
+                "inputs": {
+                    "route_enable_manifest": {
+                        "path": str(dispatch / "route_enable_manifest.json"),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return dispatch
 
 
@@ -637,6 +652,9 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     )
     assert path_tail(manifest["inputs"]["dispatch_config"]["path"]).endswith(
         "/broker_dispatch_config.json"
+    )
+    assert path_tail(manifest["inputs"]["dispatch_manifest"]["path"]).endswith(
+        "/manifest.json"
     )
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_send_packet"

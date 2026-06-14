@@ -2778,8 +2778,8 @@ strict. It also carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
 `route_broker_shadow_broker_readiness` into the sender summary/config. The
 manifest fingerprints the exact dispatch
-summary, dispatch orders, and dispatch config files consumed by the sender
-packet.
+summary, dispatch orders, dispatch config, and dispatch manifest when present
+consumed by the sender packet.
 
 ## Broker Dispatch Acknowledgement Reconciliation
 
