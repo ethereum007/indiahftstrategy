@@ -2627,8 +2627,9 @@ plan, requires matching clean route proof from both scale-up and broker
 readiness, rejects nonzero dispatch round-trip and route-enable dispatch
 round-trip failed-check counts, carries proof-refresh state, enforces any
 multi-session shadow broker-readiness aggregate retained in the scale-up config,
-and validates any supplied broker resume-gate proof identity before broker
-routing is allowed.
+revalidates any broker-readiness-carried shadow broker proof retained under
+`broker_shadow_broker_*`, and validates any supplied broker resume-gate proof
+identity before broker routing is allowed.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,

@@ -668,6 +668,103 @@ def test_cutover_gate_blocks_bad_shadow_broker_readiness_from_scaleup_config():
     assert report.config["scaleup_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
 
 
+def test_cutover_gate_carries_broker_shadow_broker_readiness_from_scaleup_config():
+    config = scaleup_config()
+    config["broker_readiness"]["shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(),
+    }
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert summary["scaleup_broker_shadow_broker_readiness_provided"]
+    assert int(summary["scaleup_broker_shadow_broker_readiness_sessions"]) == 2
+    assert int(summary["scaleup_broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert summary["scaleup_broker_shadow_broker_adapter"] == "arrow_money"
+    assert summary["scaleup_broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert summary["scaleup_broker_shadow_broker_dispatch_roundtrip_scenario_count"] == 1
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["provided"]
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
+        "india_nse_index_derivatives"
+    )
+
+
+def test_cutover_gate_blocks_bad_broker_shadow_broker_readiness_from_scaleup_config():
+    config = scaleup_config()
+    config["broker_readiness"]["shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(
+            ready_sessions=1,
+            adapter="irage",
+            adapter_count=2,
+            route_ready_sessions=1,
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_gap_pairs=2,
+            dispatch_ready_sessions=1,
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario_count=2,
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+            route_dispatch_ready_sessions=1,
+            route_dispatch_strategy="surface_mm",
+            route_dispatch_market="us_options_regular",
+            route_dispatch_scenario_count=2,
+        ),
+    }
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_broker_shadow_broker_readiness_ready",
+        "scaleup_broker_shadow_broker_adapter_matches",
+        "scaleup_broker_shadow_broker_adapter_consistent",
+        "scaleup_broker_shadow_broker_route_readiness_ready",
+        "scaleup_broker_shadow_broker_route_readiness_strategy_matches",
+        "scaleup_broker_shadow_broker_route_readiness_market_matches",
+        "scaleup_broker_shadow_broker_route_readiness_gap_pairs",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_ready",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_strategy_matches",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_market_matches",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_scenario_consistent",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_missing_request_acks",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_rejected_orders",
+        "scaleup_broker_shadow_broker_dispatch_roundtrip_unmatched_acks",
+        "scaleup_broker_shadow_broker_route_dispatch_roundtrip_ready",
+        "scaleup_broker_shadow_broker_route_dispatch_roundtrip_strategy_matches",
+        "scaleup_broker_shadow_broker_route_dispatch_roundtrip_market_matches",
+        "scaleup_broker_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+    } <= failed
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["adapter"] == "irage"
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
+    assert report.config["scaleup_broker_shadow_broker_readiness"]["dispatch_roundtrip"][
+        "max_rejected_orders"
+    ] == 1
+
+
 def test_cutover_gate_live_dryrun_requires_route_readiness():
     report = evaluate_cutover_gate(
         scaleup_summary=scaleup_summary(route_readiness_provided=False, route_readiness_ready=False),
