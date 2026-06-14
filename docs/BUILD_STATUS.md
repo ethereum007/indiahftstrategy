@@ -408,12 +408,14 @@
   dry-run dispatch IDs, carries broker schema review status/mode plus
   route-readiness proof, live-dry-run nested route proof, and route-carried
   shadow broker-readiness aggregates plus broker-readiness-carried shadow
-  broker proof from route-enable as `route_broker_shadow_broker_*`, and fails
-  closed on disabled routes, nested route-enable dispatch round-trip failed
-  checks, dirty route proof, duplicate source order IDs, dirty carried shadow
-  broker proof, or unresolved upload-order files while resolving launch pipeline
-  upload roots and fingerprinting the route-enable summary/config, route-enable
-  manifest, and upload CSV without sending orders.
+  broker proof from route-enable as `route_broker_shadow_broker_*`, preserves
+  route-enable-carried vendor market-data batch provenance as
+  `route_vendor_market_data_batch_*`, and fails closed on disabled routes,
+  nested route-enable dispatch round-trip failed checks, dirty route proof,
+  duplicate source order IDs, dirty carried shadow broker proof, or unresolved
+  upload-order files while resolving launch pipeline upload roots and
+  fingerprinting the route-enable summary/config, route-enable manifest, and
+  upload CSV without sending orders.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route-readiness proof, route round-trip proof tags, and
@@ -510,8 +512,9 @@
   separately as `broker_shadow_broker_*` fields and cutover preserving them as
   `scaleup_broker_shadow_broker_*` authorization/config fields, with
   route-enable fingerprinting the cutover manifest, carrying the same proof as
-  `cutover_broker_shadow_broker_*`, and preserving cutover-retained vendor
-  market-data batch provenance as `cutover_vendor_market_data_batch_*`.
+  `cutover_broker_shadow_broker_*`, preserving cutover-retained vendor
+  market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
+  dispatch preserving that provenance as `route_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -524,7 +527,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 686 tests.
+Current passing suite: 687 tests.
 
 ## Next Build Targets
 

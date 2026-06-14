@@ -2742,7 +2742,10 @@ strict. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, while the summary/config carry the broker schema review
 status/mode, route-readiness proof, `shadow_broker_*`, and
-`route_broker_shadow_broker_*` proof from route-enable.
+`route_broker_shadow_broker_*` proof from route-enable. If route-enable carried
+Arrow.money/iRage vendor market-data batch evidence, dispatch planning preserves
+the dataset/header/mapping proof as `route_vendor_market_data_batch_*` fields
+and a nested `route_vendor_market_data_batch` config block.
 `broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
