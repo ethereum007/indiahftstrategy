@@ -1466,6 +1466,89 @@ def test_scaleup_plan_accepts_required_data_readiness_comparison():
     assert report.config["data_readiness_comparison"]["ready_rate"] == 1.0
 
 
+def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    vendor_batch = tmp_path / "vendor_batch"
+    comparison = vendor_batch / "comparison"
+    comparison.mkdir(parents=True)
+    data_readiness_comparison_summary(True).to_csv(
+        comparison / "data_readiness_comparison_summary.csv",
+        index=False,
+    )
+    (vendor_batch / "vendor_market_data_batch_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ready": True,
+                "adapter": "arrow_money",
+                "kind": "ticks",
+                "market": "india_nse_index_derivatives",
+                "dataset_count": 2,
+                "ready_datasets": 2,
+                "failed_datasets": 0,
+                "ready_rate": 1.0,
+                "unique_source_files": 2,
+                "unique_header_fingerprints": 1,
+                "mapping_sources": "vendor_intake_draft",
+                "comparison": {
+                    "accepted": True,
+                    "ready_rate": 1.0,
+                    "failed_checks": 0,
+                },
+                "datasets": [
+                    {
+                        "dataset": "day1",
+                        "ready": True,
+                        "source_file_sha256": "a" * 64,
+                        "source_header_sha256": "b" * 64,
+                        "mapping_draft_sha256": "c" * 64,
+                        "mapping_source": "vendor_intake_draft",
+                    },
+                    {
+                        "dataset": "day2",
+                        "ready": True,
+                        "source_file_sha256": "d" * 64,
+                        "source_header_sha256": "b" * 64,
+                        "mapping_draft_sha256": "c" * 64,
+                        "mapping_source": "vendor_intake_draft",
+                    },
+                ],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        data_readiness_comparison_dir=comparison,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(require_data_readiness_comparison=True),
+    )
+
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    vendor = config["data_readiness_comparison"]["vendor_market_data_batch"]
+    assert report.ready
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["dataset_count"] == 2
+    assert vendor["unique_source_files"] == 2
+    assert vendor["unique_header_fingerprints"] == 1
+    assert vendor["mapping_sources"] == "vendor_intake_draft"
+    assert vendor["comparison"]["accepted"]
+    assert len(vendor["datasets"]) == 2
+    assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+    assert path_tail(manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
+        "/vendor_batch/vendor_market_data_batch_config.json"
+    )
+
+
 def test_scaleup_plan_fails_on_instrument_metadata_gap():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(True),

@@ -155,6 +155,9 @@ def write_scaleup_plan(
         data_readiness_comparison_dir,
         "data_readiness_comparison_summary.csv",
     )
+    vendor_market_data_batch_config_path = _optional_vendor_market_data_batch_config(
+        data_readiness_comparison_path or data_readiness_comparison_dir
+    )
     route_readiness_path = _optional_summary_input(route_readiness_dir, "route_readiness_summary.csv")
 
     evidence = _read_summary(evidence_path, "strategy_evidence_summary.csv")
@@ -216,6 +219,11 @@ def write_scaleup_plan(
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
     )
+    if vendor_market_data_batch_config_path is not None:
+        _apply_vendor_market_data_batch_config(
+            report.config,
+            json.loads(vendor_market_data_batch_config_path.read_text(encoding="utf-8")),
+        )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.plan.to_csv(out / "scaleup_plan.csv", index=False)
@@ -239,6 +247,8 @@ def write_scaleup_plan(
         inputs["data_readiness"] = data_readiness_path
     if data_readiness_comparison_path is not None:
         inputs["data_readiness_comparison"] = data_readiness_comparison_path
+    if vendor_market_data_batch_config_path is not None:
+        inputs["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
     if route_readiness_path is not None:
         inputs["route_readiness"] = route_readiness_path
     if broker_readiness_path is not None:
@@ -2641,6 +2651,58 @@ def _optional_sidecar_input(path: str | Path | None, filename: str) -> Path | No
     return file_path if file_path.exists() else None
 
 
+def _optional_vendor_market_data_batch_config(path: str | Path | None) -> Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    base = candidate.parent if candidate.is_file() else candidate
+    for folder in (base, base.parent):
+        file_path = folder / "vendor_market_data_batch_config.json"
+        if file_path.exists():
+            return file_path
+    return None
+
+
+def _apply_vendor_market_data_batch_config(config: dict[str, Any], batch_config: dict[str, Any]) -> None:
+    comparison = config.setdefault("data_readiness_comparison", {})
+    comparison["vendor_market_data_batch"] = _vendor_market_data_batch_summary(batch_config)
+
+
+def _vendor_market_data_batch_summary(batch_config: dict[str, Any]) -> dict[str, Any]:
+    comparison = batch_config.get("comparison", {}) or {}
+    datasets = batch_config.get("datasets") or []
+    return {
+        "provided": True,
+        "ready": _to_bool(batch_config.get("ready", False)),
+        "adapter": str(batch_config.get("adapter", "")),
+        "kind": str(batch_config.get("kind", "")),
+        "market": str(batch_config.get("market", "")),
+        "dataset_count": int(_number_from(batch_config, "dataset_count", 0.0)),
+        "ready_datasets": int(_number_from(batch_config, "ready_datasets", 0.0)),
+        "failed_datasets": int(_number_from(batch_config, "failed_datasets", 0.0)),
+        "ready_rate": _jsonable(_number_from(batch_config, "ready_rate", np.nan)),
+        "unique_source_files": int(_number_from(batch_config, "unique_source_files", 0.0)),
+        "unique_header_fingerprints": int(_number_from(batch_config, "unique_header_fingerprints", 0.0)),
+        "mapping_sources": str(batch_config.get("mapping_sources", "")),
+        "comparison": {
+            "accepted": _to_bool(comparison.get("accepted", False)),
+            "ready_rate": _jsonable(_number_from(comparison, "ready_rate", np.nan)),
+            "failed_checks": int(_number_from(comparison, "failed_checks", 0.0)),
+        },
+        "datasets": [
+            {
+                "dataset": str(item.get("dataset", "")),
+                "ready": _to_bool(item.get("ready", False)),
+                "source_file_sha256": str(item.get("source_file_sha256", "")),
+                "source_header_sha256": str(item.get("source_header_sha256", "")),
+                "mapping_draft_sha256": str(item.get("mapping_draft_sha256", "")),
+                "mapping_source": str(item.get("mapping_source", "")),
+            }
+            for item in datasets
+        ],
+    }
+
+
 def _launch_pipeline_summary_path(path: str | Path) -> Path | None:
     candidate = Path(path)
     if candidate.is_file():
@@ -2850,6 +2912,14 @@ def _number(row: pd.Series, column: str, fallback: float = np.nan) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _number_from(mapping: dict[str, Any], key: str, fallback: float = np.nan) -> float:
+    value = mapping.get(key, fallback)
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
+        return float(fallback)
+    return float(parsed)
 
 
 def _to_bool(value: object) -> bool:

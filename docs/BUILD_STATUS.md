@@ -329,7 +329,8 @@
   round-trip failed checks, route-enable dispatch round-trip failed checks,
   dispatch route proof, launch-pipeline identity mismatches, dirty
   broker-carried shadow broker proof, or shadow proof-refresh or shadow
-  broker-readiness strategy/market mismatches, and can consume these launch
+  broker-readiness strategy/market mismatches, carries vendor market-data batch
+  config provenance from onboarding comparisons, and can consume these launch
   pipeline roots directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
