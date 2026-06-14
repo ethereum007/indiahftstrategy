@@ -508,6 +508,17 @@ def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
         + "\n",
         encoding="utf-8",
     )
+    (dispatch / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_plan",
+                "inputs": {"route_enable_manifest": {"path": "route.json"}},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     send_summary(
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
@@ -519,6 +530,17 @@ def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
                 route_readiness_provided=route_readiness,
                 route_readiness_ready=route_readiness,
             ),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (send / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_send_packet",
+                "inputs": {"dispatch_manifest": {"path": "dispatch.json"}},
+            },
             indent=2,
         )
         + "\n",
@@ -541,6 +563,17 @@ def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
                 route_readiness_provided=route_readiness,
                 route_readiness_ready=route_readiness,
             ),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (ack / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_ack_reconciliation",
+                "inputs": {"dispatch_manifest": {"path": "dispatch.json"}},
+            },
             indent=2,
         )
         + "\n",
@@ -975,12 +1008,15 @@ def test_write_broker_dispatch_roundtrip_outputs_artifacts_and_catalog_entry(tmp
         "dispatch_summary": "/broker_dispatch_summary.csv",
         "dispatch_orders": "/broker_dispatch_orders.csv",
         "dispatch_config": "/broker_dispatch_config.json",
+        "dispatch_manifest": "/manifest.json",
         "send_summary": "/broker_dispatch_send_summary.csv",
         "send_requests": "/broker_dispatch_send_requests.csv",
         "send_config": "/broker_dispatch_send_config.json",
+        "send_manifest": "/manifest.json",
         "ack_summary": "/broker_dispatch_ack_summary.csv",
         "acknowledgements": "/broker_dispatch_acknowledgements.csv",
         "ack_config": "/broker_dispatch_ack_config.json",
+        "ack_manifest": "/manifest.json",
     }
     for name, suffix in expected_inputs.items():
         assert path_tail(manifest["inputs"][name]["path"]).endswith(suffix)

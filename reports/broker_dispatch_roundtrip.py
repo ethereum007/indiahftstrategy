@@ -102,12 +102,15 @@ def write_broker_dispatch_roundtrip(
     dispatch_summary_path = dispatch / "broker_dispatch_summary.csv"
     dispatch_orders_path = dispatch / "broker_dispatch_orders.csv"
     dispatch_config_path = dispatch / "broker_dispatch_config.json"
+    dispatch_manifest_path = dispatch / "manifest.json"
     send_summary_path = send / "broker_dispatch_send_summary.csv"
     send_requests_path = send / "broker_dispatch_send_requests.csv"
     send_config_path = send / "broker_dispatch_send_config.json"
+    send_manifest_path = send / "manifest.json"
     ack_summary_path = ack / "broker_dispatch_ack_summary.csv"
     acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
     ack_config_path = ack / "broker_dispatch_ack_config.json"
+    ack_manifest_path = ack / "manifest.json"
     report = evaluate_broker_dispatch_roundtrip(
         dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
         dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
@@ -140,12 +143,15 @@ def write_broker_dispatch_roundtrip(
             dispatch_summary=dispatch_summary_path,
             dispatch_orders=dispatch_orders_path,
             dispatch_config=dispatch_config_path,
+            dispatch_manifest=dispatch_manifest_path,
             send_summary=send_summary_path,
             send_requests=send_requests_path,
             send_config=send_config_path,
+            send_manifest=send_manifest_path,
             ack_summary=ack_summary_path,
             acknowledgements=acknowledgements_path,
             ack_config=ack_config_path,
+            ack_manifest=ack_manifest_path,
         ),
     )
     return BrokerDispatchRoundTripReport(report.orders, report.checks, report.summary, report.config, out)

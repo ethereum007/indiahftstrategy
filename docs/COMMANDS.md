@@ -2866,10 +2866,10 @@ configs, one request per dispatch order, and an accepted acknowledgement for eve
 `--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
 keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
-files that formed the proof, and the final summary/config retain the broker
-schema review status/mode, route-readiness proof, and shadow broker-readiness
-proof plus `broker_shadow_broker_readiness` reconciled from the component
-configs.
+files plus component manifests that formed the proof, and the final
+summary/config retain the broker schema review status/mode, route-readiness
+proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`
+reconciled from the component configs.
 
 ## Calibration
 

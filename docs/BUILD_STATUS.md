@@ -436,7 +436,8 @@
   upstream configs, shadow broker-readiness consistency across dispatch, send,
   and acknowledgement configs, broker-readiness shadow broker consistency,
   request-count, submission-disabled, and
-  accepted-ack checks while fingerprinting exact component proof files.
+  accepted-ack checks while fingerprinting exact component proof files and
+  manifests.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
