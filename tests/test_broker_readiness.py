@@ -990,8 +990,11 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
         roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
         index=False,
     )
+    roundtrip_config = dispatch_roundtrip_config()
+    roundtrip_config["shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
+    roundtrip_config["broker_shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
     (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
-        json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
+        json.dumps(roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -1019,7 +1022,20 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert (out_dir / "broker_readiness_items.csv").exists()
     assert (out_dir / "broker_readiness_checks.csv").exists()
     assert (out_dir / "broker_readiness_summary.csv").exists()
+    assert (out_dir / "broker_readiness_config.json").exists()
     assert (out_dir / "manifest.json").exists()
+    config = json.loads((out_dir / "broker_readiness_config.json").read_text(encoding="utf-8"))
+    assert config == report.config
+    assert config["ready"]
+    assert config["adapter"] == "arrow_money"
+    assert config["components"]["dispatch_roundtrip"]["ready"]
+    assert config["resume_gate"]["proof_refresh"]["strategy"] == "surface_mm"
+    assert config["dispatch_roundtrip"]["route_readiness"]["gap_pairs"] == 0
+    assert config["dispatch_roundtrip"]["route_dispatch_roundtrip"]["batch_id"] == "BDP-0"
+    assert config["shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert config["shadow_broker_readiness"]["dispatch_roundtrip"]["scenario_count"] == 1
+    assert config["broker_shadow_broker_readiness"]["provided"]
+    assert config["broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["sessions"] == 2
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert path_tail(manifest["inputs"]["dispatch_roundtrip"]["path"]).endswith(
         "/roundtrip/broker_dispatch_roundtrip_summary.csv"

@@ -494,7 +494,8 @@
   quality, failed-check count, route-enable dispatch round-trip failed-check
   count from the round-trip config, shadow broker-readiness aggregate,
   broker-readiness-carried shadow broker aggregate,
-  acknowledgement quality, and schema review mode into broker readiness,
+  acknowledgement quality, schema review mode, and a structured
+  `broker_readiness_config.json` handoff into broker readiness,
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
   preserving broker-readiness-carried shadow proof separately as
   `broker_shadow_broker_*` fields and cutover preserving them as

@@ -2000,6 +2000,7 @@ Outputs:
 broker_readiness_items.csv
 broker_readiness_checks.csv
 broker_readiness_summary.csv
+broker_readiness_config.json
 manifest.json
 ```
 
