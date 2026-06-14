@@ -193,7 +193,8 @@
   iRage-style CSV exports.
 - Broker readiness now consumes dispatch round-trip route-readiness proof,
   requiring matching strategy/market identity and zero route gaps before
-  Arrow.money/iRage live dry-run handoff.
+  Arrow.money/iRage live dry-run handoff, while retaining any final
+  round-trip vendor market-data batch proof for broker-readiness handoff.
 - Shadow session reports can now require and carry broker-readiness evidence,
   including broker route-readiness and dispatch round-trip proof, into
   session-level go/no-go records.
@@ -508,6 +509,7 @@
   quality, failed-check count, route-enable dispatch round-trip failed-check
   count from the round-trip config, round-trip manifest provenance, shadow
   broker-readiness aggregate, broker-readiness-carried shadow broker aggregate,
+  round-trip vendor market-data batch provenance,
   acknowledgement quality, schema review mode, and a structured
   `broker_readiness_config.json` handoff into broker readiness,
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
@@ -522,7 +524,9 @@
   dispatch preserving that provenance as `route_vendor_market_data_batch_*`
   before the sender packet carries it as `dispatch_vendor_market_data_batch_*`
   and the ack gate carries it as `ack_vendor_market_data_batch_*`, with the
-  final round-trip proof preserving it as `roundtrip_vendor_market_data_batch_*`.
+  final round-trip proof preserving it as `roundtrip_vendor_market_data_batch_*`
+  before broker readiness revalidates and carries it as
+  `dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -535,7 +539,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 690 tests.
+Current passing suite: 692 tests.
 
 ## Next Build Targets
 

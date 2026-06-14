@@ -1992,11 +1992,16 @@ counts, failed-check count, route-enable dispatch round-trip failed-check
 count from the round-trip config when present, the round-trip shadow
 broker-readiness aggregate, the broker-readiness-carried shadow broker
 aggregate, plus the nested route dispatch round-trip proof
-batch and quality counters. `--require-dispatch-roundtrip` fails closed unless the dry-run
+batch and quality counters. If the round-trip config carries
+`roundtrip_vendor_market_data_batch`, broker readiness revalidates the
+adapter/market, dataset, source-file, header-fingerprint, mapping, and
+comparison proof and retains it as `dispatch_roundtrip_vendor_market_data_batch_*`
+summary fields plus `dispatch_roundtrip.vendor_market_data_batch` config.
+`--require-dispatch-roundtrip` fails closed unless the dry-run
 dispatch plan, non-submitting send packet, acknowledgement reconciliation, and
 route proof chain passed as one round-trip proof with zero failed component
 checks, zero carried route-enable dispatch round-trip failed checks, and clean
-shadow broker-readiness proofs when supplied.
+shadow broker-readiness and vendor market-data batch proofs when supplied.
 
 Outputs:
 

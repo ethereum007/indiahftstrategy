@@ -309,6 +309,45 @@ def shadow_broker_config(
     }
 
 
+def vendor_market_data_batch_config():
+    return {
+        "provided": True,
+        "ready": True,
+        "adapter": "arrow_money",
+        "kind": "ticks",
+        "market": "india_nse_index_derivatives",
+        "dataset_count": 2,
+        "ready_datasets": 2,
+        "failed_datasets": 0,
+        "ready_rate": 1.0,
+        "unique_source_files": 2,
+        "unique_header_fingerprints": 1,
+        "mapping_sources": "vendor_intake_draft",
+        "comparison": {
+            "accepted": True,
+            "failed_checks": 0,
+        },
+        "datasets": [
+            {
+                "dataset": "nifty_day1",
+                "ready": True,
+                "source_file_sha256": "a" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "vendor_intake_draft",
+            },
+            {
+                "dataset": "nifty_day2",
+                "ready": True,
+                "source_file_sha256": "d" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "vendor_intake_draft",
+            },
+        ],
+    }
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
@@ -520,6 +559,91 @@ def test_broker_readiness_carries_dispatch_roundtrip_broker_shadow_broker_readin
     assert summary["broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert int(summary["broker_shadow_broker_dispatch_roundtrip_scenario_count"]) == 1
     assert int(summary["broker_shadow_broker_route_dispatch_roundtrip_sessions"]) == 2
+
+
+def test_broker_readiness_carries_dispatch_roundtrip_vendor_market_data_batch():
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert bool(item["dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert item["dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert int(item["dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    summary = report.summary.iloc[0]
+    assert bool(summary["dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary["dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary["dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
+    assert int(summary["dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert int(summary["dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
+    vendor = report.config["dispatch_roundtrip"]["vendor_market_data_batch"]
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+    assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_readiness_blocks_dirty_dispatch_roundtrip_vendor_market_data_batch():
+    vendor = vendor_market_data_batch_config()
+    vendor.update(
+        {
+            "ready": False,
+            "adapter": "irage",
+            "market": "us_options_regular",
+            "dataset_count": 0,
+            "ready_datasets": 0,
+            "failed_datasets": 1,
+            "unique_source_files": 0,
+            "unique_header_fingerprints": 0,
+            "mapping_sources": "",
+            "comparison": {"accepted": False, "failed_checks": 1},
+        }
+    )
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_ready",
+        "dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+        "dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "dispatch_roundtrip_vendor_market_data_batch_dataset_count",
+        "dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
+        "dispatch_roundtrip_vendor_market_data_batch_source_files",
+        "dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
+        "dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
+        "dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
+    } <= failed
 
 
 def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_readiness():
@@ -993,6 +1117,7 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     roundtrip_config = dispatch_roundtrip_config()
     roundtrip_config["shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
     roundtrip_config["broker_shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
+    roundtrip_config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
     (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
         json.dumps(roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
@@ -1047,6 +1172,8 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert config["resume_gate"]["proof_refresh"]["strategy"] == "surface_mm"
     assert config["dispatch_roundtrip"]["route_readiness"]["gap_pairs"] == 0
     assert config["dispatch_roundtrip"]["route_dispatch_roundtrip"]["batch_id"] == "BDP-0"
+    assert config["dispatch_roundtrip"]["vendor_market_data_batch"]["adapter"] == "arrow_money"
+    assert config["dispatch_roundtrip"]["vendor_market_data_batch"]["dataset_count"] == 2
     assert config["shadow_broker_readiness"]["adapter"] == "arrow_money"
     assert config["shadow_broker_readiness"]["dispatch_roundtrip"]["scenario_count"] == 1
     assert config["broker_shadow_broker_readiness"]["provided"]
