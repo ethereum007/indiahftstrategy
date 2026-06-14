@@ -495,6 +495,92 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_shadow_broker_readines
     assert int(summary["shadow_broker_route_readiness_gap_pairs"]) == 2
 
 
+def test_broker_readiness_carries_dispatch_roundtrip_broker_shadow_broker_readiness():
+    config = dispatch_roundtrip_config()
+    config["broker_shadow_broker_readiness"] = shadow_broker_config()
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("normalized", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert bool(item["broker_shadow_broker_readiness_provided"])
+    assert int(item["broker_shadow_broker_readiness_sessions"]) == 2
+    assert item["broker_shadow_broker_adapter"] == "normalized"
+    summary = report.summary.iloc[0]
+    assert bool(summary["broker_shadow_broker_readiness_provided"])
+    assert int(summary["broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert summary["broker_shadow_broker_adapter"] == "normalized"
+    assert summary["broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(summary["broker_shadow_broker_dispatch_roundtrip_scenario_count"]) == 1
+    assert int(summary["broker_shadow_broker_route_dispatch_roundtrip_sessions"]) == 2
+
+
+def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_readiness():
+    config = dispatch_roundtrip_config()
+    config["broker_shadow_broker_readiness"] = shadow_broker_config(
+        ready_sessions=1,
+        adapter="irage",
+        adapter_count=2,
+        route_ready_sessions=1,
+        route_strategy="surface_mm",
+        route_market="us_options_regular",
+        route_gap_pairs=2,
+        dispatch_ready_sessions=1,
+        dispatch_strategy="surface_mm",
+        dispatch_market="us_options_regular",
+        dispatch_scenario_count=2,
+        dispatch_missing_request_acks=1,
+        dispatch_rejected_orders=1,
+        dispatch_unmatched_acks=1,
+        route_dispatch_ready_sessions=1,
+        route_dispatch_strategy="surface_mm",
+        route_dispatch_market="us_options_regular",
+        route_dispatch_scenario_count=2,
+    )
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("normalized", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_shadow_broker_readiness_ready",
+        "broker_shadow_broker_adapter_matches",
+        "broker_shadow_broker_adapter_consistent",
+        "broker_shadow_broker_route_readiness_ready",
+        "broker_shadow_broker_route_readiness_strategy_matches",
+        "broker_shadow_broker_route_readiness_market_matches",
+        "broker_shadow_broker_route_readiness_gap_pairs",
+        "broker_shadow_broker_dispatch_roundtrip_ready",
+        "broker_shadow_broker_dispatch_roundtrip_strategy_matches",
+        "broker_shadow_broker_dispatch_roundtrip_market_matches",
+        "broker_shadow_broker_dispatch_roundtrip_scenario_consistent",
+        "broker_shadow_broker_dispatch_roundtrip_missing_request_acks",
+        "broker_shadow_broker_dispatch_roundtrip_rejected_orders",
+        "broker_shadow_broker_dispatch_roundtrip_unmatched_acks",
+        "broker_shadow_broker_route_dispatch_roundtrip_ready",
+        "broker_shadow_broker_route_dispatch_roundtrip_strategy_matches",
+        "broker_shadow_broker_route_dispatch_roundtrip_market_matches",
+        "broker_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary["broker_shadow_broker_adapter"] == "irage"
+    assert int(summary["broker_shadow_broker_route_readiness_gap_pairs"]) == 2
+
+
 def test_broker_readiness_fails_for_missing_route_dispatch_roundtrip_proof():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("normalized", True),

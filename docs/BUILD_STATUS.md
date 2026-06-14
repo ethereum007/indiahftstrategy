@@ -493,6 +493,7 @@
   while carrying proved dry-run dispatch round-trip identity, route proof
   quality, failed-check count, route-enable dispatch round-trip failed-check
   count from the round-trip config, shadow broker-readiness aggregate,
+  broker-readiness-carried shadow broker aggregate,
   acknowledgement quality, and schema review mode into broker readiness,
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
   preserving broker-readiness-carried shadow proof separately as
@@ -511,7 +512,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 681 tests.
+Current passing suite: 683 tests.
 
 ## Next Build Targets
 

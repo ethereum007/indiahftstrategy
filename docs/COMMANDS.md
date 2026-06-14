@@ -1986,12 +1986,13 @@ dry-run target mode, strategy, market, scenario, dispatch batch, request count,
 accepted acknowledgements, and missing/rejected/unmatched acknowledgement
 counts, failed-check count, route-enable dispatch round-trip failed-check
 count from the round-trip config when present, the round-trip shadow
-broker-readiness aggregate, plus the nested route dispatch round-trip proof
+broker-readiness aggregate, the broker-readiness-carried shadow broker
+aggregate, plus the nested route dispatch round-trip proof
 batch and quality counters. `--require-dispatch-roundtrip` fails closed unless the dry-run
 dispatch plan, non-submitting send packet, acknowledgement reconciliation, and
 route proof chain passed as one round-trip proof with zero failed component
 checks, zero carried route-enable dispatch round-trip failed checks, and clean
-shadow broker-readiness proof when supplied.
+shadow broker-readiness proofs when supplied.
 
 Outputs:
 
