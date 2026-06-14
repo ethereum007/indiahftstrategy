@@ -2033,7 +2033,7 @@ manifest.json
 ## Shadow Session Report
 
 Gate a full paper/shadow loop by combining launch, export, reconciliation, and
-optional runtime-session monitor artifacts:
+optional runtime-session monitor and broker-readiness artifacts:
 
 ```powershell
 python -m hft_cli shadow-session-report `
@@ -2041,8 +2041,10 @@ python -m hft_cli shadow-session-report `
   --export runs\exports\leadlag_shadow_arrow `
   --reconciliation runs\reconciliation\leadlag_shadow_arrow `
   --runtime-session runs\runtime_sessions\leadlag_shadow_latest `
+  --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
   --out runs\sessions\leadlag_shadow_2026_06_10 `
   --require-runtime-session `
+  --require-broker-readiness `
   --min-order-fill-rate 0.8 `
   --max-unmatched-fills 0 `
   --max-mismatched-orders 0 `
@@ -2072,7 +2074,11 @@ strategy/market. Runtime broker resume-gate evidence is also carried as
 `runtime_broker_resume_*` metrics and summary fields; when the runtime session
 requires or provides that gate, the shadow-session report requires a ready
 resume authorization plus matching strategy, market, and resume proof-refresh
-identity.
+identity. When broker-readiness evidence is supplied, the session gate retains
+adapter/schema review state plus the carried broker route-readiness and dispatch
+round-trip proof, and fails closed on broker readiness, adapter, strategy,
+market, scenario, acknowledgement, rejection, or route-gap mismatches. Use
+`--require-broker-readiness` to require that proof for every session record.
 
 ## Shadow Session Comparison
 

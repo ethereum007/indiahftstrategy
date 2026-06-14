@@ -194,6 +194,9 @@
 - Broker readiness now consumes dispatch round-trip route-readiness proof,
   requiring matching strategy/market identity and zero route gaps before
   Arrow.money/iRage live dry-run handoff.
+- Shadow session reports can now require and carry broker-readiness evidence,
+  including broker route-readiness and dispatch round-trip proof, into
+  session-level go/no-go records.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
   and calibration reports.
 - Spread-capture decomposition for paired round-trip fills, plus residual

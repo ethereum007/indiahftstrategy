@@ -111,6 +111,64 @@ def runtime_session_summary(
     )
 
 
+def broker_readiness_summary(
+    ready=True,
+    adapter="arrow_money",
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_gap_pairs=0,
+    dispatch_roundtrip_provided=True,
+    dispatch_roundtrip_ready=True,
+    dispatch_roundtrip_strategy="lead_lag_taker",
+    dispatch_roundtrip_market="india_nse_index_derivatives",
+    dispatch_roundtrip_scenario_key="trigger_ticks=2",
+    dispatch_roundtrip_missing_request_acks=0,
+    dispatch_roundtrip_rejected_orders=0,
+    dispatch_roundtrip_unmatched_acks=0,
+    route_dispatch_roundtrip_provided=True,
+    route_dispatch_roundtrip_ready=True,
+    route_dispatch_roundtrip_strategy="lead_lag_taker",
+    route_dispatch_roundtrip_market="india_nse_index_derivatives",
+    route_dispatch_roundtrip_scenario_key="trigger_ticks=2",
+):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "adapter": adapter,
+                "adapter_schema_status": "reviewed_vendor_schema",
+                "schema_reviewed": True,
+                "schema_review_mode": "native_schema",
+                "route_readiness_required": route_readiness_required,
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "dispatch_roundtrip_provided": dispatch_roundtrip_provided,
+                "dispatch_roundtrip_ready": dispatch_roundtrip_ready,
+                "dispatch_roundtrip_target_mode": "live_dryrun",
+                "dispatch_roundtrip_strategy": dispatch_roundtrip_strategy,
+                "dispatch_roundtrip_market": dispatch_roundtrip_market,
+                "dispatch_roundtrip_scenario_key": dispatch_roundtrip_scenario_key,
+                "dispatch_roundtrip_missing_request_acks": dispatch_roundtrip_missing_request_acks,
+                "dispatch_roundtrip_rejected_orders": dispatch_roundtrip_rejected_orders,
+                "dispatch_roundtrip_unmatched_acks": dispatch_roundtrip_unmatched_acks,
+                "route_dispatch_roundtrip_provided": route_dispatch_roundtrip_provided,
+                "route_dispatch_roundtrip_ready": route_dispatch_roundtrip_ready,
+                "route_dispatch_roundtrip_strategy": route_dispatch_roundtrip_strategy,
+                "route_dispatch_roundtrip_market": route_dispatch_roundtrip_market,
+                "route_dispatch_roundtrip_scenario_key": route_dispatch_roundtrip_scenario_key,
+                "failed_checks": 0 if ready else 1,
+                "recommendation": "broker_integration_ready" if ready else "fix_broker_readiness_gaps",
+            }
+        ]
+    )
+
+
 def checks(passed=True):
     return pd.DataFrame(
         [
@@ -254,6 +312,80 @@ def test_evaluate_shadow_session_carries_runtime_broker_resume_gate_evidence():
     assert summary["runtime_broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
 
 
+def test_evaluate_shadow_session_carries_broker_readiness_route_proof():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(True),
+        broker_readiness_summary=broker_readiness_summary(True),
+        thresholds=ShadowSessionThresholds(require_broker_readiness=True),
+    )
+
+    row = report.metrics.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.accepted
+    assert bool(row["broker_readiness_provided"])
+    assert bool(row["broker_route_readiness_ready"])
+    assert row["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(row["broker_route_readiness_gap_pairs"]) == 0
+    assert bool(summary["broker_dispatch_roundtrip_ready"])
+    assert bool(summary["broker_route_dispatch_roundtrip_ready"])
+    assert summary["broker_schema_review_mode"] == "native_schema"
+
+
+def test_evaluate_shadow_session_blocks_bad_broker_readiness_route_proof():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            route_readiness_ready=False,
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+            route_readiness_gap_pairs=2,
+            dispatch_roundtrip_strategy="surface_mm",
+            dispatch_roundtrip_market="us_options_regular",
+            dispatch_roundtrip_scenario_key="wrong-scenario",
+            dispatch_roundtrip_missing_request_acks=1,
+            dispatch_roundtrip_rejected_orders=1,
+            dispatch_roundtrip_unmatched_acks=1,
+            route_dispatch_roundtrip_ready=False,
+            route_dispatch_roundtrip_strategy="surface_mm",
+            route_dispatch_roundtrip_market="us_options_regular",
+            route_dispatch_roundtrip_scenario_key="wrong-scenario",
+        ),
+        thresholds=ShadowSessionThresholds(require_broker_readiness=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {
+        "broker_route_readiness_ready",
+        "broker_route_readiness_strategy_matches",
+        "broker_route_readiness_market_matches",
+        "broker_route_readiness_gap_pairs",
+        "broker_dispatch_roundtrip_strategy_matches",
+        "broker_dispatch_roundtrip_market_matches",
+        "broker_dispatch_roundtrip_scenario_matches",
+        "broker_dispatch_roundtrip_missing_request_acks",
+        "broker_dispatch_roundtrip_rejected_orders",
+        "broker_dispatch_roundtrip_unmatched_acks",
+        "broker_route_dispatch_roundtrip_ready",
+        "broker_route_dispatch_roundtrip_strategy_matches",
+        "broker_route_dispatch_roundtrip_market_matches",
+        "broker_route_dispatch_roundtrip_scenario_matches",
+    } <= failed
+
+
 def test_evaluate_shadow_session_blocks_bad_runtime_broker_resume_gate_evidence():
     report = evaluate_shadow_session(
         launch_summary=launch_summary(True),
@@ -304,17 +436,23 @@ def test_evaluate_shadow_session_blocks_halted_runtime_guard():
 
 def test_write_shadow_session_report_outputs_metrics_checks_summary_and_manifest(tmp_path):
     launch_dir, export_dir, reconciliation_dir = write_component_dirs(tmp_path, accepted=True)
+    broker_dir = tmp_path / "broker"
     out_dir = tmp_path / "session"
+    broker_dir.mkdir()
+    broker_readiness_summary(True).to_csv(broker_dir / "broker_readiness_summary.csv", index=False)
 
     report = write_shadow_session_report(
         launch_dir=launch_dir,
         export_dir=export_dir,
         reconciliation_dir=reconciliation_dir,
+        broker_readiness_dir=broker_dir,
         output_dir=out_dir,
-        thresholds=ShadowSessionThresholds(min_order_fill_rate=1.0),
+        thresholds=ShadowSessionThresholds(min_order_fill_rate=1.0, require_broker_readiness=True),
     )
 
     assert report.output_dir == out_dir
+    assert report.accepted
+    assert bool(report.summary.iloc[0]["broker_readiness_ready"])
     assert (out_dir / "shadow_session_metrics.csv").exists()
     assert (out_dir / "shadow_session_checks.csv").exists()
     assert (out_dir / "shadow_session_summary.csv").exists()
@@ -345,6 +483,32 @@ def test_unified_cli_shadow_session_requires_runtime_session_when_requested(tmp_
     failed = set(checks_out.loc[~checks_out["passed"].astype(bool), "check"])
     assert code == 2
     assert "runtime_session_provided" in failed
+
+
+def test_unified_cli_shadow_session_requires_broker_readiness_when_requested(tmp_path):
+    launch_dir, export_dir, reconciliation_dir = write_component_dirs(tmp_path, accepted=True)
+    out_dir = tmp_path / "cli_session_missing_broker"
+
+    code = main(
+        [
+            "shadow-session-report",
+            "--launch",
+            str(launch_dir),
+            "--export",
+            str(export_dir),
+            "--reconciliation",
+            str(reconciliation_dir),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks_out = pd.read_csv(out_dir / "shadow_session_checks.csv")
+    failed = set(checks_out.loc[~checks_out["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "broker_readiness_provided" in failed
 
 
 def test_unified_cli_shadow_session_fails_on_component_breach(tmp_path):
