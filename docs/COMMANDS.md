@@ -2798,12 +2798,14 @@ fails closed on unready dispatch plans, missing acknowledgements, rejected
 orders, duplicate acknowledgement rows, missing or mismatched route-readiness
 proof, dirty route round-trip proof for live dry-run dispatches, nonzero
 route-enable dispatch round-trip failed checks read from the dispatch config,
-dispatch rows or acknowledgement rows that carry a stale route proof batch id,
-missing acknowledgement route proof tags, or acknowledgement rows that do not
-belong to the dispatch batch. `--require-route-readiness` is automatic for
-`live_dryrun`; the explicit flag keeps paper/shadow acknowledgement reviews
-equally strict. It carries the dispatch config broker schema review status/mode
-and route-readiness proof into the ack summary/config. The manifest
+dirty send-stage shadow broker-readiness aggregates, dispatch rows or
+acknowledgement rows that carry a stale route proof batch id, missing
+acknowledgement route proof tags, or acknowledgement rows that do not belong to
+the dispatch batch. `--require-route-readiness` is automatic for `live_dryrun`;
+the explicit flag keeps paper/shadow acknowledgement reviews equally strict.
+It carries the dispatch config broker schema review status/mode,
+route-readiness proof, and shadow broker-readiness proof into the ack
+summary/config. The manifest
 fingerprints the exact dispatch summary, dispatch orders, dispatch config, and
 broker acknowledgement log files used in the reconciliation.
 

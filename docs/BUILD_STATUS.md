@@ -415,8 +415,8 @@
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip
   proof, and route-enable failed-check counters from the dispatch config,
-  validates route-readiness identity and acknowledgement-log proof batch
-  continuity, and
+  validates route-readiness identity, send-stage shadow broker-readiness
+  aggregates, and acknowledgement-log proof batch continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch and ack
   log inputs.
