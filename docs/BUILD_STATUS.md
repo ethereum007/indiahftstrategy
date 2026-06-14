@@ -197,6 +197,9 @@
 - Shadow session reports can now require and carry broker-readiness evidence,
   including broker route-readiness and dispatch round-trip proof, into
   session-level go/no-go records.
+- Shadow session comparison now aggregates broker-readiness route proof across
+  accepted sessions and blocks partial, mixed, or dirty broker route/dispatch
+  proof before controlled scale-up.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
   and calibration reports.
 - Spread-capture decomposition for paired round-trip fills, plus residual

@@ -8,6 +8,58 @@ from reports.shadow_comparison import (
 )
 
 
+def broker_session_fields(
+    *,
+    provided=True,
+    ready=True,
+    adapter="arrow_money",
+    route_ready=True,
+    route_strategy="lead_lag_taker",
+    route_market="india_nse_index_derivatives",
+    route_gap_pairs=0,
+    dispatch_ready=True,
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario="trigger_ticks=2",
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
+    route_dispatch_ready=True,
+    route_dispatch_strategy="lead_lag_taker",
+    route_dispatch_market="india_nse_index_derivatives",
+    route_dispatch_scenario="trigger_ticks=2",
+):
+    return {
+        "broker_readiness_provided": provided,
+        "broker_readiness_ready": ready,
+        "broker_readiness_adapter": adapter if provided else "",
+        "broker_schema_status": "reviewed_vendor_schema" if provided else "",
+        "broker_schema_reviewed": provided,
+        "broker_schema_review_mode": "native_schema" if provided else "",
+        "broker_route_readiness_required": provided,
+        "broker_route_readiness_provided": provided,
+        "broker_route_readiness_ready": route_ready if provided else False,
+        "broker_route_readiness_strategy": route_strategy if provided else "",
+        "broker_route_readiness_market": route_market if provided else "",
+        "broker_route_readiness_gap_pairs": route_gap_pairs if provided else 0,
+        "broker_dispatch_roundtrip_provided": provided,
+        "broker_dispatch_roundtrip_ready": dispatch_ready if provided else False,
+        "broker_dispatch_roundtrip_target_mode": "live_dryrun" if provided else "",
+        "broker_dispatch_roundtrip_strategy": dispatch_strategy if provided else "",
+        "broker_dispatch_roundtrip_market": dispatch_market if provided else "",
+        "broker_dispatch_roundtrip_scenario_key": dispatch_scenario if provided else "",
+        "broker_dispatch_roundtrip_missing_request_acks": dispatch_missing_request_acks if provided else 0,
+        "broker_dispatch_roundtrip_rejected_orders": dispatch_rejected_orders if provided else 0,
+        "broker_dispatch_roundtrip_unmatched_acks": dispatch_unmatched_acks if provided else 0,
+        "broker_route_dispatch_roundtrip_provided": provided,
+        "broker_route_dispatch_roundtrip_ready": route_dispatch_ready if provided else False,
+        "broker_route_dispatch_roundtrip_strategy": route_dispatch_strategy if provided else "",
+        "broker_route_dispatch_roundtrip_market": route_dispatch_market if provided else "",
+        "broker_route_dispatch_roundtrip_scenario_key": route_dispatch_scenario if provided else "",
+        "broker_failed_checks": 0 if ready else 1,
+    }
+
+
 def session_rows():
     return pd.DataFrame(
         [
@@ -49,6 +101,7 @@ def session_rows():
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.03,
                 "avg_latency_ns": 100,
+                **broker_session_fields(),
             },
             {
                 "session": "day2",
@@ -88,6 +141,7 @@ def session_rows():
                 "runtime_failed_checks": 0,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 120,
+                **broker_session_fields(),
             },
         ]
     )
@@ -114,8 +168,22 @@ def write_session_dir(
     broker_resume_proof_refresh_ready=True,
     broker_resume_proof_refresh_strategy="lead_lag_taker",
     broker_resume_proof_refresh_market="india_nse_index_derivatives",
+    broker_readiness_provided=True,
+    broker_readiness_ready=True,
+    broker_route_readiness_ready=True,
+    broker_route_readiness_strategy="lead_lag_taker",
+    broker_route_readiness_market="india_nse_index_derivatives",
+    broker_route_readiness_gap_pairs=0,
 ):
     path.mkdir(parents=True, exist_ok=True)
+    broker_fields = broker_session_fields(
+        provided=broker_readiness_provided,
+        ready=broker_readiness_ready,
+        route_ready=broker_route_readiness_ready,
+        route_strategy=broker_route_readiness_strategy,
+        route_market=broker_route_readiness_market,
+        route_gap_pairs=broker_route_readiness_gap_pairs,
+    )
     pd.DataFrame(
         [
             {
@@ -145,6 +213,7 @@ def write_session_dir(
                 "runtime_broker_resume_proof_refresh_ready": broker_resume_proof_refresh_ready,
                 "runtime_broker_resume_proof_refresh_strategy": broker_resume_proof_refresh_strategy,
                 "runtime_broker_resume_proof_refresh_market": broker_resume_proof_refresh_market,
+                **broker_fields,
                 "recommendation": "continue_shadow_or_promote" if accepted else "hold_in_research",
             }
         ]
@@ -184,6 +253,7 @@ def write_session_dir(
                 "runtime_broker_resume_proof_refresh_strategy": broker_resume_proof_refresh_strategy,
                 "runtime_broker_resume_proof_refresh_market": broker_resume_proof_refresh_market,
                 "runtime_failed_checks": 1 if runtime_halted else 0,
+                **broker_fields,
                 "order_fill_rate": fill_rate,
                 "max_adverse_slippage": 0.04,
                 "avg_latency_ns": 100,
@@ -218,6 +288,11 @@ def test_compare_shadow_sessions_accepts_consistent_sessions():
     assert report.summary.iloc[0]["runtime_broker_resume_sessions"] == 2
     assert report.summary.iloc[0]["broker_resume_strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
+    assert report.summary.iloc[0]["broker_readiness_sessions"] == 2
+    assert report.summary.iloc[0]["broker_readiness_ready_sessions"] == 2
+    assert report.summary.iloc[0]["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_dispatch_roundtrip_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_route_dispatch_roundtrip_market"] == "india_nse_index_derivatives"
     assert report.summary.iloc[0]["recommendation"] == "eligible_for_controlled_paper_scaleup"
 
 
@@ -295,6 +370,92 @@ def test_compare_shadow_sessions_blocks_bad_runtime_broker_resume_evidence():
     assert int(report.summary.iloc[0]["broker_resume_proof_refresh_strategy_count"]) == 2
 
 
+def test_compare_shadow_sessions_blocks_partial_broker_readiness_evidence():
+    rows = session_rows()
+    rows.loc[1, list(broker_session_fields(provided=False).keys())] = list(
+        broker_session_fields(provided=False).values()
+    )
+
+    report = compare_shadow_sessions(rows)
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert int(report.summary.iloc[0]["broker_readiness_sessions"]) == 1
+    assert "broker_readiness_present_for_accepted_sessions" in failed
+
+
+def test_compare_shadow_sessions_blocks_bad_broker_readiness_evidence():
+    rows = session_rows()
+    rows.loc[1, list(
+        broker_session_fields(
+            ready=False,
+            adapter="irage",
+            route_ready=False,
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_gap_pairs=2,
+            dispatch_ready=False,
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+            route_dispatch_ready=False,
+            route_dispatch_strategy="surface_mm",
+            route_dispatch_market="us_options_regular",
+            route_dispatch_scenario="wrong-scenario",
+        ).keys()
+    )] = list(
+        broker_session_fields(
+            ready=False,
+            adapter="irage",
+            route_ready=False,
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+            route_gap_pairs=2,
+            dispatch_ready=False,
+            dispatch_strategy="surface_mm",
+            dispatch_market="us_options_regular",
+            dispatch_scenario="wrong-scenario",
+            dispatch_missing_request_acks=1,
+            dispatch_rejected_orders=1,
+            dispatch_unmatched_acks=1,
+            route_dispatch_ready=False,
+            route_dispatch_strategy="surface_mm",
+            route_dispatch_market="us_options_regular",
+            route_dispatch_scenario="wrong-scenario",
+        ).values()
+    )
+
+    report = compare_shadow_sessions(rows)
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert {
+        "broker_readiness_ready",
+        "same_broker_adapter",
+        "broker_route_readiness_ready",
+        "same_broker_route_readiness_strategy",
+        "same_broker_route_readiness_market",
+        "max_broker_route_readiness_gap_pairs",
+        "broker_dispatch_roundtrip_ready",
+        "same_broker_dispatch_roundtrip_strategy",
+        "same_broker_dispatch_roundtrip_market",
+        "same_broker_dispatch_roundtrip_scenario",
+        "max_broker_dispatch_roundtrip_missing_request_acks",
+        "max_broker_dispatch_roundtrip_rejected_orders",
+        "max_broker_dispatch_roundtrip_unmatched_acks",
+        "broker_route_dispatch_roundtrip_ready",
+        "same_broker_route_dispatch_roundtrip_strategy",
+        "same_broker_route_dispatch_roundtrip_market",
+        "same_broker_route_dispatch_roundtrip_scenario",
+    } <= failed
+    assert int(report.summary.iloc[0]["broker_readiness_ready_sessions"]) == 1
+    assert int(report.summary.iloc[0]["broker_adapter_count"]) == 2
+    assert int(report.summary.iloc[0]["max_broker_route_readiness_gap_pairs"]) == 2
+
+
 def test_write_shadow_session_comparison_carries_runtime_proof_refresh_evidence(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
@@ -314,10 +475,13 @@ def test_write_shadow_session_comparison_carries_runtime_proof_refresh_evidence(
     assert report.accepted
     assert "runtime_proof_refresh_strategy" in runs.columns
     assert "runtime_broker_resume_proof_refresh_strategy" in runs.columns
+    assert "broker_route_readiness_strategy" in runs.columns
     assert summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
     assert summary.loc[0, "broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
+    assert summary.loc[0, "broker_route_readiness_strategy"] == "lead_lag_taker"
     assert int(summary.loc[0, "runtime_proof_refresh_sessions"]) == 2
     assert int(summary.loc[0, "runtime_broker_resume_sessions"]) == 2
+    assert int(summary.loc[0, "broker_readiness_sessions"]) == 2
 
 
 def test_write_shadow_session_comparison_outputs_artifacts(tmp_path):

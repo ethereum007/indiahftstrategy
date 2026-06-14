@@ -2117,7 +2117,12 @@ proof-refresh evidence must also have ready, non-mixed proof-refresh identity
 for the same strategy/market across the comparison set. If accepted sessions
 carry runtime broker resume-gate evidence, the comparison also requires ready
 resume authorization, ready resume proof-refresh state, and one consistent
-broker resume strategy/market/proof identity across the comparison set.
+broker resume strategy/market/proof identity across the comparison set. If any
+accepted session carries broker-readiness evidence, all accepted sessions must
+carry ready broker-readiness evidence for one adapter, one broker route-readiness
+strategy/market, and one broker dispatch round-trip strategy/market/scenario
+with zero route gaps, missing request acknowledgements, rejected orders, and
+unmatched acknowledgements.
 
 ## Controlled Scale-Up Plan
 

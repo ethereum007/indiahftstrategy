@@ -54,6 +54,11 @@ def compare_shadow_sessions(
         "mismatched_orders",
         "overfilled_orders",
         "runtime_failed_checks",
+        "broker_route_readiness_gap_pairs",
+        "broker_dispatch_roundtrip_missing_request_acks",
+        "broker_dispatch_roundtrip_rejected_orders",
+        "broker_dispatch_roundtrip_unmatched_acks",
+        "broker_failed_checks",
         "max_adverse_slippage",
     ):
         if column not in runs.columns:
@@ -72,6 +77,16 @@ def compare_shadow_sessions(
         "runtime_broker_resume_gate_provided",
         "runtime_broker_resume_gate_ready",
         "runtime_broker_resume_proof_refresh_ready",
+        "broker_readiness_provided",
+        "broker_readiness_ready",
+        "broker_schema_reviewed",
+        "broker_route_readiness_required",
+        "broker_route_readiness_provided",
+        "broker_route_readiness_ready",
+        "broker_dispatch_roundtrip_provided",
+        "broker_dispatch_roundtrip_ready",
+        "broker_route_dispatch_roundtrip_provided",
+        "broker_route_dispatch_roundtrip_ready",
     ):
         if column not in runs.columns:
             runs[column] = False
@@ -87,6 +102,18 @@ def compare_shadow_sessions(
         "runtime_broker_resume_market",
         "runtime_broker_resume_proof_refresh_strategy",
         "runtime_broker_resume_proof_refresh_market",
+        "broker_readiness_adapter",
+        "broker_schema_status",
+        "broker_schema_review_mode",
+        "broker_route_readiness_strategy",
+        "broker_route_readiness_market",
+        "broker_dispatch_roundtrip_target_mode",
+        "broker_dispatch_roundtrip_strategy",
+        "broker_dispatch_roundtrip_market",
+        "broker_dispatch_roundtrip_scenario_key",
+        "broker_route_dispatch_roundtrip_strategy",
+        "broker_route_dispatch_roundtrip_market",
+        "broker_route_dispatch_roundtrip_scenario_key",
     ):
         if column not in runs.columns:
             runs[column] = ""
@@ -247,6 +274,132 @@ def _read_sessions(session_dirs: list[str | Path], *, labels: list[str] | None) 
                     metrics.get("runtime_broker_resume_proof_refresh_market", ""),
                 )
             ),
+            "broker_readiness_provided": _to_bool(
+                summary.get("broker_readiness_provided", metrics.get("broker_readiness_provided", False))
+            ),
+            "broker_readiness_ready": _to_bool(
+                summary.get("broker_readiness_ready", metrics.get("broker_readiness_ready", False))
+            ),
+            "broker_readiness_adapter": _identity_key(
+                summary.get("broker_readiness_adapter", metrics.get("broker_readiness_adapter", ""))
+            ),
+            "broker_schema_status": str(
+                summary.get("broker_schema_status", metrics.get("broker_schema_status", ""))
+            ),
+            "broker_schema_reviewed": _to_bool(
+                summary.get("broker_schema_reviewed", metrics.get("broker_schema_reviewed", False))
+            ),
+            "broker_schema_review_mode": str(
+                summary.get("broker_schema_review_mode", metrics.get("broker_schema_review_mode", ""))
+            ),
+            "broker_route_readiness_required": _to_bool(
+                summary.get(
+                    "broker_route_readiness_required",
+                    metrics.get("broker_route_readiness_required", False),
+                )
+            ),
+            "broker_route_readiness_provided": _to_bool(
+                summary.get(
+                    "broker_route_readiness_provided",
+                    metrics.get("broker_route_readiness_provided", False),
+                )
+            ),
+            "broker_route_readiness_ready": _to_bool(
+                summary.get("broker_route_readiness_ready", metrics.get("broker_route_readiness_ready", False))
+            ),
+            "broker_route_readiness_strategy": _strategy_key(
+                summary.get(
+                    "broker_route_readiness_strategy",
+                    metrics.get("broker_route_readiness_strategy", ""),
+                )
+            ),
+            "broker_route_readiness_market": _identity_key(
+                summary.get("broker_route_readiness_market", metrics.get("broker_route_readiness_market", ""))
+            ),
+            "broker_route_readiness_gap_pairs": _number(
+                summary,
+                "broker_route_readiness_gap_pairs",
+                fallback=_number(metrics, "broker_route_readiness_gap_pairs", fallback=0.0),
+            ),
+            "broker_dispatch_roundtrip_provided": _to_bool(
+                summary.get(
+                    "broker_dispatch_roundtrip_provided",
+                    metrics.get("broker_dispatch_roundtrip_provided", False),
+                )
+            ),
+            "broker_dispatch_roundtrip_ready": _to_bool(
+                summary.get("broker_dispatch_roundtrip_ready", metrics.get("broker_dispatch_roundtrip_ready", False))
+            ),
+            "broker_dispatch_roundtrip_target_mode": _identity_key(
+                summary.get(
+                    "broker_dispatch_roundtrip_target_mode",
+                    metrics.get("broker_dispatch_roundtrip_target_mode", ""),
+                )
+            ),
+            "broker_dispatch_roundtrip_strategy": _strategy_key(
+                summary.get(
+                    "broker_dispatch_roundtrip_strategy",
+                    metrics.get("broker_dispatch_roundtrip_strategy", ""),
+                )
+            ),
+            "broker_dispatch_roundtrip_market": _identity_key(
+                summary.get(
+                    "broker_dispatch_roundtrip_market",
+                    metrics.get("broker_dispatch_roundtrip_market", ""),
+                )
+            ),
+            "broker_dispatch_roundtrip_scenario_key": str(
+                summary.get(
+                    "broker_dispatch_roundtrip_scenario_key",
+                    metrics.get("broker_dispatch_roundtrip_scenario_key", ""),
+                )
+            ),
+            "broker_dispatch_roundtrip_missing_request_acks": _number(
+                metrics,
+                "broker_dispatch_roundtrip_missing_request_acks",
+                fallback=0.0,
+            ),
+            "broker_dispatch_roundtrip_rejected_orders": _number(
+                metrics,
+                "broker_dispatch_roundtrip_rejected_orders",
+                fallback=0.0,
+            ),
+            "broker_dispatch_roundtrip_unmatched_acks": _number(
+                metrics,
+                "broker_dispatch_roundtrip_unmatched_acks",
+                fallback=0.0,
+            ),
+            "broker_route_dispatch_roundtrip_provided": _to_bool(
+                summary.get(
+                    "broker_route_dispatch_roundtrip_provided",
+                    metrics.get("broker_route_dispatch_roundtrip_provided", False),
+                )
+            ),
+            "broker_route_dispatch_roundtrip_ready": _to_bool(
+                summary.get(
+                    "broker_route_dispatch_roundtrip_ready",
+                    metrics.get("broker_route_dispatch_roundtrip_ready", False),
+                )
+            ),
+            "broker_route_dispatch_roundtrip_strategy": _strategy_key(
+                summary.get(
+                    "broker_route_dispatch_roundtrip_strategy",
+                    metrics.get("broker_route_dispatch_roundtrip_strategy", ""),
+                )
+            ),
+            "broker_route_dispatch_roundtrip_market": _identity_key(
+                summary.get(
+                    "broker_route_dispatch_roundtrip_market",
+                    metrics.get("broker_route_dispatch_roundtrip_market", ""),
+                )
+            ),
+            "broker_route_dispatch_roundtrip_scenario_key": str(
+                summary.get(
+                    "broker_route_dispatch_roundtrip_scenario_key",
+                    metrics.get("broker_route_dispatch_roundtrip_scenario_key", ""),
+                )
+            ),
+            "broker_failed_checks": _number(metrics, "broker_failed_checks", fallback=0.0),
             "runtime_failed_checks": _number(metrics, "runtime_failed_checks", fallback=0.0),
             "max_adverse_slippage": _number(metrics, "max_adverse_slippage"),
             "avg_latency_ns": _number(metrics, "avg_latency_ns"),
@@ -280,6 +433,30 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
         if not runtime_runs.empty
         else pd.DataFrame()
     )
+    accepted_runs = runs.loc[runs["accepted"].astype(bool)] if session_count else pd.DataFrame()
+    broker_readiness_runs = (
+        accepted_runs.loc[accepted_runs["broker_readiness_provided"].astype(bool)]
+        if not accepted_runs.empty
+        else pd.DataFrame()
+    )
+    broker_route_readiness_runs = (
+        broker_readiness_runs.loc[
+            broker_readiness_runs["broker_route_readiness_required"].astype(bool)
+            | broker_readiness_runs["broker_route_readiness_provided"].astype(bool)
+        ]
+        if not broker_readiness_runs.empty
+        else pd.DataFrame()
+    )
+    broker_dispatch_roundtrip_runs = (
+        broker_readiness_runs.loc[broker_readiness_runs["broker_dispatch_roundtrip_provided"].astype(bool)]
+        if not broker_readiness_runs.empty
+        else pd.DataFrame()
+    )
+    broker_route_dispatch_roundtrip_runs = (
+        broker_readiness_runs.loc[broker_readiness_runs["broker_route_dispatch_roundtrip_provided"].astype(bool)]
+        if not broker_readiness_runs.empty
+        else pd.DataFrame()
+    )
     runtime_strategies = _identity_values(runtime_runs, "runtime_strategy", normalizer=_strategy_key)
     runtime_markets = _identity_values(runtime_runs, "runtime_market", normalizer=_identity_key)
     proof_refresh_strategies = _identity_values(
@@ -310,6 +487,47 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
     broker_resume_proof_markets = _identity_values(
         broker_resume_runs,
         "runtime_broker_resume_proof_refresh_market",
+        normalizer=_identity_key,
+    )
+    broker_adapters = _identity_values(broker_readiness_runs, "broker_readiness_adapter", normalizer=_identity_key)
+    broker_route_readiness_strategies = _identity_values(
+        broker_route_readiness_runs,
+        "broker_route_readiness_strategy",
+        normalizer=_strategy_key,
+    )
+    broker_route_readiness_markets = _identity_values(
+        broker_route_readiness_runs,
+        "broker_route_readiness_market",
+        normalizer=_identity_key,
+    )
+    broker_dispatch_strategies = _identity_values(
+        broker_dispatch_roundtrip_runs,
+        "broker_dispatch_roundtrip_strategy",
+        normalizer=_strategy_key,
+    )
+    broker_dispatch_markets = _identity_values(
+        broker_dispatch_roundtrip_runs,
+        "broker_dispatch_roundtrip_market",
+        normalizer=_identity_key,
+    )
+    broker_dispatch_scenarios = _identity_values(
+        broker_dispatch_roundtrip_runs,
+        "broker_dispatch_roundtrip_scenario_key",
+        normalizer=_identity_key,
+    )
+    broker_route_dispatch_strategies = _identity_values(
+        broker_route_dispatch_roundtrip_runs,
+        "broker_route_dispatch_roundtrip_strategy",
+        normalizer=_strategy_key,
+    )
+    broker_route_dispatch_markets = _identity_values(
+        broker_route_dispatch_roundtrip_runs,
+        "broker_route_dispatch_roundtrip_market",
+        normalizer=_identity_key,
+    )
+    broker_route_dispatch_scenarios = _identity_values(
+        broker_route_dispatch_roundtrip_runs,
+        "broker_route_dispatch_roundtrip_scenario_key",
         normalizer=_identity_key,
     )
     fill_rates = pd.to_numeric(runs["order_fill_rate"], errors="coerce")
@@ -435,8 +653,126 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                     broker_resume_runs,
                     "runtime_broker_resume_proof_refresh_market",
                 ),
+                "broker_readiness_sessions": int(len(broker_readiness_runs)),
+                "broker_readiness_ready_sessions": int(broker_readiness_runs["broker_readiness_ready"].sum())
+                if not broker_readiness_runs.empty
+                else 0,
+                "broker_schema_reviewed_sessions": int(broker_readiness_runs["broker_schema_reviewed"].sum())
+                if not broker_readiness_runs.empty
+                else 0,
+                "broker_adapter": next(iter(broker_adapters)) if len(broker_adapters) == 1 else "",
+                "broker_adapter_count": int(len(broker_adapters)),
+                "missing_broker_adapter_sessions": _missing_identity_count(
+                    broker_readiness_runs,
+                    "broker_readiness_adapter",
+                ),
+                "broker_route_readiness_sessions": int(len(broker_route_readiness_runs)),
+                "broker_route_readiness_required_sessions": int(
+                    broker_route_readiness_runs["broker_route_readiness_required"].sum()
+                )
+                if not broker_route_readiness_runs.empty
+                else 0,
+                "broker_route_readiness_provided_sessions": int(
+                    broker_route_readiness_runs["broker_route_readiness_provided"].sum()
+                )
+                if not broker_route_readiness_runs.empty
+                else 0,
+                "broker_route_readiness_ready_sessions": int(
+                    broker_route_readiness_runs["broker_route_readiness_ready"].sum()
+                )
+                if not broker_route_readiness_runs.empty
+                else 0,
+                "broker_route_readiness_strategy": next(iter(broker_route_readiness_strategies))
+                if len(broker_route_readiness_strategies) == 1
+                else "",
+                "broker_route_readiness_strategy_count": int(len(broker_route_readiness_strategies)),
+                "missing_broker_route_readiness_strategy_sessions": _missing_identity_count(
+                    broker_route_readiness_runs,
+                    "broker_route_readiness_strategy",
+                ),
+                "broker_route_readiness_market": next(iter(broker_route_readiness_markets))
+                if len(broker_route_readiness_markets) == 1
+                else "",
+                "broker_route_readiness_market_count": int(len(broker_route_readiness_markets)),
+                "missing_broker_route_readiness_market_sessions": _missing_identity_count(
+                    broker_route_readiness_runs,
+                    "broker_route_readiness_market",
+                ),
+                "max_broker_route_readiness_gap_pairs": _max_numeric(
+                    broker_route_readiness_runs,
+                    "broker_route_readiness_gap_pairs",
+                ),
+                "broker_dispatch_roundtrip_sessions": int(len(broker_dispatch_roundtrip_runs)),
+                "broker_dispatch_roundtrip_ready_sessions": int(
+                    broker_dispatch_roundtrip_runs["broker_dispatch_roundtrip_ready"].sum()
+                )
+                if not broker_dispatch_roundtrip_runs.empty
+                else 0,
+                "broker_dispatch_roundtrip_strategy": next(iter(broker_dispatch_strategies))
+                if len(broker_dispatch_strategies) == 1
+                else "",
+                "broker_dispatch_roundtrip_strategy_count": int(len(broker_dispatch_strategies)),
+                "missing_broker_dispatch_roundtrip_strategy_sessions": _missing_identity_count(
+                    broker_dispatch_roundtrip_runs,
+                    "broker_dispatch_roundtrip_strategy",
+                ),
+                "broker_dispatch_roundtrip_market": next(iter(broker_dispatch_markets))
+                if len(broker_dispatch_markets) == 1
+                else "",
+                "broker_dispatch_roundtrip_market_count": int(len(broker_dispatch_markets)),
+                "missing_broker_dispatch_roundtrip_market_sessions": _missing_identity_count(
+                    broker_dispatch_roundtrip_runs,
+                    "broker_dispatch_roundtrip_market",
+                ),
+                "broker_dispatch_roundtrip_scenario_count": int(len(broker_dispatch_scenarios)),
+                "missing_broker_dispatch_roundtrip_scenario_sessions": _missing_identity_count(
+                    broker_dispatch_roundtrip_runs,
+                    "broker_dispatch_roundtrip_scenario_key",
+                ),
+                "max_broker_dispatch_roundtrip_missing_request_acks": _max_numeric(
+                    broker_dispatch_roundtrip_runs,
+                    "broker_dispatch_roundtrip_missing_request_acks",
+                ),
+                "max_broker_dispatch_roundtrip_rejected_orders": _max_numeric(
+                    broker_dispatch_roundtrip_runs,
+                    "broker_dispatch_roundtrip_rejected_orders",
+                ),
+                "max_broker_dispatch_roundtrip_unmatched_acks": _max_numeric(
+                    broker_dispatch_roundtrip_runs,
+                    "broker_dispatch_roundtrip_unmatched_acks",
+                ),
+                "broker_route_dispatch_roundtrip_sessions": int(len(broker_route_dispatch_roundtrip_runs)),
+                "broker_route_dispatch_roundtrip_ready_sessions": int(
+                    broker_route_dispatch_roundtrip_runs["broker_route_dispatch_roundtrip_ready"].sum()
+                )
+                if not broker_route_dispatch_roundtrip_runs.empty
+                else 0,
+                "broker_route_dispatch_roundtrip_strategy": next(iter(broker_route_dispatch_strategies))
+                if len(broker_route_dispatch_strategies) == 1
+                else "",
+                "broker_route_dispatch_roundtrip_strategy_count": int(len(broker_route_dispatch_strategies)),
+                "missing_broker_route_dispatch_roundtrip_strategy_sessions": _missing_identity_count(
+                    broker_route_dispatch_roundtrip_runs,
+                    "broker_route_dispatch_roundtrip_strategy",
+                ),
+                "broker_route_dispatch_roundtrip_market": next(iter(broker_route_dispatch_markets))
+                if len(broker_route_dispatch_markets) == 1
+                else "",
+                "broker_route_dispatch_roundtrip_market_count": int(len(broker_route_dispatch_markets)),
+                "missing_broker_route_dispatch_roundtrip_market_sessions": _missing_identity_count(
+                    broker_route_dispatch_roundtrip_runs,
+                    "broker_route_dispatch_roundtrip_market",
+                ),
+                "broker_route_dispatch_roundtrip_scenario_count": int(len(broker_route_dispatch_scenarios)),
+                "missing_broker_route_dispatch_roundtrip_scenario_sessions": _missing_identity_count(
+                    broker_route_dispatch_roundtrip_runs,
+                    "broker_route_dispatch_roundtrip_scenario_key",
+                ),
                 "total_runtime_failed_checks": int(
                     pd.to_numeric(runs["runtime_failed_checks"], errors="coerce").sum(skipna=True)
+                ),
+                "total_broker_failed_checks": int(
+                    pd.to_numeric(runs["broker_failed_checks"], errors="coerce").sum(skipna=True)
                 ),
                 "worst_adverse_slippage": float(slippage.max(skipna=True)) if slippage.notna().any() else np.nan,
                 "median_latency_ns": float(pd.to_numeric(runs["avg_latency_ns"], errors="coerce").median(skipna=True))
@@ -627,6 +963,185 @@ def _checks(row: pd.Series, thresholds: ShadowComparisonThresholds) -> pd.DataFr
                 ),
             ]
         )
+    broker_readiness_sessions = int(row["broker_readiness_sessions"])
+    if broker_readiness_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "broker_readiness_present_for_accepted_sessions",
+                    broker_readiness_sessions,
+                    "==",
+                    row["accepted_sessions"],
+                    broker_readiness_sessions == int(row["accepted_sessions"]),
+                    "broker readiness evidence is present for only some accepted sessions",
+                ),
+                _check(
+                    "broker_readiness_ready",
+                    row["broker_readiness_ready_sessions"],
+                    "==",
+                    broker_readiness_sessions,
+                    int(row["broker_readiness_ready_sessions"]) == broker_readiness_sessions,
+                    "accepted broker-readiness evidence is not ready for every session",
+                ),
+                _check(
+                    "same_broker_adapter",
+                    row["broker_adapter_count"],
+                    "==",
+                    1,
+                    int(row["broker_adapter_count"]) == 1
+                    and int(row["missing_broker_adapter_sessions"]) == 0,
+                    "broker adapter identity is missing or mixed across shadow sessions",
+                ),
+            ]
+        )
+    broker_route_readiness_sessions = int(row["broker_route_readiness_sessions"])
+    if broker_route_readiness_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "broker_route_readiness_provided",
+                    row["broker_route_readiness_provided_sessions"],
+                    ">=",
+                    row["broker_route_readiness_required_sessions"],
+                    int(row["broker_route_readiness_provided_sessions"])
+                    >= int(row["broker_route_readiness_required_sessions"]),
+                    "accepted broker readiness requires route-readiness proof but some sessions did not provide it",
+                ),
+                _check(
+                    "broker_route_readiness_ready",
+                    row["broker_route_readiness_ready_sessions"],
+                    "==",
+                    broker_route_readiness_sessions,
+                    int(row["broker_route_readiness_ready_sessions"]) == broker_route_readiness_sessions,
+                    "accepted broker route-readiness proof is not ready for every session",
+                ),
+                _check(
+                    "same_broker_route_readiness_strategy",
+                    row["broker_route_readiness_strategy_count"],
+                    "==",
+                    1,
+                    int(row["broker_route_readiness_strategy_count"]) == 1
+                    and int(row["missing_broker_route_readiness_strategy_sessions"]) == 0,
+                    "broker route-readiness strategy identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_broker_route_readiness_market",
+                    row["broker_route_readiness_market_count"],
+                    "==",
+                    1,
+                    int(row["broker_route_readiness_market_count"]) == 1
+                    and int(row["missing_broker_route_readiness_market_sessions"]) == 0,
+                    "broker route-readiness market identity is missing or mixed across shadow sessions",
+                ),
+                _threshold_check(
+                    "max_broker_route_readiness_gap_pairs",
+                    row["max_broker_route_readiness_gap_pairs"],
+                    "<=",
+                    0,
+                ),
+            ]
+        )
+    broker_dispatch_roundtrip_sessions = int(row["broker_dispatch_roundtrip_sessions"])
+    if broker_dispatch_roundtrip_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "broker_dispatch_roundtrip_ready",
+                    row["broker_dispatch_roundtrip_ready_sessions"],
+                    "==",
+                    broker_dispatch_roundtrip_sessions,
+                    int(row["broker_dispatch_roundtrip_ready_sessions"]) == broker_dispatch_roundtrip_sessions,
+                    "accepted broker dispatch round-trip proof is not ready for every session",
+                ),
+                _check(
+                    "same_broker_dispatch_roundtrip_strategy",
+                    row["broker_dispatch_roundtrip_strategy_count"],
+                    "==",
+                    1,
+                    int(row["broker_dispatch_roundtrip_strategy_count"]) == 1
+                    and int(row["missing_broker_dispatch_roundtrip_strategy_sessions"]) == 0,
+                    "broker dispatch round-trip strategy identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_broker_dispatch_roundtrip_market",
+                    row["broker_dispatch_roundtrip_market_count"],
+                    "==",
+                    1,
+                    int(row["broker_dispatch_roundtrip_market_count"]) == 1
+                    and int(row["missing_broker_dispatch_roundtrip_market_sessions"]) == 0,
+                    "broker dispatch round-trip market identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_broker_dispatch_roundtrip_scenario",
+                    row["broker_dispatch_roundtrip_scenario_count"],
+                    "==",
+                    1,
+                    int(row["broker_dispatch_roundtrip_scenario_count"]) == 1
+                    and int(row["missing_broker_dispatch_roundtrip_scenario_sessions"]) == 0,
+                    "broker dispatch round-trip scenario identity is missing or mixed across shadow sessions",
+                ),
+                _threshold_check(
+                    "max_broker_dispatch_roundtrip_missing_request_acks",
+                    row["max_broker_dispatch_roundtrip_missing_request_acks"],
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "max_broker_dispatch_roundtrip_rejected_orders",
+                    row["max_broker_dispatch_roundtrip_rejected_orders"],
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "max_broker_dispatch_roundtrip_unmatched_acks",
+                    row["max_broker_dispatch_roundtrip_unmatched_acks"],
+                    "<=",
+                    0,
+                ),
+            ]
+        )
+    broker_route_dispatch_roundtrip_sessions = int(row["broker_route_dispatch_roundtrip_sessions"])
+    if broker_route_dispatch_roundtrip_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "broker_route_dispatch_roundtrip_ready",
+                    row["broker_route_dispatch_roundtrip_ready_sessions"],
+                    "==",
+                    broker_route_dispatch_roundtrip_sessions,
+                    int(row["broker_route_dispatch_roundtrip_ready_sessions"])
+                    == broker_route_dispatch_roundtrip_sessions,
+                    "accepted broker route dispatch round-trip proof is not ready for every session",
+                ),
+                _check(
+                    "same_broker_route_dispatch_roundtrip_strategy",
+                    row["broker_route_dispatch_roundtrip_strategy_count"],
+                    "==",
+                    1,
+                    int(row["broker_route_dispatch_roundtrip_strategy_count"]) == 1
+                    and int(row["missing_broker_route_dispatch_roundtrip_strategy_sessions"]) == 0,
+                    "broker route dispatch round-trip strategy identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_broker_route_dispatch_roundtrip_market",
+                    row["broker_route_dispatch_roundtrip_market_count"],
+                    "==",
+                    1,
+                    int(row["broker_route_dispatch_roundtrip_market_count"]) == 1
+                    and int(row["missing_broker_route_dispatch_roundtrip_market_sessions"]) == 0,
+                    "broker route dispatch round-trip market identity is missing or mixed across shadow sessions",
+                ),
+                _check(
+                    "same_broker_route_dispatch_roundtrip_scenario",
+                    row["broker_route_dispatch_roundtrip_scenario_count"],
+                    "==",
+                    1,
+                    int(row["broker_route_dispatch_roundtrip_scenario_count"]) == 1
+                    and int(row["missing_broker_route_dispatch_roundtrip_scenario_sessions"]) == 0,
+                    "broker route dispatch round-trip scenario identity is missing or mixed across shadow sessions",
+                ),
+            ]
+        )
     if thresholds.min_worst_order_fill_rate is not None:
         checks.append(
             _threshold_check("worst_order_fill_rate", row["worst_order_fill_rate"], ">=", thresholds.min_worst_order_fill_rate)
@@ -735,6 +1250,13 @@ def _missing_identity_count(frame: pd.DataFrame, column: str) -> int:
     if column not in frame.columns:
         return int(len(frame))
     return int((frame[column].map(_identity_key) == "").sum())
+
+
+def _max_numeric(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return 0.0
+    values = pd.to_numeric(frame[column], errors="coerce")
+    return float(values.max(skipna=True)) if values.notna().any() else 0.0
 
 
 def _strategy_key(value: object) -> str:
