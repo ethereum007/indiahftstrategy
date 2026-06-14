@@ -446,6 +446,7 @@
   route-enable failed-check counters and broker schema review status/mode from
   upstream configs, shadow broker-readiness consistency across dispatch, send,
   and acknowledgement configs, broker-readiness shadow broker consistency,
+  vendor market-data batch provenance consistency,
   request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files and
   manifests.
@@ -520,7 +521,8 @@
   market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
   dispatch preserving that provenance as `route_vendor_market_data_batch_*`
   before the sender packet carries it as `dispatch_vendor_market_data_batch_*`
-  and the ack gate carries it as `ack_vendor_market_data_batch_*`.
+  and the ack gate carries it as `ack_vendor_market_data_batch_*`, with the
+  final round-trip proof preserving it as `roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -533,7 +535,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 689 tests.
+Current passing suite: 690 tests.
 
 ## Next Build Targets
 

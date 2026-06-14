@@ -485,6 +485,45 @@ def shadow_broker_config(
     }
 
 
+def vendor_market_data_batch_config():
+    return {
+        "provided": True,
+        "ready": True,
+        "adapter": "arrow_money",
+        "kind": "ticks",
+        "market": "india_nse_index_derivatives",
+        "dataset_count": 2,
+        "ready_datasets": 2,
+        "failed_datasets": 0,
+        "ready_rate": 1.0,
+        "unique_source_files": 2,
+        "unique_header_fingerprints": 1,
+        "mapping_sources": "vendor_intake_draft",
+        "comparison": {
+            "accepted": True,
+            "failed_checks": 0,
+        },
+        "datasets": [
+            {
+                "dataset": "nifty_day1",
+                "ready": True,
+                "source_file_sha256": "a" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "vendor_intake_draft",
+            },
+            {
+                "dataset": "nifty_day2",
+                "ready": True,
+                "source_file_sha256": "d" * 64,
+                "source_header_sha256": "b" * 64,
+                "mapping_draft_sha256": "c" * 64,
+                "mapping_source": "vendor_intake_draft",
+            },
+        ],
+    }
+
+
 def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
     dispatch = tmp_path / "dispatch"
     send = tmp_path / "send"
@@ -744,6 +783,45 @@ def test_broker_dispatch_roundtrip_carries_broker_shadow_broker_readiness():
     assert report.config["broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
         "india_nse_index_derivatives"
     )
+
+
+def test_broker_dispatch_roundtrip_carries_vendor_market_data_batch():
+    vendor = vendor_market_data_batch_config()
+    dispatch_config = route_enable_config()
+    dispatch_config["route_vendor_market_data_batch"] = vendor
+    send_config = route_enable_config()
+    send_config["dispatch_vendor_market_data_batch"] = vendor
+    ack_config = route_enable_config()
+    ack_config["ack_vendor_market_data_batch"] = vendor
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=dispatch_config,
+        send_config=send_config,
+        ack_config=ack_config,
+    )
+
+    summary = report.summary.iloc[0]
+    vendor_config = report.config["roundtrip_vendor_market_data_batch"]
+    assert report.passed
+    assert summary["roundtrip_vendor_market_data_batch_provided"]
+    assert summary["roundtrip_vendor_market_data_batch_ready"]
+    assert summary["roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["roundtrip_vendor_market_data_batch_kind"] == "ticks"
+    assert int(summary["roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary["roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert int(summary["roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["roundtrip_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
+    assert vendor_config["provided"]
+    assert vendor_config["ready"]
+    assert vendor_config["comparison"]["accepted"]
+    assert len(vendor_config["datasets"]) == 2
+    assert vendor_config["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
 def test_broker_dispatch_roundtrip_blocks_dirty_broker_shadow_broker_readiness():

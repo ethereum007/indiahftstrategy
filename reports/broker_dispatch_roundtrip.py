@@ -389,7 +389,115 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
             route_broker_shadow,
             field_prefix="route_broker_shadow_broker",
         )
+    vendor_market_data_batch = (
+        config.get("ack_vendor_market_data_batch", {})
+        or config.get("dispatch_vendor_market_data_batch", {})
+        or config.get("route_vendor_market_data_batch", {})
+        or {}
+    )
+    if vendor_market_data_batch:
+        _apply_vendor_market_data_batch_config(state, vendor_market_data_batch)
+    else:
+        _copy_vendor_market_data_batch_fields(state)
     return state
+
+
+def _apply_vendor_market_data_batch_config(state: pd.Series, vendor: dict[str, Any]) -> None:
+    comparison = vendor.get("comparison", {}) or {}
+    state["vendor_market_data_batch_provided"] = _to_bool(
+        vendor.get("provided", state.get("vendor_market_data_batch_provided", False))
+    )
+    state["vendor_market_data_batch_ready"] = _to_bool(
+        vendor.get("ready", state.get("vendor_market_data_batch_ready", False))
+    )
+    state["vendor_market_data_batch_adapter"] = _object_text(
+        vendor.get("adapter", state.get("vendor_market_data_batch_adapter", ""))
+    )
+    state["vendor_market_data_batch_kind"] = _object_text(
+        vendor.get("kind", state.get("vendor_market_data_batch_kind", ""))
+    )
+    state["vendor_market_data_batch_market"] = _object_text(
+        vendor.get("market", state.get("vendor_market_data_batch_market", ""))
+    )
+    state["vendor_market_data_batch_dataset_count"] = int(
+        _number_value(vendor.get("dataset_count"), _number(state, "vendor_market_data_batch_dataset_count", 0.0))
+    )
+    state["vendor_market_data_batch_ready_datasets"] = int(
+        _number_value(vendor.get("ready_datasets"), _number(state, "vendor_market_data_batch_ready_datasets", 0.0))
+    )
+    state["vendor_market_data_batch_failed_datasets"] = int(
+        _number_value(vendor.get("failed_datasets"), _number(state, "vendor_market_data_batch_failed_datasets", 0.0))
+    )
+    state["vendor_market_data_batch_ready_rate"] = _number_value(
+        vendor.get("ready_rate"),
+        _number(state, "vendor_market_data_batch_ready_rate", 0.0),
+    )
+    state["vendor_market_data_batch_unique_source_files"] = int(
+        _number_value(
+            vendor.get("unique_source_files"),
+            _number(state, "vendor_market_data_batch_unique_source_files", 0.0),
+        )
+    )
+    state["vendor_market_data_batch_unique_header_fingerprints"] = int(
+        _number_value(
+            vendor.get("unique_header_fingerprints"),
+            _number(state, "vendor_market_data_batch_unique_header_fingerprints", 0.0),
+        )
+    )
+    state["vendor_market_data_batch_mapping_sources"] = _object_text(
+        vendor.get("mapping_sources", state.get("vendor_market_data_batch_mapping_sources", ""))
+    )
+    state["vendor_market_data_batch_comparison_accepted"] = _to_bool(
+        comparison.get("accepted", state.get("vendor_market_data_batch_comparison_accepted", False))
+    )
+    state["vendor_market_data_batch_comparison_failed_checks"] = int(
+        _number_value(
+            comparison.get("failed_checks"),
+            _number(state, "vendor_market_data_batch_comparison_failed_checks", 0.0),
+        )
+    )
+    datasets = vendor.get("datasets")
+    state["vendor_market_data_batch_datasets_json"] = (
+        json.dumps(_vendor_market_data_batch_datasets(datasets), sort_keys=True)
+        if isinstance(datasets, list)
+        else _text(state, "vendor_market_data_batch_datasets_json")
+    )
+
+
+def _copy_vendor_market_data_batch_fields(state: pd.Series) -> None:
+    source_prefix = next(
+        (
+            prefix
+            for prefix in (
+                "ack_vendor_market_data_batch",
+                "dispatch_vendor_market_data_batch",
+                "route_vendor_market_data_batch",
+            )
+            if _to_bool(state.get(f"{prefix}_provided", False))
+            or int(_number(state, f"{prefix}_dataset_count", 0.0)) > 0
+        ),
+        "",
+    )
+    for suffix in (
+        "provided",
+        "ready",
+        "adapter",
+        "kind",
+        "market",
+        "dataset_count",
+        "ready_datasets",
+        "failed_datasets",
+        "ready_rate",
+        "unique_source_files",
+        "unique_header_fingerprints",
+        "mapping_sources",
+        "comparison_accepted",
+        "comparison_failed_checks",
+        "datasets_json",
+    ):
+        state[f"vendor_market_data_batch_{suffix}"] = (
+            state.get(f"{source_prefix}_{suffix}", "") if source_prefix else ""
+        )
 
 
 def _apply_shadow_broker_readiness_config(
@@ -697,6 +805,20 @@ def _checks(
                 checks,
                 pd.DataFrame(
                     _route_broker_shadow_broker_readiness_checks(
+                        dispatch_summary,
+                        send_summary,
+                        ack_summary,
+                    )
+                ),
+            ],
+            ignore_index=True,
+        )
+    if _vendor_market_data_batch_active(dispatch_summary, send_summary, ack_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(
+                    _vendor_market_data_batch_checks(
                         dispatch_summary,
                         send_summary,
                         ack_summary,
@@ -1062,6 +1184,93 @@ def _route_broker_shadow_broker_readiness_checks(*rows: pd.Series) -> list[dict[
     return checks
 
 
+def _vendor_market_data_batch_active(*rows: pd.Series) -> bool:
+    return bool(
+        any(_to_bool(row.get("vendor_market_data_batch_provided", False)) for row in rows)
+        or any(int(_number(row, "vendor_market_data_batch_dataset_count", 0.0)) > 0 for row in rows)
+    )
+
+
+def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]]:
+    provided = bool(
+        rows
+        and all(
+            _to_bool(row.get("vendor_market_data_batch_provided", False))
+            and int(_number(row, "vendor_market_data_batch_dataset_count", 0.0)) > 0
+            for row in rows
+        )
+    )
+    ready = bool(rows and all(_to_bool(row.get("vendor_market_data_batch_ready", False)) for row in rows))
+    identity_mismatches = _vendor_market_data_batch_identity_mismatches(rows)
+    counts_consistent = _vendor_market_data_batch_counts_consistent(rows)
+    failed_datasets = _vendor_market_data_batch_counter_max(rows, "vendor_market_data_batch_failed_datasets")
+    comparison_failed = _vendor_market_data_batch_counter_max(
+        rows,
+        "vendor_market_data_batch_comparison_failed_checks",
+    )
+    comparison_accepted = bool(
+        rows and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
+    )
+    return [
+        _check(
+            "vendor_market_data_batch_provided",
+            provided,
+            "is",
+            True,
+            provided,
+            "vendor market-data batch proof is not provided by every component",
+        ),
+        _check(
+            "vendor_market_data_batch_ready",
+            ready,
+            "is",
+            True,
+            ready,
+            "vendor market-data batch proof is not ready in every component",
+        ),
+        _check(
+            "vendor_market_data_batch_identity_match",
+            identity_mismatches,
+            "==",
+            0,
+            identity_mismatches == 0,
+            "vendor market-data batch adapter/market identity is inconsistent",
+        ),
+        _check(
+            "vendor_market_data_batch_dataset_count_consistent",
+            counts_consistent,
+            "is",
+            True,
+            counts_consistent,
+            "vendor market-data batch dataset counts differ across components",
+        ),
+        _check(
+            "vendor_market_data_batch_failed_datasets",
+            failed_datasets,
+            "==",
+            0,
+            failed_datasets == 0,
+            "vendor market-data batch still has failed datasets",
+        ),
+        _check(
+            "vendor_market_data_batch_comparison_accepted",
+            comparison_accepted,
+            "is",
+            True,
+            comparison_accepted,
+            "vendor market-data batch comparison is not accepted by every component",
+        ),
+        _check(
+            "vendor_market_data_batch_comparison_failed_checks",
+            comparison_failed,
+            "==",
+            0,
+            comparison_failed == 0,
+            "vendor market-data batch comparison has failed checks",
+        ),
+    ]
+
+
 def _shadow_broker_projection(row: pd.Series, *, source_prefix: str) -> pd.Series:
     mapped = row.copy()
     for suffix in (
@@ -1354,6 +1563,7 @@ def _summary(
                     source_prefix="route_broker_shadow_broker",
                     output_prefix="broker_shadow_broker",
                 ),
+                **_vendor_market_data_batch_summary_fields(proof_rows),
                 "route_dispatch_roundtrip_required": _dispatch_roundtrip_required(dispatch_summary, thresholds),
                 "route_dispatch_roundtrip_provided": _route_roundtrip_provided(*proof_rows),
                 "route_dispatch_roundtrip_ready": all(
@@ -1409,6 +1619,57 @@ def _summary(
     )
 
 
+def _vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...]) -> dict[str, object]:
+    return {
+        "roundtrip_vendor_market_data_batch_provided": bool(
+            rows and all(_to_bool(row.get("vendor_market_data_batch_provided", False)) for row in rows)
+        ),
+        "roundtrip_vendor_market_data_batch_ready": bool(
+            rows and all(_to_bool(row.get("vendor_market_data_batch_ready", False)) for row in rows)
+        ),
+        "roundtrip_vendor_market_data_batch_adapter": _vendor_market_data_batch_identity_value(rows, "adapter"),
+        "roundtrip_vendor_market_data_batch_kind": _vendor_market_data_batch_text_value(rows, "kind"),
+        "roundtrip_vendor_market_data_batch_market": _vendor_market_data_batch_identity_value(rows, "market"),
+        "roundtrip_vendor_market_data_batch_dataset_count": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_dataset_count",
+        ),
+        "roundtrip_vendor_market_data_batch_ready_datasets": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_ready_datasets",
+        ),
+        "roundtrip_vendor_market_data_batch_failed_datasets": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_failed_datasets",
+        ),
+        "roundtrip_vendor_market_data_batch_ready_rate": _vendor_market_data_batch_number_min(
+            rows,
+            "vendor_market_data_batch_ready_rate",
+        ),
+        "roundtrip_vendor_market_data_batch_unique_source_files": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_unique_source_files",
+        ),
+        "roundtrip_vendor_market_data_batch_unique_header_fingerprints": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_unique_header_fingerprints",
+        ),
+        "roundtrip_vendor_market_data_batch_mapping_sources": _vendor_market_data_batch_text_value(
+            rows,
+            "mapping_sources",
+        ),
+        "roundtrip_vendor_market_data_batch_comparison_accepted": bool(
+            rows
+            and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
+        ),
+        "roundtrip_vendor_market_data_batch_comparison_failed_checks": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_comparison_failed_checks",
+        ),
+        "roundtrip_vendor_market_data_batch_datasets_json": _vendor_market_data_batch_datasets_json(rows),
+    }
+
+
 def _prefixed_shadow_broker_config(summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
     return {
         "provided": _to_bool(summary[f"{field_prefix}_readiness_provided"]),
@@ -1440,6 +1701,30 @@ def _prefixed_shadow_broker_config(summary: pd.Series, *, field_prefix: str) -> 
             "market": _text(summary, f"{field_prefix}_route_dispatch_roundtrip_market"),
             "scenario_count": int(summary[f"{field_prefix}_route_dispatch_roundtrip_scenario_count"]),
         },
+    }
+
+
+def _vendor_market_data_batch_config(summary: pd.Series) -> dict[str, object]:
+    return {
+        "provided": _to_bool(summary["roundtrip_vendor_market_data_batch_provided"]),
+        "ready": _to_bool(summary["roundtrip_vendor_market_data_batch_ready"]),
+        "adapter": _text(summary, "roundtrip_vendor_market_data_batch_adapter"),
+        "kind": _text(summary, "roundtrip_vendor_market_data_batch_kind"),
+        "market": _text(summary, "roundtrip_vendor_market_data_batch_market"),
+        "dataset_count": int(summary["roundtrip_vendor_market_data_batch_dataset_count"]),
+        "ready_datasets": int(summary["roundtrip_vendor_market_data_batch_ready_datasets"]),
+        "failed_datasets": int(summary["roundtrip_vendor_market_data_batch_failed_datasets"]),
+        "ready_rate": _jsonable(summary["roundtrip_vendor_market_data_batch_ready_rate"]),
+        "unique_source_files": int(summary["roundtrip_vendor_market_data_batch_unique_source_files"]),
+        "unique_header_fingerprints": int(
+            summary["roundtrip_vendor_market_data_batch_unique_header_fingerprints"]
+        ),
+        "mapping_sources": _text(summary, "roundtrip_vendor_market_data_batch_mapping_sources"),
+        "comparison": {
+            "accepted": _to_bool(summary["roundtrip_vendor_market_data_batch_comparison_accepted"]),
+            "failed_checks": int(summary["roundtrip_vendor_market_data_batch_comparison_failed_checks"]),
+        },
+        "datasets": _json_list(summary["roundtrip_vendor_market_data_batch_datasets_json"]),
     }
 
 
@@ -1516,6 +1801,7 @@ def _config(
             summary,
             field_prefix="broker_shadow_broker",
         ),
+        "roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(summary),
         "route_dispatch_roundtrip": {
             "required": _to_bool(summary["route_dispatch_roundtrip_required"]),
             "provided": _to_bool(summary["route_dispatch_roundtrip_provided"]),
@@ -1717,6 +2003,62 @@ def _prefixed_shadow_broker_readiness_provided(rows: tuple[pd.Series, ...], *, s
 
 def _shadow_counter_max(rows: tuple[pd.Series, ...], column: str) -> int:
     return max(int(_number(row, column, 0.0)) for row in rows) if rows else 0
+
+
+def _vendor_market_data_batch_counter_max(rows: tuple[pd.Series, ...], column: str) -> int:
+    return max(int(_number(row, column, 0.0)) for row in rows) if rows else 0
+
+
+def _vendor_market_data_batch_number_min(rows: tuple[pd.Series, ...], column: str) -> float:
+    values = [float(_number(row, column, 0.0)) for row in rows]
+    return min(values) if values else 0.0
+
+
+def _vendor_market_data_batch_identity_mismatches(rows: tuple[pd.Series, ...]) -> int:
+    mismatches = 0
+    for column in ("adapter", "market"):
+        component_values = {
+            _identity_value(row, column)
+            for row in rows
+            if not row.empty and _identity_value(row, column)
+        }
+        proof_values = {
+            _identity_key(row.get(f"vendor_market_data_batch_{column}", ""))
+            for row in rows
+            if not row.empty and _identity_key(row.get(f"vendor_market_data_batch_{column}", ""))
+        }
+        if len(component_values | proof_values) > 1:
+            mismatches += 1
+    return mismatches
+
+
+def _vendor_market_data_batch_counts_consistent(rows: tuple[pd.Series, ...]) -> bool:
+    counts = {
+        int(_number(row, "vendor_market_data_batch_dataset_count", 0.0))
+        for row in rows
+        if not row.empty and int(_number(row, "vendor_market_data_batch_dataset_count", 0.0)) > 0
+    }
+    return bool(counts and len(counts) == 1)
+
+
+def _vendor_market_data_batch_text_value(rows: tuple[pd.Series, ...], column: str) -> str:
+    for row in rows:
+        value = _text(row, f"vendor_market_data_batch_{column}")
+        if value:
+            return value
+    return ""
+
+
+def _vendor_market_data_batch_identity_value(rows: tuple[pd.Series, ...], column: str) -> str:
+    return _identity_key(_vendor_market_data_batch_text_value(rows, column))
+
+
+def _vendor_market_data_batch_datasets_json(rows: tuple[pd.Series, ...]) -> str:
+    for row in rows:
+        value = _text(row, "vendor_market_data_batch_datasets_json")
+        if value:
+            return value
+    return ""
 
 
 def _shadow_adapter_matches(rows: tuple[pd.Series, ...]) -> bool:
@@ -1948,6 +2290,52 @@ def _to_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "passed", "ready", "accepted"}
     return bool(value)
+
+
+def _jsonable(value: object) -> object:
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+def _vendor_market_data_batch_datasets(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, list):
+        return []
+    rows: list[dict[str, object]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        rows.append(
+            {
+                "dataset": _object_text(item.get("dataset", "")),
+                "ready": _to_bool(item.get("ready", False)),
+                "source_file_sha256": _object_text(item.get("source_file_sha256", "")),
+                "source_header_sha256": _object_text(item.get("source_header_sha256", "")),
+                "mapping_draft_sha256": _object_text(item.get("mapping_draft_sha256", "")),
+                "mapping_source": _object_text(item.get("mapping_source", "")),
+            }
+        )
+    return rows
+
+
+def _json_list(value: object) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _check(
