@@ -212,7 +212,9 @@
   instrument metadata before strategy research or promotion.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
-  multi-day readiness comparison before walk-forward research.
+  multi-day readiness comparison before walk-forward research, carrying raw
+  source, header, mapping, component-manifest, and comparison fingerprints for
+  repeatable vendor data proof.
 - Multi-dataset data-readiness comparison gate that requires repeated clean
   market-data days before walk-forward research or strategy evidence review.
 - Market profile layer for India NSE index derivatives and US regular-hours
@@ -481,7 +483,8 @@
   fails closed on unmapped required vendor fields.
 - Vendor CSV intake report that profiles unknown Arrow.money/iRage samples,
   infers tick/chain/order/fill shape, scores normalized mapping coverage, and
-  emits a reviewed-mapping draft for market-data normalization.
+  emits a reviewed-mapping draft plus source/header/mapping fingerprints for
+  market-data normalization.
 - Broker integration readiness report that combines schema audit, broker order
   export, mapping draft, mapped orders, upload pack, optional halt export, and
   optional reconciliation/runtime-session/resume-gate/dispatch-roundtrip

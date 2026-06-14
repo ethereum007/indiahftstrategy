@@ -1845,6 +1845,7 @@ Outputs:
 vendor_intake_columns.csv
 vendor_intake_kind_scores.csv
 vendor_intake_mapping_candidates.csv
+vendor_intake_source_profile.json
 vendor_mapping_draft.csv
 vendor_intake_summary.csv
 manifest.json
@@ -1852,7 +1853,9 @@ manifest.json
 
 The generated `vendor_mapping_draft.csv` uses `normalized_column`,
 `source_column`, `default_value`, `required`, and `transform` columns so it can
-be reviewed and then passed to `normalize-mapped-data`.
+be reviewed and then passed to `normalize-mapped-data`. The source profile and
+manifest retain file, header, and mapping-draft SHA-256 fingerprints so a later
+Arrow.money/iRage sample can be matched exactly to the reviewed mapping.
 
 ## Vendor Order Mapping Draft
 
@@ -3093,6 +3096,12 @@ vendor_market_data_pipeline_summary.csv
 manifest.json
 ```
 
+The pipeline summary carries the raw source file hash, header hash, mapping
+hash, mapping source, and component manifest paths. The root manifest
+fingerprints the intake, mapped-data, and data-readiness manifests, so reruns
+can prove whether a changed Arrow.money/iRage file, header, or mapping is the
+reason readiness changed.
+
 For multi-day onboarding, run each raw file through the same pipeline and
 compare data-readiness evidence before walk-forward research:
 
@@ -3120,6 +3129,10 @@ vendor_market_data_batch_datasets.csv
 vendor_market_data_batch_summary.csv
 manifest.json
 ```
+
+The batch summary adds `unique_source_files`, `unique_header_fingerprints`, and
+`mapping_sources`; the batch manifest fingerprints each dataset pipeline
+manifest plus the comparison manifest.
 
 ## Order Staging
 

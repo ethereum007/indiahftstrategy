@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -9,7 +11,7 @@ import pandas as pd
 
 from adapters.broker import adapter_schema_status, get_adapter
 from adapters.schema_audit import SCHEMA_KIND_ATTRS
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 
 
 AUTO_KINDS = ("ticks", "chain", "orders", "fills")
@@ -31,6 +33,7 @@ class VendorCsvIntakeReport:
     mapping_candidates: pd.DataFrame
     mapping_draft: pd.DataFrame
     summary: pd.DataFrame
+    source_profile: dict[str, Any] | None = None
     output_dir: Path | None = None
 
     @property
@@ -53,6 +56,7 @@ def profile_vendor_csv(
         raise ValueError("vendor CSV sample has no columns")
 
     columns = _column_profiles(sample, source_columns)
+    source_profile = _source_profile(sample, source_columns, sample_path)
     kinds = _candidate_kinds(config.kind)
     candidates = pd.concat(
         [_mapping_candidates(source_columns, kind, config.adapter) for kind in kinds],
@@ -67,6 +71,7 @@ def profile_vendor_csv(
         mapping_draft=mapping_draft,
         sample=sample,
         source_path=str(sample_path or ""),
+        source_profile=source_profile,
         config=config,
     )
     return VendorCsvIntakeReport(
@@ -75,6 +80,7 @@ def profile_vendor_csv(
         mapping_candidates=candidates,
         mapping_draft=mapping_draft,
         summary=summary,
+        source_profile=source_profile,
     )
 
 
@@ -94,23 +100,34 @@ def write_vendor_csv_intake_report(
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
+    mapping_path = out / config.output_mapping_file
+    source_profile_path = out / "vendor_intake_source_profile.json"
     report.columns.to_csv(out / "vendor_intake_columns.csv", index=False)
     report.kind_scores.to_csv(out / "vendor_intake_kind_scores.csv", index=False)
     report.mapping_candidates.to_csv(out / "vendor_intake_mapping_candidates.csv", index=False)
-    report.mapping_draft.to_csv(out / config.output_mapping_file, index=False)
-    report.summary.to_csv(out / "vendor_intake_summary.csv", index=False)
+    report.mapping_draft.to_csv(mapping_path, index=False)
+    source_profile = _with_mapping_profile(report.source_profile or {}, mapping_path)
+    summary = report.summary.copy()
+    summary["mapping_draft_sha256"] = str(source_profile.get("mapping_draft_sha256", ""))
+    summary.to_csv(out / "vendor_intake_summary.csv", index=False)
+    source_profile_path.write_text(
+        json.dumps(source_profile, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="vendor_csv_intake",
         parameters={"config": asdict(config)},
         inputs={"sample": sample_file},
+        extra={"source_profile": source_profile},
     )
     return VendorCsvIntakeReport(
         columns=report.columns,
         kind_scores=report.kind_scores,
         mapping_candidates=report.mapping_candidates,
         mapping_draft=report.mapping_draft,
-        summary=report.summary,
+        summary=summary,
+        source_profile=source_profile,
         output_dir=out,
     )
 
@@ -222,6 +239,7 @@ def _summary(
     mapping_draft: pd.DataFrame,
     sample: pd.DataFrame,
     source_path: str,
+    source_profile: dict[str, Any],
     config: VendorCsvIntakeConfig,
 ) -> pd.DataFrame:
     best = kind_scores.iloc[0]
@@ -236,6 +254,9 @@ def _summary(
                 "requested_kind": config.kind,
                 "best_kind": str(best["kind"]),
                 "source_path": source_path,
+                "source_file_sha256": str(source_profile.get("file_sha256", "")),
+                "source_file_size_bytes": int(source_profile.get("file_size_bytes", 0) or 0),
+                "source_header_sha256": str(source_profile.get("header_sha256", "")),
                 "sampled_rows": int(len(sample)),
                 "source_columns": int(len(columns)),
                 "required_columns": int(best["required_columns"]),
@@ -244,6 +265,7 @@ def _summary(
                 "mapping_coverage": float(best["mapping_coverage"]),
                 "min_mapping_coverage": float(config.min_mapping_coverage),
                 "output_mapping_file": config.output_mapping_file,
+                "mapping_draft_sha256": "",
                 "recommendation": "review_mapping_then_normalize" if ready else "complete_vendor_mapping_before_research",
                 "unmapped_normalized_columns": ";".join(
                     mapping_draft.loc[
@@ -254,6 +276,38 @@ def _summary(
             }
         ]
     )
+
+
+def _source_profile(
+    sample: pd.DataFrame,
+    source_columns: list[str],
+    sample_path: str | Path | None,
+) -> dict[str, Any]:
+    profile: dict[str, Any] = {
+        "source_path": str(sample_path or ""),
+        "sampled_rows": int(len(sample)),
+        "source_columns": int(len(source_columns)),
+        "header_columns": list(source_columns),
+        "header_sha256": _header_sha256(source_columns),
+    }
+    if sample_path is not None:
+        path = Path(sample_path)
+        if path.exists() and path.is_file():
+            profile["file_size_bytes"] = int(path.stat().st_size)
+            profile["file_sha256"] = file_sha256(path)
+    return profile
+
+
+def _with_mapping_profile(source_profile: dict[str, Any], mapping_path: Path) -> dict[str, Any]:
+    profile = dict(source_profile)
+    profile["mapping_draft_path"] = str(mapping_path)
+    profile["mapping_draft_sha256"] = file_sha256(mapping_path)
+    return profile
+
+
+def _header_sha256(source_columns: list[str]) -> str:
+    payload = json.dumps(source_columns, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _candidate_kinds(kind: str) -> list[str]:

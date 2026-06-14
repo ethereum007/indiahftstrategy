@@ -104,6 +104,7 @@ def write_vendor_market_data_pipeline(
             output_mapping_file="vendor_mapping_draft.csv",
         ),
     )
+    mapping_source = "provided" if mapping_path is not None else "vendor_intake_draft"
     mapping_file = Path(mapping_path) if mapping_path is not None else intake_dir / "vendor_mapping_draft.csv"
     mapped = write_mapped_data_normalization(
         source_file,
@@ -131,21 +132,43 @@ def write_vendor_market_data_pipeline(
         thresholds=thresholds,
     )
     components = _components(intake, mapped, diagnostics, readiness)
-    summary = _summary(source_file, mapping_file, components, intake, mapped, diagnostics, readiness, config)
+    summary = _summary(
+        source_file,
+        mapping_file,
+        components,
+        intake,
+        mapped,
+        diagnostics,
+        readiness,
+        config,
+        mapping_source=mapping_source,
+        intake_dir=intake_dir,
+        mapped_dir=mapped_dir,
+        readiness_dir=readiness_dir,
+    )
     components.to_csv(out / "vendor_market_data_pipeline_components.csv", index=False)
     summary.to_csv(out / "vendor_market_data_pipeline_summary.csv", index=False)
+    inputs: dict[str, Any] = {
+        "input": source_file,
+        "mapping": mapping_file,
+    }
+    inputs.update(
+        _existing_paths(
+            vendor_intake_manifest=intake_dir / "manifest.json",
+            vendor_intake_source_profile=intake_dir / "vendor_intake_source_profile.json",
+            mapped_data_manifest=mapped_dir / "manifest.json",
+            data_readiness_manifest=readiness_dir / "manifest.json",
+        )
+    )
     write_experiment_manifest(
         out,
         run_type="vendor_market_data_pipeline",
         parameters={
             "config": asdict(config),
             "readiness_thresholds": asdict(thresholds),
-            "mapping_source": "provided" if mapping_path is not None else "vendor_intake_draft",
+            "mapping_source": mapping_source,
         },
-        inputs={
-            "input": source_file,
-            "mapping": mapping_file,
-        },
+        inputs=inputs,
     )
     return VendorMarketDataPipelineReport(components, summary, intake, mapped, diagnostics, readiness, out)
 
@@ -174,6 +197,7 @@ def write_vendor_market_data_batch_pipeline(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     dataset_rows = []
+    dataset_manifest_paths = []
     readiness_dirs = []
     comparison_labels = []
     for idx, path in enumerate(paths):
@@ -189,6 +213,9 @@ def write_vendor_market_data_batch_pipeline(
         readiness_dir = dataset_dir / "04_data_readiness"
         readiness_dirs.append(readiness_dir)
         comparison_labels.append(label)
+        dataset_manifest_path = dataset_dir / "manifest.json"
+        if dataset_manifest_path.exists():
+            dataset_manifest_paths.append(dataset_manifest_path)
         row = report.summary.iloc[0] if not report.summary.empty else pd.Series(dtype=object)
         dataset_rows.append(
             {
@@ -199,6 +226,11 @@ def write_vendor_market_data_batch_pipeline(
                 "ready": bool(report.ready),
                 "normalized_rows": int(_number(row, "normalized_rows", fallback=0.0)),
                 "failed_components": int(_number(row, "failed_components", fallback=1.0)),
+                "source_file_sha256": _text(row, "source_file_sha256"),
+                "source_header_sha256": _text(row, "source_header_sha256"),
+                "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
+                "mapping_source": _text(row, "mapping_source"),
+                "data_readiness_manifest_path": _text(row, "data_readiness_manifest_path"),
                 "recommendation": str(row.get("recommendation", "")),
             }
         )
@@ -219,6 +251,16 @@ def write_vendor_market_data_batch_pipeline(
     summary = _batch_summary(datasets, comparison, config)
     datasets.to_csv(out / "vendor_market_data_batch_datasets.csv", index=False)
     summary.to_csv(out / "vendor_market_data_batch_summary.csv", index=False)
+    inputs: dict[str, Any] = {"inputs": paths}
+    if mapping_path is not None:
+        inputs["mapping"] = mapping_path
+    inputs.update(
+        _existing_paths(
+            comparison_manifest=out / "comparison" / "manifest.json",
+        )
+    )
+    if dataset_manifest_paths:
+        inputs["dataset_manifests"] = dataset_manifest_paths
     write_experiment_manifest(
         out,
         run_type="vendor_market_data_batch_pipeline",
@@ -231,7 +273,7 @@ def write_vendor_market_data_batch_pipeline(
             "labels": labels,
             "mapping_source": "provided" if mapping_path is not None else "per_dataset_vendor_intake_draft",
         },
-        inputs={"inputs": paths, "mapping": mapping_path},
+        inputs=inputs,
     )
     return VendorMarketDataBatchReport(datasets, summary, comparison, out)
 
@@ -308,6 +350,11 @@ def _summary(
     diagnostics: DiagnosticResult,
     readiness: DataReadinessReport,
     config: VendorMarketDataPipelineConfig,
+    *,
+    mapping_source: str,
+    intake_dir: Path,
+    mapped_dir: Path,
+    readiness_dir: Path,
 ) -> pd.DataFrame:
     failed = int((~components["ready"].astype(bool)).sum()) if not components.empty else 1
     intake_row = _first(intake.summary)
@@ -321,14 +368,21 @@ def _summary(
                 "kind": config.kind,
                 "input_path": str(source_file),
                 "mapping_path": str(mapping_file),
+                "mapping_source": mapping_source,
                 "normalized_output_file": _output_filename(config),
                 "source_columns": int(_number(intake_row, "source_columns", fallback=0.0)),
+                "source_file_sha256": _text(intake_row, "source_file_sha256"),
+                "source_header_sha256": _text(intake_row, "source_header_sha256"),
+                "mapping_draft_sha256": _text(intake_row, "mapping_draft_sha256"),
                 "mapping_coverage": _number(intake_row, "mapping_coverage", fallback=0.0),
                 "input_rows": int(_number(mapped_row, "input_rows", fallback=0.0)),
                 "normalized_rows": int(_number(mapped_row, "output_rows", fallback=0.0)),
                 "diagnostic_rows": int(_number(diagnostic_row, "rows", fallback=0.0)),
                 "failed_components": failed,
                 "data_readiness_ready": bool(readiness.ready),
+                "vendor_intake_manifest_path": _manifest_path(intake_dir),
+                "mapped_data_manifest_path": _manifest_path(mapped_dir),
+                "data_readiness_manifest_path": _manifest_path(readiness_dir),
                 "recommendation": "feed_strategy_research" if readiness.ready and failed == 0 else "fix_vendor_market_data_pipeline",
             }
         ]
@@ -355,6 +409,9 @@ def _batch_summary(
                 "ready_datasets": ready_datasets,
                 "failed_datasets": failed_datasets,
                 "ready_rate": float(ready_datasets / dataset_count) if dataset_count else 0.0,
+                "unique_source_files": _unique_count(datasets, "source_file_sha256"),
+                "unique_header_fingerprints": _unique_count(datasets, "source_header_sha256"),
+                "mapping_sources": _joined_values(datasets, "mapping_source"),
                 "comparison_accepted": accepted,
                 "comparison_ready_rate": _number(comparison_row, "ready_rate", fallback=0.0),
                 "comparison_failed_checks": int(_number(comparison_row, "total_failed_checks", fallback=0.0)),
@@ -394,6 +451,36 @@ def _number(row: pd.Series, column: str, fallback: float = 0.0) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _text(row: pd.Series, column: str, fallback: str = "") -> str:
+    value = row.get(column, fallback)
+    if pd.isna(value):
+        return fallback
+    return str(value).strip()
+
+
+def _manifest_path(directory: Path) -> str:
+    manifest = directory / "manifest.json"
+    return str(manifest) if manifest.exists() else ""
+
+
+def _existing_paths(**paths: Path) -> dict[str, Path]:
+    return {name: path for name, path in paths.items() if path.exists()}
+
+
+def _unique_count(frame: pd.DataFrame, column: str) -> int:
+    if column not in frame.columns:
+        return 0
+    values = frame[column].dropna().astype(str).str.strip()
+    return int(values.loc[values != ""].nunique())
+
+
+def _joined_values(frame: pd.DataFrame, column: str) -> str:
+    if column not in frame.columns:
+        return ""
+    values = frame[column].dropna().astype(str).str.strip()
+    return ";".join(sorted(set(values.loc[values != ""])))
 
 
 def _safe_label(label: str, idx: int) -> str:

@@ -84,11 +84,18 @@ def test_write_vendor_intake_outputs_manifest_and_fill_mapping(tmp_path):
 
     summary = pd.read_csv(out_dir / "vendor_intake_summary.csv")
     mapping = pd.read_csv(out_dir / "vendor_mapping_draft.csv")
+    source_profile = json.loads((out_dir / "vendor_intake_source_profile.json").read_text(encoding="utf-8"))
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
     assert summary.loc[0, "best_kind"] == "fills"
     assert set(mapping["normalized_column"]) == {"client_order_id", "instrument_id", "ts_fill_ns", "side", "qty", "price"}
     assert manifest["run_type"] == "vendor_csv_intake"
+    assert source_profile["file_sha256"] == manifest["inputs"]["sample"]["sha256"]
+    assert source_profile["header_columns"] == list(sample.columns)
+    assert len(source_profile["header_sha256"]) == 64
+    assert summary.loc[0, "source_header_sha256"] == source_profile["header_sha256"]
+    assert summary.loc[0, "mapping_draft_sha256"] == source_profile["mapping_draft_sha256"]
+    assert manifest["extra"]["source_profile"]["header_sha256"] == source_profile["header_sha256"]
 
 
 def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):

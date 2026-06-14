@@ -59,6 +59,14 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert report.ready
     assert summary["normalized_rows"] == 2
     assert summary["mapping_coverage"] == 1.0
+    assert summary["mapping_source"] == "vendor_intake_draft"
+    assert summary["source_file_sha256"] == manifest["inputs"]["input"]["sha256"]
+    assert len(summary["source_header_sha256"]) == 64
+    assert len(summary["mapping_draft_sha256"]) == 64
+    assert "vendor_intake_manifest" in manifest["inputs"]
+    assert "vendor_intake_source_profile" in manifest["inputs"]
+    assert "mapped_data_manifest" in manifest["inputs"]
+    assert "data_readiness_manifest" in manifest["inputs"]
     assert components.loc["vendor_intake", "ready"]
     assert components.loc["data_readiness", "ready"]
     assert (out_dir / "01_vendor_intake" / "vendor_mapping_draft.csv").exists()
@@ -92,8 +100,16 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
     assert summary["dataset_count"] == 2
+    assert summary["unique_source_files"] == 2
+    assert summary["unique_header_fingerprints"] == 1
+    assert summary["mapping_sources"] == "vendor_intake_draft"
     assert summary["comparison_accepted"]
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
+    assert report.datasets["source_file_sha256"].nunique() == 2
+    assert report.datasets["source_header_sha256"].nunique() == 1
+    assert "dataset_manifests" in manifest["inputs"]
+    assert len(manifest["inputs"]["dataset_manifests"]) == 2
+    assert "comparison_manifest" in manifest["inputs"]
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
     assert manifest["run_type"] == "vendor_market_data_batch_pipeline"
