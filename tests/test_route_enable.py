@@ -425,6 +425,21 @@ def write_inputs(
         + "\n",
         encoding="utf-8",
     )
+    (cutover / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "cutover_gate",
+                "inputs": {
+                    "broker_readiness_config": {
+                        "path": str(cutover / "broker_readiness_config.json"),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     upload_summary(ready=upload_ready, orders=upload_orders).to_csv(upload / "broker_upload_summary.csv", index=False)
     order_export_summary(orders=upload_orders, total_notional=export_notional).to_csv(
         export / "broker_order_summary.csv",
@@ -875,9 +890,12 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert (out_dir / "route_enable_config.json").exists()
     assert (out_dir / "manifest.json").exists()
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert {"cutover_summary", "cutover_config", "upload_pack", "order_export"} <= set(manifest["inputs"])
+    assert {"cutover_summary", "cutover_config", "cutover_manifest", "upload_pack", "order_export"} <= set(
+        manifest["inputs"]
+    )
     assert path_tail(manifest["inputs"]["cutover_summary"]["path"]).endswith("/cutover/cutover_summary.csv")
     assert path_tail(manifest["inputs"]["cutover_config"]["path"]).endswith("/cutover/cutover_config.json")
+    assert path_tail(manifest["inputs"]["cutover_manifest"]["path"]).endswith("/cutover/manifest.json")
     assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith("/upload/broker_upload_summary.csv")
     assert path_tail(manifest["inputs"]["order_export"]["path"]).endswith("/export/broker_order_summary.csv")
     catalog = catalog_experiment_runs([out_dir])
@@ -930,6 +948,9 @@ def test_cli_route_enable_reads_launch_pipeline_upload_and_export_roots(tmp_path
         )
         assert path_tail(manifest["inputs"]["cutover_config"]["path"]).endswith(
             f"/{family}/cutover/cutover_config.json"
+        )
+        assert path_tail(manifest["inputs"]["cutover_manifest"]["path"]).endswith(
+            f"/{family}/cutover/manifest.json"
         )
         assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith(
             f"/{family}_launch_pipeline/{upload_folder}/broker_upload_summary.csv"

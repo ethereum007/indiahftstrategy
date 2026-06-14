@@ -2684,8 +2684,8 @@ live_dryrun`; the explicit flag keeps paper/shadow route reviews equally
 strict. `--upload-pack` and `--order-export` may point at a launch-pipeline
 root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
-summary, cutover config, upload summary, and optional order export summary in
-the manifest.
+summary, cutover config, cutover manifest when present, upload summary, and
+optional order export summary in the manifest.
 
 ## Broker Dispatch Plan
 

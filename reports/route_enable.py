@@ -92,6 +92,7 @@ def write_route_enable_packet(
     cutover_summary_path = (
         cutover / "cutover_summary.csv" if cutover.is_dir() else cutover_config_path.with_name("cutover_summary.csv")
     )
+    cutover_manifest_path = _sidecar_path(cutover_dir, "manifest.json")
     report = evaluate_route_enable_packet(
         cutover_summary=_read_required(cutover_summary_path, "cutover_summary"),
         cutover_config=json.loads(cutover_config_path.read_text(encoding="utf-8")),
@@ -115,6 +116,8 @@ def write_route_enable_packet(
         "cutover_config": cutover_config_path,
         "upload_pack": upload_summary_path,
     }
+    if cutover_manifest_path is not None:
+        inputs["cutover_manifest"] = cutover_manifest_path
     if order_export_summary_path is not None:
         inputs["order_export"] = (
             order_export_summary_path if order_export_summary_path.exists() else Path(order_export_dir)
@@ -1918,6 +1921,17 @@ def _summary_path(path: str | Path | None, filename: str, *, fallback_dirs: tupl
         (nested for folder in fallback_dirs if (nested := candidate / folder / filename).exists()),
         direct,
     )
+
+
+def _sidecar_path(path: str | Path | None, filename: str) -> Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_dir():
+        file_path = candidate / filename
+    else:
+        file_path = candidate if candidate.name == filename else candidate.with_name(filename)
+    return file_path if file_path.exists() else None
 
 
 def _optional_frame(frame: pd.DataFrame | None) -> pd.DataFrame:

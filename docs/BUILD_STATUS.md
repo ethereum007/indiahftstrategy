@@ -502,7 +502,8 @@
   broker-readiness inputs, preserving broker-readiness-carried shadow proof
   separately as `broker_shadow_broker_*` fields and cutover preserving them as
   `scaleup_broker_shadow_broker_*` authorization/config fields, with
-  route-enable carrying the same proof as `cutover_broker_shadow_broker_*`.
+  route-enable fingerprinting the cutover manifest and carrying the same proof
+  as `cutover_broker_shadow_broker_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
