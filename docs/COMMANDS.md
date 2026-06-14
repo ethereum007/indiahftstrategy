@@ -2708,8 +2708,9 @@ authorization and upload file, creates one dry-run dispatch row per upload
 order, and requires unique source order IDs, unique dispatch IDs, route-enabled
 state, matching target mode, clean route-readiness proof from route-enable,
 clean nested route proof from route-enable for live dry-run routing, zero
-nested route-enable dispatch round-trip failed checks, and order counts within
-the approved route limits. `--require-route-readiness` is automatic for
+nested route-enable dispatch round-trip failed checks, any route-carried shadow
+broker-readiness aggregate to remain clean and identity-consistent, and order
+counts within the approved route limits. `--require-route-readiness` is automatic for
 `--target-mode live_dryrun`; the explicit flag keeps paper/shadow dispatch
 plans equally strict. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run

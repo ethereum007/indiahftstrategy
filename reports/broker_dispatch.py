@@ -241,6 +241,8 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
     )
     if _dispatch_roundtrip_required(thresholds) or route["dispatch_roundtrip_provided"]:
         checks.extend(_dispatch_roundtrip_checks(route, target_mode))
+    if _shadow_broker_readiness_active(route):
+        checks.extend(_shadow_broker_readiness_checks(route))
     return pd.DataFrame(checks)
 
 
@@ -370,6 +372,207 @@ def _dispatch_roundtrip_checks(route: dict[str, Any], target_mode: str) -> list[
     ]
 
 
+def _shadow_broker_readiness_active(route: dict[str, Any]) -> bool:
+    session_fields = (
+        "shadow_broker_readiness_sessions",
+        "shadow_broker_route_readiness_sessions",
+        "shadow_broker_dispatch_roundtrip_sessions",
+        "shadow_broker_route_dispatch_roundtrip_sessions",
+    )
+    return any(int(route[field]) > 0 for field in session_fields)
+
+
+def _shadow_broker_readiness_checks(route: dict[str, Any]) -> list[dict[str, object]]:
+    checks: list[dict[str, object]] = []
+    sessions = int(route["shadow_broker_readiness_sessions"])
+    if sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "route_shadow_broker_readiness_ready",
+                    int(route["shadow_broker_readiness_ready_sessions"]),
+                    "==",
+                    sessions,
+                    int(route["shadow_broker_readiness_ready_sessions"]) == sessions,
+                    "route-enable shadow broker-readiness evidence is not ready for every carried session",
+                ),
+                _check(
+                    "route_shadow_broker_adapter_matches",
+                    route["shadow_broker_adapter"],
+                    "==",
+                    route["adapter"],
+                    bool(route["shadow_broker_adapter"] and route["shadow_broker_adapter"] == route["adapter"]),
+                    "route-enable shadow broker adapter does not match dispatch adapter",
+                ),
+                _check(
+                    "route_shadow_broker_adapter_consistent",
+                    int(route["shadow_broker_adapter_count"]),
+                    "==",
+                    1,
+                    int(route["shadow_broker_adapter_count"]) == 1,
+                    "route-enable shadow broker adapter identity is missing or mixed",
+                ),
+            ]
+        )
+    route_sessions = int(route["shadow_broker_route_readiness_sessions"])
+    if route_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "route_shadow_broker_route_readiness_ready",
+                    int(route["shadow_broker_route_readiness_ready_sessions"]),
+                    "==",
+                    route_sessions,
+                    int(route["shadow_broker_route_readiness_ready_sessions"]) == route_sessions,
+                    "route-enable shadow broker route-readiness proof is not ready for every carried session",
+                ),
+                _check(
+                    "route_shadow_broker_route_readiness_strategy_matches",
+                    route["shadow_broker_route_readiness_strategy"],
+                    "==",
+                    route["strategy"],
+                    bool(
+                        route["shadow_broker_route_readiness_strategy"]
+                        and route["shadow_broker_route_readiness_strategy"] == route["strategy"]
+                    ),
+                    "route-enable shadow broker route-readiness strategy does not match dispatch strategy",
+                ),
+                _check(
+                    "route_shadow_broker_route_readiness_market_matches",
+                    route["shadow_broker_route_readiness_market"],
+                    "==",
+                    route["market"],
+                    bool(
+                        route["shadow_broker_route_readiness_market"]
+                        and route["shadow_broker_route_readiness_market"] == route["market"]
+                    ),
+                    "route-enable shadow broker route-readiness market does not match dispatch market",
+                ),
+                _check(
+                    "route_shadow_broker_route_readiness_gap_pairs",
+                    int(route["shadow_broker_route_readiness_gap_pairs"]),
+                    "<=",
+                    0,
+                    int(route["shadow_broker_route_readiness_gap_pairs"]) <= 0,
+                    "route-enable shadow broker route-readiness proof has route gaps",
+                ),
+            ]
+        )
+    dispatch_sessions = int(route["shadow_broker_dispatch_roundtrip_sessions"])
+    if dispatch_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_ready",
+                    int(route["shadow_broker_dispatch_roundtrip_ready_sessions"]),
+                    "==",
+                    dispatch_sessions,
+                    int(route["shadow_broker_dispatch_roundtrip_ready_sessions"]) == dispatch_sessions,
+                    "route-enable shadow broker dispatch round-trip proof is not ready for every carried session",
+                ),
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_strategy_matches",
+                    route["shadow_broker_dispatch_roundtrip_strategy"],
+                    "==",
+                    route["strategy"],
+                    bool(
+                        route["shadow_broker_dispatch_roundtrip_strategy"]
+                        and route["shadow_broker_dispatch_roundtrip_strategy"] == route["strategy"]
+                    ),
+                    "route-enable shadow broker dispatch round-trip strategy does not match dispatch strategy",
+                ),
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_market_matches",
+                    route["shadow_broker_dispatch_roundtrip_market"],
+                    "==",
+                    route["market"],
+                    bool(
+                        route["shadow_broker_dispatch_roundtrip_market"]
+                        and route["shadow_broker_dispatch_roundtrip_market"] == route["market"]
+                    ),
+                    "route-enable shadow broker dispatch round-trip market does not match dispatch market",
+                ),
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_scenario_consistent",
+                    int(route["shadow_broker_dispatch_roundtrip_scenario_count"]),
+                    "==",
+                    1,
+                    int(route["shadow_broker_dispatch_roundtrip_scenario_count"]) == 1,
+                    "route-enable shadow broker dispatch round-trip scenario is missing or mixed",
+                ),
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_missing_request_acks",
+                    int(route["shadow_broker_dispatch_roundtrip_missing_request_acks"]),
+                    "<=",
+                    0,
+                    int(route["shadow_broker_dispatch_roundtrip_missing_request_acks"]) <= 0,
+                    "route-enable shadow broker dispatch round-trip has missing request acknowledgements",
+                ),
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_rejected_orders",
+                    int(route["shadow_broker_dispatch_roundtrip_rejected_orders"]),
+                    "<=",
+                    0,
+                    int(route["shadow_broker_dispatch_roundtrip_rejected_orders"]) <= 0,
+                    "route-enable shadow broker dispatch round-trip has rejected orders",
+                ),
+                _check(
+                    "route_shadow_broker_dispatch_roundtrip_unmatched_acks",
+                    int(route["shadow_broker_dispatch_roundtrip_unmatched_acks"]),
+                    "<=",
+                    0,
+                    int(route["shadow_broker_dispatch_roundtrip_unmatched_acks"]) <= 0,
+                    "route-enable shadow broker dispatch round-trip has unmatched acknowledgements",
+                ),
+            ]
+        )
+    route_dispatch_sessions = int(route["shadow_broker_route_dispatch_roundtrip_sessions"])
+    if route_dispatch_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "route_shadow_broker_route_dispatch_roundtrip_ready",
+                    int(route["shadow_broker_route_dispatch_roundtrip_ready_sessions"]),
+                    "==",
+                    route_dispatch_sessions,
+                    int(route["shadow_broker_route_dispatch_roundtrip_ready_sessions"]) == route_dispatch_sessions,
+                    "route-enable shadow broker route dispatch round-trip proof is not ready for every carried session",
+                ),
+                _check(
+                    "route_shadow_broker_route_dispatch_roundtrip_strategy_matches",
+                    route["shadow_broker_route_dispatch_roundtrip_strategy"],
+                    "==",
+                    route["strategy"],
+                    bool(
+                        route["shadow_broker_route_dispatch_roundtrip_strategy"]
+                        and route["shadow_broker_route_dispatch_roundtrip_strategy"] == route["strategy"]
+                    ),
+                    "route-enable shadow broker route dispatch round-trip strategy does not match dispatch strategy",
+                ),
+                _check(
+                    "route_shadow_broker_route_dispatch_roundtrip_market_matches",
+                    route["shadow_broker_route_dispatch_roundtrip_market"],
+                    "==",
+                    route["market"],
+                    bool(
+                        route["shadow_broker_route_dispatch_roundtrip_market"]
+                        and route["shadow_broker_route_dispatch_roundtrip_market"] == route["market"]
+                    ),
+                    "route-enable shadow broker route dispatch round-trip market does not match dispatch market",
+                ),
+                _check(
+                    "route_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+                    int(route["shadow_broker_route_dispatch_roundtrip_scenario_count"]),
+                    "==",
+                    1,
+                    int(route["shadow_broker_route_dispatch_roundtrip_scenario_count"]) == 1,
+                    "route-enable shadow broker route dispatch round-trip scenario is missing or mixed",
+                ),
+            ]
+        )
+    return checks
+
+
 def _summary(
     route: dict[str, Any],
     dispatch_orders: pd.DataFrame,
@@ -405,6 +608,50 @@ def _summary(
                 "route_readiness_market": route["route_readiness_market"],
                 "route_readiness_route_ready_pairs": route["route_readiness_route_ready_pairs"],
                 "route_readiness_gap_pairs": route["route_readiness_gap_pairs"],
+                "shadow_broker_readiness_sessions": route["shadow_broker_readiness_sessions"],
+                "shadow_broker_readiness_ready_sessions": route["shadow_broker_readiness_ready_sessions"],
+                "shadow_broker_adapter": route["shadow_broker_adapter"],
+                "shadow_broker_adapter_count": route["shadow_broker_adapter_count"],
+                "shadow_broker_route_readiness_sessions": route["shadow_broker_route_readiness_sessions"],
+                "shadow_broker_route_readiness_ready_sessions": route[
+                    "shadow_broker_route_readiness_ready_sessions"
+                ],
+                "shadow_broker_route_readiness_strategy": route["shadow_broker_route_readiness_strategy"],
+                "shadow_broker_route_readiness_market": route["shadow_broker_route_readiness_market"],
+                "shadow_broker_route_readiness_gap_pairs": route["shadow_broker_route_readiness_gap_pairs"],
+                "shadow_broker_dispatch_roundtrip_sessions": route["shadow_broker_dispatch_roundtrip_sessions"],
+                "shadow_broker_dispatch_roundtrip_ready_sessions": route[
+                    "shadow_broker_dispatch_roundtrip_ready_sessions"
+                ],
+                "shadow_broker_dispatch_roundtrip_strategy": route["shadow_broker_dispatch_roundtrip_strategy"],
+                "shadow_broker_dispatch_roundtrip_market": route["shadow_broker_dispatch_roundtrip_market"],
+                "shadow_broker_dispatch_roundtrip_scenario_count": route[
+                    "shadow_broker_dispatch_roundtrip_scenario_count"
+                ],
+                "shadow_broker_dispatch_roundtrip_missing_request_acks": route[
+                    "shadow_broker_dispatch_roundtrip_missing_request_acks"
+                ],
+                "shadow_broker_dispatch_roundtrip_rejected_orders": route[
+                    "shadow_broker_dispatch_roundtrip_rejected_orders"
+                ],
+                "shadow_broker_dispatch_roundtrip_unmatched_acks": route[
+                    "shadow_broker_dispatch_roundtrip_unmatched_acks"
+                ],
+                "shadow_broker_route_dispatch_roundtrip_sessions": route[
+                    "shadow_broker_route_dispatch_roundtrip_sessions"
+                ],
+                "shadow_broker_route_dispatch_roundtrip_ready_sessions": route[
+                    "shadow_broker_route_dispatch_roundtrip_ready_sessions"
+                ],
+                "shadow_broker_route_dispatch_roundtrip_strategy": route[
+                    "shadow_broker_route_dispatch_roundtrip_strategy"
+                ],
+                "shadow_broker_route_dispatch_roundtrip_market": route[
+                    "shadow_broker_route_dispatch_roundtrip_market"
+                ],
+                "shadow_broker_route_dispatch_roundtrip_scenario_count": route[
+                    "shadow_broker_route_dispatch_roundtrip_scenario_count"
+                ],
                 "route_dispatch_roundtrip_required": route["dispatch_roundtrip_required"],
                 "route_dispatch_roundtrip_provided": route["dispatch_roundtrip_provided"],
                 "route_dispatch_roundtrip_ready": route["dispatch_roundtrip_ready"],
@@ -473,6 +720,37 @@ def _config(
             "gap_pairs": int(summary["route_readiness_gap_pairs"]),
             "recommendation": route["route_readiness_recommendation"],
         },
+        "shadow_broker_readiness": {
+            "provided": int(summary["shadow_broker_readiness_sessions"]) > 0,
+            "sessions": int(summary["shadow_broker_readiness_sessions"]),
+            "ready_sessions": int(summary["shadow_broker_readiness_ready_sessions"]),
+            "adapter": str(summary["shadow_broker_adapter"]),
+            "adapter_count": int(summary["shadow_broker_adapter_count"]),
+            "route_readiness": {
+                "sessions": int(summary["shadow_broker_route_readiness_sessions"]),
+                "ready_sessions": int(summary["shadow_broker_route_readiness_ready_sessions"]),
+                "strategy": str(summary["shadow_broker_route_readiness_strategy"]),
+                "market": str(summary["shadow_broker_route_readiness_market"]),
+                "max_gap_pairs": int(summary["shadow_broker_route_readiness_gap_pairs"]),
+            },
+            "dispatch_roundtrip": {
+                "sessions": int(summary["shadow_broker_dispatch_roundtrip_sessions"]),
+                "ready_sessions": int(summary["shadow_broker_dispatch_roundtrip_ready_sessions"]),
+                "strategy": str(summary["shadow_broker_dispatch_roundtrip_strategy"]),
+                "market": str(summary["shadow_broker_dispatch_roundtrip_market"]),
+                "scenario_count": int(summary["shadow_broker_dispatch_roundtrip_scenario_count"]),
+                "max_missing_request_acks": int(summary["shadow_broker_dispatch_roundtrip_missing_request_acks"]),
+                "max_rejected_orders": int(summary["shadow_broker_dispatch_roundtrip_rejected_orders"]),
+                "max_unmatched_acks": int(summary["shadow_broker_dispatch_roundtrip_unmatched_acks"]),
+            },
+            "route_dispatch_roundtrip": {
+                "sessions": int(summary["shadow_broker_route_dispatch_roundtrip_sessions"]),
+                "ready_sessions": int(summary["shadow_broker_route_dispatch_roundtrip_ready_sessions"]),
+                "strategy": str(summary["shadow_broker_route_dispatch_roundtrip_strategy"]),
+                "market": str(summary["shadow_broker_route_dispatch_roundtrip_market"]),
+                "scenario_count": int(summary["shadow_broker_route_dispatch_roundtrip_scenario_count"]),
+            },
+        },
         "dispatch": {
             "orders": int(len(dispatch_orders)),
             "first_dispatch_order_id": str(dispatch_orders.iloc[0]["dispatch_order_id"])
@@ -510,6 +788,10 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     upload = config.get("upload", {}) or {}
     broker_readiness = config.get("broker_readiness", {}) or {}
     route_readiness = config.get("route_readiness", {}) or {}
+    shadow_broker = config.get("shadow_broker_readiness", {}) or {}
+    shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
+    shadow_broker_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
+    shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
     dispatch = config.get("dispatch_roundtrip", {}) or {}
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route_proof = dispatch.get("route_proof", {}) or {}
@@ -569,6 +851,150 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         "route_readiness_recommendation": _first_text(
             route_readiness.get("recommendation", ""),
             row.get("route_readiness_recommendation", ""),
+        ),
+        "shadow_broker_readiness_sessions": int(
+            _number_from(
+                shadow_broker,
+                "sessions",
+                _number(row, "shadow_broker_readiness_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_readiness_ready_sessions": int(
+            _number_from(
+                shadow_broker,
+                "ready_sessions",
+                _number(row, "shadow_broker_readiness_ready_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_adapter": _identity_key(
+            _first_text(shadow_broker.get("adapter", ""), row.get("shadow_broker_adapter", ""))
+        ),
+        "shadow_broker_adapter_count": int(
+            _number_from(
+                shadow_broker,
+                "adapter_count",
+                _number(row, "shadow_broker_adapter_count", 0.0),
+            )
+        ),
+        "shadow_broker_route_readiness_sessions": int(
+            _number_from(
+                shadow_broker_route,
+                "sessions",
+                _number(row, "shadow_broker_route_readiness_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_route_readiness_ready_sessions": int(
+            _number_from(
+                shadow_broker_route,
+                "ready_sessions",
+                _number(row, "shadow_broker_route_readiness_ready_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_route_readiness_strategy": _strategy_key(
+            _first_text(
+                shadow_broker_route.get("strategy", ""),
+                row.get("shadow_broker_route_readiness_strategy", ""),
+            )
+        ),
+        "shadow_broker_route_readiness_market": _identity_key(
+            _first_text(
+                shadow_broker_route.get("market", ""),
+                row.get("shadow_broker_route_readiness_market", ""),
+            )
+        ),
+        "shadow_broker_route_readiness_gap_pairs": int(
+            _number_from(
+                shadow_broker_route,
+                "max_gap_pairs",
+                _number(row, "shadow_broker_route_readiness_gap_pairs", 0.0),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_sessions": int(
+            _number_from(
+                shadow_broker_dispatch,
+                "sessions",
+                _number(row, "shadow_broker_dispatch_roundtrip_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_ready_sessions": int(
+            _number_from(
+                shadow_broker_dispatch,
+                "ready_sessions",
+                _number(row, "shadow_broker_dispatch_roundtrip_ready_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_strategy": _strategy_key(
+            _first_text(
+                shadow_broker_dispatch.get("strategy", ""),
+                row.get("shadow_broker_dispatch_roundtrip_strategy", ""),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_market": _identity_key(
+            _first_text(
+                shadow_broker_dispatch.get("market", ""),
+                row.get("shadow_broker_dispatch_roundtrip_market", ""),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_scenario_count": int(
+            _number_from(
+                shadow_broker_dispatch,
+                "scenario_count",
+                _number(row, "shadow_broker_dispatch_roundtrip_scenario_count", 0.0),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_missing_request_acks": int(
+            _number_from(
+                shadow_broker_dispatch,
+                "max_missing_request_acks",
+                _number(row, "shadow_broker_dispatch_roundtrip_missing_request_acks", 0.0),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_rejected_orders": int(
+            _number_from(
+                shadow_broker_dispatch,
+                "max_rejected_orders",
+                _number(row, "shadow_broker_dispatch_roundtrip_rejected_orders", 0.0),
+            )
+        ),
+        "shadow_broker_dispatch_roundtrip_unmatched_acks": int(
+            _number_from(
+                shadow_broker_dispatch,
+                "max_unmatched_acks",
+                _number(row, "shadow_broker_dispatch_roundtrip_unmatched_acks", 0.0),
+            )
+        ),
+        "shadow_broker_route_dispatch_roundtrip_sessions": int(
+            _number_from(
+                shadow_broker_route_dispatch,
+                "sessions",
+                _number(row, "shadow_broker_route_dispatch_roundtrip_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_route_dispatch_roundtrip_ready_sessions": int(
+            _number_from(
+                shadow_broker_route_dispatch,
+                "ready_sessions",
+                _number(row, "shadow_broker_route_dispatch_roundtrip_ready_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_route_dispatch_roundtrip_strategy": _strategy_key(
+            _first_text(
+                shadow_broker_route_dispatch.get("strategy", ""),
+                row.get("shadow_broker_route_dispatch_roundtrip_strategy", ""),
+            )
+        ),
+        "shadow_broker_route_dispatch_roundtrip_market": _identity_key(
+            _first_text(
+                shadow_broker_route_dispatch.get("market", ""),
+                row.get("shadow_broker_route_dispatch_roundtrip_market", ""),
+            )
+        ),
+        "shadow_broker_route_dispatch_roundtrip_scenario_count": int(
+            _number_from(
+                shadow_broker_route_dispatch,
+                "scenario_count",
+                _number(row, "shadow_broker_route_dispatch_roundtrip_scenario_count", 0.0),
+            )
         ),
         "dispatch_roundtrip_required": _to_bool(
             route_proof.get("required", row.get("route_dispatch_roundtrip_required", False))
