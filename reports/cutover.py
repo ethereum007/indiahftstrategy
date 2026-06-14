@@ -1098,6 +1098,7 @@ def _authorization(
                     "shadow_broker_route_dispatch_roundtrip_scenario_count"
                 ],
                 **_broker_shadow_broker_authorization_fields(scaleup),
+                **_vendor_market_data_batch_authorization_fields(scaleup),
                 "broker_readiness_ready": broker["ready"],
                 "broker_schema_status": broker["schema_status"],
                 "broker_schema_reviewed": broker["schema_reviewed"],
@@ -1274,6 +1275,27 @@ def _broker_shadow_broker_authorization_fields(scaleup: dict[str, Any]) -> dict[
     }
 
 
+def _vendor_market_data_batch_authorization_fields(scaleup: dict[str, Any]) -> dict[str, Any]:
+    vendor = scaleup["vendor_market_data_batch"]
+    return {
+        "scaleup_vendor_market_data_batch_provided": vendor["provided"],
+        "scaleup_vendor_market_data_batch_ready": vendor["ready"],
+        "scaleup_vendor_market_data_batch_adapter": vendor["adapter"],
+        "scaleup_vendor_market_data_batch_kind": vendor["kind"],
+        "scaleup_vendor_market_data_batch_market": vendor["market"],
+        "scaleup_vendor_market_data_batch_dataset_count": vendor["dataset_count"],
+        "scaleup_vendor_market_data_batch_ready_datasets": vendor["ready_datasets"],
+        "scaleup_vendor_market_data_batch_failed_datasets": vendor["failed_datasets"],
+        "scaleup_vendor_market_data_batch_ready_rate": vendor["ready_rate"],
+        "scaleup_vendor_market_data_batch_unique_source_files": vendor["unique_source_files"],
+        "scaleup_vendor_market_data_batch_unique_header_fingerprints": vendor["unique_header_fingerprints"],
+        "scaleup_vendor_market_data_batch_mapping_sources": vendor["mapping_sources"],
+        "scaleup_vendor_market_data_batch_comparison_accepted": vendor["comparison_accepted"],
+        "scaleup_vendor_market_data_batch_comparison_failed_checks": vendor["comparison_failed_checks"],
+        "scaleup_vendor_market_data_batch_datasets_json": json.dumps(vendor["datasets"], sort_keys=True),
+    }
+
+
 def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -1368,6 +1390,48 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     authorization["scaleup_shadow_broker_route_dispatch_roundtrip_scenario_count"]
                 ),
                 **_broker_shadow_broker_summary_fields(authorization),
+                "scaleup_vendor_market_data_batch_provided": _to_bool(
+                    authorization["scaleup_vendor_market_data_batch_provided"]
+                ),
+                "scaleup_vendor_market_data_batch_ready": _to_bool(
+                    authorization["scaleup_vendor_market_data_batch_ready"]
+                ),
+                "scaleup_vendor_market_data_batch_adapter": str(
+                    authorization["scaleup_vendor_market_data_batch_adapter"]
+                ),
+                "scaleup_vendor_market_data_batch_kind": str(
+                    authorization["scaleup_vendor_market_data_batch_kind"]
+                ),
+                "scaleup_vendor_market_data_batch_market": str(
+                    authorization["scaleup_vendor_market_data_batch_market"]
+                ),
+                "scaleup_vendor_market_data_batch_dataset_count": int(
+                    authorization["scaleup_vendor_market_data_batch_dataset_count"]
+                ),
+                "scaleup_vendor_market_data_batch_ready_datasets": int(
+                    authorization["scaleup_vendor_market_data_batch_ready_datasets"]
+                ),
+                "scaleup_vendor_market_data_batch_failed_datasets": int(
+                    authorization["scaleup_vendor_market_data_batch_failed_datasets"]
+                ),
+                "scaleup_vendor_market_data_batch_ready_rate": _jsonable(
+                    authorization["scaleup_vendor_market_data_batch_ready_rate"]
+                ),
+                "scaleup_vendor_market_data_batch_unique_source_files": int(
+                    authorization["scaleup_vendor_market_data_batch_unique_source_files"]
+                ),
+                "scaleup_vendor_market_data_batch_unique_header_fingerprints": int(
+                    authorization["scaleup_vendor_market_data_batch_unique_header_fingerprints"]
+                ),
+                "scaleup_vendor_market_data_batch_mapping_sources": str(
+                    authorization["scaleup_vendor_market_data_batch_mapping_sources"]
+                ),
+                "scaleup_vendor_market_data_batch_comparison_accepted": _to_bool(
+                    authorization["scaleup_vendor_market_data_batch_comparison_accepted"]
+                ),
+                "scaleup_vendor_market_data_batch_comparison_failed_checks": int(
+                    authorization["scaleup_vendor_market_data_batch_comparison_failed_checks"]
+                ),
                 "broker_readiness_ready": _to_bool(authorization["broker_readiness_ready"]),
                 "broker_schema_status": str(authorization["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(authorization["broker_schema_reviewed"]),
@@ -1630,6 +1694,7 @@ def _config(
             },
         },
         "scaleup_broker_shadow_broker_readiness": _broker_shadow_broker_config(authorization),
+        "scaleup_vendor_market_data_batch": _vendor_market_data_batch_config(authorization),
         "scaleup_dispatch_roundtrip": {
             "required": _to_bool(authorization["scaleup_dispatch_roundtrip_required"]),
             "provided": _to_bool(authorization["scaleup_dispatch_roundtrip_provided"]),
@@ -1794,11 +1859,70 @@ def _broker_shadow_broker_config(authorization: pd.Series) -> dict[str, Any]:
     }
 
 
+def _vendor_market_data_batch_config(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        "provided": _to_bool(authorization["scaleup_vendor_market_data_batch_provided"]),
+        "ready": _to_bool(authorization["scaleup_vendor_market_data_batch_ready"]),
+        "adapter": str(authorization["scaleup_vendor_market_data_batch_adapter"]),
+        "kind": str(authorization["scaleup_vendor_market_data_batch_kind"]),
+        "market": str(authorization["scaleup_vendor_market_data_batch_market"]),
+        "dataset_count": int(authorization["scaleup_vendor_market_data_batch_dataset_count"]),
+        "ready_datasets": int(authorization["scaleup_vendor_market_data_batch_ready_datasets"]),
+        "failed_datasets": int(authorization["scaleup_vendor_market_data_batch_failed_datasets"]),
+        "ready_rate": _jsonable(authorization["scaleup_vendor_market_data_batch_ready_rate"]),
+        "unique_source_files": int(authorization["scaleup_vendor_market_data_batch_unique_source_files"]),
+        "unique_header_fingerprints": int(
+            authorization["scaleup_vendor_market_data_batch_unique_header_fingerprints"]
+        ),
+        "mapping_sources": str(authorization["scaleup_vendor_market_data_batch_mapping_sources"]),
+        "comparison": {
+            "accepted": _to_bool(authorization["scaleup_vendor_market_data_batch_comparison_accepted"]),
+            "failed_checks": int(authorization["scaleup_vendor_market_data_batch_comparison_failed_checks"]),
+        },
+        "datasets": _json_list(authorization["scaleup_vendor_market_data_batch_datasets_json"]),
+    }
+
+
+def _vendor_market_data_batch_state(vendor: dict[str, Any]) -> dict[str, Any]:
+    comparison = vendor.get("comparison", {}) or {}
+    datasets = vendor.get("datasets") or []
+    return {
+        "provided": _to_bool(vendor.get("provided", False)),
+        "ready": _to_bool(vendor.get("ready", False)),
+        "adapter": _first_text(vendor.get("adapter", "")),
+        "kind": _first_text(vendor.get("kind", "")),
+        "market": _identity_key(vendor.get("market", "")),
+        "dataset_count": int(_number_from(vendor, "dataset_count", 0.0)),
+        "ready_datasets": int(_number_from(vendor, "ready_datasets", 0.0)),
+        "failed_datasets": int(_number_from(vendor, "failed_datasets", 0.0)),
+        "ready_rate": _number_from(vendor, "ready_rate", 0.0),
+        "unique_source_files": int(_number_from(vendor, "unique_source_files", 0.0)),
+        "unique_header_fingerprints": int(_number_from(vendor, "unique_header_fingerprints", 0.0)),
+        "mapping_sources": _first_text(vendor.get("mapping_sources", "")),
+        "comparison_accepted": _to_bool(comparison.get("accepted", False)),
+        "comparison_failed_checks": int(_number_from(comparison, "failed_checks", 0.0)),
+        "datasets": [
+            {
+                "dataset": _first_text(item.get("dataset", "")),
+                "ready": _to_bool(item.get("ready", False)),
+                "source_file_sha256": _first_text(item.get("source_file_sha256", "")),
+                "source_header_sha256": _first_text(item.get("source_header_sha256", "")),
+                "mapping_draft_sha256": _first_text(item.get("mapping_draft_sha256", "")),
+                "mapping_source": _first_text(item.get("mapping_source", "")),
+            }
+            for item in datasets
+            if isinstance(item, dict)
+        ],
+    }
+
+
 def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
     identity = config.get("identity", {}) or {}
     broker_readiness = config.get("broker_readiness", {}) or {}
+    data_readiness_comparison = config.get("data_readiness_comparison", {}) or {}
+    vendor_market_data_batch = data_readiness_comparison.get("vendor_market_data_batch", {}) or {}
     route_readiness = config.get("route_readiness", {}) or {}
     shadow_broker = config.get("shadow_broker_readiness", {}) or {}
     shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
@@ -1848,6 +1972,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
             broker_readiness.get("schema_review_mode", ""),
             row.get("broker_schema_review_mode", ""),
         ),
+        "vendor_market_data_batch": _vendor_market_data_batch_state(vendor_market_data_batch),
         "route_readiness_required": _to_bool(
             route_readiness.get("required", row.get("route_readiness_required", False))
         ),
@@ -2635,6 +2760,14 @@ def _jsonable(value: object) -> object:
     if _is_missing(value):
         return None
     return value
+
+
+def _json_list(value: object) -> list[dict[str, Any]]:
+    try:
+        parsed = json.loads(str(value))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _check(

@@ -622,6 +622,74 @@ def test_cutover_gate_carries_shadow_broker_readiness_from_scaleup_config():
     )
 
 
+def test_cutover_gate_carries_vendor_market_data_batch_from_scaleup_config():
+    config = scaleup_config()
+    config["data_readiness_comparison"] = {
+        "vendor_market_data_batch": {
+            "provided": True,
+            "ready": True,
+            "adapter": "arrow_money",
+            "kind": "ticks",
+            "market": "india_nse_index_derivatives",
+            "dataset_count": 2,
+            "ready_datasets": 2,
+            "failed_datasets": 0,
+            "ready_rate": 1.0,
+            "unique_source_files": 2,
+            "unique_header_fingerprints": 1,
+            "mapping_sources": "vendor_intake_draft",
+            "comparison": {
+                "accepted": True,
+                "failed_checks": 0,
+            },
+            "datasets": [
+                {
+                    "dataset": "day1",
+                    "ready": True,
+                    "source_file_sha256": "a" * 64,
+                    "source_header_sha256": "b" * 64,
+                    "mapping_draft_sha256": "c" * 64,
+                    "mapping_source": "vendor_intake_draft",
+                },
+                {
+                    "dataset": "day2",
+                    "ready": True,
+                    "source_file_sha256": "d" * 64,
+                    "source_header_sha256": "b" * 64,
+                    "mapping_draft_sha256": "c" * 64,
+                    "mapping_source": "vendor_intake_draft",
+                },
+            ],
+        }
+    }
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    summary = report.summary.iloc[0]
+    vendor = report.config["scaleup_vendor_market_data_batch"]
+    assert report.ready
+    assert summary["scaleup_vendor_market_data_batch_provided"]
+    assert summary["scaleup_vendor_market_data_batch_ready"]
+    assert summary["scaleup_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["scaleup_vendor_market_data_batch_kind"] == "ticks"
+    assert int(summary["scaleup_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary["scaleup_vendor_market_data_batch_unique_source_files"]) == 2
+    assert int(summary["scaleup_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["scaleup_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+    assert len(vendor["datasets"]) == 2
+    assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
 def test_cutover_gate_blocks_bad_shadow_broker_readiness_from_scaleup_config():
     config = scaleup_config()
     config["shadow_broker_readiness"] = shadow_broker_config(

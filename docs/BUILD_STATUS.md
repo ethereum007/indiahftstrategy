@@ -330,8 +330,8 @@
   dispatch route proof, launch-pipeline identity mismatches, dirty
   broker-carried shadow broker proof, or shadow proof-refresh or shadow
   broker-readiness strategy/market mismatches, carries vendor market-data batch
-  config provenance from onboarding comparisons, and can consume these launch
-  pipeline roots directly.
+  config provenance from onboarding comparisons through cutover authorization,
+  and can consume these launch pipeline roots directly.
 - Runtime telemetry snapshot builder that converts scale-up, export,
   broker-upload, reconciliation, optional instrument metadata, PnL, open-order,
   and position artifacts into guard-ready `runtime_telemetry.csv` inputs with

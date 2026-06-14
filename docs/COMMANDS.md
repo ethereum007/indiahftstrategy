@@ -2638,7 +2638,10 @@ round-trip failed-check counts, carries proof-refresh state, enforces any
 multi-session shadow broker-readiness aggregate retained in the scale-up config,
 revalidates any broker-readiness-carried shadow broker proof retained under
 `broker_shadow_broker_*`, and validates any supplied broker resume-gate proof
-identity before broker routing is allowed.
+identity before broker routing is allowed. If scale-up carried vendor
+market-data batch provenance from Arrow.money/iRage onboarding, cutover carries
+the dataset/header/mapping proof into `cutover_summary.csv` and
+`cutover_config.json`.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,
