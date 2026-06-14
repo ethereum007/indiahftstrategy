@@ -420,12 +420,14 @@
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route-readiness proof, route round-trip proof tags, and
   acknowledgement templates while carrying broker schema review status/mode
-  route-enable dispatch round-trip failed-check counters, and dispatch-carried
+  route-enable dispatch round-trip failed-check counters, dispatch-carried
   shadow broker-readiness aggregates plus broker-readiness-carried shadow
-  broker proof from the dispatch config as `route_broker_shadow_broker_*`,
-  validating route-readiness identity, carried shadow proof quality, and route
-  proof batch continuity, forcing live submission off, and fingerprinting exact
-  dispatch input files plus the dispatch manifest when present.
+  broker proof from the dispatch config as `route_broker_shadow_broker_*`, and
+  vendor market-data batch provenance as
+  `dispatch_vendor_market_data_batch_*`, validating route-readiness identity,
+  carried shadow proof quality, and route proof batch continuity, forcing live
+  submission off, and fingerprinting exact dispatch input files plus the
+  dispatch manifest when present.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip
@@ -514,7 +516,8 @@
   route-enable fingerprinting the cutover manifest, carrying the same proof as
   `cutover_broker_shadow_broker_*`, preserving cutover-retained vendor
   market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
-  dispatch preserving that provenance as `route_vendor_market_data_batch_*`.
+  dispatch preserving that provenance as `route_vendor_market_data_batch_*`
+  before the sender packet carries it as `dispatch_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -527,7 +530,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 687 tests.
+Current passing suite: 688 tests.
 
 ## Next Build Targets
 

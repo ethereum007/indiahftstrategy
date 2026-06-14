@@ -2794,7 +2794,11 @@ dry-run-only. `--require-route-readiness` is automatic for `--target-mode
 live_dryrun`; the explicit flag keeps paper/shadow sender packets equally
 strict. It also carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
-`route_broker_shadow_broker_readiness` into the sender summary/config. The
+`route_broker_shadow_broker_readiness` into the sender summary/config. If the
+dispatch config retained Arrow.money/iRage vendor market-data batch evidence,
+the sender packet preserves the dataset/header/mapping proof as
+`dispatch_vendor_market_data_batch_*` fields and a nested
+`dispatch_vendor_market_data_batch` config block. The
 manifest fingerprints the exact dispatch
 summary, dispatch orders, dispatch config, and dispatch manifest when present
 consumed by the sender packet.
