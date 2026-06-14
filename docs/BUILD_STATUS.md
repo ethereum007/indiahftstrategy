@@ -407,9 +407,9 @@
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route-readiness proof, route round-trip proof tags, and
   acknowledgement templates while carrying broker schema review status/mode
-  and route-enable dispatch round-trip failed-check counters from the dispatch
-  config, validating route-readiness identity and route proof batch continuity,
-  forcing live
+  route-enable dispatch round-trip failed-check counters, and dispatch-carried
+  shadow broker-readiness aggregates from the dispatch config, validating
+  route-readiness identity and route proof batch continuity, forcing live
   submission off, and fingerprinting exact dispatch input files.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
