@@ -325,11 +325,11 @@
   fingerprints the resolved input summary CSVs plus route-readiness and nested
   broker-readiness proof in the manifest, consumes multi-day shadow-comparison
   broker-readiness route/dispatch proof and broker-readiness-carried shadow
-  broker proof when present, fails closed
+  broker proof plus broker-readiness vendor market-data batch proof when present, fails closed
   on broker runtime-session, broker resume-gate proof-refresh, dispatch
   round-trip failed checks, route-enable dispatch round-trip failed checks,
   dispatch route proof, launch-pipeline identity mismatches, dirty
-  broker-carried shadow broker proof, or shadow proof-refresh or shadow
+  broker-carried shadow broker/vendor data proof, or shadow proof-refresh or shadow
   broker-readiness strategy/market mismatches, carries vendor market-data batch
   config provenance from onboarding comparisons through cutover authorization,
   and can consume these launch pipeline roots directly.
@@ -526,7 +526,9 @@
   and the ack gate carries it as `ack_vendor_market_data_batch_*`, with the
   final round-trip proof preserving it as `roundtrip_vendor_market_data_batch_*`
   before broker readiness revalidates and carries it as
-  `dispatch_roundtrip_vendor_market_data_batch_*`.
+  `dispatch_roundtrip_vendor_market_data_batch_*`, and scale-up revalidates and
+  carries the broker-readiness copy as
+  `broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -539,7 +541,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 692 tests.
+Current passing suite: 694 tests.
 
 ## Next Build Targets
 
