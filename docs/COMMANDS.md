@@ -1946,6 +1946,7 @@ python -m hft_cli review-broker-readiness `
   --require-mapped-orders `
   --require-runtime-session `
   --require-resume-gate `
+  --require-route-readiness `
   --require-dispatch-roundtrip `
   --fail-on-breach
 ```
@@ -1955,7 +1956,10 @@ schemas are still placeholders. Without it, placeholder schemas fail closed
 unless schema audit, order-mapping draft, and mapped-order export artifacts are
 all supplied and ready for the same adapter; in that case the readiness summary
 records `schema_review_mode=reviewed_vendor_mapping` and can emit
-`broker_integration_ready`. Scale-up, cutover, and route-enable artifacts carry
+`broker_integration_ready`. When dispatch round-trip evidence is supplied for
+live dry-run readiness, broker readiness also verifies the carried
+`route_readiness` proof for strategy/market identity and zero route gaps before
+Arrow.money/iRage handoff. Scale-up, cutover, and route-enable artifacts carry
 `schema_reviewed` and `schema_review_mode` forward so downstream route decisions
 can distinguish reviewed vendor mappings from unreviewed placeholders.
 When broker-neutral exports contain quote lifecycle fields, the built-in

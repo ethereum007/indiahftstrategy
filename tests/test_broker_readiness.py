@@ -152,8 +152,23 @@ def dispatch_roundtrip_summary(
     route_missing_request_acks=0,
     route_rejected_orders=0,
     route_unmatched_acks=0,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     route_enable_dispatch_roundtrip_failed_checks=0,
 ):
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "route_readiness_inputs_missing"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return pd.DataFrame(
         [
             {
@@ -184,6 +199,14 @@ def dispatch_roundtrip_summary(
                 "route_dispatch_roundtrip_missing_request_acks": route_missing_request_acks,
                 "route_dispatch_roundtrip_rejected_orders": route_rejected_orders,
                 "route_dispatch_roundtrip_unmatched_acks": route_unmatched_acks,
+                "route_readiness_required": route_readiness_required,
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
+                "route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "route_readiness_recommendation": route_readiness_recommendation,
                 "route_enable_dispatch_roundtrip_failed_checks": route_enable_dispatch_roundtrip_failed_checks,
                 "failed_checks": (0 if passed else 1) if failed_checks is None else failed_checks,
                 "recommendation": "broker_dry_run_roundtrip_proved"
@@ -194,8 +217,35 @@ def dispatch_roundtrip_summary(
     )
 
 
-def dispatch_roundtrip_config(route_enable_dispatch_roundtrip_failed_checks=0):
+def dispatch_roundtrip_config(
+    route_enable_dispatch_roundtrip_failed_checks=0,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy="lead_lag_taker",
+    route_readiness_market="india_nse_index_derivatives",
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
+):
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "route_readiness_inputs_missing"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return {
+        "route_readiness": {
+            "required": route_readiness_required,
+            "provided": route_readiness_provided,
+            "ready": route_readiness_ready,
+            "strategy": route_readiness_strategy,
+            "market": route_readiness_market,
+            "route_ready_pairs": route_readiness_route_ready_pairs,
+            "gap_pairs": route_readiness_gap_pairs,
+            "recommendation": route_readiness_recommendation,
+        },
         "route_enable_dispatch_roundtrip": {
             "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
         }
@@ -291,6 +341,11 @@ def test_broker_readiness_accepts_required_dispatch_roundtrip():
     assert int(summary["dispatch_roundtrip_missing_request_acks"]) == 0
     assert int(summary["dispatch_roundtrip_failed_checks"]) == 0
     assert int(summary["route_enable_dispatch_roundtrip_failed_checks"]) == 0
+    assert bool(summary["route_readiness_provided"])
+    assert bool(summary["route_readiness_ready"])
+    assert summary["route_readiness_strategy"] == "lead_lag_taker"
+    assert summary["route_readiness_market"] == "india_nse_index_derivatives"
+    assert int(summary["route_readiness_gap_pairs"]) == 0
     assert bool(summary["route_dispatch_roundtrip_provided"])
     assert bool(summary["route_dispatch_roundtrip_ready"])
     assert summary["route_dispatch_roundtrip_batch_id"] == "BDP-0"
@@ -353,6 +408,41 @@ def test_broker_readiness_fails_for_dirty_route_dispatch_roundtrip_proof():
         "route_dispatch_roundtrip_unmatched_acks",
     } <= failed
     assert int(report.summary.iloc[0]["route_dispatch_roundtrip_missing_request_acks"]) == 1
+
+
+def test_broker_readiness_fails_for_dirty_route_readiness_proof():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary(
+            "normalized",
+            True,
+            route_readiness_ready=False,
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+            route_readiness_gap_pairs=2,
+        ),
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_route_readiness=True,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_readiness_ready",
+        "route_readiness_strategy_matches",
+        "route_readiness_market_matches",
+        "route_readiness_gap_pairs",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert not bool(summary["route_readiness_ready"])
+    assert summary["route_readiness_strategy"] == "surface_mm"
+    assert summary["route_readiness_market"] == "us_options_regular"
+    assert int(summary["route_readiness_gap_pairs"]) == 2
 
 
 def test_broker_readiness_blocks_halted_runtime_session():
@@ -486,6 +576,64 @@ def test_broker_readiness_reads_dispatch_roundtrip_config_route_enable_failed_ch
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+
+
+def test_broker_readiness_reads_dispatch_roundtrip_config_route_readiness(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    roundtrip_dir = tmp_path / "roundtrip"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    dispatch_roundtrip_summary("normalized", True).to_csv(
+        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
+        index=False,
+    )
+    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(
+            dispatch_roundtrip_config(
+                route_readiness_ready=False,
+                route_readiness_strategy="surface_mm",
+                route_readiness_market="us_options_regular",
+                route_readiness_gap_pairs=3,
+            ),
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_broker_readiness_report(
+        output_dir=out_dir,
+        schema_audit_dir=schema_dir,
+        order_export_dir=export_dir,
+        upload_pack_dir=upload_dir,
+        dispatch_roundtrip_dir=roundtrip_dir,
+        thresholds=BrokerReadinessThresholds(
+            adapter="normalized",
+            require_route_readiness=True,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert item["route_readiness_strategy"] == "surface_mm"
+    assert int(item["route_readiness_gap_pairs"]) == 3
+    summary = report.summary.iloc[0]
+    assert not bool(summary["route_readiness_ready"])
+    assert summary["route_readiness_market"] == "us_options_regular"
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_readiness_ready",
+        "route_readiness_strategy_matches",
+        "route_readiness_market_matches",
+        "route_readiness_gap_pairs",
+    } <= failed
 
 
 def test_broker_readiness_fails_closed_for_placeholder_broker_schema():
@@ -931,3 +1079,48 @@ def test_cli_broker_readiness_can_require_dispatch_roundtrip(tmp_path):
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert "dispatch_roundtrip_provided" in failed
+
+
+def test_cli_broker_readiness_can_require_route_readiness(tmp_path):
+    schema_dir = tmp_path / "schema"
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "upload"
+    roundtrip_dir = tmp_path / "roundtrip"
+    out_dir = tmp_path / "readiness"
+    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+        path.mkdir()
+    schema_summary("normalized", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary("normalized", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary("normalized", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    dispatch_roundtrip_summary(
+        "normalized",
+        True,
+        route_readiness_provided=False,
+        route_readiness_ready=False,
+    ).to_csv(roundtrip_dir / "broker_dispatch_roundtrip_summary.csv", index=False)
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--adapter",
+            "normalized",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--dispatch-roundtrip",
+            str(roundtrip_dir),
+            "--out",
+            str(out_dir),
+            "--require-route-readiness",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert {"route_readiness_provided", "route_readiness_ready"} <= failed

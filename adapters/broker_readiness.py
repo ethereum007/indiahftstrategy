@@ -43,6 +43,7 @@ class BrokerReadinessThresholds:
     require_reconciliation: bool = False
     require_runtime_session: bool = False
     require_resume_gate: bool = False
+    require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
     require_adapter_match: bool = True
 
@@ -172,6 +173,35 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
     frame = _optional_frame(summary)
     if frame.empty:
         return frame
+    route_readiness = config.get("route_readiness", {}) or {}
+    if route_readiness:
+        frame.loc[0, "route_readiness_required"] = _to_bool(
+            route_readiness.get("required", frame.iloc[0].get("route_readiness_required", False))
+        )
+        frame.loc[0, "route_readiness_provided"] = _to_bool(
+            route_readiness.get("provided", frame.iloc[0].get("route_readiness_provided", False))
+        )
+        frame.loc[0, "route_readiness_ready"] = _to_bool(
+            route_readiness.get("ready", frame.iloc[0].get("route_readiness_ready", False))
+        )
+        frame.loc[0, "route_readiness_strategy"] = _object_text(
+            route_readiness.get("strategy", frame.iloc[0].get("route_readiness_strategy", ""))
+        )
+        frame.loc[0, "route_readiness_market"] = _object_text(
+            route_readiness.get("market", frame.iloc[0].get("route_readiness_market", ""))
+        )
+        frame.loc[0, "route_readiness_route_ready_pairs"] = int(
+            _number_value(
+                route_readiness.get("route_ready_pairs"),
+                _number(frame.iloc[0], "route_readiness_route_ready_pairs", 0.0),
+            )
+        )
+        frame.loc[0, "route_readiness_gap_pairs"] = int(
+            _number_value(route_readiness.get("gap_pairs"), _number(frame.iloc[0], "route_readiness_gap_pairs", 0.0))
+        )
+        frame.loc[0, "route_readiness_recommendation"] = _object_text(
+            route_readiness.get("recommendation", frame.iloc[0].get("route_readiness_recommendation", ""))
+        )
     route_enable = config.get("route_enable_dispatch_roundtrip", {}) or {}
     if "failed_checks" in route_enable:
         frame.loc[0, "route_enable_dispatch_roundtrip_failed_checks"] = int(
@@ -244,6 +274,18 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         )
         if component == "dispatch_roundtrip" and provided
         else 0,
+        "route_readiness_required": _dispatch_bool(component, row, "route_readiness_required"),
+        "route_readiness_provided": _dispatch_bool(component, row, "route_readiness_provided"),
+        "route_readiness_ready": _dispatch_bool(component, row, "route_readiness_ready"),
+        "route_readiness_strategy": _dispatch_text(component, row, "route_readiness_strategy"),
+        "route_readiness_market": _dispatch_text(component, row, "route_readiness_market"),
+        "route_readiness_route_ready_pairs": int(_number(row, "route_readiness_route_ready_pairs", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "route_readiness_gap_pairs": int(_number(row, "route_readiness_gap_pairs", 0.0))
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "route_readiness_recommendation": _dispatch_text(component, row, "route_readiness_recommendation"),
         "route_dispatch_roundtrip_required": _dispatch_bool(component, row, "route_dispatch_roundtrip_required"),
         "route_dispatch_roundtrip_provided": _dispatch_bool(component, row, "route_dispatch_roundtrip_provided"),
         "route_dispatch_roundtrip_ready": _dispatch_bool(component, row, "route_dispatch_roundtrip_ready"),
@@ -353,7 +395,66 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                 )
             if route_required or bool(row.route_dispatch_roundtrip_provided):
                 checks.extend(_route_dispatch_roundtrip_checks(row))
+            route_readiness_required = _route_readiness_required(row, thresholds)
+            if route_readiness_required:
+                checks.append(
+                    _check(
+                        "route_readiness_provided",
+                        bool(row.route_readiness_provided),
+                        "is",
+                        True,
+                        bool(row.route_readiness_provided),
+                        "dispatch round-trip summary must carry route-readiness proof for live dry-run readiness",
+                    )
+                )
+            if route_readiness_required or bool(row.route_readiness_provided):
+                checks.extend(_route_readiness_checks(row))
     return pd.DataFrame(checks)
+
+
+def _route_readiness_checks(row: pd.Series) -> list[dict[str, Any]]:
+    return [
+        _check(
+            "route_readiness_ready",
+            bool(row.route_readiness_ready),
+            "is",
+            True,
+            bool(row.route_readiness_ready),
+            "route-readiness proof is not ready",
+        ),
+        _check(
+            "route_readiness_strategy_matches",
+            _identity_key(row.route_readiness_strategy),
+            "==",
+            _identity_key(row.dispatch_roundtrip_strategy),
+            bool(
+                _identity_key(row.route_readiness_strategy)
+                and _identity_key(row.dispatch_roundtrip_strategy)
+                and _identity_key(row.route_readiness_strategy) == _identity_key(row.dispatch_roundtrip_strategy)
+            ),
+            "route-readiness proof strategy does not match dispatch round-trip strategy",
+        ),
+        _check(
+            "route_readiness_market_matches",
+            _identity_key(row.route_readiness_market),
+            "==",
+            _identity_key(row.dispatch_roundtrip_market),
+            bool(
+                _identity_key(row.route_readiness_market)
+                and _identity_key(row.dispatch_roundtrip_market)
+                and _identity_key(row.route_readiness_market) == _identity_key(row.dispatch_roundtrip_market)
+            ),
+            "route-readiness proof market does not match dispatch round-trip market",
+        ),
+        _check(
+            "route_readiness_gap_pairs",
+            int(row.route_readiness_gap_pairs),
+            "==",
+            0,
+            int(row.route_readiness_gap_pairs) == 0,
+            "route-readiness proof still reports market/strategy route gaps",
+        ),
+    ]
 
 
 def _route_dispatch_roundtrip_checks(row: pd.Series) -> list[dict[str, Any]]:
@@ -529,6 +630,16 @@ def _summary(
                 "route_enable_dispatch_roundtrip_failed_checks": int(
                     _number(dispatch_item, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
                 ),
+                "route_readiness_required": _item_bool(dispatch_item, "route_readiness_required"),
+                "route_readiness_provided": _item_bool(dispatch_item, "route_readiness_provided"),
+                "route_readiness_ready": _item_bool(dispatch_item, "route_readiness_ready"),
+                "route_readiness_strategy": _item_text(dispatch_item, "route_readiness_strategy"),
+                "route_readiness_market": _item_text(dispatch_item, "route_readiness_market"),
+                "route_readiness_route_ready_pairs": int(
+                    _number(dispatch_item, "route_readiness_route_ready_pairs", 0.0)
+                ),
+                "route_readiness_gap_pairs": int(_number(dispatch_item, "route_readiness_gap_pairs", 0.0)),
+                "route_readiness_recommendation": _item_text(dispatch_item, "route_readiness_recommendation"),
                 "route_dispatch_roundtrip_required": _item_bool(dispatch_item, "route_dispatch_roundtrip_required"),
                 "route_dispatch_roundtrip_provided": _item_bool(dispatch_item, "route_dispatch_roundtrip_provided"),
                 "route_dispatch_roundtrip_ready": _item_bool(dispatch_item, "route_dispatch_roundtrip_ready"),
@@ -610,7 +721,7 @@ def _component_required(component: str, thresholds: BrokerReadinessThresholds) -
             "reconciliation": thresholds.require_reconciliation,
             "runtime_session": thresholds.require_runtime_session,
             "resume_gate": thresholds.require_resume_gate,
-            "dispatch_roundtrip": thresholds.require_dispatch_roundtrip,
+            "dispatch_roundtrip": thresholds.require_dispatch_roundtrip or thresholds.require_route_readiness,
         }[component]
     )
 
@@ -727,6 +838,14 @@ def _route_dispatch_roundtrip_required(row: Any) -> bool:
     )
 
 
+def _route_readiness_required(row: Any, thresholds: BrokerReadinessThresholds) -> bool:
+    return bool(
+        thresholds.require_route_readiness
+        or row.route_readiness_required
+        or _identity_key(row.dispatch_roundtrip_target_mode) == "live_dryrun"
+    )
+
+
 def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFrame | None:
     if path is None:
         return None
@@ -808,6 +927,17 @@ def _number_value(value: object, fallback: float = 0.0) -> float:
     if pd.isna(parsed):
         return float(fallback)
     return float(parsed)
+
+
+def _object_text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if bool(pd.isna(value)):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
 
 
 def _identity_key(value: object) -> str:

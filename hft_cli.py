@@ -1319,6 +1319,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--require-reconciliation", action="store_true")
     broker_readiness.add_argument("--require-runtime-session", action="store_true")
     broker_readiness.add_argument("--require-resume-gate", action="store_true")
+    broker_readiness.add_argument("--require-route-readiness", action="store_true")
     broker_readiness.add_argument("--require-dispatch-roundtrip", action="store_true")
     broker_readiness.add_argument("--fail-on-breach", action="store_true")
 
@@ -3286,6 +3287,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_reconciliation=args.require_reconciliation,
                 require_runtime_session=args.require_runtime_session,
                 require_resume_gate=args.require_resume_gate,
+                require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 require_adapter_match=not args.allow_adapter_mismatch,
             ),

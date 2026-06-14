@@ -191,6 +191,9 @@
   validates proof-refresh strategy/market identity against the promotion target.
 - Broker/vendor adapter scaffolding for normalized, Arrow.money-style, and
   iRage-style CSV exports.
+- Broker readiness now consumes dispatch round-trip route-readiness proof,
+  requiring matching strategy/market identity and zero route gaps before
+  Arrow.money/iRage live dry-run handoff.
 - Unified `hft` command runner for scanners, replays, lead-lag measurement,
   and calibration reports.
 - Spread-capture decomposition for paired round-trip fills, plus residual
