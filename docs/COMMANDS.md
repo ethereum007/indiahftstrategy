@@ -2651,7 +2651,11 @@ revalidates any broker-readiness-carried shadow broker proof retained under
 identity before broker routing is allowed. If scale-up carried vendor
 market-data batch provenance from Arrow.money/iRage onboarding, cutover carries
 the dataset/header/mapping proof into `cutover_summary.csv` and
-`cutover_config.json`.
+`cutover_config.json`. If scale-up carried broker-readiness final dispatch
+round-trip vendor market-data batch proof, cutover revalidates adapter, market,
+dataset, provenance, and comparison acceptance checks and preserves it as
+`scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
+`scaleup_broker_dispatch_roundtrip_vendor_market_data_batch` config block.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,

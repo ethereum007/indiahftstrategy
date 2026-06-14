@@ -390,7 +390,8 @@
   proof for live-dry-run, nested broker-readiness summaries from launch
   pipeline roots, scale-up shadow broker-readiness aggregates, dispatch
   round-trip and route-enable failed-check counters, optional broker
-  resume-gate proof, broker-readiness-carried shadow broker proof, and operator
+  resume-gate proof, broker-readiness-carried shadow broker proof,
+  broker-readiness-carried vendor market-data batch proof, and operator
   strategy/market/limit acknowledgement agree in one manifest-backed
   authorization artifact that fingerprints resolved scale-up, broker-readiness,
   runtime-session, and operator-review inputs.
@@ -528,7 +529,9 @@
   before broker readiness revalidates and carries it as
   `dispatch_roundtrip_vendor_market_data_batch_*`, and scale-up revalidates and
   carries the broker-readiness copy as
-  `broker_dispatch_roundtrip_vendor_market_data_batch_*`.
+  `broker_dispatch_roundtrip_vendor_market_data_batch_*` before cutover
+  revalidates and preserves it as
+  `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -541,7 +544,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 694 tests.
+Current passing suite: 696 tests.
 
 ## Next Build Targets
 
