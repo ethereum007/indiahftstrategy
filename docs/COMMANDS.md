@@ -2706,6 +2706,7 @@ Prepare a non-submitting dry-run sender packet from an approved dispatch plan:
 python -m hft_cli prepare-broker-dispatch-send `
   --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
   --out runs\dispatch_send\leadlag_shadow_live_dryrun `
+  --require-route-readiness `
   --require-dispatch-roundtrip `
   --fail-on-breach
 ```
@@ -2726,13 +2727,16 @@ names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
 carries route dispatch round-trip proof into the sender request envelope and
 expected acknowledgement rows, then fails closed if the dispatch plan is not
-ready and armed, target mode does not match, route round-trip proof is missing
-or dirty for live dry-run sending, route-enable dispatch round-trip failed
-checks read from the dispatch config are nonzero, any dispatch row or request
-carries a mismatched route proof batch id, the adapter is unknown, payload JSON
-is invalid, idempotency keys are not unique, request limits are exceeded, or
-any request is not dry-run-only. It also carries the dispatch config broker
-schema review status/mode into the sender summary/config. The manifest
+ready and armed, target mode does not match, route-readiness proof is missing
+or identity-mismatched, route round-trip proof is missing or dirty for live
+dry-run sending, route-enable dispatch round-trip failed checks read from the
+dispatch config are nonzero, any dispatch row or request carries a mismatched
+route proof batch id, the adapter is unknown, payload JSON is invalid,
+idempotency keys are not unique, request limits are exceeded, or any request is
+not dry-run-only. `--require-route-readiness` is automatic for `--target-mode
+live_dryrun`; the explicit flag keeps paper/shadow sender packets equally
+strict. It also carries the dispatch config broker schema review status/mode
+and route-readiness proof into the sender summary/config. The manifest
 fingerprints the exact dispatch summary, dispatch orders, and dispatch config
 files consumed by the sender packet.
 

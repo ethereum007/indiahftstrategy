@@ -1575,6 +1575,7 @@ def main(argv: list[str] | None = None) -> int:
     dispatch_send.add_argument("--allow-unready-dispatch", action="store_true")
     dispatch_send.add_argument("--allow-unarmed-dispatch", action="store_true")
     dispatch_send.add_argument("--allow-non-dry-run", action="store_true")
+    dispatch_send.add_argument("--require-route-readiness", action="store_true")
     dispatch_send.add_argument("--require-dispatch-roundtrip", action="store_true")
     dispatch_send.add_argument("--max-requests", type=int, default=None)
     dispatch_send.add_argument("--fail-on-breach", action="store_true")
@@ -3591,6 +3592,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_dispatch_ready=not args.allow_unready_dispatch,
                 require_armed_dispatch=not args.allow_unarmed_dispatch,
                 require_dry_run=not args.allow_non_dry_run,
+                require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 max_requests=args.max_requests,
             ),
