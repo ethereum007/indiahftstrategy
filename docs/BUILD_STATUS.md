@@ -424,7 +424,8 @@
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, route-readiness consistency, raw ack-log route proof consistency,
   route-enable failed-check counters and broker schema review status/mode from
-  upstream configs,
+  upstream configs, shadow broker-readiness consistency across dispatch, send,
+  and acknowledgement configs,
   request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse

@@ -429,6 +429,62 @@ def route_enable_config(
     }
 
 
+def shadow_broker_config(
+    sessions=2,
+    ready_sessions=2,
+    adapter="arrow_money",
+    adapter_count=1,
+    route_sessions=2,
+    route_ready_sessions=2,
+    route_strategy="lead_lag_taker",
+    route_market="india_nse_index_derivatives",
+    route_gap_pairs=0,
+    dispatch_sessions=2,
+    dispatch_ready_sessions=2,
+    dispatch_strategy="lead_lag_taker",
+    dispatch_market="india_nse_index_derivatives",
+    dispatch_scenario_count=1,
+    dispatch_missing_request_acks=0,
+    dispatch_rejected_orders=0,
+    dispatch_unmatched_acks=0,
+    route_dispatch_sessions=2,
+    route_dispatch_ready_sessions=2,
+    route_dispatch_strategy="lead_lag_taker",
+    route_dispatch_market="india_nse_index_derivatives",
+    route_dispatch_scenario_count=1,
+):
+    return {
+        "sessions": sessions,
+        "ready_sessions": ready_sessions,
+        "adapter": adapter,
+        "adapter_count": adapter_count,
+        "route_readiness": {
+            "sessions": route_sessions,
+            "ready_sessions": route_ready_sessions,
+            "strategy": route_strategy,
+            "market": route_market,
+            "max_gap_pairs": route_gap_pairs,
+        },
+        "dispatch_roundtrip": {
+            "sessions": dispatch_sessions,
+            "ready_sessions": dispatch_ready_sessions,
+            "strategy": dispatch_strategy,
+            "market": dispatch_market,
+            "scenario_count": dispatch_scenario_count,
+            "max_missing_request_acks": dispatch_missing_request_acks,
+            "max_rejected_orders": dispatch_rejected_orders,
+            "max_unmatched_acks": dispatch_unmatched_acks,
+        },
+        "route_dispatch_roundtrip": {
+            "sessions": route_dispatch_sessions,
+            "ready_sessions": route_dispatch_ready_sessions,
+            "strategy": route_dispatch_strategy,
+            "market": route_dispatch_market,
+            "scenario_count": route_dispatch_scenario_count,
+        },
+    }
+
+
 def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
     dispatch = tmp_path / "dispatch"
     send = tmp_path / "send"
@@ -526,6 +582,99 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
     assert report.config["route_readiness"]["required"]
     assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_broker_dispatch_roundtrip_carries_shadow_broker_readiness():
+    config = route_enable_config()
+    config["shadow_broker_readiness"] = shadow_broker_config()
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=config,
+        send_config=config,
+        ack_config=config,
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    assert bool(summary["shadow_broker_readiness_provided"])
+    assert int(summary["shadow_broker_readiness_sessions"]) == 2
+    assert int(summary["shadow_broker_readiness_ready_sessions"]) == 2
+    assert summary["shadow_broker_adapter"] == "arrow_money"
+    assert summary["shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert summary["shadow_broker_dispatch_roundtrip_scenario_count"] == 1
+    assert report.config["shadow_broker_readiness"]["provided"]
+    assert report.config["shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
+    assert report.config["shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
+    assert report.config["shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
+        "india_nse_index_derivatives"
+    )
+
+
+def test_broker_dispatch_roundtrip_blocks_dirty_shadow_broker_readiness():
+    clean_config = route_enable_config()
+    clean_config["shadow_broker_readiness"] = shadow_broker_config()
+    bad_config = route_enable_config()
+    bad_config["shadow_broker_readiness"] = shadow_broker_config(
+        ready_sessions=1,
+        adapter="irage",
+        adapter_count=2,
+        route_ready_sessions=1,
+        route_strategy="surface_mm",
+        route_market="us_options_regular",
+        route_gap_pairs=2,
+        dispatch_ready_sessions=1,
+        dispatch_strategy="surface_mm",
+        dispatch_market="us_options_regular",
+        dispatch_scenario_count=2,
+        dispatch_missing_request_acks=1,
+        dispatch_rejected_orders=1,
+        dispatch_unmatched_acks=1,
+        route_dispatch_ready_sessions=1,
+        route_dispatch_strategy="surface_mm",
+        route_dispatch_market="us_options_regular",
+        route_dispatch_scenario_count=2,
+    )
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=clean_config,
+        send_config=clean_config,
+        ack_config=bad_config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "shadow_broker_readiness_ready",
+        "shadow_broker_adapter_match",
+        "shadow_broker_adapter_consistent",
+        "shadow_broker_route_readiness_ready",
+        "shadow_broker_route_readiness_identity_match",
+        "shadow_broker_route_readiness_gap_pairs",
+        "shadow_broker_dispatch_roundtrip_ready",
+        "shadow_broker_dispatch_roundtrip_identity_match",
+        "shadow_broker_dispatch_roundtrip_scenario_consistent",
+        "shadow_broker_dispatch_roundtrip_missing_request_acks",
+        "shadow_broker_dispatch_roundtrip_rejected_orders",
+        "shadow_broker_dispatch_roundtrip_unmatched_acks",
+        "shadow_broker_route_dispatch_roundtrip_ready",
+        "shadow_broker_route_dispatch_roundtrip_identity_match",
+        "shadow_broker_route_dispatch_roundtrip_scenario_consistent",
+    } <= failed
+    assert report.summary.iloc[0]["shadow_broker_adapter"] == "arrow_money"
+    assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
 
 
 def test_broker_dispatch_roundtrip_requires_route_readiness():

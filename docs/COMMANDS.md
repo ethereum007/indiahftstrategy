@@ -2842,14 +2842,15 @@ the dispatch plan, non-submitting sender packet, and acknowledgement
 reconciliation all pass with matching strategy/market/scenario/adapter
 identity, disabled live submission, dry-run-only requests, consistent
 route-readiness proof, consistent route round-trip proof, zero carried
-route-enable dispatch round-trip failed checks from upstream configs, one
+route-enable dispatch round-trip failed checks from upstream configs,
+consistent shadow broker-readiness proof across dispatch/send/ack configs, one
 request per dispatch order, and an accepted acknowledgement for every request.
 `--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
 keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
 files that formed the proof, and the final summary/config retain the broker
-schema review status/mode plus route-readiness proof reconciled from the
-component configs.
+schema review status/mode, route-readiness proof, and shadow broker-readiness
+proof reconciled from the component configs.
 
 ## Calibration
 
