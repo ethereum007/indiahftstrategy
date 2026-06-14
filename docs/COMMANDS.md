@@ -2222,6 +2222,11 @@ unmatched acknowledgement counts, plus the nested route proof target, identity,
 batch, request, and ack quality fields. `--require-dispatch-roundtrip` fails
 closed unless that broker dry-run proof and its route proof are present, ready,
 identity-matched, count-matched, and clean.
+If the shadow-session comparison carries broker-readiness evidence, scale-up
+also verifies that accepted sessions all carried ready broker proof for one
+adapter, one route-readiness strategy/market, and one broker dispatch
+round-trip strategy/market/scenario with zero route gaps and clean
+acknowledgement quality before emitting the controlled scale-up config.
 Use `--expected-strategy` and `--expected-market` to fail closed unless the
 strategy-evidence summary carries the intended strategy and market identity.
 Those identities are retained in `scaleup_summary.csv` and `scaleup_config.json`
