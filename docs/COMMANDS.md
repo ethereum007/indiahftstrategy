@@ -2665,6 +2665,7 @@ python -m hft_cli plan-broker-dispatch `
   --upload-pack runs\uploads\leadlag_shadow_arrow `
   --out runs\dispatch\leadlag_shadow_live_dryrun `
   --target-mode live_dryrun `
+  --require-route-readiness `
   --require-dispatch-roundtrip `
   --fail-on-breach
 ```
@@ -2682,13 +2683,17 @@ manifest.json
 This command still does not submit orders. It hashes the route-enable
 authorization and upload file, creates one dry-run dispatch row per upload
 order, and requires unique source order IDs, unique dispatch IDs, route-enabled
-state, matching target mode, clean nested route proof from route-enable for
-live dry-run routing, zero nested route-enable dispatch round-trip failed
-checks, and order counts within the approved route limits. The resulting
+state, matching target mode, clean route-readiness proof from route-enable,
+clean nested route proof from route-enable for live dry-run routing, zero
+nested route-enable dispatch round-trip failed checks, and order counts within
+the approved route limits. `--require-route-readiness` is automatic for
+`--target-mode live_dryrun`; the explicit flag keeps paper/shadow dispatch
+plans equally strict. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, while the summary/config carry the broker schema review
-status/mode from route-enable. `broker_dispatch_config.json` is the artifact a
-future Arrow.money or iRage sender can consume. `--upload-pack` may point at a
+status/mode and route-readiness proof from route-enable.
+`broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
+sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
 surface-MM `04_upload_pack` upload-order files and fingerprints the resolved
 route-enable summary, route-enable config, and upload CSV in the manifest.

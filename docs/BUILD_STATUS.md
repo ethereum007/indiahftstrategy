@@ -386,8 +386,8 @@
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries broker schema review status/mode plus
-  live-dry-run nested route proof from route-enable, and fails closed on
-  disabled routes, nested route-enable
+  route-readiness proof and live-dry-run nested route proof from route-enable,
+  and fails closed on disabled routes, nested route-enable
   dispatch round-trip failed checks, dirty route proof, duplicate source order
   IDs, or unresolved upload-order files while resolving launch pipeline upload
   roots and fingerprinting the route-enable summary/config plus upload CSV

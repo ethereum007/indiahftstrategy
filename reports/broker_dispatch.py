@@ -16,6 +16,7 @@ class BrokerDispatchThresholds:
     target_mode: str = "live_dryrun"
     require_route_enabled: bool = True
     require_dry_run: bool = True
+    require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
     min_orders: int = 1
     max_orders: int | None = None
@@ -51,7 +52,7 @@ def evaluate_broker_dispatch_plan(
     route = _route_state(route_enable_summary.iloc[0], route_enable_config)
     dispatch_orders = _dispatch_orders(upload_orders, route, upload_file_hash)
     checks = _checks(route, dispatch_orders, thresholds)
-    summary = _summary(route, dispatch_orders, checks, upload_file_hash)
+    summary = _summary(route, dispatch_orders, checks, upload_file_hash, thresholds)
     config = _config(route, dispatch_orders, summary.iloc[0], thresholds, checks, upload_file_hash)
     return BrokerDispatchReport(
         dispatch_orders=dispatch_orders,
@@ -145,6 +146,8 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
     orders = int(len(dispatch_orders))
     max_orders = thresholds.max_orders or int(route["max_orders_per_session"])
     target_mode = _identity_key(thresholds.target_mode)
+    route_readiness_required = _route_readiness_required(thresholds, route)
+    route_readiness_active = bool(route_readiness_required or route["route_readiness_provided"])
     checks = [
         _check(
             "route_enabled",
@@ -170,58 +173,112 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
             bool(route["dispatch_roundtrip_provided"]) or not _dispatch_roundtrip_required(thresholds),
             "dispatch requires route-enable dry-run dispatch round-trip proof",
         ),
-        _check(
-            "dispatch_orders_min",
-            orders,
-            ">=",
-            thresholds.min_orders,
-            orders >= thresholds.min_orders,
-            "dispatch batch does not contain enough orders",
-        ),
-        _check(
-            "dispatch_orders_within_limit",
-            orders,
-            "<=",
-            max_orders,
-            orders <= max_orders,
-            "dispatch order count exceeds route limit",
-        ),
-        _check(
-            "dispatch_orders_match_route_enable",
-            orders,
-            "==",
-            int(route["upload_orders"]),
-            orders == int(route["upload_orders"]),
-            "dispatch order count does not match route-enable upload order count",
-        ),
-        _check(
-            "unique_dispatch_order_id",
-            int(dispatch_orders["dispatch_order_id"].nunique()),
-            "==",
-            orders,
-            int(dispatch_orders["dispatch_order_id"].nunique()) == orders,
-            "dispatch order ids are not unique",
-        ),
-        _check(
-            "unique_source_order_id",
-            int(dispatch_orders["source_order_id"].nunique()),
-            "==",
-            orders,
-            int(dispatch_orders["source_order_id"].nunique()) == orders,
-            "source order ids are not unique",
-        ),
-        _check(
-            "dry_run_only",
-            bool(dispatch_orders["dry_run_only"].astype(bool).all()),
-            "is",
-            True,
-            bool(dispatch_orders["dry_run_only"].astype(bool).all()) or not thresholds.require_dry_run,
-            "dispatch plan contains non-dry-run rows",
-        ),
     ]
+    if route_readiness_required:
+        checks.append(
+            _check(
+                "route_readiness_provided",
+                route["route_readiness_provided"],
+                "is",
+                True,
+                bool(route["route_readiness_provided"]),
+                "dispatch requires route-enable route-readiness proof",
+            )
+        )
+    if route_readiness_active:
+        checks.extend(_route_readiness_checks(route))
+    checks.extend(
+        [
+            _check(
+                "dispatch_orders_min",
+                orders,
+                ">=",
+                thresholds.min_orders,
+                orders >= thresholds.min_orders,
+                "dispatch batch does not contain enough orders",
+            ),
+            _check(
+                "dispatch_orders_within_limit",
+                orders,
+                "<=",
+                max_orders,
+                orders <= max_orders,
+                "dispatch order count exceeds route limit",
+            ),
+            _check(
+                "dispatch_orders_match_route_enable",
+                orders,
+                "==",
+                int(route["upload_orders"]),
+                orders == int(route["upload_orders"]),
+                "dispatch order count does not match route-enable upload order count",
+            ),
+            _check(
+                "unique_dispatch_order_id",
+                int(dispatch_orders["dispatch_order_id"].nunique()),
+                "==",
+                orders,
+                int(dispatch_orders["dispatch_order_id"].nunique()) == orders,
+                "dispatch order ids are not unique",
+            ),
+            _check(
+                "unique_source_order_id",
+                int(dispatch_orders["source_order_id"].nunique()),
+                "==",
+                orders,
+                int(dispatch_orders["source_order_id"].nunique()) == orders,
+                "source order ids are not unique",
+            ),
+            _check(
+                "dry_run_only",
+                bool(dispatch_orders["dry_run_only"].astype(bool).all()),
+                "is",
+                True,
+                bool(dispatch_orders["dry_run_only"].astype(bool).all()) or not thresholds.require_dry_run,
+                "dispatch plan contains non-dry-run rows",
+            ),
+        ]
+    )
     if _dispatch_roundtrip_required(thresholds) or route["dispatch_roundtrip_provided"]:
         checks.extend(_dispatch_roundtrip_checks(route, target_mode))
     return pd.DataFrame(checks)
+
+
+def _route_readiness_checks(route: dict[str, Any]) -> list[dict[str, object]]:
+    return [
+        _check(
+            "route_readiness_ready",
+            route["route_readiness_ready"],
+            "is",
+            True,
+            bool(route["route_readiness_ready"]),
+            "route-enable route-readiness proof is not ready",
+        ),
+        _check(
+            "route_readiness_strategy_matches",
+            route["route_readiness_strategy"],
+            "==",
+            route["strategy"],
+            bool(
+                route["route_readiness_strategy"]
+                and route["strategy"]
+                and route["route_readiness_strategy"] == route["strategy"]
+            ),
+            "route-enable route-readiness strategy does not match dispatch strategy",
+        ),
+        _check(
+            "route_readiness_market_matches",
+            route["route_readiness_market"],
+            "==",
+            route["market"],
+            bool(
+                route["route_readiness_market"]
+                and route["market"]
+                and route["route_readiness_market"] == route["market"]
+            ),
+            "route-enable route-readiness market does not match dispatch market",
+        ),
+    ]
 
 
 def _dispatch_roundtrip_checks(route: dict[str, Any], target_mode: str) -> list[dict[str, object]]:
@@ -318,6 +375,7 @@ def _summary(
     dispatch_orders: pd.DataFrame,
     checks: pd.DataFrame,
     upload_file_hash: str,
+    thresholds: BrokerDispatchThresholds,
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -340,6 +398,13 @@ def _summary(
                 "max_notional_per_session": float(route["max_notional_per_session"]),
                 "upload_file_hash": upload_file_hash,
                 "dispatch_batch_id": str(dispatch_orders.iloc[0]["dispatch_batch_id"]) if not dispatch_orders.empty else "",
+                "route_readiness_required": _route_readiness_required(thresholds, route),
+                "route_readiness_provided": route["route_readiness_provided"],
+                "route_readiness_ready": route["route_readiness_ready"],
+                "route_readiness_strategy": route["route_readiness_strategy"],
+                "route_readiness_market": route["route_readiness_market"],
+                "route_readiness_route_ready_pairs": route["route_readiness_route_ready_pairs"],
+                "route_readiness_gap_pairs": route["route_readiness_gap_pairs"],
                 "route_dispatch_roundtrip_required": route["dispatch_roundtrip_required"],
                 "route_dispatch_roundtrip_provided": route["dispatch_roundtrip_provided"],
                 "route_dispatch_roundtrip_ready": route["dispatch_roundtrip_ready"],
@@ -398,6 +463,16 @@ def _config(
             "file_hash": upload_file_hash,
             "output_file": route["upload_output_file"],
         },
+        "route_readiness": {
+            "required": _to_bool(summary["route_readiness_required"]),
+            "provided": _to_bool(summary["route_readiness_provided"]),
+            "ready": _to_bool(summary["route_readiness_ready"]),
+            "strategy": str(summary["route_readiness_strategy"]),
+            "market": str(summary["route_readiness_market"]),
+            "route_ready_pairs": int(summary["route_readiness_route_ready_pairs"]),
+            "gap_pairs": int(summary["route_readiness_gap_pairs"]),
+            "recommendation": route["route_readiness_recommendation"],
+        },
         "dispatch": {
             "orders": int(len(dispatch_orders)),
             "first_dispatch_order_id": str(dispatch_orders.iloc[0]["dispatch_order_id"])
@@ -434,6 +509,7 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     upload = config.get("upload", {}) or {}
     broker_readiness = config.get("broker_readiness", {}) or {}
+    route_readiness = config.get("route_readiness", {}) or {}
     dispatch = config.get("dispatch_roundtrip", {}) or {}
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route_proof = dispatch.get("route_proof", {}) or {}
@@ -467,6 +543,33 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         "upload_orders": int(_number_from(upload, "orders", _number(row, "upload_orders", 0.0))),
         "upload_output_file": _first_text(upload.get("output_file", "")),
         "route_enable_hash": route_hash,
+        "route_readiness_required": _to_bool(
+            route_readiness.get("required", row.get("route_readiness_required", False))
+        ),
+        "route_readiness_provided": _to_bool(
+            route_readiness.get("provided", row.get("route_readiness_provided", False))
+        ),
+        "route_readiness_ready": _to_bool(route_readiness.get("ready", row.get("route_readiness_ready", False))),
+        "route_readiness_strategy": _strategy_key(
+            _first_text(route_readiness.get("strategy", ""), row.get("route_readiness_strategy", ""))
+        ),
+        "route_readiness_market": _identity_key(
+            _first_text(route_readiness.get("market", ""), row.get("route_readiness_market", ""))
+        ),
+        "route_readiness_route_ready_pairs": int(
+            _number_from(
+                route_readiness,
+                "route_ready_pairs",
+                _number(row, "route_readiness_route_ready_pairs", 0.0),
+            )
+        ),
+        "route_readiness_gap_pairs": int(
+            _number_from(route_readiness, "gap_pairs", _number(row, "route_readiness_gap_pairs", 0.0))
+        ),
+        "route_readiness_recommendation": _first_text(
+            route_readiness.get("recommendation", ""),
+            row.get("route_readiness_recommendation", ""),
+        ),
         "dispatch_roundtrip_required": _to_bool(
             route_proof.get("required", row.get("route_dispatch_roundtrip_required", False))
         ),
@@ -584,6 +687,14 @@ def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:
 
 def _dispatch_roundtrip_required(thresholds: BrokerDispatchThresholds) -> bool:
     return bool(thresholds.require_dispatch_roundtrip or thresholds.target_mode == "live_dryrun")
+
+
+def _route_readiness_required(thresholds: BrokerDispatchThresholds, route: dict[str, Any] | None = None) -> bool:
+    return bool(
+        thresholds.require_route_readiness
+        or thresholds.target_mode == "live_dryrun"
+        or (route is not None and route["route_readiness_required"])
+    )
 
 
 def _validate_thresholds(thresholds: BrokerDispatchThresholds) -> None:

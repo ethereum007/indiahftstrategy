@@ -1559,6 +1559,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_dispatch.add_argument("--target-mode", default="live_dryrun", choices=["paper", "shadow", "live_dryrun"])
     broker_dispatch.add_argument("--allow-disabled-route", action="store_true")
     broker_dispatch.add_argument("--allow-non-dry-run", action="store_true")
+    broker_dispatch.add_argument("--require-route-readiness", action="store_true")
     broker_dispatch.add_argument("--require-dispatch-roundtrip", action="store_true")
     broker_dispatch.add_argument("--min-orders", type=int, default=1)
     broker_dispatch.add_argument("--max-orders", type=int, default=None)
@@ -3573,6 +3574,7 @@ def main(argv: list[str] | None = None) -> int:
                 target_mode=args.target_mode,
                 require_route_enabled=not args.allow_disabled_route,
                 require_dry_run=not args.allow_non_dry_run,
+                require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 min_orders=args.min_orders,
                 max_orders=args.max_orders,

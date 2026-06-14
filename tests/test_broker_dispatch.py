@@ -40,6 +40,14 @@ def route_summary(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy=None,
+    route_readiness_market=None,
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -57,6 +65,15 @@ def route_summary(
     )
     route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
     route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
+    route_readiness_strategy = dispatch_strategy if route_readiness_strategy is None else route_readiness_strategy
+    route_readiness_market = dispatch_market if route_readiness_market is None else route_readiness_market
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return pd.DataFrame(
         [
             {
@@ -73,6 +90,14 @@ def route_summary(
                 "upload_orders": upload_orders,
                 "max_orders_per_session": 10,
                 "max_notional_per_session": 100_000.0,
+                "route_readiness_required": route_readiness_required,
+                "route_readiness_provided": route_readiness_provided,
+                "route_readiness_ready": route_readiness_ready,
+                "route_readiness_strategy": route_readiness_strategy,
+                "route_readiness_market": route_readiness_market,
+                "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
+                "route_readiness_gap_pairs": route_readiness_gap_pairs,
+                "route_readiness_recommendation": route_readiness_recommendation,
                 "dispatch_roundtrip_required": True,
                 "dispatch_roundtrip_provided": dispatch_provided,
                 "dispatch_roundtrip_ready": dispatch_ready,
@@ -137,6 +162,14 @@ def route_config(
     route_missing_request_acks=None,
     route_rejected_orders=None,
     route_unmatched_acks=None,
+    route_readiness_required=True,
+    route_readiness_provided=True,
+    route_readiness_ready=True,
+    route_readiness_strategy=None,
+    route_readiness_market=None,
+    route_readiness_route_ready_pairs=1,
+    route_readiness_gap_pairs=0,
+    route_readiness_recommendation=None,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -154,6 +187,15 @@ def route_config(
     )
     route_rejected_orders = dispatch_rejected_orders if route_rejected_orders is None else route_rejected_orders
     route_unmatched_acks = dispatch_unmatched_acks if route_unmatched_acks is None else route_unmatched_acks
+    route_readiness_strategy = dispatch_strategy if route_readiness_strategy is None else route_readiness_strategy
+    route_readiness_market = dispatch_market if route_readiness_market is None else route_readiness_market
+    route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if route_readiness_recommendation is None and route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if route_readiness_recommendation is None
+        else route_readiness_recommendation
+    )
     return {
         "schema_version": 1,
         "route_enabled": enabled,
@@ -178,6 +220,16 @@ def route_config(
             "orders": upload_orders,
             "output_file": "broker_upload_orders.csv",
             "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+        },
+        "route_readiness": {
+            "required": route_readiness_required,
+            "provided": route_readiness_provided,
+            "ready": route_readiness_ready,
+            "strategy": route_readiness_strategy,
+            "market": route_readiness_market,
+            "route_ready_pairs": route_readiness_route_ready_pairs,
+            "gap_pairs": route_readiness_gap_pairs,
+            "recommendation": route_readiness_recommendation,
         },
         "dispatch_roundtrip": {
             "required": True,
@@ -252,17 +304,33 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
-def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True):
+def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True, route_readiness=True):
     route = root / "route_enable"
     upload = root / "upload"
     route.mkdir(parents=True)
     upload.mkdir()
-    route_summary(route_ready, dispatch_provided=dispatch, dispatch_ready=dispatch).to_csv(
+    route_summary(
+        route_ready,
+        dispatch_provided=dispatch,
+        dispatch_ready=dispatch,
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    ).to_csv(
         route / "route_enable_summary.csv",
         index=False,
     )
     (route / "route_enable_config.json").write_text(
-        json.dumps(route_config(route_ready, dispatch_provided=dispatch, dispatch_ready=dispatch), indent=2) + "\n",
+        json.dumps(
+            route_config(
+                route_ready,
+                dispatch_provided=dispatch,
+                dispatch_ready=dispatch,
+                route_readiness_provided=route_readiness,
+                route_readiness_ready=route_readiness,
+            ),
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     upload_orders(duplicate).to_csv(upload / "broker_upload_orders.csv", index=False)
@@ -296,6 +364,45 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 0
     assert report.config["route_dispatch_roundtrip"]["dispatch_batch_id"] == "BDP-0"
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 0
+    assert bool(report.summary.iloc[0]["route_readiness_required"])
+    assert bool(report.summary.iloc[0]["route_readiness_ready"])
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
+    assert report.config["route_readiness"]["required"]
+    assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_broker_dispatch_requires_route_readiness():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(route_readiness_provided=False, route_readiness_ready=False),
+        route_enable_config=route_config(route_readiness_provided=False, route_readiness_ready=False),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_readiness_provided", "route_readiness_ready"} <= failed
+    assert report.config["route_readiness"]["required"]
+    assert not report.config["route_readiness"]["provided"]
+
+
+def test_broker_dispatch_blocks_route_readiness_identity_mismatch():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+        ),
+        route_enable_config=route_config(
+            route_readiness_strategy="surface_mm",
+            route_readiness_market="us_options_regular",
+        ),
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"route_readiness_strategy_matches", "route_readiness_market_matches"} <= failed
+    assert report.summary.iloc[0]["route_readiness_strategy"] == "surface_mm"
+    assert report.config["route_readiness"]["market"] == "us_options_regular"
 
 
 def test_broker_dispatch_requires_nested_route_dispatch_roundtrip():
@@ -541,3 +648,29 @@ def test_cli_broker_dispatch_can_require_dispatch_roundtrip(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "route_dispatch_roundtrip_provided" in failed
+
+
+def test_cli_broker_dispatch_can_require_route_readiness(tmp_path):
+    route, upload = write_inputs(tmp_path, route_readiness=False)
+    out_dir = tmp_path / "dispatch"
+
+    code = main(
+        [
+            "plan-broker-dispatch",
+            "--route-enable",
+            str(route),
+            "--upload-pack",
+            str(upload),
+            "--out",
+            str(out_dir),
+            "--require-route-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "route_readiness_provided" in failed
