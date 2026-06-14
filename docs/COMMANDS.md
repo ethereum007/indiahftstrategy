@@ -2620,8 +2620,10 @@ round-trip proof carried by both scale-up and broker readiness. It validates
 runtime and dispatch strategy/market/target-mode identity against the scale-up
 plan, requires matching clean route proof from both scale-up and broker
 readiness, rejects nonzero dispatch round-trip and route-enable dispatch
-round-trip failed-check counts, carries proof-refresh state, and validates any
-supplied broker resume-gate proof identity before broker routing is allowed.
+round-trip failed-check counts, carries proof-refresh state, enforces any
+multi-session shadow broker-readiness aggregate retained in the scale-up config,
+and validates any supplied broker resume-gate proof identity before broker
+routing is allowed.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,

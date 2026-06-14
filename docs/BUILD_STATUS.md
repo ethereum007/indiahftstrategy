@@ -381,11 +381,11 @@
   after scale-up, route-readiness proof, broker readiness, runtime-session
   guard, proof freshness, required dispatch round-trip proof plus nested route
   proof for live-dry-run, nested broker-readiness summaries from launch
-  pipeline roots, dispatch round-trip and route-enable failed-check counters,
-  optional broker resume-gate proof, and operator strategy/market/limit
-  acknowledgement agree in one manifest-backed authorization artifact that
-  fingerprints resolved scale-up, broker-readiness, runtime-session, and
-  operator-review inputs.
+  pipeline roots, scale-up shadow broker-readiness aggregates, dispatch
+  round-trip and route-enable failed-check counters, optional broker
+  resume-gate proof, and operator strategy/market/limit acknowledgement agree
+  in one manifest-backed authorization artifact that fingerprints resolved
+  scale-up, broker-readiness, runtime-session, and operator-review inputs.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
   cutover route-readiness proof, live-dry-run dispatch round-trip proof,
