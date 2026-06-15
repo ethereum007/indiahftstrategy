@@ -644,6 +644,96 @@ def test_broker_dispatch_ack_carries_ack_broker_vendor_market_data_batch_when_pr
     assert not vendor["comparison"]["accepted"]
 
 
+def test_cli_broker_dispatch_ack_hydrates_broker_vendor_data_from_manifest_chain(tmp_path):
+    dispatch, acks = write_inputs(tmp_path)
+    broker_config = dispatch / "broker_readiness_config.json"
+    cutover_manifest = dispatch / "cutover_manifest.json"
+    route_manifest = dispatch / "route_enable_manifest.json"
+    broker_config.write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "live_dryrun",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cutover_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "cutover_gate",
+                "inputs": {
+                    "broker_readiness_config": {
+                        "path": str(broker_config),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    route_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "route_enable_packet",
+                "inputs": {
+                    "cutover_manifest": {
+                        "path": str(cutover_manifest),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "dispatch_acks"
+
+    code = main(
+        [
+            "reconcile-broker-dispatch",
+            "--dispatch",
+            str(dispatch),
+            "--acks",
+            str(acks),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_ack_summary.csv")
+    config = json.loads((out_dir / "broker_dispatch_ack_config.json").read_text(encoding="utf-8"))
+    vendor = config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert code == 0
+    assert bool(summary.loc[0, "passed"])
+    assert bool(summary.loc[0, "ack_broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary.loc[0, "ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert (
+        summary.loc[0, "ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"]
+        == "arrow_money"
+    )
+    assert int(summary.loc[0, "ack_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary.loc[0, "ack_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+    assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+
+
 def test_broker_dispatch_ack_blocks_bad_send_broker_shadow_broker_readiness():
     config = dispatch_config()
     config["route_broker_shadow_broker_readiness"] = {

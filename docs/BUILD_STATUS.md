@@ -447,7 +447,9 @@
   `ack_vendor_market_data_batch_*`, broker-readiness final dispatch
   round-trip vendor market-data proof as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
-  acknowledgement-log proof batch continuity, and
+  acknowledgement-log proof batch continuity, hydrating missing broker
+  vendor-data proof through dispatch/route-enable/cutover manifests when
+  needed, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch, dispatch
   manifest, and ack log inputs.
@@ -557,7 +559,8 @@
   through the dispatch/route-enable/cutover manifest chain, and
   preserves it as
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
-  acknowledgement reconciliation prefers its ack-stage config block and
+  acknowledgement reconciliation prefers its ack-stage config block, hydrates
+  missing proof through the dispatch/route-enable/cutover manifest chain, and
   preserves it as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
   round-trip proof prefers its roundtrip-stage config block and reconciles it as
@@ -587,7 +590,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 737 tests.
+Current passing suite: 738 tests.
 
 ## Next Build Targets
 

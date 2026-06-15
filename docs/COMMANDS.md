@@ -2940,7 +2940,10 @@ ack gate preserves it as
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` config block. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
-ack-stage block. The
+ack-stage block. For older or thin dispatch configs, the ack gate can also
+follow the dispatch manifest to the route-enable and cutover manifests to
+hydrate missing broker vendor-data proof from the recorded
+`broker_readiness_config` sidecar before preserving it. The
 manifest fingerprints the exact dispatch summary, dispatch orders, dispatch
 config, dispatch manifest when present, and broker acknowledgement log files
 used in the reconciliation.
