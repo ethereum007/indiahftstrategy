@@ -42,11 +42,36 @@ def assert_broker_vendor_data_adapter_mismatch_blocked(
     assert_broker_vendor_data_proof_forwarded(output_dir, readiness_subdir=readiness_subdir)
 
 
+def assert_broker_vendor_data_market_mismatch_blocked(
+    output_dir,
+    *,
+    summary_file,
+    components_file,
+    readiness_subdir="06_broker_readiness",
+    proof_market="us_options_regular",
+):
+    summary = pd.read_csv(output_dir / summary_file)
+    components = pd.read_csv(output_dir / components_file)
+    checks = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_checks.csv")
+    broker_summary = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_summary.csv")
+
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert not bool(summary.loc[0, "ready"])
+    assert components.set_index("component").loc["broker_readiness", "status"] == "not_ready"
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+    } <= failed
+    assert broker_summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_market"] == proof_market
+    assert broker_summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_market"] == proof_market
+    assert_broker_vendor_data_proof_forwarded(output_dir, readiness_subdir=readiness_subdir)
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
 
-def write_broker_vendor_data_proof(path, *, adapter="arrow_money"):
+def write_broker_vendor_data_proof(path, *, adapter="arrow_money", market="india_nse_index_derivatives"):
     batch_dir = path / "01_vendor_market_data_batch"
     batch_dir.mkdir(parents=True, exist_ok=True)
     (batch_dir / "vendor_market_data_batch_config.json").write_text(
@@ -56,7 +81,7 @@ def write_broker_vendor_data_proof(path, *, adapter="arrow_money"):
                 "provided": True,
                 "adapter": adapter,
                 "kind": "ticks",
-                "market": "india_nse_index_derivatives",
+                "market": market,
                 "dataset_count": 2,
                 "ready_datasets": 2,
                 "failed_datasets": 0,

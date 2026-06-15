@@ -588,7 +588,8 @@
   roots even when no dispatch round-trip proof is supplied, compares them
   against the launch/broker expected market when available, and fails closed
   across all five launch CLIs when an iRage proof root is supplied to an
-  Arrow.money/normalized launch adapter.
+  Arrow.money/normalized launch adapter or when an otherwise matching proof
+  root carries a non-India market.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -601,7 +602,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 754 tests.
+Current passing suite: 759 tests.
 
 ## Next Build Targets
 
