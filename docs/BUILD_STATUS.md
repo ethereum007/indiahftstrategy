@@ -570,9 +570,10 @@
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker readiness prefers its readiness-native broker vendor-data config block
   when present, otherwise revalidates the roundtrip-stage block directly or
-  through normalized handoff fields, scale-up, cutover, route-enable, and broker
-  dispatch accept those direct final round-trip proof prefixes, and carry it as
-  `broker_dispatch_roundtrip_vendor_market_data_batch_*`. Broker vendor-data
+  through normalized handoff fields, scale-up, cutover, route-enable, broker
+  dispatch, and broker dispatch send accept those direct final round-trip proof
+  prefixes and carry them into their stage-native broker vendor-data fields.
+  Broker vendor-data
   proof selection now uses one shared active-proof selector across cutover,
   route-enable, dispatch, send, ack, round-trip, and broker-readiness stages,
   and broker readiness can now consume a generated
@@ -622,7 +623,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 798 tests.
+Current passing suite: 800 tests.
 
 ## Next Build Targets
 

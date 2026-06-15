@@ -638,6 +638,52 @@ def test_broker_dispatch_send_blocks_wrong_manifest_broker_vendor_market_data_ba
     assert vendor["manifest_run_type"] == "not_vendor_batch"
 
 
+def test_broker_dispatch_send_carries_roundtrip_broker_vendor_market_data_batch():
+    config = dispatch_config()
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=config,
+    )
+
+    summary = report.summary.iloc[0]
+    vendor = report.config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert report.ready
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+
+
+def test_broker_dispatch_send_blocks_wrong_manifest_roundtrip_vendor_market_data_batch():
+    config = dispatch_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=config,
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "not_vendor_batch"
+    )
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
+
+
 def test_broker_dispatch_send_carries_dispatch_broker_vendor_market_data_batch_when_preferred():
     config = dispatch_config()
     config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
