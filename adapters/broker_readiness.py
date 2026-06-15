@@ -165,10 +165,9 @@ def write_broker_readiness_report(
             dispatch_roundtrip_dir,
             "broker_dispatch_roundtrip_config.json",
         ),
-        _read_required_optional_config(
+        _read_vendor_market_data_batch_config(
             vendor_market_data_batch_dir,
             "vendor_market_data_batch_config.json",
-            component="vendor market-data batch",
         ),
     )
     report = evaluate_broker_readiness(
@@ -439,6 +438,9 @@ def _apply_vendor_market_data_batch_config(
         vendor.get("adapter", row.get(f"{source_prefix}_adapter", ""))
     )
     frame.loc[0, f"{field_prefix}_kind"] = _object_text(vendor.get("kind", row.get(f"{source_prefix}_kind", "")))
+    frame.loc[0, f"{field_prefix}_manifest_run_type"] = _object_text(
+        vendor.get("manifest_run_type", row.get(f"{source_prefix}_manifest_run_type", ""))
+    )
     frame.loc[0, f"{field_prefix}_market"] = _object_text(
         vendor.get("market", row.get(f"{source_prefix}_market", ""))
     )
@@ -988,6 +990,12 @@ def _vendor_market_data_batch_item_fields(
             row,
             f"{field_prefix}_kind",
             f"{source_prefix}_kind",
+        ),
+        f"{field_prefix}_manifest_run_type": _dispatch_text_any(
+            component,
+            row,
+            f"{field_prefix}_manifest_run_type",
+            f"{source_prefix}_manifest_run_type",
         ),
         f"{field_prefix}_market": _dispatch_text_any(
             component,
@@ -1542,6 +1550,7 @@ def _dispatch_roundtrip_vendor_market_data_batch_active(row: Any) -> bool:
 def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[str, Any]]:
     expected_kind = _vendor_market_data_batch_expected_kind(row)
     vendor_kind = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_kind)
+    manifest_run_type = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_manifest_run_type)
     expected_market = _vendor_market_data_batch_expected_market(row)
     vendor_market = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market)
     return [
@@ -1580,6 +1589,14 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
             expected_kind if expected_kind else "nonempty kind",
             bool(vendor_kind and (not expected_kind or vendor_kind == expected_kind)),
             "dispatch round-trip vendor market-data kind does not match broker readiness expected kind",
+        ),
+        _check(
+            "dispatch_roundtrip_vendor_market_data_batch_manifest_run_type",
+            manifest_run_type,
+            "==",
+            "vendor_market_data_batch_pipeline",
+            manifest_run_type == "vendor_market_data_batch_pipeline",
+            "dispatch round-trip vendor market-data manifest is not a vendor batch pipeline proof",
         ),
         _check(
             "dispatch_roundtrip_vendor_market_data_batch_market_matches",
@@ -1726,6 +1743,7 @@ def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any
         "ready",
         "adapter",
         "kind",
+        "manifest_run_type",
         "market",
         "dataset_count",
         "ready_datasets",
@@ -1971,6 +1989,7 @@ def _vendor_market_data_batch_summary_fields(
         f"{field_prefix}_ready": _item_bool(item, f"{field_prefix}_ready"),
         f"{field_prefix}_adapter": _item_text(item, f"{field_prefix}_adapter"),
         f"{field_prefix}_kind": _item_text(item, f"{field_prefix}_kind"),
+        f"{field_prefix}_manifest_run_type": _item_text(item, f"{field_prefix}_manifest_run_type"),
         f"{field_prefix}_market": _item_text(item, f"{field_prefix}_market"),
         f"{field_prefix}_dataset_count": int(_number(item, f"{field_prefix}_dataset_count", 0.0)),
         f"{field_prefix}_ready_datasets": int(_number(item, f"{field_prefix}_ready_datasets", 0.0)),
@@ -2208,6 +2227,7 @@ def _vendor_market_data_batch_config(
         "ready": _item_bool(row, f"{field_prefix}_ready"),
         "adapter": _item_text(row, f"{field_prefix}_adapter"),
         "kind": _item_text(row, f"{field_prefix}_kind"),
+        "manifest_run_type": _item_text(row, f"{field_prefix}_manifest_run_type"),
         "market": _item_text(row, f"{field_prefix}_market"),
         "dataset_count": int(_number(row, f"{field_prefix}_dataset_count", 0.0)),
         "ready_datasets": int(_number(row, f"{field_prefix}_ready_datasets", 0.0)),
@@ -2526,6 +2546,27 @@ def _read_required_optional_config(
     if not candidate.exists():
         raise FileNotFoundError(f"{component} config not found: {candidate}")
     return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _read_vendor_market_data_batch_config(
+    path: str | Path | None,
+    file_name: str,
+) -> dict[str, Any]:
+    config = _read_required_optional_config(
+        path,
+        file_name,
+        component="vendor market-data batch",
+    )
+    if not config:
+        return {}
+    manifest = _read_required_optional_config(
+        path,
+        "manifest.json",
+        component="vendor market-data batch",
+    )
+    enriched = dict(config)
+    enriched["manifest_run_type"] = str(manifest.get("run_type", ""))
+    return enriched
 
 
 def _dispatch_roundtrip_config_with_vendor_market_data_batch(

@@ -594,7 +594,9 @@
   artifacts can be market-checked outside a launch pipeline, including
   vendor-only proof roots with no dispatch round-trip supplied. Broker
   readiness now also checks expected vendor data kind, so chain proof roots
-  cannot satisfy tick-data launch/broker-readiness gates.
+  cannot satisfy tick-data launch/broker-readiness gates, and it validates the
+  vendor-batch manifest run type so a random or mislabeled proof directory
+  cannot satisfy broker/vendor market-data readiness.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -607,7 +609,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 768 tests.
+Current passing suite: 774 tests.
 
 ## Next Build Targets
 

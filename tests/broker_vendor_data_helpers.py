@@ -92,6 +92,33 @@ def assert_broker_vendor_data_kind_mismatch_blocked(
     assert_broker_vendor_data_proof_forwarded(output_dir, readiness_subdir=readiness_subdir)
 
 
+def assert_broker_vendor_data_manifest_mismatch_blocked(
+    output_dir,
+    *,
+    summary_file,
+    components_file,
+    readiness_subdir="06_broker_readiness",
+    proof_run_type="not_vendor_batch",
+):
+    summary = pd.read_csv(output_dir / summary_file)
+    components = pd.read_csv(output_dir / components_file)
+    checks = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_checks.csv")
+    broker_summary = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_summary.csv")
+
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert not bool(summary.loc[0, "ready"])
+    assert components.set_index("component").loc["broker_readiness", "status"] == "not_ready"
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_manifest_run_type",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type",
+    } <= failed
+    assert broker_summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == proof_run_type
+    assert broker_summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        proof_run_type
+    )
+    assert_broker_vendor_data_proof_forwarded(output_dir, readiness_subdir=readiness_subdir)
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
@@ -102,6 +129,7 @@ def write_broker_vendor_data_proof(
     adapter="arrow_money",
     market="india_nse_index_derivatives",
     kind="ticks",
+    manifest_run_type="vendor_market_data_batch_pipeline",
 ):
     batch_dir = path / "01_vendor_market_data_batch"
     batch_dir.mkdir(parents=True, exist_ok=True)
@@ -146,7 +174,7 @@ def write_broker_vendor_data_proof(
         encoding="utf-8",
     )
     (batch_dir / "manifest.json").write_text(
-        json.dumps({"run_type": "vendor_market_data_batch_pipeline"}, indent=2) + "\n",
+        json.dumps({"run_type": manifest_run_type}, indent=2) + "\n",
         encoding="utf-8",
     )
     (path / "broker_vendor_data_readiness_config.json").write_text(
