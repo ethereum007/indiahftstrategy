@@ -553,7 +553,8 @@
   through the route-enable/cutover manifest chain, revalidates it, and
   preserves it as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
-  non-submitting sender packet prefers its dispatch-native config block and
+  non-submitting sender packet prefers its dispatch-native config block, hydrates missing proof
+  through the dispatch/route-enable/cutover manifest chain, and
   preserves it as
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   acknowledgement reconciliation prefers its ack-stage config block and
@@ -586,7 +587,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 736 tests.
+Current passing suite: 737 tests.
 
 ## Next Build Targets
 

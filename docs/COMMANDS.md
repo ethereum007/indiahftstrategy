@@ -2882,6 +2882,9 @@ proof, the sender packet preserves it as
 both `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` and
 `route_broker_dispatch_roundtrip_vendor_market_data_batch` blocks are present,
 the sender packet prefers the dispatch-native block. The
+sender can also follow the dispatch manifest to the route-enable and cutover
+manifests to hydrate missing broker vendor-data proof from the recorded
+`broker_readiness_config` sidecar before preserving it.
 manifest fingerprints the exact dispatch
 summary, dispatch orders, dispatch config, and dispatch manifest when present
 consumed by the sender packet.
