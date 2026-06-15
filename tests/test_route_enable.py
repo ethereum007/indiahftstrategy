@@ -833,6 +833,54 @@ def test_route_enable_prefers_cutover_broker_vendor_market_data_batch():
     assert vendor["comparison"]["accepted"]
 
 
+def test_route_enable_carries_roundtrip_broker_vendor_market_data_batch():
+    config = cutover_config()
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    summary = report.summary.iloc[0]
+    vendor = report.config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert report.ready
+    assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
+    assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+
+
+def test_route_enable_blocks_wrong_manifest_roundtrip_vendor_market_data_batch():
+    config = cutover_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "not_vendor_batch"
+    )
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
+
+
 def test_route_enable_blocks_bad_cutover_broker_vendor_market_data_batch_when_preferred():
     config = cutover_config()
     config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
