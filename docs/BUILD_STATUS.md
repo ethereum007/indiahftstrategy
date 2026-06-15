@@ -537,7 +537,7 @@
   final round-trip proof preserving it as `roundtrip_vendor_market_data_batch_*`
   before broker readiness revalidates and carries it as
   `dispatch_roundtrip_vendor_market_data_batch_*`, and scale-up revalidates and
-  carries the broker-readiness copy as
+  carries the broker-readiness broker-specific copy as
   `broker_dispatch_roundtrip_vendor_market_data_batch_*` before cutover
   revalidates and preserves it as
   `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
@@ -565,7 +565,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 706 tests.
+Current passing suite: 708 tests.
 
 ## Next Build Targets
 

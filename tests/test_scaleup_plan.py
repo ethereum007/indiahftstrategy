@@ -499,6 +499,44 @@ def data_readiness_summary(ready=True):
     )
 
 
+def with_broker_dispatch_roundtrip_vendor_batch(summary, **overrides):
+    values = {
+        "provided": True,
+        "ready": True,
+        "adapter": "arrow_money",
+        "kind": "ticks",
+        "market": "india_nse_index_derivatives",
+        "dataset_count": 2,
+        "ready_datasets": 2,
+        "failed_datasets": 0,
+        "ready_rate": 1.0,
+        "unique_source_files": 2,
+        "unique_header_fingerprints": 1,
+        "mapping_sources": "vendor_intake_draft",
+        "comparison_accepted": True,
+        "comparison_failed_checks": 0,
+        "datasets_json": json.dumps(
+            [
+                {
+                    "dataset": "nifty_day1",
+                    "ready": True,
+                    "source_file_sha256": "a" * 64,
+                    "source_header_sha256": "b" * 64,
+                    "mapping_draft_sha256": "c" * 64,
+                    "mapping_source": "vendor_intake_draft",
+                }
+            ],
+            sort_keys=True,
+        ),
+    }
+    values.update(overrides)
+    result = summary.copy()
+    prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
+    for suffix, value in values.items():
+        result.loc[0, f"{prefix}_{suffix}"] = value
+    return result
+
+
 def data_readiness_comparison_summary(accepted=True):
     return pd.DataFrame(
         [
@@ -1134,6 +1172,98 @@ def test_scaleup_plan_blocks_bad_broker_readiness_vendor_market_data_batch():
             dispatch_roundtrip_vendor_market_data_batch_failed_datasets=1,
             dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks=1,
         ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_dispatch_roundtrip_vendor_market_data_batch_ready",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
+    } <= failed
+
+
+def test_scaleup_plan_prefers_broker_readiness_broker_vendor_market_data_batch():
+    broker_readiness = broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+        dispatch_roundtrip_vendor_market_data_batch_provided=True,
+        dispatch_roundtrip_vendor_market_data_batch_ready=False,
+        dispatch_roundtrip_vendor_market_data_batch_adapter="irage",
+        dispatch_roundtrip_vendor_market_data_batch_market="us_options_regular",
+        dispatch_roundtrip_vendor_market_data_batch_failed_datasets=1,
+        dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks=1,
+    )
+    broker_readiness = with_broker_dispatch_roundtrip_vendor_batch(broker_readiness)
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness,
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    vendor = report.config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["comparison"]["accepted"]
+
+
+def test_scaleup_plan_blocks_bad_broker_readiness_broker_vendor_market_data_batch():
+    broker_readiness = broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+        dispatch_roundtrip_vendor_market_data_batch_provided=True,
+        dispatch_roundtrip_vendor_market_data_batch_ready=True,
+        dispatch_roundtrip_vendor_market_data_batch_adapter="arrow_money",
+        dispatch_roundtrip_vendor_market_data_batch_kind="ticks",
+        dispatch_roundtrip_vendor_market_data_batch_market="india_nse_index_derivatives",
+        dispatch_roundtrip_vendor_market_data_batch_dataset_count=2,
+        dispatch_roundtrip_vendor_market_data_batch_ready_datasets=2,
+        dispatch_roundtrip_vendor_market_data_batch_ready_rate=1.0,
+        dispatch_roundtrip_vendor_market_data_batch_unique_source_files=2,
+        dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints=1,
+        dispatch_roundtrip_vendor_market_data_batch_mapping_sources="vendor_intake_draft",
+        dispatch_roundtrip_vendor_market_data_batch_comparison_accepted=True,
+    )
+    broker_readiness = with_broker_dispatch_roundtrip_vendor_batch(
+        broker_readiness,
+        ready=False,
+        adapter="irage",
+        market="us_options_regular",
+        dataset_count=0,
+        ready_datasets=0,
+        failed_datasets=1,
+        unique_source_files=0,
+        unique_header_fingerprints=0,
+        mapping_sources="",
+        comparison_accepted=False,
+        comparison_failed_checks=1,
+    )
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness,
         thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
     )
 

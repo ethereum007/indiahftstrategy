@@ -2213,10 +2213,26 @@ def _broker_shadow_broker_readiness_active(broker_readiness: pd.Series) -> bool:
 def _broker_vendor_market_data_batch_active(broker_readiness: pd.Series) -> bool:
     if broker_readiness.empty:
         return False
+    source_prefix = _broker_vendor_market_data_batch_source_prefix(broker_readiness)
     return bool(
-        _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_provided", False))
-        or int(_number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_dataset_count", 0.0)) > 0
+        _to_bool(broker_readiness.get(f"{source_prefix}_provided", False))
+        or int(_number(broker_readiness, f"{source_prefix}_dataset_count", 0.0)) > 0
     )
+
+
+def _broker_vendor_market_data_batch_source_prefix(broker_readiness: pd.Series) -> str:
+    broker_prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
+    generic_prefix = "dispatch_roundtrip_vendor_market_data_batch"
+    if broker_readiness.empty:
+        return generic_prefix
+    if (
+        _to_bool(broker_readiness.get(f"{broker_prefix}_provided", False))
+        or int(_number(broker_readiness, f"{broker_prefix}_dataset_count", 0.0)) > 0
+        or _identity_key(broker_readiness.get(f"{broker_prefix}_adapter", ""))
+        or _identity_key(broker_readiness.get(f"{broker_prefix}_market", ""))
+    ):
+        return broker_prefix
+    return generic_prefix
 
 
 def _broker_vendor_market_data_batch_checks(
@@ -2225,23 +2241,24 @@ def _broker_vendor_market_data_batch_checks(
     expected_market: str,
     expected_adapter: str,
 ) -> list[dict[str, object]]:
-    vendor_adapter = _identity_key(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_adapter", ""))
-    vendor_market = _identity_key(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_market", ""))
+    source_prefix = _broker_vendor_market_data_batch_source_prefix(broker_readiness)
+    vendor_adapter = _identity_key(broker_readiness.get(f"{source_prefix}_adapter", ""))
+    vendor_market = _identity_key(broker_readiness.get(f"{source_prefix}_market", ""))
     return [
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_provided",
-            _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_provided", False)),
+            _to_bool(broker_readiness.get(f"{source_prefix}_provided", False)),
             "is",
             True,
-            _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_provided", False)),
+            _to_bool(broker_readiness.get(f"{source_prefix}_provided", False)),
             "broker-readiness vendor market-data batch proof is active but not marked provided",
         ),
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_ready",
-            _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_ready", False)),
+            _to_bool(broker_readiness.get(f"{source_prefix}_ready", False)),
             "is",
             True,
-            _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_ready", False)),
+            _to_bool(broker_readiness.get(f"{source_prefix}_ready", False)),
             "broker-readiness vendor market-data batch proof is not ready",
         ),
         _check(
@@ -2262,67 +2279,53 @@ def _broker_vendor_market_data_batch_checks(
         ),
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count",
-            int(_number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_dataset_count", 0.0)),
+            int(_number(broker_readiness, f"{source_prefix}_dataset_count", 0.0)),
             ">",
             0,
-            int(_number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_dataset_count", 0.0)) > 0,
+            int(_number(broker_readiness, f"{source_prefix}_dataset_count", 0.0)) > 0,
             "broker-readiness vendor market-data batch has no datasets",
         ),
         _threshold_check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
-            _number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_failed_datasets", 0.0),
+            _number(broker_readiness, f"{source_prefix}_failed_datasets", 0.0),
             "<=",
             0,
         ),
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
-            int(_number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_unique_source_files", 0.0)),
+            int(_number(broker_readiness, f"{source_prefix}_unique_source_files", 0.0)),
             ">",
             0,
-            int(_number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_unique_source_files", 0.0))
-            > 0,
+            int(_number(broker_readiness, f"{source_prefix}_unique_source_files", 0.0)) > 0,
             "broker-readiness vendor market-data batch is missing source-file provenance",
         ),
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
-            int(
-                _number(
-                    broker_readiness,
-                    "dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints",
-                    0.0,
-                )
-            ),
+            int(_number(broker_readiness, f"{source_prefix}_unique_header_fingerprints", 0.0)),
             ">",
             0,
-            int(
-                _number(
-                    broker_readiness,
-                    "dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints",
-                    0.0,
-                )
-            )
-            > 0,
+            int(_number(broker_readiness, f"{source_prefix}_unique_header_fingerprints", 0.0)) > 0,
             "broker-readiness vendor market-data batch is missing header fingerprint provenance",
         ),
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
-            str(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_mapping_sources", "")).strip(),
+            str(broker_readiness.get(f"{source_prefix}_mapping_sources", "")).strip(),
             "!=",
             "",
-            bool(str(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_mapping_sources", "")).strip()),
+            bool(str(broker_readiness.get(f"{source_prefix}_mapping_sources", "")).strip()),
             "broker-readiness vendor market-data batch is missing mapping source provenance",
         ),
         _check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
-            _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_comparison_accepted", False)),
+            _to_bool(broker_readiness.get(f"{source_prefix}_comparison_accepted", False)),
             "is",
             True,
-            _to_bool(broker_readiness.get("dispatch_roundtrip_vendor_market_data_batch_comparison_accepted", False)),
+            _to_bool(broker_readiness.get(f"{source_prefix}_comparison_accepted", False)),
             "broker-readiness vendor market-data comparison was not accepted",
         ),
         _threshold_check(
             "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
-            _number(broker_readiness, "dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks", 0.0),
+            _number(broker_readiness, f"{source_prefix}_comparison_failed_checks", 0.0),
             "<=",
             0,
         ),
@@ -2627,7 +2630,7 @@ def _broker_shadow_broker_plan_fields(broker_readiness: pd.Series) -> dict[str, 
 
 def _broker_vendor_market_data_batch_plan_fields(broker_readiness: pd.Series) -> dict[str, object]:
     field_prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
-    source_prefix = "dispatch_roundtrip_vendor_market_data_batch"
+    source_prefix = _broker_vendor_market_data_batch_source_prefix(broker_readiness)
     if broker_readiness.empty:
         return {
             f"{field_prefix}_provided": False,

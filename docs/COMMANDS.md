@@ -2250,7 +2250,9 @@ header-fingerprint, mapping, and comparison evidence and retains it as
 `broker_readiness.dispatch_roundtrip.vendor_market_data_batch` config. Broker
 readiness may also supply the same broker-specific proof under
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
-after revalidating the round-trip broker proof chain.
+after revalidating the round-trip broker proof chain. Scale-up prefers that
+broker-specific block when present and falls back to the generic
+`vendor_market_data_batch` block for older readiness artifacts.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
 fields so broker-stage proof can be audited independently from the
