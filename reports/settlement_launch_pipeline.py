@@ -50,6 +50,7 @@ class SettlementLaunchPipelineConfig:
     broker_halt_export_dir: str | Path | None = None
     broker_reconciliation_dir: str | Path | None = None
     broker_runtime_session_dir: str | Path | None = None
+    broker_vendor_data_readiness_dir: str | Path | None = None
     require_broker_schema_audit: bool = False
     require_broker_mapping_draft: bool = False
     require_broker_mapped_orders: bool = False
@@ -188,6 +189,7 @@ def write_settlement_launch_pipeline(
             halt_export_dir=config.broker_halt_export_dir,
             reconciliation_dir=config.broker_reconciliation_dir,
             runtime_session_dir=config.broker_runtime_session_dir,
+            vendor_market_data_batch_dir=config.broker_vendor_data_readiness_dir,
             thresholds=BrokerReadinessThresholds(
                 adapter=config.adapter,
                 require_reviewed_schema=config.require_reviewed_schema,

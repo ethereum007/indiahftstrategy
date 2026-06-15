@@ -121,6 +121,7 @@ def write_broker_readiness_report(
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
     _validate_thresholds(thresholds)
+    vendor_market_data_batch_dir = _resolve_vendor_market_data_batch_dir(vendor_market_data_batch_dir)
     dispatch_roundtrip_config_path = _manifest_config_input(
         dispatch_roundtrip_dir,
         "broker_dispatch_roundtrip_config.json",
@@ -2504,6 +2505,17 @@ def _dispatch_roundtrip_config_with_vendor_market_data_batch(
     merged["roundtrip_vendor_market_data_batch"] = vendor
     merged["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
     return merged
+
+
+def _resolve_vendor_market_data_batch_dir(path: str | Path | None) -> str | Path | None:
+    if path is None:
+        return None
+    candidate = Path(path)
+    if candidate.is_dir() and not (candidate / "vendor_market_data_batch_config.json").exists():
+        nested = candidate / "01_vendor_market_data_batch"
+        if (nested / "vendor_market_data_batch_config.json").exists():
+            return nested
+    return path
 
 
 def _config_path(path: str | Path, file_name: str) -> Path:

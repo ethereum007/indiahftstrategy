@@ -736,6 +736,7 @@ python -m hft_cli pipeline-leadlag-launch `
   --max-order-qty 75 `
   --max-notional 10000 `
   --max-orders 2 `
+  --broker-vendor-data-readiness runs\broker_vendor_data\arrow_ready `
   --broker-runtime-session runs\runtime_sessions\leadlag_shadow_latest `
   --require-broker-runtime-session `
   --allow-placeholder-schema `
@@ -755,6 +756,12 @@ leadlag_launch_pipeline_components.csv
 leadlag_launch_pipeline_summary.csv
 manifest.json
 ```
+
+The same `--broker-vendor-data-readiness` option is available on the imbalance,
+parity, settlement, and surface-MM launch pipelines. It may point at either the
+top-level `pipeline-broker-vendor-readiness` output or the nested
+`01_vendor_market_data_batch` directory, and the launch pipeline forwards the
+proof into broker readiness before broker dispatch planning.
 
 ## Microprice Imbalance Edge Audit
 
