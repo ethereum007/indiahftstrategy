@@ -591,7 +591,8 @@
   Arrow.money/normalized launch adapter or when an otherwise matching proof
   root carries a non-India market. The standalone `review-broker-readiness`
   CLI now also accepts `--expected-market` so operator-supplied vendor-batch
-  artifacts can be market-checked outside a launch pipeline.
+  artifacts can be market-checked outside a launch pipeline, including
+  vendor-only proof roots with no dispatch round-trip supplied.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -604,7 +605,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 760 tests.
+Current passing suite: 762 tests.
 
 ## Next Build Targets
 

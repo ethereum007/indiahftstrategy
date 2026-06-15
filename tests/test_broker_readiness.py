@@ -1527,6 +1527,45 @@ def test_cli_broker_readiness_accepts_vendor_market_data_batch_artifact(tmp_path
     )
 
 
+def test_cli_broker_readiness_accepts_vendor_only_market_data_batch_artifact(tmp_path):
+    schema_dir, export_dir, upload_dir, _roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money")
+    out_dir = tmp_path / "readiness"
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--vendor-market-data-batch",
+            str(vendor_batch_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    config = json.loads((out_dir / "broker_readiness_config.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert "dispatch_roundtrip_ready" not in set(checks["check"])
+    assert config["dispatch_roundtrip"]["vendor_market_data_batch"]["adapter"] == "arrow_money"
+    assert config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]["dataset_count"] == 2
+
+
 def test_cli_broker_readiness_blocks_wrong_market_vendor_market_data_batch_artifact(tmp_path):
     schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
     vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money", market="us_options_regular")
@@ -1562,6 +1601,47 @@ def test_cli_broker_readiness_blocks_wrong_market_vendor_market_data_batch_artif
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+    } <= failed
+    assert summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
+
+
+def test_cli_broker_readiness_blocks_wrong_market_vendor_only_market_data_batch_artifact(tmp_path):
+    schema_dir, export_dir, upload_dir, _roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money", market="us_options_regular")
+    out_dir = tmp_path / "readiness"
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--vendor-market-data-batch",
+            str(vendor_batch_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "dispatch_roundtrip_ready" not in failed
     assert {
         "dispatch_roundtrip_vendor_market_data_batch_market_matches",
         "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
