@@ -646,6 +646,91 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_vendor_market_data_bat
     } <= failed
 
 
+def test_broker_readiness_carries_broker_dispatch_roundtrip_vendor_market_data_batch():
+    config = dispatch_roundtrip_config()
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
+    assert bool(item["broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert item["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert int(item["broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    summary = report.summary.iloc[0]
+    assert bool(summary["broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
+    assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
+    vendor = report.config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+    assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_readiness_blocks_dirty_broker_dispatch_roundtrip_vendor_market_data_batch():
+    vendor = vendor_market_data_batch_config()
+    vendor.update(
+        {
+            "ready": False,
+            "adapter": "irage",
+            "market": "us_options_regular",
+            "dataset_count": 0,
+            "ready_datasets": 0,
+            "failed_datasets": 1,
+            "unique_source_files": 0,
+            "unique_header_fingerprints": 0,
+            "mapping_sources": "",
+            "comparison": {"accepted": False, "failed_checks": 1},
+        }
+    )
+    config = dispatch_roundtrip_config()
+    config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_dispatch_roundtrip_vendor_market_data_batch_ready",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
+    } <= failed
+
+
 def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_readiness():
     config = dispatch_roundtrip_config()
     config["broker_shadow_broker_readiness"] = shadow_broker_config(
@@ -1118,6 +1203,9 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     roundtrip_config["shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
     roundtrip_config["broker_shadow_broker_readiness"] = shadow_broker_config(adapter="arrow_money")
     roundtrip_config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+    roundtrip_config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = (
+        vendor_market_data_batch_config()
+    )
     (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
         json.dumps(roundtrip_config, indent=2) + "\n",
         encoding="utf-8",
@@ -1174,6 +1262,10 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert config["dispatch_roundtrip"]["route_dispatch_roundtrip"]["batch_id"] == "BDP-0"
     assert config["dispatch_roundtrip"]["vendor_market_data_batch"]["adapter"] == "arrow_money"
     assert config["dispatch_roundtrip"]["vendor_market_data_batch"]["dataset_count"] == 2
+    assert config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]["adapter"] == (
+        "arrow_money"
+    )
+    assert config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]["dataset_count"] == 2
     assert config["shadow_broker_readiness"]["adapter"] == "arrow_money"
     assert config["shadow_broker_readiness"]["dispatch_roundtrip"]["scenario_count"] == 1
     assert config["broker_shadow_broker_readiness"]["provided"]

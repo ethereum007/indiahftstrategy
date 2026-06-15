@@ -1997,6 +1997,12 @@ batch and quality counters. If the round-trip config carries
 adapter/market, dataset, source-file, header-fingerprint, mapping, and
 comparison proof and retains it as `dispatch_roundtrip_vendor_market_data_batch_*`
 summary fields plus `dispatch_roundtrip.vendor_market_data_batch` config.
+If the round-trip config carries
+`roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, broker
+readiness revalidates the broker-readiness final dispatch batch proof and
+retains it as `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary
+fields plus `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
+config.
 `--require-dispatch-roundtrip` fails closed unless the dry-run
 dispatch plan, non-submitting send packet, acknowledgement reconciliation, and
 route proof chain passed as one round-trip proof with zero failed component
@@ -2241,7 +2247,10 @@ If broker readiness carried final vendor market-data batch proof from the dry-ru
 round-trip, scale-up revalidates the adapter/market, dataset, source-file,
 header-fingerprint, mapping, and comparison evidence and retains it as
 `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary fields plus
-`broker_readiness.dispatch_roundtrip.vendor_market_data_batch` config.
+`broker_readiness.dispatch_roundtrip.vendor_market_data_batch` config. Broker
+readiness may also supply the same broker-specific proof under
+`broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
+after revalidating the round-trip broker proof chain.
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
 fields so broker-stage proof can be audited independently from the

@@ -364,14 +364,28 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
     vendor_market_data_batch = config.get("roundtrip_vendor_market_data_batch", {}) or {}
     if vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(frame, vendor_market_data_batch)
+    broker_vendor_market_data_batch = (
+        config.get("roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
+    )
+    if broker_vendor_market_data_batch:
+        _apply_vendor_market_data_batch_config(
+            frame,
+            broker_vendor_market_data_batch,
+            field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+            source_prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
     return frame
 
 
-def _apply_vendor_market_data_batch_config(frame: pd.DataFrame, vendor: dict[str, Any]) -> None:
+def _apply_vendor_market_data_batch_config(
+    frame: pd.DataFrame,
+    vendor: dict[str, Any],
+    *,
+    field_prefix: str = "dispatch_roundtrip_vendor_market_data_batch",
+    source_prefix: str = "roundtrip_vendor_market_data_batch",
+) -> None:
     row = frame.iloc[0]
     comparison = vendor.get("comparison", {}) or {}
-    field_prefix = "dispatch_roundtrip_vendor_market_data_batch"
-    source_prefix = "roundtrip_vendor_market_data_batch"
     frame.loc[0, f"{field_prefix}_provided"] = _to_bool(
         vendor.get("provided", row.get(f"{source_prefix}_provided", False))
     )
@@ -759,6 +773,13 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
             provided=provided,
         ),
         **_vendor_market_data_batch_item_fields(component, row, provided=provided),
+        **_vendor_market_data_batch_item_fields(
+            component,
+            row,
+            provided=provided,
+            field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+            source_prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
@@ -885,9 +906,9 @@ def _vendor_market_data_batch_item_fields(
     row: pd.Series,
     *,
     provided: bool,
+    field_prefix: str = "dispatch_roundtrip_vendor_market_data_batch",
+    source_prefix: str = "roundtrip_vendor_market_data_batch",
 ) -> dict[str, Any]:
-    field_prefix = "dispatch_roundtrip_vendor_market_data_batch"
-    source_prefix = "roundtrip_vendor_market_data_batch"
     active = component == "dispatch_roundtrip" and provided
     dataset_count = int(
         _dispatch_number_any(component, row, f"{field_prefix}_dataset_count", f"{source_prefix}_dataset_count")
@@ -1085,6 +1106,8 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                 checks.extend(_broker_shadow_broker_readiness_checks(row))
             if _dispatch_roundtrip_vendor_market_data_batch_active(row):
                 checks.extend(_dispatch_roundtrip_vendor_market_data_batch_checks(row))
+            if _broker_dispatch_roundtrip_vendor_market_data_batch_active(row):
+                checks.extend(_broker_dispatch_roundtrip_vendor_market_data_batch_checks(row))
     return pd.DataFrame(checks)
 
 
@@ -1564,6 +1587,36 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
     ]
 
 
+def _broker_dispatch_roundtrip_vendor_market_data_batch_active(row: Any) -> bool:
+    return _dispatch_roundtrip_vendor_market_data_batch_active(
+        _vendor_market_data_batch_projection(
+            row,
+            source_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+    )
+
+
+def _broker_dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    projected = _vendor_market_data_batch_projection(
+        row,
+        source_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    for check in _dispatch_roundtrip_vendor_market_data_batch_checks(projected):
+        renamed = dict(check)
+        renamed["check"] = str(renamed["check"]).replace(
+            "dispatch_roundtrip_vendor_market_data_batch",
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+        if "reason" in renamed:
+            renamed["reason"] = str(renamed["reason"]).replace(
+                "dispatch round-trip vendor market-data",
+                "broker-readiness dispatch round-trip vendor market-data",
+            )
+        checks.append(renamed)
+    return checks
+
+
 def _shadow_broker_projection(row: Any, *, source_prefix: str) -> Any:
     data = row._asdict() if hasattr(row, "_asdict") else dict(vars(row))
     for suffix in (
@@ -1592,6 +1645,32 @@ def _shadow_broker_projection(row: Any, *, source_prefix: str) -> Any:
         "route_dispatch_roundtrip_scenario_count",
     ):
         data[f"shadow_broker_{suffix}"] = data.get(f"{source_prefix}_{suffix}", "")
+    return SimpleNamespace(**data)
+
+
+def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any:
+    data = row._asdict() if hasattr(row, "_asdict") else dict(vars(row))
+    for suffix in (
+        "provided",
+        "ready",
+        "adapter",
+        "kind",
+        "market",
+        "dataset_count",
+        "ready_datasets",
+        "failed_datasets",
+        "ready_rate",
+        "unique_source_files",
+        "unique_header_fingerprints",
+        "mapping_sources",
+        "comparison_accepted",
+        "comparison_failed_checks",
+        "datasets_json",
+    ):
+        data[f"dispatch_roundtrip_vendor_market_data_batch_{suffix}"] = data.get(
+            f"{source_prefix}_{suffix}",
+            "",
+        )
     return SimpleNamespace(**data)
 
 
@@ -1801,14 +1880,21 @@ def _summary(
                     field_prefix="broker_shadow_broker",
                 ),
                 **_vendor_market_data_batch_summary_fields(dispatch_item),
+                **_vendor_market_data_batch_summary_fields(
+                    dispatch_item,
+                    field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+                ),
                 "recommendation": _summary_recommendation(ready, schema_status, schema_review, thresholds),
             }
         ]
     )
 
 
-def _vendor_market_data_batch_summary_fields(item: pd.Series) -> dict[str, Any]:
-    field_prefix = "dispatch_roundtrip_vendor_market_data_batch"
+def _vendor_market_data_batch_summary_fields(
+    item: pd.Series,
+    *,
+    field_prefix: str = "dispatch_roundtrip_vendor_market_data_batch",
+) -> dict[str, Any]:
     return {
         f"{field_prefix}_provided": _item_bool(item, f"{field_prefix}_provided"),
         f"{field_prefix}_ready": _item_bool(item, f"{field_prefix}_ready"),
@@ -2034,11 +2120,18 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
             "unmatched_acks": int(_number(row, "route_dispatch_roundtrip_unmatched_acks", 0.0)),
         },
         "vendor_market_data_batch": _vendor_market_data_batch_config(row),
+        "broker_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
+            row,
+            field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
     }
 
 
-def _vendor_market_data_batch_config(row: pd.Series) -> dict[str, Any]:
-    field_prefix = "dispatch_roundtrip_vendor_market_data_batch"
+def _vendor_market_data_batch_config(
+    row: pd.Series,
+    *,
+    field_prefix: str = "dispatch_roundtrip_vendor_market_data_batch",
+) -> dict[str, Any]:
     return {
         "provided": _item_bool(row, f"{field_prefix}_provided"),
         "ready": _item_bool(row, f"{field_prefix}_ready"),

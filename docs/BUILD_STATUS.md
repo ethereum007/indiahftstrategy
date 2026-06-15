@@ -518,7 +518,8 @@
   quality, failed-check count, route-enable dispatch round-trip failed-check
   count from the round-trip config, round-trip manifest provenance, shadow
   broker-readiness aggregate, broker-readiness-carried shadow broker aggregate,
-  round-trip vendor market-data batch provenance,
+  round-trip vendor market-data batch provenance, broker-readiness final
+  dispatch round-trip vendor market-data provenance,
   acknowledgement quality, schema review mode, and a structured
   `broker_readiness_config.json` handoff into broker readiness,
   scale-up, cutover, and route-enable handoff artifacts, with scale-up now
@@ -549,7 +550,9 @@
   acknowledgement reconciliation preserves it as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
   round-trip proof reconciles it as
-  `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
+  `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
+  broker readiness revalidates and carries it as
+  `broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -562,7 +565,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 704 tests.
+Current passing suite: 706 tests.
 
 ## Next Build Targets
 
