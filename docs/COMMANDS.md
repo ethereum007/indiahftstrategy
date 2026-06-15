@@ -2238,10 +2238,15 @@ gate.
 launch-pipeline, proof-refresh, metadata, data-readiness, data-readiness
 comparison, exposure, route-readiness, broker-readiness summary CSVs, and
 broker-readiness config JSON sidecars rather than only the input folders, so
-scale-up handoffs can prove the exact records behind each recommendation. When
-the data-readiness comparison comes from a vendor onboarding batch, scale-up
-also fingerprints the sibling `vendor_market_data_batch_config.json` and carries
-its dataset/header/mapping proof into `scaleup_config.json`.
+scale-up handoffs can prove the exact records behind each recommendation. If a
+launch-pipeline broker-readiness summary is thin but its
+`broker_readiness_config.json` retains
+`broker_dispatch_roundtrip_vendor_market_data_batch`, scale-up hydrates the
+operator-visible `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary
+fields and carries the same proof into `scaleup_config.json`. When the
+data-readiness comparison comes from a vendor onboarding batch, scale-up also
+fingerprints the sibling `vendor_market_data_batch_config.json` and carries its
+dataset/header/mapping proof into `scaleup_config.json`.
 Use `--route-readiness` with `--require-route-readiness` to fail closed unless
 the market-portability, strategy-evidence, and file-provenance-gated
 `ops_launch` evidence chain has accepted the exact strategy/market route.

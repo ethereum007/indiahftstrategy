@@ -325,7 +325,9 @@
   fingerprints the resolved input summary CSVs plus route-readiness and nested
   broker-readiness proof in the manifest, consumes multi-day shadow-comparison
   broker-readiness route/dispatch proof and broker-readiness-carried shadow
-  broker proof plus broker-readiness vendor market-data batch proof when present, fails closed
+  broker proof plus broker-readiness vendor market-data batch proof when present,
+  hydrates broker vendor-data proof from nested broker-readiness config sidecars
+  when launch-pipeline summaries are thin, fails closed
   on broker runtime-session, broker resume-gate proof-refresh, dispatch
   round-trip failed checks, route-enable dispatch round-trip failed checks,
   dispatch route proof, launch-pipeline identity mismatches, dirty
@@ -566,7 +568,8 @@
   `pipeline-broker-vendor-readiness` command now chains vendor batch generation
   into broker readiness and emits root summary/config/manifest artifacts, and
   all launch-family pipelines can forward that proof root into broker readiness
-  through `--broker-vendor-data-readiness`.
+  through `--broker-vendor-data-readiness`; scale-up then preserves the
+  broker-readiness config sidecar proof in its operator-visible summary/config.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -579,7 +582,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 732 tests.
+Current passing suite: 733 tests.
 
 ## Next Build Targets
 

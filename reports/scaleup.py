@@ -190,6 +190,11 @@ def write_scaleup_plan(
         if broker_readiness_path
         else None
     )
+    if broker_readiness_config_path is not None:
+        broker_readiness = _with_broker_vendor_market_data_batch_config(
+            broker_readiness,
+            json.loads(broker_readiness_config_path.read_text(encoding="utf-8")),
+        )
     data_readiness = (
         _read_optional_summary(data_readiness_path, "data_readiness_summary.csv")
         if data_readiness_path
@@ -2899,6 +2904,89 @@ def _optional_vendor_market_data_batch_config(path: str | Path | None) -> Path |
 def _apply_vendor_market_data_batch_config(config: dict[str, Any], batch_config: dict[str, Any]) -> None:
     comparison = config.setdefault("data_readiness_comparison", {})
     comparison["vendor_market_data_batch"] = _vendor_market_data_batch_summary(batch_config)
+
+
+def _with_broker_vendor_market_data_batch_config(
+    broker_readiness: pd.DataFrame | None,
+    broker_readiness_config: dict[str, Any],
+) -> pd.DataFrame | None:
+    if broker_readiness is None or broker_readiness.empty:
+        return broker_readiness
+    broker_prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
+    row = broker_readiness.iloc[0]
+    if (
+        _to_bool(row.get(f"{broker_prefix}_provided", False))
+        or int(_number(row, f"{broker_prefix}_dataset_count", 0.0)) > 0
+        or _identity_key(row.get(f"{broker_prefix}_adapter", ""))
+        or _identity_key(row.get(f"{broker_prefix}_market", ""))
+    ):
+        return broker_readiness
+
+    batch_config = _broker_vendor_market_data_batch_config_from_readiness_config(
+        broker_readiness_config
+    )
+    if batch_config is None:
+        return broker_readiness
+
+    out = broker_readiness.copy()
+    index = out.index[0]
+    for column, value in _broker_vendor_market_data_batch_flat_fields(batch_config).items():
+        out.loc[index, column] = value
+    return out
+
+
+def _broker_vendor_market_data_batch_config_from_readiness_config(
+    broker_readiness_config: dict[str, Any],
+) -> dict[str, Any] | None:
+    dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
+    if not isinstance(dispatch, dict):
+        return None
+    for key in (
+        "broker_dispatch_roundtrip_vendor_market_data_batch",
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "vendor_market_data_batch",
+        "roundtrip_vendor_market_data_batch",
+    ):
+        candidate = dispatch.get(key)
+        if _vendor_market_data_batch_config_active(candidate):
+            return candidate
+    return None
+
+
+def _vendor_market_data_batch_config_active(candidate: object) -> bool:
+    if not isinstance(candidate, dict) or not candidate:
+        return False
+    datasets = candidate.get("datasets") or []
+    return bool(
+        _to_bool(candidate.get("provided", False))
+        or int(_number_from(candidate, "dataset_count", 0.0)) > 0
+        or str(candidate.get("adapter", "")).strip()
+        or str(candidate.get("market", "")).strip()
+        or datasets
+    )
+
+
+def _broker_vendor_market_data_batch_flat_fields(batch_config: dict[str, Any]) -> dict[str, object]:
+    summary = _vendor_market_data_batch_summary(batch_config)
+    comparison = summary["comparison"]
+    prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
+    return {
+        f"{prefix}_provided": _to_bool(batch_config.get("provided", True)),
+        f"{prefix}_ready": _to_bool(summary["ready"]),
+        f"{prefix}_adapter": _identity_key(summary["adapter"]),
+        f"{prefix}_kind": str(summary["kind"]),
+        f"{prefix}_market": _identity_key(summary["market"]),
+        f"{prefix}_dataset_count": int(summary["dataset_count"]),
+        f"{prefix}_ready_datasets": int(summary["ready_datasets"]),
+        f"{prefix}_failed_datasets": int(summary["failed_datasets"]),
+        f"{prefix}_ready_rate": summary["ready_rate"],
+        f"{prefix}_unique_source_files": int(summary["unique_source_files"]),
+        f"{prefix}_unique_header_fingerprints": int(summary["unique_header_fingerprints"]),
+        f"{prefix}_mapping_sources": str(summary["mapping_sources"]),
+        f"{prefix}_comparison_accepted": _to_bool(comparison.get("accepted", False)),
+        f"{prefix}_comparison_failed_checks": int(_number_from(comparison, "failed_checks", 0.0)),
+        f"{prefix}_datasets_json": json.dumps(summary["datasets"], sort_keys=True),
+    }
 
 
 def _vendor_market_data_batch_summary(batch_config: dict[str, Any]) -> dict[str, Any]:
