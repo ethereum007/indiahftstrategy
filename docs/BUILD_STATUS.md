@@ -589,7 +589,9 @@
   against the launch/broker expected market when available, and fails closed
   across all five launch CLIs when an iRage proof root is supplied to an
   Arrow.money/normalized launch adapter or when an otherwise matching proof
-  root carries a non-India market.
+  root carries a non-India market. The standalone `review-broker-readiness`
+  CLI now also accepts `--expected-market` so operator-supplied vendor-batch
+  artifacts can be market-checked outside a launch pipeline.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -602,7 +604,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 759 tests.
+Current passing suite: 760 tests.
 
 ## Next Build Targets
 

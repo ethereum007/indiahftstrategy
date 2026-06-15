@@ -14,11 +14,11 @@ from reports.vendor_data_onboarding import (
 )
 
 
-def broker_vendor_ticks(day: str, *, base: float = 100.0):
+def broker_vendor_ticks(day: str, *, base: float = 100.0, session_open: str = "09:15"):
     return pd.DataFrame(
         [
             {
-                "exchange_ts": f"{day} 09:15:00",
+                "exchange_ts": f"{day} {session_open}:00",
                 "best_bid": base,
                 "best_ask": base + 0.05,
                 "bid_size": 75,
@@ -27,7 +27,7 @@ def broker_vendor_ticks(day: str, *, base: float = 100.0):
                 "last_size": 75,
             },
             {
-                "exchange_ts": f"{day} 09:15:01",
+                "exchange_ts": f"{day} {session_open}:01",
                 "best_bid": base + 0.05,
                 "best_ask": base + 0.10,
                 "bid_size": 150,
@@ -421,12 +421,14 @@ def write_broker_readiness_input_dirs(root, adapter):
     return schema_dir, export_dir, upload_dir, roundtrip_dir
 
 
-def write_vendor_market_data_batch(root, adapter):
+def write_vendor_market_data_batch(root, adapter, *, market="india_nse_index_derivatives"):
     day1 = root / f"{adapter}_ticks_day1.csv"
     day2 = root / f"{adapter}_ticks_day2.csv"
     out_dir = root / "vendor_batch"
-    broker_vendor_ticks("2026-06-10", base=100.0).to_csv(day1, index=False)
-    broker_vendor_ticks("2026-06-11", base=100.5).to_csv(day2, index=False)
+    session_open = "09:30" if market.startswith("us_") else "09:15"
+    broker_vendor_ticks("2026-06-10", base=100.0, session_open=session_open).to_csv(day1, index=False)
+    broker_vendor_ticks("2026-06-11", base=100.5, session_open=session_open).to_csv(day2, index=False)
+    filter_session = not market.startswith("us_")
     report = write_vendor_market_data_batch_pipeline(
         [day1, day2],
         output_dir=out_dir,
@@ -434,9 +436,12 @@ def write_vendor_market_data_batch(root, adapter):
         config=VendorMarketDataPipelineConfig(
             adapter=adapter,
             kind="ticks",
+            market=market,
             timestamp_unit="datetime",
+            filter_session=filter_session,
             tick_size=0.05,
             min_rows=2,
+            max_out_of_session_rows=0 if filter_session else 2,
         ),
     )
     assert report.ready
@@ -1520,6 +1525,49 @@ def test_cli_broker_readiness_accepts_vendor_market_data_batch_artifact(tmp_path
     assert config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]["adapter"] == (
         "arrow_money"
     )
+
+
+def test_cli_broker_readiness_blocks_wrong_market_vendor_market_data_batch_artifact(tmp_path):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money", market="us_options_regular")
+    out_dir = tmp_path / "readiness"
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--dispatch-roundtrip",
+            str(roundtrip_dir),
+            "--vendor-market-data-batch",
+            str(vendor_batch_dir),
+            "--allow-placeholder-schema",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+    } <= failed
+    assert summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
 
 
 def test_broker_readiness_reads_roundtrip_config_next_to_summary_file(tmp_path):
