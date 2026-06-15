@@ -10,6 +10,7 @@ import pandas as pd
 
 from adapters.broker import adapter_schema_status, get_adapter
 from reports.manifest import write_experiment_manifest
+from reports.vendor_market_data import select_vendor_market_data_batch_source
 
 
 SUMMARY_FILES = {
@@ -29,16 +30,6 @@ SUMMARY_FALLBACK_DIRS = {
     "order_export": ("04_export", "03_export"),
     "upload_pack": ("05_upload_pack", "04_upload_pack"),
 }
-
-BROKER_VENDOR_MARKET_DATA_BATCH_CONFIG_FIELDS = (
-    "broker_dispatch_roundtrip_vendor_market_data_batch",
-    "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
-    "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
-    "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
-    "route_broker_dispatch_roundtrip_vendor_market_data_batch",
-    "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
-    "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch",
-)
 
 
 @dataclass(frozen=True)
@@ -386,11 +377,19 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
 
 
 def _broker_vendor_market_data_batch_config(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    for source_prefix in BROKER_VENDOR_MARKET_DATA_BATCH_CONFIG_FIELDS:
-        vendor = config.get(source_prefix, {}) or {}
-        if isinstance(vendor, dict) and vendor:
-            return vendor, source_prefix
-    return {}, "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
+    return select_vendor_market_data_batch_source(
+        config,
+        (
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        default_source="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
 
 
 def _apply_vendor_market_data_batch_config(

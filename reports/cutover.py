@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.vendor_market_data import vendor_market_data_batch_source_active
 
 
 @dataclass(frozen=True)
@@ -2659,20 +2660,9 @@ def _broker_shadow_broker_state_fields(row: pd.Series, shadow_broker: dict[str, 
 
 def _broker_vendor_market_data_batch_source(dispatch: dict[str, Any]) -> dict[str, Any]:
     broker_vendor = dispatch.get("broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
-    if _vendor_market_data_batch_source_active(broker_vendor):
+    if vendor_market_data_batch_source_active(broker_vendor):
         return broker_vendor
     return dispatch.get("vendor_market_data_batch", {}) or {}
-
-
-def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
-    if not vendor:
-        return False
-    return bool(
-        _to_bool(vendor.get("provided", False))
-        or int(_number_from(vendor, "dataset_count", 0.0)) > 0
-        or _identity_key(vendor.get("adapter", ""))
-        or _identity_key(vendor.get("market", ""))
-    )
 
 
 def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:

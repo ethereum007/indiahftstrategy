@@ -9,6 +9,7 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.vendor_market_data import select_vendor_market_data_batch_source
 
 
 @dataclass(frozen=True)
@@ -1586,25 +1587,13 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
 
 
 def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
-    candidates = (
-        "route_broker_dispatch_roundtrip_vendor_market_data_batch",
-        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
-    )
-    for field_prefix in candidates:
-        vendor = config.get(field_prefix, {}) or {}
-        if _vendor_market_data_batch_source_active(vendor):
-            return vendor, field_prefix
-    return {}, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
-
-
-def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
-    if not vendor:
-        return False
-    return bool(
-        _to_bool(vendor.get("provided", False))
-        or int(_number_from(vendor, "dataset_count", 0.0)) > 0
-        or _identity_key(vendor.get("adapter", ""))
-        or _identity_key(vendor.get("market", ""))
+    return select_vendor_market_data_batch_source(
+        config,
+        (
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        default_source="cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
     )
 
 

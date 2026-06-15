@@ -8,6 +8,7 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.vendor_market_data import select_vendor_market_data_batch_source
 
 
 ACCEPTED_ACK_STATUSES = {
@@ -414,27 +415,19 @@ def _broker_vendor_market_data_batch_source(
         "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
         "route_broker_dispatch_roundtrip_vendor_market_data_batch",
     )
-    for field_prefix in candidates:
-        vendor = config.get(field_prefix, {}) or {}
-        if _vendor_market_data_batch_source_active(vendor):
-            return vendor, field_prefix
+    vendor, field_prefix = select_vendor_market_data_batch_source(
+        config,
+        candidates,
+        default_source="route_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    if vendor:
+        return vendor, field_prefix
     if any(
         f"dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_{suffix}" in state
         for suffix in ("provided", "dataset_count", "datasets_json")
     ):
         return {}, "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"
     return {}, "route_broker_dispatch_roundtrip_vendor_market_data_batch"
-
-
-def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
-    if not vendor:
-        return False
-    return bool(
-        _to_bool(vendor.get("provided", False))
-        or int(_number_value(vendor.get("dataset_count"), 0.0)) > 0
-        or _identity_key(vendor.get("adapter", ""))
-        or _identity_key(vendor.get("market", ""))
-    )
 
 
 def _apply_vendor_market_data_batch_config(
