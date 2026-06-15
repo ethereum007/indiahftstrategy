@@ -285,12 +285,13 @@ def shadow_broker_config(
     }
 
 
-def vendor_market_data_batch_config():
+def vendor_market_data_batch_config(*, manifest_run_type="vendor_market_data_batch_pipeline"):
     return {
         "provided": True,
         "ready": True,
         "adapter": "arrow_money",
         "kind": "ticks",
+        "manifest_run_type": manifest_run_type,
         "market": "india_nse_index_derivatives",
         "dataset_count": 2,
         "ready_datasets": 2,
@@ -555,12 +556,14 @@ def test_broker_dispatch_ack_carries_ack_vendor_market_data_batch():
     assert summary["ack_vendor_market_data_batch_ready"]
     assert summary["ack_vendor_market_data_batch_adapter"] == "arrow_money"
     assert summary["ack_vendor_market_data_batch_kind"] == "ticks"
+    assert summary["ack_vendor_market_data_batch_manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert int(summary["ack_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["ack_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["ack_vendor_market_data_batch_unique_header_fingerprints"]) == 1
     assert summary["ack_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
@@ -584,6 +587,9 @@ def test_broker_dispatch_ack_carries_broker_vendor_market_data_batch():
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
     assert int(summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
@@ -592,6 +598,7 @@ def test_broker_dispatch_ack_carries_broker_vendor_market_data_batch():
     )
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
@@ -614,11 +621,39 @@ def test_broker_dispatch_ack_prefers_ack_broker_vendor_market_data_batch():
     vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == (
         "india_nse_index_derivatives"
     )
     assert vendor["adapter"] == "arrow_money"
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert vendor["comparison"]["accepted"]
+
+
+def test_broker_dispatch_ack_blocks_wrong_manifest_broker_vendor_market_data_batch():
+    config = dispatch_config()
+    config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert "ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "not_vendor_batch"
+    )
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
 
 
 def test_broker_dispatch_ack_carries_ack_broker_vendor_market_data_batch_when_preferred():
@@ -638,10 +673,39 @@ def test_broker_dispatch_ack_carries_ack_broker_vendor_market_data_batch_when_pr
     vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
     assert not summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "irage"
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
     assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
     assert vendor["adapter"] == "irage"
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert vendor["failed_datasets"] == 1
     assert not vendor["comparison"]["accepted"]
+
+
+def test_broker_dispatch_ack_blocks_wrong_manifest_ack_broker_vendor_market_data_batch_when_preferred():
+    config = dispatch_config()
+    config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+    config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert "ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "not_vendor_batch"
+    )
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
 
 
 def test_cli_broker_dispatch_ack_hydrates_broker_vendor_data_from_manifest_chain(tmp_path):
