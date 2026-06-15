@@ -460,6 +460,14 @@ def _broker_vendor_market_data_batch_checks(route: dict[str, Any]) -> list[dict[
             "route-enable broker-readiness vendor market-data market does not match dispatch market",
         ),
         _check(
+            f"{prefix}_manifest_run_type",
+            vendor["manifest_run_type"],
+            "==",
+            "vendor_market_data_batch_pipeline",
+            vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline",
+            "route-enable broker-readiness vendor market-data manifest is not a vendor batch pipeline proof",
+        ),
+        _check(
             f"{prefix}_dataset_count",
             int(vendor["dataset_count"]),
             ">",
@@ -928,6 +936,7 @@ def _vendor_market_data_batch_summary_fields(route: dict[str, Any]) -> dict[str,
         "route_vendor_market_data_batch_ready": vendor["ready"],
         "route_vendor_market_data_batch_adapter": vendor["adapter"],
         "route_vendor_market_data_batch_kind": vendor["kind"],
+        "route_vendor_market_data_batch_manifest_run_type": vendor["manifest_run_type"],
         "route_vendor_market_data_batch_market": vendor["market"],
         "route_vendor_market_data_batch_dataset_count": vendor["dataset_count"],
         "route_vendor_market_data_batch_ready_datasets": vendor["ready_datasets"],
@@ -950,6 +959,7 @@ def _broker_vendor_market_data_batch_summary_fields(route: dict[str, Any]) -> di
         f"{field_prefix}_ready": vendor["ready"],
         f"{field_prefix}_adapter": vendor["adapter"],
         f"{field_prefix}_kind": vendor["kind"],
+        f"{field_prefix}_manifest_run_type": vendor["manifest_run_type"],
         f"{field_prefix}_market": vendor["market"],
         f"{field_prefix}_dataset_count": vendor["dataset_count"],
         f"{field_prefix}_ready_datasets": vendor["ready_datasets"],
@@ -1006,6 +1016,7 @@ def _vendor_market_data_batch_config(summary: pd.Series) -> dict[str, Any]:
         "ready": _to_bool(summary["route_vendor_market_data_batch_ready"]),
         "adapter": str(summary["route_vendor_market_data_batch_adapter"]),
         "kind": str(summary["route_vendor_market_data_batch_kind"]),
+        "manifest_run_type": str(summary["route_vendor_market_data_batch_manifest_run_type"]),
         "market": str(summary["route_vendor_market_data_batch_market"]),
         "dataset_count": int(summary["route_vendor_market_data_batch_dataset_count"]),
         "ready_datasets": int(summary["route_vendor_market_data_batch_ready_datasets"]),
@@ -1031,6 +1042,7 @@ def _broker_vendor_market_data_batch_config(summary: pd.Series) -> dict[str, Any
         "ready": _to_bool(summary[f"{field_prefix}_ready"]),
         "adapter": str(summary[f"{field_prefix}_adapter"]),
         "kind": str(summary[f"{field_prefix}_kind"]),
+        "manifest_run_type": str(summary[f"{field_prefix}_manifest_run_type"]),
         "market": str(summary[f"{field_prefix}_market"]),
         "dataset_count": int(summary[f"{field_prefix}_dataset_count"]),
         "ready_datasets": int(summary[f"{field_prefix}_ready_datasets"]),
@@ -1676,6 +1688,9 @@ def _vendor_market_data_batch_state(
         "ready": _to_bool(vendor.get("ready", row.get(f"{field_prefix}_ready", False))),
         "adapter": _first_text(vendor.get("adapter", ""), row.get(f"{field_prefix}_adapter", "")),
         "kind": _first_text(vendor.get("kind", ""), row.get(f"{field_prefix}_kind", "")),
+        "manifest_run_type": _identity_key(
+            _first_text(vendor.get("manifest_run_type", ""), row.get(f"{field_prefix}_manifest_run_type", ""))
+        ),
         "market": _identity_key(
             _first_text(vendor.get("market", ""), row.get(f"{field_prefix}_market", ""))
         ),

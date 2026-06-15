@@ -603,7 +603,8 @@
   the same manifest identity on scale-up-carried broker/vendor proofs before
   route enable can inherit them. Route enable now carries and revalidates that
   manifest identity before broker dispatch planning can inherit cutover-carried
-  broker/vendor data proof.
+  broker/vendor data proof. Broker dispatch planning now carries and revalidates
+  that identity before send packets can inherit route-enable-carried proof.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -616,7 +617,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 780 tests.
+Current passing suite: 782 tests.
 
 ## Next Build Targets
 
