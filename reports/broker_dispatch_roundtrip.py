@@ -389,11 +389,9 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
             route_broker_shadow,
             field_prefix="route_broker_shadow_broker",
         )
-    broker_vendor_market_data_batch = (
-        config.get("ack_broker_dispatch_roundtrip_vendor_market_data_batch", {})
-        or config.get("dispatch_broker_dispatch_roundtrip_vendor_market_data_batch", {})
-        or config.get("route_broker_dispatch_roundtrip_vendor_market_data_batch", {})
-        or {}
+    broker_vendor_market_data_batch, _broker_vendor_source_prefix = _broker_vendor_market_data_batch_source(
+        state,
+        config,
     )
     if broker_vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(
@@ -405,6 +403,7 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
         _copy_vendor_market_data_batch_fields(
             state,
             source_prefixes=(
+                "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
                 "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
                 "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
                 "route_broker_dispatch_roundtrip_vendor_market_data_batch",
@@ -422,6 +421,40 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
     else:
         _copy_vendor_market_data_batch_fields(state)
     return state
+
+
+def _broker_vendor_market_data_batch_source(
+    state: pd.Series,
+    config: dict[str, Any],
+) -> tuple[dict[str, Any], str]:
+    candidates = (
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    for field_prefix in candidates:
+        vendor = config.get(field_prefix, {}) or {}
+        if _vendor_market_data_batch_source_active(vendor):
+            return vendor, field_prefix
+    for field_prefix in candidates:
+        if any(
+            f"{field_prefix}_{suffix}" in state
+            for suffix in ("provided", "dataset_count", "datasets_json")
+        ):
+            return {}, field_prefix
+    return {}, "ack_broker_dispatch_roundtrip_vendor_market_data_batch"
+
+
+def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
+    if not vendor:
+        return False
+    return bool(
+        _to_bool(vendor.get("provided", False))
+        or int(_number_value(vendor.get("dataset_count"), 0.0)) > 0
+        or _identity_key(vendor.get("adapter", ""))
+        or _identity_key(vendor.get("market", ""))
+    )
 
 
 def _apply_vendor_market_data_batch_config(

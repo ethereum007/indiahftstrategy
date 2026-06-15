@@ -553,7 +553,7 @@
   acknowledgement reconciliation prefers its ack-stage config block and
   preserves it as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
-  round-trip proof reconciles it as
+  round-trip proof prefers its roundtrip-stage config block and reconciles it as
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker readiness revalidates and carries it as
   `broker_dispatch_roundtrip_vendor_market_data_batch_*`.
@@ -569,7 +569,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 718 tests.
+Current passing suite: 720 tests.
 
 ## Next Build Targets
 

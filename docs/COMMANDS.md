@@ -2960,7 +2960,10 @@ summary/config retain the broker schema review status/mode, route-readiness
 proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`
 and `roundtrip_vendor_market_data_batch` reconciled from the component configs,
 plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
-from the broker-readiness component proof chain.
+from the broker-readiness component proof chain. If a component config carries
+`roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, the round-trip
+review prefers that block before falling back through ack-, dispatch-, and
+route-retained broker vendor-data blocks.
 
 ## Calibration
 
