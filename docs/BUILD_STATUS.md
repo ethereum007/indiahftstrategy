@@ -601,7 +601,9 @@
   vendor proofs and rejects non-`vendor_market_data_batch_pipeline` proofs
   before controlled capital increases. Cutover now preserves and revalidates
   the same manifest identity on scale-up-carried broker/vendor proofs before
-  route enable can inherit them.
+  route enable can inherit them. Route enable now carries and revalidates that
+  manifest identity before broker dispatch planning can inherit cutover-carried
+  broker/vendor data proof.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -614,7 +616,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 778 tests.
+Current passing suite: 780 tests.
 
 ## Next Build Targets
 
