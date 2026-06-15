@@ -555,7 +555,8 @@
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
   round-trip proof prefers its roundtrip-stage config block and reconciles it as
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
-  broker readiness revalidates and carries it as
+  broker readiness prefers its readiness-native broker vendor-data config block
+  when present, otherwise revalidates the roundtrip-stage block, and carries it as
   `broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
@@ -569,7 +570,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 720 tests.
+Current passing suite: 722 tests.
 
 ## Next Build Targets
 

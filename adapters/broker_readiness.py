@@ -30,6 +30,16 @@ SUMMARY_FALLBACK_DIRS = {
     "upload_pack": ("05_upload_pack", "04_upload_pack"),
 }
 
+BROKER_VENDOR_MARKET_DATA_BATCH_CONFIG_FIELDS = (
+    "broker_dispatch_roundtrip_vendor_market_data_batch",
+    "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+    "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+    "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+    "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+    "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
+    "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch",
+)
+
 
 @dataclass(frozen=True)
 class BrokerReadinessThresholds:
@@ -364,17 +374,23 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
     vendor_market_data_batch = config.get("roundtrip_vendor_market_data_batch", {}) or {}
     if vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(frame, vendor_market_data_batch)
-    broker_vendor_market_data_batch = (
-        config.get("roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
-    )
+    broker_vendor_market_data_batch, broker_vendor_source_prefix = _broker_vendor_market_data_batch_config(config)
     if broker_vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(
             frame,
             broker_vendor_market_data_batch,
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
-            source_prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+            source_prefix=broker_vendor_source_prefix,
         )
     return frame
+
+
+def _broker_vendor_market_data_batch_config(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    for source_prefix in BROKER_VENDOR_MARKET_DATA_BATCH_CONFIG_FIELDS:
+        vendor = config.get(source_prefix, {}) or {}
+        if isinstance(vendor, dict) and vendor:
+            return vendor, source_prefix
+    return {}, "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"
 
 
 def _apply_vendor_market_data_batch_config(

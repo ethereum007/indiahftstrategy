@@ -2002,7 +2002,10 @@ If the round-trip config carries
 readiness revalidates the broker-readiness final dispatch batch proof and
 retains it as `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary
 fields plus `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
-config.
+config. When both `broker_dispatch_roundtrip_vendor_market_data_batch` and
+older round-trip or component-retained broker vendor-data proof blocks are
+present, broker readiness prefers the readiness-native block and fails closed
+from that selected proof.
 `--require-dispatch-roundtrip` fails closed unless the dry-run
 dispatch plan, non-submitting send packet, acknowledgement reconciliation, and
 route proof chain passed as one round-trip proof with zero failed component
