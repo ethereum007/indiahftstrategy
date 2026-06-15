@@ -2904,7 +2904,10 @@ the ack gate preserves the dataset/header/mapping proof as
 broker-readiness final dispatch round-trip vendor market-data batch proof, the
 ack gate preserves it as
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`ack_broker_dispatch_roundtrip_vendor_market_data_batch` config block. The
+`ack_broker_dispatch_roundtrip_vendor_market_data_batch` config block. When
+`ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
+dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
+ack-stage block. The
 manifest fingerprints the exact dispatch summary, dispatch orders, dispatch
 config, dispatch manifest when present, and broker acknowledgement log files
 used in the reconciliation.

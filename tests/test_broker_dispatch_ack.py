@@ -324,6 +324,27 @@ def vendor_market_data_batch_config():
     }
 
 
+def dirty_vendor_market_data_batch_config():
+    vendor = vendor_market_data_batch_config()
+    vendor.update(
+        {
+            "ready": False,
+            "adapter": "irage",
+            "market": "us_options_regular",
+            "dataset_count": 0,
+            "ready_datasets": 0,
+            "failed_datasets": 1,
+            "ready_rate": 0.0,
+            "unique_source_files": 0,
+            "unique_header_fingerprints": 0,
+            "mapping_sources": "",
+            "datasets": [],
+        }
+    )
+    vendor["comparison"] = {"accepted": False, "failed_checks": 1}
+    return vendor
+
+
 def write_inputs(
     tmp_path,
     *,
@@ -574,6 +595,53 @@ def test_broker_dispatch_ack_carries_broker_vendor_market_data_batch():
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_dispatch_ack_prefers_ack_broker_vendor_market_data_batch():
+    config = dispatch_config()
+    config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"] = dirty_vendor_market_data_batch_config()
+    config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == (
+        "india_nse_index_derivatives"
+    )
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["comparison"]["accepted"]
+
+
+def test_broker_dispatch_ack_carries_ack_broker_vendor_market_data_batch_when_preferred():
+    config = dispatch_config()
+    config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+    config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"] = dirty_vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert not summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "irage"
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
+    assert vendor["adapter"] == "irage"
+    assert vendor["failed_datasets"] == 1
+    assert not vendor["comparison"]["accepted"]
 
 
 def test_broker_dispatch_ack_blocks_bad_send_broker_shadow_broker_readiness():

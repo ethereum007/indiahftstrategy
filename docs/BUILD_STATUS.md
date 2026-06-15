@@ -550,7 +550,8 @@
   non-submitting sender packet prefers its dispatch-native config block and
   preserves it as
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
-  acknowledgement reconciliation preserves it as
+  acknowledgement reconciliation prefers its ack-stage config block and
+  preserves it as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
   round-trip proof reconciles it as
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
@@ -568,7 +569,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 716 tests.
+Current passing suite: 718 tests.
 
 ## Next Build Targets
 
