@@ -384,6 +384,22 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
             route_broker_shadow,
             field_prefix="route_broker_shadow_broker",
         )
+    broker_vendor_market_data_batch = (
+        config.get("route_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
+    )
+    if broker_vendor_market_data_batch:
+        _apply_vendor_market_data_batch_config(
+            state,
+            broker_vendor_market_data_batch,
+            field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+            fallback_prefix="route_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+    else:
+        _copy_vendor_market_data_batch_fields(
+            state,
+            source_prefix="route_broker_dispatch_roundtrip_vendor_market_data_batch",
+            field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
     vendor_market_data_batch = config.get("route_vendor_market_data_batch", {}) or {}
     if vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(
@@ -1378,6 +1394,10 @@ def _summary(
                 ),
                 **_vendor_market_data_batch_summary_fields(
                     dispatch_summary,
+                    field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+                ),
+                **_vendor_market_data_batch_summary_fields(
+                    dispatch_summary,
                     field_prefix="dispatch_vendor_market_data_batch",
                 ),
                 "route_dispatch_roundtrip_required": _to_bool(
@@ -1589,6 +1609,10 @@ def _config(
         "route_broker_shadow_broker_readiness": _prefixed_shadow_broker_config(
             summary,
             field_prefix="route_broker_shadow_broker",
+        ),
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
+            summary,
+            field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
         ),
         "dispatch_vendor_market_data_batch": _vendor_market_data_batch_config(
             summary,

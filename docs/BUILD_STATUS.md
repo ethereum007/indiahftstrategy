@@ -429,8 +429,9 @@
   route-enable dispatch round-trip failed-check counters, dispatch-carried
   shadow broker-readiness aggregates plus broker-readiness-carried shadow
   broker proof from the dispatch config as `route_broker_shadow_broker_*`, and
-  vendor market-data batch provenance as
-  `dispatch_vendor_market_data_batch_*`, validating route-readiness identity,
+  vendor market-data batch provenance as `dispatch_vendor_market_data_batch_*`,
+  plus broker-readiness vendor market-data batch proof as
+  `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, validating route-readiness identity,
   carried shadow proof quality, and route proof batch continuity, forcing live
   submission off, and fingerprinting exact dispatch input files plus the
   dispatch manifest when present.
@@ -539,7 +540,9 @@
   route-enable revalidates and preserves it as
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker dispatch revalidates and preserves it as
-  `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
+  `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
+  non-submitting sender packet preserves it as
+  `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -552,7 +555,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 700 tests.
+Current passing suite: 701 tests.
 
 ## Next Build Targets
 
