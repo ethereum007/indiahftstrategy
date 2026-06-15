@@ -2818,6 +2818,10 @@ comparison acceptance checks and preserves it as
 When both `route_broker_dispatch_roundtrip_vendor_market_data_batch` and the
 cutover-retained `cutover_broker_dispatch_roundtrip_vendor_market_data_batch`
 blocks are present, dispatch planning prefers the route-native block.
+For older or thin route-enable configs, dispatch planning can follow the
+route-enable manifest to the cutover manifest and hydrate missing broker
+vendor-data proof from the recorded `broker_readiness_config` sidecar before
+revalidating it.
 `broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or

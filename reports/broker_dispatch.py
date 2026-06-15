@@ -9,7 +9,10 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
-from reports.vendor_market_data import select_vendor_market_data_batch_source
+from reports.vendor_market_data import (
+    select_vendor_market_data_batch_source,
+    vendor_market_data_batch_source_active,
+)
 
 
 @dataclass(frozen=True)
@@ -83,6 +86,13 @@ def write_broker_dispatch_plan(
     )
     route_manifest_path = _sidecar_path(route_enable_dir, "manifest.json")
     route_config = json.loads(route_config_path.read_text(encoding="utf-8"))
+    cutover_manifest_path = _manifest_input_path(route_manifest_path, "cutover_manifest")
+    broker_readiness_config_path = _manifest_input_path(cutover_manifest_path, "broker_readiness_config")
+    if broker_readiness_config_path is not None:
+        route_config = _with_broker_readiness_config_vendor_market_data_batch(
+            route_config,
+            json.loads(broker_readiness_config_path.read_text(encoding="utf-8")),
+        )
     upload_file = _upload_orders_path(upload_dir, route_config, upload_orders_path)
     upload_bytes = upload_file.read_bytes()
     report = evaluate_broker_dispatch_plan(
@@ -1595,6 +1605,50 @@ def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dic
         ),
         default_source="cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
     )
+
+
+def _with_broker_readiness_config_vendor_market_data_batch(
+    route_config: dict[str, Any],
+    broker_readiness_config: dict[str, Any],
+) -> dict[str, Any]:
+    vendor, _source = _broker_vendor_market_data_batch_source(route_config)
+    if vendor_market_data_batch_source_active(vendor):
+        return route_config
+    dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
+    if not isinstance(dispatch, dict):
+        return route_config
+    vendor, _source = select_vendor_market_data_batch_source(
+        dispatch,
+        (
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "vendor_market_data_batch",
+            "roundtrip_vendor_market_data_batch",
+        ),
+        default_source="broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    if not vendor_market_data_batch_source_active(vendor):
+        return route_config
+    out = dict(route_config)
+    out["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(vendor)
+    return out
+
+
+def _manifest_input_path(manifest_path: Path | None, input_name: str) -> Path | None:
+    if manifest_path is None or not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    value = (manifest.get("inputs", {}) or {}).get(input_name)
+    raw_path = value.get("path") if isinstance(value, dict) else value
+    if not raw_path:
+        return None
+    path = Path(str(raw_path))
+    if not path.is_absolute():
+        path = manifest_path.parent / path
+    return path if path.exists() else None
 
 
 def _batch_id(route: dict[str, Any], upload_orders: pd.DataFrame, upload_file_hash: str) -> str:

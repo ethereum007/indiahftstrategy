@@ -549,7 +549,8 @@
   from broker-readiness sidecars referenced by the cutover manifest, revalidates it, and
   preserves it as
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
-  broker dispatch prefers its route-native config block, revalidates it, and
+  broker dispatch prefers its route-native config block, hydrates missing proof
+  through the route-enable/cutover manifest chain, revalidates it, and
   preserves it as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   non-submitting sender packet prefers its dispatch-native config block and
@@ -585,7 +586,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 735 tests.
+Current passing suite: 736 tests.
 
 ## Next Build Targets
 
