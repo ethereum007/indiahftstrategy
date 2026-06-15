@@ -520,15 +520,38 @@ def test_broker_dispatch_send_carries_dispatch_vendor_market_data_batch():
     assert summary["dispatch_vendor_market_data_batch_ready"]
     assert summary["dispatch_vendor_market_data_batch_adapter"] == "arrow_money"
     assert summary["dispatch_vendor_market_data_batch_kind"] == "ticks"
+    assert summary["dispatch_vendor_market_data_batch_manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert int(summary["dispatch_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["dispatch_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["dispatch_vendor_market_data_batch_unique_header_fingerprints"]) == 1
     assert summary["dispatch_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_dispatch_send_blocks_wrong_manifest_vendor_market_data_batch():
+    config = dispatch_config()
+    config["route_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=config,
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["dispatch_vendor_market_data_batch"]
+    assert "dispatch_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["dispatch_vendor_market_data_batch_manifest_run_type"] == "not_vendor_batch"
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
 
 
 def test_broker_dispatch_send_carries_broker_vendor_market_data_batch():

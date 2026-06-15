@@ -569,6 +569,28 @@ def test_broker_dispatch_ack_carries_ack_vendor_market_data_batch():
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
+def test_broker_dispatch_ack_blocks_wrong_manifest_vendor_market_data_batch():
+    config = dispatch_config()
+    config["dispatch_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["ack_vendor_market_data_batch"]
+    assert "ack_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["ack_vendor_market_data_batch_manifest_run_type"] == "not_vendor_batch"
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
+
+
 def test_broker_dispatch_ack_carries_broker_vendor_market_data_batch():
     config = dispatch_config()
     config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()

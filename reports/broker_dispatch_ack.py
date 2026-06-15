@@ -811,6 +811,14 @@ def _checks(
             ],
             ignore_index=True,
         )
+    if _vendor_market_data_batch_active(dispatch_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_vendor_market_data_batch_checks(dispatch_summary)),
+            ],
+            ignore_index=True,
+        )
     if _broker_vendor_market_data_batch_active(dispatch_summary):
         checks = pd.concat(
             [
@@ -1251,6 +1259,32 @@ def _route_broker_shadow_broker_readiness_checks(dispatch_summary: pd.Series) ->
             )
         checks.append(renamed)
     return checks
+
+
+def _vendor_market_data_batch_active(dispatch_summary: pd.Series) -> bool:
+    prefix = "ack_vendor_market_data_batch"
+    return bool(
+        _to_bool(dispatch_summary.get(f"{prefix}_provided", False))
+        or _to_bool(dispatch_summary.get(f"{prefix}_ready", False))
+        or _identity_key(dispatch_summary.get(f"{prefix}_adapter", ""))
+        or _identity_key(dispatch_summary.get(f"{prefix}_manifest_run_type", ""))
+        or int(_number(dispatch_summary, f"{prefix}_dataset_count", 0.0)) > 0
+    )
+
+
+def _vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
+    prefix = "ack_vendor_market_data_batch"
+    manifest_run_type = _identity_key(dispatch_summary.get(f"{prefix}_manifest_run_type", ""))
+    return [
+        _check(
+            f"{prefix}_manifest_run_type",
+            manifest_run_type,
+            "==",
+            "vendor_market_data_batch_pipeline",
+            manifest_run_type == "vendor_market_data_batch_pipeline",
+            "ack vendor market-data manifest is not a vendor batch pipeline proof",
+        )
+    ]
 
 
 def _broker_vendor_market_data_batch_active(dispatch_summary: pd.Series) -> bool:

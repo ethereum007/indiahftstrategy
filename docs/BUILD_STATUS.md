@@ -606,7 +606,8 @@
   broker/vendor data proof. Broker dispatch planning now carries and revalidates
   that identity before send packets can inherit route-enable-carried proof.
   Broker dispatch send, acknowledgement, and final round-trip gates now carry
-  and revalidate the same identity before scale-up can inherit it.
+  and revalidate the same identity before scale-up can inherit it, including
+  both generic and broker-readiness-prefixed vendor proof paths.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -619,7 +620,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 788 tests.
+Current passing suite: 790 tests.
 
 ## Next Build Targets
 
