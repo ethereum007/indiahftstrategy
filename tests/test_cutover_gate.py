@@ -796,6 +796,88 @@ def test_cutover_gate_blocks_bad_broker_vendor_market_data_batch_from_scaleup_co
     assert vendor["failed_datasets"] == 1
 
 
+def test_cutover_gate_prefers_broker_specific_broker_vendor_market_data_batch_from_scaleup_config():
+    config = scaleup_config()
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch["vendor_market_data_batch"] = vendor_market_data_batch_config(
+        ready=False,
+        adapter="irage",
+        market="us_options_regular",
+        failed_datasets=1,
+        comparison_failed_checks=1,
+    )
+    dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    vendor = report.config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == (
+        "india_nse_index_derivatives"
+    )
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["comparison"]["accepted"]
+
+
+def test_cutover_gate_blocks_bad_broker_specific_broker_vendor_market_data_batch_from_scaleup_config():
+    config = scaleup_config()
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch["vendor_market_data_batch"] = vendor_market_data_batch_config()
+    dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        ready=False,
+        adapter="irage",
+        market="us_options_regular",
+        dataset_count=0,
+        ready_datasets=0,
+        failed_datasets=1,
+        ready_rate=0.0,
+        unique_source_files=0,
+        unique_header_fingerprints=0,
+        mapping_sources="",
+        comparison_accepted=False,
+        comparison_failed_checks=1,
+        datasets=[],
+    )
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_ready",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
+        "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
+    } <= failed
+    vendor = report.config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert vendor["adapter"] == "irage"
+    assert vendor["market"] == "us_options_regular"
+    assert vendor["failed_datasets"] == 1
+
+
 def test_cutover_gate_blocks_bad_shadow_broker_readiness_from_scaleup_config():
     config = scaleup_config()
     config["shadow_broker_readiness"] = shadow_broker_config(

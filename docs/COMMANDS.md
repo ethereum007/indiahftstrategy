@@ -2667,6 +2667,10 @@ round-trip vendor market-data batch proof, cutover revalidates adapter, market,
 dataset, provenance, and comparison acceptance checks and preserves it as
 `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
 `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch` config block.
+When the scale-up config includes both
+`broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
+and the older `broker_readiness.dispatch_roundtrip.vendor_market_data_batch`
+block, cutover prefers the broker-specific block.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,

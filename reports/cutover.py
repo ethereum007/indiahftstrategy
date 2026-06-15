@@ -2140,7 +2140,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
     broker_shadow_broker = broker_readiness.get("shadow_broker_readiness", {}) or {}
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
-    broker_vendor_market_data_batch = dispatch.get("vendor_market_data_batch", {}) or {}
+    broker_vendor_market_data_batch = _broker_vendor_market_data_batch_source(dispatch)
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
     strategy = _strategy_key(_first_text(row.get("strategy", ""), config.get("strategy", ""), identity.get("strategy", "")))
@@ -2655,6 +2655,24 @@ def _broker_shadow_broker_state_fields(row: pd.Series, shadow_broker: dict[str, 
             )
         ),
     }
+
+
+def _broker_vendor_market_data_batch_source(dispatch: dict[str, Any]) -> dict[str, Any]:
+    broker_vendor = dispatch.get("broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
+    if _vendor_market_data_batch_source_active(broker_vendor):
+        return broker_vendor
+    return dispatch.get("vendor_market_data_batch", {}) or {}
+
+
+def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
+    if not vendor:
+        return False
+    return bool(
+        _to_bool(vendor.get("provided", False))
+        or int(_number_from(vendor, "dataset_count", 0.0)) > 0
+        or _identity_key(vendor.get("adapter", ""))
+        or _identity_key(vendor.get("market", ""))
+    )
 
 
 def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:
