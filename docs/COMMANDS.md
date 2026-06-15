@@ -1997,6 +1997,11 @@ batch and quality counters. If the round-trip config carries
 adapter/market, dataset, source-file, header-fingerprint, mapping, and
 comparison proof and retains it as `dispatch_roundtrip_vendor_market_data_batch_*`
 summary fields plus `dispatch_roundtrip.vendor_market_data_batch` config.
+`--vendor-market-data-batch` may point directly at a
+`pipeline-vendor-market-data-batch` output directory or
+`vendor_market_data_batch_config.json`; broker readiness merges that artifact
+as both the generic round-trip vendor-data proof and the broker-specific
+readiness-native proof, then fingerprints the batch config and manifest.
 If the round-trip config carries
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, broker
 readiness revalidates the broker-readiness final dispatch batch proof and

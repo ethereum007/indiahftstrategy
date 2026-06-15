@@ -8,6 +8,35 @@ from adapters.broker_readiness import (
     write_broker_readiness_report,
 )
 from hft_cli import main
+from reports.vendor_data_onboarding import (
+    VendorMarketDataPipelineConfig,
+    write_vendor_market_data_batch_pipeline,
+)
+
+
+def broker_vendor_ticks(day: str, *, base: float = 100.0):
+    return pd.DataFrame(
+        [
+            {
+                "exchange_ts": f"{day} 09:15:00",
+                "best_bid": base,
+                "best_ask": base + 0.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": base + 0.05,
+                "last_size": 75,
+            },
+            {
+                "exchange_ts": f"{day} 09:15:01",
+                "best_bid": base + 0.05,
+                "best_ask": base + 0.10,
+                "bid_size": 150,
+                "ask_size": 75,
+                "last_px": base + 0.10,
+                "last_size": 75,
+            },
+        ]
+    )
 
 
 def schema_summary(adapter="normalized", ready=True):
@@ -369,6 +398,49 @@ def dirty_vendor_market_data_batch_config():
 
 def path_tail(value):
     return str(value).replace("\\", "/")
+
+
+def write_broker_readiness_input_dirs(root, adapter):
+    schema_dir = root / "schema"
+    export_dir = root / "export"
+    upload_dir = root / "upload"
+    roundtrip_dir = root / "roundtrip"
+    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+        path.mkdir(parents=True)
+    schema_summary(adapter, True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    order_export_summary(adapter, True).to_csv(export_dir / "broker_order_summary.csv", index=False)
+    upload_summary(adapter, True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    dispatch_roundtrip_summary(adapter, True).to_csv(
+        roundtrip_dir / "broker_dispatch_roundtrip_summary.csv",
+        index=False,
+    )
+    (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return schema_dir, export_dir, upload_dir, roundtrip_dir
+
+
+def write_vendor_market_data_batch(root, adapter):
+    day1 = root / f"{adapter}_ticks_day1.csv"
+    day2 = root / f"{adapter}_ticks_day2.csv"
+    out_dir = root / "vendor_batch"
+    broker_vendor_ticks("2026-06-10", base=100.0).to_csv(day1, index=False)
+    broker_vendor_ticks("2026-06-11", base=100.5).to_csv(day2, index=False)
+    report = write_vendor_market_data_batch_pipeline(
+        [day1, day2],
+        output_dir=out_dir,
+        labels=["day1", "day2"],
+        config=VendorMarketDataPipelineConfig(
+            adapter=adapter,
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=2,
+        ),
+    )
+    assert report.ready
+    return out_dir
 
 
 def test_broker_readiness_accepts_ready_normalized_artifacts():
@@ -1363,6 +1435,90 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     )
     assert path_tail(manifest["inputs"]["dispatch_roundtrip_manifest"]["path"]).endswith(
         "/roundtrip/manifest.json"
+    )
+
+
+def test_broker_readiness_reads_vendor_market_data_batch_artifact(tmp_path):
+    for adapter in ("arrow_money", "irage"):
+        root = tmp_path / adapter
+        schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(root, adapter)
+        vendor_batch_dir = write_vendor_market_data_batch(root, adapter)
+        out_dir = root / "readiness"
+
+        report = write_broker_readiness_report(
+            output_dir=out_dir,
+            schema_audit_dir=schema_dir,
+            order_export_dir=export_dir,
+            upload_pack_dir=upload_dir,
+            dispatch_roundtrip_dir=roundtrip_dir,
+            vendor_market_data_batch_dir=vendor_batch_dir,
+            thresholds=BrokerReadinessThresholds(
+                adapter=adapter,
+                require_reviewed_schema=False,
+                require_dispatch_roundtrip=True,
+            ),
+        )
+
+        assert report.ready
+        summary = report.summary.iloc[0]
+        assert bool(summary["dispatch_roundtrip_vendor_market_data_batch_ready"])
+        assert bool(summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+        assert summary["dispatch_roundtrip_vendor_market_data_batch_adapter"] == adapter
+        assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == adapter
+        assert int(summary["dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+        assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+        config = json.loads((out_dir / "broker_readiness_config.json").read_text(encoding="utf-8"))
+        generic_vendor = config["dispatch_roundtrip"]["vendor_market_data_batch"]
+        broker_vendor = config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]
+        assert generic_vendor["adapter"] == adapter
+        assert broker_vendor["adapter"] == adapter
+        assert generic_vendor["comparison"]["accepted"]
+        assert broker_vendor["dataset_count"] == 2
+        assert broker_vendor["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
+        manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+        assert path_tail(manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
+            "/vendor_batch/vendor_market_data_batch_config.json"
+        )
+        assert path_tail(manifest["inputs"]["vendor_market_data_batch_manifest"]["path"]).endswith(
+            "/vendor_batch/manifest.json"
+        )
+
+
+def test_cli_broker_readiness_accepts_vendor_market_data_batch_artifact(tmp_path):
+    schema_dir, export_dir, upload_dir, roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    vendor_batch_dir = write_vendor_market_data_batch(tmp_path, "arrow_money")
+    out_dir = tmp_path / "readiness"
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--dispatch-roundtrip",
+            str(roundtrip_dir),
+            "--vendor-market-data-batch",
+            str(vendor_batch_dir),
+            "--allow-placeholder-schema",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+    config = json.loads((out_dir / "broker_readiness_config.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]["adapter"] == (
+        "arrow_money"
     )
 
 

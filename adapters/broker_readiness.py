@@ -116,6 +116,7 @@ def write_broker_readiness_report(
     runtime_session_dir: str | Path | None = None,
     resume_dir: str | Path | None = None,
     dispatch_roundtrip_dir: str | Path | None = None,
+    vendor_market_data_batch_dir: str | Path | None = None,
     thresholds: BrokerReadinessThresholds | None = None,
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
@@ -126,6 +127,14 @@ def write_broker_readiness_report(
     )
     dispatch_roundtrip_manifest_path = _manifest_config_input(
         dispatch_roundtrip_dir,
+        "manifest.json",
+    )
+    vendor_market_data_batch_config_path = _manifest_config_input(
+        vendor_market_data_batch_dir,
+        "vendor_market_data_batch_config.json",
+    )
+    vendor_market_data_batch_manifest_path = _manifest_config_input(
+        vendor_market_data_batch_dir,
         "manifest.json",
     )
     input_paths = {
@@ -144,6 +153,21 @@ def write_broker_readiness_report(
         input_paths["dispatch_roundtrip_config"] = dispatch_roundtrip_config_path
     if dispatch_roundtrip_manifest_path is not None:
         input_paths["dispatch_roundtrip_manifest"] = dispatch_roundtrip_manifest_path
+    if vendor_market_data_batch_config_path is not None:
+        input_paths["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
+    if vendor_market_data_batch_manifest_path is not None:
+        input_paths["vendor_market_data_batch_manifest"] = vendor_market_data_batch_manifest_path
+    dispatch_roundtrip_config = _dispatch_roundtrip_config_with_vendor_market_data_batch(
+        _read_optional_config(
+            dispatch_roundtrip_dir,
+            "broker_dispatch_roundtrip_config.json",
+        ),
+        _read_required_optional_config(
+            vendor_market_data_batch_dir,
+            "vendor_market_data_batch_config.json",
+            component="vendor market-data batch",
+        ),
+    )
     report = evaluate_broker_readiness(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),
@@ -155,10 +179,7 @@ def write_broker_readiness_report(
         runtime_session_summary=_read_optional_summary(runtime_session_dir, "runtime_session"),
         resume_summary=_read_optional_summary(resume_dir, "resume_gate"),
         dispatch_roundtrip_summary=_read_optional_summary(dispatch_roundtrip_dir, "dispatch_roundtrip"),
-        dispatch_roundtrip_config=_read_optional_config(
-            dispatch_roundtrip_dir,
-            "broker_dispatch_roundtrip_config.json",
-        ),
+        dispatch_roundtrip_config=dispatch_roundtrip_config,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -2456,6 +2477,33 @@ def _read_optional_config(path: str | Path | None, file_name: str) -> dict[str, 
     if not candidate.exists():
         return {}
     return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _read_required_optional_config(
+    path: str | Path | None,
+    file_name: str,
+    *,
+    component: str,
+) -> dict[str, Any]:
+    if path is None:
+        return {}
+    candidate = _config_path(path, file_name)
+    if not candidate.exists():
+        raise FileNotFoundError(f"{component} config not found: {candidate}")
+    return json.loads(candidate.read_text(encoding="utf-8"))
+
+
+def _dispatch_roundtrip_config_with_vendor_market_data_batch(
+    dispatch_roundtrip_config: dict[str, Any],
+    vendor_market_data_batch_config: dict[str, Any],
+) -> dict[str, Any]:
+    if not vendor_market_data_batch_config:
+        return dict(dispatch_roundtrip_config)
+    merged = dict(dispatch_roundtrip_config)
+    vendor = dict(vendor_market_data_batch_config)
+    merged["roundtrip_vendor_market_data_batch"] = vendor
+    merged["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    return merged
 
 
 def _config_path(path: str | Path, file_name: str) -> Path:
