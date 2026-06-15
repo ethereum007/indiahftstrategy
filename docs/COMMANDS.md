@@ -2848,7 +2848,10 @@ the sender packet preserves the dataset/header/mapping proof as
 retained broker-readiness final dispatch round-trip vendor market-data batch
 proof, the sender packet preserves it as
 `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` config block. The
+`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` config block. When
+both `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` and
+`route_broker_dispatch_roundtrip_vendor_market_data_batch` blocks are present,
+the sender packet prefers the dispatch-native block. The
 manifest fingerprints the exact dispatch
 summary, dispatch orders, dispatch config, and dispatch manifest when present
 consumed by the sender packet.

@@ -384,20 +384,21 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
             route_broker_shadow,
             field_prefix="route_broker_shadow_broker",
         )
-    broker_vendor_market_data_batch = (
-        config.get("route_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
-    )
+    (
+        broker_vendor_market_data_batch,
+        broker_vendor_market_data_batch_prefix,
+    ) = _broker_vendor_market_data_batch_source(config)
     if broker_vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(
             state,
             broker_vendor_market_data_batch,
             field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
-            fallback_prefix="route_broker_dispatch_roundtrip_vendor_market_data_batch",
+            fallback_prefix=broker_vendor_market_data_batch_prefix,
         )
     else:
         _copy_vendor_market_data_batch_fields(
             state,
-            source_prefix="route_broker_dispatch_roundtrip_vendor_market_data_batch",
+            source_prefix=broker_vendor_market_data_batch_prefix,
             field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
         )
     vendor_market_data_batch = config.get("route_vendor_market_data_batch", {}) or {}
@@ -415,6 +416,29 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
             field_prefix="dispatch_vendor_market_data_batch",
         )
     return state
+
+
+def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    candidates = (
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    for field_prefix in candidates:
+        vendor = config.get(field_prefix, {}) or {}
+        if _vendor_market_data_batch_source_active(vendor):
+            return vendor, field_prefix
+    return {}, "route_broker_dispatch_roundtrip_vendor_market_data_batch"
+
+
+def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
+    if not vendor:
+        return False
+    return bool(
+        _to_bool(vendor.get("provided", False))
+        or int(_number_value(vendor.get("dataset_count"), 0.0)) > 0
+        or _identity_key(vendor.get("adapter", ""))
+        or _identity_key(vendor.get("market", ""))
+    )
 
 
 def _apply_vendor_market_data_batch_config(

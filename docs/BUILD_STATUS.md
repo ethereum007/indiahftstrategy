@@ -547,7 +547,8 @@
   broker dispatch prefers its route-native config block, revalidates it, and
   preserves it as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
-  non-submitting sender packet preserves it as
+  non-submitting sender packet prefers its dispatch-native config block and
+  preserves it as
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   acknowledgement reconciliation preserves it as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
@@ -567,7 +568,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 714 tests.
+Current passing suite: 716 tests.
 
 ## Next Build Targets
 
