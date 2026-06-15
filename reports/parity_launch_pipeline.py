@@ -222,6 +222,7 @@ def write_parity_launch_pipeline(
             vendor_market_data_batch_dir=config.broker_vendor_data_readiness_dir,
             thresholds=BrokerReadinessThresholds(
                 adapter=config.adapter,
+                expected_market=str(launch.summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
                 require_reviewed_schema=config.require_reviewed_schema,
                 require_schema_audit=config.require_broker_schema_audit,
                 require_order_export=True,

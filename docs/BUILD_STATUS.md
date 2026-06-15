@@ -584,7 +584,11 @@
   CLI operator paths. The generated `pipeline-broker-vendor-readiness` root now
   has end-to-end CLI coverage feeding a launch pipeline before scale-up
   preserves the broker-readiness config sidecar proof in its operator-visible
-  summary/config.
+  summary/config. Broker readiness now evaluates standalone vendor-batch proof
+  roots even when no dispatch round-trip proof is supplied, compares them
+  against the launch/broker expected market when available, and fails closed
+  across all five launch CLIs when an iRage proof root is supplied to an
+  Arrow.money/normalized launch adapter.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -597,7 +601,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 749 tests.
+Current passing suite: 754 tests.
 
 ## Next Build Targets
 

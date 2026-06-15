@@ -8,6 +8,7 @@ from reports.parity_launch_pipeline import (
     write_parity_launch_pipeline,
 )
 from tests.broker_vendor_data_helpers import (
+    assert_broker_vendor_data_adapter_mismatch_blocked,
     assert_broker_vendor_data_proof_forwarded,
     path_tail,
     write_broker_vendor_data_proof,
@@ -197,6 +198,44 @@ def test_cli_pipeline_parity_launch_forwards_broker_vendor_data_proof_root(tmp_p
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert_broker_vendor_data_proof_forwarded(out_dir)
+
+
+def test_cli_pipeline_parity_launch_blocks_mismatched_broker_vendor_data_proof_root(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    proof_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data", adapter="irage")
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+
+    code = main(
+        [
+            "pipeline-parity-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--route-tag",
+            "parity_shadow",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "2000000",
+            "--max-orders",
+            "3",
+            "--broker-vendor-data-readiness",
+            str(proof_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 2
+    assert_broker_vendor_data_adapter_mismatch_blocked(
+        out_dir,
+        summary_file="parity_launch_pipeline_summary.csv",
+        components_file="parity_launch_pipeline_components.csv",
+    )
 
 
 def test_parity_launch_pipeline_skips_downstream_when_promotion_unready(tmp_path):

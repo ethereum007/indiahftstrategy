@@ -1,5 +1,7 @@
 import json
 
+import pandas as pd
+
 
 def assert_broker_vendor_data_proof_forwarded(output_dir, *, readiness_subdir="06_broker_readiness"):
     broker_manifest = json.loads((output_dir / readiness_subdir / "manifest.json").read_text(encoding="utf-8"))
@@ -13,6 +15,31 @@ def assert_broker_vendor_data_proof_forwarded(output_dir, *, readiness_subdir="0
     assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
         "/broker_vendor_data"
     )
+
+
+def assert_broker_vendor_data_adapter_mismatch_blocked(
+    output_dir,
+    *,
+    summary_file,
+    components_file,
+    readiness_subdir="06_broker_readiness",
+    proof_adapter="irage",
+):
+    summary = pd.read_csv(output_dir / summary_file)
+    components = pd.read_csv(output_dir / components_file)
+    checks = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_checks.csv")
+    broker_summary = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_summary.csv")
+
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert not bool(summary.loc[0, "ready"])
+    assert components.set_index("component").loc["broker_readiness", "status"] == "not_ready"
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+    } <= failed
+    assert broker_summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_adapter"] == proof_adapter
+    assert broker_summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == proof_adapter
+    assert_broker_vendor_data_proof_forwarded(output_dir, readiness_subdir=readiness_subdir)
 
 
 def path_tail(value):

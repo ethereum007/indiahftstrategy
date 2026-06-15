@@ -2854,6 +2854,7 @@ def main(argv: list[str] | None = None) -> int:
             ),
             broker_thresholds=BrokerReadinessThresholds(
                 adapter=args.adapter,
+                expected_market=args.market,
                 require_reviewed_schema=not args.allow_placeholder_schema,
                 require_schema_audit=not args.skip_schema_audit,
                 require_order_export=not args.skip_order_export,

@@ -8,6 +8,7 @@ from reports.surface_mm_launch_pipeline import (
     write_surface_mm_launch_pipeline,
 )
 from tests.broker_vendor_data_helpers import (
+    assert_broker_vendor_data_adapter_mismatch_blocked,
     assert_broker_vendor_data_proof_forwarded,
     path_tail,
     write_broker_vendor_data_proof,
@@ -288,6 +289,39 @@ def test_cli_surface_mm_launch_pipeline_forwards_broker_vendor_data_proof_root(t
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert_broker_vendor_data_proof_forwarded(out_dir, readiness_subdir="05_broker_readiness")
+
+
+def test_cli_surface_mm_launch_pipeline_blocks_mismatched_broker_vendor_data_proof_root(tmp_path):
+    surface_pipeline = tmp_path / "surface_pipeline"
+    proof_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data", adapter="irage")
+    out_dir = tmp_path / "cli_launch_pipeline"
+    write_surface_pipeline(surface_pipeline)
+
+    code = main(
+        [
+            "pipeline-surface-mm-launch",
+            "--surface-pipeline",
+            str(surface_pipeline),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "normalized",
+            "--mode",
+            "paper",
+            "--broker-vendor-data-readiness",
+            str(proof_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 2
+    assert_broker_vendor_data_adapter_mismatch_blocked(
+        out_dir,
+        summary_file="surface_mm_launch_pipeline_summary.csv",
+        components_file="surface_mm_launch_pipeline_components.csv",
+        readiness_subdir="05_broker_readiness",
+    )
 
 
 def test_surface_mm_launch_pipeline_blocks_unready_surface_research(tmp_path):

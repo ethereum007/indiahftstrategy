@@ -35,6 +35,7 @@ SUMMARY_FALLBACK_DIRS = {
 @dataclass(frozen=True)
 class BrokerReadinessThresholds:
     adapter: str = "arrow_money"
+    expected_market: str = ""
     require_reviewed_schema: bool = True
     require_schema_audit: bool = True
     require_order_export: bool = True
@@ -214,7 +215,11 @@ def _items(summaries: dict[str, pd.DataFrame], thresholds: BrokerReadinessThresh
 def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, Any]) -> pd.DataFrame:
     frame = _optional_frame(summary)
     if frame.empty:
-        return frame
+        vendor_market_data_batch = config.get("roundtrip_vendor_market_data_batch", {}) or {}
+        broker_vendor_market_data_batch, _ = _broker_vendor_market_data_batch_config(config)
+        if not vendor_market_data_batch and not broker_vendor_market_data_batch:
+            return frame
+        frame = pd.DataFrame([{"vendor_market_data_batch_only": True}])
     route_readiness = config.get("route_readiness", {}) or {}
     if route_readiness:
         frame.loc[0, "route_readiness_required"] = _to_bool(
@@ -591,7 +596,10 @@ def _apply_shadow_broker_readiness_config(
 
 def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> dict[str, Any]:
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
-    provided = not summary.empty
+    vendor_market_data_batch_only = component == "dispatch_roundtrip" and _to_bool(
+        row.get("vendor_market_data_batch_only", False)
+    )
+    provided = bool(not summary.empty and not vendor_market_data_batch_only)
     ready = _component_ready(component, row) if provided else False
     adapter = str(row.get("adapter", "")).strip()
     schema_status = str(row.get("adapter_schema_status", "")).strip()
@@ -603,8 +611,10 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "required": required,
         "provided": provided,
         "ready": ready,
+        "vendor_market_data_batch_only": vendor_market_data_batch_only,
         "adapter": adapter,
         "expected_adapter": thresholds.adapter,
+        "expected_market": thresholds.expected_market,
         "adapter_match": adapter_match,
         "adapter_schema_status": schema_status,
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
@@ -946,7 +956,8 @@ def _vendor_market_data_batch_item_fields(
     field_prefix: str = "dispatch_roundtrip_vendor_market_data_batch",
     source_prefix: str = "roundtrip_vendor_market_data_batch",
 ) -> dict[str, Any]:
-    active = component == "dispatch_roundtrip" and provided
+    vendor_market_data_batch_only = _to_bool(row.get("vendor_market_data_batch_only", False))
+    active = component == "dispatch_roundtrip" and (provided or vendor_market_data_batch_only)
     dataset_count = int(
         _dispatch_number_any(component, row, f"{field_prefix}_dataset_count", f"{source_prefix}_dataset_count")
     )
@@ -1141,6 +1152,9 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                 checks.extend(_shadow_broker_readiness_checks(row))
             if _broker_shadow_broker_readiness_active(row):
                 checks.extend(_broker_shadow_broker_readiness_checks(row))
+        if row.component == "dispatch_roundtrip" and (
+            bool(row.provided) or bool(getattr(row, "vendor_market_data_batch_only", False))
+        ):
             if _dispatch_roundtrip_vendor_market_data_batch_active(row):
                 checks.extend(_dispatch_roundtrip_vendor_market_data_batch_checks(row))
             if _broker_dispatch_roundtrip_vendor_market_data_batch_active(row):
@@ -1524,6 +1538,8 @@ def _dispatch_roundtrip_vendor_market_data_batch_active(row: Any) -> bool:
 
 
 def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[str, Any]]:
+    expected_market = _vendor_market_data_batch_expected_market(row)
+    vendor_market = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market)
     return [
         _check(
             "dispatch_roundtrip_vendor_market_data_batch_provided",
@@ -1555,15 +1571,11 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
         ),
         _check(
             "dispatch_roundtrip_vendor_market_data_batch_market_matches",
-            _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market),
-            "==",
-            _identity_key(row.dispatch_roundtrip_market),
-            bool(
-                _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market)
-                and _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market)
-                == _identity_key(row.dispatch_roundtrip_market)
-            ),
-            "dispatch round-trip vendor market-data market does not match dispatch round-trip market",
+            vendor_market,
+            "==" if expected_market else "present",
+            expected_market if expected_market else "nonempty market",
+            bool(vendor_market and (not expected_market or vendor_market == expected_market)),
+            "dispatch round-trip vendor market-data market does not match broker readiness market",
         ),
         _check(
             "dispatch_roundtrip_vendor_market_data_batch_dataset_count",
@@ -1622,6 +1634,12 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
             "dispatch round-trip vendor market-data comparison has failed checks",
         ),
     ]
+
+
+def _vendor_market_data_batch_expected_market(row: Any) -> str:
+    return _identity_key(getattr(row, "dispatch_roundtrip_market", "")) or _identity_key(
+        getattr(row, "expected_market", "")
+    )
 
 
 def _broker_dispatch_roundtrip_vendor_market_data_batch_active(row: Any) -> bool:
