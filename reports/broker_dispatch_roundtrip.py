@@ -560,6 +560,9 @@ def _apply_vendor_market_data_batch_config(
     state[f"{field_prefix}_kind"] = _object_text(
         vendor.get("kind", state.get(f"{field_prefix}_kind", ""))
     )
+    state[f"{field_prefix}_manifest_run_type"] = _identity_key(
+        vendor.get("manifest_run_type", state.get(f"{field_prefix}_manifest_run_type", ""))
+    )
     state[f"{field_prefix}_market"] = _object_text(
         vendor.get("market", state.get(f"{field_prefix}_market", ""))
     )
@@ -632,6 +635,7 @@ def _copy_vendor_market_data_batch_fields(
         "ready",
         "adapter",
         "kind",
+        "manifest_run_type",
         "market",
         "dataset_count",
         "ready_datasets",
@@ -1350,6 +1354,7 @@ def _route_broker_shadow_broker_readiness_checks(*rows: pd.Series) -> list[dict[
 def _vendor_market_data_batch_active(*rows: pd.Series) -> bool:
     return bool(
         any(_to_bool(row.get("vendor_market_data_batch_provided", False)) for row in rows)
+        or any(_identity_key(row.get("vendor_market_data_batch_manifest_run_type", "")) for row in rows)
         or any(int(_number(row, "vendor_market_data_batch_dataset_count", 0.0)) > 0 for row in rows)
     )
 
@@ -1365,6 +1370,7 @@ def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]
     )
     ready = bool(rows and all(_to_bool(row.get("vendor_market_data_batch_ready", False)) for row in rows))
     identity_mismatches = _vendor_market_data_batch_identity_mismatches(rows)
+    manifest_run_type_valid = _vendor_market_data_batch_manifest_run_type_valid(rows)
     counts_consistent = _vendor_market_data_batch_counts_consistent(rows)
     failed_datasets = _vendor_market_data_batch_counter_max(rows, "vendor_market_data_batch_failed_datasets")
     comparison_failed = _vendor_market_data_batch_counter_max(
@@ -1398,6 +1404,14 @@ def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]
             0,
             identity_mismatches == 0,
             "vendor market-data batch adapter/market identity is inconsistent",
+        ),
+        _check(
+            "vendor_market_data_batch_manifest_run_type",
+            _vendor_market_data_batch_text_value(rows, "manifest_run_type"),
+            "==",
+            "vendor_market_data_batch_pipeline",
+            manifest_run_type_valid,
+            "vendor market-data batch manifest is not a vendor batch pipeline proof",
         ),
         _check(
             "vendor_market_data_batch_dataset_count_consistent",
@@ -1472,6 +1486,7 @@ def _vendor_market_data_batch_projection(row: pd.Series, *, source_prefix: str) 
         "ready",
         "adapter",
         "kind",
+        "manifest_run_type",
         "market",
         "dataset_count",
         "ready_datasets",
@@ -1847,6 +1862,10 @@ def _vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...]) -> dic
         ),
         "roundtrip_vendor_market_data_batch_adapter": _vendor_market_data_batch_identity_value(rows, "adapter"),
         "roundtrip_vendor_market_data_batch_kind": _vendor_market_data_batch_text_value(rows, "kind"),
+        "roundtrip_vendor_market_data_batch_manifest_run_type": _vendor_market_data_batch_identity_value(
+            rows,
+            "manifest_run_type",
+        ),
         "roundtrip_vendor_market_data_batch_market": _vendor_market_data_batch_identity_value(rows, "market"),
         "roundtrip_vendor_market_data_batch_dataset_count": _vendor_market_data_batch_counter_max(
             rows,
@@ -1945,6 +1964,7 @@ def _vendor_market_data_batch_config(
         "ready": _to_bool(summary[f"{field_prefix}_ready"]),
         "adapter": _text(summary, f"{field_prefix}_adapter"),
         "kind": _text(summary, f"{field_prefix}_kind"),
+        "manifest_run_type": _text(summary, f"{field_prefix}_manifest_run_type"),
         "market": _text(summary, f"{field_prefix}_market"),
         "dataset_count": int(summary[f"{field_prefix}_dataset_count"]),
         "ready_datasets": int(summary[f"{field_prefix}_ready_datasets"]),
@@ -2271,6 +2291,15 @@ def _vendor_market_data_batch_identity_mismatches(rows: tuple[pd.Series, ...]) -
         if len(component_values | proof_values) > 1:
             mismatches += 1
     return mismatches
+
+
+def _vendor_market_data_batch_manifest_run_type_valid(rows: tuple[pd.Series, ...]) -> bool:
+    values = {
+        _identity_key(row.get("vendor_market_data_batch_manifest_run_type", ""))
+        for row in rows
+        if not row.empty and _identity_key(row.get("vendor_market_data_batch_manifest_run_type", ""))
+    }
+    return values == {"vendor_market_data_batch_pipeline"}
 
 
 def _vendor_market_data_batch_counts_consistent(rows: tuple[pd.Series, ...]) -> bool:
