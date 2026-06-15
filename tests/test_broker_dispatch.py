@@ -718,6 +718,82 @@ def test_broker_dispatch_blocks_bad_route_broker_vendor_market_data_batch():
     assert vendor["failed_datasets"] == 1
 
 
+def test_broker_dispatch_prefers_route_broker_vendor_market_data_batch():
+    config = route_config()
+    config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        ready=False,
+        adapter="irage",
+        market="us_options_regular",
+        failed_datasets=1,
+        comparison_failed_checks=1,
+    )
+    config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=config,
+        upload_orders=upload_orders(),
+        upload_file_hash="abc123",
+        thresholds=BrokerDispatchThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    vendor = report.config["route_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert summary["route_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["route_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["route_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == (
+        "india_nse_index_derivatives"
+    )
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["comparison"]["accepted"]
+
+
+def test_broker_dispatch_blocks_bad_route_broker_vendor_market_data_batch_when_preferred():
+    config = route_config()
+    config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+    config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        ready=False,
+        adapter="irage",
+        market="us_options_regular",
+        dataset_count=0,
+        ready_datasets=0,
+        failed_datasets=1,
+        ready_rate=0.0,
+        unique_source_files=0,
+        unique_header_fingerprints=0,
+        mapping_sources="",
+        comparison_accepted=False,
+        comparison_failed_checks=1,
+        datasets=[],
+    )
+
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=config,
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_ready",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
+    } <= failed
+    vendor = report.config["route_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert vendor["adapter"] == "irage"
+    assert vendor["market"] == "us_options_regular"
+    assert vendor["failed_datasets"] == 1
+
+
 def test_broker_dispatch_blocks_bad_route_broker_shadow_broker_readiness():
     config = route_config()
     config["cutover_broker_shadow_broker_readiness"] = {

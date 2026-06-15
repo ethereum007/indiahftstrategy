@@ -2789,6 +2789,9 @@ proof, dispatch planning revalidates adapter, market, dataset, provenance, and
 comparison acceptance checks and preserves it as
 `route_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
 `route_broker_dispatch_roundtrip_vendor_market_data_batch` config block.
+When both `route_broker_dispatch_roundtrip_vendor_market_data_batch` and the
+cutover-retained `cutover_broker_dispatch_roundtrip_vendor_market_data_batch`
+blocks are present, dispatch planning prefers the route-native block.
 `broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or

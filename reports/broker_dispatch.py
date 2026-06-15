@@ -1161,9 +1161,10 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     broker_shadow_broker_route = broker_shadow_broker.get("route_readiness", {}) or {}
     broker_shadow_broker_dispatch = broker_shadow_broker.get("dispatch_roundtrip", {}) or {}
     broker_shadow_broker_route_dispatch = broker_shadow_broker.get("route_dispatch_roundtrip", {}) or {}
-    broker_vendor_market_data_batch = (
-        config.get("cutover_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
-    )
+    (
+        broker_vendor_market_data_batch,
+        broker_vendor_market_data_batch_prefix,
+    ) = _broker_vendor_market_data_batch_source(config)
     vendor_market_data_batch = config.get("cutover_vendor_market_data_batch", {}) or {}
     dispatch = config.get("dispatch_roundtrip", {}) or {}
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
@@ -1522,7 +1523,7 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         "broker_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_state(
             row,
             broker_vendor_market_data_batch,
-            field_prefix="cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
+            field_prefix=broker_vendor_market_data_batch_prefix,
         ),
         "vendor_market_data_batch": _vendor_market_data_batch_state(row, vendor_market_data_batch),
         "dispatch_roundtrip_required": _to_bool(
@@ -1582,6 +1583,29 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             )
         ),
     }
+
+
+def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    candidates = (
+        "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    for field_prefix in candidates:
+        vendor = config.get(field_prefix, {}) or {}
+        if _vendor_market_data_batch_source_active(vendor):
+            return vendor, field_prefix
+    return {}, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch"
+
+
+def _vendor_market_data_batch_source_active(vendor: dict[str, Any]) -> bool:
+    if not vendor:
+        return False
+    return bool(
+        _to_bool(vendor.get("provided", False))
+        or int(_number_from(vendor, "dataset_count", 0.0)) > 0
+        or _identity_key(vendor.get("adapter", ""))
+        or _identity_key(vendor.get("market", ""))
+    )
 
 
 def _batch_id(route: dict[str, Any], upload_orders: pd.DataFrame, upload_file_hash: str) -> str:

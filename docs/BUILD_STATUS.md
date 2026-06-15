@@ -544,7 +544,8 @@
   route-enable prefers its cutover-specific config block, revalidates it, and
   preserves it as
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
-  broker dispatch revalidates and preserves it as
+  broker dispatch prefers its route-native config block, revalidates it, and
+  preserves it as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   non-submitting sender packet preserves it as
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
@@ -566,7 +567,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 712 tests.
+Current passing suite: 714 tests.
 
 ## Next Build Targets
 
