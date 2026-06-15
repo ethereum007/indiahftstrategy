@@ -596,7 +596,10 @@
   readiness now also checks expected vendor data kind, so chain proof roots
   cannot satisfy tick-data launch/broker-readiness gates, and it validates the
   vendor-batch manifest run type so a random or mislabeled proof directory
-  cannot satisfy broker/vendor market-data readiness.
+  cannot satisfy broker/vendor market-data readiness. Scale-up now carries the
+  same manifest identity field from generic or broker-prefixed broker-readiness
+  vendor proofs and rejects non-`vendor_market_data_batch_pipeline` proofs
+  before controlled capital increases.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -609,7 +612,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 774 tests.
+Current passing suite: 776 tests.
 
 ## Next Build Targets
 

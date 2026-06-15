@@ -279,6 +279,7 @@ def broker_readiness_summary(
     dispatch_roundtrip_vendor_market_data_batch_ready=False,
     dispatch_roundtrip_vendor_market_data_batch_adapter="",
     dispatch_roundtrip_vendor_market_data_batch_kind="",
+    dispatch_roundtrip_vendor_market_data_batch_manifest_run_type="",
     dispatch_roundtrip_vendor_market_data_batch_market="",
     dispatch_roundtrip_vendor_market_data_batch_dataset_count=0,
     dispatch_roundtrip_vendor_market_data_batch_ready_datasets=0,
@@ -438,6 +439,9 @@ def broker_readiness_summary(
                 "dispatch_roundtrip_vendor_market_data_batch_kind": (
                     dispatch_roundtrip_vendor_market_data_batch_kind
                 ),
+                "dispatch_roundtrip_vendor_market_data_batch_manifest_run_type": (
+                    dispatch_roundtrip_vendor_market_data_batch_manifest_run_type
+                ),
                 "dispatch_roundtrip_vendor_market_data_batch_market": (
                     dispatch_roundtrip_vendor_market_data_batch_market
                 ),
@@ -505,6 +509,7 @@ def with_broker_dispatch_roundtrip_vendor_batch(summary, **overrides):
         "ready": True,
         "adapter": "arrow_money",
         "kind": "ticks",
+        "manifest_run_type": "vendor_market_data_batch_pipeline",
         "market": "india_nse_index_derivatives",
         "dataset_count": 2,
         "ready_datasets": 2,
@@ -543,6 +548,7 @@ def broker_vendor_market_data_batch_config(**overrides):
         "ready": True,
         "adapter": "arrow_money",
         "kind": "ticks",
+        "manifest_run_type": "vendor_market_data_batch_pipeline",
         "market": "india_nse_index_derivatives",
         "dataset_count": 2,
         "ready_datasets": 2,
@@ -1165,6 +1171,7 @@ def test_scaleup_plan_carries_broker_readiness_vendor_market_data_batch():
             dispatch_roundtrip_vendor_market_data_batch_ready=True,
             dispatch_roundtrip_vendor_market_data_batch_adapter="arrow_money",
             dispatch_roundtrip_vendor_market_data_batch_kind="ticks",
+            dispatch_roundtrip_vendor_market_data_batch_manifest_run_type="vendor_market_data_batch_pipeline",
             dispatch_roundtrip_vendor_market_data_batch_market="india_nse_index_derivatives",
             dispatch_roundtrip_vendor_market_data_batch_dataset_count=2,
             dispatch_roundtrip_vendor_market_data_batch_ready_datasets=2,
@@ -1183,6 +1190,9 @@ def test_scaleup_plan_carries_broker_readiness_vendor_market_data_batch():
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
     assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
@@ -1219,6 +1229,7 @@ def test_scaleup_plan_blocks_bad_broker_readiness_vendor_market_data_batch():
         "broker_dispatch_roundtrip_vendor_market_data_batch_ready",
         "broker_dispatch_roundtrip_vendor_market_data_batch_adapter_matches",
         "broker_dispatch_roundtrip_vendor_market_data_batch_market_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type",
         "broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count",
         "broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
         "broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
@@ -1227,6 +1238,40 @@ def test_scaleup_plan_blocks_bad_broker_readiness_vendor_market_data_batch():
         "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
         "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
     } <= failed
+
+
+def test_scaleup_plan_blocks_wrong_manifest_broker_readiness_vendor_market_data_batch():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            dispatch_roundtrip_vendor_market_data_batch_provided=True,
+            dispatch_roundtrip_vendor_market_data_batch_ready=True,
+            dispatch_roundtrip_vendor_market_data_batch_adapter="arrow_money",
+            dispatch_roundtrip_vendor_market_data_batch_kind="ticks",
+            dispatch_roundtrip_vendor_market_data_batch_manifest_run_type="not_vendor_batch",
+            dispatch_roundtrip_vendor_market_data_batch_market="india_nse_index_derivatives",
+            dispatch_roundtrip_vendor_market_data_batch_dataset_count=2,
+            dispatch_roundtrip_vendor_market_data_batch_ready_datasets=2,
+            dispatch_roundtrip_vendor_market_data_batch_ready_rate=1.0,
+            dispatch_roundtrip_vendor_market_data_batch_unique_source_files=2,
+            dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints=1,
+            dispatch_roundtrip_vendor_market_data_batch_mapping_sources="vendor_intake_draft",
+            dispatch_roundtrip_vendor_market_data_batch_comparison_accepted=True,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == "not_vendor_batch"
 
 
 def test_scaleup_plan_prefers_broker_readiness_broker_vendor_market_data_batch():
@@ -1257,6 +1302,9 @@ def test_scaleup_plan_prefers_broker_readiness_broker_vendor_market_data_batch()
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
     assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     vendor = report.config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
     assert vendor["adapter"] == "arrow_money"
@@ -1319,6 +1367,33 @@ def test_scaleup_plan_blocks_bad_broker_readiness_broker_vendor_market_data_batc
         "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
         "broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
     } <= failed
+
+
+def test_scaleup_plan_blocks_wrong_manifest_broker_readiness_broker_vendor_market_data_batch():
+    broker_readiness = broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+    )
+    broker_readiness = with_broker_dispatch_roundtrip_vendor_batch(
+        broker_readiness,
+        manifest_run_type="not_vendor_batch",
+    )
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness,
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == "not_vendor_batch"
 
 
 def test_scaleup_plan_carries_broker_readiness_shadow_broker_proof():
