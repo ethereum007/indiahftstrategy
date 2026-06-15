@@ -460,7 +460,9 @@
   upstream configs, shadow broker-readiness consistency across dispatch, send,
   and acknowledgement configs, broker-readiness shadow broker consistency,
   vendor market-data batch provenance consistency, broker-readiness final
-  dispatch round-trip vendor market-data consistency,
+  dispatch round-trip vendor market-data consistency, hydrating missing broker
+  vendor-data proof through dispatch/route-enable/cutover manifests when
+  component configs are thin,
   request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files and
   manifests.
@@ -563,7 +565,8 @@
   missing proof through the dispatch/route-enable/cutover manifest chain, and
   preserves it as
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
-  round-trip proof prefers its roundtrip-stage config block and reconciles it as
+  round-trip proof prefers its roundtrip-stage config block, hydrates missing
+  component proof through the dispatch/route-enable/cutover manifest chain, and reconciles it as
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker readiness prefers its readiness-native broker vendor-data config block
   when present, otherwise revalidates the roundtrip-stage block, and carries it as
@@ -590,7 +593,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 738 tests.
+Current passing suite: 739 tests.
 
 ## Next Build Targets
 

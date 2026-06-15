@@ -8,7 +8,10 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
-from reports.vendor_market_data import select_vendor_market_data_batch_source
+from reports.vendor_market_data import (
+    select_vendor_market_data_batch_source,
+    vendor_market_data_batch_source_active,
+)
 
 
 @dataclass(frozen=True)
@@ -112,6 +115,33 @@ def write_broker_dispatch_roundtrip(
     acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
     ack_config_path = ack / "broker_dispatch_ack_config.json"
     ack_manifest_path = ack / "manifest.json"
+    dispatch_config = _read_optional_json(dispatch_config_path)
+    send_config = _read_optional_json(send_config_path)
+    ack_config = _read_optional_json(ack_config_path)
+    send_dispatch_manifest_path = _manifest_input_path(send_manifest_path, "dispatch_manifest")
+    ack_dispatch_manifest_path = _manifest_input_path(ack_manifest_path, "dispatch_manifest")
+    broker_readiness_config_path = (
+        _broker_readiness_config_from_dispatch_manifest(dispatch_manifest_path)
+        or _broker_readiness_config_from_dispatch_manifest(send_dispatch_manifest_path)
+        or _broker_readiness_config_from_dispatch_manifest(ack_dispatch_manifest_path)
+    )
+    if broker_readiness_config_path is not None:
+        broker_readiness_config = json.loads(broker_readiness_config_path.read_text(encoding="utf-8"))
+        dispatch_config = _with_broker_readiness_config_vendor_market_data_batch(
+            dispatch_config,
+            broker_readiness_config,
+            target_key="route_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+        send_config = _with_broker_readiness_config_vendor_market_data_batch(
+            send_config,
+            broker_readiness_config,
+            target_key="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+        ack_config = _with_broker_readiness_config_vendor_market_data_batch(
+            ack_config,
+            broker_readiness_config,
+            target_key="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
     report = evaluate_broker_dispatch_roundtrip(
         dispatch_summary=_read_required(dispatch_summary_path, "broker_dispatch_summary"),
         dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
@@ -122,9 +152,9 @@ def write_broker_dispatch_roundtrip(
             acknowledgements_path,
             "broker_dispatch_acknowledgements",
         ),
-        dispatch_config=_read_optional_json(dispatch_config_path),
-        send_config=_read_optional_json(send_config_path),
-        ack_config=_read_optional_json(ack_config_path),
+        dispatch_config=dispatch_config,
+        send_config=send_config,
+        ack_config=ack_config,
         thresholds=thresholds,
     )
     out = Path(output_dir)
@@ -160,6 +190,29 @@ def write_broker_dispatch_roundtrip(
 
 def _manifest_inputs(**paths: Path) -> dict[str, Path]:
     return {name: path for name, path in paths.items() if path.exists()}
+
+
+def _manifest_input_path(manifest_path: Path | None, input_name: str) -> Path | None:
+    if manifest_path is None or not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    value = (manifest.get("inputs", {}) or {}).get(input_name)
+    raw_path = value.get("path") if isinstance(value, dict) else value
+    if not raw_path:
+        return None
+    path = Path(str(raw_path))
+    if not path.is_absolute():
+        path = manifest_path.parent / path
+    return path if path.exists() else None
+
+
+def _broker_readiness_config_from_dispatch_manifest(dispatch_manifest_path: Path | None) -> Path | None:
+    route_manifest_path = _manifest_input_path(dispatch_manifest_path, "route_enable_manifest")
+    cutover_manifest_path = _manifest_input_path(route_manifest_path, "cutover_manifest")
+    return _manifest_input_path(cutover_manifest_path, "broker_readiness_config")
 
 
 def _roundtrip_orders(
@@ -448,6 +501,44 @@ def _broker_vendor_market_data_batch_source(
         ):
             return {}, field_prefix
     return {}, "ack_broker_dispatch_roundtrip_vendor_market_data_batch"
+
+
+def _with_broker_readiness_config_vendor_market_data_batch(
+    component_config: dict[str, Any],
+    broker_readiness_config: dict[str, Any],
+    *,
+    target_key: str,
+) -> dict[str, Any]:
+    vendor, _source = select_vendor_market_data_batch_source(
+        component_config,
+        (
+            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        default_source="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    if vendor_market_data_batch_source_active(vendor):
+        return component_config
+    dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
+    if not isinstance(dispatch, dict):
+        return component_config
+    vendor, _source = select_vendor_market_data_batch_source(
+        dispatch,
+        (
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "vendor_market_data_batch",
+            "roundtrip_vendor_market_data_batch",
+        ),
+        default_source="broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+    if not vendor_market_data_batch_source_active(vendor):
+        return component_config
+    out = dict(component_config)
+    out[target_key] = dict(vendor)
+    return out
 
 
 def _apply_vendor_market_data_batch_config(

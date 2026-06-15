@@ -2999,7 +2999,11 @@ plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
 from the broker-readiness component proof chain. If a component config carries
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, the round-trip
 review prefers that block before falling back through ack-, dispatch-, and
-route-retained broker vendor-data blocks.
+route-retained broker vendor-data blocks. For older or thin component configs,
+the round-trip review can also follow the dispatch manifest through the
+route-enable and cutover manifests to hydrate missing broker vendor-data proof
+from the recorded `broker_readiness_config` sidecar before enforcing component
+consistency.
 
 ## Calibration
 
