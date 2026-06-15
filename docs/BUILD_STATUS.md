@@ -545,7 +545,8 @@
   vendor-data proof from direct or launch-root broker-readiness sidecars,
   revalidates it, and preserves it as
   `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
-  route-enable prefers its cutover-specific config block, revalidates it, and
+  route-enable prefers its cutover-specific config block, hydrates missing proof
+  from broker-readiness sidecars referenced by the cutover manifest, revalidates it, and
   preserves it as
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker dispatch prefers its route-native config block, revalidates it, and
@@ -584,7 +585,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 734 tests.
+Current passing suite: 735 tests.
 
 ## Next Build Targets
 
