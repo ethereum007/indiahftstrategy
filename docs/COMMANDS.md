@@ -2709,7 +2709,13 @@ live_dryrun`; the explicit flag keeps paper/shadow route reviews equally
 strict. If `cutover_config.json` retained Arrow.money/iRage vendor market-data
 batch evidence, route-enable carries the dataset/header/mapping proof into
 `route_enable_summary.csv` and `route_enable_config.json` as
-`cutover_vendor_market_data_batch_*` audit fields. `--upload-pack` and
+`cutover_vendor_market_data_batch_*` audit fields. If cutover retained the
+broker-readiness final dispatch round-trip vendor market-data batch proof,
+route-enable revalidates adapter, market, dataset, provenance, and comparison
+acceptance checks and carries it as
+`cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*` audit fields
+plus the `cutover_broker_dispatch_roundtrip_vendor_market_data_batch` config
+block. `--upload-pack` and
 `--order-export` may point at a launch-pipeline
 root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
