@@ -24,6 +24,10 @@ from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispa
 from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
 from reports.broker_dispatch_roundtrip import BrokerDispatchRoundTripThresholds, write_broker_dispatch_roundtrip
 from reports.broker_dispatch_send import BrokerDispatchSendThresholds, write_broker_dispatch_send_packet
+from reports.broker_vendor_data_readiness import (
+    BrokerVendorDataReadinessConfig,
+    write_broker_vendor_data_readiness_pipeline,
+)
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.data_readiness_comparison import (
     DataReadinessComparisonThresholds,
@@ -852,6 +856,61 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--min-ready-rate", type=float, default=1.0)
     vendor_market_data_batch.add_argument("--max-total-failed-checks", type=int, default=0)
     vendor_market_data_batch.add_argument("--fail-on-breach", action="store_true")
+
+    broker_vendor_data_readiness = sub.add_parser(
+        "pipeline-broker-vendor-readiness",
+        help="Run vendor market-data batch onboarding and feed the proof into broker readiness.",
+    )
+    broker_vendor_data_readiness.add_argument("--input", nargs="+", required=True)
+    broker_vendor_data_readiness.add_argument("--out", required=True)
+    broker_vendor_data_readiness.add_argument("--label", action="append", dest="labels")
+    broker_vendor_data_readiness.add_argument("--mapping", default=None)
+    broker_vendor_data_readiness.add_argument("--adapter", default="arrow_money")
+    broker_vendor_data_readiness.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
+    broker_vendor_data_readiness.add_argument("--output-file", default=None)
+    broker_vendor_data_readiness.add_argument("--sample-rows", type=int, default=1000)
+    broker_vendor_data_readiness.add_argument("--min-mapping-coverage", type=float, default=1.0)
+    broker_vendor_data_readiness.add_argument("--timestamp-unit", default="ns")
+    broker_vendor_data_readiness.add_argument("--timestamp-tz", default=None)
+    broker_vendor_data_readiness.add_argument("--market", default="india_nse_index_derivatives")
+    broker_vendor_data_readiness.add_argument("--no-filter-session", action="store_true")
+    broker_vendor_data_readiness.add_argument("--tick-size", type=float, default=None)
+    broker_vendor_data_readiness.add_argument("--allow-missing-required", action="store_true")
+    broker_vendor_data_readiness.add_argument("--min-rows", type=int, default=1)
+    broker_vendor_data_readiness.add_argument("--max-crossed-quote-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-out-of-session-rows", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--max-p99-gap-ns", type=float, default=None)
+    broker_vendor_data_readiness.add_argument("--max-median-spread-ticks", type=float, default=None)
+    broker_vendor_data_readiness.add_argument("--min-datasets", type=int, default=None)
+    broker_vendor_data_readiness.add_argument("--min-ready-datasets", type=int, default=None)
+    broker_vendor_data_readiness.add_argument("--min-ready-rate", type=float, default=1.0)
+    broker_vendor_data_readiness.add_argument("--max-total-failed-checks", type=int, default=0)
+    broker_vendor_data_readiness.add_argument("--schema-audit", default=None)
+    broker_vendor_data_readiness.add_argument("--order-export", default=None)
+    broker_vendor_data_readiness.add_argument("--mapping-draft", default=None)
+    broker_vendor_data_readiness.add_argument("--mapped-orders", default=None)
+    broker_vendor_data_readiness.add_argument("--upload-pack", default=None)
+    broker_vendor_data_readiness.add_argument("--halt-export", default=None)
+    broker_vendor_data_readiness.add_argument("--reconciliation", default=None)
+    broker_vendor_data_readiness.add_argument("--runtime-session", default=None)
+    broker_vendor_data_readiness.add_argument("--resume-gate", default=None)
+    broker_vendor_data_readiness.add_argument("--dispatch-roundtrip", default=None)
+    broker_vendor_data_readiness.add_argument("--allow-placeholder-schema", action="store_true")
+    broker_vendor_data_readiness.add_argument("--allow-adapter-mismatch", action="store_true")
+    broker_vendor_data_readiness.add_argument("--skip-schema-audit", action="store_true")
+    broker_vendor_data_readiness.add_argument("--skip-order-export", action="store_true")
+    broker_vendor_data_readiness.add_argument("--skip-upload-pack", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-mapping-draft", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-mapped-orders", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-halt-export", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-reconciliation", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-runtime-session", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-resume-gate", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-route-readiness", action="store_true")
+    broker_vendor_data_readiness.add_argument("--require-dispatch-roundtrip", action="store_true")
+    broker_vendor_data_readiness.add_argument("--fail-on-breach", action="store_true")
 
     diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
     diag_ticks.add_argument("--ticks", required=True)
@@ -2736,6 +2795,70 @@ def main(argv: list[str] | None = None) -> int:
                 else input_count,
                 min_ready_rate=args.min_ready_rate,
                 max_total_failed_checks=args.max_total_failed_checks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "pipeline-broker-vendor-readiness":
+        input_count = len(args.input)
+        result = write_broker_vendor_data_readiness_pipeline(
+            args.input,
+            output_dir=args.out,
+            labels=args.labels,
+            mapping_path=args.mapping,
+            schema_audit_dir=args.schema_audit,
+            order_export_dir=args.order_export,
+            mapping_draft_dir=args.mapping_draft,
+            mapped_orders_dir=args.mapped_orders,
+            upload_pack_dir=args.upload_pack,
+            halt_export_dir=args.halt_export,
+            reconciliation_dir=args.reconciliation,
+            runtime_session_dir=args.runtime_session,
+            resume_dir=args.resume_gate,
+            dispatch_roundtrip_dir=args.dispatch_roundtrip,
+            config=BrokerVendorDataReadinessConfig(
+                adapter=args.adapter,
+                kind=args.kind,
+                sample_rows=args.sample_rows,
+                min_mapping_coverage=args.min_mapping_coverage,
+                output_filename=args.output_file,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                filter_session=not args.no_filter_session,
+                market=args.market,
+                tick_size=args.tick_size,
+                require_all_mapped=not args.allow_missing_required,
+                min_rows=args.min_rows,
+                max_crossed_quote_rows=args.max_crossed_quote_rows,
+                max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_out_of_session_rows=args.max_out_of_session_rows,
+                max_p99_gap_ns=args.max_p99_gap_ns,
+                max_median_spread_ticks=args.max_median_spread_ticks,
+            ),
+            comparison_thresholds=DataReadinessComparisonThresholds(
+                min_datasets=args.min_datasets if args.min_datasets is not None else input_count,
+                min_ready_datasets=args.min_ready_datasets
+                if args.min_ready_datasets is not None
+                else input_count,
+                min_ready_rate=args.min_ready_rate,
+                max_total_failed_checks=args.max_total_failed_checks,
+            ),
+            broker_thresholds=BrokerReadinessThresholds(
+                adapter=args.adapter,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                require_schema_audit=not args.skip_schema_audit,
+                require_order_export=not args.skip_order_export,
+                require_mapping_draft=args.require_mapping_draft,
+                require_mapped_orders=args.require_mapped_orders,
+                require_upload_pack=not args.skip_upload_pack,
+                require_halt_export=args.require_halt_export,
+                require_reconciliation=args.require_reconciliation,
+                require_runtime_session=args.require_runtime_session,
+                require_resume_gate=args.require_resume_gate,
+                require_route_readiness=args.require_route_readiness,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                require_adapter_match=not args.allow_adapter_mismatch,
             ),
         )
         print(result.summary.to_string(index=False))

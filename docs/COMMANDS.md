@@ -3237,6 +3237,35 @@ manifest plus the comparison manifest. `vendor_market_data_batch_config.json`
 keeps the accepted dataset list, comparison thresholds, and per-dataset
 fingerprints together for walk-forward research handoff.
 
+To run the vendor batch proof and broker-readiness review as one auditable
+handoff recipe:
+
+```powershell
+python -m hft_cli pipeline-broker-vendor-readiness `
+  --input vendor\arrow_ticks_2026_06_10.csv vendor\arrow_ticks_2026_06_11.csv `
+  --label day1 `
+  --label day2 `
+  --out runs\broker_vendor_data\arrow_ready `
+  --adapter arrow_money `
+  --kind ticks `
+  --timestamp-unit datetime `
+  --tick-size 0.05 `
+  --schema-audit runs\broker_schema\arrow_money `
+  --order-export runs\launch\04_export `
+  --upload-pack runs\launch\05_upload_pack `
+  --dispatch-roundtrip runs\broker_dispatch_roundtrip `
+  --allow-placeholder-schema `
+  --require-dispatch-roundtrip `
+  --fail-on-breach
+```
+
+This writes `01_vendor_market_data_batch`, `02_broker_readiness`,
+`broker_vendor_data_readiness_components.csv`,
+`broker_vendor_data_readiness_summary.csv`,
+`broker_vendor_data_readiness_config.json`, and a root manifest. It is the
+current one-command Arrow.money/iRage data proof path before broker dry-run
+handoff.
+
 ## Order Staging
 
 Stage generated quote or order candidates into a broker-neutral pre-trade file

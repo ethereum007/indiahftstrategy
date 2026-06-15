@@ -562,7 +562,9 @@
   route-enable, dispatch, send, ack, round-trip, and broker-readiness stages,
   and broker readiness can now consume a generated
   `vendor_market_data_batch_config.json` directly for Arrow.money/iRage
-  end-to-end intake proof runs.
+  end-to-end intake proof runs. A top-level
+  `pipeline-broker-vendor-readiness` command now chains vendor batch generation
+  into broker readiness and emits root summary/config/manifest artifacts.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -575,7 +577,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 729 tests.
+Current passing suite: 731 tests.
 
 ## Next Build Targets
 
