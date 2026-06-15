@@ -113,6 +113,7 @@ def write_broker_vendor_data_readiness_pipeline(
     broker_thresholds = broker_thresholds or BrokerReadinessThresholds(
         adapter=config.adapter,
         expected_market=config.market,
+        expected_vendor_data_kind=config.kind,
         require_reviewed_schema=False,
         require_dispatch_roundtrip=True,
     )

@@ -36,6 +36,7 @@ SUMMARY_FALLBACK_DIRS = {
 class BrokerReadinessThresholds:
     adapter: str = "arrow_money"
     expected_market: str = ""
+    expected_vendor_data_kind: str = ""
     require_reviewed_schema: bool = True
     require_schema_audit: bool = True
     require_order_export: bool = True
@@ -615,6 +616,7 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "adapter": adapter,
         "expected_adapter": thresholds.adapter,
         "expected_market": thresholds.expected_market,
+        "expected_vendor_data_kind": thresholds.expected_vendor_data_kind,
         "adapter_match": adapter_match,
         "adapter_schema_status": schema_status,
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
@@ -1538,6 +1540,8 @@ def _dispatch_roundtrip_vendor_market_data_batch_active(row: Any) -> bool:
 
 
 def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[str, Any]]:
+    expected_kind = _vendor_market_data_batch_expected_kind(row)
+    vendor_kind = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_kind)
     expected_market = _vendor_market_data_batch_expected_market(row)
     vendor_market = _identity_key(row.dispatch_roundtrip_vendor_market_data_batch_market)
     return [
@@ -1568,6 +1572,14 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
                 == _identity_key(row.expected_adapter)
             ),
             "dispatch round-trip vendor market-data adapter does not match broker readiness adapter",
+        ),
+        _check(
+            "dispatch_roundtrip_vendor_market_data_batch_kind_matches",
+            vendor_kind,
+            "==" if expected_kind else "present",
+            expected_kind if expected_kind else "nonempty kind",
+            bool(vendor_kind and (not expected_kind or vendor_kind == expected_kind)),
+            "dispatch round-trip vendor market-data kind does not match broker readiness expected kind",
         ),
         _check(
             "dispatch_roundtrip_vendor_market_data_batch_market_matches",
@@ -1634,6 +1646,10 @@ def _dispatch_roundtrip_vendor_market_data_batch_checks(row: Any) -> list[dict[s
             "dispatch round-trip vendor market-data comparison has failed checks",
         ),
     ]
+
+
+def _vendor_market_data_batch_expected_kind(row: Any) -> str:
+    return _identity_key(getattr(row, "expected_vendor_data_kind", ""))
 
 
 def _vendor_market_data_batch_expected_market(row: Any) -> str:

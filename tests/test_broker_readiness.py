@@ -12,6 +12,7 @@ from reports.vendor_data_onboarding import (
     VendorMarketDataPipelineConfig,
     write_vendor_market_data_batch_pipeline,
 )
+from tests.broker_vendor_data_helpers import write_broker_vendor_data_proof
 
 
 def broker_vendor_ticks(day: str, *, base: float = 100.0, session_open: str = "09:15"):
@@ -1541,6 +1542,8 @@ def test_cli_broker_readiness_accepts_vendor_only_market_data_batch_artifact(tmp
             "arrow_money",
             "--expected-market",
             "india_nse_index_derivatives",
+            "--expected-vendor-data-kind",
+            "ticks",
             "--schema-audit",
             str(schema_dir),
             "--order-export",
@@ -1564,6 +1567,49 @@ def test_cli_broker_readiness_accepts_vendor_only_market_data_batch_artifact(tmp
     assert "dispatch_roundtrip_ready" not in set(checks["check"])
     assert config["dispatch_roundtrip"]["vendor_market_data_batch"]["adapter"] == "arrow_money"
     assert config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]["dataset_count"] == 2
+
+
+def test_cli_broker_readiness_blocks_wrong_kind_vendor_only_market_data_batch_artifact(tmp_path):
+    schema_dir, export_dir, upload_dir, _roundtrip_dir = write_broker_readiness_input_dirs(tmp_path, "arrow_money")
+    vendor_batch_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data", kind="chain")
+    out_dir = tmp_path / "readiness"
+
+    code = main(
+        [
+            "review-broker-readiness",
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--expected-vendor-data-kind",
+            "ticks",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--vendor-market-data-batch",
+            str(vendor_batch_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert "dispatch_roundtrip_ready" not in failed
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_kind_matches",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_kind_matches",
+    } <= failed
+    assert summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_kind"] == "chain"
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_kind"] == "chain"
 
 
 def test_cli_broker_readiness_blocks_wrong_market_vendor_market_data_batch_artifact(tmp_path):

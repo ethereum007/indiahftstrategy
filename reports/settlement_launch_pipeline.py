@@ -193,6 +193,7 @@ def write_settlement_launch_pipeline(
             thresholds=BrokerReadinessThresholds(
                 adapter=config.adapter,
                 expected_market=str(launch.summary.iloc[0].get("market", INDIA_NSE_INDEX_DERIVATIVES.name)),
+                expected_vendor_data_kind="ticks",
                 require_reviewed_schema=config.require_reviewed_schema,
                 require_schema_audit=config.require_broker_schema_audit,
                 require_order_export=True,

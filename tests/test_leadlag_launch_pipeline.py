@@ -9,6 +9,7 @@ from reports.leadlag_launch_pipeline import (
 )
 from tests.broker_vendor_data_helpers import (
     assert_broker_vendor_data_adapter_mismatch_blocked,
+    assert_broker_vendor_data_kind_mismatch_blocked,
     assert_broker_vendor_data_market_mismatch_blocked,
     assert_broker_vendor_data_proof_forwarded,
     write_broker_vendor_data_proof,
@@ -290,6 +291,48 @@ def test_cli_pipeline_leadlag_launch_blocks_wrong_market_broker_vendor_data_proo
 
     assert code == 2
     assert_broker_vendor_data_market_mismatch_blocked(
+        out_dir,
+        summary_file="leadlag_launch_pipeline_summary.csv",
+        components_file="leadlag_launch_pipeline_components.csv",
+    )
+
+
+def test_cli_pipeline_leadlag_launch_blocks_wrong_kind_broker_vendor_data_proof_root(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    proof_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data", kind="chain")
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+
+    code = main(
+        [
+            "pipeline-leadlag-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--route-tag",
+            "leadlag_shadow",
+            "--laggard-instrument-id",
+            "NIFTY_20260610_25000C",
+            "--reference-price",
+            "10",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "10000",
+            "--max-orders",
+            "2",
+            "--broker-vendor-data-readiness",
+            str(proof_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert code == 2
+    assert_broker_vendor_data_kind_mismatch_blocked(
         out_dir,
         summary_file="leadlag_launch_pipeline_summary.csv",
         components_file="leadlag_launch_pipeline_components.csv",
