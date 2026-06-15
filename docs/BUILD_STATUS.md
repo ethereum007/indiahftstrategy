@@ -599,7 +599,9 @@
   cannot satisfy broker/vendor market-data readiness. Scale-up now carries the
   same manifest identity field from generic or broker-prefixed broker-readiness
   vendor proofs and rejects non-`vendor_market_data_batch_pipeline` proofs
-  before controlled capital increases.
+  before controlled capital increases. Cutover now preserves and revalidates
+  the same manifest identity on scale-up-carried broker/vendor proofs before
+  route enable can inherit them.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -612,7 +614,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 776 tests.
+Current passing suite: 778 tests.
 
 ## Next Build Targets
 

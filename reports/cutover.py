@@ -1050,6 +1050,14 @@ def _broker_vendor_market_data_batch_checks(scaleup: dict[str, Any]) -> list[dic
             "scale-up broker-readiness vendor market-data market does not match cutover market",
         ),
         _check(
+            f"{prefix}_manifest_run_type",
+            vendor["manifest_run_type"],
+            "==",
+            "vendor_market_data_batch_pipeline",
+            vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline",
+            "scale-up broker-readiness vendor market-data manifest is not a vendor batch pipeline proof",
+        ),
+        _check(
             f"{prefix}_dataset_count",
             int(vendor["dataset_count"]),
             ">",
@@ -1392,6 +1400,7 @@ def _vendor_market_data_batch_authorization_fields(scaleup: dict[str, Any]) -> d
         "scaleup_vendor_market_data_batch_ready": vendor["ready"],
         "scaleup_vendor_market_data_batch_adapter": vendor["adapter"],
         "scaleup_vendor_market_data_batch_kind": vendor["kind"],
+        "scaleup_vendor_market_data_batch_manifest_run_type": vendor["manifest_run_type"],
         "scaleup_vendor_market_data_batch_market": vendor["market"],
         "scaleup_vendor_market_data_batch_dataset_count": vendor["dataset_count"],
         "scaleup_vendor_market_data_batch_ready_datasets": vendor["ready_datasets"],
@@ -1414,6 +1423,7 @@ def _broker_vendor_market_data_batch_authorization_fields(scaleup: dict[str, Any
         f"{field_prefix}_ready": vendor["ready"],
         f"{field_prefix}_adapter": vendor["adapter"],
         f"{field_prefix}_kind": vendor["kind"],
+        f"{field_prefix}_manifest_run_type": vendor["manifest_run_type"],
         f"{field_prefix}_market": vendor["market"],
         f"{field_prefix}_dataset_count": vendor["dataset_count"],
         f"{field_prefix}_ready_datasets": vendor["ready_datasets"],
@@ -1756,6 +1766,7 @@ def _broker_vendor_market_data_batch_summary_fields(authorization: pd.Series) ->
         f"{field_prefix}_ready": _to_bool(authorization[f"{field_prefix}_ready"]),
         f"{field_prefix}_adapter": str(authorization[f"{field_prefix}_adapter"]),
         f"{field_prefix}_kind": str(authorization[f"{field_prefix}_kind"]),
+        f"{field_prefix}_manifest_run_type": str(authorization[f"{field_prefix}_manifest_run_type"]),
         f"{field_prefix}_market": str(authorization[f"{field_prefix}_market"]),
         f"{field_prefix}_dataset_count": int(authorization[f"{field_prefix}_dataset_count"]),
         f"{field_prefix}_ready_datasets": int(authorization[f"{field_prefix}_ready_datasets"]),
@@ -2050,6 +2061,7 @@ def _broker_vendor_market_data_batch_config(authorization: pd.Series) -> dict[st
         "ready": _to_bool(authorization[f"{field_prefix}_ready"]),
         "adapter": str(authorization[f"{field_prefix}_adapter"]),
         "kind": str(authorization[f"{field_prefix}_kind"]),
+        "manifest_run_type": str(authorization[f"{field_prefix}_manifest_run_type"]),
         "market": str(authorization[f"{field_prefix}_market"]),
         "dataset_count": int(authorization[f"{field_prefix}_dataset_count"]),
         "ready_datasets": int(authorization[f"{field_prefix}_ready_datasets"]),
@@ -2086,6 +2098,9 @@ def _vendor_market_data_batch_state(
         "ready": _to_bool(vendor.get("ready", row_value("ready", False))),
         "adapter": _identity_key(_first_text(vendor.get("adapter", ""), row_value("adapter", ""))),
         "kind": _first_text(vendor.get("kind", ""), row_value("kind", "")),
+        "manifest_run_type": _identity_key(
+            _first_text(vendor.get("manifest_run_type", ""), row_value("manifest_run_type", ""))
+        ),
         "market": _identity_key(_first_text(vendor.get("market", ""), row_value("market", ""))),
         "dataset_count": int(_number_from(vendor, "dataset_count", _number(row, f"{field_prefix}_dataset_count", 0.0))),
         "ready_datasets": int(
