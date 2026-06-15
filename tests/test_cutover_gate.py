@@ -865,6 +865,60 @@ def test_cutover_gate_prefers_broker_specific_broker_vendor_market_data_batch_fr
     assert vendor["comparison"]["accepted"]
 
 
+def test_cutover_gate_carries_roundtrip_broker_vendor_market_data_batch_from_scaleup_config():
+    config = scaleup_config()
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    summary = report.summary.iloc[0]
+    vendor = report.config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert report.ready
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+
+
+def test_cutover_gate_blocks_wrong_manifest_roundtrip_vendor_market_data_batch_from_scaleup_config():
+    config = scaleup_config()
+    dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+    dispatch["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config(
+        manifest_run_type="not_vendor_batch"
+    )
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "not_vendor_batch"
+    )
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
+
+
 def test_cutover_gate_blocks_bad_broker_specific_broker_vendor_market_data_batch_from_scaleup_config():
     config = scaleup_config()
     dispatch = config["broker_readiness"]["dispatch_roundtrip"]

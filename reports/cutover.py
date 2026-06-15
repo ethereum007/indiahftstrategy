@@ -2680,10 +2680,16 @@ def _broker_shadow_broker_state_fields(row: pd.Series, shadow_broker: dict[str, 
 
 
 def _broker_vendor_market_data_batch_source(dispatch: dict[str, Any]) -> dict[str, Any]:
-    broker_vendor = dispatch.get("broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
-    if vendor_market_data_batch_source_active(broker_vendor):
-        return broker_vendor
-    return dispatch.get("vendor_market_data_batch", {}) or {}
+    for key in (
+        "broker_dispatch_roundtrip_vendor_market_data_batch",
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "vendor_market_data_batch",
+        "roundtrip_vendor_market_data_batch",
+    ):
+        vendor = dispatch.get(key, {}) or {}
+        if vendor_market_data_batch_source_active(vendor):
+            return vendor
+    return {}
 
 
 def _with_broker_readiness_config_vendor_market_data_batch(
