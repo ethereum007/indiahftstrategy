@@ -7,6 +7,7 @@ from reports.broker_vendor_data_readiness import (
     BrokerVendorDataReadinessConfig,
     write_broker_vendor_data_readiness_pipeline,
 )
+from tests.broker_vendor_data_helpers import assert_broker_vendor_data_proof_forwarded
 
 
 def vendor_ticks(day: str, *, base: float = 100.0):
@@ -129,6 +130,55 @@ def dispatch_roundtrip_config():
     }
 
 
+def leadlag_scenario_key():
+    return (
+        "strategy=lead_lag_taker|market=india_nse_index_derivatives|trigger_ticks=10|"
+        "delta=1|leader_tick=0.05|laggard_tick=0.05"
+    )
+
+
+def write_leadlag_promotion(path):
+    path.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "candidate_scenario_key": leadlag_scenario_key(),
+                "failed_checks": 0,
+                "recommendation": "paper_or_shadow_candidate",
+            }
+        ]
+    ).to_csv(path / "promotion_summary.csv", index=False)
+    (path / "candidate_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ready": True,
+                "strategy": "lead_lag_taker",
+                "scenario_key": leadlag_scenario_key(),
+                "parameters": {
+                    "market": "india_nse_index_derivatives",
+                    "leader_tick": 0.05,
+                    "laggard_tick": 0.05,
+                    "delta": 1.0,
+                    "trigger_ticks": 10.0,
+                    "qty": 75,
+                    "flat_after_ns": 200_000,
+                    "cooloff_ns": 1000,
+                },
+                "metrics": {
+                    "total_net_pnl": 42.0,
+                    "median_markout_mean": 0.15,
+                },
+                "failed_checks": [],
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
 def write_inputs(root, adapter):
     day1 = root / f"{adapter}_ticks_day1.csv"
     day2 = root / f"{adapter}_ticks_day2.csv"
@@ -243,3 +293,80 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "broker_vendor_data_ready"])
     assert set(components["component"]) == {"vendor_market_data_batch", "broker_readiness"}
+
+
+def test_cli_broker_vendor_data_readiness_output_feeds_launch_cli(tmp_path):
+    paths = write_inputs(tmp_path / "broker_inputs", "arrow_money")
+    proof_dir = tmp_path / "broker_vendor_data"
+
+    vendor_code = main(
+        [
+            "pipeline-broker-vendor-readiness",
+            "--input",
+            *(str(path) for path in paths["input"]),
+            "--out",
+            str(proof_dir),
+            "--label",
+            "day1",
+            "--label",
+            "day2",
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-rows",
+            "2",
+            "--schema-audit",
+            str(paths["schema"]),
+            "--order-export",
+            str(paths["export"]),
+            "--upload-pack",
+            str(paths["upload"]),
+            "--dispatch-roundtrip",
+            str(paths["roundtrip"]),
+            "--allow-placeholder-schema",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    promotion_dir = tmp_path / "promotion"
+    launch_dir = tmp_path / "launch_pipeline"
+    write_leadlag_promotion(promotion_dir)
+    launch_code = main(
+        [
+            "pipeline-leadlag-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(launch_dir),
+            "--adapter",
+            "arrow_money",
+            "--route-tag",
+            "leadlag_shadow",
+            "--laggard-instrument-id",
+            "NIFTY_20260610_25000C",
+            "--reference-price",
+            "10",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "10000",
+            "--max-orders",
+            "2",
+            "--broker-vendor-data-readiness",
+            str(proof_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    launch_summary = pd.read_csv(launch_dir / "leadlag_launch_pipeline_summary.csv")
+    assert vendor_code == 0
+    assert launch_code == 0
+    assert bool(launch_summary.loc[0, "ready"])
+    assert_broker_vendor_data_proof_forwarded(launch_dir)
