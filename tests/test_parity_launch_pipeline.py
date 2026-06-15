@@ -7,6 +7,7 @@ from reports.parity_launch_pipeline import (
     ParityLaunchPipelineConfig,
     write_parity_launch_pipeline,
 )
+from tests.broker_vendor_data_helpers import path_tail, write_broker_vendor_data_proof
 
 
 def promotion_summary(*, ready=True):
@@ -122,6 +123,40 @@ def test_write_parity_launch_pipeline_runs_full_shadow_handoff(tmp_path):
     assert (out_dir / "06_broker_readiness" / "broker_readiness_summary.csv").exists()
     assert (out_dir / "parity_launch_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_parity_launch_pipeline_consumes_broker_vendor_data_proof_root(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    proof_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data")
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+
+    report = write_parity_launch_pipeline(
+        promotion_dir,
+        output_dir=out_dir,
+        config=ParityLaunchPipelineConfig(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            route_tag="parity_shadow",
+            max_order_qty=75,
+            max_notional=2_000_000,
+            max_orders=3,
+            broker_vendor_data_readiness_dir=proof_dir,
+        ),
+    )
+
+    assert report.ready
+    broker_manifest = json.loads((out_dir / "06_broker_readiness" / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
+        "/broker_vendor_data/01_vendor_market_data_batch/vendor_market_data_batch_config.json"
+    )
+    assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_manifest"]["path"]).endswith(
+        "/broker_vendor_data/01_vendor_market_data_batch/manifest.json"
+    )
+    pipeline_manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
+        "/broker_vendor_data"
+    )
 
 
 def test_parity_launch_pipeline_skips_downstream_when_promotion_unready(tmp_path):

@@ -7,6 +7,7 @@ from reports.surface_mm_launch_pipeline import (
     SurfaceMMLaunchPipelineConfig,
     write_surface_mm_launch_pipeline,
 )
+from tests.broker_vendor_data_helpers import path_tail, write_broker_vendor_data_proof
 
 
 def surface_quotes():
@@ -222,6 +223,37 @@ def test_surface_mm_launch_pipeline_runs_to_broker_readiness(tmp_path):
     assert (out_dir / "05_broker_readiness" / "broker_readiness_summary.csv").exists()
     assert (out_dir / "surface_mm_launch_pipeline_summary.csv").exists()
     assert (out_dir / "manifest.json").exists()
+
+
+def test_surface_mm_launch_pipeline_consumes_broker_vendor_data_proof_root(tmp_path):
+    surface_pipeline = tmp_path / "surface_pipeline"
+    proof_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data", adapter="normalized")
+    out_dir = tmp_path / "launch_pipeline"
+    write_surface_pipeline(surface_pipeline)
+
+    report = write_surface_mm_launch_pipeline(
+        surface_pipeline,
+        output_dir=out_dir,
+        config=SurfaceMMLaunchPipelineConfig(
+            adapter="normalized",
+            mode="paper",
+            require_reviewed_schema=True,
+            broker_vendor_data_readiness_dir=proof_dir,
+        ),
+    )
+
+    assert report.ready
+    broker_manifest = json.loads((out_dir / "05_broker_readiness" / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
+        "/broker_vendor_data/01_vendor_market_data_batch/vendor_market_data_batch_config.json"
+    )
+    assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_manifest"]["path"]).endswith(
+        "/broker_vendor_data/01_vendor_market_data_batch/manifest.json"
+    )
+    pipeline_manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
+        "/broker_vendor_data"
+    )
 
 
 def test_surface_mm_launch_pipeline_blocks_unready_surface_research(tmp_path):
