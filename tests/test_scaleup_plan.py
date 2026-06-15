@@ -503,7 +503,12 @@ def data_readiness_summary(ready=True):
     )
 
 
-def with_broker_dispatch_roundtrip_vendor_batch(summary, **overrides):
+def with_broker_dispatch_roundtrip_vendor_batch(
+    summary,
+    *,
+    prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+    **overrides,
+):
     values = {
         "provided": True,
         "ready": True,
@@ -536,7 +541,6 @@ def with_broker_dispatch_roundtrip_vendor_batch(summary, **overrides):
     }
     values.update(overrides)
     result = summary.copy()
-    prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
     for suffix, value in values.items():
         result.loc[0, f"{prefix}_{suffix}"] = value
     return result
@@ -1309,6 +1313,68 @@ def test_scaleup_plan_prefers_broker_readiness_broker_vendor_market_data_batch()
     vendor = report.config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
     assert vendor["adapter"] == "arrow_money"
     assert vendor["comparison"]["accepted"]
+
+
+def test_scaleup_plan_carries_roundtrip_broker_vendor_market_data_batch():
+    broker_readiness = broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+    )
+    broker_readiness = with_broker_dispatch_roundtrip_vendor_batch(
+        broker_readiness,
+        prefix="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+    )
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness,
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    vendor = report.config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+
+
+def test_scaleup_plan_blocks_wrong_manifest_roundtrip_vendor_market_data_batch():
+    broker_readiness = broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+    )
+    broker_readiness = with_broker_dispatch_roundtrip_vendor_batch(
+        broker_readiness,
+        prefix="roundtrip_vendor_market_data_batch",
+        manifest_run_type="not_vendor_batch",
+    )
+
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness,
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    vendor = report.config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
+    assert "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type" in failed
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == "not_vendor_batch"
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
 
 
 def test_scaleup_plan_blocks_bad_broker_readiness_broker_vendor_market_data_batch():

@@ -2219,25 +2219,34 @@ def _broker_vendor_market_data_batch_active(broker_readiness: pd.Series) -> bool
     if broker_readiness.empty:
         return False
     source_prefix = _broker_vendor_market_data_batch_source_prefix(broker_readiness)
-    return bool(
-        _to_bool(broker_readiness.get(f"{source_prefix}_provided", False))
-        or int(_number(broker_readiness, f"{source_prefix}_dataset_count", 0.0)) > 0
-    )
+    return _vendor_market_data_batch_prefix_active(broker_readiness, source_prefix)
 
 
 def _broker_vendor_market_data_batch_source_prefix(broker_readiness: pd.Series) -> str:
-    broker_prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
     generic_prefix = "dispatch_roundtrip_vendor_market_data_batch"
     if broker_readiness.empty:
         return generic_prefix
-    if (
-        _to_bool(broker_readiness.get(f"{broker_prefix}_provided", False))
-        or int(_number(broker_readiness, f"{broker_prefix}_dataset_count", 0.0)) > 0
-        or _identity_key(broker_readiness.get(f"{broker_prefix}_adapter", ""))
-        or _identity_key(broker_readiness.get(f"{broker_prefix}_market", ""))
+    for prefix in (
+        "broker_dispatch_roundtrip_vendor_market_data_batch",
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        generic_prefix,
+        "roundtrip_vendor_market_data_batch",
     ):
-        return broker_prefix
+        if _vendor_market_data_batch_prefix_active(broker_readiness, prefix):
+            return prefix
     return generic_prefix
+
+
+def _vendor_market_data_batch_prefix_active(row: pd.Series, prefix: str) -> bool:
+    if row.empty:
+        return False
+    return bool(
+        _to_bool(row.get(f"{prefix}_provided", False))
+        or int(_number(row, f"{prefix}_dataset_count", 0.0)) > 0
+        or _identity_key(row.get(f"{prefix}_adapter", ""))
+        or _identity_key(row.get(f"{prefix}_market", ""))
+        or _identity_key(row.get(f"{prefix}_manifest_run_type", ""))
+    )
 
 
 def _broker_vendor_market_data_batch_checks(
@@ -2927,13 +2936,13 @@ def _with_broker_vendor_market_data_batch_config(
 ) -> pd.DataFrame | None:
     if broker_readiness is None or broker_readiness.empty:
         return broker_readiness
-    broker_prefix = "broker_dispatch_roundtrip_vendor_market_data_batch"
     row = broker_readiness.iloc[0]
-    if (
-        _to_bool(row.get(f"{broker_prefix}_provided", False))
-        or int(_number(row, f"{broker_prefix}_dataset_count", 0.0)) > 0
-        or _identity_key(row.get(f"{broker_prefix}_adapter", ""))
-        or _identity_key(row.get(f"{broker_prefix}_market", ""))
+    if any(
+        _vendor_market_data_batch_prefix_active(row, prefix)
+        for prefix in (
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
     ):
         return broker_readiness
 
@@ -2977,6 +2986,7 @@ def _vendor_market_data_batch_config_active(candidate: object) -> bool:
         or int(_number_from(candidate, "dataset_count", 0.0)) > 0
         or str(candidate.get("adapter", "")).strip()
         or str(candidate.get("market", "")).strip()
+        or str(candidate.get("manifest_run_type", "")).strip()
         or datasets
     )
 

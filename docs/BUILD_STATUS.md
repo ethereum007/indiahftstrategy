@@ -541,7 +541,7 @@
   before the sender packet carries it as `dispatch_vendor_market_data_batch_*`
   and the ack gate carries it as `ack_vendor_market_data_batch_*`, with the
   final round-trip proof preserving it as `roundtrip_vendor_market_data_batch_*`
-  before broker readiness revalidates and carries it as
+  before broker readiness revalidates and carries it directly or as
   `dispatch_roundtrip_vendor_market_data_batch_*`, and scale-up revalidates and
   carries the broker-readiness broker-specific copy as
   `broker_dispatch_roundtrip_vendor_market_data_batch_*` before cutover
@@ -569,7 +569,8 @@
   component proof through the dispatch/route-enable/cutover manifest chain, and reconciles it as
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker readiness prefers its readiness-native broker vendor-data config block
-  when present, otherwise revalidates the roundtrip-stage block, and carries it as
+  when present, otherwise revalidates the roundtrip-stage block directly or
+  through normalized handoff fields, and carries it as
   `broker_dispatch_roundtrip_vendor_market_data_batch_*`. Broker vendor-data
   proof selection now uses one shared active-proof selector across cutover,
   route-enable, dispatch, send, ack, round-trip, and broker-readiness stages,
@@ -620,7 +621,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 790 tests.
+Current passing suite: 792 tests.
 
 ## Next Build Targets
 
