@@ -503,6 +503,9 @@ def _apply_vendor_market_data_batch_config(
         vendor.get("adapter", state.get(f"{fallback_prefix}_adapter", ""))
     )
     state[f"{field_prefix}_kind"] = _object_text(vendor.get("kind", state.get(f"{fallback_prefix}_kind", "")))
+    state[f"{field_prefix}_manifest_run_type"] = _identity_key(
+        vendor.get("manifest_run_type", state.get(f"{fallback_prefix}_manifest_run_type", ""))
+    )
     state[f"{field_prefix}_market"] = _object_text(
         vendor.get("market", state.get(f"{fallback_prefix}_market", ""))
     )
@@ -571,6 +574,7 @@ def _copy_vendor_market_data_batch_fields(
         "ready",
         "adapter",
         "kind",
+        "manifest_run_type",
         "market",
         "dataset_count",
         "ready_datasets",
@@ -883,6 +887,14 @@ def _checks(
             [
                 checks,
                 pd.DataFrame(_route_broker_shadow_broker_readiness_checks(dispatch_summary)),
+            ],
+            ignore_index=True,
+        )
+    if _broker_vendor_market_data_batch_active(dispatch_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_broker_vendor_market_data_batch_checks(dispatch_summary)),
             ],
             ignore_index=True,
         )
@@ -1262,6 +1274,32 @@ def _route_broker_shadow_broker_readiness_checks(dispatch_summary: pd.Series) ->
     return checks
 
 
+def _broker_vendor_market_data_batch_active(dispatch_summary: pd.Series) -> bool:
+    prefix = "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"
+    return bool(
+        _to_bool(dispatch_summary.get(f"{prefix}_provided", False))
+        or _to_bool(dispatch_summary.get(f"{prefix}_ready", False))
+        or _identity_key(dispatch_summary.get(f"{prefix}_adapter", ""))
+        or _identity_key(dispatch_summary.get(f"{prefix}_manifest_run_type", ""))
+        or int(_number(dispatch_summary, f"{prefix}_dataset_count", 0.0)) > 0
+    )
+
+
+def _broker_vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
+    prefix = "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"
+    manifest_run_type = _identity_key(dispatch_summary.get(f"{prefix}_manifest_run_type", ""))
+    return [
+        _check(
+            f"{prefix}_manifest_run_type",
+            manifest_run_type,
+            "==",
+            "vendor_market_data_batch_pipeline",
+            manifest_run_type == "vendor_market_data_batch_pipeline",
+            "dispatch broker-readiness vendor market-data manifest is not a vendor batch pipeline proof",
+        )
+    ]
+
+
 def _shadow_broker_projection(dispatch_summary: pd.Series, *, source_prefix: str) -> pd.Series:
     mapped = dispatch_summary.copy()
     for suffix in (
@@ -1561,6 +1599,9 @@ def _vendor_market_data_batch_summary_fields(dispatch_summary: pd.Series, *, fie
         f"{field_prefix}_ready": _to_bool(dispatch_summary.get(f"{field_prefix}_ready", False)),
         f"{field_prefix}_adapter": _identity_key(dispatch_summary.get(f"{field_prefix}_adapter", "")),
         f"{field_prefix}_kind": _text(dispatch_summary, f"{field_prefix}_kind"),
+        f"{field_prefix}_manifest_run_type": _identity_key(
+            dispatch_summary.get(f"{field_prefix}_manifest_run_type", "")
+        ),
         f"{field_prefix}_market": _identity_key(dispatch_summary.get(f"{field_prefix}_market", "")),
         f"{field_prefix}_dataset_count": int(_number(dispatch_summary, f"{field_prefix}_dataset_count", 0.0)),
         f"{field_prefix}_ready_datasets": int(_number(dispatch_summary, f"{field_prefix}_ready_datasets", 0.0)),
@@ -1589,6 +1630,7 @@ def _vendor_market_data_batch_config(summary: pd.Series, *, field_prefix: str) -
         "ready": _to_bool(summary[f"{field_prefix}_ready"]),
         "adapter": _text(summary, f"{field_prefix}_adapter"),
         "kind": _text(summary, f"{field_prefix}_kind"),
+        "manifest_run_type": _text(summary, f"{field_prefix}_manifest_run_type"),
         "market": _text(summary, f"{field_prefix}_market"),
         "dataset_count": int(summary[f"{field_prefix}_dataset_count"]),
         "ready_datasets": int(summary[f"{field_prefix}_ready_datasets"]),

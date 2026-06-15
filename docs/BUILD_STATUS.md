@@ -617,7 +617,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 782 tests.
+Current passing suite: 784 tests.
 
 ## Next Build Targets
 
