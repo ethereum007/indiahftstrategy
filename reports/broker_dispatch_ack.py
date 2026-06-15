@@ -367,6 +367,37 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
             route_broker_shadow,
             field_prefix="route_broker_shadow_broker",
         )
+    dispatch_broker_vendor_market_data_batch = (
+        config.get("dispatch_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
+    )
+    route_broker_vendor_market_data_batch = (
+        config.get("route_broker_dispatch_roundtrip_vendor_market_data_batch", {}) or {}
+    )
+    broker_vendor_market_data_batch = (
+        dispatch_broker_vendor_market_data_batch or route_broker_vendor_market_data_batch
+    )
+    broker_vendor_source_prefix = (
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"
+        if dispatch_broker_vendor_market_data_batch
+        or any(
+            f"dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_{suffix}" in state
+            for suffix in ("provided", "dataset_count", "datasets_json")
+        )
+        else "route_broker_dispatch_roundtrip_vendor_market_data_batch"
+    )
+    if broker_vendor_market_data_batch:
+        _apply_vendor_market_data_batch_config(
+            state,
+            broker_vendor_market_data_batch,
+            field_prefix="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+            fallback_prefix=broker_vendor_source_prefix,
+        )
+    else:
+        _copy_vendor_market_data_batch_fields(
+            state,
+            source_prefix=broker_vendor_source_prefix,
+            field_prefix="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
     vendor_market_data_batch = (
         config.get("dispatch_vendor_market_data_batch", {})
         or config.get("route_vendor_market_data_batch", {})
@@ -1344,6 +1375,10 @@ def _summary(
                 ),
                 **_vendor_market_data_batch_summary_fields(
                     dispatch_summary,
+                    field_prefix="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+                ),
+                **_vendor_market_data_batch_summary_fields(
+                    dispatch_summary,
                     field_prefix="ack_vendor_market_data_batch",
                 ),
                 "route_dispatch_roundtrip_required": _to_bool(
@@ -1546,6 +1581,10 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
         "route_broker_shadow_broker_readiness": _prefixed_shadow_broker_config(
             summary,
             field_prefix="route_broker_shadow_broker",
+        ),
+        "ack_broker_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
+            summary,
+            field_prefix="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
         ),
         "ack_vendor_market_data_batch": _vendor_market_data_batch_config(
             summary,

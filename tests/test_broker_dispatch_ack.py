@@ -545,6 +545,37 @@ def test_broker_dispatch_ack_carries_ack_vendor_market_data_batch():
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
+def test_broker_dispatch_ack_carries_broker_vendor_market_data_batch():
+    config = dispatch_config()
+    config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    summary = report.summary.iloc[0]
+    vendor = report.config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert report.passed
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_provided"]
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
+    assert int(summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert int(summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["ack_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == (
+        "vendor_intake_draft"
+    )
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+    assert len(vendor["datasets"]) == 2
+    assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
 def test_broker_dispatch_ack_blocks_bad_send_broker_shadow_broker_readiness():
     config = dispatch_config()
     config["route_broker_shadow_broker_readiness"] = {

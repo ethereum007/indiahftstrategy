@@ -442,8 +442,10 @@
   validates route-readiness identity, send-stage shadow broker-readiness
   aggregates, broker-readiness-carried shadow broker proof,
   dispatch-carried vendor market-data batch provenance as
-  `ack_vendor_market_data_batch_*`, and acknowledgement-log proof batch
-  continuity, and
+  `ack_vendor_market_data_batch_*`, broker-readiness final dispatch
+  round-trip vendor market-data proof as
+  `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
+  acknowledgement-log proof batch continuity, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch, dispatch
   manifest, and ack log inputs.
@@ -542,7 +544,9 @@
   broker dispatch revalidates and preserves it as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   non-submitting sender packet preserves it as
-  `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
+  `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
+  acknowledgement reconciliation preserves it as
+  `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -555,7 +559,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 701 tests.
+Current passing suite: 702 tests.
 
 ## Next Build Targets
 
