@@ -541,7 +541,9 @@
   `dispatch_roundtrip_vendor_market_data_batch_*`, and scale-up revalidates and
   carries the broker-readiness broker-specific copy as
   `broker_dispatch_roundtrip_vendor_market_data_batch_*` before cutover
-  prefers the broker-specific config block, revalidates it, and preserves it as
+  prefers the broker-specific config block, hydrates missing scale-up broker
+  vendor-data proof from direct or launch-root broker-readiness sidecars,
+  revalidates it, and preserves it as
   `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
   route-enable prefers its cutover-specific config block, revalidates it, and
   preserves it as
@@ -582,7 +584,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 733 tests.
+Current passing suite: 734 tests.
 
 ## Next Build Targets
 

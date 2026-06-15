@@ -1401,6 +1401,69 @@ def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path)
         )
 
 
+def test_cli_cutover_gate_hydrates_broker_vendor_data_from_sidecar(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "live_dryrun",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cutover"
+
+    code = main(
+        [
+            "review-cutover-gate",
+            "--scaleup",
+            str(scaleup),
+            "--broker-readiness",
+            str(broker),
+            "--runtime-session",
+            str(runtime),
+            "--operator-review",
+            str(review_path),
+            "--out",
+            str(out_dir),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "cutover_summary.csv")
+    config = json.loads((out_dir / "cutover_config.json").read_text(encoding="utf-8"))
+    vendor = config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary.loc[0, "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert (
+        summary.loc[0, "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"]
+        == "arrow_money"
+    )
+    assert int(summary.loc[0, "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary.loc[0, "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["adapter"] == "arrow_money"
+    assert vendor["comparison"]["accepted"]
+    assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+
+
 def test_cli_cutover_gate_fails_without_operator_review(tmp_path):
     scaleup, broker, runtime, _review_path = write_inputs(tmp_path, operator=False)
     out_dir = tmp_path / "cutover"

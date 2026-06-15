@@ -107,9 +107,15 @@ def write_cutover_gate_report(
         if runtime_session_dir is not None
         else None
     )
+    scaleup_config = json.loads(scaleup_config_path.read_text(encoding="utf-8"))
+    if broker_readiness_config_path is not None:
+        scaleup_config = _with_broker_readiness_config_vendor_market_data_batch(
+            scaleup_config,
+            json.loads(broker_readiness_config_path.read_text(encoding="utf-8")),
+        )
     report = evaluate_cutover_gate(
         scaleup_summary=_read_required(scaleup_summary_path, "scaleup_summary"),
-        scaleup_config=json.loads(scaleup_config_path.read_text(encoding="utf-8")),
+        scaleup_config=scaleup_config,
         scaleup_checks=_read_optional(scaleup_checks_path),
         broker_readiness_summary=_read_required(broker_readiness_summary_path, "broker_readiness"),
         runtime_session_summary=_read_optional(runtime_session_summary_path),
@@ -2663,6 +2669,35 @@ def _broker_vendor_market_data_batch_source(dispatch: dict[str, Any]) -> dict[st
     if vendor_market_data_batch_source_active(broker_vendor):
         return broker_vendor
     return dispatch.get("vendor_market_data_batch", {}) or {}
+
+
+def _with_broker_readiness_config_vendor_market_data_batch(
+    scaleup_config: dict[str, Any],
+    broker_readiness_config: dict[str, Any],
+) -> dict[str, Any]:
+    broker_readiness = scaleup_config.get("broker_readiness", {}) or {}
+    if not isinstance(broker_readiness, dict):
+        return scaleup_config
+    dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
+    if not isinstance(dispatch, dict) or vendor_market_data_batch_source_active(
+        _broker_vendor_market_data_batch_source(dispatch)
+    ):
+        return scaleup_config
+    sidecar_dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
+    if not isinstance(sidecar_dispatch, dict):
+        return scaleup_config
+
+    vendor = _broker_vendor_market_data_batch_source(sidecar_dispatch)
+    if not vendor_market_data_batch_source_active(vendor):
+        return scaleup_config
+
+    out = dict(scaleup_config)
+    out_broker = dict(broker_readiness)
+    out_dispatch = dict(dispatch)
+    out_dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(vendor)
+    out_broker["dispatch_roundtrip"] = out_dispatch
+    out["broker_readiness"] = out_broker
+    return out
 
 
 def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:

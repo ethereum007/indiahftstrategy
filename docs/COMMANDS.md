@@ -2690,7 +2690,11 @@ dataset, provenance, and comparison acceptance checks and preserves it as
 When the scale-up config includes both
 `broker_readiness.dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
 and the older `broker_readiness.dispatch_roundtrip.vendor_market_data_batch`
-block, cutover prefers the broker-specific block.
+block, cutover prefers the broker-specific block. For older or thin scale-up
+configs, cutover also reads the resolved broker-readiness config sidecar and
+hydrates missing broker vendor-data proof from
+`dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch` before
+revalidating and carrying it downstream.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,
