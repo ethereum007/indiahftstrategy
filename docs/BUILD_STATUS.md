@@ -413,7 +413,10 @@
   shadow broker-readiness aggregates plus broker-readiness-carried shadow
   broker proof from route-enable as `route_broker_shadow_broker_*`, preserves
   route-enable-carried vendor market-data batch provenance as
-  `route_vendor_market_data_batch_*`, and fails closed on disabled routes,
+  `route_vendor_market_data_batch_*`, preserves route-enable-carried
+  broker-readiness vendor market-data batch proof as
+  `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and fails
+  closed on disabled routes,
   nested route-enable dispatch round-trip failed checks, dirty route proof,
   duplicate source order IDs, dirty carried shadow broker proof, or unresolved
   upload-order files while resolving launch pipeline upload roots and
@@ -534,7 +537,9 @@
   revalidates and preserves it as
   `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
   route-enable revalidates and preserves it as
-  `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
+  `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
+  broker dispatch revalidates and preserves it as
+  `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -547,7 +552,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 698 tests.
+Current passing suite: 700 tests.
 
 ## Next Build Targets
 
