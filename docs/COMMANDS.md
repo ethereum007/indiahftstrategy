@@ -2730,7 +2730,10 @@ route-enable revalidates adapter, market, dataset, provenance, and comparison
 acceptance checks and carries it as
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*` audit fields
 plus the `cutover_broker_dispatch_roundtrip_vendor_market_data_batch` config
-block. `--upload-pack` and
+block. When both `cutover_broker_dispatch_roundtrip_vendor_market_data_batch`
+and the scale-up-retained
+`scaleup_broker_dispatch_roundtrip_vendor_market_data_batch` blocks are present,
+route-enable prefers the cutover-specific block. `--upload-pack` and
 `--order-export` may point at a launch-pipeline
 root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover

@@ -541,7 +541,8 @@
   `broker_dispatch_roundtrip_vendor_market_data_batch_*` before cutover
   prefers the broker-specific config block, revalidates it, and preserves it as
   `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
-  route-enable revalidates and preserves it as
+  route-enable prefers its cutover-specific config block, revalidates it, and
+  preserves it as
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker dispatch revalidates and preserves it as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
@@ -565,7 +566,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 710 tests.
+Current passing suite: 712 tests.
 
 ## Next Build Targets
 
