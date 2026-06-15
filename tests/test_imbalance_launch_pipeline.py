@@ -7,7 +7,11 @@ from reports.imbalance_launch_pipeline import (
     ImbalanceLaunchPipelineConfig,
     write_imbalance_launch_pipeline,
 )
-from tests.broker_vendor_data_helpers import path_tail, write_broker_vendor_data_proof
+from tests.broker_vendor_data_helpers import (
+    assert_broker_vendor_data_proof_forwarded,
+    path_tail,
+    write_broker_vendor_data_proof,
+)
 
 
 def promotion_summary(*, ready=True):
@@ -166,6 +170,46 @@ def test_imbalance_launch_pipeline_consumes_broker_vendor_data_proof_root(tmp_pa
     assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
         "/broker_vendor_data"
     )
+
+
+def test_cli_pipeline_imbalance_launch_forwards_broker_vendor_data_proof_root(tmp_path):
+    promotion_dir = tmp_path / "promotion"
+    proof_dir = write_broker_vendor_data_proof(tmp_path / "broker_vendor_data")
+    out_dir = tmp_path / "pipeline"
+    write_promotion(promotion_dir)
+
+    code = main(
+        [
+            "pipeline-imbalance-launch",
+            "--promotion",
+            str(promotion_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--route-tag",
+            "imbalance_shadow",
+            "--instrument-id",
+            "NIFTY_20260610_25000C",
+            "--reference-price",
+            "10",
+            "--max-order-qty",
+            "75",
+            "--max-notional",
+            "10000",
+            "--max-orders",
+            "2",
+            "--broker-vendor-data-readiness",
+            str(proof_dir),
+            "--allow-placeholder-schema",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "imbalance_launch_pipeline_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert_broker_vendor_data_proof_forwarded(out_dir)
 
 
 def test_imbalance_launch_pipeline_skips_downstream_when_promotion_unready(tmp_path):

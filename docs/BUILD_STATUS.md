@@ -580,9 +580,9 @@
   into broker readiness and emits root summary/config/manifest artifacts, and
   all launch-family pipelines can forward that proof root into broker readiness
   through `--broker-vendor-data-readiness` with regression coverage for
-  lead-lag, imbalance, parity, settlement, and surface-MM; scale-up then
-  preserves the broker-readiness config sidecar proof in its operator-visible
-  summary/config.
+  lead-lag, imbalance, parity, settlement, and surface-MM across direct API and
+  CLI operator paths; scale-up then preserves the broker-readiness config
+  sidecar proof in its operator-visible summary/config.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -595,7 +595,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 743 tests.
+Current passing suite: 748 tests.
 
 ## Next Build Targets
 

@@ -1,6 +1,20 @@
 import json
 
 
+def assert_broker_vendor_data_proof_forwarded(output_dir, *, readiness_subdir="06_broker_readiness"):
+    broker_manifest = json.loads((output_dir / readiness_subdir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
+        "/broker_vendor_data/01_vendor_market_data_batch/vendor_market_data_batch_config.json"
+    )
+    assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_manifest"]["path"]).endswith(
+        "/broker_vendor_data/01_vendor_market_data_batch/manifest.json"
+    )
+    pipeline_manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
+        "/broker_vendor_data"
+    )
+
+
 def path_tail(value):
     return str(value).replace("\\", "/")
 
