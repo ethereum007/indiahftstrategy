@@ -2922,14 +2922,18 @@ route-enable dispatch round-trip failed checks from upstream configs,
 consistent shadow broker-readiness proof across dispatch/send/ack configs, one
 consistent broker-readiness shadow broker proof across dispatch/send/ack
 configs, consistent vendor market-data batch provenance across component
-configs, one request per dispatch order, and an accepted acknowledgement for every request.
+configs, consistent broker-readiness final dispatch round-trip vendor
+market-data proof across component configs, one request per dispatch order, and
+an accepted acknowledgement for every request.
 `--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
 keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
 files plus component manifests that formed the proof, and the final
 summary/config retain the broker schema review status/mode, route-readiness
 proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`
-and `roundtrip_vendor_market_data_batch` reconciled from the component configs.
+and `roundtrip_vendor_market_data_batch` reconciled from the component configs,
+plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
+from the broker-readiness component proof chain.
 
 ## Calibration
 
