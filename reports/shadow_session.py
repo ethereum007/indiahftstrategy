@@ -263,6 +263,22 @@ def _metrics(
                     broker,
                     "route_dispatch_roundtrip_scenario_key",
                 ),
+                "broker_vendor_data_readiness_provided": _to_bool(
+                    broker.get("broker_vendor_data_readiness_provided", False)
+                )
+                if not broker.empty
+                else False,
+                "broker_vendor_data_readiness_ready": _to_bool(
+                    broker.get("broker_vendor_data_readiness_ready", False)
+                )
+                if not broker.empty
+                else False,
+                "broker_vendor_data_readiness_failed_checks": _number_or_zero(
+                    broker,
+                    "broker_vendor_data_readiness_failed_checks",
+                )
+                if not broker.empty
+                else 0.0,
                 "broker_failed_checks": broker_failed,
                 "scenario_key": launch_scenario,
                 "export_scenario_key": export_scenario,
@@ -644,7 +660,44 @@ def _broker_readiness_checks(row: pd.Series) -> list[dict[str, object]]:
                 ),
             ]
         )
+    if _broker_vendor_data_readiness_active(row):
+        checks.extend(_broker_vendor_data_readiness_checks(row))
     return checks
+
+
+def _broker_vendor_data_readiness_active(row: pd.Series) -> bool:
+    return bool(
+        row["broker_vendor_data_readiness_provided"]
+        or row["broker_vendor_data_readiness_ready"]
+        or int(row["broker_vendor_data_readiness_failed_checks"]) > 0
+    )
+
+
+def _broker_vendor_data_readiness_checks(row: pd.Series) -> list[dict[str, object]]:
+    return [
+        _check(
+            "broker_vendor_data_readiness_provided",
+            row["broker_vendor_data_readiness_provided"],
+            "is",
+            True,
+            bool(row["broker_vendor_data_readiness_provided"]),
+            "broker readiness must carry broker vendor-data wrapper proof",
+        ),
+        _check(
+            "broker_vendor_data_readiness_ready",
+            row["broker_vendor_data_readiness_ready"],
+            "is",
+            True,
+            bool(row["broker_vendor_data_readiness_ready"]),
+            "broker vendor-data wrapper proof is not ready",
+        ),
+        _threshold_check(
+            "broker_vendor_data_readiness_failed_checks",
+            row["broker_vendor_data_readiness_failed_checks"],
+            "<=",
+            0,
+        ),
+    ]
 
 
 def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
@@ -711,6 +764,11 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_route_dispatch_roundtrip_ready": bool(row["broker_route_dispatch_roundtrip_ready"]),
                 "broker_route_dispatch_roundtrip_strategy": row["broker_route_dispatch_roundtrip_strategy"],
                 "broker_route_dispatch_roundtrip_market": row["broker_route_dispatch_roundtrip_market"],
+                "broker_vendor_data_readiness_provided": bool(row["broker_vendor_data_readiness_provided"]),
+                "broker_vendor_data_readiness_ready": bool(row["broker_vendor_data_readiness_ready"]),
+                "broker_vendor_data_readiness_failed_checks": int(
+                    row["broker_vendor_data_readiness_failed_checks"]
+                ),
                 "broker_failed_checks": int(row["broker_failed_checks"]),
                 "total_failed_component_checks": int(row["total_failed_component_checks"]),
                 "failed_checks": failed_checks,

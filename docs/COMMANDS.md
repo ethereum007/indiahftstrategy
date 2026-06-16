@@ -2115,7 +2115,10 @@ resume authorization plus matching strategy, market, and resume proof-refresh
 identity. When broker-readiness evidence is supplied, the session gate retains
 adapter/schema review state plus the carried broker route-readiness and dispatch
 round-trip proof, and fails closed on broker readiness, adapter, strategy,
-market, scenario, acknowledgement, rejection, or route-gap mismatches. Use
+market, scenario, acknowledgement, rejection, route-gap, or broker vendor-data
+wrapper readiness mismatches. The summary also exposes
+`broker_vendor_data_readiness_*` fields so Arrow.money/iRage data-readiness
+proof remains visible at the shadow-session acceptance layer. Use
 `--require-broker-readiness` to require that proof for every session record.
 
 ## Shadow Session Comparison

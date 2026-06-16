@@ -672,6 +672,9 @@
   broker-readiness-prefixed vendor proof paths. Broker readiness now consumes
   the final round-trip wrapper block directly, so a failed wrapper cannot be
   masked when the final dry-run proof is reviewed for integration readiness.
+  Shadow-session acceptance now carries the broker-readiness
+  `broker_vendor_data_readiness_*` fields and fails closed when the
+  Arrow.money/iRage wrapper proof is unready or has failed checks.
   Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
@@ -688,7 +691,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 842 tests.
+Current passing suite: 843 tests.
 
 ## Next Build Targets
 

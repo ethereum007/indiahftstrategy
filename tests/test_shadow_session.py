@@ -133,6 +133,9 @@ def broker_readiness_summary(
     route_dispatch_roundtrip_strategy="lead_lag_taker",
     route_dispatch_roundtrip_market="india_nse_index_derivatives",
     route_dispatch_roundtrip_scenario_key="trigger_ticks=2",
+    broker_vendor_data_readiness_provided=True,
+    broker_vendor_data_readiness_ready=True,
+    broker_vendor_data_readiness_failed_checks=0,
 ):
     return pd.DataFrame(
         [
@@ -162,6 +165,9 @@ def broker_readiness_summary(
                 "route_dispatch_roundtrip_strategy": route_dispatch_roundtrip_strategy,
                 "route_dispatch_roundtrip_market": route_dispatch_roundtrip_market,
                 "route_dispatch_roundtrip_scenario_key": route_dispatch_roundtrip_scenario_key,
+                "broker_vendor_data_readiness_provided": broker_vendor_data_readiness_provided,
+                "broker_vendor_data_readiness_ready": broker_vendor_data_readiness_ready,
+                "broker_vendor_data_readiness_failed_checks": broker_vendor_data_readiness_failed_checks,
                 "failed_checks": 0 if ready else 1,
                 "recommendation": "broker_integration_ready" if ready else "fix_broker_readiness_gaps",
             }
@@ -334,6 +340,8 @@ def test_evaluate_shadow_session_carries_broker_readiness_route_proof():
     assert int(row["broker_route_readiness_gap_pairs"]) == 0
     assert bool(summary["broker_dispatch_roundtrip_ready"])
     assert bool(summary["broker_route_dispatch_roundtrip_ready"])
+    assert bool(row["broker_vendor_data_readiness_ready"])
+    assert int(summary["broker_vendor_data_readiness_failed_checks"]) == 0
     assert summary["broker_schema_review_mode"] == "native_schema"
 
 
@@ -384,6 +392,35 @@ def test_evaluate_shadow_session_blocks_bad_broker_readiness_route_proof():
         "broker_route_dispatch_roundtrip_market_matches",
         "broker_route_dispatch_roundtrip_scenario_matches",
     } <= failed
+
+
+def test_evaluate_shadow_session_blocks_bad_broker_vendor_data_readiness():
+    report = evaluate_shadow_session(
+        launch_summary=launch_summary(True),
+        launch_checks=checks(True),
+        export_summary=export_summary(True),
+        export_checks=checks(True),
+        reconciliation_summary=reconciliation_summary(True),
+        reconciliation_checks=checks(True),
+        runtime_session_summary=runtime_session_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            broker_vendor_data_readiness_ready=False,
+            broker_vendor_data_readiness_failed_checks=1,
+        ),
+        thresholds=ShadowSessionThresholds(require_broker_readiness=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.accepted
+    assert {
+        "broker_vendor_data_readiness_ready",
+        "broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert bool(summary["broker_vendor_data_readiness_provided"])
+    assert not bool(summary["broker_vendor_data_readiness_ready"])
+    assert int(summary["broker_vendor_data_readiness_failed_checks"]) == 1
 
 
 def test_evaluate_shadow_session_blocks_bad_runtime_broker_resume_gate_evidence():
@@ -453,6 +490,7 @@ def test_write_shadow_session_report_outputs_metrics_checks_summary_and_manifest
     assert report.output_dir == out_dir
     assert report.accepted
     assert bool(report.summary.iloc[0]["broker_readiness_ready"])
+    assert bool(report.summary.iloc[0]["broker_vendor_data_readiness_ready"])
     assert (out_dir / "shadow_session_metrics.csv").exists()
     assert (out_dir / "shadow_session_checks.csv").exists()
     assert (out_dir / "shadow_session_summary.csv").exists()
