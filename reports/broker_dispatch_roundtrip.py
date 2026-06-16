@@ -595,6 +595,20 @@ def _apply_vendor_market_data_batch_config(
             _number(state, f"{field_prefix}_unique_header_fingerprints", 0.0),
         )
     )
+    state[f"{field_prefix}_source_file_fingerprint_coverage"] = _number_value(
+        vendor.get("source_file_fingerprint_coverage"),
+        _number(state, f"{field_prefix}_source_file_fingerprint_coverage", 0.0),
+    )
+    state[f"{field_prefix}_min_mapping_coverage"] = _number_value(
+        vendor.get("min_mapping_coverage"),
+        _number(state, f"{field_prefix}_min_mapping_coverage", 0.0),
+    )
+    state[f"{field_prefix}_unique_mapping_drafts"] = int(
+        _number_value(
+            vendor.get("unique_mapping_drafts"),
+            _number(state, f"{field_prefix}_unique_mapping_drafts", 0.0),
+        )
+    )
     state[f"{field_prefix}_mapping_sources"] = _object_text(
         vendor.get("mapping_sources", state.get(f"{field_prefix}_mapping_sources", ""))
     )
@@ -647,6 +661,9 @@ def _copy_vendor_market_data_batch_fields(
         "ready_rate",
         "unique_source_files",
         "unique_header_fingerprints",
+        "source_file_fingerprint_coverage",
+        "min_mapping_coverage",
+        "unique_mapping_drafts",
         "mapping_sources",
         "comparison_accepted",
         "comparison_failed_checks",
@@ -1381,6 +1398,18 @@ def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]
         rows,
         "vendor_market_data_batch_comparison_failed_checks",
     )
+    source_file_fingerprint_coverage = _vendor_market_data_batch_number_min(
+        rows,
+        "vendor_market_data_batch_source_file_fingerprint_coverage",
+    )
+    min_mapping_coverage = _vendor_market_data_batch_number_min(
+        rows,
+        "vendor_market_data_batch_min_mapping_coverage",
+    )
+    unique_mapping_drafts = _vendor_market_data_batch_counter_min(
+        rows,
+        "vendor_market_data_batch_unique_mapping_drafts",
+    )
     comparison_accepted = bool(
         rows and all(_to_bool(row.get("vendor_market_data_batch_comparison_accepted", False)) for row in rows)
     )
@@ -1432,6 +1461,30 @@ def _vendor_market_data_batch_checks(*rows: pd.Series) -> list[dict[str, object]
             0,
             failed_datasets == 0,
             "vendor market-data batch still has failed datasets",
+        ),
+        _check(
+            "vendor_market_data_batch_source_file_fingerprint_coverage",
+            source_file_fingerprint_coverage,
+            ">=",
+            1.0,
+            source_file_fingerprint_coverage >= 1.0,
+            "vendor market-data batch has incomplete source-file fingerprint coverage",
+        ),
+        _check(
+            "vendor_market_data_batch_min_mapping_coverage",
+            min_mapping_coverage,
+            ">=",
+            1.0,
+            min_mapping_coverage >= 1.0,
+            "vendor market-data batch has incomplete field mapping coverage",
+        ),
+        _check(
+            "vendor_market_data_batch_mapping_drafts",
+            unique_mapping_drafts,
+            ">",
+            0,
+            unique_mapping_drafts > 0,
+            "vendor market-data batch is missing mapping draft provenance",
         ),
         _check(
             "vendor_market_data_batch_comparison_accepted",
@@ -1498,6 +1551,9 @@ def _vendor_market_data_batch_projection(row: pd.Series, *, source_prefix: str) 
         "ready_rate",
         "unique_source_files",
         "unique_header_fingerprints",
+        "source_file_fingerprint_coverage",
+        "min_mapping_coverage",
+        "unique_mapping_drafts",
         "mapping_sources",
         "comparison_accepted",
         "comparison_failed_checks",
@@ -1895,6 +1951,20 @@ def _vendor_market_data_batch_summary_fields(rows: tuple[pd.Series, ...]) -> dic
             rows,
             "vendor_market_data_batch_unique_header_fingerprints",
         ),
+        "roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage": (
+            _vendor_market_data_batch_number_min(
+                rows,
+                "vendor_market_data_batch_source_file_fingerprint_coverage",
+            )
+        ),
+        "roundtrip_vendor_market_data_batch_min_mapping_coverage": _vendor_market_data_batch_number_min(
+            rows,
+            "vendor_market_data_batch_min_mapping_coverage",
+        ),
+        "roundtrip_vendor_market_data_batch_unique_mapping_drafts": _vendor_market_data_batch_counter_max(
+            rows,
+            "vendor_market_data_batch_unique_mapping_drafts",
+        ),
         "roundtrip_vendor_market_data_batch_mapping_sources": _vendor_market_data_batch_text_value(
             rows,
             "mapping_sources",
@@ -1978,6 +2048,11 @@ def _vendor_market_data_batch_config(
         "unique_header_fingerprints": int(
             summary[f"{field_prefix}_unique_header_fingerprints"]
         ),
+        "source_file_fingerprint_coverage": _jsonable(
+            summary[f"{field_prefix}_source_file_fingerprint_coverage"]
+        ),
+        "min_mapping_coverage": _jsonable(summary[f"{field_prefix}_min_mapping_coverage"]),
+        "unique_mapping_drafts": int(summary[f"{field_prefix}_unique_mapping_drafts"]),
         "mapping_sources": _text(summary, f"{field_prefix}_mapping_sources"),
         "comparison": {
             "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),
@@ -2272,6 +2347,11 @@ def _shadow_counter_max(rows: tuple[pd.Series, ...], column: str) -> int:
 
 def _vendor_market_data_batch_counter_max(rows: tuple[pd.Series, ...], column: str) -> int:
     return max(int(_number(row, column, 0.0)) for row in rows) if rows else 0
+
+
+def _vendor_market_data_batch_counter_min(rows: tuple[pd.Series, ...], column: str) -> int:
+    values = [int(_number(row, column, 0.0)) for row in rows]
+    return min(values) if values else 0
 
 
 def _vendor_market_data_batch_number_min(rows: tuple[pd.Series, ...], column: str) -> float:

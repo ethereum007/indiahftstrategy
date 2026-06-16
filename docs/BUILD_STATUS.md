@@ -644,9 +644,10 @@
   revalidates broker-readiness-prefixed vendor proof before non-submitting send
   packets can inherit it. Acknowledgement now carries those coverage/provenance
   fields and revalidates broker-readiness-prefixed vendor proof before accepted
-  ack evidence can advance. Final round-trip gates now carry and revalidate the
-  same identity before scale-up can inherit it, including
-  both generic and broker-readiness-prefixed vendor proof paths.
+  ack evidence can advance. Final round-trip gates now carry and reconcile the
+  same identity, coverage, and mapping-draft provenance across dispatch/send/ack
+  before scale-up can inherit it, including both generic and
+  broker-readiness-prefixed vendor proof paths.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
