@@ -227,6 +227,10 @@
 - Data readiness now also checks data-kind consistency across vendor intake,
   schema audit, and mapped-data summaries, and applies expected tick/chain
   kind checks to mapped-data and schema evidence, not only intake evidence.
+- Data readiness artifacts now carry vendor intake source-file, source-header,
+  mapping-draft, file-size, and mapping-coverage fingerprints into both
+  component rows and the top-level summary for catalog and broker handoff
+  traceability.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
@@ -645,7 +649,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 818 tests.
+Current passing suite: 819 tests.
 
 ## Next Build Targets
 

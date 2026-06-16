@@ -243,6 +243,35 @@ def test_data_readiness_exposes_ambiguous_vendor_intake_kind():
     assert summary["vendor_intake_ambiguous_kinds"] == "orders;fills"
 
 
+def test_data_readiness_carries_vendor_intake_fingerprints():
+    intake = vendor_intake_summary(True)
+    intake.loc[0, "source_file_sha256"] = "a" * 64
+    intake.loc[0, "source_file_size_bytes"] = 1234
+    intake.loc[0, "source_header_sha256"] = "b" * 64
+    intake.loc[0, "mapping_draft_sha256"] = "c" * 64
+    intake.loc[0, "mapping_coverage"] = 0.99
+
+    report = evaluate_data_readiness(
+        vendor_intake_summary=intake,
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(require_vendor_intake=True),
+    )
+
+    item = report.items.set_index("component").loc["vendor_intake"]
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert item["source_file_sha256"] == "a" * 64
+    assert int(item["source_file_size_bytes"]) == 1234
+    assert item["source_header_sha256"] == "b" * 64
+    assert item["mapping_draft_sha256"] == "c" * 64
+    assert item["mapping_coverage"] == 0.99
+    assert summary["vendor_intake_source_file_sha256"] == "a" * 64
+    assert int(summary["vendor_intake_source_file_size_bytes"]) == 1234
+    assert summary["vendor_intake_source_header_sha256"] == "b" * 64
+    assert summary["vendor_intake_mapping_draft_sha256"] == "c" * 64
+    assert summary["vendor_intake_mapping_coverage"] == 0.99
+
+
 def test_data_readiness_blocks_mismatched_vendor_intake_kind():
     fill_intake = vendor_intake_summary(True)
     fill_intake.loc[0, "best_kind"] = "fills"

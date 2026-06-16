@@ -172,6 +172,11 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "kind_selection": _text(row, "kind_selection"),
         "selected_kind_ambiguous": _to_bool(row.get("selected_kind_ambiguous", False)),
         "ambiguous_kinds": _text(row, "ambiguous_kinds"),
+        "source_file_sha256": _text(row, "source_file_sha256"),
+        "source_file_size_bytes": _number(row, "source_file_size_bytes"),
+        "source_header_sha256": _text(row, "source_header_sha256"),
+        "mapping_draft_sha256": _text(row, "mapping_draft_sha256"),
+        "mapping_coverage": _number(row, "mapping_coverage"),
         "recommendation": _component_recommendation(component, provided, ready, required, row),
     }
 
@@ -456,6 +461,15 @@ def _summary(
                     "selected_kind_ambiguous",
                 ),
                 "vendor_intake_ambiguous_kinds": _component_text(items, "vendor_intake", "ambiguous_kinds"),
+                "vendor_intake_source_file_sha256": _component_text(items, "vendor_intake", "source_file_sha256"),
+                "vendor_intake_source_file_size_bytes": _component_number(
+                    items,
+                    "vendor_intake",
+                    "source_file_size_bytes",
+                ),
+                "vendor_intake_source_header_sha256": _component_text(items, "vendor_intake", "source_header_sha256"),
+                "vendor_intake_mapping_draft_sha256": _component_text(items, "vendor_intake", "mapping_draft_sha256"),
+                "vendor_intake_mapping_coverage": _component_number(items, "vendor_intake", "mapping_coverage"),
                 "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
             }
         ]
@@ -545,6 +559,15 @@ def _component_bool(items: pd.DataFrame, component: str, column: str) -> bool:
     if row.empty:
         return False
     return _to_bool(row.iloc[0].get(column, False))
+
+
+def _component_number(items: pd.DataFrame, component: str, column: str, fallback: float = np.nan) -> float:
+    if items.empty or column not in items.columns:
+        return fallback
+    row = items.loc[items["component"].astype(str) == component]
+    if row.empty:
+        return fallback
+    return _number(row.iloc[0], column, fallback=fallback)
 
 
 def _joined_component_values(items: pd.DataFrame, column: str) -> str:
