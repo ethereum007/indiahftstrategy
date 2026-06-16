@@ -2694,7 +2694,10 @@ block, cutover prefers the broker-specific block. For older or thin scale-up
 configs, cutover also reads the resolved broker-readiness config sidecar and
 hydrates missing broker vendor-data proof from
 `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch` before
-revalidating and carrying it downstream.
+revalidating and carrying it downstream. Cutover also carries
+`broker_readiness.broker_vendor_data_readiness` into
+`scaleup_broker_vendor_data_readiness_*` summary fields and fails closed if the
+wrapper readiness sidecar is failed even when the nested vendor batch is valid.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,
@@ -3306,7 +3309,8 @@ ready. Launch and broker-readiness commands honor the wrapper root's own
 masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper
 state from `broker_readiness_config.json` and blocks controlled scale increases
 when the wrapper readiness sidecar is failed, even if the nested batch proof is
-otherwise valid.
+otherwise valid. Cutover applies the same wrapper readiness gate before route
+enable can inherit scale-up-carried broker/vendor proof.
 
 ## Order Staging
 

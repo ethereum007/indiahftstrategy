@@ -771,6 +771,44 @@ def test_cutover_gate_carries_broker_vendor_market_data_batch_from_scaleup_confi
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
+def test_cutover_gate_blocks_failed_broker_vendor_data_readiness_from_scaleup_config():
+    config = scaleup_config()
+    config["broker_readiness"]["broker_vendor_data_readiness"] = {
+        "provided": True,
+        "ready": False,
+        "failed_checks": 1,
+    }
+    config["broker_readiness"]["dispatch_roundtrip"][
+        "vendor_market_data_batch"
+    ] = vendor_market_data_batch_config()
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    summary = report.summary.iloc[0]
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert summary["scaleup_broker_vendor_data_readiness_provided"]
+    assert not summary["scaleup_broker_vendor_data_readiness_ready"]
+    assert int(summary["scaleup_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert {
+        "scaleup_broker_vendor_data_readiness_ready",
+        "scaleup_broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert report.config["scaleup_broker_vendor_data_readiness"] == {
+        "provided": True,
+        "ready": False,
+        "failed_checks": 1,
+    }
+    assert report.config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+
+
 def test_cutover_gate_blocks_bad_broker_vendor_market_data_batch_from_scaleup_config():
     config = scaleup_config()
     config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"] = (
@@ -1619,6 +1657,78 @@ def test_cli_cutover_gate_hydrates_broker_vendor_data_from_sidecar(tmp_path):
     assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+
+
+def test_cli_cutover_gate_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "live_dryrun",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_vendor_data_readiness": {
+                        "provided": True,
+                        "ready": False,
+                        "failed_checks": 1,
+                    },
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cutover"
+
+    code = main(
+        [
+            "review-cutover-gate",
+            "--scaleup",
+            str(scaleup),
+            "--broker-readiness",
+            str(broker),
+            "--runtime-session",
+            str(runtime),
+            "--operator-review",
+            str(review_path),
+            "--out",
+            str(out_dir),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "cutover_summary.csv")
+    checks = pd.read_csv(out_dir / "cutover_checks.csv")
+    config = json.loads((out_dir / "cutover_config.json").read_text(encoding="utf-8"))
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    vendor_readiness = config["scaleup_broker_vendor_data_readiness"]
+    vendor_batch = config["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "scaleup_broker_vendor_data_readiness_provided"])
+    assert not bool(summary.loc[0, "scaleup_broker_vendor_data_readiness_ready"])
+    assert int(summary.loc[0, "scaleup_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert {
+        "scaleup_broker_vendor_data_readiness_ready",
+        "scaleup_broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert vendor_readiness == {
+        "provided": True,
+        "ready": False,
+        "failed_checks": 1,
+    }
+    assert vendor_batch["ready"]
+    assert vendor_batch["dataset_count"] == 2
 
 
 def test_cli_cutover_gate_fails_without_operator_review(tmp_path):

@@ -425,6 +425,8 @@ def _checks(
         checks.extend(_shadow_broker_readiness_checks(scaleup))
     if _broker_shadow_broker_readiness_active(scaleup):
         checks.extend(_broker_shadow_broker_readiness_checks(scaleup))
+    if _broker_vendor_data_readiness_active(scaleup):
+        checks.extend(_broker_vendor_data_readiness_checks(scaleup))
     if _broker_vendor_market_data_batch_active(scaleup):
         checks.extend(_broker_vendor_market_data_batch_checks(scaleup))
     resume_active = bool(thresholds.require_resume_gate or broker["resume_gate_provided"])
@@ -1013,6 +1015,46 @@ def _broker_vendor_market_data_batch_active(scaleup: dict[str, Any]) -> bool:
     return bool(_to_bool(vendor["provided"]) or int(vendor["dataset_count"]) > 0)
 
 
+def _broker_vendor_data_readiness_active(scaleup: dict[str, Any]) -> bool:
+    readiness = scaleup["broker_vendor_data_readiness"]
+    return bool(
+        _to_bool(readiness["provided"])
+        or _to_bool(readiness["ready"])
+        or int(readiness["failed_checks"]) > 0
+    )
+
+
+def _broker_vendor_data_readiness_checks(scaleup: dict[str, Any]) -> list[dict[str, object]]:
+    readiness = scaleup["broker_vendor_data_readiness"]
+    prefix = "scaleup_broker_vendor_data_readiness"
+    return [
+        _check(
+            f"{prefix}_provided",
+            _to_bool(readiness["provided"]),
+            "is",
+            True,
+            _to_bool(readiness["provided"]),
+            "scale-up broker-vendor readiness wrapper proof is active but not marked provided",
+        ),
+        _check(
+            f"{prefix}_ready",
+            _to_bool(readiness["ready"]),
+            "is",
+            True,
+            _to_bool(readiness["ready"]),
+            "scale-up broker-vendor readiness wrapper proof is not ready",
+        ),
+        _check(
+            f"{prefix}_failed_checks",
+            int(readiness["failed_checks"]),
+            "<=",
+            0,
+            int(readiness["failed_checks"]) <= 0,
+            "scale-up broker-vendor readiness wrapper proof has failed checks",
+        ),
+    ]
+
+
 def _broker_vendor_market_data_batch_checks(scaleup: dict[str, Any]) -> list[dict[str, object]]:
     vendor = scaleup["broker_dispatch_roundtrip_vendor_market_data_batch"]
     prefix = "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"
@@ -1239,6 +1281,7 @@ def _authorization(
                     "shadow_broker_route_dispatch_roundtrip_scenario_count"
                 ],
                 **_broker_shadow_broker_authorization_fields(scaleup),
+                **_broker_vendor_data_readiness_authorization_fields(scaleup),
                 **_broker_vendor_market_data_batch_authorization_fields(scaleup),
                 **_vendor_market_data_batch_authorization_fields(scaleup),
                 "broker_readiness_ready": broker["ready"],
@@ -1470,6 +1513,15 @@ def _broker_vendor_market_data_batch_authorization_fields(scaleup: dict[str, Any
     }
 
 
+def _broker_vendor_data_readiness_authorization_fields(scaleup: dict[str, Any]) -> dict[str, Any]:
+    readiness = scaleup["broker_vendor_data_readiness"]
+    return {
+        "scaleup_broker_vendor_data_readiness_provided": readiness["provided"],
+        "scaleup_broker_vendor_data_readiness_ready": readiness["ready"],
+        "scaleup_broker_vendor_data_readiness_failed_checks": readiness["failed_checks"],
+    }
+
+
 def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -1564,6 +1616,7 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     authorization["scaleup_shadow_broker_route_dispatch_roundtrip_scenario_count"]
                 ),
                 **_broker_shadow_broker_summary_fields(authorization),
+                **_broker_vendor_data_readiness_summary_fields(authorization),
                 **_broker_vendor_market_data_batch_summary_fields(authorization),
                 "scaleup_vendor_market_data_batch_provided": _to_bool(
                     authorization["scaleup_vendor_market_data_batch_provided"]
@@ -1832,6 +1885,20 @@ def _broker_vendor_market_data_batch_summary_fields(authorization: pd.Series) ->
     }
 
 
+def _broker_vendor_data_readiness_summary_fields(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        "scaleup_broker_vendor_data_readiness_provided": _to_bool(
+            authorization["scaleup_broker_vendor_data_readiness_provided"]
+        ),
+        "scaleup_broker_vendor_data_readiness_ready": _to_bool(
+            authorization["scaleup_broker_vendor_data_readiness_ready"]
+        ),
+        "scaleup_broker_vendor_data_readiness_failed_checks": int(
+            authorization["scaleup_broker_vendor_data_readiness_failed_checks"]
+        ),
+    }
+
+
 def _config(
     authorization: pd.Series,
     thresholds: CutoverGateThresholds,
@@ -1910,6 +1977,7 @@ def _config(
             },
         },
         "scaleup_broker_shadow_broker_readiness": _broker_shadow_broker_config(authorization),
+        "scaleup_broker_vendor_data_readiness": _broker_vendor_data_readiness_config(authorization),
         "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch": (
             _broker_vendor_market_data_batch_config(authorization)
         ),
@@ -2136,6 +2204,14 @@ def _broker_vendor_market_data_batch_config(authorization: pd.Series) -> dict[st
     }
 
 
+def _broker_vendor_data_readiness_config(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        "provided": _to_bool(authorization["scaleup_broker_vendor_data_readiness_provided"]),
+        "ready": _to_bool(authorization["scaleup_broker_vendor_data_readiness_ready"]),
+        "failed_checks": int(authorization["scaleup_broker_vendor_data_readiness_failed_checks"]),
+    }
+
+
 def _vendor_market_data_batch_state(
     vendor: dict[str, Any],
     *,
@@ -2223,6 +2299,43 @@ def _vendor_market_data_batch_state(
     }
 
 
+def _broker_vendor_data_readiness_state(
+    readiness: dict[str, Any],
+    *,
+    row: pd.Series | None = None,
+) -> dict[str, Any]:
+    row = pd.Series(dtype=object) if row is None else row
+    active_config = _broker_vendor_data_readiness_source_active(readiness)
+    return {
+        "provided": _to_bool(
+            readiness.get(
+                "provided",
+                row.get("broker_vendor_data_readiness_provided", active_config),
+            )
+        ),
+        "ready": _to_bool(
+            readiness.get("ready", row.get("broker_vendor_data_readiness_ready", False))
+        ),
+        "failed_checks": _broker_vendor_data_readiness_failed_checks(
+            readiness,
+            fallback=_number(row, "broker_vendor_data_readiness_failed_checks", 0.0),
+        ),
+    }
+
+
+def _broker_vendor_data_readiness_failed_checks(
+    readiness: dict[str, Any],
+    *,
+    fallback: float = 0.0,
+) -> int:
+    failed_checks = readiness.get("failed_checks")
+    if isinstance(failed_checks, list):
+        return len(failed_checks)
+    if failed_checks not in (None, ""):
+        return int(_number_from(readiness, "failed_checks", fallback))
+    return int(_number_from(readiness, "failed_check_count", fallback))
+
+
 def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
@@ -2237,6 +2350,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
     broker_shadow_broker = broker_readiness.get("shadow_broker_readiness", {}) or {}
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
+    broker_vendor_data_readiness = broker_readiness.get("broker_vendor_data_readiness", {}) or {}
     broker_vendor_market_data_batch = _broker_vendor_market_data_batch_source(dispatch)
     route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route = dispatch.get("route_proof", {}) or {}
@@ -2285,6 +2399,10 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
             broker_vendor_market_data_batch,
             row=row,
             field_prefix="broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        "broker_vendor_data_readiness": _broker_vendor_data_readiness_state(
+            broker_vendor_data_readiness,
+            row=row,
         ),
         "route_readiness_required": _to_bool(
             route_readiness.get("required", row.get("route_readiness_required", False))
@@ -2767,6 +2885,28 @@ def _broker_vendor_market_data_batch_source(dispatch: dict[str, Any]) -> dict[st
     return {}
 
 
+def _broker_vendor_data_readiness_source(config: dict[str, Any]) -> dict[str, Any]:
+    candidates: list[object] = []
+    dispatch = config.get("dispatch_roundtrip", {}) or {}
+    if isinstance(dispatch, dict):
+        candidates.append(dispatch.get("broker_vendor_data_readiness"))
+    candidates.append(config.get("broker_vendor_data_readiness"))
+    for candidate in candidates:
+        if isinstance(candidate, dict) and _broker_vendor_data_readiness_source_active(candidate):
+            return candidate
+    return {}
+
+
+def _broker_vendor_data_readiness_source_active(readiness: object) -> bool:
+    if not isinstance(readiness, dict) or not readiness:
+        return False
+    return bool(
+        _to_bool(readiness.get("provided", True))
+        or _to_bool(readiness.get("ready", False))
+        or _broker_vendor_data_readiness_failed_checks(readiness) > 0
+    )
+
+
 def _with_broker_readiness_config_vendor_market_data_batch(
     scaleup_config: dict[str, Any],
     broker_readiness_config: dict[str, Any],
@@ -2775,22 +2915,34 @@ def _with_broker_readiness_config_vendor_market_data_batch(
     if not isinstance(broker_readiness, dict):
         return scaleup_config
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
-    if not isinstance(dispatch, dict) or vendor_market_data_batch_source_active(
-        _broker_vendor_market_data_batch_source(dispatch)
-    ):
+    if not isinstance(dispatch, dict):
         return scaleup_config
     sidecar_dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
     if not isinstance(sidecar_dispatch, dict):
         return scaleup_config
 
     vendor = _broker_vendor_market_data_batch_source(sidecar_dispatch)
-    if not vendor_market_data_batch_source_active(vendor):
+    should_hydrate_vendor = (
+        not vendor_market_data_batch_source_active(_broker_vendor_market_data_batch_source(dispatch))
+        and vendor_market_data_batch_source_active(vendor)
+    )
+    readiness = _broker_vendor_data_readiness_source(broker_readiness_config)
+    should_hydrate_readiness = (
+        not _broker_vendor_data_readiness_source_active(
+            broker_readiness.get("broker_vendor_data_readiness", {}) or {}
+        )
+        and _broker_vendor_data_readiness_source_active(readiness)
+    )
+    if not should_hydrate_vendor and not should_hydrate_readiness:
         return scaleup_config
 
     out = dict(scaleup_config)
     out_broker = dict(broker_readiness)
     out_dispatch = dict(dispatch)
-    out_dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(vendor)
+    if should_hydrate_vendor:
+        out_dispatch["broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(vendor)
+    if should_hydrate_readiness:
+        out_broker["broker_vendor_data_readiness"] = dict(readiness)
     out_broker["dispatch_roundtrip"] = out_dispatch
     out["broker_readiness"] = out_broker
     return out
