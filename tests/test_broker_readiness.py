@@ -352,7 +352,10 @@ def vendor_market_data_batch_config():
         "failed_datasets": 0,
         "ready_rate": 1.0,
         "unique_source_files": 2,
+        "source_file_fingerprint_coverage": 1.0,
+        "min_mapping_coverage": 1.0,
         "unique_header_fingerprints": 1,
+        "unique_mapping_drafts": 1,
         "mapping_sources": "vendor_intake_draft",
         "comparison": {
             "accepted": True,
@@ -390,7 +393,10 @@ def dirty_vendor_market_data_batch_config():
             "ready_datasets": 0,
             "failed_datasets": 1,
             "unique_source_files": 0,
+            "source_file_fingerprint_coverage": 0.0,
+            "min_mapping_coverage": 0.0,
             "unique_header_fingerprints": 0,
+            "unique_mapping_drafts": 0,
             "mapping_sources": "",
             "comparison": {"accepted": False, "failed_checks": 1},
         }
@@ -687,11 +693,17 @@ def test_broker_readiness_carries_dispatch_roundtrip_vendor_market_data_batch():
     assert summary["dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
     assert summary["dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
     assert int(summary["dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert summary["dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary["dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
     assert int(summary["dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert int(summary["dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert summary["dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
     vendor = report.config["dispatch_roundtrip"]["vendor_market_data_batch"]
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
@@ -707,7 +719,10 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_vendor_market_data_bat
             "ready_datasets": 0,
             "failed_datasets": 1,
             "unique_source_files": 0,
+            "source_file_fingerprint_coverage": 0.0,
+            "min_mapping_coverage": 0.0,
             "unique_header_fingerprints": 0,
+            "unique_mapping_drafts": 0,
             "mapping_sources": "",
             "comparison": {"accepted": False, "failed_checks": 1},
         }
@@ -772,11 +787,17 @@ def test_broker_readiness_carries_broker_dispatch_roundtrip_vendor_market_data_b
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
     assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
     assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert int(summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
     vendor = report.config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
@@ -854,7 +875,10 @@ def test_broker_readiness_blocks_dirty_broker_dispatch_roundtrip_vendor_market_d
             "ready_datasets": 0,
             "failed_datasets": 1,
             "unique_source_files": 0,
+            "source_file_fingerprint_coverage": 0.0,
+            "min_mapping_coverage": 0.0,
             "unique_header_fingerprints": 0,
+            "unique_mapping_drafts": 0,
             "mapping_sources": "",
             "comparison": {"accepted": False, "failed_checks": 1},
         }

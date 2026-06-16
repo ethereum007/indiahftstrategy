@@ -464,10 +464,24 @@ def _apply_vendor_market_data_batch_config(
             _number(row, f"{source_prefix}_unique_source_files", 0.0),
         )
     )
+    frame.loc[0, f"{field_prefix}_source_file_fingerprint_coverage"] = _number_value(
+        vendor.get("source_file_fingerprint_coverage"),
+        _number(row, f"{source_prefix}_source_file_fingerprint_coverage", 0.0),
+    )
+    frame.loc[0, f"{field_prefix}_min_mapping_coverage"] = _number_value(
+        vendor.get("min_mapping_coverage"),
+        _number(row, f"{source_prefix}_min_mapping_coverage", 0.0),
+    )
     frame.loc[0, f"{field_prefix}_unique_header_fingerprints"] = int(
         _number_value(
             vendor.get("unique_header_fingerprints"),
             _number(row, f"{source_prefix}_unique_header_fingerprints", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_unique_mapping_drafts"] = int(
+        _number_value(
+            vendor.get("unique_mapping_drafts"),
+            _number(row, f"{source_prefix}_unique_mapping_drafts", 0.0),
         )
     )
     frame.loc[0, f"{field_prefix}_mapping_sources"] = _object_text(
@@ -1033,12 +1047,38 @@ def _vendor_market_data_batch_item_fields(
         )
         if active
         else 0,
+        f"{field_prefix}_source_file_fingerprint_coverage": _dispatch_number_any(
+            component,
+            row,
+            f"{field_prefix}_source_file_fingerprint_coverage",
+            f"{source_prefix}_source_file_fingerprint_coverage",
+        )
+        if active
+        else 0.0,
+        f"{field_prefix}_min_mapping_coverage": _dispatch_number_any(
+            component,
+            row,
+            f"{field_prefix}_min_mapping_coverage",
+            f"{source_prefix}_min_mapping_coverage",
+        )
+        if active
+        else 0.0,
         f"{field_prefix}_unique_header_fingerprints": int(
             _dispatch_number_any(
                 component,
                 row,
                 f"{field_prefix}_unique_header_fingerprints",
                 f"{source_prefix}_unique_header_fingerprints",
+            )
+        )
+        if active
+        else 0,
+        f"{field_prefix}_unique_mapping_drafts": int(
+            _dispatch_number_any(
+                component,
+                row,
+                f"{field_prefix}_unique_mapping_drafts",
+                f"{source_prefix}_unique_mapping_drafts",
             )
         )
         if active
@@ -1751,7 +1791,10 @@ def _vendor_market_data_batch_projection(row: Any, *, source_prefix: str) -> Any
         "failed_datasets",
         "ready_rate",
         "unique_source_files",
+        "source_file_fingerprint_coverage",
+        "min_mapping_coverage",
         "unique_header_fingerprints",
+        "unique_mapping_drafts",
         "mapping_sources",
         "comparison_accepted",
         "comparison_failed_checks",
@@ -1997,9 +2040,16 @@ def _vendor_market_data_batch_summary_fields(
         f"{field_prefix}_failed_datasets": int(_number(item, f"{field_prefix}_failed_datasets", 0.0)),
         f"{field_prefix}_ready_rate": _number(item, f"{field_prefix}_ready_rate", 0.0),
         f"{field_prefix}_unique_source_files": int(_number(item, f"{field_prefix}_unique_source_files", 0.0)),
+        f"{field_prefix}_source_file_fingerprint_coverage": _number(
+            item,
+            f"{field_prefix}_source_file_fingerprint_coverage",
+            0.0,
+        ),
+        f"{field_prefix}_min_mapping_coverage": _number(item, f"{field_prefix}_min_mapping_coverage", 0.0),
         f"{field_prefix}_unique_header_fingerprints": int(
             _number(item, f"{field_prefix}_unique_header_fingerprints", 0.0)
         ),
+        f"{field_prefix}_unique_mapping_drafts": int(_number(item, f"{field_prefix}_unique_mapping_drafts", 0.0)),
         f"{field_prefix}_mapping_sources": _item_text(item, f"{field_prefix}_mapping_sources"),
         f"{field_prefix}_comparison_accepted": _item_bool(item, f"{field_prefix}_comparison_accepted"),
         f"{field_prefix}_comparison_failed_checks": int(
@@ -2235,7 +2285,12 @@ def _vendor_market_data_batch_config(
         "failed_datasets": int(_number(row, f"{field_prefix}_failed_datasets", 0.0)),
         "ready_rate": _jsonable(_number(row, f"{field_prefix}_ready_rate", 0.0)),
         "unique_source_files": int(_number(row, f"{field_prefix}_unique_source_files", 0.0)),
+        "source_file_fingerprint_coverage": _jsonable(
+            _number(row, f"{field_prefix}_source_file_fingerprint_coverage", 0.0)
+        ),
+        "min_mapping_coverage": _jsonable(_number(row, f"{field_prefix}_min_mapping_coverage", 0.0)),
         "unique_header_fingerprints": int(_number(row, f"{field_prefix}_unique_header_fingerprints", 0.0)),
+        "unique_mapping_drafts": int(_number(row, f"{field_prefix}_unique_mapping_drafts", 0.0)),
         "mapping_sources": _item_text(row, f"{field_prefix}_mapping_sources"),
         "comparison": {
             "accepted": _item_bool(row, f"{field_prefix}_comparison_accepted"),

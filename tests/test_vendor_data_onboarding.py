@@ -116,6 +116,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert summary["source_file_fingerprint_coverage"] == 1.0
     assert summary["min_mapping_coverage"] == 1.0
     assert summary["unique_header_fingerprints"] == 1
+    assert summary["unique_mapping_drafts"] == 1
     assert summary["mapping_sources"] == "vendor_intake_draft"
     assert summary["comparison_accepted"]
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
@@ -130,6 +131,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["source_file_fingerprint_coverage"] == 1.0
     assert config["min_mapping_coverage"] == 1.0
     assert config["unique_header_fingerprints"] == 1
+    assert config["unique_mapping_drafts"] == 1
     assert config["comparison"]["accepted"]
     assert config["comparison"]["thresholds"]["min_datasets"] == 2
     assert config["comparison"]["thresholds"]["min_source_file_fingerprint_coverage"] == 1.0

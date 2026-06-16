@@ -433,6 +433,7 @@ def _batch_summary(
                 ),
                 "min_mapping_coverage": _number(comparison_row, "min_mapping_coverage", fallback=0.0),
                 "unique_header_fingerprints": _unique_count(datasets, "source_header_sha256"),
+                "unique_mapping_drafts": int(_number(comparison_row, "unique_mapping_drafts", fallback=0.0)),
                 "mapping_sources": _joined_values(datasets, "mapping_source"),
                 "comparison_accepted": accepted,
                 "comparison_ready_rate": _number(comparison_row, "ready_rate", fallback=0.0),
@@ -545,6 +546,7 @@ def _batch_config(
         "source_file_fingerprint_coverage": _number(row, "source_file_fingerprint_coverage", fallback=0.0),
         "min_mapping_coverage": _number(row, "min_mapping_coverage", fallback=0.0),
         "unique_header_fingerprints": int(_number(row, "unique_header_fingerprints", fallback=0.0)),
+        "unique_mapping_drafts": int(_number(row, "unique_mapping_drafts", fallback=0.0)),
         "mapping_sources": _text(row, "mapping_sources"),
         "comparison": {
             "accepted": _truthy(row.get("comparison_accepted", False)),
