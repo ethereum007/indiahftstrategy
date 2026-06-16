@@ -51,6 +51,7 @@ class BrokerVendorDataReadinessReport:
     broker_readiness: BrokerReadinessReport
     components: pd.DataFrame
     summary: pd.DataFrame
+    checks: pd.DataFrame
     output_dir: Path | None = None
 
     @property
@@ -140,10 +141,19 @@ def write_broker_vendor_data_readiness_pipeline(
     )
     components = _components(vendor_batch, vendor_batch_dir, broker_readiness, broker_readiness_dir)
     summary = _summary(components, vendor_batch, broker_readiness, config)
+    checks = _checks(summary.iloc[0], components, config)
+    failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    summary.loc[summary.index[0], "failed_checks"] = failed_checks
+    summary.loc[summary.index[0], "ready"] = failed_checks == 0
+    summary.loc[summary.index[0], "recommendation"] = (
+        "broker_data_proof_ready" if failed_checks == 0 else "fix_vendor_or_broker_readiness_proof"
+    )
     components.to_csv(out / "broker_vendor_data_readiness_components.csv", index=False)
     summary.to_csv(out / "broker_vendor_data_readiness_summary.csv", index=False)
+    checks.to_csv(out / "broker_vendor_data_readiness_checks.csv", index=False)
     (out / "broker_vendor_data_readiness_config.json").write_text(
-        json.dumps(_config(summary.iloc[0], components, config, broker_thresholds), indent=2, sort_keys=True) + "\n",
+        json.dumps(_config(summary.iloc[0], components, checks, config, broker_thresholds), indent=2, sort_keys=True)
+        + "\n",
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -174,7 +184,7 @@ def write_broker_vendor_data_readiness_pipeline(
             "broker_readiness": broker_readiness_dir,
         },
     )
-    return BrokerVendorDataReadinessReport(vendor_batch, broker_readiness, components, summary, out)
+    return BrokerVendorDataReadinessReport(vendor_batch, broker_readiness, components, summary, checks, out)
 
 
 def _components(
@@ -254,12 +264,156 @@ def _summary(
     )
 
 
-def _config(
+def _checks(
     row: pd.Series,
     components: pd.DataFrame,
     config: BrokerVendorDataReadinessConfig,
+) -> pd.DataFrame:
+    dataset_count = _int(row.get("dataset_count", 0))
+    min_mapping_coverage = float(config.min_mapping_coverage)
+    checks = [
+        _check(
+            "vendor_batch_ready",
+            bool(row.get("vendor_batch_ready", False)),
+            "is",
+            True,
+            bool(row.get("vendor_batch_ready", False)),
+            "vendor market-data batch is not ready",
+        ),
+        _check(
+            "broker_readiness_ready",
+            bool(row.get("broker_readiness_ready", False)),
+            "is",
+            True,
+            bool(row.get("broker_readiness_ready", False)),
+            "broker readiness review is not ready",
+        ),
+        _check(
+            "broker_vendor_data_ready",
+            bool(row.get("broker_vendor_data_ready", False)),
+            "is",
+            True,
+            bool(row.get("broker_vendor_data_ready", False)),
+            "broker readiness did not accept the broker vendor-data proof",
+        ),
+        _check(
+            "failed_components",
+            int((~components["ready"].astype(bool)).sum()) if not components.empty else 1,
+            "<=",
+            0,
+            (int((~components["ready"].astype(bool)).sum()) if not components.empty else 1) <= 0,
+            "one or more broker-vendor readiness components are not ready",
+        ),
+        _check(
+            "dataset_count",
+            dataset_count,
+            ">",
+            0,
+            dataset_count > 0,
+            "vendor market-data batch has no datasets",
+        ),
+        _check(
+            "ready_datasets",
+            _int(row.get("ready_datasets", 0)),
+            ">=",
+            dataset_count,
+            _int(row.get("ready_datasets", 0)) >= dataset_count and dataset_count > 0,
+            "not all vendor market-data datasets are ready",
+        ),
+        _check(
+            "failed_datasets",
+            _int(row.get("failed_datasets", 0)),
+            "<=",
+            0,
+            _int(row.get("failed_datasets", 0)) <= 0,
+            "vendor market-data batch has failed datasets",
+        ),
+        _check(
+            "unique_source_files",
+            _int(row.get("unique_source_files", 0)),
+            ">=",
+            dataset_count,
+            _int(row.get("unique_source_files", 0)) >= dataset_count and dataset_count > 0,
+            "vendor market-data batch does not prove distinct source files per dataset",
+        ),
+        _check(
+            "source_file_fingerprint_coverage",
+            _float(row.get("source_file_fingerprint_coverage", 0.0)),
+            ">=",
+            1.0,
+            _float(row.get("source_file_fingerprint_coverage", 0.0)) >= 1.0,
+            "vendor market-data batch has incomplete source-file fingerprint coverage",
+        ),
+        _check(
+            "min_mapping_coverage",
+            _float(row.get("min_mapping_coverage", 0.0)),
+            ">=",
+            min_mapping_coverage,
+            _float(row.get("min_mapping_coverage", 0.0)) >= min_mapping_coverage,
+            "vendor market-data batch has incomplete mapping coverage",
+        ),
+        _check(
+            "unique_mapping_drafts",
+            _int(row.get("unique_mapping_drafts", 0)),
+            ">",
+            0,
+            _int(row.get("unique_mapping_drafts", 0)) > 0,
+            "vendor market-data batch is missing mapping draft provenance",
+        ),
+        _check(
+            "mapping_sources",
+            str(row.get("mapping_sources", "")).strip(),
+            "!=",
+            "",
+            bool(str(row.get("mapping_sources", "")).strip()),
+            "vendor market-data batch is missing mapping source provenance",
+        ),
+        _check(
+            "comparison_accepted",
+            bool(row.get("comparison_accepted", False)),
+            "is",
+            True,
+            bool(row.get("comparison_accepted", False)),
+            "vendor market-data batch comparison was not accepted",
+        ),
+        _check(
+            "comparison_failed_checks",
+            _int(row.get("comparison_failed_checks", 0)),
+            "<=",
+            0,
+            _int(row.get("comparison_failed_checks", 0)) <= 0,
+            "vendor market-data batch comparison has failed checks",
+        ),
+    ]
+    return pd.DataFrame(checks)
+
+
+def _check(
+    check: str,
+    observed: object,
+    operator: str,
+    expected: object,
+    passed: bool,
+    message: str,
+) -> dict[str, object]:
+    return {
+        "check": check,
+        "observed": observed,
+        "operator": operator,
+        "expected": expected,
+        "passed": bool(passed),
+        "message": "" if passed else message,
+    }
+
+
+def _config(
+    row: pd.Series,
+    components: pd.DataFrame,
+    checks: pd.DataFrame,
+    config: BrokerVendorDataReadinessConfig,
     broker_thresholds: BrokerReadinessThresholds,
 ) -> dict[str, object]:
+    failed = checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
     return {
         "schema_version": 1,
         "ready": bool(row.get("ready", False)),
@@ -287,6 +441,8 @@ def _config(
             "broker_vendor_data_ready": bool(row.get("broker_vendor_data_ready", False)),
         },
         "broker_thresholds": asdict(broker_thresholds),
+        "failed_check_count": _int(row.get("failed_checks", len(failed))),
+        "failed_checks": failed,
         "components": [
             {
                 "component": str(component.get("component", "")),

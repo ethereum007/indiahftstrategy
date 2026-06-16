@@ -244,6 +244,9 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert int(summary["unique_mapping_drafts"]) == 1
         assert summary["mapping_sources"] == "vendor_intake_draft"
         assert bool(summary["comparison_accepted"])
+        assert int(summary["failed_checks"]) == 0
+        assert bool(report.checks["passed"].all())
+        assert (out_dir / "broker_vendor_data_readiness_checks.csv").exists()
         assert (out_dir / "01_vendor_market_data_batch" / "vendor_market_data_batch_config.json").exists()
         assert (out_dir / "02_broker_readiness" / "broker_readiness_config.json").exists()
         config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
@@ -255,6 +258,8 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
         assert config["vendor_market_data_batch"]["comparison"]["accepted"]
         assert config["broker_readiness"]["broker_vendor_data_ready"]
+        assert config["failed_check_count"] == 0
+        assert config["failed_checks"] == []
         component_by_name = {item["component"]: item for item in config["components"]}
         assert component_by_name["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
         assert component_by_name["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
@@ -305,9 +310,12 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
 
     summary = pd.read_csv(out_dir / "broker_vendor_data_readiness_summary.csv")
     components = pd.read_csv(out_dir / "broker_vendor_data_readiness_components.csv")
+    checks = pd.read_csv(out_dir / "broker_vendor_data_readiness_checks.csv")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "broker_vendor_data_ready"])
+    assert int(summary.loc[0, "failed_checks"]) == 0
+    assert bool(checks["passed"].all())
     assert summary.loc[0, "source_file_fingerprint_coverage"] == 1.0
     assert summary.loc[0, "min_mapping_coverage"] == 1.0
     assert int(summary.loc[0, "unique_mapping_drafts"]) == 1
@@ -316,6 +324,66 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert vendor_component["source_file_fingerprint_coverage"] == 1.0
     assert vendor_component["min_mapping_coverage"] == 1.0
     assert int(vendor_component["unique_mapping_drafts"]) == 1
+
+
+def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batch(tmp_path):
+    paths = write_inputs(tmp_path, "arrow_money")
+    out_dir = tmp_path / "proof"
+    reused_input = paths["input"][0]
+
+    code = main(
+        [
+            "pipeline-broker-vendor-readiness",
+            "--input",
+            str(reused_input),
+            str(reused_input),
+            "--out",
+            str(out_dir),
+            "--label",
+            "day1",
+            "--label",
+            "day1_copy",
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-rows",
+            "2",
+            "--schema-audit",
+            str(paths["schema"]),
+            "--order-export",
+            str(paths["export"]),
+            "--upload-pack",
+            str(paths["upload"]),
+            "--dispatch-roundtrip",
+            str(paths["roundtrip"]),
+            "--allow-placeholder-schema",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_vendor_data_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_vendor_data_readiness_checks.csv")
+    config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "failed_checks"]) == len(failed)
+    assert {
+        "vendor_batch_ready",
+        "broker_readiness_ready",
+        "broker_vendor_data_ready",
+        "failed_components",
+        "unique_source_files",
+        "comparison_accepted",
+    } <= failed
+    assert config["failed_check_count"] == len(failed)
+    assert set(config["failed_checks"]) == failed
 
 
 def test_cli_broker_vendor_data_readiness_output_feeds_launch_cli(tmp_path):
