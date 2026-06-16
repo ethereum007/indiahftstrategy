@@ -2243,6 +2243,11 @@ If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker
 gate.
+If the shadow-session comparison carried broker vendor-data wrapper proof,
+scale-up retains `shadow_broker_vendor_data_readiness_*` fields and a nested
+`shadow_broker_readiness.broker_vendor_data_readiness` config block, and fails
+closed when the comparison-level Arrow.money/iRage wrapper proof is partial,
+unready, or has failed checks.
 `manifest.json` fingerprints the resolved evidence, shadow-comparison, launch,
 launch-pipeline, proof-refresh, metadata, data-readiness, data-readiness
 comparison, exposure, route-readiness, broker-readiness summary CSVs, and

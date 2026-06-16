@@ -676,7 +676,9 @@
   `broker_vendor_data_readiness_*` fields and fails closed when the
   Arrow.money/iRage wrapper proof is unready or has failed checks. Shadow
   comparison now aggregates the same wrapper fields and blocks promotion when
-  accepted broker-readiness sessions lose or fail that proof.
+  accepted broker-readiness sessions lose or fail that proof. Scale-up now
+  retains and enforces that shadow-comparison wrapper aggregate before
+  promotion.
   Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
@@ -693,7 +695,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 845 tests.
+Current passing suite: 846 tests.
 
 ## Next Build Targets
 

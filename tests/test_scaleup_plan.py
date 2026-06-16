@@ -33,6 +33,10 @@ def shadow_summary(
     proof_refresh_mixed_identity_sessions=0,
     broker_readiness_sessions=0,
     broker_readiness_ready_sessions=None,
+    broker_vendor_data_readiness_sessions=0,
+    broker_vendor_data_readiness_provided_sessions=None,
+    broker_vendor_data_readiness_ready_sessions=None,
+    max_broker_vendor_data_readiness_failed_checks=0,
     broker_adapter="",
     broker_adapter_count=0,
     missing_broker_adapter_sessions=0,
@@ -63,6 +67,10 @@ def shadow_summary(
         proof_refresh_ready_sessions = proof_refresh_sessions
     if broker_readiness_ready_sessions is None:
         broker_readiness_ready_sessions = broker_readiness_sessions
+    if broker_vendor_data_readiness_provided_sessions is None:
+        broker_vendor_data_readiness_provided_sessions = broker_vendor_data_readiness_sessions
+    if broker_vendor_data_readiness_ready_sessions is None:
+        broker_vendor_data_readiness_ready_sessions = broker_vendor_data_readiness_sessions
     if broker_route_readiness_required_sessions is None:
         broker_route_readiness_required_sessions = broker_route_readiness_sessions
     if broker_route_readiness_provided_sessions is None:
@@ -96,6 +104,14 @@ def shadow_summary(
                 "proof_refresh_market": proof_refresh_market,
                 "broker_readiness_sessions": broker_readiness_sessions,
                 "broker_readiness_ready_sessions": broker_readiness_ready_sessions,
+                "broker_vendor_data_readiness_sessions": broker_vendor_data_readiness_sessions,
+                "broker_vendor_data_readiness_provided_sessions": (
+                    broker_vendor_data_readiness_provided_sessions
+                ),
+                "broker_vendor_data_readiness_ready_sessions": broker_vendor_data_readiness_ready_sessions,
+                "max_broker_vendor_data_readiness_failed_checks": (
+                    max_broker_vendor_data_readiness_failed_checks
+                ),
                 "broker_adapter": broker_adapter,
                 "broker_adapter_count": broker_adapter_count,
                 "missing_broker_adapter_sessions": missing_broker_adapter_sessions,
@@ -963,6 +979,7 @@ def test_scaleup_plan_carries_shadow_broker_readiness_proof():
         shadow_comparison_summary=shadow_summary(
             True,
             broker_readiness_sessions=2,
+            broker_vendor_data_readiness_sessions=2,
             broker_adapter="arrow_money",
             broker_adapter_count=1,
             broker_route_readiness_sessions=2,
@@ -982,9 +999,11 @@ def test_scaleup_plan_carries_shadow_broker_readiness_proof():
 
     assert report.ready
     assert report.summary.iloc[0]["shadow_broker_readiness_sessions"] == 2
+    assert report.summary.iloc[0]["shadow_broker_vendor_data_readiness_ready_sessions"] == 2
     assert report.summary.iloc[0]["shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["shadow_broker_dispatch_roundtrip_scenario_count"] == 1
     assert report.config["shadow_broker_readiness"]["sessions"] == 2
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
     assert report.config["shadow_broker_readiness"]["adapter"] == "arrow_money"
     assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
     assert report.config["shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
@@ -1000,6 +1019,10 @@ def test_scaleup_plan_blocks_bad_shadow_broker_readiness_proof():
             True,
             broker_readiness_sessions=1,
             broker_readiness_ready_sessions=0,
+            broker_vendor_data_readiness_sessions=1,
+            broker_vendor_data_readiness_provided_sessions=1,
+            broker_vendor_data_readiness_ready_sessions=0,
+            max_broker_vendor_data_readiness_failed_checks=1,
             broker_adapter="",
             broker_adapter_count=2,
             missing_broker_adapter_sessions=1,
@@ -1030,6 +1053,8 @@ def test_scaleup_plan_blocks_bad_shadow_broker_readiness_proof():
     assert {
         "shadow_broker_readiness_present_for_accepted_sessions",
         "shadow_broker_readiness_ready",
+        "shadow_broker_vendor_data_readiness_ready",
+        "shadow_broker_vendor_data_readiness_failed_checks",
         "shadow_broker_adapter_consistent",
         "shadow_broker_route_readiness_ready",
         "shadow_broker_route_readiness_strategy_matches",
@@ -1049,6 +1074,32 @@ def test_scaleup_plan_blocks_bad_shadow_broker_readiness_proof():
     } <= failed
     assert report.summary.iloc[0]["shadow_broker_route_readiness_strategy"] == "surface_mm"
     assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
+
+
+def test_scaleup_plan_blocks_partial_shadow_broker_vendor_data_readiness():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(
+            True,
+            broker_readiness_sessions=2,
+            broker_vendor_data_readiness_sessions=1,
+            broker_vendor_data_readiness_provided_sessions=1,
+            broker_vendor_data_readiness_ready_sessions=1,
+            broker_adapter="arrow_money",
+            broker_adapter_count=1,
+        ),
+        launch_summary=launch_summary(True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "shadow_broker_vendor_data_readiness_provided",
+        "shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    assert report.summary.iloc[0]["shadow_broker_vendor_data_readiness_sessions"] == 1
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["provided_sessions"] == 1
 
 
 def test_scaleup_plan_accepts_required_instrument_metadata():
