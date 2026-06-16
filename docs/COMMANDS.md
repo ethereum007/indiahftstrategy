@@ -2958,10 +2958,14 @@ ack gate preserves it as
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` config block. When
 `ack_broker_dispatch_roundtrip_vendor_market_data_batch` is present alongside
 dispatch- or route-retained broker vendor-data blocks, the ack gate prefers the
-ack-stage block. For older or thin dispatch configs, the ack gate can also
-follow the dispatch manifest to the route-enable and cutover manifests to
-hydrate missing broker vendor-data proof from the recorded
-`broker_readiness_config` sidecar before preserving it. The
+ack-stage block. If the dispatch config retained broker-vendor wrapper
+readiness, the ack gate carries it as `ack_broker_vendor_data_readiness_*`
+fields plus `ack_broker_vendor_data_readiness` config, and fails closed when
+the wrapper is not ready or has failed checks even if the nested vendor batch is
+valid. For older or thin dispatch configs, the ack gate can also follow the
+dispatch manifest to the route-enable and cutover manifests to hydrate missing
+broker vendor-data proof and wrapper readiness from the recorded
+`broker_readiness_config` sidecar before preserving them. The
 manifest fingerprints the exact dispatch summary, dispatch orders, dispatch
 config, dispatch manifest when present, and broker acknowledgement log files
 used in the reconciliation.
@@ -3329,7 +3333,8 @@ enable can inherit scale-up-carried broker/vendor proof, and route-enable
 applies it again before broker dispatch can inherit cutover-carried proof.
 Broker dispatch planning applies the same gate before sender packets can
 inherit route-enable-carried proof, and broker dispatch send applies it again
-before request packets can advance.
+before request packets can advance. Broker dispatch ack applies it again before
+accepted acknowledgement evidence can advance.
 
 ## Order Staging
 
