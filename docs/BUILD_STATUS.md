@@ -647,7 +647,10 @@
   ack evidence can advance. Final round-trip gates now carry and reconcile the
   same identity, coverage, and mapping-draft provenance across dispatch/send/ack
   before scale-up can inherit it, including both generic and
-  broker-readiness-prefixed vendor proof paths.
+  broker-readiness-prefixed vendor proof paths. Scale-up now carries the same
+  coverage/provenance fields into its plan, summary, config, and broker-readiness
+  sidecar hydration, and blocks scale-up when that broker/vendor proof is
+  incomplete.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
