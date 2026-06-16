@@ -514,6 +514,9 @@
   infers tick/chain/order/fill shape, scores normalized mapping coverage, and
   emits a reviewed-mapping draft plus source/header/mapping fingerprints for
   market-data normalization.
+- Vendor CSV intake now fails closed when automatic kind detection is
+  ambiguous, for example when a broker file can be interpreted equally well as
+  orders or fills, and requires an explicit `--kind` before normalization.
 - Broker integration readiness report that combines schema audit, broker order
   export, mapping draft, mapped orders, upload pack, optional halt export, and
   optional reconciliation/runtime-session/resume-gate/dispatch-roundtrip
@@ -629,7 +632,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 809 tests.
+Current passing suite: 811 tests.
 
 ## Next Build Targets
 

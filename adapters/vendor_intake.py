@@ -209,8 +209,8 @@ def _kind_scores(candidates: pd.DataFrame, config: VendorCsvIntakeConfig) -> pd.
     if scores.empty:
         return scores
     scores = scores.sort_values(
-        ["ready", "mapping_coverage", "mapped_columns", "exact_columns", "kind"],
-        ascending=[False, False, False, False, True],
+        ["ready", "mapping_coverage", "mapped_columns", "exact_columns", "alias_columns", "kind"],
+        ascending=[False, False, False, False, False, True],
         kind="mergesort",
     )
     return scores.reset_index(drop=True)
@@ -244,7 +244,9 @@ def _summary(
 ) -> pd.DataFrame:
     best = kind_scores.iloc[0]
     unmapped = int(best["unmapped_required_columns"])
-    ready = bool(best["ready"])
+    ambiguous_kinds = _top_ambiguous_kinds(kind_scores, config)
+    ambiguous = len(ambiguous_kinds) > 1
+    ready = bool(best["ready"]) and not ambiguous
     return pd.DataFrame(
         [
             {
@@ -261,12 +263,17 @@ def _summary(
                 "source_columns": int(len(columns)),
                 "required_columns": int(best["required_columns"]),
                 "mapped_columns": int(best["mapped_columns"]),
+                "exact_columns": int(best["exact_columns"]),
+                "alias_columns": int(best["alias_columns"]),
                 "unmapped_required_columns": unmapped,
                 "mapping_coverage": float(best["mapping_coverage"]),
                 "min_mapping_coverage": float(config.min_mapping_coverage),
+                "kind_selection": _kind_selection(config, ambiguous),
+                "selected_kind_ambiguous": ambiguous,
+                "ambiguous_kinds": ";".join(ambiguous_kinds),
                 "output_mapping_file": config.output_mapping_file,
                 "mapping_draft_sha256": "",
-                "recommendation": "review_mapping_then_normalize" if ready else "complete_vendor_mapping_before_research",
+                "recommendation": _recommendation(ready, ambiguous),
                 "unmapped_normalized_columns": ";".join(
                     mapping_draft.loc[
                         mapping_draft["source_column"].astype(str) == "",
@@ -276,6 +283,36 @@ def _summary(
             }
         ]
     )
+
+
+def _top_ambiguous_kinds(kind_scores: pd.DataFrame, config: VendorCsvIntakeConfig) -> list[str]:
+    if config.kind.strip().lower().replace("-", "_") != "auto" or kind_scores.empty:
+        return []
+    top = kind_scores.iloc[0]
+    score_columns = [
+        "ready",
+        "mapping_coverage",
+        "mapped_columns",
+        "exact_columns",
+        "alias_columns",
+        "unmapped_required_columns",
+    ]
+    tied = kind_scores.copy()
+    for column in score_columns:
+        tied = tied.loc[tied[column] == top[column]]
+    return [str(kind) for kind in tied["kind"]]
+
+
+def _kind_selection(config: VendorCsvIntakeConfig, ambiguous: bool) -> str:
+    if config.kind.strip().lower().replace("-", "_") != "auto":
+        return "explicit"
+    return "ambiguous" if ambiguous else "auto_unique"
+
+
+def _recommendation(ready: bool, ambiguous: bool) -> str:
+    if ambiguous:
+        return "set_vendor_kind_explicitly_before_normalizing"
+    return "review_mapping_then_normalize" if ready else "complete_vendor_mapping_before_research"
 
 
 def _source_profile(

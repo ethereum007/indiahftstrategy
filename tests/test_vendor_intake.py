@@ -98,6 +98,63 @@ def test_write_vendor_intake_outputs_manifest_and_fill_mapping(tmp_path):
     assert manifest["extra"]["source_profile"]["header_sha256"] == source_profile["header_sha256"]
 
 
+def test_vendor_intake_fails_closed_when_auto_kind_is_ambiguous():
+    sample = pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "ts_sent_ns": 1_780_000_000_000_000_000,
+                "ts_fill_ns": 1_780_000_001_000_000_000,
+                "side": "BUY",
+                "qty": 75,
+                "price": 10.5,
+            }
+        ]
+    )
+
+    report = profile_vendor_csv(
+        sample,
+        config=VendorCsvIntakeConfig(adapter="arrow_money", kind="auto"),
+    )
+
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert bool(summary["selected_kind_ambiguous"])
+    assert summary["kind_selection"] == "ambiguous"
+    assert set(summary["ambiguous_kinds"].split(";")) == {"orders", "fills"}
+    assert summary["recommendation"] == "set_vendor_kind_explicitly_before_normalizing"
+
+
+def test_vendor_intake_allows_explicit_kind_for_ambiguous_order_fill_file():
+    sample = pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "ts_sent_ns": 1_780_000_000_000_000_000,
+                "ts_fill_ns": 1_780_000_001_000_000_000,
+                "side": "BUY",
+                "qty": 75,
+                "price": 10.5,
+            }
+        ]
+    )
+
+    report = profile_vendor_csv(
+        sample,
+        config=VendorCsvIntakeConfig(adapter="arrow_money", kind="orders"),
+    )
+
+    summary = report.summary.iloc[0]
+    mapping = report.mapping_draft.set_index("normalized_column")
+    assert report.ready
+    assert summary["best_kind"] == "orders"
+    assert summary["kind_selection"] == "explicit"
+    assert not bool(summary["selected_kind_ambiguous"])
+    assert mapping.loc["ts_sent_ns", "source_column"] == "ts_sent_ns"
+
+
 def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):
     sample = pd.DataFrame([{"exchange_ts": "2026-06-10 09:15:00", "best_bid": 100.0}])
     sample_path = tmp_path / "partial_ticks.csv"
