@@ -2890,13 +2890,19 @@ the sender packet preserves the dataset/header/mapping proof as
 retained broker-readiness final dispatch round-trip vendor market-data batch
 proof, the sender packet preserves it as
 `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` config block. When
+`dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` config block. If
+the dispatch config retained broker-vendor wrapper readiness, the sender packet
+carries it as `dispatch_broker_vendor_data_readiness_*` fields plus
+`dispatch_broker_vendor_data_readiness` config, and fails closed when the
+wrapper is not ready or has failed checks even if the nested vendor batch itself
+is valid. When
 both `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch` and
 `route_broker_dispatch_roundtrip_vendor_market_data_batch` blocks are present,
 the sender packet prefers the dispatch-native block. The
 sender can also follow the dispatch manifest to the route-enable and cutover
 manifests to hydrate missing broker vendor-data proof from the recorded
-`broker_readiness_config` sidecar before preserving it.
+`broker_readiness_config` sidecar before preserving it, including the wrapper
+readiness gate.
 manifest fingerprints the exact dispatch
 summary, dispatch orders, dispatch config, and dispatch manifest when present
 consumed by the sender packet.
@@ -3322,7 +3328,8 @@ otherwise valid. Cutover applies the same wrapper readiness gate before route
 enable can inherit scale-up-carried broker/vendor proof, and route-enable
 applies it again before broker dispatch can inherit cutover-carried proof.
 Broker dispatch planning applies the same gate before sender packets can
-inherit route-enable-carried proof.
+inherit route-enable-carried proof, and broker dispatch send applies it again
+before request packets can advance.
 
 ## Order Staging
 

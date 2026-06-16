@@ -400,6 +400,23 @@ def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series
         broker_vendor_market_data_batch,
         broker_vendor_market_data_batch_prefix,
     ) = _broker_vendor_market_data_batch_source(config)
+    (
+        broker_vendor_data_readiness,
+        broker_vendor_data_readiness_prefix,
+    ) = _broker_vendor_data_readiness_source(config)
+    if broker_vendor_data_readiness:
+        _apply_broker_vendor_data_readiness_config(
+            state,
+            broker_vendor_data_readiness,
+            field_prefix="dispatch_broker_vendor_data_readiness",
+            fallback_prefix=broker_vendor_data_readiness_prefix,
+        )
+    else:
+        _copy_broker_vendor_data_readiness_fields(
+            state,
+            source_prefix=broker_vendor_data_readiness_prefix,
+            field_prefix="dispatch_broker_vendor_data_readiness",
+        )
     if broker_vendor_market_data_batch:
         _apply_vendor_market_data_batch_config(
             state,
@@ -444,30 +461,82 @@ def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dic
     )
 
 
+def _broker_vendor_data_readiness_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    candidates: list[tuple[object, str]] = [
+        (config.get("dispatch_broker_vendor_data_readiness"), "dispatch_broker_vendor_data_readiness"),
+        (config.get("route_broker_vendor_data_readiness"), "route_broker_vendor_data_readiness"),
+        (config.get("cutover_broker_vendor_data_readiness"), "cutover_broker_vendor_data_readiness"),
+        (config.get("scaleup_broker_vendor_data_readiness"), "scaleup_broker_vendor_data_readiness"),
+        (config.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness"),
+    ]
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    if isinstance(broker_readiness, dict):
+        candidates.append(
+            (broker_readiness.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness")
+        )
+        broker_dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
+        if isinstance(broker_dispatch, dict):
+            candidates.append(
+                (broker_dispatch.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness")
+            )
+    dispatch = config.get("dispatch_roundtrip", {}) or {}
+    if isinstance(dispatch, dict):
+        candidates.append(
+            (dispatch.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness")
+        )
+    for candidate, source in candidates:
+        if isinstance(candidate, dict) and _broker_vendor_data_readiness_source_active(candidate):
+            return candidate, source
+    return {}, "route_broker_vendor_data_readiness"
+
+
+def _broker_vendor_data_readiness_source_active(readiness: object) -> bool:
+    if not isinstance(readiness, dict) or not readiness:
+        return False
+    return bool(
+        _to_bool(readiness.get("provided", True))
+        or _to_bool(readiness.get("ready", False))
+        or _broker_vendor_data_readiness_failed_checks(readiness) > 0
+    )
+
+
 def _with_broker_readiness_config_vendor_market_data_batch(
     dispatch_config: dict[str, Any],
     broker_readiness_config: dict[str, Any],
 ) -> dict[str, Any]:
     vendor, _source = _broker_vendor_market_data_batch_source(dispatch_config)
-    if vendor_market_data_batch_source_active(vendor):
-        return dispatch_config
     dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
-    if not isinstance(dispatch, dict):
-        return dispatch_config
-    vendor, _source = select_vendor_market_data_batch_source(
-        dispatch,
-        (
-            "broker_dispatch_roundtrip_vendor_market_data_batch",
-            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
-            "vendor_market_data_batch",
-            "roundtrip_vendor_market_data_batch",
-        ),
-        default_source="broker_dispatch_roundtrip_vendor_market_data_batch",
+    if isinstance(dispatch, dict):
+        sidecar_vendor, _source = select_vendor_market_data_batch_source(
+            dispatch,
+            (
+                "broker_dispatch_roundtrip_vendor_market_data_batch",
+                "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+                "vendor_market_data_batch",
+                "roundtrip_vendor_market_data_batch",
+            ),
+            default_source="broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+    else:
+        sidecar_vendor = {}
+    should_hydrate_vendor = (
+        not vendor_market_data_batch_source_active(vendor)
+        and vendor_market_data_batch_source_active(sidecar_vendor)
     )
-    if not vendor_market_data_batch_source_active(vendor):
+    existing_readiness, _readiness_source = _broker_vendor_data_readiness_source(dispatch_config)
+    sidecar_readiness, _sidecar_readiness_source = _broker_vendor_data_readiness_source(broker_readiness_config)
+    should_hydrate_readiness = (
+        not _broker_vendor_data_readiness_source_active(existing_readiness)
+        and _broker_vendor_data_readiness_source_active(sidecar_readiness)
+    )
+    if not should_hydrate_vendor and not should_hydrate_readiness:
         return dispatch_config
+
     out = dict(dispatch_config)
-    out["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(vendor)
+    if should_hydrate_vendor:
+        out["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(sidecar_vendor)
+    if should_hydrate_readiness:
+        out["route_broker_vendor_data_readiness"] = dict(sidecar_readiness)
     return out
 
 
@@ -608,6 +677,50 @@ def _copy_vendor_market_data_batch_fields(
         "datasets_json",
     ):
         state[f"{field_prefix}_{suffix}"] = state.get(f"{source_prefix}_{suffix}", "")
+
+
+def _apply_broker_vendor_data_readiness_config(
+    state: pd.Series,
+    readiness: dict[str, Any],
+    *,
+    field_prefix: str,
+    fallback_prefix: str,
+) -> None:
+    active_config = _broker_vendor_data_readiness_source_active(readiness)
+    state[f"{field_prefix}_provided"] = _to_bool(
+        readiness.get("provided", state.get(f"{fallback_prefix}_provided", active_config))
+    )
+    state[f"{field_prefix}_ready"] = _to_bool(
+        readiness.get("ready", state.get(f"{fallback_prefix}_ready", False))
+    )
+    state[f"{field_prefix}_failed_checks"] = _broker_vendor_data_readiness_failed_checks(
+        readiness,
+        fallback=_number(state, f"{fallback_prefix}_failed_checks", 0.0),
+    )
+
+
+def _copy_broker_vendor_data_readiness_fields(
+    state: pd.Series,
+    *,
+    source_prefix: str,
+    field_prefix: str,
+) -> None:
+    state[f"{field_prefix}_provided"] = state.get(f"{source_prefix}_provided", False)
+    state[f"{field_prefix}_ready"] = state.get(f"{source_prefix}_ready", False)
+    state[f"{field_prefix}_failed_checks"] = state.get(f"{source_prefix}_failed_checks", 0)
+
+
+def _broker_vendor_data_readiness_failed_checks(
+    readiness: dict[str, Any],
+    *,
+    fallback: float = 0.0,
+) -> int:
+    failed_checks = readiness.get("failed_checks")
+    if isinstance(failed_checks, list):
+        return len(failed_checks)
+    if failed_checks not in (None, ""):
+        return int(_number_value(failed_checks, fallback))
+    return int(_number_value(readiness.get("failed_check_count", fallback), fallback))
 
 
 def _apply_shadow_broker_readiness_config(
@@ -907,6 +1020,14 @@ def _checks(
             [
                 checks,
                 pd.DataFrame(_route_broker_shadow_broker_readiness_checks(dispatch_summary)),
+            ],
+            ignore_index=True,
+        )
+    if _broker_vendor_data_readiness_active(dispatch_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_broker_vendor_data_readiness_checks(dispatch_summary)),
             ],
             ignore_index=True,
         )
@@ -1313,6 +1434,45 @@ def _vendor_market_data_batch_active(dispatch_summary: pd.Series) -> bool:
     )
 
 
+def _broker_vendor_data_readiness_active(dispatch_summary: pd.Series) -> bool:
+    prefix = "dispatch_broker_vendor_data_readiness"
+    return bool(
+        _to_bool(dispatch_summary.get(f"{prefix}_provided", False))
+        or _to_bool(dispatch_summary.get(f"{prefix}_ready", False))
+        or int(_number(dispatch_summary, f"{prefix}_failed_checks", 0.0)) > 0
+    )
+
+
+def _broker_vendor_data_readiness_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
+    prefix = "dispatch_broker_vendor_data_readiness"
+    return [
+        _check(
+            f"{prefix}_provided",
+            _to_bool(dispatch_summary.get(f"{prefix}_provided", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get(f"{prefix}_provided", False)),
+            "dispatch broker-vendor readiness wrapper proof is active but not marked provided",
+        ),
+        _check(
+            f"{prefix}_ready",
+            _to_bool(dispatch_summary.get(f"{prefix}_ready", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get(f"{prefix}_ready", False)),
+            "dispatch broker-vendor readiness wrapper proof is not ready",
+        ),
+        _check(
+            f"{prefix}_failed_checks",
+            int(_number(dispatch_summary, f"{prefix}_failed_checks", 0.0)),
+            "<=",
+            0,
+            int(_number(dispatch_summary, f"{prefix}_failed_checks", 0.0)) <= 0,
+            "dispatch broker-vendor readiness wrapper proof has failed checks",
+        ),
+    ]
+
+
 def _vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
     prefix = "dispatch_vendor_market_data_batch"
     manifest_run_type = _identity_key(dispatch_summary.get(f"{prefix}_manifest_run_type", ""))
@@ -1576,6 +1736,10 @@ def _summary(
                     dispatch_summary,
                     field_prefix="route_broker_shadow_broker",
                 ),
+                **_broker_vendor_data_readiness_summary_fields(
+                    dispatch_summary,
+                    field_prefix="dispatch_broker_vendor_data_readiness",
+                ),
                 **_vendor_market_data_batch_summary_fields(
                     dispatch_summary,
                     field_prefix="dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
@@ -1711,6 +1875,20 @@ def _vendor_market_data_batch_summary_fields(dispatch_summary: pd.Series, *, fie
     }
 
 
+def _broker_vendor_data_readiness_summary_fields(
+    dispatch_summary: pd.Series,
+    *,
+    field_prefix: str,
+) -> dict[str, object]:
+    return {
+        f"{field_prefix}_provided": _to_bool(dispatch_summary.get(f"{field_prefix}_provided", False)),
+        f"{field_prefix}_ready": _to_bool(dispatch_summary.get(f"{field_prefix}_ready", False)),
+        f"{field_prefix}_failed_checks": int(
+            _number(dispatch_summary, f"{field_prefix}_failed_checks", 0.0)
+        ),
+    }
+
+
 def _vendor_market_data_batch_config(summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
     return {
         "provided": _to_bool(summary[f"{field_prefix}_provided"]),
@@ -1736,6 +1914,14 @@ def _vendor_market_data_batch_config(summary: pd.Series, *, field_prefix: str) -
             "failed_checks": int(summary[f"{field_prefix}_comparison_failed_checks"]),
         },
         "datasets": _json_list(summary[f"{field_prefix}_datasets_json"]),
+    }
+
+
+def _broker_vendor_data_readiness_config(summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
+    return {
+        "provided": _to_bool(summary[f"{field_prefix}_provided"]),
+        "ready": _to_bool(summary[f"{field_prefix}_ready"]),
+        "failed_checks": int(summary[f"{field_prefix}_failed_checks"]),
     }
 
 
@@ -1811,6 +1997,10 @@ def _config(
         "route_broker_shadow_broker_readiness": _prefixed_shadow_broker_config(
             summary,
             field_prefix="route_broker_shadow_broker",
+        ),
+        "dispatch_broker_vendor_data_readiness": _broker_vendor_data_readiness_config(
+            summary,
+            field_prefix="dispatch_broker_vendor_data_readiness",
         ),
         "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
             summary,

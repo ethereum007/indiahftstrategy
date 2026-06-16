@@ -295,6 +295,14 @@ def vendor_market_data_batch_config(*, manifest_run_type="vendor_market_data_bat
     }
 
 
+def broker_vendor_data_readiness_config(*, provided=True, ready=True, failed_checks=0):
+    return {
+        "provided": provided,
+        "ready": ready,
+        "failed_checks": failed_checks,
+    }
+
+
 def dirty_vendor_market_data_batch_config():
     vendor = vendor_market_data_batch_config()
     vendor.update(
@@ -604,6 +612,37 @@ def test_broker_dispatch_send_carries_broker_vendor_market_data_batch():
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_dispatch_send_blocks_failed_broker_vendor_data_readiness():
+    config = dispatch_config()
+    config["route_broker_vendor_data_readiness"] = broker_vendor_data_readiness_config(
+        ready=False,
+        failed_checks=1,
+    )
+    config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_send_packet(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        dispatch_config=config,
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    readiness = report.config["dispatch_broker_vendor_data_readiness"]
+    assert {
+        "dispatch_broker_vendor_data_readiness_ready",
+        "dispatch_broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert summary["dispatch_broker_vendor_data_readiness_provided"]
+    assert not summary["dispatch_broker_vendor_data_readiness_ready"]
+    assert int(summary["dispatch_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert readiness["provided"]
+    assert not readiness["ready"]
+    assert readiness["failed_checks"] == 1
+    assert report.config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
 
 
 def test_broker_dispatch_send_prefers_dispatch_broker_vendor_market_data_batch():
@@ -1076,6 +1115,99 @@ def test_cli_broker_dispatch_send_hydrates_broker_vendor_data_from_manifest_chai
     assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+
+
+def test_cli_broker_dispatch_send_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    broker_config = dispatch / "broker_readiness_config.json"
+    cutover_manifest = dispatch / "cutover_manifest.json"
+    route_manifest = dispatch / "route_enable_manifest.json"
+    broker_config.write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "broker_vendor_data_readiness": broker_vendor_data_readiness_config(
+                    ready=False,
+                    failed_checks=1,
+                ),
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "live_dryrun",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cutover_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "cutover_gate",
+                "inputs": {
+                    "broker_readiness_config": {
+                        "path": str(broker_config),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    route_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "route_enable_packet",
+                "inputs": {
+                    "cutover_manifest": {
+                        "path": str(cutover_manifest),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "dispatch_send"
+
+    code = main(
+        [
+            "prepare-broker-dispatch-send",
+            "--dispatch",
+            str(dispatch),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_send_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_send_checks.csv")
+    config = json.loads((out_dir / "broker_dispatch_send_config.json").read_text(encoding="utf-8"))
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    readiness = config["dispatch_broker_vendor_data_readiness"]
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {
+        "dispatch_broker_vendor_data_readiness_ready",
+        "dispatch_broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert bool(summary.loc[0, "dispatch_broker_vendor_data_readiness_provided"])
+    assert not bool(summary.loc[0, "dispatch_broker_vendor_data_readiness_ready"])
+    assert int(summary.loc[0, "dispatch_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert readiness["provided"]
+    assert not readiness["ready"]
+    assert readiness["failed_checks"] == 1
+    assert config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
 
 
 def test_cli_broker_dispatch_send_fails_when_request_limit_breached(tmp_path):

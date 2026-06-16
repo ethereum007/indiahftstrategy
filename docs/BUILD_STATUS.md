@@ -588,9 +588,10 @@
   nested batch, and preserves them as
   `route_broker_vendor_data_readiness_*` and
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
-  non-submitting sender packet prefers its dispatch-native config block, hydrates missing proof
-  through the dispatch/route-enable/cutover manifest chain, and
-  preserves it as
+  non-submitting sender packet prefers its dispatch-native config block,
+  hydrates missing proof through the dispatch/route-enable/cutover manifest
+  chain, revalidates the wrapper and nested batch, and preserves them as
+  `dispatch_broker_vendor_data_readiness_*` and
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   acknowledgement reconciliation prefers its ack-stage config block, hydrates
   missing proof through the dispatch/route-enable/cutover manifest chain, and
@@ -656,11 +657,12 @@
   identity, source-file fingerprint coverage, mapping coverage, and
   mapping-draft provenance before send packets can inherit route-enable-carried
   proof.
-  Broker dispatch send now carries those coverage/provenance fields and
-  revalidates broker-readiness-prefixed vendor proof before non-submitting send
-  packets can inherit it. Acknowledgement now carries those coverage/provenance
-  fields and revalidates broker-readiness-prefixed vendor proof before accepted
-  ack evidence can advance. Final round-trip gates now carry and reconcile the
+  Broker dispatch send now carries that wrapper readiness state plus
+  coverage/provenance fields and revalidates broker-readiness-prefixed vendor
+  proof before non-submitting send packets can inherit it. Acknowledgement now
+  carries those coverage/provenance fields and revalidates
+  broker-readiness-prefixed vendor proof before accepted ack evidence can
+  advance. Final round-trip gates now carry and reconcile the
   same identity, coverage, and mapping-draft provenance across dispatch/send/ack
   before scale-up can inherit it, including both generic and
   broker-readiness-prefixed vendor proof paths. Scale-up now carries the same
@@ -679,7 +681,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 834 tests.
+Current passing suite: 836 tests.
 
 ## Next Build Targets
 
