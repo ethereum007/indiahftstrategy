@@ -3008,8 +3008,9 @@ consistent shadow broker-readiness proof across dispatch/send/ack configs, one
 consistent broker-readiness shadow broker proof across dispatch/send/ack
 configs, consistent vendor market-data batch provenance across component
 configs, consistent broker-readiness final dispatch round-trip vendor
-market-data proof across component configs, one request per dispatch order, and
-an accepted acknowledgement for every request.
+market-data proof across component configs, consistent broker-vendor wrapper
+readiness across component configs, one request per dispatch order, and an
+accepted acknowledgement for every request.
 `--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
 keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
@@ -3018,13 +3019,18 @@ summary/config retain the broker schema review status/mode, route-readiness
 proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`
 and `roundtrip_vendor_market_data_batch` reconciled from the component configs,
 plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
-from the broker-readiness component proof chain. If a component config carries
+from the broker-readiness component proof chain and
+`roundtrip_broker_vendor_data_readiness` reconciled from the wrapper proof
+chain. If a component config carries
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch`, the round-trip
 review prefers that block before falling back through ack-, dispatch-, and
-route-retained broker vendor-data blocks. For older or thin component configs,
-the round-trip review can also follow the dispatch manifest through the
-route-enable and cutover manifests to hydrate missing broker vendor-data proof
-from the recorded `broker_readiness_config` sidecar before enforcing component
+route-retained broker vendor-data blocks. If a component config carries
+broker-vendor wrapper readiness, the round-trip review fails closed when the
+wrapper is not ready or has failed checks even if the nested vendor batch is
+valid. For older or thin component configs, the round-trip review can also
+follow the dispatch manifest through the route-enable and cutover manifests to
+hydrate missing broker vendor-data proof and wrapper readiness from the
+recorded `broker_readiness_config` sidecar before enforcing component
 consistency.
 
 ## Calibration
@@ -3334,7 +3340,8 @@ applies it again before broker dispatch can inherit cutover-carried proof.
 Broker dispatch planning applies the same gate before sender packets can
 inherit route-enable-carried proof, and broker dispatch send applies it again
 before request packets can advance. Broker dispatch ack applies it again before
-accepted acknowledgement evidence can advance.
+accepted acknowledgement evidence can advance, and broker dispatch round-trip
+review applies it once more before the final dry-run proof can advance.
 
 ## Order Staging
 

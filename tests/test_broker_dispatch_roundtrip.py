@@ -549,6 +549,14 @@ def dirty_vendor_market_data_batch_config():
     return vendor
 
 
+def broker_vendor_data_readiness_config(*, provided=True, ready=True, failed_checks=0):
+    return {
+        "provided": provided,
+        "ready": ready,
+        "failed_checks": failed_checks,
+    }
+
+
 def write_inputs(tmp_path, *, missing_ack=False, route_readiness=True):
     dispatch = tmp_path / "dispatch"
     send = tmp_path / "send"
@@ -906,6 +914,53 @@ def test_broker_dispatch_roundtrip_carries_broker_vendor_market_data_batch():
     assert vendor_config["comparison"]["accepted"]
     assert len(vendor_config["datasets"]) == 2
     assert vendor_config["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_dispatch_roundtrip_blocks_failed_broker_vendor_data_readiness():
+    vendor = vendor_market_data_batch_config()
+    dispatch_config = route_enable_config()
+    dispatch_config["route_broker_vendor_data_readiness"] = broker_vendor_data_readiness_config()
+    dispatch_config["route_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    send_config = route_enable_config()
+    send_config["dispatch_broker_vendor_data_readiness"] = broker_vendor_data_readiness_config()
+    send_config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+    ack_config = route_enable_config()
+    ack_config["ack_broker_vendor_data_readiness"] = broker_vendor_data_readiness_config(
+        ready=False,
+        failed_checks=1,
+    )
+    ack_config["ack_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
+
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        dispatch_config=dispatch_config,
+        send_config=send_config,
+        ack_config=ack_config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    wrapper_config = report.config["roundtrip_broker_vendor_data_readiness"]
+    vendor_config = report.config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert {
+        "broker_vendor_data_readiness_ready",
+        "broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert bool(summary["roundtrip_broker_vendor_data_readiness_provided"])
+    assert not bool(summary["roundtrip_broker_vendor_data_readiness_ready"])
+    assert int(summary["roundtrip_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert wrapper_config["provided"]
+    assert not wrapper_config["ready"]
+    assert wrapper_config["failed_checks"] == 1
+    assert vendor_config["provided"]
+    assert vendor_config["ready"]
+    assert vendor_config["unique_mapping_drafts"] == 1
 
 
 def test_broker_dispatch_roundtrip_blocks_dirty_broker_vendor_market_data_batch():
@@ -1273,6 +1328,121 @@ def test_cli_broker_dispatch_roundtrip_hydrates_broker_vendor_data_from_manifest
     assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+
+
+def test_cli_broker_dispatch_roundtrip_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
+    dispatch, send, ack = write_inputs(tmp_path)
+    broker_config = dispatch / "broker_readiness_config.json"
+    cutover_manifest = dispatch / "cutover_manifest.json"
+    route_manifest = dispatch / "route_enable_manifest.json"
+    broker_config.write_text(
+        json.dumps(
+            {
+                "ready": False,
+                "adapter": "arrow_money",
+                "broker_vendor_data_readiness": broker_vendor_data_readiness_config(
+                    ready=False,
+                    failed_checks=1,
+                ),
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "live_dryrun",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cutover_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "cutover_gate",
+                "inputs": {
+                    "broker_readiness_config": {
+                        "path": str(broker_config),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    route_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "route_enable_packet",
+                "inputs": {
+                    "cutover_manifest": {
+                        "path": str(cutover_manifest),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (dispatch / "manifest.json").write_text(
+        json.dumps(
+            {
+                "run_type": "broker_dispatch_plan",
+                "inputs": {
+                    "route_enable_manifest": {
+                        "path": str(route_manifest),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "roundtrip"
+
+    code = main(
+        [
+            "review-broker-dispatch-roundtrip",
+            "--dispatch",
+            str(dispatch),
+            "--send",
+            str(send),
+            "--ack",
+            str(ack),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_roundtrip_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_roundtrip_checks.csv")
+    config = json.loads((out_dir / "broker_dispatch_roundtrip_config.json").read_text(encoding="utf-8"))
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    wrapper = config["roundtrip_broker_vendor_data_readiness"]
+    vendor = config["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert code == 2
+    assert not bool(summary.loc[0, "passed"])
+    assert {
+        "broker_vendor_data_readiness_ready",
+        "broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert bool(summary.loc[0, "roundtrip_broker_vendor_data_readiness_provided"])
+    assert not bool(summary.loc[0, "roundtrip_broker_vendor_data_readiness_ready"])
+    assert int(summary.loc[0, "roundtrip_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert wrapper["provided"]
+    assert not wrapper["ready"]
+    assert wrapper["failed_checks"] == 1
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["unique_mapping_drafts"] == 1
 
 
 def test_broker_dispatch_roundtrip_blocks_dirty_broker_shadow_broker_readiness():

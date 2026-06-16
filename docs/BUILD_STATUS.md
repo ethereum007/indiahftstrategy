@@ -599,7 +599,9 @@
   `ack_broker_vendor_data_readiness_*` and
   `ack_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and the final
   round-trip proof prefers its roundtrip-stage config block, hydrates missing
-  component proof through the dispatch/route-enable/cutover manifest chain, and reconciles it as
+  component proof through the dispatch/route-enable/cutover manifest chain,
+  revalidates the wrapper and nested batch, and reconciles them as
+  `roundtrip_broker_vendor_data_readiness_*` and
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker readiness prefers its readiness-native broker vendor-data config block
   when present, otherwise revalidates the roundtrip-stage block directly or
@@ -663,8 +665,9 @@
   proof before non-submitting send packets can inherit it. Acknowledgement now
   carries that wrapper readiness state plus coverage/provenance fields and
   revalidates broker-readiness-prefixed vendor proof before accepted ack
-  evidence can advance. Final round-trip gates now carry and reconcile the
-  same identity, coverage, and mapping-draft provenance across dispatch/send/ack
+  evidence can advance. Final round-trip gates now carry that wrapper readiness
+  state and reconcile the same identity, coverage, and mapping-draft provenance
+  across dispatch/send/ack
   before scale-up can inherit it, including both generic and
   broker-readiness-prefixed vendor proof paths. Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
@@ -682,7 +685,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 838 tests.
+Current passing suite: 840 tests.
 
 ## Next Build Targets
 
