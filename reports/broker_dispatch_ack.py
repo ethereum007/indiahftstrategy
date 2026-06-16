@@ -557,6 +557,20 @@ def _apply_vendor_market_data_batch_config(
             _number(state, f"{fallback_prefix}_unique_header_fingerprints", 0.0),
         )
     )
+    state[f"{field_prefix}_source_file_fingerprint_coverage"] = _number_value(
+        vendor.get("source_file_fingerprint_coverage"),
+        _number(state, f"{fallback_prefix}_source_file_fingerprint_coverage", 0.0),
+    )
+    state[f"{field_prefix}_min_mapping_coverage"] = _number_value(
+        vendor.get("min_mapping_coverage"),
+        _number(state, f"{fallback_prefix}_min_mapping_coverage", 0.0),
+    )
+    state[f"{field_prefix}_unique_mapping_drafts"] = int(
+        _number_value(
+            vendor.get("unique_mapping_drafts"),
+            _number(state, f"{fallback_prefix}_unique_mapping_drafts", 0.0),
+        )
+    )
     state[f"{field_prefix}_mapping_sources"] = _object_text(
         vendor.get("mapping_sources", state.get(f"{fallback_prefix}_mapping_sources", ""))
     )
@@ -596,6 +610,9 @@ def _copy_vendor_market_data_batch_fields(
         "ready_rate",
         "unique_source_files",
         "unique_header_fingerprints",
+        "source_file_fingerprint_coverage",
+        "min_mapping_coverage",
+        "unique_mapping_drafts",
         "mapping_sources",
         "comparison_accepted",
         "comparison_failed_checks",
@@ -1315,7 +1332,31 @@ def _broker_vendor_market_data_batch_checks(dispatch_summary: pd.Series) -> list
             "vendor_market_data_batch_pipeline",
             manifest_run_type == "vendor_market_data_batch_pipeline",
             "ack broker-readiness vendor market-data manifest is not a vendor batch pipeline proof",
-        )
+        ),
+        _check(
+            f"{prefix}_source_file_fingerprint_coverage",
+            _number(dispatch_summary, f"{prefix}_source_file_fingerprint_coverage", 0.0),
+            ">=",
+            1.0,
+            _number(dispatch_summary, f"{prefix}_source_file_fingerprint_coverage", 0.0) >= 1.0,
+            "ack broker-readiness vendor market-data batch has incomplete source-file fingerprint coverage",
+        ),
+        _check(
+            f"{prefix}_min_mapping_coverage",
+            _number(dispatch_summary, f"{prefix}_min_mapping_coverage", 0.0),
+            ">=",
+            1.0,
+            _number(dispatch_summary, f"{prefix}_min_mapping_coverage", 0.0) >= 1.0,
+            "ack broker-readiness vendor market-data batch has incomplete field mapping coverage",
+        ),
+        _check(
+            f"{prefix}_mapping_drafts",
+            int(_number(dispatch_summary, f"{prefix}_unique_mapping_drafts", 0.0)),
+            ">",
+            0,
+            int(_number(dispatch_summary, f"{prefix}_unique_mapping_drafts", 0.0)) > 0,
+            "ack broker-readiness vendor market-data batch is missing mapping draft provenance",
+        ),
     ]
 
 
@@ -1637,6 +1678,15 @@ def _vendor_market_data_batch_summary_fields(dispatch_summary: pd.Series, *, fie
         f"{field_prefix}_unique_header_fingerprints": int(
             _number(dispatch_summary, f"{field_prefix}_unique_header_fingerprints", 0.0)
         ),
+        f"{field_prefix}_source_file_fingerprint_coverage": _number(
+            dispatch_summary, f"{field_prefix}_source_file_fingerprint_coverage", 0.0
+        ),
+        f"{field_prefix}_min_mapping_coverage": _number(
+            dispatch_summary, f"{field_prefix}_min_mapping_coverage", 0.0
+        ),
+        f"{field_prefix}_unique_mapping_drafts": int(
+            _number(dispatch_summary, f"{field_prefix}_unique_mapping_drafts", 0.0)
+        ),
         f"{field_prefix}_mapping_sources": _text(dispatch_summary, f"{field_prefix}_mapping_sources"),
         f"{field_prefix}_comparison_accepted": _to_bool(
             dispatch_summary.get(f"{field_prefix}_comparison_accepted", False)
@@ -1662,6 +1712,11 @@ def _vendor_market_data_batch_config(summary: pd.Series, *, field_prefix: str) -
         "ready_rate": _jsonable(summary[f"{field_prefix}_ready_rate"]),
         "unique_source_files": int(summary[f"{field_prefix}_unique_source_files"]),
         "unique_header_fingerprints": int(summary[f"{field_prefix}_unique_header_fingerprints"]),
+        "source_file_fingerprint_coverage": _jsonable(
+            summary[f"{field_prefix}_source_file_fingerprint_coverage"]
+        ),
+        "min_mapping_coverage": _jsonable(summary[f"{field_prefix}_min_mapping_coverage"]),
+        "unique_mapping_drafts": int(summary[f"{field_prefix}_unique_mapping_drafts"]),
         "mapping_sources": _text(summary, f"{field_prefix}_mapping_sources"),
         "comparison": {
             "accepted": _to_bool(summary[f"{field_prefix}_comparison_accepted"]),

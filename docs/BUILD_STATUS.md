@@ -642,8 +642,10 @@
   mapping-draft provenance before send packets can inherit route-enable-carried proof.
   Broker dispatch send now carries those coverage/provenance fields and
   revalidates broker-readiness-prefixed vendor proof before non-submitting send
-  packets can inherit it. Acknowledgement and final round-trip gates now carry
-  and revalidate the same identity before scale-up can inherit it, including
+  packets can inherit it. Acknowledgement now carries those coverage/provenance
+  fields and revalidates broker-readiness-prefixed vendor proof before accepted
+  ack evidence can advance. Final round-trip gates now carry and revalidate the
+  same identity before scale-up can inherit it, including
   both generic and broker-readiness-prefixed vendor proof paths.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
