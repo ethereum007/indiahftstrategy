@@ -603,9 +603,9 @@
   revalidates the wrapper and nested batch, and reconciles them as
   `roundtrip_broker_vendor_data_readiness_*` and
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
-  broker readiness prefers its readiness-native broker vendor-data config block
-  when present, otherwise revalidates the roundtrip-stage block directly or
-  through normalized handoff fields, scale-up, cutover, route-enable, broker
+  broker readiness prefers its readiness-native broker vendor-data config
+  blocks when present, otherwise revalidates the roundtrip-stage wrapper and
+  nested batch directly or through normalized handoff fields, scale-up, cutover, route-enable, broker
   dispatch, broker dispatch send, broker dispatch ack, and the final
   round-trip gate accept those direct final proof prefixes and carry them into
   their stage-native broker vendor-data fields, and broker readiness can
@@ -669,7 +669,10 @@
   state and reconcile the same identity, coverage, and mapping-draft provenance
   across dispatch/send/ack
   before scale-up can inherit it, including both generic and
-  broker-readiness-prefixed vendor proof paths. Scale-up now carries the same
+  broker-readiness-prefixed vendor proof paths. Broker readiness now consumes
+  the final round-trip wrapper block directly, so a failed wrapper cannot be
+  masked when the final dry-run proof is reviewed for integration readiness.
+  Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
   incomplete.
@@ -685,7 +688,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 840 tests.
+Current passing suite: 842 tests.
 
 ## Next Build Targets
 

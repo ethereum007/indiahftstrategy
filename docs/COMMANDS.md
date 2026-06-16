@@ -2014,15 +2014,20 @@ If the round-trip config carries
 readiness revalidates the broker-readiness final dispatch batch proof and
 retains it as `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary
 fields plus `dispatch_roundtrip.broker_dispatch_roundtrip_vendor_market_data_batch`
-config. When both `broker_dispatch_roundtrip_vendor_market_data_batch` and
-older round-trip or component-retained broker vendor-data proof blocks are
-present, broker readiness prefers the readiness-native block and fails closed
-from that selected proof.
+config. If the round-trip config carries
+`roundtrip_broker_vendor_data_readiness`, broker readiness revalidates the
+wrapper and retains it as `broker_vendor_data_readiness_*` summary fields plus
+`dispatch_roundtrip.broker_vendor_data_readiness` config. When both
+readiness-native broker vendor-data blocks and older round-trip or
+component-retained broker vendor-data proof blocks are present, broker
+readiness prefers the readiness-native blocks and fails closed from that
+selected proof.
 `--require-dispatch-roundtrip` fails closed unless the dry-run
 dispatch plan, non-submitting send packet, acknowledgement reconciliation, and
 route proof chain passed as one round-trip proof with zero failed component
 checks, zero carried route-enable dispatch round-trip failed checks, and clean
-shadow broker-readiness and vendor market-data batch proofs when supplied.
+shadow broker-readiness, broker-vendor wrapper, and vendor market-data batch
+proofs when supplied.
 
 Outputs:
 
