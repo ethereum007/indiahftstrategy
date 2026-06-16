@@ -240,7 +240,8 @@
 - Multi-dataset data-readiness comparison gate that requires repeated clean
   market-data days before walk-forward research or strategy evidence review,
   and can fail closed when vendor-data folds do not come from distinct raw
-  source-file fingerprints or when source-fingerprint coverage is incomplete.
+  source-file fingerprints, when source-fingerprint coverage is incomplete, or
+  when any fold falls below the required mapping coverage.
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.
@@ -651,7 +652,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 823 tests.
+Current passing suite: 825 tests.
 
 ## Next Build Targets
 

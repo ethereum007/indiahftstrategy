@@ -120,6 +120,27 @@ def test_compare_data_readiness_can_require_source_fingerprint_coverage():
     assert "source_file_fingerprint_coverage" in failed
 
 
+def test_compare_data_readiness_can_require_min_mapping_coverage():
+    runs = readiness_runs()
+    runs.loc[0, "mapping_coverage"] = 1.0
+    runs.loc[1, "mapping_coverage"] = 0.8
+
+    report = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            min_ready_rate=1.0,
+            min_mapping_coverage=0.95,
+        ),
+    )
+
+    row = report.summary.iloc[0]
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert row["min_mapping_coverage"] == 0.8
+    assert "min_mapping_coverage" in failed
+
+
 def test_compare_data_readiness_fails_on_missing_ready_dataset():
     runs = readiness_runs()
     runs.loc[1, "ready"] = False
@@ -217,3 +238,34 @@ def test_cli_compare_data_readiness_can_fail_on_missing_source_fingerprint(tmp_p
     assert not bool(summary.loc[0, "accepted"])
     assert summary.loc[0, "source_file_fingerprint_coverage"] == 0.5
     assert "source_file_fingerprint_coverage" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_compare_data_readiness_can_fail_on_low_mapping_coverage(tmp_path):
+    day1 = tmp_path / "day1"
+    day2 = tmp_path / "day2"
+    out_dir = tmp_path / "comparison"
+    write_readiness_dir(day1, source_hash="a" * 64, mapping_coverage=1.0)
+    write_readiness_dir(day2, source_hash="d" * 64, mapping_coverage=0.8)
+
+    code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(out_dir),
+            "--min-datasets",
+            "2",
+            "--min-mapping-coverage",
+            "0.95",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "data_readiness_comparison_summary.csv")
+    checks = pd.read_csv(out_dir / "data_readiness_comparison_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "accepted"])
+    assert summary.loc[0, "min_mapping_coverage"] == 0.8
+    assert "min_mapping_coverage" in set(checks.loc[~checks["passed"].astype(bool), "check"])

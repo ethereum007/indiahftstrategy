@@ -17,6 +17,7 @@ class DataReadinessComparisonThresholds:
     max_total_failed_checks: int = 0
     min_unique_source_files: int | None = None
     min_source_file_fingerprint_coverage: float | None = None
+    min_mapping_coverage: float | None = None
 
 
 @dataclass(frozen=True)
@@ -200,6 +201,15 @@ def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd
                 thresholds.min_source_file_fingerprint_coverage,
             )
         )
+    if thresholds.min_mapping_coverage is not None:
+        checks.append(
+            _threshold_check(
+                "min_mapping_coverage",
+                row["min_mapping_coverage"],
+                ">=",
+                thresholds.min_mapping_coverage,
+            )
+        )
     return pd.DataFrame(checks)
 
 
@@ -244,6 +254,8 @@ def _validate_thresholds(thresholds: DataReadinessComparisonThresholds) -> None:
         and not 0 <= thresholds.min_source_file_fingerprint_coverage <= 1
     ):
         raise ValueError("min_source_file_fingerprint_coverage must be between 0 and 1")
+    if thresholds.min_mapping_coverage is not None and not 0 <= thresholds.min_mapping_coverage <= 1:
+        raise ValueError("min_mapping_coverage must be between 0 and 1")
 
 
 def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:

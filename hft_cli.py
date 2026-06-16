@@ -983,6 +983,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness_compare.add_argument("--max-total-failed-checks", type=int, default=0)
     data_readiness_compare.add_argument("--min-unique-source-files", type=int, default=None)
     data_readiness_compare.add_argument("--min-source-file-fingerprint-coverage", type=float, default=None)
+    data_readiness_compare.add_argument("--min-mapping-coverage", type=float, default=None)
     data_readiness_compare.add_argument("--fail-on-breach", action="store_true")
 
     instrument_metadata = sub.add_parser(
@@ -2819,6 +2820,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage
                 if args.min_source_file_fingerprint_coverage is not None
                 else 1.0,
+                min_mapping_coverage=args.min_mapping_coverage,
             ),
         )
         print(result.summary.to_string(index=False))
@@ -2873,6 +2875,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage
                 if args.min_source_file_fingerprint_coverage is not None
                 else 1.0,
+                min_mapping_coverage=args.min_mapping_coverage,
             ),
             broker_thresholds=BrokerReadinessThresholds(
                 adapter=args.adapter,
@@ -2958,6 +2961,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_total_failed_checks=args.max_total_failed_checks,
                 min_unique_source_files=args.min_unique_source_files,
                 min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage,
+                min_mapping_coverage=args.min_mapping_coverage,
             ),
         )
         print(result.summary.to_string(index=False))
