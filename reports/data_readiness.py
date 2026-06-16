@@ -267,8 +267,50 @@ def _checks(
                     "vendor intake kind does not match expected market-data kind",
                 )
             )
+    checks.extend(_data_kind_checks(summaries, thresholds))
     checks.extend(_adapter_checks(summaries, thresholds))
     return pd.DataFrame(checks)
+
+
+def _data_kind_checks(
+    summaries: dict[str, pd.DataFrame],
+    thresholds: DataReadinessThresholds,
+) -> list[dict[str, Any]]:
+    data_components = ["vendor_intake", "schema_audit", "mapped_data"]
+    provided = {
+        component: _component_kind(component, _overall_row(summaries[component]))
+        for component in data_components
+        if not summaries[component].empty
+    }
+    checks: list[dict[str, Any]] = []
+    expected_kind = _vendor_data_kind(thresholds.expected_vendor_data_kind)
+    if expected_kind:
+        for component, kind in provided.items():
+            if component == "vendor_intake":
+                continue
+            checks.append(
+                _check(
+                    f"{component}_kind_matches",
+                    kind,
+                    "==",
+                    expected_kind,
+                    bool(kind and kind == expected_kind),
+                    f"{component} kind does not match expected market-data kind",
+                )
+            )
+    if len(provided) > 1:
+        unique_kinds = sorted({kind for kind in provided.values() if kind})
+        checks.append(
+            _check(
+                "data_kind_consistency",
+                ";".join(unique_kinds),
+                "count",
+                1,
+                len(unique_kinds) == 1,
+                "vendor intake, schema audit, and mapped-data summaries use different data kinds",
+            )
+        )
+    return checks
 
 
 def _adapter_checks(
@@ -404,6 +446,8 @@ def _summary(
                 "data_adapters": _joined_component_values(items, "adapter"),
                 "data_adapter_count": _component_value_count(items, "adapter"),
                 "expected_vendor_data_kind": _vendor_data_kind(thresholds.expected_vendor_data_kind),
+                "data_kinds": _joined_component_kinds(items),
+                "data_kind_count": _component_kind_count(items),
                 "vendor_intake_kind": _component_text(items, "vendor_intake", "kind"),
                 "vendor_intake_kind_selection": _component_text(items, "vendor_intake", "kind_selection"),
                 "vendor_intake_selected_kind_ambiguous": _component_bool(
@@ -513,6 +557,31 @@ def _joined_component_values(items: pd.DataFrame, column: str) -> str:
 
 def _component_value_count(items: pd.DataFrame, column: str) -> int:
     values = _joined_component_values(items, column)
+    if not values:
+        return 0
+    return len(values.split(";"))
+
+
+def _component_kind(component: str, row: pd.Series) -> str:
+    if component == "vendor_intake":
+        return _vendor_data_kind(_text(row, "best_kind", fallback=_text(row, "kind")))
+    return _vendor_data_kind(_text(row, "kind"))
+
+
+def _joined_component_kinds(items: pd.DataFrame) -> str:
+    if items.empty or "component" not in items.columns or "kind" not in items.columns:
+        return ""
+    kinds = [
+        _vendor_data_kind(item.get("kind", ""))
+        for item in items.to_dict(orient="records")
+        if str(item.get("component", "")) in {"vendor_intake", "schema_audit", "mapped_data"}
+    ]
+    kinds = [kind for kind in kinds if kind]
+    return ";".join(sorted(set(kinds)))
+
+
+def _component_kind_count(items: pd.DataFrame) -> int:
+    values = _joined_component_kinds(items)
     if not values:
         return 0
     return len(values.split(";"))

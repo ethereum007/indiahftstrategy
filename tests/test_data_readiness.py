@@ -287,6 +287,50 @@ def test_data_readiness_blocks_mixed_vendor_adapters():
     assert int(summary["data_adapter_count"]) == 2
 
 
+def test_data_readiness_blocks_mixed_data_kinds():
+    intake = vendor_intake_summary(True)
+    mapped = mapped_data_summary(True)
+    mapped.loc[0, "kind"] = "chain"
+
+    report = evaluate_data_readiness(
+        vendor_intake_summary=intake,
+        mapped_data_summary=mapped,
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(
+            require_vendor_intake=True,
+            require_mapped_data=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "data_kind_consistency" in failed
+    assert summary["data_kinds"] == "chain;ticks"
+    assert int(summary["data_kind_count"]) == 2
+
+
+def test_data_readiness_checks_expected_kind_for_mapped_data():
+    mapped = mapped_data_summary(True)
+    mapped.loc[0, "kind"] = "fills"
+
+    report = evaluate_data_readiness(
+        mapped_data_summary=mapped,
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(
+            require_mapped_data=True,
+            expected_vendor_data_kind="ticks",
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "mapped_data_kind_matches" in failed
+    assert summary["expected_vendor_data_kind"] == "ticks"
+    assert summary["data_kinds"] == "fills"
+
+
 def test_data_readiness_blocks_nonportable_expected_pair():
     portability = build_market_portability_report(
         MarketPortabilityReportConfig(

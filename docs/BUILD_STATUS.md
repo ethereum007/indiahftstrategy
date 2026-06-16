@@ -224,6 +224,9 @@
 - Data readiness now checks adapter consistency across vendor intake, schema
   audit, and mapped-data summaries, and can enforce an expected Arrow.money or
   iRage adapter before research data is accepted.
+- Data readiness now also checks data-kind consistency across vendor intake,
+  schema audit, and mapped-data summaries, and applies expected tick/chain
+  kind checks to mapped-data and schema evidence, not only intake evidence.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
@@ -642,7 +645,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 816 tests.
+Current passing suite: 818 tests.
 
 ## Next Build Targets
 
