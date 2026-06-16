@@ -16,6 +16,7 @@ class DataReadinessComparisonThresholds:
     min_ready_rate: float = 1.0
     max_total_failed_checks: int = 0
     min_unique_source_files: int | None = None
+    min_source_file_fingerprint_coverage: float | None = None
 
 
 @dataclass(frozen=True)
@@ -190,6 +191,15 @@ def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd
                 thresholds.min_unique_source_files,
             )
         )
+    if thresholds.min_source_file_fingerprint_coverage is not None:
+        checks.append(
+            _threshold_check(
+                "source_file_fingerprint_coverage",
+                row["source_file_fingerprint_coverage"],
+                ">=",
+                thresholds.min_source_file_fingerprint_coverage,
+            )
+        )
     return pd.DataFrame(checks)
 
 
@@ -229,6 +239,11 @@ def _validate_thresholds(thresholds: DataReadinessComparisonThresholds) -> None:
         raise ValueError("max_total_failed_checks must be non-negative")
     if thresholds.min_unique_source_files is not None and thresholds.min_unique_source_files <= 0:
         raise ValueError("min_unique_source_files must be positive")
+    if (
+        thresholds.min_source_file_fingerprint_coverage is not None
+        and not 0 <= thresholds.min_source_file_fingerprint_coverage <= 1
+    ):
+        raise ValueError("min_source_file_fingerprint_coverage must be between 0 and 1")
 
 
 def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:

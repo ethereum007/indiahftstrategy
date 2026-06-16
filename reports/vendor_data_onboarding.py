@@ -247,6 +247,7 @@ def write_vendor_market_data_batch_pipeline(
         min_ready_rate=1.0,
         max_total_failed_checks=0,
         min_unique_source_files=len(paths),
+        min_source_file_fingerprint_coverage=1.0,
     )
     comparison = write_data_readiness_comparison(
         readiness_dirs,
@@ -424,6 +425,11 @@ def _batch_summary(
                 "failed_datasets": failed_datasets,
                 "ready_rate": float(ready_datasets / dataset_count) if dataset_count else 0.0,
                 "unique_source_files": _unique_count(datasets, "source_file_sha256"),
+                "source_file_fingerprint_coverage": _number(
+                    comparison_row,
+                    "source_file_fingerprint_coverage",
+                    fallback=0.0,
+                ),
                 "unique_header_fingerprints": _unique_count(datasets, "source_header_sha256"),
                 "mapping_sources": _joined_values(datasets, "mapping_source"),
                 "comparison_accepted": accepted,
@@ -534,6 +540,7 @@ def _batch_config(
         "failed_datasets": int(_number(row, "failed_datasets", fallback=0.0)),
         "ready_rate": _number(row, "ready_rate", fallback=0.0),
         "unique_source_files": int(_number(row, "unique_source_files", fallback=0.0)),
+        "source_file_fingerprint_coverage": _number(row, "source_file_fingerprint_coverage", fallback=0.0),
         "unique_header_fingerprints": int(_number(row, "unique_header_fingerprints", fallback=0.0)),
         "mapping_sources": _text(row, "mapping_sources"),
         "comparison": {

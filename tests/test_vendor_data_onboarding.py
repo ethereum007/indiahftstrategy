@@ -113,6 +113,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert report.ready
     assert summary["dataset_count"] == 2
     assert summary["unique_source_files"] == 2
+    assert summary["source_file_fingerprint_coverage"] == 1.0
     assert summary["unique_header_fingerprints"] == 1
     assert summary["mapping_sources"] == "vendor_intake_draft"
     assert summary["comparison_accepted"]
@@ -125,9 +126,11 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["ready"]
     assert config["dataset_count"] == 2
     assert config["unique_source_files"] == 2
+    assert config["source_file_fingerprint_coverage"] == 1.0
     assert config["unique_header_fingerprints"] == 1
     assert config["comparison"]["accepted"]
     assert config["comparison"]["thresholds"]["min_datasets"] == 2
+    assert config["comparison"]["thresholds"]["min_source_file_fingerprint_coverage"] == 1.0
     assert len(config["datasets"]) == 2
     assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()

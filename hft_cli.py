@@ -859,6 +859,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_market_data_batch.add_argument("--min-ready-rate", type=float, default=1.0)
     vendor_market_data_batch.add_argument("--max-total-failed-checks", type=int, default=0)
     vendor_market_data_batch.add_argument("--min-unique-source-files", type=int, default=None)
+    vendor_market_data_batch.add_argument("--min-source-file-fingerprint-coverage", type=float, default=None)
     vendor_market_data_batch.add_argument("--fail-on-breach", action="store_true")
 
     broker_vendor_data_readiness = sub.add_parser(
@@ -892,6 +893,7 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--min-ready-rate", type=float, default=1.0)
     broker_vendor_data_readiness.add_argument("--max-total-failed-checks", type=int, default=0)
     broker_vendor_data_readiness.add_argument("--min-unique-source-files", type=int, default=None)
+    broker_vendor_data_readiness.add_argument("--min-source-file-fingerprint-coverage", type=float, default=None)
     broker_vendor_data_readiness.add_argument("--schema-audit", default=None)
     broker_vendor_data_readiness.add_argument("--order-export", default=None)
     broker_vendor_data_readiness.add_argument("--mapping-draft", default=None)
@@ -980,6 +982,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness_compare.add_argument("--min-ready-rate", type=float, default=1.0)
     data_readiness_compare.add_argument("--max-total-failed-checks", type=int, default=0)
     data_readiness_compare.add_argument("--min-unique-source-files", type=int, default=None)
+    data_readiness_compare.add_argument("--min-source-file-fingerprint-coverage", type=float, default=None)
     data_readiness_compare.add_argument("--fail-on-breach", action="store_true")
 
     instrument_metadata = sub.add_parser(
@@ -2813,6 +2816,9 @@ def main(argv: list[str] | None = None) -> int:
                 min_unique_source_files=args.min_unique_source_files
                 if args.min_unique_source_files is not None
                 else input_count,
+                min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage
+                if args.min_source_file_fingerprint_coverage is not None
+                else 1.0,
             ),
         )
         print(result.summary.to_string(index=False))
@@ -2864,6 +2870,9 @@ def main(argv: list[str] | None = None) -> int:
                 min_unique_source_files=args.min_unique_source_files
                 if args.min_unique_source_files is not None
                 else input_count,
+                min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage
+                if args.min_source_file_fingerprint_coverage is not None
+                else 1.0,
             ),
             broker_thresholds=BrokerReadinessThresholds(
                 adapter=args.adapter,
@@ -2948,6 +2957,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_ready_rate=args.min_ready_rate,
                 max_total_failed_checks=args.max_total_failed_checks,
                 min_unique_source_files=args.min_unique_source_files,
+                min_source_file_fingerprint_coverage=args.min_source_file_fingerprint_coverage,
             ),
         )
         print(result.summary.to_string(index=False))
