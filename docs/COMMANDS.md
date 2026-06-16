@@ -3301,7 +3301,9 @@ handoff. The root summary/config also surfaces source-file fingerprint
 coverage, minimum mapping coverage, and mapping-draft provenance, so operators
 can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
-ready.
+ready. Launch and broker-readiness commands honor the wrapper root's own
+`broker_vendor_data_readiness_config.json`, so a failed wrapper root cannot be
+masked by a valid nested vendor batch.
 
 ## Order Staging
 

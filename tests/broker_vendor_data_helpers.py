@@ -11,6 +11,9 @@ def assert_broker_vendor_data_proof_forwarded(output_dir, *, readiness_subdir="0
     assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_manifest"]["path"]).endswith(
         "/broker_vendor_data/01_vendor_market_data_batch/manifest.json"
     )
+    assert path_tail(broker_manifest["inputs"]["broker_vendor_data_readiness_config"]["path"]).endswith(
+        "/broker_vendor_data/broker_vendor_data_readiness_config.json"
+    )
     pipeline_manifest = json.loads((output_dir / "manifest.json").read_text(encoding="utf-8"))
     assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
         "/broker_vendor_data"
@@ -146,7 +149,10 @@ def write_broker_vendor_data_proof(
                 "failed_datasets": 0,
                 "ready_rate": 1.0,
                 "unique_source_files": 2,
+                "source_file_fingerprint_coverage": 1.0,
+                "min_mapping_coverage": 1.0,
                 "unique_header_fingerprints": 1,
+                "unique_mapping_drafts": 1,
                 "mapping_sources": "vendor_intake_draft",
                 "comparison": {"accepted": True, "failed_checks": 0},
                 "datasets": [
@@ -178,7 +184,23 @@ def write_broker_vendor_data_proof(
         encoding="utf-8",
     )
     (path / "broker_vendor_data_readiness_config.json").write_text(
-        json.dumps({"ready": True, "adapter": adapter}, indent=2) + "\n",
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": adapter,
+                "failed_check_count": 0,
+                "failed_checks": [],
+                "vendor_market_data_batch": {
+                    "ready": True,
+                    "dataset_count": 2,
+                    "source_file_fingerprint_coverage": 1.0,
+                    "min_mapping_coverage": 1.0,
+                    "unique_mapping_drafts": 1,
+                },
+            },
+            indent=2,
+        )
+        + "\n",
         encoding="utf-8",
     )
     return path

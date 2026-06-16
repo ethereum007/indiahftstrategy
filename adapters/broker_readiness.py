@@ -123,6 +123,15 @@ def write_broker_readiness_report(
 ) -> BrokerReadinessReport:
     thresholds = thresholds or BrokerReadinessThresholds()
     _validate_thresholds(thresholds)
+    vendor_market_data_batch_root_dir = vendor_market_data_batch_dir
+    broker_vendor_data_readiness_config_path = _manifest_config_input(
+        vendor_market_data_batch_root_dir,
+        "broker_vendor_data_readiness_config.json",
+    )
+    broker_vendor_data_readiness_config = _read_optional_config(
+        vendor_market_data_batch_root_dir,
+        "broker_vendor_data_readiness_config.json",
+    )
     vendor_market_data_batch_dir = _resolve_vendor_market_data_batch_dir(vendor_market_data_batch_dir)
     dispatch_roundtrip_config_path = _manifest_config_input(
         dispatch_roundtrip_dir,
@@ -160,6 +169,8 @@ def write_broker_readiness_report(
         input_paths["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
     if vendor_market_data_batch_manifest_path is not None:
         input_paths["vendor_market_data_batch_manifest"] = vendor_market_data_batch_manifest_path
+    if broker_vendor_data_readiness_config_path is not None:
+        input_paths["broker_vendor_data_readiness_config"] = broker_vendor_data_readiness_config_path
     dispatch_roundtrip_config = _dispatch_roundtrip_config_with_vendor_market_data_batch(
         _read_optional_config(
             dispatch_roundtrip_dir,
@@ -169,6 +180,7 @@ def write_broker_readiness_report(
             vendor_market_data_batch_dir,
             "vendor_market_data_batch_config.json",
         ),
+        broker_vendor_data_readiness_config,
     )
     report = evaluate_broker_readiness(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
@@ -256,6 +268,18 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
                 route_enable.get("failed_checks"),
                 _number(frame.iloc[0], "route_enable_dispatch_roundtrip_failed_checks", 0.0),
             )
+        )
+    broker_vendor_data_readiness = config.get("broker_vendor_data_readiness", {}) or {}
+    if broker_vendor_data_readiness:
+        failed_checks = broker_vendor_data_readiness.get("failed_check_count")
+        if failed_checks is None:
+            failed_checks = len(broker_vendor_data_readiness.get("failed_checks", []) or [])
+        frame.loc[0, "broker_vendor_data_readiness_provided"] = True
+        frame.loc[0, "broker_vendor_data_readiness_ready"] = _to_bool(
+            broker_vendor_data_readiness.get("ready", False)
+        )
+        frame.loc[0, "broker_vendor_data_readiness_failed_checks"] = int(
+            _number_value(failed_checks, 0.0)
         )
     shadow_broker = config.get("shadow_broker_readiness", {}) or {}
     if shadow_broker:
@@ -678,6 +702,21 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
             _number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
         )
         if component == "dispatch_roundtrip" and provided
+        else 0,
+        "broker_vendor_data_readiness_provided": _dispatch_bool(
+            component,
+            row,
+            "broker_vendor_data_readiness_provided",
+        ),
+        "broker_vendor_data_readiness_ready": _dispatch_bool(
+            component,
+            row,
+            "broker_vendor_data_readiness_ready",
+        ),
+        "broker_vendor_data_readiness_failed_checks": int(
+            _number(row, "broker_vendor_data_readiness_failed_checks", 0.0)
+        )
+        if component == "dispatch_roundtrip"
         else 0,
         "route_readiness_required": _dispatch_bool(component, row, "route_readiness_required"),
         "route_readiness_provided": _dispatch_bool(component, row, "route_readiness_provided"),
@@ -1206,11 +1245,34 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
         if row.component == "dispatch_roundtrip" and (
             bool(row.provided) or bool(getattr(row, "vendor_market_data_batch_only", False))
         ):
+            if bool(getattr(row, "broker_vendor_data_readiness_provided", False)):
+                checks.extend(_broker_vendor_data_readiness_checks(row))
             if _dispatch_roundtrip_vendor_market_data_batch_active(row):
                 checks.extend(_dispatch_roundtrip_vendor_market_data_batch_checks(row))
             if _broker_dispatch_roundtrip_vendor_market_data_batch_active(row):
                 checks.extend(_broker_dispatch_roundtrip_vendor_market_data_batch_checks(row))
     return pd.DataFrame(checks)
+
+
+def _broker_vendor_data_readiness_checks(row: pd.Series) -> list[dict[str, Any]]:
+    return [
+        _check(
+            "broker_vendor_data_readiness_ready",
+            bool(row.broker_vendor_data_readiness_ready),
+            "is",
+            True,
+            bool(row.broker_vendor_data_readiness_ready),
+            "broker-vendor data readiness root is not ready",
+        ),
+        _check(
+            "broker_vendor_data_readiness_failed_checks",
+            int(row.broker_vendor_data_readiness_failed_checks),
+            "<=",
+            0,
+            int(row.broker_vendor_data_readiness_failed_checks) <= 0,
+            "broker-vendor data readiness root has failed checks",
+        ),
+    ]
 
 
 def _route_readiness_checks(row: pd.Series) -> list[dict[str, Any]]:
@@ -1891,6 +1953,17 @@ def _summary(
                 "route_enable_dispatch_roundtrip_failed_checks": int(
                     _number(dispatch_item, "route_enable_dispatch_roundtrip_failed_checks", 0.0)
                 ),
+                "broker_vendor_data_readiness_provided": _item_bool(
+                    dispatch_item,
+                    "broker_vendor_data_readiness_provided",
+                ),
+                "broker_vendor_data_readiness_ready": _item_bool(
+                    dispatch_item,
+                    "broker_vendor_data_readiness_ready",
+                ),
+                "broker_vendor_data_readiness_failed_checks": int(
+                    _number(dispatch_item, "broker_vendor_data_readiness_failed_checks", 0.0)
+                ),
                 "route_readiness_required": _item_bool(dispatch_item, "route_readiness_required"),
                 "route_readiness_provided": _item_bool(dispatch_item, "route_readiness_provided"),
                 "route_readiness_ready": _item_bool(dispatch_item, "route_readiness_ready"),
@@ -2232,6 +2305,11 @@ def _dispatch_roundtrip_config(row: pd.Series) -> dict[str, Any]:
         "failed_checks": int(_number(row, "dispatch_roundtrip_failed_checks", 0.0)),
         "route_enable_dispatch_roundtrip": {
             "failed_checks": int(_number(row, "route_enable_dispatch_roundtrip_failed_checks", 0.0)),
+        },
+        "broker_vendor_data_readiness": {
+            "provided": _item_bool(row, "broker_vendor_data_readiness_provided"),
+            "ready": _item_bool(row, "broker_vendor_data_readiness_ready"),
+            "failed_checks": int(_number(row, "broker_vendor_data_readiness_failed_checks", 0.0)),
         },
         "route_readiness": {
             "required": _item_bool(row, "route_readiness_required"),
@@ -2628,10 +2706,13 @@ def _read_vendor_market_data_batch_config(
 def _dispatch_roundtrip_config_with_vendor_market_data_batch(
     dispatch_roundtrip_config: dict[str, Any],
     vendor_market_data_batch_config: dict[str, Any],
+    broker_vendor_data_readiness_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not vendor_market_data_batch_config:
-        return dict(dispatch_roundtrip_config)
     merged = dict(dispatch_roundtrip_config)
+    if broker_vendor_data_readiness_config:
+        merged["broker_vendor_data_readiness"] = dict(broker_vendor_data_readiness_config)
+    if not vendor_market_data_batch_config:
+        return merged
     vendor = dict(vendor_market_data_batch_config)
     merged["roundtrip_vendor_market_data_batch"] = vendor
     merged["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
