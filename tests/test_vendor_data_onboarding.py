@@ -75,6 +75,7 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert config["mapping"]["draft_sha256"] == summary["mapping_draft_sha256"]
     assert config["data_readiness"]["ready"]
     assert config["data_readiness"]["thresholds"]["min_tick_rows"] == 2
+    assert config["data_readiness"]["thresholds"]["expected_vendor_data_kind"] == "ticks"
     assert config["component_manifests"]["vendor_intake"].endswith("manifest.json")
     assert components.loc["vendor_intake", "ready"]
     assert components.loc["data_readiness", "ready"]

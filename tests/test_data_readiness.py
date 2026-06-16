@@ -243,6 +243,27 @@ def test_data_readiness_exposes_ambiguous_vendor_intake_kind():
     assert summary["vendor_intake_ambiguous_kinds"] == "orders;fills"
 
 
+def test_data_readiness_blocks_mismatched_vendor_intake_kind():
+    fill_intake = vendor_intake_summary(True)
+    fill_intake.loc[0, "best_kind"] = "fills"
+
+    report = evaluate_data_readiness(
+        vendor_intake_summary=fill_intake,
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(
+            require_vendor_intake=True,
+            expected_vendor_data_kind="ticks",
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "vendor_intake_kind_matches" in failed
+    assert summary["expected_vendor_data_kind"] == "ticks"
+    assert summary["vendor_intake_kind"] == "fills"
+
+
 def test_data_readiness_blocks_nonportable_expected_pair():
     portability = build_market_portability_report(
         MarketPortabilityReportConfig(
@@ -336,6 +357,41 @@ def test_cli_data_readiness_can_require_vendor_intake(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "vendor_intake_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
+def test_cli_data_readiness_can_require_vendor_intake_kind(tmp_path):
+    tick_dir = tmp_path / "tick_diag"
+    intake_dir = tmp_path / "intake"
+    out_dir = tmp_path / "data_readiness"
+    tick_dir.mkdir()
+    intake_dir.mkdir()
+    tick_summary().to_csv(tick_dir / "diagnostic_summary.csv", index=False)
+    intake = vendor_intake_summary(True)
+    intake.loc[0, "best_kind"] = "fills"
+    intake.to_csv(intake_dir / "vendor_intake_summary.csv", index=False)
+
+    code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(out_dir),
+            "--tick-diagnostics",
+            str(tick_dir),
+            "--vendor-intake",
+            str(intake_dir),
+            "--require-vendor-intake",
+            "--expected-vendor-data-kind",
+            "ticks",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
+    checks = pd.read_csv(out_dir / "data_readiness_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "vendor_intake_kind"] == "fills"
+    assert "vendor_intake_kind_matches" in set(checks.loc[~checks["passed"].astype(bool), "check"])
 
 
 def test_cli_data_readiness_can_require_market_portability_pair(tmp_path):

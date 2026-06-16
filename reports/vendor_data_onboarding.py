@@ -303,6 +303,7 @@ def _readiness_thresholds(config: VendorMarketDataPipelineConfig) -> DataReadine
         require_mapped_data=True,
         require_tick_diagnostics=config.kind == "ticks",
         require_chain_diagnostics=config.kind == "chain",
+        expected_vendor_data_kind=config.kind,
         min_tick_rows=config.min_rows,
         min_chain_rows=config.min_rows,
         max_crossed_quote_rows=config.max_crossed_quote_rows,

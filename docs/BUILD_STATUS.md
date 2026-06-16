@@ -218,6 +218,9 @@
   dedicated fail-closed check when auto-detected Arrow.money/iRage CSV kind is
   ambiguous, so proof catalogs can explain blocked vendor onboarding without
   reopening the intake folder.
+- Data readiness can now require the vendor-intake kind to match the expected
+  market-data kind, preventing an `orders` or `fills` sample from satisfying a
+  `ticks` or `chain` research-data gate.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
@@ -636,7 +639,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 812 tests.
+Current passing suite: 814 tests.
 
 ## Next Build Targets
 

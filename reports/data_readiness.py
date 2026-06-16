@@ -36,6 +36,7 @@ class DataReadinessThresholds:
     require_instrument_metadata: bool = False
     expected_strategy: str | None = None
     expected_market: str | None = None
+    expected_vendor_data_kind: str | None = None
     min_tick_rows: int = 1
     min_chain_rows: int = 1
     min_chain_expiries: int = 1
@@ -251,6 +252,19 @@ def _checks(
                 "vendor CSV kind is ambiguous; rerun intake with explicit --kind",
             )
         )
+        expected_kind = _vendor_data_kind(thresholds.expected_vendor_data_kind)
+        if expected_kind:
+            actual_kind = _vendor_data_kind(_text(row, "best_kind", fallback=_text(row, "kind")))
+            checks.append(
+                _check(
+                    "vendor_intake_kind_matches",
+                    actual_kind,
+                    "==",
+                    expected_kind,
+                    bool(actual_kind and actual_kind == expected_kind),
+                    "vendor intake kind does not match expected market-data kind",
+                )
+            )
     return pd.DataFrame(checks)
 
 
@@ -344,6 +358,8 @@ def _summary(
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
+                "expected_vendor_data_kind": _vendor_data_kind(thresholds.expected_vendor_data_kind),
+                "vendor_intake_kind": _component_text(items, "vendor_intake", "kind"),
                 "vendor_intake_kind_selection": _component_text(items, "vendor_intake", "kind_selection"),
                 "vendor_intake_selected_kind_ambiguous": _component_bool(
                     items,
@@ -532,6 +548,26 @@ def _identity(value: object) -> str:
     return str(value).strip().lower().replace("-", "_").replace(" ", "_").replace(".", "_")
 
 
+def _vendor_data_kind(value: object) -> str:
+    key = _identity(value)
+    aliases = {
+        "": "",
+        "tick": "ticks",
+        "ticks": "ticks",
+        "top_of_book": "ticks",
+        "chain": "chain",
+        "option_chain": "chain",
+        "options": "chain",
+        "order": "orders",
+        "orders": "orders",
+        "simulated_orders": "orders",
+        "fill": "fills",
+        "fills": "fills",
+        "live_fills": "fills",
+    }
+    return aliases.get(key, key)
+
+
 def _threshold_check(name: str, value: float | int, operator: str, threshold: float | int) -> dict[str, Any]:
     value_float = float(value)
     threshold_float = float(threshold)
@@ -603,6 +639,9 @@ def _to_bool(value: object) -> bool:
 
 
 def _validate_thresholds(thresholds: DataReadinessThresholds) -> None:
+    expected_kind = _vendor_data_kind(thresholds.expected_vendor_data_kind)
+    if expected_kind and expected_kind not in {"ticks", "chain", "orders", "fills"}:
+        raise ValueError("expected_vendor_data_kind must be one of ticks, chain, orders, or fills")
     for name in (
         "min_tick_rows",
         "min_chain_rows",
