@@ -777,6 +777,7 @@ def _broker_shadow_broker_readiness_checks(scaleup: dict[str, Any]) -> list[dict
 def _shadow_broker_readiness_active_for(scaleup: dict[str, Any], *, key_prefix: str) -> bool:
     session_fields = (
         "readiness_sessions",
+        "vendor_data_readiness_sessions",
         "route_readiness_sessions",
         "dispatch_roundtrip_sessions",
         "route_dispatch_roundtrip_sessions",
@@ -837,6 +838,46 @@ def _shadow_broker_readiness_checks_for(
                     1,
                     int(scaleup[_shadow_broker_key(key_prefix, "adapter_count")]) == 1,
                     f"{label} adapter identity is missing or mixed",
+                ),
+            ]
+        )
+    vendor_sessions = int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_sessions")])
+    if vendor_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    f"{check_prefix}_vendor_data_readiness_present_for_broker_sessions",
+                    vendor_sessions,
+                    "==",
+                    sessions,
+                    vendor_sessions == sessions,
+                    f"{label} vendor-data wrapper proof is present for only some broker-readiness sessions",
+                ),
+                _check(
+                    f"{check_prefix}_vendor_data_readiness_provided",
+                    int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_provided_sessions")]),
+                    "==",
+                    sessions,
+                    int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_provided_sessions")])
+                    == sessions,
+                    f"{label} vendor-data wrapper proof is missing for some broker-readiness sessions",
+                ),
+                _check(
+                    f"{check_prefix}_vendor_data_readiness_ready",
+                    int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_ready_sessions")]),
+                    "==",
+                    sessions,
+                    int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_ready_sessions")])
+                    == sessions,
+                    f"{label} vendor-data wrapper proof is not ready for every broker-readiness session",
+                ),
+                _check(
+                    f"{check_prefix}_vendor_data_readiness_failed_checks",
+                    int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_failed_checks")]),
+                    "<=",
+                    0,
+                    int(scaleup[_shadow_broker_key(key_prefix, "vendor_data_readiness_failed_checks")]) <= 0,
+                    f"{label} vendor-data wrapper proof has failed checks",
                 ),
             ]
         )
@@ -1224,6 +1265,18 @@ def _authorization(
                 "scaleup_shadow_broker_readiness_ready_sessions": scaleup[
                     "shadow_broker_readiness_ready_sessions"
                 ],
+                "scaleup_shadow_broker_vendor_data_readiness_sessions": scaleup[
+                    "shadow_broker_vendor_data_readiness_sessions"
+                ],
+                "scaleup_shadow_broker_vendor_data_readiness_provided_sessions": scaleup[
+                    "shadow_broker_vendor_data_readiness_provided_sessions"
+                ],
+                "scaleup_shadow_broker_vendor_data_readiness_ready_sessions": scaleup[
+                    "shadow_broker_vendor_data_readiness_ready_sessions"
+                ],
+                "scaleup_shadow_broker_vendor_data_readiness_failed_checks": scaleup[
+                    "shadow_broker_vendor_data_readiness_failed_checks"
+                ],
                 "scaleup_shadow_broker_adapter": scaleup["shadow_broker_adapter"],
                 "scaleup_shadow_broker_adapter_count": scaleup["shadow_broker_adapter_count"],
                 "scaleup_shadow_broker_route_readiness_sessions": scaleup[
@@ -1401,6 +1454,18 @@ def _broker_shadow_broker_authorization_fields(scaleup: dict[str, Any]) -> dict[
         "scaleup_broker_shadow_broker_readiness_ready_sessions": scaleup[
             "broker_shadow_broker_readiness_ready_sessions"
         ],
+        "scaleup_broker_shadow_broker_vendor_data_readiness_sessions": scaleup[
+            "broker_shadow_broker_vendor_data_readiness_sessions"
+        ],
+        "scaleup_broker_shadow_broker_vendor_data_readiness_provided_sessions": scaleup[
+            "broker_shadow_broker_vendor_data_readiness_provided_sessions"
+        ],
+        "scaleup_broker_shadow_broker_vendor_data_readiness_ready_sessions": scaleup[
+            "broker_shadow_broker_vendor_data_readiness_ready_sessions"
+        ],
+        "scaleup_broker_shadow_broker_vendor_data_readiness_failed_checks": scaleup[
+            "broker_shadow_broker_vendor_data_readiness_failed_checks"
+        ],
         "scaleup_broker_shadow_broker_adapter": scaleup["broker_shadow_broker_adapter"],
         "scaleup_broker_shadow_broker_adapter_count": scaleup["broker_shadow_broker_adapter_count"],
         "scaleup_broker_shadow_broker_route_readiness_sessions": scaleup[
@@ -1556,6 +1621,18 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "scaleup_shadow_broker_readiness_ready_sessions": int(
                     authorization["scaleup_shadow_broker_readiness_ready_sessions"]
+                ),
+                "scaleup_shadow_broker_vendor_data_readiness_sessions": int(
+                    authorization["scaleup_shadow_broker_vendor_data_readiness_sessions"]
+                ),
+                "scaleup_shadow_broker_vendor_data_readiness_provided_sessions": int(
+                    authorization["scaleup_shadow_broker_vendor_data_readiness_provided_sessions"]
+                ),
+                "scaleup_shadow_broker_vendor_data_readiness_ready_sessions": int(
+                    authorization["scaleup_shadow_broker_vendor_data_readiness_ready_sessions"]
+                ),
+                "scaleup_shadow_broker_vendor_data_readiness_failed_checks": int(
+                    authorization["scaleup_shadow_broker_vendor_data_readiness_failed_checks"]
                 ),
                 "scaleup_shadow_broker_adapter": str(authorization["scaleup_shadow_broker_adapter"]),
                 "scaleup_shadow_broker_adapter_count": int(
@@ -1792,6 +1869,18 @@ def _broker_shadow_broker_summary_fields(authorization: pd.Series) -> dict[str, 
         "scaleup_broker_shadow_broker_readiness_ready_sessions": int(
             authorization["scaleup_broker_shadow_broker_readiness_ready_sessions"]
         ),
+        "scaleup_broker_shadow_broker_vendor_data_readiness_sessions": int(
+            authorization["scaleup_broker_shadow_broker_vendor_data_readiness_sessions"]
+        ),
+        "scaleup_broker_shadow_broker_vendor_data_readiness_provided_sessions": int(
+            authorization["scaleup_broker_shadow_broker_vendor_data_readiness_provided_sessions"]
+        ),
+        "scaleup_broker_shadow_broker_vendor_data_readiness_ready_sessions": int(
+            authorization["scaleup_broker_shadow_broker_vendor_data_readiness_ready_sessions"]
+        ),
+        "scaleup_broker_shadow_broker_vendor_data_readiness_failed_checks": int(
+            authorization["scaleup_broker_shadow_broker_vendor_data_readiness_failed_checks"]
+        ),
         "scaleup_broker_shadow_broker_adapter": str(authorization["scaleup_broker_shadow_broker_adapter"]),
         "scaleup_broker_shadow_broker_adapter_count": int(
             authorization["scaleup_broker_shadow_broker_adapter_count"]
@@ -1941,6 +2030,16 @@ def _config(
             "ready_sessions": int(authorization["scaleup_shadow_broker_readiness_ready_sessions"]),
             "adapter": str(authorization["scaleup_shadow_broker_adapter"]),
             "adapter_count": int(authorization["scaleup_shadow_broker_adapter_count"]),
+            "broker_vendor_data_readiness": {
+                "sessions": int(authorization["scaleup_shadow_broker_vendor_data_readiness_sessions"]),
+                "provided_sessions": int(
+                    authorization["scaleup_shadow_broker_vendor_data_readiness_provided_sessions"]
+                ),
+                "ready_sessions": int(
+                    authorization["scaleup_shadow_broker_vendor_data_readiness_ready_sessions"]
+                ),
+                "failed_checks": int(authorization["scaleup_shadow_broker_vendor_data_readiness_failed_checks"]),
+            },
             "route_readiness": {
                 "sessions": int(authorization["scaleup_shadow_broker_route_readiness_sessions"]),
                 "ready_sessions": int(authorization["scaleup_shadow_broker_route_readiness_ready_sessions"]),
@@ -2101,6 +2200,18 @@ def _broker_shadow_broker_config(authorization: pd.Series) -> dict[str, Any]:
         "ready_sessions": int(authorization["scaleup_broker_shadow_broker_readiness_ready_sessions"]),
         "adapter": str(authorization["scaleup_broker_shadow_broker_adapter"]),
         "adapter_count": int(authorization["scaleup_broker_shadow_broker_adapter_count"]),
+        "broker_vendor_data_readiness": {
+            "sessions": int(authorization["scaleup_broker_shadow_broker_vendor_data_readiness_sessions"]),
+            "provided_sessions": int(
+                authorization["scaleup_broker_shadow_broker_vendor_data_readiness_provided_sessions"]
+            ),
+            "ready_sessions": int(
+                authorization["scaleup_broker_shadow_broker_vendor_data_readiness_ready_sessions"]
+            ),
+            "failed_checks": int(
+                authorization["scaleup_broker_shadow_broker_vendor_data_readiness_failed_checks"]
+            ),
+        },
         "route_readiness": {
             "sessions": int(authorization["scaleup_broker_shadow_broker_route_readiness_sessions"]),
             "ready_sessions": int(
@@ -2345,6 +2456,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     vendor_market_data_batch = data_readiness_comparison.get("vendor_market_data_batch", {}) or {}
     route_readiness = config.get("route_readiness", {}) or {}
     shadow_broker = config.get("shadow_broker_readiness", {}) or {}
+    shadow_broker_vendor_readiness = shadow_broker.get("broker_vendor_data_readiness", {}) or {}
     shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
     shadow_broker_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
     shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
@@ -2583,6 +2695,34 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
                 _number(row, "shadow_broker_readiness_ready_sessions", 0.0),
             )
         ),
+        "shadow_broker_vendor_data_readiness_sessions": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "sessions",
+                _number(row, "shadow_broker_vendor_data_readiness_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_vendor_data_readiness_provided_sessions": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "provided_sessions",
+                _number(row, "shadow_broker_vendor_data_readiness_provided_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_vendor_data_readiness_ready_sessions": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "ready_sessions",
+                _number(row, "shadow_broker_vendor_data_readiness_ready_sessions", 0.0),
+            )
+        ),
+        "shadow_broker_vendor_data_readiness_failed_checks": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "failed_checks",
+                _number(row, "shadow_broker_vendor_data_readiness_failed_checks", 0.0),
+            )
+        ),
         "shadow_broker_adapter": _identity_key(
             _first_text(shadow_broker.get("adapter", ""), row.get("shadow_broker_adapter", ""))
         ),
@@ -2718,6 +2858,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
 
 
 def _broker_shadow_broker_state_fields(row: pd.Series, shadow_broker: dict[str, Any]) -> dict[str, Any]:
+    shadow_broker_vendor_readiness = shadow_broker.get("broker_vendor_data_readiness", {}) or {}
     shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
     shadow_broker_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
     shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
@@ -2737,6 +2878,34 @@ def _broker_shadow_broker_state_fields(row: pd.Series, shadow_broker: dict[str, 
                 shadow_broker,
                 "ready_sessions",
                 _number(row, "broker_shadow_broker_readiness_ready_sessions", 0.0),
+            )
+        ),
+        "broker_shadow_broker_vendor_data_readiness_sessions": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "sessions",
+                _number(row, "broker_shadow_broker_vendor_data_readiness_sessions", 0.0),
+            )
+        ),
+        "broker_shadow_broker_vendor_data_readiness_provided_sessions": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "provided_sessions",
+                _number(row, "broker_shadow_broker_vendor_data_readiness_provided_sessions", 0.0),
+            )
+        ),
+        "broker_shadow_broker_vendor_data_readiness_ready_sessions": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "ready_sessions",
+                _number(row, "broker_shadow_broker_vendor_data_readiness_ready_sessions", 0.0),
+            )
+        ),
+        "broker_shadow_broker_vendor_data_readiness_failed_checks": int(
+            _number_from(
+                shadow_broker_vendor_readiness,
+                "failed_checks",
+                _number(row, "broker_shadow_broker_vendor_data_readiness_failed_checks", 0.0),
             )
         ),
         "broker_shadow_broker_adapter": _identity_key(

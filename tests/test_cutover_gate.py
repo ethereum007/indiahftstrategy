@@ -282,6 +282,10 @@ def scaleup_config(
 def shadow_broker_config(
     sessions=2,
     ready_sessions=2,
+    vendor_data_readiness_sessions=2,
+    vendor_data_readiness_provided_sessions=2,
+    vendor_data_readiness_ready_sessions=2,
+    vendor_data_readiness_failed_checks=0,
     adapter="arrow_money",
     adapter_count=1,
     route_sessions=2,
@@ -306,6 +310,12 @@ def shadow_broker_config(
     return {
         "sessions": sessions,
         "ready_sessions": ready_sessions,
+        "broker_vendor_data_readiness": {
+            "sessions": vendor_data_readiness_sessions,
+            "provided_sessions": vendor_data_readiness_provided_sessions,
+            "ready_sessions": vendor_data_readiness_ready_sessions,
+            "failed_checks": vendor_data_readiness_failed_checks,
+        },
         "adapter": adapter,
         "adapter_count": adapter_count,
         "route_readiness": {
@@ -675,10 +685,12 @@ def test_cutover_gate_carries_shadow_broker_readiness_from_scaleup_config():
     summary = report.summary.iloc[0]
     assert int(summary["scaleup_shadow_broker_readiness_sessions"]) == 2
     assert int(summary["scaleup_shadow_broker_readiness_ready_sessions"]) == 2
+    assert int(summary["scaleup_shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
     assert summary["scaleup_shadow_broker_adapter"] == "arrow_money"
     assert summary["scaleup_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert summary["scaleup_shadow_broker_dispatch_roundtrip_scenario_count"] == 1
     assert report.config["scaleup_shadow_broker_readiness"]["provided"]
+    assert report.config["scaleup_shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
     assert report.config["scaleup_shadow_broker_readiness"]["adapter"] == "arrow_money"
     assert report.config["scaleup_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
     assert report.config["scaleup_shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
@@ -1074,6 +1086,8 @@ def test_cutover_gate_blocks_bad_shadow_broker_readiness_from_scaleup_config():
     config = scaleup_config()
     config["shadow_broker_readiness"] = shadow_broker_config(
         ready_sessions=1,
+        vendor_data_readiness_ready_sessions=1,
+        vendor_data_readiness_failed_checks=1,
         adapter="irage",
         adapter_count=2,
         route_ready_sessions=1,
@@ -1106,6 +1120,8 @@ def test_cutover_gate_blocks_bad_shadow_broker_readiness_from_scaleup_config():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
         "scaleup_shadow_broker_readiness_ready",
+        "scaleup_shadow_broker_vendor_data_readiness_ready",
+        "scaleup_shadow_broker_vendor_data_readiness_failed_checks",
         "scaleup_shadow_broker_adapter_matches",
         "scaleup_shadow_broker_adapter_consistent",
         "scaleup_shadow_broker_route_readiness_ready",
@@ -1125,7 +1141,38 @@ def test_cutover_gate_blocks_bad_shadow_broker_readiness_from_scaleup_config():
         "scaleup_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
     } <= failed
     assert report.config["scaleup_shadow_broker_readiness"]["adapter"] == "irage"
+    assert report.config["scaleup_shadow_broker_readiness"]["broker_vendor_data_readiness"]["failed_checks"] == 1
     assert report.config["scaleup_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
+
+
+def test_cutover_gate_blocks_partial_shadow_broker_vendor_data_readiness_from_scaleup_config():
+    config = scaleup_config()
+    config["shadow_broker_readiness"] = shadow_broker_config(
+        vendor_data_readiness_sessions=1,
+        vendor_data_readiness_provided_sessions=1,
+        vendor_data_readiness_ready_sessions=1,
+    )
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "scaleup_shadow_broker_vendor_data_readiness_provided",
+        "scaleup_shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    assert int(report.summary.iloc[0]["scaleup_shadow_broker_vendor_data_readiness_sessions"]) == 1
+    assert report.config["scaleup_shadow_broker_readiness"]["broker_vendor_data_readiness"][
+        "provided_sessions"
+    ] == 1
 
 
 def test_cutover_gate_carries_broker_shadow_broker_readiness_from_scaleup_config():
