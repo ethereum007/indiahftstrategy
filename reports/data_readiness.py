@@ -156,15 +156,7 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "rows",
         fallback=_number(row, "output_rows", fallback=_number(row, "sampled_rows", fallback=0.0)),
     )
-    failed_checks = _number(
-        row,
-        "failed_checks",
-        fallback=_number(
-            row,
-            "failed_mappings",
-            fallback=_number(row, "unmapped_required_columns", fallback=0.0),
-        ),
-    )
+    failed_checks = _component_failed_checks(component, row)
     return {
         "component": component,
         "required": required,
@@ -173,7 +165,11 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "rows": int(row_count),
         "failed_checks": int(failed_checks),
         "source_file": SUMMARY_FILES[component],
-        "recommendation": _component_recommendation(component, provided, ready, required),
+        "kind": _text(row, "best_kind", fallback=_text(row, "kind")),
+        "kind_selection": _text(row, "kind_selection"),
+        "selected_kind_ambiguous": _to_bool(row.get("selected_kind_ambiguous", False)),
+        "ambiguous_kinds": _text(row, "ambiguous_kinds"),
+        "recommendation": _component_recommendation(component, provided, ready, required, row),
     }
 
 
@@ -240,6 +236,19 @@ def _checks(
                 "ready_pairs",
                 pair_ready,
                 "expected strategy-market pair is not marked portable or India-ready",
+            )
+        )
+    if not summaries["vendor_intake"].empty:
+        row = summaries["vendor_intake"].iloc[0]
+        ambiguous = _to_bool(row.get("selected_kind_ambiguous", False))
+        checks.append(
+            _check(
+                "vendor_intake_kind_unambiguous",
+                _text(row, "ambiguous_kinds"),
+                "is",
+                "unambiguous",
+                not ambiguous,
+                "vendor CSV kind is ambiguous; rerun intake with explicit --kind",
             )
         )
     return pd.DataFrame(checks)
@@ -335,6 +344,13 @@ def _summary(
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
+                "vendor_intake_kind_selection": _component_text(items, "vendor_intake", "kind_selection"),
+                "vendor_intake_selected_kind_ambiguous": _component_bool(
+                    items,
+                    "vendor_intake",
+                    "selected_kind_ambiguous",
+                ),
+                "vendor_intake_ambiguous_kinds": _component_text(items, "vendor_intake", "ambiguous_kinds"),
                 "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
             }
         ]
@@ -375,14 +391,55 @@ def _component_ready(component: str, frame: pd.DataFrame) -> bool:
     return False
 
 
-def _component_recommendation(component: str, provided: bool, ready: bool, required: bool) -> str:
+def _component_failed_checks(component: str, row: pd.Series) -> float:
+    failed = _number(
+        row,
+        "failed_checks",
+        fallback=_number(
+            row,
+            "failed_mappings",
+            fallback=_number(row, "unmapped_required_columns", fallback=0.0),
+        ),
+    )
+    if component == "vendor_intake" and _to_bool(row.get("selected_kind_ambiguous", False)):
+        return max(failed, 1.0)
+    return failed
+
+
+def _component_recommendation(
+    component: str,
+    provided: bool,
+    ready: bool,
+    required: bool,
+    row: pd.Series,
+) -> str:
     if not provided and required:
         return f"run_{component}"
     if not provided:
         return "optional_not_supplied"
+    if component == "vendor_intake" and _to_bool(row.get("selected_kind_ambiguous", False)):
+        return "set_vendor_kind_explicitly"
     if not ready:
         return f"fix_{component}"
     return "accepted"
+
+
+def _component_text(items: pd.DataFrame, component: str, column: str) -> str:
+    if items.empty or column not in items.columns:
+        return ""
+    row = items.loc[items["component"].astype(str) == component]
+    if row.empty:
+        return ""
+    return _text(row.iloc[0], column)
+
+
+def _component_bool(items: pd.DataFrame, component: str, column: str) -> bool:
+    if items.empty or column not in items.columns:
+        return False
+    row = items.loc[items["component"].astype(str) == component]
+    if row.empty:
+        return False
+    return _to_bool(row.iloc[0].get(column, False))
 
 
 def _overall_row(frame: pd.DataFrame) -> pd.Series:
@@ -523,6 +580,13 @@ def _number(row: pd.Series, column: str, fallback: float = np.nan) -> float:
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _text(row: pd.Series, column: str, fallback: str = "") -> str:
+    value = row.get(column, fallback)
+    if pd.isna(value):
+        return fallback
+    return str(value).strip()
 
 
 def _to_bool(value: object) -> bool:

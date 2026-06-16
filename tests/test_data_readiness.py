@@ -215,6 +215,34 @@ def test_data_readiness_fails_on_unready_vendor_intake():
     assert int(item["failed_checks"]) == 1
 
 
+def test_data_readiness_exposes_ambiguous_vendor_intake_kind():
+    ambiguous_intake = vendor_intake_summary(False)
+    ambiguous_intake.loc[0, "unmapped_required_columns"] = 0
+    ambiguous_intake.loc[0, "kind_selection"] = "ambiguous"
+    ambiguous_intake.loc[0, "selected_kind_ambiguous"] = True
+    ambiguous_intake.loc[0, "ambiguous_kinds"] = "orders;fills"
+    ambiguous_intake.loc[0, "recommendation"] = "set_vendor_kind_explicitly_before_normalizing"
+
+    report = evaluate_data_readiness(
+        vendor_intake_summary=ambiguous_intake,
+        tick_diagnostic_summary=tick_summary(),
+        thresholds=DataReadinessThresholds(require_vendor_intake=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    item = report.items.set_index("component").loc["vendor_intake"]
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert {"vendor_intake_ready", "vendor_intake_kind_unambiguous"} <= failed
+    assert int(item["failed_checks"]) == 1
+    assert item["kind_selection"] == "ambiguous"
+    assert bool(item["selected_kind_ambiguous"])
+    assert item["ambiguous_kinds"] == "orders;fills"
+    assert item["recommendation"] == "set_vendor_kind_explicitly"
+    assert bool(summary["vendor_intake_selected_kind_ambiguous"])
+    assert summary["vendor_intake_ambiguous_kinds"] == "orders;fills"
+
+
 def test_data_readiness_blocks_nonportable_expected_pair():
     portability = build_market_portability_report(
         MarketPortabilityReportConfig(

@@ -214,6 +214,10 @@
   mapped-data normalization, tick/chain diagnostics, market-profile fee
   assumptions, market-portability strategy/market pair approval, and
   instrument metadata before strategy research or promotion.
+- Data readiness now carries vendor intake kind-selection state and emits a
+  dedicated fail-closed check when auto-detected Arrow.money/iRage CSV kind is
+  ambiguous, so proof catalogs can explain blocked vendor onboarding without
+  reopening the intake folder.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
@@ -632,7 +636,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 811 tests.
+Current passing suite: 812 tests.
 
 ## Next Build Targets
 
