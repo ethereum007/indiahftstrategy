@@ -3303,7 +3303,10 @@ can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
 ready. Launch and broker-readiness commands honor the wrapper root's own
 `broker_vendor_data_readiness_config.json`, so a failed wrapper root cannot be
-masked by a valid nested vendor batch.
+masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper
+state from `broker_readiness_config.json` and blocks controlled scale increases
+when the wrapper readiness sidecar is failed, even if the nested batch proof is
+otherwise valid.
 
 ## Order Staging
 

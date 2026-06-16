@@ -624,7 +624,10 @@
   for wrapper readiness, vendor-batch distinct-source proof, coverage, mapping
   provenance, and broker-readiness acceptance, and broker readiness now blocks
   supplied wrapper roots whose own readiness config is not ready even if their
-  nested vendor batch is internally valid. Broker readiness now evaluates standalone vendor-batch proof
+  nested vendor batch is internally valid. Scale-up now also hydrates the
+  broker-vendor wrapper readiness state from `broker_readiness_config.json`, so
+  a failed Arrow.money/iRage wrapper sidecar cannot be masked by a valid nested
+  vendor batch during controlled capital increases. Broker readiness now evaluates standalone vendor-batch proof
   roots even when no dispatch round-trip proof is supplied, compares them
   against the launch/broker expected market when available, and fails closed
   across all five launch CLIs when an iRage proof root is supplied to an
@@ -670,7 +673,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 827 tests.
+Current passing suite: 828 tests.
 
 ## Next Build Targets
 

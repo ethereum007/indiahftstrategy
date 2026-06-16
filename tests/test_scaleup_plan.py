@@ -2620,6 +2620,85 @@ def test_cli_scaleup_plan_hydrates_launch_pipeline_broker_vendor_data_config(tmp
     )
 
 
+def test_cli_scaleup_plan_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
+    evidence, shadow, _, _ = write_inputs(tmp_path)
+    pipeline = write_strategy_launch_pipeline(tmp_path)
+    broker = pipeline / "06_broker_readiness"
+    broker_readiness_summary(
+        True,
+        dispatch_roundtrip_provided=True,
+        dispatch_roundtrip_ready=True,
+        dispatch_roundtrip_target_mode="shadow",
+    ).to_csv(broker / "broker_readiness_summary.csv", index=False)
+    (broker / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "shadow",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_vendor_data_readiness": {
+                        "provided": True,
+                        "ready": False,
+                        "failed_checks": 1,
+                    },
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        broker_vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(pipeline),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    vendor_readiness = config["broker_readiness"]["broker_vendor_data_readiness"]
+    vendor_batch = config["broker_readiness"]["dispatch_roundtrip"]["vendor_market_data_batch"]
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "broker_vendor_data_readiness_provided"])
+    assert not bool(summary.loc[0, "broker_vendor_data_readiness_ready"])
+    assert int(summary.loc[0, "broker_vendor_data_readiness_failed_checks"]) == 1
+    assert {
+        "broker_vendor_data_readiness_ready",
+        "broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert vendor_readiness == {
+        "provided": True,
+        "ready": False,
+        "failed_checks": 1,
+    }
+    assert vendor_batch["ready"]
+    assert vendor_batch["dataset_count"] == 2
+
+
 def test_cli_scaleup_plan_direct_launch_summary_file_ignores_pipeline_detector(tmp_path):
     evidence, shadow, launch, _ = write_inputs(tmp_path)
     out_dir = tmp_path / "scaleup"

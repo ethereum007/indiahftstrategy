@@ -1215,6 +1215,8 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 expected_adapter=expected_broker_shadow_adapter,
             )
         )
+    if _broker_vendor_data_readiness_active(broker_readiness):
+        checks.extend(_broker_vendor_data_readiness_checks(broker_readiness))
     if _broker_vendor_market_data_batch_active(broker_readiness):
         expected_vendor_market = _identity_key(thresholds.expected_market) or evidence_market
         expected_vendor_adapter = _identity_key(broker_readiness.get("adapter", "")) or _identity_key(
@@ -1536,6 +1538,21 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "broker_readiness_recommendation": str(broker_readiness.get("recommendation", ""))
                 if not broker_readiness.empty
                 else "",
+                "broker_vendor_data_readiness_provided": _to_bool(
+                    broker_readiness.get("broker_vendor_data_readiness_provided", False)
+                )
+                if not broker_readiness.empty
+                else False,
+                "broker_vendor_data_readiness_ready": _to_bool(
+                    broker_readiness.get("broker_vendor_data_readiness_ready", False)
+                )
+                if not broker_readiness.empty
+                else False,
+                "broker_vendor_data_readiness_failed_checks": int(
+                    _number(broker_readiness, "broker_vendor_data_readiness_failed_checks", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
                 "broker_runtime_session_required": thresholds.target_mode == "live_dryrun",
                 "broker_runtime_session_provided": _to_bool(broker_readiness.get("runtime_session_provided", False))
                 if not broker_readiness.empty
@@ -1853,6 +1870,15 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
                 "broker_schema_review_mode": str(plan_row["broker_schema_review_mode"]),
+                "broker_vendor_data_readiness_provided": _to_bool(
+                    plan_row["broker_vendor_data_readiness_provided"]
+                ),
+                "broker_vendor_data_readiness_ready": _to_bool(
+                    plan_row["broker_vendor_data_readiness_ready"]
+                ),
+                "broker_vendor_data_readiness_failed_checks": int(
+                    plan_row["broker_vendor_data_readiness_failed_checks"]
+                ),
                 "broker_runtime_session_required": _to_bool(plan_row["broker_runtime_session_required"]),
                 "broker_runtime_session_provided": _to_bool(plan_row["broker_runtime_session_provided"]),
                 "broker_runtime_session_ready": _to_bool(plan_row["broker_runtime_session_ready"]),
@@ -2110,6 +2136,11 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
             "schema_review_mode": str(plan_row["broker_schema_review_mode"]),
             "recommendation": str(plan_row["broker_readiness_recommendation"]),
+            "broker_vendor_data_readiness": {
+                "provided": _to_bool(plan_row["broker_vendor_data_readiness_provided"]),
+                "ready": _to_bool(plan_row["broker_vendor_data_readiness_ready"]),
+                "failed_checks": int(plan_row["broker_vendor_data_readiness_failed_checks"]),
+            },
             "runtime_session": {
                 "required": _to_bool(plan_row["broker_runtime_session_required"]),
                 "provided": _to_bool(plan_row["broker_runtime_session_provided"]),
@@ -2222,6 +2253,16 @@ def _broker_vendor_market_data_batch_active(broker_readiness: pd.Series) -> bool
     return _vendor_market_data_batch_prefix_active(broker_readiness, source_prefix)
 
 
+def _broker_vendor_data_readiness_active(broker_readiness: pd.Series) -> bool:
+    if broker_readiness.empty:
+        return False
+    return bool(
+        _to_bool(broker_readiness.get("broker_vendor_data_readiness_provided", False))
+        or _to_bool(broker_readiness.get("broker_vendor_data_readiness_ready", False))
+        or int(_number(broker_readiness, "broker_vendor_data_readiness_failed_checks", 0.0)) > 0
+    )
+
+
 def _broker_vendor_market_data_batch_source_prefix(broker_readiness: pd.Series) -> str:
     generic_prefix = "dispatch_roundtrip_vendor_market_data_batch"
     if broker_readiness.empty:
@@ -2247,6 +2288,33 @@ def _vendor_market_data_batch_prefix_active(row: pd.Series, prefix: str) -> bool
         or _identity_key(row.get(f"{prefix}_market", ""))
         or _identity_key(row.get(f"{prefix}_manifest_run_type", ""))
     )
+
+
+def _broker_vendor_data_readiness_checks(broker_readiness: pd.Series) -> list[dict[str, object]]:
+    return [
+        _check(
+            "broker_vendor_data_readiness_provided",
+            _to_bool(broker_readiness.get("broker_vendor_data_readiness_provided", False)),
+            "is",
+            True,
+            _to_bool(broker_readiness.get("broker_vendor_data_readiness_provided", False)),
+            "broker-vendor readiness wrapper proof is active but not marked provided",
+        ),
+        _check(
+            "broker_vendor_data_readiness_ready",
+            _to_bool(broker_readiness.get("broker_vendor_data_readiness_ready", False)),
+            "is",
+            True,
+            _to_bool(broker_readiness.get("broker_vendor_data_readiness_ready", False)),
+            "broker-vendor readiness wrapper proof is not ready",
+        ),
+        _threshold_check(
+            "broker_vendor_data_readiness_failed_checks",
+            _number(broker_readiness, "broker_vendor_data_readiness_failed_checks", 0.0),
+            "<=",
+            0,
+        ),
+    ]
 
 
 def _broker_vendor_market_data_batch_checks(
@@ -2989,26 +3057,73 @@ def _with_broker_vendor_market_data_batch_config(
     if broker_readiness is None or broker_readiness.empty:
         return broker_readiness
     row = broker_readiness.iloc[0]
-    if any(
+    batch_config = None
+    if not any(
         _vendor_market_data_batch_prefix_active(row, prefix)
         for prefix in (
             "broker_dispatch_roundtrip_vendor_market_data_batch",
             "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
         )
     ):
-        return broker_readiness
-
-    batch_config = _broker_vendor_market_data_batch_config_from_readiness_config(
+        batch_config = _broker_vendor_market_data_batch_config_from_readiness_config(
+            broker_readiness_config
+        )
+    vendor_readiness_config = _broker_vendor_data_readiness_config_from_readiness_config(
         broker_readiness_config
     )
-    if batch_config is None:
+    if batch_config is None and vendor_readiness_config is None:
         return broker_readiness
 
     out = broker_readiness.copy()
     index = out.index[0]
-    for column, value in _broker_vendor_market_data_batch_flat_fields(batch_config).items():
-        out.loc[index, column] = value
+    if batch_config is not None:
+        for column, value in _broker_vendor_market_data_batch_flat_fields(batch_config).items():
+            out.loc[index, column] = value
+    if vendor_readiness_config is not None:
+        for column, value in _broker_vendor_data_readiness_flat_fields(vendor_readiness_config).items():
+            out.loc[index, column] = value
     return out
+
+
+def _broker_vendor_data_readiness_config_from_readiness_config(
+    broker_readiness_config: dict[str, Any],
+) -> dict[str, Any] | None:
+    candidates: list[object] = []
+    dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
+    if isinstance(dispatch, dict):
+        candidates.append(dispatch.get("broker_vendor_data_readiness"))
+    candidates.append(broker_readiness_config.get("broker_vendor_data_readiness"))
+    for candidate in candidates:
+        if _broker_vendor_data_readiness_config_active(candidate):
+            return candidate
+    return None
+
+
+def _broker_vendor_data_readiness_config_active(candidate: object) -> bool:
+    if not isinstance(candidate, dict) or not candidate:
+        return False
+    return bool(
+        _to_bool(candidate.get("provided", True))
+        or _to_bool(candidate.get("ready", False))
+        or _broker_vendor_data_failed_check_count(candidate) > 0
+    )
+
+
+def _broker_vendor_data_readiness_flat_fields(config: dict[str, Any]) -> dict[str, object]:
+    return {
+        "broker_vendor_data_readiness_provided": _to_bool(config.get("provided", True)),
+        "broker_vendor_data_readiness_ready": _to_bool(config.get("ready", False)),
+        "broker_vendor_data_readiness_failed_checks": _broker_vendor_data_failed_check_count(config),
+    }
+
+
+def _broker_vendor_data_failed_check_count(config: dict[str, Any]) -> int:
+    failed_checks = config.get("failed_checks")
+    if isinstance(failed_checks, list):
+        return len(failed_checks)
+    if failed_checks not in (None, ""):
+        return int(_number_from(config, "failed_checks", 0.0))
+    return int(_number_from(config, "failed_check_count", 0.0))
 
 
 def _broker_vendor_market_data_batch_config_from_readiness_config(
