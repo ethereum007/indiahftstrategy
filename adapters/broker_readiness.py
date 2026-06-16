@@ -414,6 +414,7 @@ def _broker_vendor_market_data_batch_config(config: dict[str, Any]) -> tuple[dic
             "route_broker_dispatch_roundtrip_vendor_market_data_batch",
             "cutover_broker_dispatch_roundtrip_vendor_market_data_batch",
             "scaleup_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "roundtrip_vendor_market_data_batch",
         ),
         default_source="roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
     )

@@ -573,7 +573,9 @@
   through normalized handoff fields, scale-up, cutover, route-enable, broker
   dispatch, broker dispatch send, broker dispatch ack, and the final
   round-trip gate accept those direct final proof prefixes and carry them into
-  their stage-native broker vendor-data fields.
+  their stage-native broker vendor-data fields, and broker readiness can
+  promote the generic final round-trip vendor proof into broker-specific
+  readiness proof when no broker-prefixed proof is present.
   Broker vendor-data
   proof selection now uses one shared active-proof selector across cutover,
   route-enable, dispatch, send, ack, round-trip, and broker-readiness stages,
@@ -624,7 +626,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 804 tests.
+Current passing suite: 806 tests.
 
 ## Next Build Targets
 

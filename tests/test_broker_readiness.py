@@ -781,6 +781,68 @@ def test_broker_readiness_carries_broker_dispatch_roundtrip_vendor_market_data_b
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
+def test_broker_readiness_carries_broker_vendor_market_data_batch_from_generic_roundtrip_proof():
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert bool(summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    vendor = report.config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert vendor["provided"]
+    assert vendor["ready"]
+    assert vendor["comparison"]["accepted"]
+
+
+def test_broker_readiness_blocks_wrong_manifest_generic_roundtrip_vendor_market_data_batch():
+    vendor = vendor_market_data_batch_config()
+    vendor["manifest_run_type"] = "not_vendor_batch"
+    config = dispatch_roundtrip_config()
+    config["roundtrip_vendor_market_data_batch"] = vendor
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("arrow_money", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+            require_dispatch_roundtrip=True,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert {
+        "dispatch_roundtrip_vendor_market_data_batch_manifest_run_type",
+        "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type",
+    } <= failed
+    assert summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == "not_vendor_batch"
+    vendor = report.config["dispatch_roundtrip"]["broker_dispatch_roundtrip_vendor_market_data_batch"]
+    assert vendor["manifest_run_type"] == "not_vendor_batch"
+
+
 def test_broker_readiness_blocks_dirty_broker_dispatch_roundtrip_vendor_market_data_batch():
     vendor = vendor_market_data_batch_config()
     vendor.update(
