@@ -266,6 +266,9 @@ def vendor_market_data_batch_config(*, manifest_run_type="vendor_market_data_bat
         "ready_rate": 1.0,
         "unique_source_files": 2,
         "unique_header_fingerprints": 1,
+        "source_file_fingerprint_coverage": 1.0,
+        "min_mapping_coverage": 1.0,
+        "unique_mapping_drafts": 1,
         "mapping_sources": "vendor_intake_draft",
         "comparison": {
             "accepted": True,
@@ -305,6 +308,9 @@ def dirty_vendor_market_data_batch_config():
             "ready_rate": 0.0,
             "unique_source_files": 0,
             "unique_header_fingerprints": 0,
+            "source_file_fingerprint_coverage": 0.0,
+            "min_mapping_coverage": 0.0,
+            "unique_mapping_drafts": 0,
             "mapping_sources": "",
             "datasets": [],
         }
@@ -524,10 +530,16 @@ def test_broker_dispatch_send_carries_dispatch_vendor_market_data_batch():
     assert int(summary["dispatch_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["dispatch_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["dispatch_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["dispatch_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary["dispatch_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert int(summary["dispatch_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert summary["dispatch_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
     assert vendor["provided"]
     assert vendor["ready"]
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
@@ -577,12 +589,18 @@ def test_broker_dispatch_send_carries_broker_vendor_market_data_batch():
     assert int(summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert int(summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == (
         "vendor_intake_draft"
     )
     assert vendor["provided"]
     assert vendor["ready"]
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
@@ -612,6 +630,9 @@ def test_broker_dispatch_send_prefers_dispatch_broker_vendor_market_data_batch()
     )
     assert vendor["adapter"] == "arrow_money"
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
 
 
@@ -657,8 +678,11 @@ def test_broker_dispatch_send_carries_roundtrip_broker_vendor_market_data_batch(
         "vendor_market_data_batch_pipeline"
     )
     assert int(summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
     assert vendor["adapter"] == "arrow_money"
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["unique_mapping_drafts"] == 1
 
 
 def test_broker_dispatch_send_blocks_wrong_manifest_roundtrip_vendor_market_data_batch():
@@ -697,7 +721,13 @@ def test_broker_dispatch_send_carries_dispatch_broker_vendor_market_data_batch_w
 
     summary = report.summary.iloc[0]
     vendor = report.config["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch"]
-    assert report.ready
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage",
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage",
+        "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_drafts",
+    } <= failed
     assert not summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
     assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "irage"
     assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
@@ -706,6 +736,9 @@ def test_broker_dispatch_send_carries_dispatch_broker_vendor_market_data_batch_w
     assert summary["dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_market"] == "us_options_regular"
     assert vendor["adapter"] == "irage"
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 0.0
+    assert vendor["min_mapping_coverage"] == 0.0
+    assert vendor["unique_mapping_drafts"] == 0
     assert vendor["failed_datasets"] == 1
     assert not vendor["comparison"]["accepted"]
 
@@ -1036,8 +1069,11 @@ def test_cli_broker_dispatch_send_hydrates_broker_vendor_data_from_manifest_chai
     )
     assert int(summary.loc[0, "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary.loc[0, "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert summary.loc[0, "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary.loc[0, "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
 

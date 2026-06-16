@@ -640,7 +640,9 @@
   broker/vendor data proof. Broker dispatch planning now carries and revalidates
   that identity plus source-file fingerprint coverage, mapping coverage, and
   mapping-draft provenance before send packets can inherit route-enable-carried proof.
-  Broker dispatch send, acknowledgement, and final round-trip gates now carry
+  Broker dispatch send now carries those coverage/provenance fields and
+  revalidates broker-readiness-prefixed vendor proof before non-submitting send
+  packets can inherit it. Acknowledgement and final round-trip gates now carry
   and revalidate the same identity before scale-up can inherit it, including
   both generic and broker-readiness-prefixed vendor proof paths.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
