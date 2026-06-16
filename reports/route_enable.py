@@ -620,6 +620,30 @@ def _broker_vendor_market_data_batch_checks(cutover: dict[str, Any]) -> list[dic
             "cutover broker-readiness vendor market-data batch is missing header fingerprint provenance",
         ),
         _check(
+            f"{prefix}_source_file_fingerprint_coverage",
+            float(vendor["source_file_fingerprint_coverage"]),
+            ">=",
+            1.0,
+            float(vendor["source_file_fingerprint_coverage"]) >= 1.0,
+            "cutover broker-readiness vendor market-data batch has incomplete source-file fingerprint coverage",
+        ),
+        _check(
+            f"{prefix}_min_mapping_coverage",
+            float(vendor["min_mapping_coverage"]),
+            ">=",
+            1.0,
+            float(vendor["min_mapping_coverage"]) >= 1.0,
+            "cutover broker-readiness vendor market-data batch has incomplete field mapping coverage",
+        ),
+        _check(
+            f"{prefix}_mapping_drafts",
+            int(vendor["unique_mapping_drafts"]),
+            ">",
+            0,
+            int(vendor["unique_mapping_drafts"]) > 0,
+            "cutover broker-readiness vendor market-data batch is missing mapping draft provenance",
+        ),
+        _check(
             f"{prefix}_mapping_sources",
             str(vendor["mapping_sources"]).strip(),
             "!=",
@@ -1126,6 +1150,11 @@ def _vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> dict[str
         "cutover_vendor_market_data_batch_ready_rate": vendor["ready_rate"],
         "cutover_vendor_market_data_batch_unique_source_files": vendor["unique_source_files"],
         "cutover_vendor_market_data_batch_unique_header_fingerprints": vendor["unique_header_fingerprints"],
+        "cutover_vendor_market_data_batch_source_file_fingerprint_coverage": vendor[
+            "source_file_fingerprint_coverage"
+        ],
+        "cutover_vendor_market_data_batch_min_mapping_coverage": vendor["min_mapping_coverage"],
+        "cutover_vendor_market_data_batch_unique_mapping_drafts": vendor["unique_mapping_drafts"],
         "cutover_vendor_market_data_batch_mapping_sources": vendor["mapping_sources"],
         "cutover_vendor_market_data_batch_comparison_accepted": vendor["comparison_accepted"],
         "cutover_vendor_market_data_batch_comparison_failed_checks": vendor["comparison_failed_checks"],
@@ -1149,6 +1178,9 @@ def _broker_vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> d
         f"{field_prefix}_ready_rate": vendor["ready_rate"],
         f"{field_prefix}_unique_source_files": vendor["unique_source_files"],
         f"{field_prefix}_unique_header_fingerprints": vendor["unique_header_fingerprints"],
+        f"{field_prefix}_source_file_fingerprint_coverage": vendor["source_file_fingerprint_coverage"],
+        f"{field_prefix}_min_mapping_coverage": vendor["min_mapping_coverage"],
+        f"{field_prefix}_unique_mapping_drafts": vendor["unique_mapping_drafts"],
         f"{field_prefix}_mapping_sources": vendor["mapping_sources"],
         f"{field_prefix}_comparison_accepted": vendor["comparison_accepted"],
         f"{field_prefix}_comparison_failed_checks": vendor["comparison_failed_checks"],
@@ -1371,6 +1403,15 @@ def _vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[str, Any
         "cutover_vendor_market_data_batch_unique_header_fingerprints": int(
             packet["cutover_vendor_market_data_batch_unique_header_fingerprints"]
         ),
+        "cutover_vendor_market_data_batch_source_file_fingerprint_coverage": _jsonable(
+            packet["cutover_vendor_market_data_batch_source_file_fingerprint_coverage"]
+        ),
+        "cutover_vendor_market_data_batch_min_mapping_coverage": _jsonable(
+            packet["cutover_vendor_market_data_batch_min_mapping_coverage"]
+        ),
+        "cutover_vendor_market_data_batch_unique_mapping_drafts": int(
+            packet["cutover_vendor_market_data_batch_unique_mapping_drafts"]
+        ),
         "cutover_vendor_market_data_batch_mapping_sources": str(
             packet["cutover_vendor_market_data_batch_mapping_sources"]
         ),
@@ -1400,6 +1441,11 @@ def _broker_vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[s
         f"{field_prefix}_unique_header_fingerprints": int(
             packet[f"{field_prefix}_unique_header_fingerprints"]
         ),
+        f"{field_prefix}_source_file_fingerprint_coverage": _jsonable(
+            packet[f"{field_prefix}_source_file_fingerprint_coverage"]
+        ),
+        f"{field_prefix}_min_mapping_coverage": _jsonable(packet[f"{field_prefix}_min_mapping_coverage"]),
+        f"{field_prefix}_unique_mapping_drafts": int(packet[f"{field_prefix}_unique_mapping_drafts"]),
         f"{field_prefix}_mapping_sources": str(packet[f"{field_prefix}_mapping_sources"]),
         f"{field_prefix}_comparison_accepted": _to_bool(packet[f"{field_prefix}_comparison_accepted"]),
         f"{field_prefix}_comparison_failed_checks": int(packet[f"{field_prefix}_comparison_failed_checks"]),
@@ -1594,6 +1640,11 @@ def _vendor_market_data_batch_config(packet: pd.Series) -> dict[str, Any]:
         "unique_header_fingerprints": int(
             packet["cutover_vendor_market_data_batch_unique_header_fingerprints"]
         ),
+        "source_file_fingerprint_coverage": _jsonable(
+            packet["cutover_vendor_market_data_batch_source_file_fingerprint_coverage"]
+        ),
+        "min_mapping_coverage": _jsonable(packet["cutover_vendor_market_data_batch_min_mapping_coverage"]),
+        "unique_mapping_drafts": int(packet["cutover_vendor_market_data_batch_unique_mapping_drafts"]),
         "mapping_sources": str(packet["cutover_vendor_market_data_batch_mapping_sources"]),
         "comparison": {
             "accepted": _to_bool(packet["cutover_vendor_market_data_batch_comparison_accepted"]),
@@ -1618,6 +1669,11 @@ def _broker_vendor_market_data_batch_config(packet: pd.Series) -> dict[str, Any]
         "ready_rate": _jsonable(packet[f"{field_prefix}_ready_rate"]),
         "unique_source_files": int(packet[f"{field_prefix}_unique_source_files"]),
         "unique_header_fingerprints": int(packet[f"{field_prefix}_unique_header_fingerprints"]),
+        "source_file_fingerprint_coverage": _jsonable(
+            packet[f"{field_prefix}_source_file_fingerprint_coverage"]
+        ),
+        "min_mapping_coverage": _jsonable(packet[f"{field_prefix}_min_mapping_coverage"]),
+        "unique_mapping_drafts": int(packet[f"{field_prefix}_unique_mapping_drafts"]),
         "mapping_sources": str(packet[f"{field_prefix}_mapping_sources"]),
         "comparison": {
             "accepted": _to_bool(packet[f"{field_prefix}_comparison_accepted"]),
@@ -1671,6 +1727,23 @@ def _vendor_market_data_batch_state(
                 vendor,
                 "unique_header_fingerprints",
                 _number(row, f"{field_prefix}_unique_header_fingerprints", 0.0),
+            )
+        ),
+        "source_file_fingerprint_coverage": _number_from(
+            vendor,
+            "source_file_fingerprint_coverage",
+            _number(row, f"{field_prefix}_source_file_fingerprint_coverage", 0.0),
+        ),
+        "min_mapping_coverage": _number_from(
+            vendor,
+            "min_mapping_coverage",
+            _number(row, f"{field_prefix}_min_mapping_coverage", 0.0),
+        ),
+        "unique_mapping_drafts": int(
+            _number_from(
+                vendor,
+                "unique_mapping_drafts",
+                _number(row, f"{field_prefix}_unique_mapping_drafts", 0.0),
             )
         ),
         "mapping_sources": _first_text(vendor.get("mapping_sources", ""), row_value("mapping_sources", "")),

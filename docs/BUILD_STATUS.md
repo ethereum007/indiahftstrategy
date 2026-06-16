@@ -636,8 +636,8 @@
   before controlled capital increases. Cutover now preserves and revalidates
   the same manifest identity, coverage, and mapping-draft provenance on
   scale-up-carried broker/vendor proofs before route enable can inherit them.
-  Route enable now carries and revalidates that
-  manifest identity before broker dispatch planning can inherit cutover-carried
+  Route enable now carries and revalidates that manifest identity, coverage, and
+  mapping-draft provenance before broker dispatch planning can inherit cutover-carried
   broker/vendor data proof. Broker dispatch planning now carries and revalidates
   that identity plus source-file fingerprint coverage, mapping coverage, and
   mapping-draft provenance before send packets can inherit route-enable-carried proof.

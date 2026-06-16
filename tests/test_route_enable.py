@@ -356,6 +356,9 @@ def vendor_market_data_batch_config(
     ready_rate=1.0,
     unique_source_files=2,
     unique_header_fingerprints=1,
+    source_file_fingerprint_coverage=1.0,
+    min_mapping_coverage=1.0,
+    unique_mapping_drafts=1,
     mapping_sources="vendor_intake_draft",
     comparison_accepted=True,
     comparison_failed_checks=0,
@@ -393,6 +396,9 @@ def vendor_market_data_batch_config(
         "ready_rate": ready_rate,
         "unique_source_files": unique_source_files,
         "unique_header_fingerprints": unique_header_fingerprints,
+        "source_file_fingerprint_coverage": source_file_fingerprint_coverage,
+        "min_mapping_coverage": min_mapping_coverage,
+        "unique_mapping_drafts": unique_mapping_drafts,
         "mapping_sources": mapping_sources,
         "comparison": {
             "accepted": comparison_accepted,
@@ -686,10 +692,16 @@ def test_route_enable_carries_cutover_vendor_market_data_batch():
     assert int(summary["cutover_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["cutover_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["cutover_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert summary["cutover_vendor_market_data_batch_source_file_fingerprint_coverage"] == 1.0
+    assert summary["cutover_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert int(summary["cutover_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert summary["cutover_vendor_market_data_batch_mapping_sources"] == "vendor_intake_draft"
     assert vendor["provided"]
     assert vendor["ready"]
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
@@ -720,12 +732,23 @@ def test_route_enable_carries_cutover_broker_vendor_market_data_batch():
     assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
     assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_header_fingerprints"]) == 1
+    assert (
+        summary[
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"
+        ]
+        == 1.0
+    )
+    assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources"] == (
         "vendor_intake_draft"
     )
     assert vendor["provided"]
     assert vendor["ready"]
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
@@ -743,6 +766,9 @@ def test_route_enable_blocks_bad_cutover_broker_vendor_market_data_batch():
         ready_rate=0.0,
         unique_source_files=0,
         unique_header_fingerprints=0,
+        source_file_fingerprint_coverage=0.0,
+        min_mapping_coverage=0.0,
+        unique_mapping_drafts=0,
         mapping_sources="",
         comparison_accepted=False,
         comparison_failed_checks=1,
@@ -765,6 +791,9 @@ def test_route_enable_blocks_bad_cutover_broker_vendor_market_data_batch():
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_drafts",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
@@ -830,6 +859,9 @@ def test_route_enable_prefers_cutover_broker_vendor_market_data_batch():
     )
     assert vendor["adapter"] == "arrow_money"
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
 
 
@@ -854,8 +886,19 @@ def test_route_enable_carries_roundtrip_broker_vendor_market_data_batch():
         "vendor_market_data_batch_pipeline"
     )
     assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert (
+        summary[
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage"
+        ]
+        == 1.0
+    )
+    assert summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert int(summary["cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"]) == 1
     assert vendor["adapter"] == "arrow_money"
     assert vendor["manifest_run_type"] == "vendor_market_data_batch_pipeline"
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
 
 
 def test_route_enable_blocks_wrong_manifest_roundtrip_vendor_market_data_batch():
@@ -894,6 +937,9 @@ def test_route_enable_blocks_bad_cutover_broker_vendor_market_data_batch_when_pr
         ready_rate=0.0,
         unique_source_files=0,
         unique_header_fingerprints=0,
+        source_file_fingerprint_coverage=0.0,
+        min_mapping_coverage=0.0,
+        unique_mapping_drafts=0,
         mapping_sources="",
         comparison_accepted=False,
         comparison_failed_checks=1,
@@ -916,6 +962,9 @@ def test_route_enable_blocks_bad_cutover_broker_vendor_market_data_batch_when_pr
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_failed_datasets",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_files",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_header_fingerprints",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage",
+        "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_drafts",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_mapping_sources",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted",
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_failed_checks",
@@ -1307,8 +1356,26 @@ def test_cli_route_enable_hydrates_broker_vendor_data_from_cutover_manifest(tmp_
     )
     assert int(summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
     assert int(summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert (
+        summary.loc[
+            0,
+            "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_source_file_fingerprint_coverage",
+        ]
+        == 1.0
+    )
+    assert (
+        summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"]
+        == 1.0
+    )
+    assert (
+        int(summary.loc[0, "cutover_broker_dispatch_roundtrip_vendor_market_data_batch_unique_mapping_drafts"])
+        == 1
+    )
     assert vendor["provided"]
     assert vendor["ready"]
+    assert vendor["source_file_fingerprint_coverage"] == 1.0
+    assert vendor["min_mapping_coverage"] == 1.0
+    assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
 
