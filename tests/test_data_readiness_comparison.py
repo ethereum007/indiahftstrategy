@@ -35,7 +35,16 @@ def readiness_runs():
     )
 
 
-def write_readiness_dir(path, *, ready=True, failed_checks=0):
+def write_readiness_dir(
+    path,
+    *,
+    ready=True,
+    failed_checks=0,
+    source_hash="",
+    header_hash="",
+    mapping_hash="",
+    mapping_coverage=1.0,
+):
     path.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
@@ -46,6 +55,10 @@ def write_readiness_dir(path, *, ready=True, failed_checks=0):
                 "provided_components": 6,
                 "ready_components": 6 if ready else 5,
                 "failed_checks": failed_checks,
+                "vendor_intake_source_file_sha256": source_hash,
+                "vendor_intake_source_header_sha256": header_hash,
+                "vendor_intake_mapping_draft_sha256": mapping_hash,
+                "vendor_intake_mapping_coverage": mapping_coverage,
                 "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
             }
         ]
@@ -63,6 +76,27 @@ def test_compare_data_readiness_accepts_multiple_clean_datasets():
     assert row["dataset_count"] == 2
     assert row["ready_rate"] == 1.0
     assert row["recommendation"] == "feed_walkforward_research"
+
+
+def test_compare_data_readiness_can_require_unique_vendor_sources():
+    runs = readiness_runs()
+    runs["source_file_sha256"] = "a" * 64
+
+    report = compare_data_readiness(
+        runs,
+        thresholds=DataReadinessComparisonThresholds(
+            min_datasets=2,
+            min_ready_rate=1.0,
+            min_unique_source_files=2,
+        ),
+    )
+
+    row = report.summary.iloc[0]
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.accepted
+    assert row["unique_source_files"] == 1
+    assert row["source_file_fingerprint_coverage"] == 1.0
+    assert "unique_source_files" in failed
 
 
 def test_compare_data_readiness_fails_on_missing_ready_dataset():
@@ -84,8 +118,8 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
     out_dir = tmp_path / "comparison"
-    write_readiness_dir(day1)
-    write_readiness_dir(day2)
+    write_readiness_dir(day1, source_hash="a" * 64, header_hash="b" * 64, mapping_hash="c" * 64)
+    write_readiness_dir(day2, source_hash="d" * 64, header_hash="b" * 64, mapping_hash="c" * 64)
 
     report = write_data_readiness_comparison(
         [day1, day2],
@@ -96,6 +130,10 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
 
     assert report.accepted
     assert report.output_dir == out_dir
+    assert report.dataset_runs.loc[0, "source_file_sha256"] == "a" * 64
+    assert report.summary.loc[0, "unique_source_files"] == 2
+    assert report.summary.loc[0, "unique_header_fingerprints"] == 1
+    assert report.summary.loc[0, "unique_mapping_drafts"] == 1
     assert (out_dir / "data_readiness_runs.csv").exists()
     assert (out_dir / "data_readiness_comparison_checks.csv").exists()
     assert (out_dir / "data_readiness_comparison_summary.csv").exists()

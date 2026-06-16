@@ -15,6 +15,7 @@ class DataReadinessComparisonThresholds:
     min_ready_datasets: int | None = None
     min_ready_rate: float = 1.0
     max_total_failed_checks: int = 0
+    min_unique_source_files: int | None = None
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,17 @@ def compare_data_readiness(
         if column not in runs.columns:
             runs[column] = 0.0
         runs[column] = pd.to_numeric(runs[column], errors="coerce")
+    _coalesce_column(runs, "source_file_sha256", "vendor_intake_source_file_sha256", default="")
+    _coalesce_column(runs, "source_header_sha256", "vendor_intake_source_header_sha256", default="")
+    _coalesce_column(runs, "mapping_draft_sha256", "vendor_intake_mapping_draft_sha256", default="")
+    _coalesce_column(runs, "mapping_coverage", "vendor_intake_mapping_coverage", default=np.nan)
+    for column in ("source_file_sha256", "source_header_sha256", "mapping_draft_sha256"):
+        if column not in runs.columns:
+            runs[column] = ""
+        runs[column] = runs[column].fillna("").astype(str).str.strip()
+    if "mapping_coverage" not in runs.columns:
+        runs["mapping_coverage"] = np.nan
+    runs["mapping_coverage"] = pd.to_numeric(runs["mapping_coverage"], errors="coerce")
     summary = _summary(runs)
     checks = _checks(summary.iloc[0], thresholds)
     accepted = bool(checks["passed"].all()) if not checks.empty else False
@@ -101,6 +113,26 @@ def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] 
                 "provided_components": _number(row, "provided_components", fallback=0.0),
                 "ready_components": _number(row, "ready_components", fallback=0.0),
                 "failed_checks": _number(row, "failed_checks", fallback=0.0),
+                "source_file_sha256": _text(
+                    row,
+                    "vendor_intake_source_file_sha256",
+                    fallback=_text(row, "source_file_sha256"),
+                ),
+                "source_header_sha256": _text(
+                    row,
+                    "vendor_intake_source_header_sha256",
+                    fallback=_text(row, "source_header_sha256"),
+                ),
+                "mapping_draft_sha256": _text(
+                    row,
+                    "vendor_intake_mapping_draft_sha256",
+                    fallback=_text(row, "mapping_draft_sha256"),
+                ),
+                "mapping_coverage": _number(
+                    row,
+                    "vendor_intake_mapping_coverage",
+                    fallback=_number(row, "mapping_coverage"),
+                ),
                 "recommendation": str(row.get("recommendation", "")),
             }
         )
@@ -119,6 +151,11 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "failed_datasets": failed_datasets,
                 "ready_rate": ready_datasets / dataset_count if dataset_count else 0.0,
                 "total_failed_checks": int(pd.to_numeric(runs["failed_checks"], errors="coerce").sum(skipna=True)),
+                "unique_source_files": _unique_text_count(runs, "source_file_sha256"),
+                "source_file_fingerprint_coverage": _text_coverage(runs, "source_file_sha256"),
+                "unique_header_fingerprints": _unique_text_count(runs, "source_header_sha256"),
+                "unique_mapping_drafts": _unique_text_count(runs, "mapping_draft_sha256"),
+                "min_mapping_coverage": _min_number(runs, "mapping_coverage"),
                 "median_ready_components": float(pd.to_numeric(runs["ready_components"], errors="coerce").median(skipna=True))
                 if dataset_count
                 else np.nan,
@@ -133,19 +170,27 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
 
 def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd.DataFrame:
     min_ready = thresholds.min_ready_datasets if thresholds.min_ready_datasets is not None else thresholds.min_datasets
-    return pd.DataFrame(
-        [
-            _threshold_check("dataset_count", row["dataset_count"], ">=", thresholds.min_datasets),
-            _threshold_check("ready_datasets", row["ready_datasets"], ">=", min_ready),
-            _threshold_check("ready_rate", row["ready_rate"], ">=", thresholds.min_ready_rate),
+    checks = [
+        _threshold_check("dataset_count", row["dataset_count"], ">=", thresholds.min_datasets),
+        _threshold_check("ready_datasets", row["ready_datasets"], ">=", min_ready),
+        _threshold_check("ready_rate", row["ready_rate"], ">=", thresholds.min_ready_rate),
+        _threshold_check(
+            "total_failed_checks",
+            row["total_failed_checks"],
+            "<=",
+            thresholds.max_total_failed_checks,
+        ),
+    ]
+    if thresholds.min_unique_source_files is not None:
+        checks.append(
             _threshold_check(
-                "total_failed_checks",
-                row["total_failed_checks"],
-                "<=",
-                thresholds.max_total_failed_checks,
-            ),
-        ]
-    )
+                "unique_source_files",
+                row["unique_source_files"],
+                ">=",
+                thresholds.min_unique_source_files,
+            )
+        )
+    return pd.DataFrame(checks)
 
 
 def _threshold_check(name: str, value: float | int, operator: str, threshold: float | int) -> dict[str, object]:
@@ -182,6 +227,8 @@ def _validate_thresholds(thresholds: DataReadinessComparisonThresholds) -> None:
         raise ValueError("min_ready_rate must be between 0 and 1")
     if thresholds.max_total_failed_checks < 0:
         raise ValueError("max_total_failed_checks must be non-negative")
+    if thresholds.min_unique_source_files is not None and thresholds.min_unique_source_files <= 0:
+        raise ValueError("min_unique_source_files must be positive")
 
 
 def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:
@@ -190,11 +237,54 @@ def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:
         raise ValueError(f"{name} missing required columns: {missing}")
 
 
+def _coalesce_column(frame: pd.DataFrame, column: str, fallback_column: str, *, default: object) -> None:
+    if column not in frame.columns:
+        frame[column] = frame[fallback_column] if fallback_column in frame.columns else default
+        return
+    if fallback_column not in frame.columns:
+        return
+    current = frame[column]
+    if pd.api.types.is_numeric_dtype(current):
+        missing = current.isna()
+    else:
+        missing = current.isna() | (current.astype(str).str.strip() == "")
+    frame.loc[missing, column] = frame.loc[missing, fallback_column]
+
+
 def _number(row: pd.Series, column: str, fallback: float = np.nan) -> float:
     value = row.get(column, fallback)
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _text(row: pd.Series, column: str, fallback: str = "") -> str:
+    value = row.get(column, fallback)
+    if pd.isna(value):
+        return fallback
+    return str(value).strip()
+
+
+def _unique_text_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty or column not in frame.columns:
+        return 0
+    values = frame[column].dropna().astype(str).str.strip()
+    values = values.loc[values != ""]
+    return int(values.nunique())
+
+
+def _text_coverage(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return 0.0
+    values = frame[column].fillna("").astype(str).str.strip()
+    return float((values != "").sum() / len(values)) if len(values) else 0.0
+
+
+def _min_number(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return np.nan
+    values = pd.to_numeric(frame[column], errors="coerce")
+    return float(values.min(skipna=True)) if values.notna().any() else np.nan
 
 
 def _to_bool(value: object) -> bool:

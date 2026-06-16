@@ -246,6 +246,7 @@ def write_vendor_market_data_batch_pipeline(
         min_ready_datasets=len(paths),
         min_ready_rate=1.0,
         max_total_failed_checks=0,
+        min_unique_source_files=len(paths),
     )
     comparison = write_data_readiness_comparison(
         readiness_dirs,

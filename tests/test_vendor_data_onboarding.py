@@ -135,6 +135,33 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert manifest["run_type"] == "vendor_market_data_batch_pipeline"
 
 
+def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_path):
+    day1 = tmp_path / "arrow_ticks_day1.csv"
+    out_dir = tmp_path / "batch"
+    vendor_ticks("2026-06-10").to_csv(day1, index=False)
+
+    report = write_vendor_market_data_batch_pipeline(
+        [day1, day1],
+        output_dir=out_dir,
+        labels=["day1", "day1_copy"],
+        config=VendorMarketDataPipelineConfig(
+            adapter="arrow_money",
+            kind="ticks",
+            timestamp_unit="datetime",
+            tick_size=0.05,
+            min_rows=2,
+        ),
+    )
+
+    checks = pd.read_csv(out_dir / "comparison" / "data_readiness_comparison_checks.csv")
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert summary["ready_datasets"] == 2
+    assert summary["unique_source_files"] == 1
+    assert not summary["comparison_accepted"]
+    assert "unique_source_files" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+
+
 def test_vendor_market_data_pipeline_onboards_option_chain_file(tmp_path):
     raw = pd.DataFrame(
         [
