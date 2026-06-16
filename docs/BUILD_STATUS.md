@@ -678,8 +678,9 @@
   comparison now aggregates the same wrapper fields and blocks promotion when
   accepted broker-readiness sessions lose or fail that proof. Scale-up now
   retains and enforces that shadow-comparison wrapper aggregate before
-  promotion, and cutover now carries and revalidates the same aggregate before
-  live-dryrun route authorization.
+  promotion, cutover now carries and revalidates the same aggregate before
+  live-dryrun route authorization, and route-enable now revalidates the
+  cutover-carried aggregate before a broker route can be enabled.
   Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
@@ -696,7 +697,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 847 tests.
+Current passing suite: 848 tests.
 
 ## Next Build Targets
 
