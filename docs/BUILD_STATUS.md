@@ -584,8 +584,9 @@
   `cutover_broker_vendor_data_readiness_*` and
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker dispatch prefers its route-native config block, hydrates missing proof
-  through the route-enable/cutover manifest chain, revalidates it, and
-  preserves it as
+  through the route-enable/cutover manifest chain, revalidates the wrapper and
+  nested batch, and preserves them as
+  `route_broker_vendor_data_readiness_*` and
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before the
   non-submitting sender packet prefers its dispatch-native config block, hydrates missing proof
   through the dispatch/route-enable/cutover manifest chain, and
@@ -651,9 +652,10 @@
   Route enable now carries and revalidates that wrapper readiness state,
   manifest identity, coverage, and mapping-draft provenance before broker
   dispatch planning can inherit cutover-carried broker/vendor data proof. Broker
-  dispatch planning now carries and revalidates that identity plus source-file
-  fingerprint coverage, mapping coverage, and mapping-draft provenance before
-  send packets can inherit route-enable-carried proof.
+  dispatch planning now carries and revalidates that wrapper readiness state,
+  identity, source-file fingerprint coverage, mapping coverage, and
+  mapping-draft provenance before send packets can inherit route-enable-carried
+  proof.
   Broker dispatch send now carries those coverage/provenance fields and
   revalidates broker-readiness-prefixed vendor proof before non-submitting send
   packets can inherit it. Acknowledgement now carries those coverage/provenance
@@ -677,7 +679,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 832 tests.
+Current passing suite: 834 tests.
 
 ## Next Build Targets
 

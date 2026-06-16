@@ -2821,14 +2821,19 @@ carried the broker-readiness final dispatch round-trip vendor market-data batch
 proof, dispatch planning revalidates adapter, market, dataset, provenance, and
 comparison acceptance checks and preserves it as
 `route_broker_dispatch_roundtrip_vendor_market_data_batch_*` fields plus the
-`route_broker_dispatch_roundtrip_vendor_market_data_batch` config block.
+`route_broker_dispatch_roundtrip_vendor_market_data_batch` config block. If
+route-enable carried the broker-vendor wrapper readiness state, dispatch
+planning carries it as `route_broker_vendor_data_readiness_*` fields plus
+`route_broker_vendor_data_readiness` config, and fails closed when the wrapper
+is not ready or has failed checks even if the nested vendor batch itself is
+valid.
 When both `route_broker_dispatch_roundtrip_vendor_market_data_batch` and the
 cutover-retained `cutover_broker_dispatch_roundtrip_vendor_market_data_batch`
 blocks are present, dispatch planning prefers the route-native block.
 For older or thin route-enable configs, dispatch planning can follow the
 route-enable manifest to the cutover manifest and hydrate missing broker
-vendor-data proof from the recorded `broker_readiness_config` sidecar before
-revalidating it.
+vendor-data proof and wrapper readiness from the recorded
+`broker_readiness_config` sidecar before revalidating them.
 `broker_dispatch_config.json` is the artifact a future Arrow.money or iRage
 sender can consume. `--upload-pack` may point at a
 launch-pipeline root; dispatch planning resolves nested `05_upload_pack` or
@@ -3316,6 +3321,8 @@ when the wrapper readiness sidecar is failed, even if the nested batch proof is
 otherwise valid. Cutover applies the same wrapper readiness gate before route
 enable can inherit scale-up-carried broker/vendor proof, and route-enable
 applies it again before broker dispatch can inherit cutover-carried proof.
+Broker dispatch planning applies the same gate before sender packets can
+inherit route-enable-carried proof.
 
 ## Order Staging
 

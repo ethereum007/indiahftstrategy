@@ -389,6 +389,14 @@ def vendor_market_data_batch_config(
     }
 
 
+def broker_vendor_data_readiness_config(provided=True, ready=True, failed_checks=0):
+    return {
+        "provided": provided,
+        "ready": ready,
+        "failed_checks": failed_checks,
+    }
+
+
 def upload_orders(duplicate=False):
     second_id = "ORD-1" if duplicate else "ORD-2"
     return pd.DataFrame(
@@ -698,6 +706,37 @@ def test_broker_dispatch_carries_route_broker_vendor_market_data_batch():
     assert vendor["comparison"]["accepted"]
     assert len(vendor["datasets"]) == 2
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
+
+
+def test_broker_dispatch_blocks_failed_route_broker_vendor_data_readiness():
+    config = route_config()
+    config["cutover_broker_vendor_data_readiness"] = broker_vendor_data_readiness_config(
+        ready=False,
+        failed_checks=1,
+    )
+    config["cutover_broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor_market_data_batch_config()
+
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(),
+        route_enable_config=config,
+        upload_orders=upload_orders(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    readiness = report.config["route_broker_vendor_data_readiness"]
+    assert {
+        "route_broker_vendor_data_readiness_ready",
+        "route_broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert summary["route_broker_vendor_data_readiness_provided"]
+    assert not summary["route_broker_vendor_data_readiness_ready"]
+    assert int(summary["route_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert readiness["provided"]
+    assert not readiness["ready"]
+    assert readiness["failed_checks"] == 1
+    assert report.config["route_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
 
 
 def test_broker_dispatch_blocks_bad_route_broker_vendor_market_data_batch():
@@ -1252,6 +1291,85 @@ def test_cli_broker_dispatch_hydrates_broker_vendor_data_from_route_manifest_cha
     assert vendor["unique_mapping_drafts"] == 1
     assert vendor["comparison"]["accepted"]
     assert vendor["datasets"][1]["source_file_sha256"] == "d" * 64
+
+
+def test_cli_broker_dispatch_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
+    route, upload = write_inputs(tmp_path)
+    broker_config = route / "broker_readiness_config.json"
+    cutover_manifest = route / "cutover_manifest.json"
+    broker_config.write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "broker_vendor_data_readiness": broker_vendor_data_readiness_config(
+                    ready=False,
+                    failed_checks=1,
+                ),
+                "dispatch_roundtrip": {
+                    "provided": True,
+                    "ready": True,
+                    "target_mode": "live_dryrun",
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                        vendor_market_data_batch_config()
+                    ),
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cutover_manifest.write_text(
+        json.dumps(
+            {
+                "run_type": "cutover_gate",
+                "inputs": {
+                    "broker_readiness_config": {
+                        "path": str(broker_config),
+                    }
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "dispatch"
+
+    code = main(
+        [
+            "plan-broker-dispatch",
+            "--route-enable",
+            str(route),
+            "--upload-pack",
+            str(upload),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+    checks = pd.read_csv(out_dir / "broker_dispatch_checks.csv")
+    config = json.loads((out_dir / "broker_dispatch_config.json").read_text(encoding="utf-8"))
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    readiness = config["route_broker_vendor_data_readiness"]
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert {
+        "route_broker_vendor_data_readiness_ready",
+        "route_broker_vendor_data_readiness_failed_checks",
+    } <= failed
+    assert bool(summary.loc[0, "route_broker_vendor_data_readiness_provided"])
+    assert not bool(summary.loc[0, "route_broker_vendor_data_readiness_ready"])
+    assert int(summary.loc[0, "route_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert readiness["provided"]
+    assert not readiness["ready"]
+    assert readiness["failed_checks"] == 1
+    assert config["route_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
 
 
 def test_cli_broker_dispatch_reads_launch_pipeline_upload_roots(tmp_path):
