@@ -576,10 +576,12 @@
   prefers the broker-specific config block, hydrates missing scale-up broker
   vendor-data proof from direct or launch-root broker-readiness sidecars,
   revalidates it, and preserves it as
-  `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and
+  `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch_*` plus the
+  `scaleup_broker_vendor_data_readiness_*` wrapper gate, and
   route-enable prefers its cutover-specific config block, hydrates missing proof
-  from broker-readiness sidecars referenced by the cutover manifest, revalidates it, and
-  preserves it as
+  from broker-readiness sidecars referenced by the cutover manifest, revalidates
+  the wrapper and nested batch, and preserves them as
+  `cutover_broker_vendor_data_readiness_*` and
   `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*`, before
   broker dispatch prefers its route-native config block, hydrates missing proof
   through the route-enable/cutover manifest chain, revalidates it, and
@@ -646,11 +648,12 @@
   the same manifest identity, coverage, mapping-draft provenance, and
   broker-vendor wrapper readiness state on scale-up-carried broker/vendor
   proofs before route enable can inherit them.
-  Route enable now carries and revalidates that manifest identity, coverage, and
-  mapping-draft provenance before broker dispatch planning can inherit cutover-carried
-  broker/vendor data proof. Broker dispatch planning now carries and revalidates
-  that identity plus source-file fingerprint coverage, mapping coverage, and
-  mapping-draft provenance before send packets can inherit route-enable-carried proof.
+  Route enable now carries and revalidates that wrapper readiness state,
+  manifest identity, coverage, and mapping-draft provenance before broker
+  dispatch planning can inherit cutover-carried broker/vendor data proof. Broker
+  dispatch planning now carries and revalidates that identity plus source-file
+  fingerprint coverage, mapping coverage, and mapping-draft provenance before
+  send packets can inherit route-enable-carried proof.
   Broker dispatch send now carries those coverage/provenance fields and
   revalidates broker-readiness-prefixed vendor proof before non-submitting send
   packets can inherit it. Acknowledgement now carries those coverage/provenance
@@ -674,7 +677,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 830 tests.
+Current passing suite: 832 tests.
 
 ## Next Build Targets
 

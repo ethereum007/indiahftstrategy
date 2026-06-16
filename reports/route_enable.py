@@ -247,6 +247,8 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
         checks.extend(_shadow_broker_readiness_checks(cutover))
     if _broker_shadow_broker_readiness_active(cutover):
         checks.extend(_broker_shadow_broker_readiness_checks(cutover))
+    if _broker_vendor_data_readiness_active(cutover):
+        checks.extend(_broker_vendor_data_readiness_checks(cutover))
     if _broker_vendor_market_data_batch_active(cutover):
         checks.extend(_broker_vendor_market_data_batch_checks(cutover))
     if thresholds.require_order_export_ready:
@@ -541,6 +543,46 @@ def _route_dispatch_roundtrip_checks(cutover: dict[str, Any], target_mode: str) 
 def _broker_vendor_market_data_batch_active(cutover: dict[str, Any]) -> bool:
     vendor = cutover["broker_dispatch_roundtrip_vendor_market_data_batch"]
     return bool(_to_bool(vendor["provided"]) or int(vendor["dataset_count"]) > 0)
+
+
+def _broker_vendor_data_readiness_active(cutover: dict[str, Any]) -> bool:
+    readiness = cutover["broker_vendor_data_readiness"]
+    return bool(
+        _to_bool(readiness["provided"])
+        or _to_bool(readiness["ready"])
+        or int(readiness["failed_checks"]) > 0
+    )
+
+
+def _broker_vendor_data_readiness_checks(cutover: dict[str, Any]) -> list[dict[str, object]]:
+    readiness = cutover["broker_vendor_data_readiness"]
+    prefix = "cutover_broker_vendor_data_readiness"
+    return [
+        _check(
+            f"{prefix}_provided",
+            _to_bool(readiness["provided"]),
+            "is",
+            True,
+            _to_bool(readiness["provided"]),
+            "cutover broker-vendor readiness wrapper proof is active but not marked provided",
+        ),
+        _check(
+            f"{prefix}_ready",
+            _to_bool(readiness["ready"]),
+            "is",
+            True,
+            _to_bool(readiness["ready"]),
+            "cutover broker-vendor readiness wrapper proof is not ready",
+        ),
+        _check(
+            f"{prefix}_failed_checks",
+            int(readiness["failed_checks"]),
+            "<=",
+            0,
+            int(readiness["failed_checks"]) <= 0,
+            "cutover broker-vendor readiness wrapper proof has failed checks",
+        ),
+    ]
 
 
 def _broker_vendor_market_data_batch_checks(cutover: dict[str, Any]) -> list[dict[str, object]]:
@@ -1024,6 +1066,7 @@ def _packet(
                     "shadow_broker_route_dispatch_roundtrip_scenario_count"
                 ],
                 **_broker_shadow_broker_packet_fields(cutover),
+                **_broker_vendor_data_readiness_packet_fields(cutover),
                 **_broker_vendor_market_data_batch_packet_fields(cutover),
                 **_vendor_market_data_batch_packet_fields(cutover),
                 "broker_resume_gate_ready": cutover["broker_resume_gate_ready"],
@@ -1188,6 +1231,15 @@ def _broker_vendor_market_data_batch_packet_fields(cutover: dict[str, Any]) -> d
     }
 
 
+def _broker_vendor_data_readiness_packet_fields(cutover: dict[str, Any]) -> dict[str, Any]:
+    readiness = cutover["broker_vendor_data_readiness"]
+    return {
+        "cutover_broker_vendor_data_readiness_provided": readiness["provided"],
+        "cutover_broker_vendor_data_readiness_ready": readiness["ready"],
+        "cutover_broker_vendor_data_readiness_failed_checks": readiness["failed_checks"],
+    }
+
+
 def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     ready = failed == 0
@@ -1266,6 +1318,7 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     packet["shadow_broker_route_dispatch_roundtrip_scenario_count"]
                 ),
                 **_broker_shadow_broker_summary_fields(packet),
+                **_broker_vendor_data_readiness_summary_fields(packet),
                 **_broker_vendor_market_data_batch_summary_fields(packet),
                 **_vendor_market_data_batch_summary_fields(packet),
                 "broker_resume_gate_ready": _to_bool(packet["broker_resume_gate_ready"]),
@@ -1452,6 +1505,20 @@ def _broker_vendor_market_data_batch_summary_fields(packet: pd.Series) -> dict[s
     }
 
 
+def _broker_vendor_data_readiness_summary_fields(packet: pd.Series) -> dict[str, Any]:
+    return {
+        "cutover_broker_vendor_data_readiness_provided": _to_bool(
+            packet["cutover_broker_vendor_data_readiness_provided"]
+        ),
+        "cutover_broker_vendor_data_readiness_ready": _to_bool(
+            packet["cutover_broker_vendor_data_readiness_ready"]
+        ),
+        "cutover_broker_vendor_data_readiness_failed_checks": int(
+            packet["cutover_broker_vendor_data_readiness_failed_checks"]
+        ),
+    }
+
+
 def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.DataFrame) -> dict[str, Any]:
     return {
         "schema_version": 1,
@@ -1535,6 +1602,7 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             },
         },
         "cutover_broker_shadow_broker_readiness": _broker_shadow_broker_config(packet),
+        "cutover_broker_vendor_data_readiness": _broker_vendor_data_readiness_config(packet),
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch": (
             _broker_vendor_market_data_batch_config(packet)
         ),
@@ -1683,6 +1751,14 @@ def _broker_vendor_market_data_batch_config(packet: pd.Series) -> dict[str, Any]
     }
 
 
+def _broker_vendor_data_readiness_config(packet: pd.Series) -> dict[str, Any]:
+    return {
+        "provided": _to_bool(packet["cutover_broker_vendor_data_readiness_provided"]),
+        "ready": _to_bool(packet["cutover_broker_vendor_data_readiness_ready"]),
+        "failed_checks": int(packet["cutover_broker_vendor_data_readiness_failed_checks"]),
+    }
+
+
 def _vendor_market_data_batch_state(
     vendor: dict[str, Any],
     *,
@@ -1770,6 +1846,40 @@ def _vendor_market_data_batch_state(
     }
 
 
+def _broker_vendor_data_readiness_state(
+    readiness: dict[str, Any],
+    *,
+    row: pd.Series | None = None,
+    field_prefix: str = "",
+) -> dict[str, Any]:
+    row = pd.Series(dtype=object) if row is None else row
+    active_config = _broker_vendor_data_readiness_source_active(readiness)
+    row_value = (lambda suffix, default: row.get(f"{field_prefix}_{suffix}", default)) if field_prefix else (
+        lambda _suffix, default: default
+    )
+    return {
+        "provided": _to_bool(readiness.get("provided", row_value("provided", active_config))),
+        "ready": _to_bool(readiness.get("ready", row_value("ready", False))),
+        "failed_checks": _broker_vendor_data_readiness_failed_checks(
+            readiness,
+            fallback=_number(row, f"{field_prefix}_failed_checks", 0.0) if field_prefix else 0.0,
+        ),
+    }
+
+
+def _broker_vendor_data_readiness_failed_checks(
+    readiness: dict[str, Any],
+    *,
+    fallback: float = 0.0,
+) -> int:
+    failed_checks = readiness.get("failed_checks")
+    if isinstance(failed_checks, list):
+        return len(failed_checks)
+    if failed_checks not in (None, ""):
+        return int(_number_from(readiness, "failed_checks", fallback))
+    return int(_number_from(readiness, "failed_check_count", fallback))
+
+
 def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
@@ -1787,6 +1897,10 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
         broker_vendor_market_data_batch,
         broker_vendor_market_data_batch_prefix,
     ) = _broker_vendor_market_data_batch_source(config)
+    (
+        broker_vendor_data_readiness,
+        broker_vendor_data_readiness_prefix,
+    ) = _broker_vendor_data_readiness_source(config)
     vendor_market_data_batch = config.get("scaleup_vendor_market_data_batch", {}) or {}
     scaleup_dispatch = config.get("scaleup_dispatch_roundtrip", {}) or {}
     scaleup_route_enable = scaleup_dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
@@ -1989,6 +2103,11 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             row=row,
             field_prefix=broker_vendor_market_data_batch_prefix,
         ),
+        "broker_vendor_data_readiness": _broker_vendor_data_readiness_state(
+            broker_vendor_data_readiness,
+            row=row,
+            field_prefix=broker_vendor_data_readiness_prefix,
+        ),
         "vendor_market_data_batch": _vendor_market_data_batch_state(vendor_market_data_batch),
         "broker_schema_status": _first_text(
             broker_readiness.get("adapter_schema_status", ""),
@@ -2167,30 +2286,80 @@ def _broker_vendor_market_data_batch_source(config: dict[str, Any]) -> tuple[dic
     )
 
 
+def _broker_vendor_data_readiness_source(config: dict[str, Any]) -> tuple[dict[str, Any], str]:
+    candidates: list[tuple[object, str]] = [
+        (config.get("cutover_broker_vendor_data_readiness"), "cutover_broker_vendor_data_readiness"),
+        (config.get("scaleup_broker_vendor_data_readiness"), "scaleup_broker_vendor_data_readiness"),
+        (config.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness"),
+    ]
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    if isinstance(broker_readiness, dict):
+        candidates.append(
+            (broker_readiness.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness")
+        )
+        broker_dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
+        if isinstance(broker_dispatch, dict):
+            candidates.append(
+                (broker_dispatch.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness")
+            )
+    dispatch = config.get("dispatch_roundtrip", {}) or {}
+    if isinstance(dispatch, dict):
+        candidates.append(
+            (dispatch.get("broker_vendor_data_readiness"), "broker_vendor_data_readiness")
+        )
+    for candidate, source in candidates:
+        if isinstance(candidate, dict) and _broker_vendor_data_readiness_source_active(candidate):
+            return candidate, source
+    return {}, "scaleup_broker_vendor_data_readiness"
+
+
+def _broker_vendor_data_readiness_source_active(readiness: object) -> bool:
+    if not isinstance(readiness, dict) or not readiness:
+        return False
+    return bool(
+        _to_bool(readiness.get("provided", True))
+        or _to_bool(readiness.get("ready", False))
+        or _broker_vendor_data_readiness_failed_checks(readiness) > 0
+    )
+
+
 def _with_broker_readiness_config_vendor_market_data_batch(
     cutover_config: dict[str, Any],
     broker_readiness_config: dict[str, Any],
 ) -> dict[str, Any]:
     vendor, _source = _broker_vendor_market_data_batch_source(cutover_config)
-    if vendor_market_data_batch_source_active(vendor):
-        return cutover_config
     dispatch = broker_readiness_config.get("dispatch_roundtrip", {}) or {}
-    if not isinstance(dispatch, dict):
-        return cutover_config
-    vendor, _source = select_vendor_market_data_batch_source(
-        dispatch,
-        (
-            "broker_dispatch_roundtrip_vendor_market_data_batch",
-            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
-            "vendor_market_data_batch",
-            "roundtrip_vendor_market_data_batch",
-        ),
-        default_source="broker_dispatch_roundtrip_vendor_market_data_batch",
+    if isinstance(dispatch, dict):
+        sidecar_vendor, _source = select_vendor_market_data_batch_source(
+            dispatch,
+            (
+                "broker_dispatch_roundtrip_vendor_market_data_batch",
+                "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+                "vendor_market_data_batch",
+                "roundtrip_vendor_market_data_batch",
+            ),
+            default_source="broker_dispatch_roundtrip_vendor_market_data_batch",
+        )
+    else:
+        sidecar_vendor = {}
+    should_hydrate_vendor = (
+        not vendor_market_data_batch_source_active(vendor)
+        and vendor_market_data_batch_source_active(sidecar_vendor)
     )
-    if not vendor_market_data_batch_source_active(vendor):
+    existing_readiness, _readiness_source = _broker_vendor_data_readiness_source(cutover_config)
+    sidecar_readiness, _sidecar_readiness_source = _broker_vendor_data_readiness_source(broker_readiness_config)
+    should_hydrate_readiness = (
+        not _broker_vendor_data_readiness_source_active(existing_readiness)
+        and _broker_vendor_data_readiness_source_active(sidecar_readiness)
+    )
+    if not should_hydrate_vendor and not should_hydrate_readiness:
         return cutover_config
+
     out = dict(cutover_config)
-    out["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(vendor)
+    if should_hydrate_vendor:
+        out["scaleup_broker_dispatch_roundtrip_vendor_market_data_batch"] = dict(sidecar_vendor)
+    if should_hydrate_readiness:
+        out["scaleup_broker_vendor_data_readiness"] = dict(sidecar_readiness)
     return out
 
 

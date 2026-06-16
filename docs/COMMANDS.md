@@ -2757,14 +2757,18 @@ route-enable revalidates adapter, market, dataset, provenance, and comparison
 acceptance checks and carries it as
 `cutover_broker_dispatch_roundtrip_vendor_market_data_batch_*` audit fields
 plus the `cutover_broker_dispatch_roundtrip_vendor_market_data_batch` config
-block. When both `cutover_broker_dispatch_roundtrip_vendor_market_data_batch`
+block. If cutover retained the broker-vendor wrapper readiness state,
+route-enable carries it as `cutover_broker_vendor_data_readiness_*` audit
+fields plus `cutover_broker_vendor_data_readiness` config, and fails closed
+when the wrapper is not ready or has failed checks even if the nested vendor
+batch itself is valid. When both `cutover_broker_dispatch_roundtrip_vendor_market_data_batch`
 and the scale-up-retained
 `scaleup_broker_dispatch_roundtrip_vendor_market_data_batch` blocks are present,
 route-enable prefers the cutover-specific block. For older or thin cutover
 configs, route-enable can also read the cutover manifest's
 `broker_readiness_config` input and hydrate missing broker vendor-data proof
-before revalidating it. `--upload-pack` and `--order-export` may point at a launch-pipeline
-root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
+and wrapper readiness before revalidating them. `--upload-pack` and
+`--order-export` may point at a launch-pipeline root; route-enable resolves nested `05_upload_pack`/`04_export` or surface-MM
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
 summary, cutover config, cutover manifest when present, upload summary, and
 optional order export summary in the manifest.
@@ -3310,7 +3314,8 @@ masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper
 state from `broker_readiness_config.json` and blocks controlled scale increases
 when the wrapper readiness sidecar is failed, even if the nested batch proof is
 otherwise valid. Cutover applies the same wrapper readiness gate before route
-enable can inherit scale-up-carried broker/vendor proof.
+enable can inherit scale-up-carried broker/vendor proof, and route-enable
+applies it again before broker dispatch can inherit cutover-carried proof.
 
 ## Order Staging
 
