@@ -618,7 +618,9 @@
   CLI operator paths. The generated `pipeline-broker-vendor-readiness` root now
   has end-to-end CLI coverage feeding a launch pipeline before scale-up
   preserves the broker-readiness config sidecar proof in its operator-visible
-  summary/config. Broker readiness now evaluates standalone vendor-batch proof
+  summary/config, and its own summary/config now surfaces source-file
+  fingerprint coverage, mapping coverage, and mapping-draft provenance from
+  the generated vendor batch. Broker readiness now evaluates standalone vendor-batch proof
   roots even when no dispatch round-trip proof is supplied, compares them
   against the launch/broker expected market when available, and fails closed
   across all five launch CLIs when an iRage proof root is supplied to an

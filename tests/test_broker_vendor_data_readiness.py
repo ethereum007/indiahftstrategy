@@ -237,12 +237,28 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert bool(summary["broker_readiness_ready"])
         assert bool(summary["broker_vendor_data_ready"])
         assert int(summary["dataset_count"]) == 2
+        assert int(summary["unique_source_files"]) == 2
+        assert int(summary["unique_header_fingerprints"]) == 1
+        assert summary["source_file_fingerprint_coverage"] == 1.0
+        assert summary["min_mapping_coverage"] == 1.0
+        assert int(summary["unique_mapping_drafts"]) == 1
+        assert summary["mapping_sources"] == "vendor_intake_draft"
+        assert bool(summary["comparison_accepted"])
         assert (out_dir / "01_vendor_market_data_batch" / "vendor_market_data_batch_config.json").exists()
         assert (out_dir / "02_broker_readiness" / "broker_readiness_config.json").exists()
         config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert config["ready"]
         assert config["adapter"] == adapter
+        assert config["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
+        assert config["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
+        assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
+        assert config["vendor_market_data_batch"]["comparison"]["accepted"]
+        assert config["broker_readiness"]["broker_vendor_data_ready"]
+        component_by_name = {item["component"]: item for item in config["components"]}
+        assert component_by_name["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
+        assert component_by_name["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
+        assert component_by_name["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
         assert manifest["run_type"] == "broker_vendor_data_readiness_pipeline"
         assert "vendor_market_data_batch" in manifest["inputs"]
         assert "broker_readiness" in manifest["inputs"]
@@ -292,7 +308,14 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "broker_vendor_data_ready"])
+    assert summary.loc[0, "source_file_fingerprint_coverage"] == 1.0
+    assert summary.loc[0, "min_mapping_coverage"] == 1.0
+    assert int(summary.loc[0, "unique_mapping_drafts"]) == 1
     assert set(components["component"]) == {"vendor_market_data_batch", "broker_readiness"}
+    vendor_component = components.set_index("component").loc["vendor_market_data_batch"]
+    assert vendor_component["source_file_fingerprint_coverage"] == 1.0
+    assert vendor_component["min_mapping_coverage"] == 1.0
+    assert int(vendor_component["unique_mapping_drafts"]) == 1
 
 
 def test_cli_broker_vendor_data_readiness_output_feeds_launch_cli(tmp_path):

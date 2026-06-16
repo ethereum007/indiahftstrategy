@@ -3296,7 +3296,9 @@ This writes `01_vendor_market_data_batch`, `02_broker_readiness`,
 `broker_vendor_data_readiness_summary.csv`,
 `broker_vendor_data_readiness_config.json`, and a root manifest. It is the
 current one-command Arrow.money/iRage data proof path before broker dry-run
-handoff.
+handoff. The root summary/config also surfaces source-file fingerprint
+coverage, minimum mapping coverage, and mapping-draft provenance, so operators
+can verify the broker-vendor proof without drilling into nested batch files.
 
 ## Order Staging
 

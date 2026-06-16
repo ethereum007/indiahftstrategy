@@ -16,6 +16,12 @@ from reports.vendor_data_onboarding import (
     write_vendor_market_data_batch_pipeline,
 )
 
+_VENDOR_BATCH_PREFIXES = (
+    "",
+    "broker_dispatch_roundtrip_vendor_market_data_batch",
+    "dispatch_roundtrip_vendor_market_data_batch",
+)
+
 
 @dataclass(frozen=True)
 class BrokerVendorDataReadinessConfig:
@@ -193,7 +199,15 @@ def _component(name: str, ready: bool, artifact_dir: Path, summary: pd.DataFrame
         "ready": bool(ready),
         "artifact_dir": str(artifact_dir),
         "adapter": str(row.get("adapter", "")),
-        "dataset_count": _int(row.get("dataset_count", 0)),
+        "dataset_count": _int(_vendor_value(row, "dataset_count", 0)),
+        "ready_datasets": _int(_vendor_value(row, "ready_datasets", 0)),
+        "failed_datasets": _int(_vendor_value(row, "failed_datasets", 0)),
+        "unique_source_files": _int(_vendor_value(row, "unique_source_files", 0)),
+        "unique_header_fingerprints": _int(_vendor_value(row, "unique_header_fingerprints", 0)),
+        "source_file_fingerprint_coverage": _float(_vendor_value(row, "source_file_fingerprint_coverage", 0.0)),
+        "min_mapping_coverage": _float(_vendor_value(row, "min_mapping_coverage", 0.0)),
+        "unique_mapping_drafts": _int(_vendor_value(row, "unique_mapping_drafts", 0)),
+        "mapping_sources": str(_vendor_value(row, "mapping_sources", "")),
         "failed_checks": _int(row.get("failed_checks", row.get("comparison_failed_checks", 0))),
         "recommendation": str(row.get("recommendation", "")),
     }
@@ -221,6 +235,15 @@ def _summary(
                 "ready_datasets": _int(vendor_row.get("ready_datasets", 0)),
                 "failed_datasets": _int(vendor_row.get("failed_datasets", 0)),
                 "unique_source_files": _int(vendor_row.get("unique_source_files", 0)),
+                "unique_header_fingerprints": _int(vendor_row.get("unique_header_fingerprints", 0)),
+                "source_file_fingerprint_coverage": _float(
+                    vendor_row.get("source_file_fingerprint_coverage", 0.0)
+                ),
+                "min_mapping_coverage": _float(vendor_row.get("min_mapping_coverage", 0.0)),
+                "unique_mapping_drafts": _int(vendor_row.get("unique_mapping_drafts", 0)),
+                "mapping_sources": str(vendor_row.get("mapping_sources", "")),
+                "comparison_accepted": bool(vendor_row.get("comparison_accepted", False)),
+                "comparison_failed_checks": _int(vendor_row.get("comparison_failed_checks", 0)),
                 "broker_vendor_data_ready": bool(
                     broker_row.get("broker_dispatch_roundtrip_vendor_market_data_batch_ready", False)
                 ),
@@ -243,6 +266,26 @@ def _config(
         "adapter": config.adapter,
         "kind": config.kind,
         "market": config.market,
+        "vendor_market_data_batch": {
+            "ready": bool(row.get("vendor_batch_ready", False)),
+            "dataset_count": _int(row.get("dataset_count", 0)),
+            "ready_datasets": _int(row.get("ready_datasets", 0)),
+            "failed_datasets": _int(row.get("failed_datasets", 0)),
+            "unique_source_files": _int(row.get("unique_source_files", 0)),
+            "unique_header_fingerprints": _int(row.get("unique_header_fingerprints", 0)),
+            "source_file_fingerprint_coverage": _float(row.get("source_file_fingerprint_coverage", 0.0)),
+            "min_mapping_coverage": _float(row.get("min_mapping_coverage", 0.0)),
+            "unique_mapping_drafts": _int(row.get("unique_mapping_drafts", 0)),
+            "mapping_sources": str(row.get("mapping_sources", "")),
+            "comparison": {
+                "accepted": bool(row.get("comparison_accepted", False)),
+                "failed_checks": _int(row.get("comparison_failed_checks", 0)),
+            },
+        },
+        "broker_readiness": {
+            "ready": bool(row.get("broker_readiness_ready", False)),
+            "broker_vendor_data_ready": bool(row.get("broker_vendor_data_ready", False)),
+        },
         "broker_thresholds": asdict(broker_thresholds),
         "components": [
             {
@@ -250,6 +293,13 @@ def _config(
                 "ready": bool(component.get("ready", False)),
                 "status": str(component.get("status", "")),
                 "artifact_dir": str(component.get("artifact_dir", "")),
+                "dataset_count": _int(component.get("dataset_count", 0)),
+                "unique_source_files": _int(component.get("unique_source_files", 0)),
+                "source_file_fingerprint_coverage": _float(
+                    component.get("source_file_fingerprint_coverage", 0.0)
+                ),
+                "min_mapping_coverage": _float(component.get("min_mapping_coverage", 0.0)),
+                "unique_mapping_drafts": _int(component.get("unique_mapping_drafts", 0)),
             }
             for component in components.to_dict(orient="records")
         ],
@@ -264,3 +314,22 @@ def _int(value: object) -> int:
         return int(float(value))
     except (TypeError, ValueError):
         return 0
+
+
+def _float(value: object) -> float:
+    try:
+        if pd.isna(value):
+            return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _vendor_value(row: pd.Series, suffix: str, fallback: object) -> object:
+    for prefix in _VENDOR_BATCH_PREFIXES:
+        column = suffix if not prefix else f"{prefix}_{suffix}"
+        if column in row.index:
+            value = row.get(column, fallback)
+            if not pd.isna(value):
+                return value
+    return fallback
