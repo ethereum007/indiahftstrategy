@@ -58,6 +58,7 @@ def compare_shadow_sessions(
         "broker_dispatch_roundtrip_missing_request_acks",
         "broker_dispatch_roundtrip_rejected_orders",
         "broker_dispatch_roundtrip_unmatched_acks",
+        "broker_vendor_data_readiness_failed_checks",
         "broker_failed_checks",
         "max_adverse_slippage",
     ):
@@ -87,6 +88,8 @@ def compare_shadow_sessions(
         "broker_dispatch_roundtrip_ready",
         "broker_route_dispatch_roundtrip_provided",
         "broker_route_dispatch_roundtrip_ready",
+        "broker_vendor_data_readiness_provided",
+        "broker_vendor_data_readiness_ready",
     ):
         if column not in runs.columns:
             runs[column] = False
@@ -399,6 +402,23 @@ def _read_sessions(session_dirs: list[str | Path], *, labels: list[str] | None) 
                     metrics.get("broker_route_dispatch_roundtrip_scenario_key", ""),
                 )
             ),
+            "broker_vendor_data_readiness_provided": _to_bool(
+                summary.get(
+                    "broker_vendor_data_readiness_provided",
+                    metrics.get("broker_vendor_data_readiness_provided", False),
+                )
+            ),
+            "broker_vendor_data_readiness_ready": _to_bool(
+                summary.get(
+                    "broker_vendor_data_readiness_ready",
+                    metrics.get("broker_vendor_data_readiness_ready", False),
+                )
+            ),
+            "broker_vendor_data_readiness_failed_checks": _number(
+                summary,
+                "broker_vendor_data_readiness_failed_checks",
+                fallback=_number(metrics, "broker_vendor_data_readiness_failed_checks", fallback=0.0),
+            ),
             "broker_failed_checks": _number(metrics, "broker_failed_checks", fallback=0.0),
             "runtime_failed_checks": _number(metrics, "runtime_failed_checks", fallback=0.0),
             "max_adverse_slippage": _number(metrics, "max_adverse_slippage"),
@@ -454,6 +474,21 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
     )
     broker_route_dispatch_roundtrip_runs = (
         broker_readiness_runs.loc[broker_readiness_runs["broker_route_dispatch_roundtrip_provided"].astype(bool)]
+        if not broker_readiness_runs.empty
+        else pd.DataFrame()
+    )
+    broker_vendor_data_readiness_runs = (
+        broker_readiness_runs.loc[
+            broker_readiness_runs["broker_vendor_data_readiness_provided"].astype(bool)
+            | broker_readiness_runs["broker_vendor_data_readiness_ready"].astype(bool)
+            | (
+                pd.to_numeric(
+                    broker_readiness_runs["broker_vendor_data_readiness_failed_checks"],
+                    errors="coerce",
+                ).fillna(0)
+                > 0
+            )
+        ]
         if not broker_readiness_runs.empty
         else pd.DataFrame()
     )
@@ -660,6 +695,21 @@ def _summary(runs: pd.DataFrame) -> pd.DataFrame:
                 "broker_schema_reviewed_sessions": int(broker_readiness_runs["broker_schema_reviewed"].sum())
                 if not broker_readiness_runs.empty
                 else 0,
+                "broker_vendor_data_readiness_sessions": int(len(broker_vendor_data_readiness_runs)),
+                "broker_vendor_data_readiness_provided_sessions": int(
+                    broker_readiness_runs["broker_vendor_data_readiness_provided"].sum()
+                )
+                if not broker_readiness_runs.empty
+                else 0,
+                "broker_vendor_data_readiness_ready_sessions": int(
+                    broker_readiness_runs["broker_vendor_data_readiness_ready"].sum()
+                )
+                if not broker_readiness_runs.empty
+                else 0,
+                "max_broker_vendor_data_readiness_failed_checks": _max_numeric(
+                    broker_readiness_runs,
+                    "broker_vendor_data_readiness_failed_checks",
+                ),
                 "broker_adapter": next(iter(broker_adapters)) if len(broker_adapters) == 1 else "",
                 "broker_adapter_count": int(len(broker_adapters)),
                 "missing_broker_adapter_sessions": _missing_identity_count(
@@ -991,6 +1041,42 @@ def _checks(row: pd.Series, thresholds: ShadowComparisonThresholds) -> pd.DataFr
                     int(row["broker_adapter_count"]) == 1
                     and int(row["missing_broker_adapter_sessions"]) == 0,
                     "broker adapter identity is missing or mixed across shadow sessions",
+                ),
+            ]
+        )
+    broker_vendor_data_readiness_sessions = int(row["broker_vendor_data_readiness_sessions"])
+    if broker_vendor_data_readiness_sessions > 0:
+        checks.extend(
+            [
+                _check(
+                    "broker_vendor_data_readiness_present_for_broker_readiness_sessions",
+                    broker_vendor_data_readiness_sessions,
+                    "==",
+                    broker_readiness_sessions,
+                    broker_vendor_data_readiness_sessions == broker_readiness_sessions,
+                    "broker vendor-data wrapper proof is present for only some accepted broker-readiness sessions",
+                ),
+                _check(
+                    "broker_vendor_data_readiness_provided",
+                    row["broker_vendor_data_readiness_provided_sessions"],
+                    "==",
+                    broker_readiness_sessions,
+                    int(row["broker_vendor_data_readiness_provided_sessions"]) == broker_readiness_sessions,
+                    "accepted broker-readiness sessions are missing broker vendor-data wrapper proof",
+                ),
+                _check(
+                    "broker_vendor_data_readiness_ready",
+                    row["broker_vendor_data_readiness_ready_sessions"],
+                    "==",
+                    broker_readiness_sessions,
+                    int(row["broker_vendor_data_readiness_ready_sessions"]) == broker_readiness_sessions,
+                    "accepted broker vendor-data wrapper proof is not ready for every session",
+                ),
+                _threshold_check(
+                    "max_broker_vendor_data_readiness_failed_checks",
+                    row["max_broker_vendor_data_readiness_failed_checks"],
+                    "<=",
+                    0,
                 ),
             ]
         )

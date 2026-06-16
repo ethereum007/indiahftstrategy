@@ -2162,7 +2162,8 @@ broker resume strategy/market/proof identity across the comparison set. If any
 accepted session carries broker-readiness evidence, all accepted sessions must
 carry ready broker-readiness evidence for one adapter, one broker route-readiness
 strategy/market, and one broker dispatch round-trip strategy/market/scenario
-with zero route gaps, missing request acknowledgements, rejected orders, and
+with ready broker vendor-data wrapper proof and zero route gaps, missing
+request acknowledgements, rejected orders, wrapper failed checks, and
 unmatched acknowledgements.
 
 ## Controlled Scale-Up Plan
