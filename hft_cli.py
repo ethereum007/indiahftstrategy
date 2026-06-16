@@ -950,6 +950,7 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--require-instrument-metadata", action="store_true")
     data_readiness.add_argument("--expected-strategy", default=None)
     data_readiness.add_argument("--expected-market", default=None)
+    data_readiness.add_argument("--expected-adapter", default=None)
     data_readiness.add_argument("--expected-vendor-data-kind", default=None)
     data_readiness.add_argument("--min-tick-rows", type=int, default=1)
     data_readiness.add_argument("--min-chain-rows", type=int, default=1)
@@ -2909,6 +2910,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_instrument_metadata=args.require_instrument_metadata,
                 expected_strategy=args.expected_strategy,
                 expected_market=args.expected_market,
+                expected_adapter=args.expected_adapter,
                 expected_vendor_data_kind=args.expected_vendor_data_kind,
                 min_tick_rows=args.min_tick_rows,
                 min_chain_rows=args.min_chain_rows,

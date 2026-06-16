@@ -221,6 +221,9 @@
 - Data readiness can now require the vendor-intake kind to match the expected
   market-data kind, preventing an `orders` or `fills` sample from satisfying a
   `ticks` or `chain` research-data gate.
+- Data readiness now checks adapter consistency across vendor intake, schema
+  audit, and mapped-data summaries, and can enforce an expected Arrow.money or
+  iRage adapter before research data is accepted.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
@@ -639,7 +642,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 814 tests.
+Current passing suite: 816 tests.
 
 ## Next Build Targets
 

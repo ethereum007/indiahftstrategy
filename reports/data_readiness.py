@@ -36,6 +36,7 @@ class DataReadinessThresholds:
     require_instrument_metadata: bool = False
     expected_strategy: str | None = None
     expected_market: str | None = None
+    expected_adapter: str | None = None
     expected_vendor_data_kind: str | None = None
     min_tick_rows: int = 1
     min_chain_rows: int = 1
@@ -166,6 +167,7 @@ def _item(component: str, frame: pd.DataFrame, thresholds: DataReadinessThreshol
         "rows": int(row_count),
         "failed_checks": int(failed_checks),
         "source_file": SUMMARY_FILES[component],
+        "adapter": _identity(row.get("adapter", "")),
         "kind": _text(row, "best_kind", fallback=_text(row, "kind")),
         "kind_selection": _text(row, "kind_selection"),
         "selected_kind_ambiguous": _to_bool(row.get("selected_kind_ambiguous", False)),
@@ -265,7 +267,47 @@ def _checks(
                     "vendor intake kind does not match expected market-data kind",
                 )
             )
+    checks.extend(_adapter_checks(summaries, thresholds))
     return pd.DataFrame(checks)
+
+
+def _adapter_checks(
+    summaries: dict[str, pd.DataFrame],
+    thresholds: DataReadinessThresholds,
+) -> list[dict[str, Any]]:
+    adapter_components = ["vendor_intake", "schema_audit", "mapped_data"]
+    provided = {
+        component: _identity(_overall_row(summaries[component]).get("adapter", ""))
+        for component in adapter_components
+        if not summaries[component].empty
+    }
+    checks: list[dict[str, Any]] = []
+    expected_adapter = _identity(thresholds.expected_adapter)
+    if expected_adapter:
+        for component, adapter in provided.items():
+            checks.append(
+                _check(
+                    f"{component}_adapter_matches",
+                    adapter,
+                    "==",
+                    expected_adapter,
+                    bool(adapter and adapter == expected_adapter),
+                    f"{component} adapter does not match expected adapter",
+                )
+            )
+    if len(provided) > 1:
+        unique_adapters = sorted({adapter for adapter in provided.values() if adapter})
+        checks.append(
+            _check(
+                "data_adapter_consistency",
+                ";".join(unique_adapters),
+                "count",
+                1,
+                len(unique_adapters) == 1,
+                "vendor intake, schema audit, and mapped-data summaries use different adapters",
+            )
+        )
+    return checks
 
 
 def _tick_checks(summary: pd.DataFrame, thresholds: DataReadinessThresholds) -> list[dict[str, Any]]:
@@ -358,6 +400,9 @@ def _summary(
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
+                "expected_adapter": _identity(thresholds.expected_adapter),
+                "data_adapters": _joined_component_values(items, "adapter"),
+                "data_adapter_count": _component_value_count(items, "adapter"),
                 "expected_vendor_data_kind": _vendor_data_kind(thresholds.expected_vendor_data_kind),
                 "vendor_intake_kind": _component_text(items, "vendor_intake", "kind"),
                 "vendor_intake_kind_selection": _component_text(items, "vendor_intake", "kind_selection"),
@@ -456,6 +501,21 @@ def _component_bool(items: pd.DataFrame, component: str, column: str) -> bool:
     if row.empty:
         return False
     return _to_bool(row.iloc[0].get(column, False))
+
+
+def _joined_component_values(items: pd.DataFrame, column: str) -> str:
+    if items.empty or column not in items.columns:
+        return ""
+    values = items[column].dropna().astype(str).str.strip()
+    values = values.loc[values != ""]
+    return ";".join(sorted(set(values)))
+
+
+def _component_value_count(items: pd.DataFrame, column: str) -> int:
+    values = _joined_component_values(items, column)
+    if not values:
+        return 0
+    return len(values.split(";"))
 
 
 def _overall_row(frame: pd.DataFrame) -> pd.Series:

@@ -3396,6 +3396,7 @@ python -m hft_cli review-data-readiness `
   --require-instrument-metadata `
   --expected-strategy microprice_imbalance `
   --expected-market india_nse_index_derivatives `
+  --expected-adapter arrow_money `
   --expected-vendor-data-kind ticks `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
