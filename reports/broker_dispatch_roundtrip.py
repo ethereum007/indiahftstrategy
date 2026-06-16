@@ -486,6 +486,8 @@ def _broker_vendor_market_data_batch_source(
         "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
         "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
         "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+        "broker_dispatch_roundtrip_vendor_market_data_batch",
+        "roundtrip_vendor_market_data_batch",
     )
     vendor, field_prefix = select_vendor_market_data_batch_source(
         config,
@@ -516,6 +518,8 @@ def _with_broker_readiness_config_vendor_market_data_batch(
             "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
             "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
             "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+            "roundtrip_vendor_market_data_batch",
         ),
         default_source="ack_broker_dispatch_roundtrip_vendor_market_data_batch",
     )
