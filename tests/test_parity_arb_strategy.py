@@ -94,3 +94,77 @@ def test_parity_arb_taker_routes_three_ioc_legs_and_tracks_fills():
     legging = strategy.legging_report()
     assert not bool(legging.iloc[0]["partial"])
     assert legging.iloc[0]["fill_count"] == 3
+
+
+def test_parity_arb_taker_resets_run_state_when_reused():
+    strategy = ParityArbTakerStrategy(
+        pd.DataFrame(
+            [
+                {
+                    "ts": 0,
+                    "strike": 1000.0,
+                    "direction": "buy_synthetic_sell_future",
+                    "qty": 75,
+                }
+            ]
+        ),
+        ParityLegMap(
+            future_id="FUT",
+            call_by_strike={1000.0: "CALL1000"},
+            put_by_strike={1000.0: "PUT1000"},
+        ),
+        ParityArbConfig(max_signal_age_ns=1_000),
+    )
+
+    first = _parity_engine(strategy)
+    first.run()
+    assert len(strategy.executions) == 1
+    assert len(strategy.order_to_execution) == 3
+
+    second = _parity_engine(strategy)
+    second.run()
+    assert len(strategy.executions) == 1
+    assert len(strategy.order_to_execution) == 3
+    assert strategy.legging_report().iloc[0]["fill_count"] == 3
+
+
+def _parity_engine(strategy):
+    return MultiInstrumentEngine(
+        instruments={
+            "CALL1000": InstrumentConfig(
+                Instrument("CALL1000", Kind.OPT, lot_size=75, tick=0.05),
+                "NSE",
+                book(
+                    [
+                        (0, 54.0, 55.0, 75, 75, np.nan, 0),
+                        (100, 54.0, 55.0, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=no_costs(),
+            ),
+            "PUT1000": InstrumentConfig(
+                Instrument("PUT1000", Kind.OPT, lot_size=75, tick=0.05),
+                "NSE",
+                book(
+                    [
+                        (0, 60.0, 61.0, 75, 75, np.nan, 0),
+                        (100, 60.0, 61.0, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=no_costs(),
+            ),
+            "FUT": InstrumentConfig(
+                Instrument("FUT", Kind.FUT, lot_size=75, tick=0.05),
+                "NSE",
+                book(
+                    [
+                        (0, 1008.0, 1009.0, 75, 75, np.nan, 0),
+                        (100, 1008.0, 1009.0, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=no_costs(),
+            ),
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )

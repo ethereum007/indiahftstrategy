@@ -28,6 +28,9 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
     def __init__(self, config: MicropriceImbalanceConfig):
         _validate_config(config)
         self.config = config
+        self._reset_run_state()
+
+    def _reset_run_state(self) -> None:
         self.entry_ts: int | None = None
         self.last_order_ts: int | None = None
         self.entry_orders: list[int] = []
@@ -36,7 +39,7 @@ class MicropriceImbalanceStrategy(MultiInstrumentStrategy):
         self.signals: list[dict[str, object]] = []
 
     def on_start(self, engine: MultiInstrumentEngine):
-        pass
+        self._reset_run_state()
 
     def on_tick(self, engine: MultiInstrumentEngine, instrument_id: str, tick: dict):
         if instrument_id != self.config.instrument_id:

@@ -48,12 +48,15 @@ class ParityArbTakerStrategy(MultiInstrumentStrategy):
         self.signals = signals.sort_values("ts").reset_index(drop=True)
         self.leg_map = leg_map
         self.config = config or ParityArbConfig()
+        self._reset_run_state()
+
+    def _reset_run_state(self) -> None:
         self.next_signal = 0
         self.executions: list[SignalExecution] = []
         self.order_to_execution: dict[int, int] = {}
 
     def on_start(self, engine: MultiInstrumentEngine):
-        self.next_signal = 0
+        self._reset_run_state()
 
     def on_tick(self, engine: MultiInstrumentEngine, instrument_id: str, tick: dict):
         now = int(tick["ts"])

@@ -80,3 +80,66 @@ def test_leadlag_taker_enters_on_leader_jump_and_flattens_after_hold():
     assert list(strategy_fills["side"]) == [1, -1]
     assert list(strategy_fills["price"]) == [50.05, 50.50]
     assert engine.positions["CALL"] == 0
+
+
+def test_leadlag_taker_resets_run_state_when_reused():
+    strategy = LeadLagTakerStrategy(
+        LeadLagTakerConfig(
+            leader_id="FUT",
+            laggard_id="CALL",
+            qty=75,
+            delta=1.0,
+            leader_tick=0.05,
+            laggard_tick=0.05,
+            trigger_ticks=10.0,
+            flat_after_ns=200,
+        )
+    )
+
+    first = _leadlag_engine(strategy)
+    first.run()
+    assert strategy.entry_orders == [1]
+    assert strategy.exit_orders == [2]
+    assert len(strategy.fills) == 2
+
+    second = _leadlag_engine(strategy)
+    second.run()
+    assert strategy.entry_orders == [1]
+    assert strategy.exit_orders == [2]
+    assert len(strategy.fills) == 2
+
+
+def _leadlag_engine(strategy):
+    return MultiInstrumentEngine(
+        instruments={
+            "FUT": InstrumentConfig(
+                Instrument("FUT", Kind.FUT, lot_size=75, tick=0.05),
+                "NSE",
+                book(
+                    [
+                        (0, 100.00, 100.10, 75, 75, np.nan, 0),
+                        (100, 101.00, 101.10, 75, 75, np.nan, 0),
+                        (300, 101.00, 101.10, 75, 75, np.nan, 0),
+                        (400, 101.00, 101.10, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=no_costs(),
+            ),
+            "CALL": InstrumentConfig(
+                Instrument("CALL", Kind.OPT, lot_size=75, tick=0.05),
+                "NSE",
+                book(
+                    [
+                        (0, 50.00, 50.05, 75, 75, np.nan, 0),
+                        (100, 50.00, 50.05, 75, 75, np.nan, 0),
+                        (200, 50.00, 50.05, 75, 75, np.nan, 0),
+                        (300, 50.50, 50.55, 75, 75, np.nan, 0),
+                        (400, 50.50, 50.55, 75, 75, np.nan, 0),
+                    ]
+                ),
+                costs=no_costs(),
+            ),
+        },
+        venues={"NSE": venue()},
+        strategy=strategy,
+    )

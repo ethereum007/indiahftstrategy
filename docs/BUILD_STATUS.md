@@ -71,6 +71,9 @@
   sweep `candidate_config.json` directly, while explicit CLI parameters remain
   available for overrides.
 - Replay strategies: parity taker and lead-lag taker.
+- Replay strategy instances reset run-local state at engine start for
+  lead-lag taker, parity taker, and microprice imbalance, so repeated
+  sweeps/replays cannot carry stale order, fill, signal, or legging state.
 - Replay CLIs for parity taker and lead-lag taker, writing fills, equity,
   summary, signals/legging, and markout artifacts.
 - Microprice/order-book imbalance replay strategy for single-instrument
@@ -626,7 +629,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 806 tests.
+Current passing suite: 809 tests.
 
 ## Next Build Targets
 

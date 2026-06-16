@@ -24,6 +24,9 @@ class LeadLagTakerStrategy(MultiInstrumentStrategy):
 
     def __init__(self, config: LeadLagTakerConfig):
         self.config = config
+        self._reset_run_state()
+
+    def _reset_run_state(self) -> None:
         self.prev_leader_mid: float | None = None
         self.entry_ts: int | None = None
         self.last_trade_ts: int | None = None
@@ -32,7 +35,7 @@ class LeadLagTakerStrategy(MultiInstrumentStrategy):
         self.fills: list[RoutedFill] = []
 
     def on_start(self, engine: MultiInstrumentEngine):
-        pass
+        self._reset_run_state()
 
     def on_tick(self, engine: MultiInstrumentEngine, instrument_id: str, tick: dict):
         now = int(tick["ts"])
