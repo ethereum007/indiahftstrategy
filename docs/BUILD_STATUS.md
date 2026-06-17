@@ -680,7 +680,9 @@
   retains and enforces that shadow-comparison wrapper aggregate before
   promotion, cutover now carries and revalidates the same aggregate before
   live-dryrun route authorization, and route-enable now revalidates the
-  cutover-carried aggregate before a broker route can be enabled.
+  cutover-carried aggregate before a broker route can be enabled. Broker
+  dispatch now revalidates the route-enable-carried aggregate before broker
+  dry-run dispatch packets can be armed.
   Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
@@ -697,7 +699,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 848 tests.
+Current passing suite: 849 tests.
 
 ## Next Build Targets
 
