@@ -61,6 +61,9 @@
 - Broker readiness now carries adapter schema review checklist evidence into
   its summary/config and manifest inputs, preserving Arrow.money/iRage schema
   blockers and review tasks through the broker gate.
+- Broker readiness now emits `broker_readiness_action_queue.csv`, a
+  manifest-tracked failed-check queue with inferred next CLI gates and help
+  commands for Arrow.money/iRage operator or scheduler handoff.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

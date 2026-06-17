@@ -2119,6 +2119,7 @@ Outputs:
 broker_readiness_items.csv
 broker_readiness_checks.csv
 broker_readiness_summary.csv
+broker_readiness_action_queue.csv
 broker_readiness_config.json
 manifest.json
 ```
@@ -2127,6 +2128,9 @@ If the schema audit directory contains `adapter_schema_review_checklist.csv`,
 broker readiness records it as a manifest input and carries checklist presence,
 blocked-check names, and review-check names into `broker_readiness_summary.csv`
 and `broker_readiness_config.json`.
+`broker_readiness_action_queue.csv` flattens failed readiness checks into a
+priority-ordered blocked-action queue with the inferred component, next CLI
+gate, and `next_gate_help_command` for runner or operator handoff.
 
 ## Broker Fill Reconciliation
 

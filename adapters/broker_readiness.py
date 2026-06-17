@@ -26,6 +26,25 @@ SUMMARY_FILES = {
     "dispatch_roundtrip": "broker_dispatch_roundtrip_summary.csv",
 }
 SCHEMA_REVIEW_CHECKLIST_FILE = "adapter_schema_review_checklist.csv"
+BROKER_READINESS_NEXT_GATES = {
+    "schema_audit": "audit-adapter-schema",
+    "order_export": "export-launch-orders",
+    "mapping_draft": "draft-order-mapping",
+    "mapped_orders": "map-broker-orders",
+    "upload_pack": "pack-broker-upload",
+    "halt_export": "export-halt-response",
+    "reconciliation": "reconcile-broker-fills",
+    "runtime_session": "monitor-runtime-session",
+    "resume_gate": "review-resume-gate",
+    "dispatch_roundtrip": "review-broker-dispatch-roundtrip",
+    "route_readiness": "review-route-readiness",
+    "route_enable": "review-route-enable",
+    "broker_dispatch": "plan-broker-dispatch",
+    "dispatch_send": "prepare-broker-dispatch-send",
+    "dispatch_ack": "reconcile-broker-dispatch",
+    "vendor_market_data": "pipeline-broker-vendor-readiness",
+    "broker_readiness": "review-broker-readiness",
+}
 
 SUMMARY_FALLBACK_DIRS = {
     "order_export": ("04_export", "03_export"),
@@ -210,6 +229,7 @@ def write_broker_readiness_report(
     report.items.to_csv(out / "broker_readiness_items.csv", index=False)
     report.checks.to_csv(out / "broker_readiness_checks.csv", index=False)
     report.summary.to_csv(out / "broker_readiness_summary.csv", index=False)
+    _action_queue(report.checks).to_csv(out / "broker_readiness_action_queue.csv", index=False)
     (out / "broker_readiness_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -2392,6 +2412,83 @@ def _config(
             field_prefix="broker_shadow_broker",
         ),
     }
+
+
+def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if not checks.empty and "passed" in checks.columns:
+        failed = checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+        for priority, row in enumerate(failed.to_dict(orient="records"), start=1):
+            check_name = str(row.get("check", ""))
+            component = _action_component(check_name)
+            next_gate = BROKER_READINESS_NEXT_GATES.get(component, "review-broker-readiness")
+            rows.append(
+                {
+                    "priority": priority,
+                    "queue_status": "blocked",
+                    "check": check_name,
+                    "component": component,
+                    "next_gate": next_gate,
+                    "next_gate_help_command": _help_command(next_gate),
+                    "actual": _action_value(row.get("value")),
+                    "operator": _action_value(row.get("operator")),
+                    "expected": _action_value(row.get("threshold")),
+                    "reason": str(row.get("reason", "")),
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "queue_status",
+            "check",
+            "component",
+            "next_gate",
+            "next_gate_help_command",
+            "actual",
+            "operator",
+            "expected",
+            "reason",
+        ],
+    )
+
+
+def _action_component(check_name: str) -> str:
+    prefixes = [
+        ("route_enable_dispatch_roundtrip_", "route_enable"),
+        ("route_dispatch_roundtrip_", "dispatch_roundtrip"),
+        ("route_readiness_", "route_readiness"),
+        ("broker_vendor_data_readiness_", "vendor_market_data"),
+        ("dispatch_roundtrip_vendor_market_data_batch_", "vendor_market_data"),
+        ("broker_dispatch_roundtrip_vendor_market_data_batch_", "vendor_market_data"),
+        ("shadow_broker_", "broker_readiness"),
+        ("broker_shadow_broker_", "broker_readiness"),
+        ("schema_reviewed", "schema_audit"),
+        ("schema_audit_", "schema_audit"),
+        ("order_export_", "order_export"),
+        ("mapping_draft_", "mapping_draft"),
+        ("mapped_orders_", "mapped_orders"),
+        ("upload_pack_", "upload_pack"),
+        ("halt_export_", "halt_export"),
+        ("reconciliation_", "reconciliation"),
+        ("runtime_session_", "runtime_session"),
+        ("resume_gate_", "resume_gate"),
+        ("dispatch_roundtrip_", "dispatch_roundtrip"),
+    ]
+    for prefix, component in prefixes:
+        if check_name == prefix or check_name.startswith(prefix):
+            return component
+    return "broker_readiness"
+
+
+def _help_command(next_gate: str) -> str:
+    return f"python -m hft_cli {next_gate} --help" if next_gate else ""
+
+
+def _action_value(value: Any) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value)
 
 
 def _component_config(items: pd.DataFrame, component: str) -> dict[str, Any]:
