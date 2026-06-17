@@ -229,9 +229,14 @@ def write_broker_readiness_report(
     report.items.to_csv(out / "broker_readiness_items.csv", index=False)
     report.checks.to_csv(out / "broker_readiness_checks.csv", index=False)
     report.summary.to_csv(out / "broker_readiness_summary.csv", index=False)
-    _action_queue(report.checks).to_csv(out / "broker_readiness_action_queue.csv", index=False)
+    action_queue = _action_queue(report.checks)
+    action_queue.to_csv(out / "broker_readiness_action_queue.csv", index=False)
     (out / "broker_readiness_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "broker_readiness_runbook.md").write_text(
+        _runbook_markdown(report.summary, report.items, action_queue),
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -2489,6 +2494,82 @@ def _action_value(value: Any) -> str:
     if pd.isna(value):
         return ""
     return str(value)
+
+
+def _runbook_markdown(summary: pd.DataFrame, items: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    lines = [
+        "# Broker Readiness Runbook",
+        "",
+        f"- Ready: {_yes_no(_item_bool(row, 'ready'))}",
+        f"- Adapter: {_item_text(row, 'adapter')}",
+        f"- Recommendation: {_item_text(row, 'recommendation')}",
+        f"- Schema review mode: {_item_text(row, 'schema_review_mode')}",
+        f"- Failed checks: {int(_number(row, 'failed_checks', 0.0))}",
+        f"- Missing required components: {int(_number(row, 'missing_required_components', 0.0))}",
+        f"- Schema blocked checks: {_item_text(row, 'schema_review_blocked_check_names')}",
+        f"- Schema review checks: {_item_text(row, 'schema_review_review_check_names')}",
+        "",
+        "## Components",
+        "",
+        _components_table(items),
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _components_table(items: pd.DataFrame) -> str:
+    if items.empty:
+        return "_None_"
+    rows = [
+        [
+            _item_text(row, "component"),
+            _yes_no(_item_bool(row, "required")),
+            _yes_no(_item_bool(row, "provided")),
+            _yes_no(_item_bool(row, "ready")),
+            _item_text(row, "recommendation"),
+        ]
+        for _, row in items.iterrows()
+    ]
+    return _markdown_table(["Component", "Required", "Provided", "Ready", "Recommendation"], rows)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    rows = [
+        [
+            str(int(_number(row, "priority", 0.0))),
+            _item_text(row, "check"),
+            _item_text(row, "component"),
+            _item_text(row, "next_gate"),
+            _item_text(row, "next_gate_help_command"),
+            _item_text(row, "reason"),
+        ]
+        for _, row in action_queue.iterrows()
+    ]
+    return _markdown_table(["Priority", "Check", "Component", "Next gate", "Help", "Reason"], rows)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _escape_cell(value: str) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
 
 
 def _component_config(items: pd.DataFrame, component: str) -> dict[str, Any]:

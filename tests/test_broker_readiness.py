@@ -1739,10 +1739,17 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert (out_dir / "broker_readiness_summary.csv").exists()
     assert (out_dir / "broker_readiness_action_queue.csv").exists()
     assert (out_dir / "broker_readiness_config.json").exists()
+    assert (out_dir / "broker_readiness_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     action_queue = pd.read_csv(out_dir / "broker_readiness_action_queue.csv")
     assert action_queue.empty
     assert "next_gate_help_command" in action_queue.columns
+    runbook = (out_dir / "broker_readiness_runbook.md").read_text(encoding="utf-8")
+    assert "# Broker Readiness Runbook" in runbook
+    assert "- Ready: yes" in runbook
+    assert "dry_run_only_until_vendor_schema_review" in runbook
+    assert "## Components" in runbook
+    assert "## Blocked Actions" in runbook
     config = json.loads((out_dir / "broker_readiness_config.json").read_text(encoding="utf-8"))
     assert config == report.config
     assert config["ready"]
@@ -1783,6 +1790,7 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     )
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "broker_readiness_action_queue.csv" in artifact_paths
+    assert "broker_readiness_runbook.md" in artifact_paths
 
 
 def test_broker_readiness_reads_vendor_market_data_batch_artifact(tmp_path):
@@ -2221,6 +2229,7 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     summary = pd.read_csv(out_dir / "broker_readiness_summary.csv")
     checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
     action_queue = pd.read_csv(out_dir / "broker_readiness_action_queue.csv")
+    runbook = (out_dir / "broker_readiness_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "schema_reviewed" in set(checks.loc[~checks["passed"].astype(bool), "check"])
@@ -2228,6 +2237,8 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     assert action_queue.loc[0, "component"] == "schema_audit"
     assert action_queue.loc[0, "next_gate"] == "audit-adapter-schema"
     assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
+    assert "- Ready: no" in runbook
+    assert "audit-adapter-schema" in runbook
 
 
 def test_cli_broker_readiness_accepts_reviewed_vendor_mapping_without_placeholder_override(tmp_path):
