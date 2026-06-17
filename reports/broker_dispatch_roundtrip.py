@@ -325,119 +325,10 @@ def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Serie
         )
     shadow_broker = config.get("shadow_broker_readiness", {}) or {}
     if shadow_broker:
-        state["shadow_broker_readiness_sessions"] = int(
-            _number_value(
-                shadow_broker.get("sessions"),
-                _number(state, "shadow_broker_readiness_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_readiness_ready_sessions"] = int(
-            _number_value(
-                shadow_broker.get("ready_sessions"),
-                _number(state, "shadow_broker_readiness_ready_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_adapter"] = _object_text(
-            shadow_broker.get("adapter", _text(state, "shadow_broker_adapter"))
-        )
-        state["shadow_broker_adapter_count"] = int(
-            _number_value(
-                shadow_broker.get("adapter_count"),
-                _number(state, "shadow_broker_adapter_count", 0.0),
-            )
-        )
-        shadow_route = shadow_broker.get("route_readiness", {}) or {}
-        state["shadow_broker_route_readiness_sessions"] = int(
-            _number_value(
-                shadow_route.get("sessions"),
-                _number(state, "shadow_broker_route_readiness_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_route_readiness_ready_sessions"] = int(
-            _number_value(
-                shadow_route.get("ready_sessions"),
-                _number(state, "shadow_broker_route_readiness_ready_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_route_readiness_strategy"] = _object_text(
-            shadow_route.get("strategy", _text(state, "shadow_broker_route_readiness_strategy"))
-        )
-        state["shadow_broker_route_readiness_market"] = _object_text(
-            shadow_route.get("market", _text(state, "shadow_broker_route_readiness_market"))
-        )
-        state["shadow_broker_route_readiness_gap_pairs"] = int(
-            _number_value(
-                shadow_route.get("max_gap_pairs"),
-                _number(state, "shadow_broker_route_readiness_gap_pairs", 0.0),
-            )
-        )
-        shadow_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
-        state["shadow_broker_dispatch_roundtrip_sessions"] = int(
-            _number_value(
-                shadow_dispatch.get("sessions"),
-                _number(state, "shadow_broker_dispatch_roundtrip_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_dispatch_roundtrip_ready_sessions"] = int(
-            _number_value(
-                shadow_dispatch.get("ready_sessions"),
-                _number(state, "shadow_broker_dispatch_roundtrip_ready_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_dispatch_roundtrip_strategy"] = _object_text(
-            shadow_dispatch.get("strategy", _text(state, "shadow_broker_dispatch_roundtrip_strategy"))
-        )
-        state["shadow_broker_dispatch_roundtrip_market"] = _object_text(
-            shadow_dispatch.get("market", _text(state, "shadow_broker_dispatch_roundtrip_market"))
-        )
-        state["shadow_broker_dispatch_roundtrip_scenario_count"] = int(
-            _number_value(
-                shadow_dispatch.get("scenario_count"),
-                _number(state, "shadow_broker_dispatch_roundtrip_scenario_count", 0.0),
-            )
-        )
-        state["shadow_broker_dispatch_roundtrip_missing_request_acks"] = int(
-            _number_value(
-                shadow_dispatch.get("max_missing_request_acks"),
-                _number(state, "shadow_broker_dispatch_roundtrip_missing_request_acks", 0.0),
-            )
-        )
-        state["shadow_broker_dispatch_roundtrip_rejected_orders"] = int(
-            _number_value(
-                shadow_dispatch.get("max_rejected_orders"),
-                _number(state, "shadow_broker_dispatch_roundtrip_rejected_orders", 0.0),
-            )
-        )
-        state["shadow_broker_dispatch_roundtrip_unmatched_acks"] = int(
-            _number_value(
-                shadow_dispatch.get("max_unmatched_acks"),
-                _number(state, "shadow_broker_dispatch_roundtrip_unmatched_acks", 0.0),
-            )
-        )
-        shadow_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
-        state["shadow_broker_route_dispatch_roundtrip_sessions"] = int(
-            _number_value(
-                shadow_route_dispatch.get("sessions"),
-                _number(state, "shadow_broker_route_dispatch_roundtrip_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_route_dispatch_roundtrip_ready_sessions"] = int(
-            _number_value(
-                shadow_route_dispatch.get("ready_sessions"),
-                _number(state, "shadow_broker_route_dispatch_roundtrip_ready_sessions", 0.0),
-            )
-        )
-        state["shadow_broker_route_dispatch_roundtrip_strategy"] = _object_text(
-            shadow_route_dispatch.get("strategy", _text(state, "shadow_broker_route_dispatch_roundtrip_strategy"))
-        )
-        state["shadow_broker_route_dispatch_roundtrip_market"] = _object_text(
-            shadow_route_dispatch.get("market", _text(state, "shadow_broker_route_dispatch_roundtrip_market"))
-        )
-        state["shadow_broker_route_dispatch_roundtrip_scenario_count"] = int(
-            _number_value(
-                shadow_route_dispatch.get("scenario_count"),
-                _number(state, "shadow_broker_route_dispatch_roundtrip_scenario_count", 0.0),
-            )
+        _apply_shadow_broker_readiness_config(
+            state,
+            shadow_broker,
+            field_prefix="shadow_broker",
         )
     route_broker_shadow = config.get("route_broker_shadow_broker_readiness", {}) or {}
     if route_broker_shadow:
@@ -809,6 +700,7 @@ def _apply_shadow_broker_readiness_config(
     route = readiness.get("route_readiness", {}) or {}
     dispatch = readiness.get("dispatch_roundtrip", {}) or {}
     route_dispatch = readiness.get("route_dispatch_roundtrip", {}) or {}
+    vendor_readiness = readiness.get("broker_vendor_data_readiness", {}) or {}
     state[f"{field_prefix}_readiness_provided"] = _to_bool(
         readiness.get("provided", state.get(f"{field_prefix}_readiness_provided", False))
     )
@@ -819,6 +711,30 @@ def _apply_shadow_broker_readiness_config(
         _number_value(
             readiness.get("ready_sessions"),
             _number(state, f"{field_prefix}_readiness_ready_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_vendor_data_readiness_sessions"] = int(
+        _number_value(
+            vendor_readiness.get("sessions"),
+            _number(state, f"{field_prefix}_vendor_data_readiness_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_vendor_data_readiness_provided_sessions"] = int(
+        _number_value(
+            vendor_readiness.get("provided_sessions"),
+            _number(state, f"{field_prefix}_vendor_data_readiness_provided_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_vendor_data_readiness_ready_sessions"] = int(
+        _number_value(
+            vendor_readiness.get("ready_sessions"),
+            _number(state, f"{field_prefix}_vendor_data_readiness_ready_sessions", 0.0),
+        )
+    )
+    state[f"{field_prefix}_vendor_data_readiness_failed_checks"] = int(
+        _number_value(
+            vendor_readiness.get("failed_checks"),
+            _number(state, f"{field_prefix}_vendor_data_readiness_failed_checks", 0.0),
         )
     )
     state[f"{field_prefix}_adapter"] = _object_text(
@@ -1288,6 +1204,7 @@ def _route_roundtrip_checks(
 def _shadow_broker_readiness_active(*rows: pd.Series) -> bool:
     session_columns = (
         "shadow_broker_readiness_sessions",
+        "shadow_broker_vendor_data_readiness_sessions",
         "shadow_broker_route_readiness_sessions",
         "shadow_broker_dispatch_roundtrip_sessions",
         "shadow_broker_route_dispatch_roundtrip_sessions",
@@ -1300,6 +1217,16 @@ def _shadow_broker_readiness_checks(*rows: pd.Series) -> list[dict[str, object]]
     ready_sessions = [int(_number(row, "shadow_broker_readiness_ready_sessions", 0.0)) for row in rows]
     provided = all(value > 0 for value in sessions)
     ready = provided and all(ready == session for ready, session in zip(ready_sessions, sessions))
+    vendor_sessions = [
+        int(_number(row, "shadow_broker_vendor_data_readiness_sessions", 0.0)) for row in rows
+    ]
+    vendor_provided_sessions = [
+        int(_number(row, "shadow_broker_vendor_data_readiness_provided_sessions", 0.0)) for row in rows
+    ]
+    vendor_ready_sessions = [
+        int(_number(row, "shadow_broker_vendor_data_readiness_ready_sessions", 0.0)) for row in rows
+    ]
+    vendor_active = any(value > 0 for value in vendor_sessions)
     adapter_match = _shadow_adapter_matches(rows)
     adapter_consistent = _shadow_adapter_consistent(rows)
     route_sessions = [int(_number(row, "shadow_broker_route_readiness_sessions", 0.0)) for row in rows]
@@ -1334,6 +1261,42 @@ def _shadow_broker_readiness_checks(*rows: pd.Series) -> list[dict[str, object]]
             "|".join(str(value) for value in sessions),
             ready,
             "shadow broker-readiness proof is not ready in every component artifact",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+            "|".join(str(value) for value in vendor_sessions),
+            "==",
+            "|".join(str(value) for value in sessions),
+            (not vendor_active)
+            or all(vendor == session for vendor, session in zip(vendor_sessions, sessions)),
+            "shadow broker vendor-data wrapper proof is present for only some broker-readiness sessions",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_provided",
+            "|".join(str(value) for value in vendor_provided_sessions),
+            "==",
+            "|".join(str(value) for value in sessions),
+            (not vendor_active)
+            or all(provided == session for provided, session in zip(vendor_provided_sessions, sessions)),
+            "shadow broker vendor-data wrapper proof is missing for some broker-readiness sessions",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_ready",
+            "|".join(str(value) for value in vendor_ready_sessions),
+            "==",
+            "|".join(str(value) for value in sessions),
+            (not vendor_active)
+            or all(ready == session for ready, session in zip(vendor_ready_sessions, sessions)),
+            "shadow broker vendor-data wrapper proof is not ready in every component artifact",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_failed_checks",
+            _shadow_counter_max(rows, "shadow_broker_vendor_data_readiness_failed_checks"),
+            "<=",
+            0,
+            (not vendor_active)
+            or _shadow_counter_max(rows, "shadow_broker_vendor_data_readiness_failed_checks") <= 0,
+            "shadow broker vendor-data wrapper proof has failed checks",
         ),
         _check(
             "shadow_broker_adapter_match",
@@ -1466,6 +1429,7 @@ def _route_broker_shadow_broker_readiness_active(*rows: pd.Series) -> bool:
     prefix = "route_broker_shadow_broker"
     session_columns = (
         f"{prefix}_readiness_sessions",
+        f"{prefix}_vendor_data_readiness_sessions",
         f"{prefix}_route_readiness_sessions",
         f"{prefix}_dispatch_roundtrip_sessions",
         f"{prefix}_route_dispatch_roundtrip_sessions",
@@ -1755,6 +1719,10 @@ def _shadow_broker_projection(row: pd.Series, *, source_prefix: str) -> pd.Serie
     for suffix in (
         "readiness_sessions",
         "readiness_ready_sessions",
+        "vendor_data_readiness_sessions",
+        "vendor_data_readiness_provided_sessions",
+        "vendor_data_readiness_ready_sessions",
+        "vendor_data_readiness_failed_checks",
         "adapter",
         "adapter_count",
         "route_readiness_sessions",
@@ -1798,6 +1766,22 @@ def _prefixed_shadow_broker_summary_fields(
         f"{output_prefix}_readiness_ready_sessions": _shadow_counter_max(
             rows,
             f"{source_prefix}_readiness_ready_sessions",
+        ),
+        f"{output_prefix}_vendor_data_readiness_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_vendor_data_readiness_sessions",
+        ),
+        f"{output_prefix}_vendor_data_readiness_provided_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_vendor_data_readiness_provided_sessions",
+        ),
+        f"{output_prefix}_vendor_data_readiness_ready_sessions": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_vendor_data_readiness_ready_sessions",
+        ),
+        f"{output_prefix}_vendor_data_readiness_failed_checks": _shadow_counter_max(
+            rows,
+            f"{source_prefix}_vendor_data_readiness_failed_checks",
         ),
         f"{output_prefix}_adapter": _prefixed_shadow_adapter_value(rows, source_prefix=source_prefix),
         f"{output_prefix}_adapter_count": _shadow_counter_max(rows, f"{source_prefix}_adapter_count"),
@@ -1953,6 +1937,22 @@ def _summary(
                 "shadow_broker_readiness_ready_sessions": _shadow_counter_max(
                     proof_rows,
                     "shadow_broker_readiness_ready_sessions",
+                ),
+                "shadow_broker_vendor_data_readiness_sessions": _shadow_counter_max(
+                    proof_rows,
+                    "shadow_broker_vendor_data_readiness_sessions",
+                ),
+                "shadow_broker_vendor_data_readiness_provided_sessions": _shadow_counter_max(
+                    proof_rows,
+                    "shadow_broker_vendor_data_readiness_provided_sessions",
+                ),
+                "shadow_broker_vendor_data_readiness_ready_sessions": _shadow_counter_max(
+                    proof_rows,
+                    "shadow_broker_vendor_data_readiness_ready_sessions",
+                ),
+                "shadow_broker_vendor_data_readiness_failed_checks": _shadow_counter_max(
+                    proof_rows,
+                    "shadow_broker_vendor_data_readiness_failed_checks",
                 ),
                 "shadow_broker_adapter": _shadow_adapter_value(proof_rows),
                 "shadow_broker_adapter_count": _shadow_counter_max(
@@ -2204,6 +2204,12 @@ def _prefixed_shadow_broker_config(summary: pd.Series, *, field_prefix: str) -> 
         "ready_sessions": int(summary[f"{field_prefix}_readiness_ready_sessions"]),
         "adapter": _text(summary, f"{field_prefix}_adapter"),
         "adapter_count": int(summary[f"{field_prefix}_adapter_count"]),
+        "broker_vendor_data_readiness": {
+            "sessions": int(summary[f"{field_prefix}_vendor_data_readiness_sessions"]),
+            "provided_sessions": int(summary[f"{field_prefix}_vendor_data_readiness_provided_sessions"]),
+            "ready_sessions": int(summary[f"{field_prefix}_vendor_data_readiness_ready_sessions"]),
+            "failed_checks": int(summary[f"{field_prefix}_vendor_data_readiness_failed_checks"]),
+        },
         "route_readiness": {
             "sessions": int(summary[f"{field_prefix}_route_readiness_sessions"]),
             "ready_sessions": int(summary[f"{field_prefix}_route_readiness_ready_sessions"]),
@@ -2315,6 +2321,12 @@ def _config(
             "ready_sessions": int(summary["shadow_broker_readiness_ready_sessions"]),
             "adapter": _text(summary, "shadow_broker_adapter"),
             "adapter_count": int(summary["shadow_broker_adapter_count"]),
+            "broker_vendor_data_readiness": {
+                "sessions": int(summary["shadow_broker_vendor_data_readiness_sessions"]),
+                "provided_sessions": int(summary["shadow_broker_vendor_data_readiness_provided_sessions"]),
+                "ready_sessions": int(summary["shadow_broker_vendor_data_readiness_ready_sessions"]),
+                "failed_checks": int(summary["shadow_broker_vendor_data_readiness_failed_checks"]),
+            },
             "route_readiness": {
                 "sessions": int(summary["shadow_broker_route_readiness_sessions"]),
                 "ready_sessions": int(summary["shadow_broker_route_readiness_ready_sessions"]),

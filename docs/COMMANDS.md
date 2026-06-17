@@ -3055,8 +3055,13 @@ keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints 
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
 files plus component manifests that formed the proof, and the final
 summary/config retain the broker schema review status/mode, route-readiness
-proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`
-and `roundtrip_vendor_market_data_batch` reconciled from the component configs,
+proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`.
+If the component configs retained the shadow-broker broker-vendor wrapper
+aggregate, the round-trip review revalidates component-wide wrapper coverage
+and carries it as `shadow_broker_vendor_data_readiness_*` plus nested
+`shadow_broker_readiness.broker_vendor_data_readiness` config, and does the
+same for `broker_shadow_broker_readiness`. It also retains
+`roundtrip_vendor_market_data_batch` reconciled from the component configs,
 plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
 from the broker-readiness component proof chain and
 `roundtrip_broker_vendor_data_readiness` reconciled from the wrapper proof
