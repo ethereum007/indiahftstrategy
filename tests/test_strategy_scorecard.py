@@ -50,6 +50,26 @@ def incomplete_imbalance_rows():
     ]
 
 
+def complete_ops_launch_rows(strategy="lead_lag_taker", *, market="india_nse_index_derivatives"):
+    run_types = [
+        ("scaleup_plan", "scaleup_summary.csv"),
+        ("runtime_telemetry_snapshot", "runtime_telemetry_summary.csv"),
+        ("runtime_guard", "runtime_guard_summary.csv"),
+        ("runtime_session_monitor", "runtime_session_summary.csv"),
+        ("broker_readiness", "broker_readiness_summary.csv"),
+        ("cutover_gate", "cutover_summary.csv"),
+        ("route_enable_packet", "route_enable_summary.csv"),
+        ("broker_dispatch_plan", "broker_dispatch_summary.csv"),
+        ("broker_dispatch_send_packet", "broker_dispatch_send_summary.csv"),
+        ("broker_dispatch_ack_reconciliation", "broker_dispatch_ack_summary.csv"),
+        ("broker_dispatch_roundtrip", "broker_dispatch_roundtrip_summary.csv"),
+    ]
+    return [
+        row(run_type, summary_file, strategy, market=market, minute=10 + index)
+        for index, (run_type, summary_file) in enumerate(run_types)
+    ]
+
+
 def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separate():
     catalog = pd.DataFrame(complete_leadlag_rows() + incomplete_imbalance_rows())
 
@@ -120,3 +140,56 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     assert code == 2
     assert not bool(scorecard.loc[0, "ready"])
     assert "missing_required_run_type" in set(gaps["gap"])
+
+
+def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
+    catalog = pd.DataFrame(
+        complete_ops_launch_rows("lead_lag_taker") + complete_ops_launch_rows("imbalance")
+    )
+
+    report = evaluate_strategy_scorecard(
+        catalog,
+        thresholds=StrategyScorecardThresholds(
+            profiles=("ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            expected_ops_strategy="leadlag",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    assert report.ready
+    assert score["profile"] == "ops_launch"
+    assert score["strategy"] == "lead_lag_taker"
+    assert score["recommendation"] == "ready_for_live_dryrun_route_review"
+    assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
+    assert set(report.gaps["total_runs"]) == {1}
+
+
+def test_cli_strategy_scorecard_ops_launch_fails_closed_on_mixed_strategy_without_filter(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "scorecard"
+    pd.DataFrame(
+        complete_ops_launch_rows("lead_lag_taker") + complete_ops_launch_rows("imbalance")
+    ).to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "ops_launch",
+            "--market",
+            "india_nse_index_derivatives",
+            "--require-file-inputs",
+            "--fail-on-breach",
+        ]
+    )
+
+    scorecard = pd.read_csv(out_dir / "strategy_scorecard.csv")
+    assert code == 2
+    assert not bool(scorecard.loc[0, "ready"])
+    assert scorecard.loc[0, "recommendation"] == "review_ops_launch_checks"

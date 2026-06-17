@@ -33,6 +33,9 @@
   settlement, and surface market-making evidence profiles from one experiment
   catalog while filtering shared run types by strategy/market identity and
   emitting explicit missing-evidence gaps.
+- Strategy readiness scorecard can also score the file-provenance-gated
+  `ops_launch` live-dry-run evidence lane for a named strategy, and fails
+  closed on mixed strategy identities when no explicit ops strategy is supplied.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,
@@ -721,7 +724,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 864 tests.
+Current passing suite: 866 tests.
 
 ## Next Build Targets
 

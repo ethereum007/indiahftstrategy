@@ -1059,6 +1059,7 @@ def main(argv: list[str] | None = None) -> int:
     scorecard.add_argument("--out", required=True)
     scorecard.add_argument("--profile", action="append", dest="profiles")
     scorecard.add_argument("--market", default=None)
+    scorecard.add_argument("--ops-strategy", default=None)
     scorecard.add_argument("--allow-dirty-git", action="store_true")
     scorecard.add_argument("--require-file-inputs", action="store_true")
     scorecard.add_argument("--fail-on-breach", action="store_true")
@@ -3069,6 +3070,7 @@ def main(argv: list[str] | None = None) -> int:
             thresholds=StrategyScorecardThresholds(
                 profiles=tuple(args.profiles) if args.profiles else StrategyScorecardThresholds().profiles,
                 expected_market=args.market,
+                expected_ops_strategy=args.ops_strategy,
                 allow_dirty_git=args.allow_dirty_git,
                 require_file_inputs=args.require_file_inputs,
             ),

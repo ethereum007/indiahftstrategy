@@ -34,6 +34,7 @@ PROFILE_STRATEGY_HINTS = {
 class StrategyScorecardThresholds:
     profiles: tuple[str, ...] = DEFAULT_SCORECARD_PROFILES
     expected_market: str | None = None
+    expected_ops_strategy: str | None = None
     allow_dirty_git: bool = False
     require_file_inputs: bool = False
 
@@ -63,7 +64,7 @@ def evaluate_strategy_scorecard(
     gap_rows: list[dict[str, Any]] = []
     for profile in thresholds.profiles:
         profile_key = _profile_key(profile)
-        expected_strategy = _expected_strategy(profile_key)
+        expected_strategy = _expected_strategy(profile_key, thresholds)
         expected_market = _normalize_identity(thresholds.expected_market)
         profile_catalog = _filter_catalog(catalog, strategy=expected_strategy, market=expected_market)
         required_run_types = evidence_profile_run_types(profile_key)
@@ -72,9 +73,9 @@ def evaluate_strategy_scorecard(
             thresholds=EvidenceThresholds(
                 required_run_types=required_run_types,
                 allow_dirty_git=thresholds.allow_dirty_git,
-                require_same_strategy=bool(expected_strategy),
+                require_same_strategy=bool(expected_strategy) or profile_key == "ops_launch",
                 require_same_market=bool(expected_market),
-                expected_strategy=expected_strategy,
+                expected_strategy=expected_strategy or None,
                 expected_market=expected_market or None,
                 require_file_inputs=thresholds.require_file_inputs,
             ),
@@ -216,9 +217,7 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                 "best_readiness_score": float(best["readiness_score"]),
                 "ready_profile_names": ";".join(ready["profile"].astype(str).tolist()),
                 "blocked_profile_names": ";".join(blocked["profile"].astype(str).tolist()),
-                "recommendation": "promote_ready_strategy_to_shadow_scaleup_review"
-                if has_ready
-                else "complete_missing_research_evidence",
+                "recommendation": _summary_recommendation(str(best["profile"]), has_ready),
             }
         ]
     )
@@ -261,7 +260,9 @@ def _profile_key(profile: str) -> str:
     return _normalize_identity(profile)
 
 
-def _expected_strategy(profile: str) -> str:
+def _expected_strategy(profile: str, thresholds: StrategyScorecardThresholds) -> str:
+    if profile == "ops_launch":
+        return _normalize_strategy(thresholds.expected_ops_strategy)
     return _normalize_strategy(PROFILE_STRATEGY_HINTS.get(profile, ""))
 
 
@@ -274,14 +275,28 @@ def _latest_generated_at(items: pd.DataFrame) -> str:
 
 def _score_recommendation(profile: str, ready: bool, score: float) -> str:
     if ready:
+        if profile == "ops_launch":
+            return "ready_for_live_dryrun_route_review"
         return "ready_for_shadow_scaleup_review"
     if score <= 0:
+        if profile == "ops_launch":
+            return "start_ops_launch_evidence"
         return "start_profile_research_evidence"
     if score < 1:
+        if profile == "ops_launch":
+            return "complete_ops_launch_evidence_gaps"
         return "complete_profile_evidence_gaps"
     if profile == "ops_launch":
         return "review_ops_launch_checks"
     return "review_profile_checks"
+
+
+def _summary_recommendation(best_profile: str, has_ready: bool) -> str:
+    if not has_ready:
+        return "complete_missing_research_evidence"
+    if best_profile == "ops_launch":
+        return "promote_ready_route_to_live_dryrun_review"
+    return "promote_ready_strategy_to_shadow_scaleup_review"
 
 
 def _catalog_path(path: str | Path) -> Path:

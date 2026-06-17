@@ -264,6 +264,26 @@ expected strategy identity before scoring, so shared run types such as
 file-fingerprinted inputs, and `--allow-dirty-git` only for exploratory
 catalogs.
 
+To score the operational live-dry-run chain for one strategy after scale-up,
+cutover, route enable, and broker dispatch proof are present, include the
+`ops_launch` profile and the expected strategy:
+
+```powershell
+python -m hft_cli score-strategy-readiness `
+  --catalog runs\catalog\latest `
+  --out runs\scorecards\leadlag_ops_launch `
+  --profile ops_launch `
+  --ops-strategy lead_lag_taker `
+  --market india_nse_index_derivatives `
+  --require-file-inputs `
+  --fail-on-breach
+```
+
+If `ops_launch` is scored without `--ops-strategy`, all required artifacts must
+still carry one consistent strategy identity, so mixed lead-lag/imbalance
+broker evidence fails closed instead of producing a borrowed live-dry-run
+readiness signal.
+
 Outputs:
 
 ```text
