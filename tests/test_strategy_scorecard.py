@@ -133,9 +133,16 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "strategy_scorecard.csv").exists()
     assert (out_dir / "strategy_scorecard_gaps.csv").exists()
     assert (out_dir / "strategy_scorecard_summary.csv").exists()
+    assert (out_dir / "strategy_scorecard_action_queue.csv").exists()
     assert (out_dir / "strategy_scorecard_next_actions.json").exists()
     assert (out_dir / "strategy_scorecard_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    queue = pd.read_csv(out_dir / "strategy_scorecard_action_queue.csv")
+    assert queue.loc[0, "priority"] == 1
+    assert queue.loc[0, "queue_status"] == "ready"
+    assert queue.loc[0, "profile"] == "leadlag"
+    assert queue.loc[0, "next_gate"] == "plan-scaleup"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
     assert config == report.config
     assert config["schema_version"] == 1
@@ -150,6 +157,7 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert "`plan-scaleup`" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "strategy_scorecard_action_queue.csv" in artifact_paths
     assert "strategy_scorecard_runbook.md" in artifact_paths
 
 
@@ -175,11 +183,15 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
 
     scorecard = pd.read_csv(out_dir / "strategy_scorecard.csv")
     gaps = pd.read_csv(out_dir / "strategy_scorecard_gaps.csv")
+    queue = pd.read_csv(out_dir / "strategy_scorecard_action_queue.csv")
     config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(scorecard.loc[0, "ready"])
     assert scorecard.loc[0, "next_gate"] == "walkforward-imbalance-replay"
     assert scorecard.loc[0, "next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
+    assert queue.loc[0, "queue_status"] == "blocked"
+    assert queue.loc[0, "next_required_run_type"] == "imbalance_replay_walkforward"
+    assert queue.loc[0, "next_gate"] == "walkforward-imbalance-replay"
     assert config["ready_action_count"] == 0
     assert config["blocked_action_count"] == 1
     open_gap_count = int(gaps["gap"].fillna("").astype(str).str.len().gt(0).sum())

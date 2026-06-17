@@ -291,6 +291,7 @@ Outputs:
 strategy_scorecard.csv
 strategy_scorecard_gaps.csv
 strategy_scorecard_summary.csv
+strategy_scorecard_action_queue.csv
 strategy_scorecard_next_actions.json
 strategy_scorecard_runbook.md
 manifest.json
@@ -310,6 +311,9 @@ open gaps in a machine-readable sidecar for schedulers or follow-up runbooks.
 It includes `schema_version`, `ready_actions`, `blocked_actions`, and action
 counts so automation can consume ready scale-up lanes separately from blocked
 research or broker-proof lanes.
+`strategy_scorecard_action_queue.csv` flattens those ranked actions into one
+priority-ordered row per profile with `queue_status`, `next_gate`, and
+`next_gate_help_command` for simple runner or scheduler handoff.
 Both CSV and JSON outputs include `next_gate_help_command` fields such as
 `python -m hft_cli walkforward-imbalance-replay --help`, making the next CLI
 entry point explicit even before concrete data paths are selected.

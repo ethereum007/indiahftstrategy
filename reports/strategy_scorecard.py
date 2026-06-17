@@ -158,6 +158,7 @@ def write_strategy_scorecard(
     report.scorecard.to_csv(out / "strategy_scorecard.csv", index=False)
     report.gaps.to_csv(out / "strategy_scorecard_gaps.csv", index=False)
     report.summary.to_csv(out / "strategy_scorecard_summary.csv", index=False)
+    _action_queue(report.config).to_csv(out / "strategy_scorecard_action_queue.csv", index=False)
     (out / "strategy_scorecard_next_actions.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -360,6 +361,50 @@ def _gap_action(row: dict[str, Any]) -> dict[str, Any]:
         "unknown_status_runs": int(_numeric(row.get("unknown_status_runs", 0))),
         "latest_run_dir": str(row.get("latest_run_dir", "")),
     }
+
+
+def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
+    rows = []
+    for priority, action in enumerate(config.get("next_actions", []), start=1):
+        if not isinstance(action, dict):
+            continue
+        rows.append(
+            {
+                "priority": priority,
+                "queue_status": "ready" if bool(action.get("ready", False)) else "blocked",
+                "profile": str(action.get("profile", "")),
+                "strategy": str(action.get("strategy", "")),
+                "market": str(action.get("market", "")),
+                "readiness_score": float(_numeric(action.get("readiness_score", 0.0))),
+                "passed_required_run_types": int(_numeric(action.get("passed_required_run_types", 0))),
+                "required_run_type_count": int(_numeric(action.get("required_run_type_count", 0))),
+                "next_required_run_type": str(action.get("next_required_run_type", "")),
+                "next_gate": str(action.get("next_gate", "")),
+                "next_gate_help_command": str(action.get("next_gate_help_command", "")),
+                "missing_required_run_types": _list_text(action.get("missing_required_run_types")),
+                "blocked_required_run_types": _list_text(action.get("blocked_required_run_types")),
+                "recommendation": str(action.get("recommendation", "")),
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "queue_status",
+            "profile",
+            "strategy",
+            "market",
+            "readiness_score",
+            "passed_required_run_types",
+            "required_run_type_count",
+            "next_required_run_type",
+            "next_gate",
+            "next_gate_help_command",
+            "missing_required_run_types",
+            "blocked_required_run_types",
+            "recommendation",
+        ],
+    )
 
 
 def _runbook_markdown(config: dict[str, Any]) -> str:
