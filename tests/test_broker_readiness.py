@@ -56,6 +56,31 @@ def schema_summary(adapter="normalized", ready=True):
     )
 
 
+def schema_review_checklist():
+    return pd.DataFrame(
+        [
+            {
+                "check_name": "required_columns_present",
+                "passed": True,
+                "status": "pass",
+                "detail": "all required source columns are present",
+            },
+            {
+                "check_name": "vendor_schema_reviewed",
+                "passed": False,
+                "status": "blocked",
+                "detail": "adapter is still using normalized placeholders",
+            },
+            {
+                "check_name": "extra_columns_classified",
+                "passed": False,
+                "status": "review",
+                "detail": "1 extra vendor column needs classification",
+            },
+        ]
+    )
+
+
 def order_export_summary(adapter="normalized", ready=True):
     return pd.DataFrame(
         [
@@ -1515,6 +1540,38 @@ def test_broker_readiness_fails_closed_for_placeholder_broker_schema():
     assert report.summary.iloc[0]["recommendation"] == "obtain_vendor_schema_samples"
 
 
+def test_broker_readiness_carries_schema_review_checklist_counts():
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("arrow_money", True),
+        schema_review_checklist=schema_review_checklist(),
+        order_export_summary=order_export_summary("arrow_money", True),
+        upload_pack_summary=upload_summary("arrow_money", True),
+        thresholds=BrokerReadinessThresholds(
+            adapter="arrow_money",
+            require_reviewed_schema=False,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    schema_item = report.items.loc[report.items["component"] == "schema_audit"].iloc[0]
+    assert report.ready
+    assert bool(summary["schema_review_checklist_present"])
+    assert int(summary["schema_review_check_count"]) == 3
+    assert int(summary["schema_review_blocked_checks"]) == 1
+    assert int(summary["schema_review_review_checks"]) == 1
+    assert summary["schema_review_blocked_check_names"] == "vendor_schema_reviewed"
+    assert summary["schema_review_review_check_names"] == "extra_columns_classified"
+    assert bool(schema_item["schema_review_checklist_present"])
+    assert report.config["schema_review_checklist"] == {
+        "provided": True,
+        "check_count": 3,
+        "blocked_checks": 1,
+        "review_checks": 1,
+        "blocked_check_names": ["vendor_schema_reviewed"],
+        "review_check_names": ["extra_columns_classified"],
+    }
+
+
 def test_broker_readiness_accepts_reviewed_vendor_mapping_for_placeholder_adapter():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("arrow_money", True),
@@ -1617,6 +1674,7 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     resume_dir.mkdir()
     roundtrip_dir.mkdir()
     schema_summary("arrow_money", True).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
+    schema_review_checklist().to_csv(schema_dir / "adapter_schema_review_checklist.csv", index=False)
     order_export_summary("arrow_money", True).to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary("arrow_money", True).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
     resume_summary("arrow_money", True).to_csv(resume_dir / "resume_summary.csv", index=False)
@@ -1671,6 +1729,9 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert report.output_dir == out_dir
     assert report.summary.iloc[0]["recommendation"] == "dry_run_only_until_vendor_schema_review"
     assert report.summary.iloc[0]["resume_strategy"] == "surface_mm"
+    assert bool(report.summary.iloc[0]["schema_review_checklist_present"])
+    assert int(report.summary.iloc[0]["schema_review_blocked_checks"]) == 1
+    assert report.summary.iloc[0]["schema_review_blocked_check_names"] == "vendor_schema_reviewed"
     assert bool(report.summary.iloc[0]["resume_gate_ready"])
     assert bool(report.summary.iloc[0]["dispatch_roundtrip_ready"])
     assert (out_dir / "broker_readiness_items.csv").exists()
@@ -1682,6 +1743,9 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert config == report.config
     assert config["ready"]
     assert config["adapter"] == "arrow_money"
+    assert config["schema_review_checklist"]["provided"]
+    assert config["schema_review_checklist"]["blocked_check_names"] == ["vendor_schema_reviewed"]
+    assert config["schema_review_checklist"]["review_check_names"] == ["extra_columns_classified"]
     assert config["components"]["dispatch_roundtrip"]["ready"]
     assert config["resume_gate"]["proof_refresh"]["strategy"] == "surface_mm"
     assert config["dispatch_roundtrip"]["route_readiness"]["gap_pairs"] == 0
@@ -1709,6 +1773,9 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     )
     assert path_tail(manifest["inputs"]["dispatch_roundtrip_manifest"]["path"]).endswith(
         "/roundtrip/manifest.json"
+    )
+    assert path_tail(manifest["inputs"]["schema_review_checklist"]["path"]).endswith(
+        "/schema/adapter_schema_review_checklist.csv"
     )
 
 

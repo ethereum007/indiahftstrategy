@@ -25,6 +25,7 @@ SUMMARY_FILES = {
     "resume_gate": "resume_summary.csv",
     "dispatch_roundtrip": "broker_dispatch_roundtrip_summary.csv",
 }
+SCHEMA_REVIEW_CHECKLIST_FILE = "adapter_schema_review_checklist.csv"
 
 SUMMARY_FALLBACK_DIRS = {
     "order_export": ("04_export", "03_export"),
@@ -68,6 +69,7 @@ class BrokerReadinessReport:
 def evaluate_broker_readiness(
     *,
     schema_audit_summary: pd.DataFrame | None = None,
+    schema_review_checklist: pd.DataFrame | None = None,
     order_export_summary: pd.DataFrame | None = None,
     mapping_draft_summary: pd.DataFrame | None = None,
     mapped_order_summary: pd.DataFrame | None = None,
@@ -98,7 +100,7 @@ def evaluate_broker_readiness(
         "resume_gate": _optional_frame(resume_summary),
         "dispatch_roundtrip": dispatch_roundtrip,
     }
-    items = _items(summaries, thresholds)
+    items = _items(summaries, thresholds, schema_review_checklist=schema_review_checklist)
     checks = _checks(items, thresholds)
     summary = _summary(items, checks, thresholds)
     config = _config(items, checks, summary, thresholds)
@@ -149,6 +151,10 @@ def write_broker_readiness_report(
         vendor_market_data_batch_dir,
         "manifest.json",
     )
+    schema_review_checklist_path = _manifest_config_input(
+        schema_audit_dir,
+        SCHEMA_REVIEW_CHECKLIST_FILE,
+    )
     input_paths = {
         "schema_audit": _manifest_summary_input(schema_audit_dir, "schema_audit"),
         "order_export": _manifest_summary_input(order_export_dir, "order_export"),
@@ -169,6 +175,8 @@ def write_broker_readiness_report(
         input_paths["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
     if vendor_market_data_batch_manifest_path is not None:
         input_paths["vendor_market_data_batch_manifest"] = vendor_market_data_batch_manifest_path
+    if schema_review_checklist_path is not None:
+        input_paths["schema_review_checklist"] = schema_review_checklist_path
     if broker_vendor_data_readiness_config_path is not None:
         input_paths["broker_vendor_data_readiness_config"] = broker_vendor_data_readiness_config_path
     dispatch_roundtrip_config = _dispatch_roundtrip_config_with_vendor_market_data_batch(
@@ -184,6 +192,7 @@ def write_broker_readiness_report(
     )
     report = evaluate_broker_readiness(
         schema_audit_summary=_read_optional_summary(schema_audit_dir, "schema_audit"),
+        schema_review_checklist=_read_optional_schema_review_checklist(schema_audit_dir),
         order_export_summary=_read_optional_summary(order_export_dir, "order_export"),
         mapping_draft_summary=_read_optional_summary(mapping_draft_dir, "mapping_draft"),
         mapped_order_summary=_read_optional_summary(mapped_orders_dir, "mapped_orders"),
@@ -220,8 +229,23 @@ def write_broker_readiness_report(
     )
 
 
-def _items(summaries: dict[str, pd.DataFrame], thresholds: BrokerReadinessThresholds) -> pd.DataFrame:
-    return pd.DataFrame([_item(component, frame, thresholds) for component, frame in summaries.items()])
+def _items(
+    summaries: dict[str, pd.DataFrame],
+    thresholds: BrokerReadinessThresholds,
+    *,
+    schema_review_checklist: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            _item(
+                component,
+                frame,
+                thresholds,
+                schema_review_checklist=schema_review_checklist if component == "schema_audit" else None,
+            )
+            for component, frame in summaries.items()
+        ]
+    )
 
 
 def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, Any]) -> pd.DataFrame:
@@ -597,7 +621,13 @@ def _apply_shadow_broker_readiness_config(
     )
 
 
-def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> dict[str, Any]:
+def _item(
+    component: str,
+    summary: pd.DataFrame,
+    thresholds: BrokerReadinessThresholds,
+    *,
+    schema_review_checklist: pd.DataFrame | None = None,
+) -> dict[str, Any]:
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
     vendor_market_data_batch_only = component == "dispatch_roundtrip" and _to_bool(
         row.get("vendor_market_data_batch_only", False)
@@ -621,6 +651,7 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "expected_vendor_data_kind": thresholds.expected_vendor_data_kind,
         "adapter_match": adapter_match,
         "adapter_schema_status": schema_status,
+        **_schema_review_checklist_item_fields(component, schema_review_checklist),
         "failed_checks": int(failed_checks) if not pd.isna(failed_checks) else 0,
         "runtime_guard_action": str(row.get("guard_action", "")).strip() if component == "runtime_session" else "",
         "runtime_guard_halted": _guard_halted(row) if component == "runtime_session" and provided else False,
@@ -869,6 +900,39 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         "source_file": SUMMARY_FILES[component],
         "recommendation": _component_recommendation(component, provided, ready, required),
     }
+
+
+def _schema_review_checklist_item_fields(
+    component: str,
+    checklist: pd.DataFrame | None,
+) -> dict[str, Any]:
+    if component != "schema_audit" or checklist is None or checklist.empty:
+        return {
+            "schema_review_checklist_present": False,
+            "schema_review_check_count": 0,
+            "schema_review_blocked_checks": 0,
+            "schema_review_review_checks": 0,
+            "schema_review_blocked_check_names": "",
+            "schema_review_review_check_names": "",
+        }
+    frame = checklist.copy()
+    status = frame.get("status", pd.Series([""] * len(frame), index=frame.index)).astype(str)
+    blocked = status.str.casefold().eq("blocked")
+    review = status.str.casefold().eq("review")
+    return {
+        "schema_review_checklist_present": True,
+        "schema_review_check_count": int(len(frame)),
+        "schema_review_blocked_checks": int(blocked.sum()),
+        "schema_review_review_checks": int(review.sum()),
+        "schema_review_blocked_check_names": ";".join(_check_names(frame, blocked)),
+        "schema_review_review_check_names": ";".join(_check_names(frame, review)),
+    }
+
+
+def _check_names(frame: pd.DataFrame, mask: pd.Series) -> list[str]:
+    if "check_name" not in frame.columns:
+        return []
+    return frame.loc[mask, "check_name"].dropna().astype(str).tolist()
 
 
 def _prefixed_shadow_broker_item_fields(
@@ -1931,6 +1995,7 @@ def _summary(
     schema_status = adapter_schema_status(thresholds.adapter)
     schema_review = _schema_review_state(items, thresholds)
     ready = failed == 0
+    schema_item = _component_item(items, "schema_audit")
     runtime_item = _component_item(items, "runtime_session")
     resume_item = _component_item(items, "resume_gate")
     dispatch_item = _component_item(items, "dispatch_roundtrip")
@@ -1942,6 +2007,12 @@ def _summary(
                 "adapter_schema_status": schema_status,
                 "schema_reviewed": bool(schema_review["reviewed"]),
                 "schema_review_mode": schema_review["mode"],
+                "schema_review_checklist_present": _item_bool(schema_item, "schema_review_checklist_present"),
+                "schema_review_check_count": int(_number(schema_item, "schema_review_check_count", 0.0)),
+                "schema_review_blocked_checks": int(_number(schema_item, "schema_review_blocked_checks", 0.0)),
+                "schema_review_review_checks": int(_number(schema_item, "schema_review_review_checks", 0.0)),
+                "schema_review_blocked_check_names": _item_text(schema_item, "schema_review_blocked_check_names"),
+                "schema_review_review_check_names": _item_text(schema_item, "schema_review_review_check_names"),
                 "required_components": int(len(required_items)),
                 "provided_components": int(items["provided"].astype(bool).sum()) if not items.empty else 0,
                 "ready_components": ready_items,
@@ -2290,6 +2361,14 @@ def _config(
         "adapter_schema_status": _item_text(row, "adapter_schema_status"),
         "schema_reviewed": _item_bool(row, "schema_reviewed"),
         "schema_review_mode": _item_text(row, "schema_review_mode"),
+        "schema_review_checklist": {
+            "provided": _item_bool(row, "schema_review_checklist_present"),
+            "check_count": int(_number(row, "schema_review_check_count", 0.0)),
+            "blocked_checks": int(_number(row, "schema_review_blocked_checks", 0.0)),
+            "review_checks": int(_number(row, "schema_review_review_checks", 0.0)),
+            "blocked_check_names": _split_names(_item_text(row, "schema_review_blocked_check_names")),
+            "review_check_names": _split_names(_item_text(row, "schema_review_review_check_names")),
+        },
         "recommendation": _item_text(row, "recommendation"),
         "thresholds": asdict(thresholds),
         "component_counts": {
@@ -2608,6 +2687,10 @@ def _item_text(item: pd.Series, column: str) -> str:
     return str(item[column])
 
 
+def _split_names(value: str) -> list[str]:
+    return [part for part in str(value).split(";") if part]
+
+
 def _runtime_text(component: str, row: pd.Series, column: str) -> str:
     if component != "runtime_session" or row.empty:
         return ""
@@ -2701,6 +2784,18 @@ def _read_optional_summary(path: str | Path | None, component: str) -> pd.DataFr
     frame = pd.read_csv(candidate)
     if frame.empty:
         raise ValueError(f"{component} summary is empty: {candidate}")
+    return frame
+
+
+def _read_optional_schema_review_checklist(path: str | Path | None) -> pd.DataFrame | None:
+    if path is None:
+        return None
+    candidate = _config_path(path, SCHEMA_REVIEW_CHECKLIST_FILE)
+    if not candidate.exists():
+        return None
+    frame = pd.read_csv(candidate)
+    if frame.empty:
+        raise ValueError(f"schema review checklist is empty: {candidate}")
     return frame
 
 

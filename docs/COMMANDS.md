@@ -2123,6 +2123,11 @@ broker_readiness_config.json
 manifest.json
 ```
 
+If the schema audit directory contains `adapter_schema_review_checklist.csv`,
+broker readiness records it as a manifest input and carries checklist presence,
+blocked-check names, and review-check names into `broker_readiness_summary.csv`
+and `broker_readiness_config.json`.
+
 ## Broker Fill Reconciliation
 
 Reconcile exported paper/shadow orders against normalized broker or drop-copy
