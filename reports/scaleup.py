@@ -2304,6 +2304,7 @@ def _broker_shadow_broker_readiness_active(broker_readiness: pd.Series) -> bool:
         return False
     session_fields = (
         "shadow_broker_readiness_sessions",
+        "shadow_broker_vendor_data_readiness_sessions",
         "shadow_broker_route_readiness_sessions",
         "shadow_broker_dispatch_roundtrip_sessions",
         "shadow_broker_route_dispatch_roundtrip_sessions",
@@ -2523,6 +2524,14 @@ def _broker_shadow_broker_readiness_checks(
     expected_adapter: str,
 ) -> list[dict[str, object]]:
     shadow_adapter = _identity_key(broker_readiness.get("shadow_broker_adapter", ""))
+    shadow_sessions = int(_number(broker_readiness, "shadow_broker_readiness_sessions", fallback=0.0))
+    vendor_sessions = int(
+        _number(broker_readiness, "shadow_broker_vendor_data_readiness_sessions", fallback=0.0)
+    )
+    vendor_failed_checks = int(
+        _number(broker_readiness, "shadow_broker_vendor_data_readiness_failed_checks", fallback=0.0)
+    )
+    vendor_active = vendor_sessions > 0 or vendor_failed_checks > 0
     return [
         _check(
             "broker_shadow_broker_readiness_provided",
@@ -2541,6 +2550,69 @@ def _broker_shadow_broker_readiness_checks(
             and int(_number(broker_readiness, "shadow_broker_readiness_ready_sessions", fallback=0.0))
             == int(_number(broker_readiness, "shadow_broker_readiness_sessions", fallback=0.0)),
             "broker-readiness shadow broker-readiness proof is not ready",
+        ),
+        _check(
+            "broker_shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+            vendor_sessions,
+            "==",
+            shadow_sessions,
+            not vendor_active or vendor_sessions == shadow_sessions,
+            (
+                "broker-readiness shadow broker vendor-data wrapper proof is present for only "
+                "some broker-readiness sessions"
+            ),
+        ),
+        _check(
+            "broker_shadow_broker_vendor_data_readiness_provided",
+            int(
+                _number(
+                    broker_readiness,
+                    "shadow_broker_vendor_data_readiness_provided_sessions",
+                    fallback=0.0,
+                )
+            ),
+            "==",
+            shadow_sessions,
+            not vendor_active
+            or int(
+                _number(
+                    broker_readiness,
+                    "shadow_broker_vendor_data_readiness_provided_sessions",
+                    fallback=0.0,
+                )
+            )
+            == shadow_sessions,
+            "broker-readiness shadow broker vendor-data wrapper proof is missing for some sessions",
+        ),
+        _check(
+            "broker_shadow_broker_vendor_data_readiness_ready",
+            int(
+                _number(
+                    broker_readiness,
+                    "shadow_broker_vendor_data_readiness_ready_sessions",
+                    fallback=0.0,
+                )
+            ),
+            "==",
+            shadow_sessions,
+            not vendor_active
+            or int(
+                _number(
+                    broker_readiness,
+                    "shadow_broker_vendor_data_readiness_ready_sessions",
+                    fallback=0.0,
+                )
+            )
+            == shadow_sessions,
+            "broker-readiness shadow broker vendor-data wrapper proof is not ready",
+        ),
+        _check(
+            "broker_shadow_broker_vendor_data_readiness_failed_checks",
+            vendor_failed_checks,
+            "<=",
+            0,
+            not vendor_active or vendor_failed_checks <= 0,
+            "broker-readiness shadow broker vendor-data wrapper proof has failed checks",
         ),
         _check(
             "broker_shadow_broker_adapter_matches",
@@ -2715,6 +2787,10 @@ def _broker_shadow_broker_plan_fields(broker_readiness: pd.Series) -> dict[str, 
             "broker_shadow_broker_readiness_provided": False,
             "broker_shadow_broker_readiness_sessions": 0,
             "broker_shadow_broker_readiness_ready_sessions": 0,
+            "broker_shadow_broker_vendor_data_readiness_sessions": 0,
+            "broker_shadow_broker_vendor_data_readiness_provided_sessions": 0,
+            "broker_shadow_broker_vendor_data_readiness_ready_sessions": 0,
+            "broker_shadow_broker_vendor_data_readiness_failed_checks": 0,
             "broker_shadow_broker_adapter": "",
             "broker_shadow_broker_adapter_count": 0,
             "broker_shadow_broker_route_readiness_sessions": 0,
@@ -2745,6 +2821,30 @@ def _broker_shadow_broker_plan_fields(broker_readiness: pd.Series) -> dict[str, 
         ),
         "broker_shadow_broker_readiness_ready_sessions": int(
             _number(broker_readiness, "shadow_broker_readiness_ready_sessions", fallback=0.0)
+        ),
+        "broker_shadow_broker_vendor_data_readiness_sessions": int(
+            _number(broker_readiness, "shadow_broker_vendor_data_readiness_sessions", fallback=0.0)
+        ),
+        "broker_shadow_broker_vendor_data_readiness_provided_sessions": int(
+            _number(
+                broker_readiness,
+                "shadow_broker_vendor_data_readiness_provided_sessions",
+                fallback=0.0,
+            )
+        ),
+        "broker_shadow_broker_vendor_data_readiness_ready_sessions": int(
+            _number(
+                broker_readiness,
+                "shadow_broker_vendor_data_readiness_ready_sessions",
+                fallback=0.0,
+            )
+        ),
+        "broker_shadow_broker_vendor_data_readiness_failed_checks": int(
+            _number(
+                broker_readiness,
+                "shadow_broker_vendor_data_readiness_failed_checks",
+                fallback=0.0,
+            )
         ),
         "broker_shadow_broker_adapter": _identity_key(broker_readiness.get("shadow_broker_adapter", "")),
         "broker_shadow_broker_adapter_count": int(
@@ -2890,6 +2990,18 @@ def _broker_shadow_broker_summary_fields(plan_row: pd.Series) -> dict[str, objec
         "broker_shadow_broker_readiness_ready_sessions": int(
             plan_row["broker_shadow_broker_readiness_ready_sessions"]
         ),
+        "broker_shadow_broker_vendor_data_readiness_sessions": int(
+            plan_row["broker_shadow_broker_vendor_data_readiness_sessions"]
+        ),
+        "broker_shadow_broker_vendor_data_readiness_provided_sessions": int(
+            plan_row["broker_shadow_broker_vendor_data_readiness_provided_sessions"]
+        ),
+        "broker_shadow_broker_vendor_data_readiness_ready_sessions": int(
+            plan_row["broker_shadow_broker_vendor_data_readiness_ready_sessions"]
+        ),
+        "broker_shadow_broker_vendor_data_readiness_failed_checks": int(
+            plan_row["broker_shadow_broker_vendor_data_readiness_failed_checks"]
+        ),
         "broker_shadow_broker_adapter": str(plan_row["broker_shadow_broker_adapter"]),
         "broker_shadow_broker_adapter_count": int(plan_row["broker_shadow_broker_adapter_count"]),
         "broker_shadow_broker_route_readiness_sessions": int(
@@ -2987,6 +3099,14 @@ def _broker_shadow_broker_config(plan_row: pd.Series) -> dict[str, object]:
         "ready_sessions": int(plan_row["broker_shadow_broker_readiness_ready_sessions"]),
         "adapter": str(plan_row["broker_shadow_broker_adapter"]),
         "adapter_count": int(plan_row["broker_shadow_broker_adapter_count"]),
+        "broker_vendor_data_readiness": {
+            "sessions": int(plan_row["broker_shadow_broker_vendor_data_readiness_sessions"]),
+            "provided_sessions": int(
+                plan_row["broker_shadow_broker_vendor_data_readiness_provided_sessions"]
+            ),
+            "ready_sessions": int(plan_row["broker_shadow_broker_vendor_data_readiness_ready_sessions"]),
+            "failed_checks": int(plan_row["broker_shadow_broker_vendor_data_readiness_failed_checks"]),
+        },
         "route_readiness": {
             "sessions": int(plan_row["broker_shadow_broker_route_readiness_sessions"]),
             "ready_sessions": int(plan_row["broker_shadow_broker_route_readiness_ready_sessions"]),

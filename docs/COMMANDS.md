@@ -2296,7 +2296,11 @@ broker-specific block when present and falls back to the generic
 If broker readiness carried dispatch round-trip shadow broker-readiness proof,
 scale-up revalidates it and retains the separate `broker_shadow_broker_*`
 fields so broker-stage proof can be audited independently from the
-shadow-session comparison aggregate.
+shadow-session comparison aggregate. If that broker-readiness shadow proof
+included Arrow.money/iRage broker-vendor wrapper evidence, scale-up also
+retains `broker_shadow_broker_vendor_data_readiness_*` fields plus nested
+`broker_readiness.shadow_broker_readiness.broker_vendor_data_readiness` config,
+and fails closed when the wrapper proof is partial, unready, or failed.
 If the shadow-session comparison carries broker-readiness evidence, scale-up
 also verifies that accepted sessions all carried ready broker proof for one
 adapter, one route-readiness strategy/market, and one broker dispatch

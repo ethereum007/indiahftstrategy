@@ -271,6 +271,10 @@ def broker_readiness_summary(
     shadow_broker_readiness_provided=False,
     shadow_broker_readiness_sessions=0,
     shadow_broker_readiness_ready_sessions=None,
+    shadow_broker_vendor_data_readiness_sessions=0,
+    shadow_broker_vendor_data_readiness_provided_sessions=None,
+    shadow_broker_vendor_data_readiness_ready_sessions=None,
+    shadow_broker_vendor_data_readiness_failed_checks=0,
     shadow_broker_adapter="",
     shadow_broker_adapter_count=0,
     shadow_broker_route_readiness_sessions=0,
@@ -343,6 +347,10 @@ def broker_readiness_summary(
         route_dispatch_roundtrip_unmatched_acks = dispatch_roundtrip_unmatched_acks
     if shadow_broker_readiness_ready_sessions is None:
         shadow_broker_readiness_ready_sessions = shadow_broker_readiness_sessions
+    if shadow_broker_vendor_data_readiness_provided_sessions is None:
+        shadow_broker_vendor_data_readiness_provided_sessions = shadow_broker_vendor_data_readiness_sessions
+    if shadow_broker_vendor_data_readiness_ready_sessions is None:
+        shadow_broker_vendor_data_readiness_ready_sessions = shadow_broker_vendor_data_readiness_sessions
     if shadow_broker_route_readiness_ready_sessions is None:
         shadow_broker_route_readiness_ready_sessions = shadow_broker_route_readiness_sessions
     if shadow_broker_dispatch_roundtrip_ready_sessions is None:
@@ -408,6 +416,18 @@ def broker_readiness_summary(
                 "shadow_broker_readiness_provided": shadow_broker_readiness_provided,
                 "shadow_broker_readiness_sessions": shadow_broker_readiness_sessions,
                 "shadow_broker_readiness_ready_sessions": shadow_broker_readiness_ready_sessions,
+                "shadow_broker_vendor_data_readiness_sessions": (
+                    shadow_broker_vendor_data_readiness_sessions
+                ),
+                "shadow_broker_vendor_data_readiness_provided_sessions": (
+                    shadow_broker_vendor_data_readiness_provided_sessions
+                ),
+                "shadow_broker_vendor_data_readiness_ready_sessions": (
+                    shadow_broker_vendor_data_readiness_ready_sessions
+                ),
+                "shadow_broker_vendor_data_readiness_failed_checks": (
+                    shadow_broker_vendor_data_readiness_failed_checks
+                ),
                 "shadow_broker_adapter": shadow_broker_adapter,
                 "shadow_broker_adapter_count": shadow_broker_adapter_count,
                 "shadow_broker_route_readiness_sessions": shadow_broker_route_readiness_sessions,
@@ -1571,6 +1591,10 @@ def test_scaleup_plan_carries_broker_readiness_shadow_broker_proof():
             shadow_broker_readiness_provided=True,
             shadow_broker_readiness_sessions=2,
             shadow_broker_readiness_ready_sessions=2,
+            shadow_broker_vendor_data_readiness_sessions=2,
+            shadow_broker_vendor_data_readiness_provided_sessions=2,
+            shadow_broker_vendor_data_readiness_ready_sessions=2,
+            shadow_broker_vendor_data_readiness_failed_checks=0,
             shadow_broker_adapter="arrow_money",
             shadow_broker_adapter_count=1,
             shadow_broker_route_readiness_sessions=2,
@@ -1596,6 +1620,9 @@ def test_scaleup_plan_carries_broker_readiness_shadow_broker_proof():
     summary = report.summary.iloc[0]
     assert summary["broker_shadow_broker_readiness_provided"]
     assert int(summary["broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_failed_checks"]) == 0
     assert summary["broker_shadow_broker_adapter"] == "arrow_money"
     assert summary["broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert int(summary["broker_shadow_broker_dispatch_roundtrip_scenario_count"]) == 1
@@ -1603,6 +1630,7 @@ def test_scaleup_plan_carries_broker_readiness_shadow_broker_proof():
     shadow_proof = report.config["broker_readiness"]["shadow_broker_readiness"]
     assert shadow_proof["provided"]
     assert shadow_proof["adapter"] == "arrow_money"
+    assert shadow_proof["broker_vendor_data_readiness"]["ready_sessions"] == 2
     assert shadow_proof["route_readiness"]["market"] == "india_nse_index_derivatives"
     assert shadow_proof["dispatch_roundtrip"]["sessions"] == 2
     assert shadow_proof["route_dispatch_roundtrip"]["scenario_count"] == 1
@@ -1621,6 +1649,10 @@ def test_scaleup_plan_blocks_dirty_broker_readiness_shadow_broker_proof():
             shadow_broker_readiness_provided=True,
             shadow_broker_readiness_sessions=2,
             shadow_broker_readiness_ready_sessions=1,
+            shadow_broker_vendor_data_readiness_sessions=2,
+            shadow_broker_vendor_data_readiness_provided_sessions=2,
+            shadow_broker_vendor_data_readiness_ready_sessions=1,
+            shadow_broker_vendor_data_readiness_failed_checks=1,
             shadow_broker_adapter="irage",
             shadow_broker_adapter_count=2,
             shadow_broker_route_readiness_sessions=2,
@@ -1649,6 +1681,8 @@ def test_scaleup_plan_blocks_dirty_broker_readiness_shadow_broker_proof():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
         "broker_shadow_broker_readiness_ready",
+        "broker_shadow_broker_vendor_data_readiness_ready",
+        "broker_shadow_broker_vendor_data_readiness_failed_checks",
         "broker_shadow_broker_adapter_matches",
         "broker_shadow_broker_adapter_consistent",
         "broker_shadow_broker_route_readiness_ready",
@@ -1669,10 +1703,61 @@ def test_scaleup_plan_blocks_dirty_broker_readiness_shadow_broker_proof():
     } <= failed
     summary = report.summary.iloc[0]
     assert summary["broker_shadow_broker_adapter"] == "irage"
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_failed_checks"]) == 1
     assert int(summary["broker_shadow_broker_route_readiness_gap_pairs"]) == 2
     shadow_proof = report.config["broker_readiness"]["shadow_broker_readiness"]
     assert shadow_proof["adapter"] == "irage"
+    assert shadow_proof["broker_vendor_data_readiness"]["failed_checks"] == 1
     assert shadow_proof["dispatch_roundtrip"]["max_rejected_orders"] == 1
+
+
+def test_scaleup_plan_blocks_partial_broker_readiness_shadow_broker_vendor_data_readiness():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        broker_readiness_summary=broker_readiness_summary(
+            True,
+            dispatch_roundtrip_provided=True,
+            dispatch_roundtrip_ready=True,
+            dispatch_roundtrip_target_mode="shadow",
+            shadow_broker_readiness_provided=True,
+            shadow_broker_readiness_sessions=2,
+            shadow_broker_readiness_ready_sessions=2,
+            shadow_broker_vendor_data_readiness_sessions=1,
+            shadow_broker_vendor_data_readiness_provided_sessions=1,
+            shadow_broker_vendor_data_readiness_ready_sessions=1,
+            shadow_broker_adapter="arrow_money",
+            shadow_broker_adapter_count=1,
+            shadow_broker_route_readiness_sessions=2,
+            shadow_broker_route_readiness_ready_sessions=2,
+            shadow_broker_route_readiness_strategy="lead_lag_taker",
+            shadow_broker_route_readiness_market="india_nse_index_derivatives",
+            shadow_broker_dispatch_roundtrip_sessions=2,
+            shadow_broker_dispatch_roundtrip_ready_sessions=2,
+            shadow_broker_dispatch_roundtrip_strategy="lead_lag_taker",
+            shadow_broker_dispatch_roundtrip_market="india_nse_index_derivatives",
+            shadow_broker_dispatch_roundtrip_scenario_count=1,
+            shadow_broker_route_dispatch_roundtrip_sessions=2,
+            shadow_broker_route_dispatch_roundtrip_ready_sessions=2,
+            shadow_broker_route_dispatch_roundtrip_strategy="lead_lag_taker",
+            shadow_broker_route_dispatch_roundtrip_market="india_nse_index_derivatives",
+            shadow_broker_route_dispatch_roundtrip_scenario_count=1,
+        ),
+        thresholds=ScaleUpThresholds(require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "broker_shadow_broker_vendor_data_readiness_provided",
+        "broker_shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_sessions"]) == 1
+    shadow_proof = report.config["broker_readiness"]["shadow_broker_readiness"]
+    assert shadow_proof["broker_vendor_data_readiness"]["provided_sessions"] == 1
 
 
 def test_scaleup_plan_blocks_missing_broker_dispatch_route_proof():

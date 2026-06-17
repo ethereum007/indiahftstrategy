@@ -561,7 +561,10 @@
   cutover fingerprinting the same sidecar from direct or nested
   broker-readiness inputs, preserving broker-readiness-carried shadow proof
   separately as `broker_shadow_broker_*` fields and cutover preserving them as
-  `scaleup_broker_shadow_broker_*` authorization/config fields, with
+  `scaleup_broker_shadow_broker_*` authorization/config fields. Scale-up now
+  also revalidates broker-readiness-carried shadow broker vendor-data wrapper
+  counters as `broker_shadow_broker_vendor_data_readiness_*` before promotion,
+  with
   route-enable fingerprinting the cutover manifest, carrying the same proof as
   `cutover_broker_shadow_broker_*`, preserving cutover-retained vendor
   market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
@@ -705,7 +708,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 853 tests.
+Current passing suite: 854 tests.
 
 ## Next Build Targets
 
