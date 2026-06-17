@@ -682,7 +682,9 @@
   live-dryrun route authorization, and route-enable now revalidates the
   cutover-carried aggregate before a broker route can be enabled. Broker
   dispatch now revalidates the route-enable-carried aggregate before broker
-  dry-run dispatch packets can be armed.
+  dry-run dispatch packets can be armed, and broker dispatch send now
+  revalidates the dispatch-carried aggregate before non-submitting sender
+  packets can be reviewed.
   Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
@@ -699,7 +701,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 849 tests.
+Current passing suite: 850 tests.
 
 ## Next Build Targets
 
