@@ -2932,7 +2932,8 @@ dispatch config retained the shadow-broker broker-vendor wrapper aggregate, the
 sender packet revalidates the per-session wrapper coverage and carries it as
 `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and does the
-same for `route_broker_shadow_broker_readiness`. If the
+same for `route_broker_shadow_broker_readiness`, failing closed when either
+wrapper aggregate is partial, unready, or dirty. If the
 dispatch config retained Arrow.money/iRage vendor market-data batch evidence,
 the sender packet preserves the dataset/header/mapping proof as
 `dispatch_vendor_market_data_batch_*` fields and a nested
