@@ -290,6 +290,7 @@ Outputs:
 strategy_scorecard.csv
 strategy_scorecard_gaps.csv
 strategy_scorecard_summary.csv
+strategy_scorecard_next_actions.json
 manifest.json
 ```
 
@@ -302,6 +303,8 @@ or per-gap `next_gate` hints, so a blocked imbalance profile can point directly
 to `walkforward-imbalance-replay`, a missing broker dry-run packet can point to
 `plan-broker-dispatch`, and a ready `ops_launch` profile can point to
 `review-route-readiness`.
+`strategy_scorecard_next_actions.json` mirrors the ranked next actions and
+open gaps in a machine-readable sidecar for schedulers or follow-up runbooks.
 
 ## Market Profile Report
 

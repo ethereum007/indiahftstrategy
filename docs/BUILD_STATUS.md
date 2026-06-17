@@ -39,6 +39,9 @@
 - Strategy readiness scorecard rows, gap rows, and summary now name the next
   required run type and CLI gate so blocked research or broker dry-run lanes
   can move directly to the missing proof step.
+- Strategy readiness scorecard writes `strategy_scorecard_next_actions.json`,
+  a machine-readable ranked next-action and open-gap sidecar for automated
+  research/ops follow-up.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

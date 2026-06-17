@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -91,6 +92,7 @@ class StrategyScorecardReport:
     scorecard: pd.DataFrame
     gaps: pd.DataFrame
     summary: pd.DataFrame
+    config: dict[str, Any]
     output_dir: Path | None = None
 
     @property
@@ -133,7 +135,8 @@ def evaluate_strategy_scorecard(
     scorecard = _rank_scorecard(pd.DataFrame(rows))
     gaps = pd.DataFrame(gap_rows)
     summary = _summary(scorecard)
-    return StrategyScorecardReport(scorecard=scorecard, gaps=gaps, summary=summary)
+    config = _config(scorecard, gaps, summary)
+    return StrategyScorecardReport(scorecard=scorecard, gaps=gaps, summary=summary, config=config)
 
 
 def write_strategy_scorecard(
@@ -151,13 +154,17 @@ def write_strategy_scorecard(
     report.scorecard.to_csv(out / "strategy_scorecard.csv", index=False)
     report.gaps.to_csv(out / "strategy_scorecard_gaps.csv", index=False)
     report.summary.to_csv(out / "strategy_scorecard_summary.csv", index=False)
+    (out / "strategy_scorecard_next_actions.json").write_text(
+        json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="strategy_scorecard",
         parameters={"thresholds": asdict(thresholds)},
         inputs={"catalog": catalog_file},
     )
-    return StrategyScorecardReport(report.scorecard, report.gaps, report.summary, out)
+    return StrategyScorecardReport(report.scorecard, report.gaps, report.summary, report.config, out)
 
 
 def _scorecard_row(
@@ -280,6 +287,60 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) -> dict[str, Any]:
+    summary_row = _jsonable_row(summary.iloc[0].to_dict()) if not summary.empty else {}
+    return {
+        "ready": bool(summary_row.get("ready", False)),
+        "best_profile": str(summary_row.get("best_profile", "")),
+        "best_strategy": str(summary_row.get("best_strategy", "")),
+        "best_market": str(summary_row.get("best_market", "")),
+        "best_next_required_run_type": str(summary_row.get("best_next_required_run_type", "")),
+        "best_next_gate": str(summary_row.get("best_next_gate", "")),
+        "recommendation": str(summary_row.get("recommendation", "")),
+        "next_actions": [_action(row) for row in _records(scorecard)],
+        "gaps": [_gap_action(row) for row in _records(gaps) if str(row.get("gap", ""))],
+    }
+
+
+def _action(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "rank": int(_numeric(row.get("rank", 0))),
+        "profile": str(row.get("profile", "")),
+        "strategy": str(row.get("strategy", "")),
+        "market": str(row.get("market", "")),
+        "ready": bool(row.get("ready", False)),
+        "readiness_score": float(_numeric(row.get("readiness_score", 0.0))),
+        "passed_required_run_types": int(_numeric(row.get("passed_required_run_types", 0))),
+        "required_run_type_count": int(_numeric(row.get("required_run_type_count", 0))),
+        "next_required_run_type": str(row.get("next_required_run_type", "")),
+        "next_gate": str(row.get("next_gate", "")),
+        "missing_required_run_types": _split_items(row.get("missing_required_run_types", "")),
+        "blocked_required_run_types": _split_items(row.get("blocked_required_run_types", "")),
+        "recommendation": str(row.get("recommendation", "")),
+    }
+
+
+def _gap_action(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "profile": str(row.get("profile", "")),
+        "strategy": str(row.get("strategy", "")),
+        "market": str(row.get("market", "")),
+        "required_run_type": str(row.get("required_run_type", "")),
+        "gap": str(row.get("gap", "")),
+        "next_gate": str(row.get("next_gate", "")),
+        "passed_runs": int(_numeric(row.get("passed_runs", 0))),
+        "failed_runs": int(_numeric(row.get("failed_runs", 0))),
+        "unknown_status_runs": int(_numeric(row.get("unknown_status_runs", 0))),
+        "latest_run_dir": str(row.get("latest_run_dir", "")),
+    }
+
+
+def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    return [_jsonable_row(row) for row in frame.to_dict(orient="records")]
+
+
 def _rank_scorecard(frame: pd.DataFrame) -> pd.DataFrame:
     if frame.empty:
         return frame
@@ -387,6 +448,25 @@ def _validate_thresholds(thresholds: StrategyScorecardThresholds) -> None:
         raise ValueError("profiles must not be empty")
     for profile in thresholds.profiles:
         evidence_profile_run_types(profile)
+
+
+def _split_items(value: Any) -> list[str]:
+    return [item for item in str(value).split(";") if item]
+
+
+def _jsonable_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {key: _jsonable(value) for key, value in row.items()}
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, np.generic):
+        return value.item()
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return value
 
 
 def _numeric(value: Any) -> float:

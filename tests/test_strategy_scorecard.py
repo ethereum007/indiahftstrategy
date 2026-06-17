@@ -94,6 +94,14 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert ranked.loc["imbalance", "next_gate"] == "walkforward-imbalance-replay"
     assert report.summary.loc[0, "best_profile"] == "leadlag"
     assert report.summary.loc[0, "best_next_gate"] == "plan-scaleup"
+    assert report.config["best_profile"] == "leadlag"
+    assert report.config["next_actions"][0]["next_gate"] == "plan-scaleup"
+    assert report.config["next_actions"][1]["missing_required_run_types"] == [
+        "imbalance_replay_walkforward",
+        "imbalance_research_pipeline",
+        "imbalance_order_plan",
+        "imbalance_launch_pipeline",
+    ]
 
 
 def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
@@ -116,7 +124,11 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "strategy_scorecard.csv").exists()
     assert (out_dir / "strategy_scorecard_gaps.csv").exists()
     assert (out_dir / "strategy_scorecard_summary.csv").exists()
+    assert (out_dir / "strategy_scorecard_next_actions.json").exists()
     assert (out_dir / "manifest.json").exists()
+    config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
+    assert config == report.config
+    assert config["next_actions"][0]["profile"] == "leadlag"
 
 
 def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path):
@@ -172,6 +184,8 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert score["next_gate"] == "review-route-readiness"
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.summary.loc[0, "best_next_gate"] == "review-route-readiness"
+    assert report.config["best_next_gate"] == "review-route-readiness"
+    assert report.config["next_actions"][0]["next_gate"] == "review-route-readiness"
     assert set(report.gaps["total_runs"]) == {1}
 
 
