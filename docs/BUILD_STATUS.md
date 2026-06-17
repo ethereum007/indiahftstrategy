@@ -76,6 +76,9 @@
   `broker_vendor_data_readiness_pipeline` proof and points missing wrapper
   evidence to `pipeline-broker-vendor-readiness --help`, so broker-vendor data
   readiness is a launch prerequisite rather than a passive catalog signal.
+- Route readiness now emits manifest-tracked `route_readiness_action_queue.csv`
+  and `route_readiness_runbook.md` handoffs, carrying next gates, help commands,
+  and strategy/ops evidence status into the final live-dry-run route review.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

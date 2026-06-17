@@ -402,7 +402,9 @@ Outputs:
 route_readiness_pairs.csv
 route_readiness_gaps.csv
 route_readiness_summary.csv
+route_readiness_action_queue.csv
 route_readiness_config.json
+route_readiness_runbook.md
 manifest.json
 ```
 
@@ -410,6 +412,10 @@ The review fails closed until the route is portable, matching strategy evidence
 is ready, matching `ops_launch` evidence is ready, and ops evidence was reviewed
 with file-fingerprinted inputs. Use `--allow-non-file-ops-inputs` only for
 explicit dry-run investigations that are not route-review candidates.
+`route_readiness_action_queue.csv` flattens ready and blocked route pairs into
+priority order with `next_gate`, `next_gate_help_command`, evidence statuses,
+and the route-level recommendation. `route_readiness_runbook.md` mirrors the
+same handoff for operator review before live dry-run routing.
 
 ## Instrument Metadata Report
 

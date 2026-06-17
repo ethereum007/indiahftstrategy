@@ -78,6 +78,12 @@ def write_route_readiness_review(
     review.pairs.to_csv(out / "route_readiness_pairs.csv", index=False)
     review.gaps.to_csv(out / "route_readiness_gaps.csv", index=False)
     review.summary.to_csv(out / "route_readiness_summary.csv", index=False)
+    action_queue = _action_queue(review.pairs)
+    action_queue.to_csv(out / "route_readiness_action_queue.csv", index=False)
+    (out / "route_readiness_runbook.md").write_text(
+        _runbook_markdown(review.summary.iloc[0], review.pairs, review.gaps, action_queue),
+        encoding="utf-8",
+    )
     (out / "route_readiness_config.json").write_text(
         json.dumps(review.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -172,6 +178,9 @@ def _pair_row(
         "status": status,
         "blocker": "" if route_ready else _blocker(pair, status),
         "next_gate": "live_dryrun_route_review" if route_ready else _next_gate(pair, status),
+        "next_gate_help_command": _next_gate_help_command(
+            "live_dryrun_route_review" if route_ready else _next_gate(pair, status)
+        ),
     }
 
 
@@ -268,6 +277,23 @@ def _next_gate(pair: dict[str, Any], status: str) -> str:
     return ""
 
 
+def _next_gate_help_command(next_gate: str) -> str:
+    gate = _text(next_gate)
+    if not gate or gate in {"live_dryrun_route_review", "run_walkforward_and_paper_shadow_gates"}:
+        return ""
+    if gate == "run_market_profile_report_with_fee_assumptions":
+        return "python -m hft_cli market-portability-report --help"
+    command = gate.split()[0]
+    cli_commands = {
+        "market-portability-report",
+        "review-route-readiness",
+        "review-strategy-evidence",
+    }
+    if command in cli_commands:
+        return f"python -m hft_cli {gate} --help"
+    return ""
+
+
 def _blocker(pair: dict[str, Any], status: str) -> str:
     if status == "blocked_by_portability":
         return _text(pair.get("blocker")) or status
@@ -352,6 +378,8 @@ def _config(
         "route_ready_pairs": _records(ready_pairs),
         "gap_pairs": _records(gaps),
         "next_gates": sorted(set(gaps["next_gate"].astype(str))) if not gaps.empty else [],
+        "ready_action_count": int(pairs["route_ready"].astype(bool).sum()) if not pairs.empty else 0,
+        "blocked_action_count": int((~pairs["route_ready"].astype(bool)).sum()) if not pairs.empty else 0,
     }
 
 
@@ -363,7 +391,14 @@ def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         "market",
         "portability_status",
         "strategy_evidence_profile",
+        "strategy_evidence_status",
+        "strategy_evidence_source",
+        "strategy_evidence_recommendation",
         "strategy_evidence_ready",
+        "ops_evidence_profile",
+        "ops_evidence_status",
+        "ops_evidence_source",
+        "ops_evidence_recommendation",
         "ops_evidence_ready",
         "ops_file_inputs_required",
         "ops_non_file_input_count",
@@ -371,9 +406,161 @@ def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         "status",
         "blocker",
         "next_gate",
+        "next_gate_help_command",
     ]
     available = [column for column in columns if column in frame.columns]
     return [_jsonable_row(row) for row in frame[available].to_dict(orient="records")]
+
+
+def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    if not pairs.empty:
+        ordered = pairs.sort_values(["route_ready", "strategy", "market"], ascending=[False, True, True])
+        for priority, row in enumerate(ordered.to_dict(orient="records"), start=1):
+            rows.append(
+                {
+                    "priority": priority,
+                    "queue_status": "ready" if bool(row.get("route_ready", False)) else "blocked",
+                    "strategy": _text(row.get("strategy")),
+                    "market": _text(row.get("market")),
+                    "status": _text(row.get("status")),
+                    "blocker": _text(row.get("blocker")),
+                    "next_gate": _text(row.get("next_gate")),
+                    "next_gate_help_command": _text(row.get("next_gate_help_command")),
+                    "strategy_evidence_profile": _text(row.get("strategy_evidence_profile")),
+                    "strategy_evidence_status": _text(row.get("strategy_evidence_status")),
+                    "ops_evidence_profile": _text(row.get("ops_evidence_profile")),
+                    "ops_evidence_status": _text(row.get("ops_evidence_status")),
+                    "ops_file_inputs_required": bool(row.get("ops_file_inputs_required", False)),
+                    "ops_non_file_input_count": int(_number(row.get("ops_non_file_input_count", 0))),
+                    "recommendation": _route_action_recommendation(row),
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "queue_status",
+            "strategy",
+            "market",
+            "status",
+            "blocker",
+            "next_gate",
+            "next_gate_help_command",
+            "strategy_evidence_profile",
+            "strategy_evidence_status",
+            "ops_evidence_profile",
+            "ops_evidence_status",
+            "ops_file_inputs_required",
+            "ops_non_file_input_count",
+            "recommendation",
+        ],
+    )
+
+
+def _route_action_recommendation(row: dict[str, Any]) -> str:
+    if bool(row.get("route_ready", False)):
+        return "ready_for_live_dryrun_route_review"
+    status = _text(row.get("status"))
+    if status == "ops_evidence_incomplete":
+        return _text(row.get("ops_evidence_recommendation")) or "complete_ops_launch_evidence"
+    if status.startswith("ops"):
+        return "complete_ops_launch_evidence"
+    if status == "strategy_evidence_incomplete":
+        return _text(row.get("strategy_evidence_recommendation")) or "complete_strategy_evidence"
+    if status.startswith("strategy"):
+        return "complete_strategy_evidence"
+    if status == "blocked_by_portability":
+        return "resolve_market_portability_gap"
+    return "complete_route_readiness_gaps"
+
+
+def _runbook_markdown(
+    summary_row: pd.Series,
+    pairs: pd.DataFrame,
+    gaps: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready", False)) else "no"
+    lines = [
+        "# Route Readiness Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Recommendation: {_text(summary_row.get('recommendation'))}",
+        f"- Route-ready pairs: {int(_number(summary_row.get('route_ready_pairs', 0)))}",
+        f"- Gap pairs: {int(_number(summary_row.get('gap_pairs', 0)))}",
+        f"- Require ops file inputs: {str(_to_bool(summary_row.get('require_ops_file_inputs', False))).lower()}",
+        "",
+        "## Action Queue",
+        "",
+        _action_queue_table(action_queue),
+        "",
+        "## Route Pairs",
+        "",
+        _pairs_table(pairs),
+        "",
+        "## Gaps",
+        "",
+        _pairs_table(gaps),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Priority", "Status", "Strategy", "Market", "Next gate", "Help", "Recommendation"],
+        [
+            [
+                str(int(_number(row.get("priority", 0)))),
+                _text(row.get("queue_status")),
+                _text(row.get("strategy")),
+                _text(row.get("market")),
+                _code(row.get("next_gate")),
+                _code(row.get("next_gate_help_command")),
+                _text(row.get("recommendation")),
+            ]
+            for row in action_queue.to_dict(orient="records")
+        ],
+    )
+
+
+def _pairs_table(frame: pd.DataFrame) -> str:
+    if frame.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Strategy", "Market", "Status", "Blocker", "Next gate"],
+        [
+            [
+                _text(row.get("strategy")),
+                _text(row.get("market")),
+                _text(row.get("status")),
+                _text(row.get("blocker")),
+                _code(row.get("next_gate")),
+            ]
+            for row in frame.to_dict(orient="records")
+        ],
+    )
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _code(value: Any) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
+
+
+def _escape_cell(value: Any) -> str:
+    return _text(value).replace("|", "\\|")
 
 
 def _read_evidence_summaries(paths: tuple[str | Path, ...]) -> tuple[list[Path], pd.DataFrame]:
