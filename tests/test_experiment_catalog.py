@@ -121,6 +121,33 @@ def test_catalog_experiment_runs_recognizes_proof_refresh_status(tmp_path):
     assert row["summary_proof_source"] == "latest"
 
 
+def test_catalog_experiment_runs_recognizes_strategy_scorecard_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "strategy_scorecard",
+        run_type="strategy_scorecard",
+        summary_name="strategy_scorecard_summary.csv",
+        summary_row={
+            "ready": True,
+            "best_profile": "leadlag",
+            "best_strategy": "lead_lag_taker",
+            "best_next_gate": "plan-scaleup",
+            "ready_profiles": 1,
+            "blocked_profiles": 4,
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "strategy_scorecard"
+    assert row["summary_file"] == "strategy_scorecard_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_best_profile"] == "leadlag"
+    assert row["summary_best_next_gate"] == "plan-scaleup"
+
+
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):
     root = tmp_path / "runs"
     write_run(

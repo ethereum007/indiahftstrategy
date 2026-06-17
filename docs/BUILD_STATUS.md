@@ -42,6 +42,8 @@
 - Strategy readiness scorecard writes `strategy_scorecard_next_actions.json`,
   a machine-readable ranked next-action and open-gap sidecar for automated
   research/ops follow-up.
+- Experiment catalog now recognizes strategy scorecard summaries, preserving
+  best-profile and next-gate readiness signals for downstream evidence ledgers.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,
@@ -730,7 +732,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 866 tests.
+Current passing suite: 867 tests.
 
 ## Next Build Targets
 

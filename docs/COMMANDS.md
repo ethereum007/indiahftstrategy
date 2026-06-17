@@ -229,8 +229,9 @@ manifest.json
 
 The catalog recognizes research, proof, promotion, data-readiness, market
 portability, calibration, launch, broker export/upload, broker-readiness,
-shadow-session, scale-up, surface-quality, quote-risk, quote-lifecycle,
-runtime guard, runtime-session, cutover, route-enable, broker-dispatch,
+shadow-session, strategy-scorecard, scale-up, surface-quality, quote-risk,
+quote-lifecycle, runtime guard, runtime-session, cutover, route-enable,
+broker-dispatch,
 broker-dispatch-send,
 broker-dispatch-ack, broker-dispatch-roundtrip, halt-response, and resume
 summaries, so those run types can be promoted into explicit
