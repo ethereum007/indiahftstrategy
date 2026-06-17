@@ -113,6 +113,7 @@ from reports.settlement_launch_pipeline import (
 from reports.settlement_order_plan import SettlementOrderPlanConfig, write_settlement_order_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
+from reports.strategy_scorecard import StrategyScorecardThresholds, write_strategy_scorecard
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
 from reports.surface_mm_pipeline import write_surface_mm_research_pipeline
@@ -1049,6 +1050,18 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--require-file-inputs", action="store_true")
     evidence.add_argument("--allow-non-file-inputs", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
+
+    scorecard = sub.add_parser(
+        "score-strategy-readiness",
+        help="Rank strategy evidence profiles from an experiment catalog.",
+    )
+    scorecard.add_argument("--catalog", required=True)
+    scorecard.add_argument("--out", required=True)
+    scorecard.add_argument("--profile", action="append", dest="profiles")
+    scorecard.add_argument("--market", default=None)
+    scorecard.add_argument("--allow-dirty-git", action="store_true")
+    scorecard.add_argument("--require-file-inputs", action="store_true")
+    scorecard.add_argument("--fail-on-breach", action="store_true")
 
     route_readiness = sub.add_parser(
         "review-route-readiness",
@@ -3045,6 +3058,19 @@ def main(argv: list[str] | None = None) -> int:
                 expected_market=args.expected_market,
                 require_file_inputs=args.require_file_inputs
                 or (is_ops_launch_profile and not args.allow_non_file_inputs),
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "score-strategy-readiness":
+        result = write_strategy_scorecard(
+            args.catalog,
+            output_dir=args.out,
+            thresholds=StrategyScorecardThresholds(
+                profiles=tuple(args.profiles) if args.profiles else StrategyScorecardThresholds().profiles,
+                expected_market=args.market,
+                allow_dirty_git=args.allow_dirty_git,
+                require_file_inputs=args.require_file_inputs,
             ),
         )
         print(result.summary.to_string(index=False))

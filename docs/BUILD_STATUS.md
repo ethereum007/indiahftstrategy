@@ -29,6 +29,10 @@
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts
   with shared strategy and market identity before shadow scale-up review.
+- Strategy readiness scorecard ranks lead-lag, imbalance, parity/box,
+  settlement, and surface market-making evidence profiles from one experiment
+  catalog while filtering shared run types by strategy/market identity and
+  emitting explicit missing-evidence gaps.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,
@@ -717,7 +721,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 861 tests.
+Current passing suite: 864 tests.
 
 ## Next Build Targets
 

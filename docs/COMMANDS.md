@@ -243,6 +243,41 @@ come from different strategy or market identities. Pair them with
 The identity check also recognizes runtime identity aliases retained by
 broker-readiness, shadow-session, and runtime-session summaries.
 
+## Strategy Readiness Scorecard
+
+Rank strategy evidence profiles from a combined experiment catalog so research
+review can see which India-first candidates are closest to shadow scale-up:
+
+```powershell
+python -m hft_cli score-strategy-readiness `
+  --catalog runs\catalog\latest `
+  --out runs\scorecards\india_shadow `
+  --market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
+By default the scorecard reviews `leadlag`, `imbalance`, `parity`,
+`settlement`, and `surface_mm`. It filters the catalog by each profile's
+expected strategy identity before scoring, so shared run types such as
+`promotion_report` cannot be borrowed from another strategy lane. Use repeated
+`--profile` flags for a narrower review, `--require-file-inputs` to require
+file-fingerprinted inputs, and `--allow-dirty-git` only for exploratory
+catalogs.
+
+Outputs:
+
+```text
+strategy_scorecard.csv
+strategy_scorecard_gaps.csv
+strategy_scorecard_summary.csv
+manifest.json
+```
+
+`strategy_scorecard.csv` ranks profiles by readiness and evidence completion.
+`strategy_scorecard_gaps.csv` lists the missing or non-passing run types for
+each profile, and the summary names the current best candidate plus whether at
+least one strategy is ready for shadow scale-up review.
+
 ## Market Profile Report
 
 Export India/US market assumptions before a run:
