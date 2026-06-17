@@ -305,6 +305,10 @@ def shadow_broker_config(
     route_dispatch_strategy="lead_lag_taker",
     route_dispatch_market="india_nse_index_derivatives",
     route_dispatch_scenario_count=1,
+    broker_vendor_data_readiness_sessions=2,
+    broker_vendor_data_readiness_provided_sessions=2,
+    broker_vendor_data_readiness_ready_sessions=2,
+    broker_vendor_data_readiness_failed_checks=0,
 ):
     return {
         "provided": sessions > 0,
@@ -312,6 +316,12 @@ def shadow_broker_config(
         "ready_sessions": ready_sessions,
         "adapter": adapter,
         "adapter_count": adapter_count,
+        "broker_vendor_data_readiness": {
+            "sessions": broker_vendor_data_readiness_sessions,
+            "provided_sessions": broker_vendor_data_readiness_provided_sessions,
+            "ready_sessions": broker_vendor_data_readiness_ready_sessions,
+            "failed_checks": broker_vendor_data_readiness_failed_checks,
+        },
         "route_readiness": {
             "sessions": route_sessions,
             "ready_sessions": route_ready_sessions,
@@ -577,14 +587,19 @@ def test_broker_readiness_carries_dispatch_roundtrip_shadow_broker_readiness():
     item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
     assert bool(item["shadow_broker_readiness_provided"])
     assert int(item["shadow_broker_readiness_sessions"]) == 2
+    assert int(item["shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
     assert item["shadow_broker_adapter"] == "normalized"
     summary = report.summary.iloc[0]
     assert bool(summary["shadow_broker_readiness_provided"])
     assert int(summary["shadow_broker_readiness_ready_sessions"]) == 2
+    assert int(summary["shadow_broker_vendor_data_readiness_sessions"]) == 2
+    assert int(summary["shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
+    assert int(summary["shadow_broker_vendor_data_readiness_failed_checks"]) == 0
     assert summary["shadow_broker_adapter"] == "normalized"
     assert summary["shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert int(summary["shadow_broker_dispatch_roundtrip_scenario_count"]) == 1
     assert int(summary["shadow_broker_route_dispatch_roundtrip_sessions"]) == 2
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
 
 
 def test_broker_readiness_blocks_dirty_dispatch_roundtrip_shadow_broker_readiness():
@@ -608,6 +623,8 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_shadow_broker_readines
         route_dispatch_strategy="surface_mm",
         route_dispatch_market="us_options_regular",
         route_dispatch_scenario_count=2,
+        broker_vendor_data_readiness_ready_sessions=1,
+        broker_vendor_data_readiness_failed_checks=1,
     )
 
     report = evaluate_broker_readiness(
@@ -623,6 +640,8 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_shadow_broker_readines
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
         "shadow_broker_readiness_ready",
+        "shadow_broker_vendor_data_readiness_ready",
+        "shadow_broker_vendor_data_readiness_failed_checks",
         "shadow_broker_adapter_matches",
         "shadow_broker_adapter_consistent",
         "shadow_broker_route_readiness_ready",
@@ -643,7 +662,38 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_shadow_broker_readines
     } <= failed
     summary = report.summary.iloc[0]
     assert summary["shadow_broker_adapter"] == "irage"
+    assert int(summary["shadow_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["failed_checks"] == 1
     assert int(summary["shadow_broker_route_readiness_gap_pairs"]) == 2
+
+
+def test_broker_readiness_blocks_partial_dispatch_roundtrip_shadow_broker_vendor_data_readiness():
+    config = dispatch_roundtrip_config()
+    config["shadow_broker_readiness"] = shadow_broker_config(
+        broker_vendor_data_readiness_sessions=1,
+        broker_vendor_data_readiness_provided_sessions=1,
+        broker_vendor_data_readiness_ready_sessions=1,
+    )
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("normalized", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "shadow_broker_vendor_data_readiness_provided",
+        "shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert int(summary["shadow_broker_vendor_data_readiness_sessions"]) == 1
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["provided_sessions"] == 1
 
 
 def test_broker_readiness_carries_dispatch_roundtrip_broker_shadow_broker_readiness():
@@ -663,14 +713,19 @@ def test_broker_readiness_carries_dispatch_roundtrip_broker_shadow_broker_readin
     item = report.items.loc[report.items["component"] == "dispatch_roundtrip"].iloc[0]
     assert bool(item["broker_shadow_broker_readiness_provided"])
     assert int(item["broker_shadow_broker_readiness_sessions"]) == 2
+    assert int(item["broker_shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
     assert item["broker_shadow_broker_adapter"] == "normalized"
     summary = report.summary.iloc[0]
     assert bool(summary["broker_shadow_broker_readiness_provided"])
     assert int(summary["broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_failed_checks"]) == 0
     assert summary["broker_shadow_broker_adapter"] == "normalized"
     assert summary["broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert int(summary["broker_shadow_broker_dispatch_roundtrip_scenario_count"]) == 1
     assert int(summary["broker_shadow_broker_route_dispatch_roundtrip_sessions"]) == 2
+    assert report.config["broker_shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
 
 
 def test_broker_readiness_carries_dispatch_roundtrip_vendor_market_data_batch():
@@ -1082,6 +1137,8 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_r
         route_dispatch_strategy="surface_mm",
         route_dispatch_market="us_options_regular",
         route_dispatch_scenario_count=2,
+        broker_vendor_data_readiness_ready_sessions=1,
+        broker_vendor_data_readiness_failed_checks=1,
     )
 
     report = evaluate_broker_readiness(
@@ -1097,6 +1154,8 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_r
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
         "broker_shadow_broker_readiness_ready",
+        "broker_shadow_broker_vendor_data_readiness_ready",
+        "broker_shadow_broker_vendor_data_readiness_failed_checks",
         "broker_shadow_broker_adapter_matches",
         "broker_shadow_broker_adapter_consistent",
         "broker_shadow_broker_route_readiness_ready",
@@ -1117,6 +1176,8 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_r
     } <= failed
     summary = report.summary.iloc[0]
     assert summary["broker_shadow_broker_adapter"] == "irage"
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_failed_checks"]) == 1
+    assert report.config["broker_shadow_broker_readiness"]["broker_vendor_data_readiness"]["failed_checks"] == 1
     assert int(summary["broker_shadow_broker_route_readiness_gap_pairs"]) == 2
 
 
@@ -1600,8 +1661,10 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert config["dispatch_roundtrip"]["broker_vendor_data_readiness"]["provided"]
     assert config["dispatch_roundtrip"]["broker_vendor_data_readiness"]["ready"]
     assert config["shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
     assert config["shadow_broker_readiness"]["dispatch_roundtrip"]["scenario_count"] == 1
     assert config["broker_shadow_broker_readiness"]["provided"]
+    assert config["broker_shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
     assert config["broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["sessions"] == 2
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert path_tail(manifest["inputs"]["dispatch_roundtrip"]["path"]).endswith(

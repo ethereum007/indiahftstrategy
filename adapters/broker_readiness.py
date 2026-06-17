@@ -287,128 +287,10 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
         )
     shadow_broker = config.get("shadow_broker_readiness", {}) or {}
     if shadow_broker:
-        frame.loc[0, "shadow_broker_readiness_provided"] = _to_bool(
-            shadow_broker.get("provided", frame.iloc[0].get("shadow_broker_readiness_provided", False))
-        )
-        frame.loc[0, "shadow_broker_readiness_sessions"] = int(
-            _number_value(
-                shadow_broker.get("sessions"),
-                _number(frame.iloc[0], "shadow_broker_readiness_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_readiness_ready_sessions"] = int(
-            _number_value(
-                shadow_broker.get("ready_sessions"),
-                _number(frame.iloc[0], "shadow_broker_readiness_ready_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_adapter"] = _object_text(
-            shadow_broker.get("adapter", frame.iloc[0].get("shadow_broker_adapter", ""))
-        )
-        frame.loc[0, "shadow_broker_adapter_count"] = int(
-            _number_value(
-                shadow_broker.get("adapter_count"),
-                _number(frame.iloc[0], "shadow_broker_adapter_count", 0.0),
-            )
-        )
-        shadow_route = shadow_broker.get("route_readiness", {}) or {}
-        frame.loc[0, "shadow_broker_route_readiness_sessions"] = int(
-            _number_value(
-                shadow_route.get("sessions"),
-                _number(frame.iloc[0], "shadow_broker_route_readiness_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_route_readiness_ready_sessions"] = int(
-            _number_value(
-                shadow_route.get("ready_sessions"),
-                _number(frame.iloc[0], "shadow_broker_route_readiness_ready_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_route_readiness_strategy"] = _object_text(
-            shadow_route.get("strategy", frame.iloc[0].get("shadow_broker_route_readiness_strategy", ""))
-        )
-        frame.loc[0, "shadow_broker_route_readiness_market"] = _object_text(
-            shadow_route.get("market", frame.iloc[0].get("shadow_broker_route_readiness_market", ""))
-        )
-        frame.loc[0, "shadow_broker_route_readiness_gap_pairs"] = int(
-            _number_value(
-                shadow_route.get("max_gap_pairs"),
-                _number(frame.iloc[0], "shadow_broker_route_readiness_gap_pairs", 0.0),
-            )
-        )
-        shadow_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_sessions"] = int(
-            _number_value(
-                shadow_dispatch.get("sessions"),
-                _number(frame.iloc[0], "shadow_broker_dispatch_roundtrip_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_ready_sessions"] = int(
-            _number_value(
-                shadow_dispatch.get("ready_sessions"),
-                _number(frame.iloc[0], "shadow_broker_dispatch_roundtrip_ready_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_strategy"] = _object_text(
-            shadow_dispatch.get("strategy", frame.iloc[0].get("shadow_broker_dispatch_roundtrip_strategy", ""))
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_market"] = _object_text(
-            shadow_dispatch.get("market", frame.iloc[0].get("shadow_broker_dispatch_roundtrip_market", ""))
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_scenario_count"] = int(
-            _number_value(
-                shadow_dispatch.get("scenario_count"),
-                _number(frame.iloc[0], "shadow_broker_dispatch_roundtrip_scenario_count", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_missing_request_acks"] = int(
-            _number_value(
-                shadow_dispatch.get("max_missing_request_acks"),
-                _number(frame.iloc[0], "shadow_broker_dispatch_roundtrip_missing_request_acks", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_rejected_orders"] = int(
-            _number_value(
-                shadow_dispatch.get("max_rejected_orders"),
-                _number(frame.iloc[0], "shadow_broker_dispatch_roundtrip_rejected_orders", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_dispatch_roundtrip_unmatched_acks"] = int(
-            _number_value(
-                shadow_dispatch.get("max_unmatched_acks"),
-                _number(frame.iloc[0], "shadow_broker_dispatch_roundtrip_unmatched_acks", 0.0),
-            )
-        )
-        shadow_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
-        frame.loc[0, "shadow_broker_route_dispatch_roundtrip_sessions"] = int(
-            _number_value(
-                shadow_route_dispatch.get("sessions"),
-                _number(frame.iloc[0], "shadow_broker_route_dispatch_roundtrip_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_route_dispatch_roundtrip_ready_sessions"] = int(
-            _number_value(
-                shadow_route_dispatch.get("ready_sessions"),
-                _number(frame.iloc[0], "shadow_broker_route_dispatch_roundtrip_ready_sessions", 0.0),
-            )
-        )
-        frame.loc[0, "shadow_broker_route_dispatch_roundtrip_strategy"] = _object_text(
-            shadow_route_dispatch.get(
-                "strategy",
-                frame.iloc[0].get("shadow_broker_route_dispatch_roundtrip_strategy", ""),
-            )
-        )
-        frame.loc[0, "shadow_broker_route_dispatch_roundtrip_market"] = _object_text(
-            shadow_route_dispatch.get(
-                "market",
-                frame.iloc[0].get("shadow_broker_route_dispatch_roundtrip_market", ""),
-            )
-        )
-        frame.loc[0, "shadow_broker_route_dispatch_roundtrip_scenario_count"] = int(
-            _number_value(
-                shadow_route_dispatch.get("scenario_count"),
-                _number(frame.iloc[0], "shadow_broker_route_dispatch_roundtrip_scenario_count", 0.0),
-            )
+        _apply_shadow_broker_readiness_config(
+            frame,
+            shadow_broker,
+            field_prefix="shadow_broker",
         )
     broker_shadow_broker = config.get("broker_shadow_broker_readiness", {}) or {}
     if broker_shadow_broker:
@@ -590,6 +472,7 @@ def _apply_shadow_broker_readiness_config(
     route = readiness.get("route_readiness", {}) or {}
     dispatch = readiness.get("dispatch_roundtrip", {}) or {}
     route_dispatch = readiness.get("route_dispatch_roundtrip", {}) or {}
+    vendor_readiness = readiness.get("broker_vendor_data_readiness", {}) or {}
     row = frame.iloc[0]
     frame.loc[0, f"{field_prefix}_readiness_provided"] = _to_bool(
         readiness.get("provided", row.get(f"{field_prefix}_readiness_provided", False))
@@ -601,6 +484,30 @@ def _apply_shadow_broker_readiness_config(
         _number_value(
             readiness.get("ready_sessions"),
             _number(row, f"{field_prefix}_readiness_ready_sessions", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_vendor_data_readiness_sessions"] = int(
+        _number_value(
+            vendor_readiness.get("sessions"),
+            _number(row, f"{field_prefix}_vendor_data_readiness_sessions", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_vendor_data_readiness_provided_sessions"] = int(
+        _number_value(
+            vendor_readiness.get("provided_sessions"),
+            _number(row, f"{field_prefix}_vendor_data_readiness_provided_sessions", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_vendor_data_readiness_ready_sessions"] = int(
+        _number_value(
+            vendor_readiness.get("ready_sessions"),
+            _number(row, f"{field_prefix}_vendor_data_readiness_ready_sessions", 0.0),
+        )
+    )
+    frame.loc[0, f"{field_prefix}_vendor_data_readiness_failed_checks"] = int(
+        _number_value(
+            vendor_readiness.get("failed_checks"),
+            _number(row, f"{field_prefix}_vendor_data_readiness_failed_checks", 0.0),
         )
     )
     frame.loc[0, f"{field_prefix}_adapter"] = _object_text(readiness.get("adapter", row.get(f"{field_prefix}_adapter", "")))
@@ -831,6 +738,26 @@ def _item(component: str, summary: pd.DataFrame, thresholds: BrokerReadinessThre
         )
         if component == "dispatch_roundtrip" and provided
         else 0,
+        "shadow_broker_vendor_data_readiness_sessions": int(
+            _number(row, "shadow_broker_vendor_data_readiness_sessions", 0.0)
+        )
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "shadow_broker_vendor_data_readiness_provided_sessions": int(
+            _number(row, "shadow_broker_vendor_data_readiness_provided_sessions", 0.0)
+        )
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "shadow_broker_vendor_data_readiness_ready_sessions": int(
+            _number(row, "shadow_broker_vendor_data_readiness_ready_sessions", 0.0)
+        )
+        if component == "dispatch_roundtrip" and provided
+        else 0,
+        "shadow_broker_vendor_data_readiness_failed_checks": int(
+            _number(row, "shadow_broker_vendor_data_readiness_failed_checks", 0.0)
+        )
+        if component == "dispatch_roundtrip" and provided
+        else 0,
         "shadow_broker_adapter": _dispatch_text(component, row, "shadow_broker_adapter"),
         "shadow_broker_adapter_count": int(_number(row, "shadow_broker_adapter_count", 0.0))
         if component == "dispatch_roundtrip" and provided
@@ -960,6 +887,26 @@ def _prefixed_shadow_broker_item_fields(
         else 0,
         f"{field_prefix}_readiness_ready_sessions": int(
             _number(row, f"{field_prefix}_readiness_ready_sessions", 0.0)
+        )
+        if active
+        else 0,
+        f"{field_prefix}_vendor_data_readiness_sessions": int(
+            _number(row, f"{field_prefix}_vendor_data_readiness_sessions", 0.0)
+        )
+        if active
+        else 0,
+        f"{field_prefix}_vendor_data_readiness_provided_sessions": int(
+            _number(row, f"{field_prefix}_vendor_data_readiness_provided_sessions", 0.0)
+        )
+        if active
+        else 0,
+        f"{field_prefix}_vendor_data_readiness_ready_sessions": int(
+            _number(row, f"{field_prefix}_vendor_data_readiness_ready_sessions", 0.0)
+        )
+        if active
+        else 0,
+        f"{field_prefix}_vendor_data_readiness_failed_checks": int(
+            _number(row, f"{field_prefix}_vendor_data_readiness_failed_checks", 0.0)
         )
         if active
         else 0,
@@ -1473,6 +1420,7 @@ def _shadow_broker_readiness_active(row: Any) -> bool:
     return bool(
         row.shadow_broker_readiness_provided
         or int(row.shadow_broker_readiness_sessions) > 0
+        or int(row.shadow_broker_vendor_data_readiness_sessions) > 0
         or int(row.shadow_broker_route_readiness_sessions) > 0
         or int(row.shadow_broker_dispatch_roundtrip_sessions) > 0
         or int(row.shadow_broker_route_dispatch_roundtrip_sessions) > 0
@@ -1497,6 +1445,43 @@ def _shadow_broker_readiness_checks(row: Any) -> list[dict[str, Any]]:
             int(row.shadow_broker_readiness_sessions) > 0
             and int(row.shadow_broker_readiness_ready_sessions) == int(row.shadow_broker_readiness_sessions),
             "dispatch round-trip shadow broker-readiness proof is not ready",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+            int(row.shadow_broker_vendor_data_readiness_sessions),
+            "==",
+            int(row.shadow_broker_readiness_sessions),
+            int(row.shadow_broker_vendor_data_readiness_sessions) == 0
+            or int(row.shadow_broker_vendor_data_readiness_sessions) == int(row.shadow_broker_readiness_sessions),
+            "dispatch round-trip shadow broker vendor-data wrapper proof is present for only some broker-readiness sessions",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_provided",
+            int(row.shadow_broker_vendor_data_readiness_provided_sessions),
+            "==",
+            int(row.shadow_broker_readiness_sessions),
+            int(row.shadow_broker_vendor_data_readiness_sessions) == 0
+            or int(row.shadow_broker_vendor_data_readiness_provided_sessions)
+            == int(row.shadow_broker_readiness_sessions),
+            "dispatch round-trip shadow broker vendor-data wrapper proof is missing for some broker-readiness sessions",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_ready",
+            int(row.shadow_broker_vendor_data_readiness_ready_sessions),
+            "==",
+            int(row.shadow_broker_readiness_sessions),
+            int(row.shadow_broker_vendor_data_readiness_sessions) == 0
+            or int(row.shadow_broker_vendor_data_readiness_ready_sessions) == int(row.shadow_broker_readiness_sessions),
+            "dispatch round-trip shadow broker vendor-data wrapper proof is not ready",
+        ),
+        _check(
+            "shadow_broker_vendor_data_readiness_failed_checks",
+            int(row.shadow_broker_vendor_data_readiness_failed_checks),
+            "<=",
+            0,
+            int(row.shadow_broker_vendor_data_readiness_sessions) == 0
+            or int(row.shadow_broker_vendor_data_readiness_failed_checks) <= 0,
+            "dispatch round-trip shadow broker vendor-data wrapper proof has failed checks",
         ),
         _check(
             "shadow_broker_adapter_matches",
@@ -1671,6 +1656,7 @@ def _broker_shadow_broker_readiness_active(row: Any) -> bool:
     return bool(
         row.broker_shadow_broker_readiness_provided
         or int(row.broker_shadow_broker_readiness_sessions) > 0
+        or int(row.broker_shadow_broker_vendor_data_readiness_sessions) > 0
         or int(row.broker_shadow_broker_route_readiness_sessions) > 0
         or int(row.broker_shadow_broker_dispatch_roundtrip_sessions) > 0
         or int(row.broker_shadow_broker_route_dispatch_roundtrip_sessions) > 0
@@ -1868,6 +1854,10 @@ def _shadow_broker_projection(row: Any, *, source_prefix: str) -> Any:
         "readiness_provided",
         "readiness_sessions",
         "readiness_ready_sessions",
+        "vendor_data_readiness_sessions",
+        "vendor_data_readiness_provided_sessions",
+        "vendor_data_readiness_ready_sessions",
+        "vendor_data_readiness_failed_checks",
         "adapter",
         "adapter_count",
         "route_readiness_sessions",
@@ -2073,6 +2063,18 @@ def _summary(
                 "shadow_broker_readiness_ready_sessions": int(
                     _number(dispatch_item, "shadow_broker_readiness_ready_sessions", 0.0)
                 ),
+                "shadow_broker_vendor_data_readiness_sessions": int(
+                    _number(dispatch_item, "shadow_broker_vendor_data_readiness_sessions", 0.0)
+                ),
+                "shadow_broker_vendor_data_readiness_provided_sessions": int(
+                    _number(dispatch_item, "shadow_broker_vendor_data_readiness_provided_sessions", 0.0)
+                ),
+                "shadow_broker_vendor_data_readiness_ready_sessions": int(
+                    _number(dispatch_item, "shadow_broker_vendor_data_readiness_ready_sessions", 0.0)
+                ),
+                "shadow_broker_vendor_data_readiness_failed_checks": int(
+                    _number(dispatch_item, "shadow_broker_vendor_data_readiness_failed_checks", 0.0)
+                ),
                 "shadow_broker_adapter": _item_text(dispatch_item, "shadow_broker_adapter"),
                 "shadow_broker_adapter_count": int(_number(dispatch_item, "shadow_broker_adapter_count", 0.0)),
                 "shadow_broker_route_readiness_sessions": int(
@@ -2192,6 +2194,18 @@ def _prefixed_shadow_broker_summary_fields(item: pd.Series, *, field_prefix: str
         f"{field_prefix}_readiness_sessions": int(_number(item, f"{field_prefix}_readiness_sessions", 0.0)),
         f"{field_prefix}_readiness_ready_sessions": int(
             _number(item, f"{field_prefix}_readiness_ready_sessions", 0.0)
+        ),
+        f"{field_prefix}_vendor_data_readiness_sessions": int(
+            _number(item, f"{field_prefix}_vendor_data_readiness_sessions", 0.0)
+        ),
+        f"{field_prefix}_vendor_data_readiness_provided_sessions": int(
+            _number(item, f"{field_prefix}_vendor_data_readiness_provided_sessions", 0.0)
+        ),
+        f"{field_prefix}_vendor_data_readiness_ready_sessions": int(
+            _number(item, f"{field_prefix}_vendor_data_readiness_ready_sessions", 0.0)
+        ),
+        f"{field_prefix}_vendor_data_readiness_failed_checks": int(
+            _number(item, f"{field_prefix}_vendor_data_readiness_failed_checks", 0.0)
         ),
         f"{field_prefix}_adapter": _item_text(item, f"{field_prefix}_adapter"),
         f"{field_prefix}_adapter_count": int(_number(item, f"{field_prefix}_adapter_count", 0.0)),
@@ -2439,6 +2453,14 @@ def _prefixed_shadow_broker_config(row: pd.Series, *, field_prefix: str) -> dict
         "ready_sessions": int(_number(row, f"{field_prefix}_readiness_ready_sessions", 0.0)),
         "adapter": _item_text(row, f"{field_prefix}_adapter"),
         "adapter_count": int(_number(row, f"{field_prefix}_adapter_count", 0.0)),
+        "broker_vendor_data_readiness": {
+            "sessions": int(_number(row, f"{field_prefix}_vendor_data_readiness_sessions", 0.0)),
+            "provided_sessions": int(
+                _number(row, f"{field_prefix}_vendor_data_readiness_provided_sessions", 0.0)
+            ),
+            "ready_sessions": int(_number(row, f"{field_prefix}_vendor_data_readiness_ready_sessions", 0.0)),
+            "failed_checks": int(_number(row, f"{field_prefix}_vendor_data_readiness_failed_checks", 0.0)),
+        },
         "route_readiness": {
             "sessions": int(_number(row, f"{field_prefix}_route_readiness_sessions", 0.0)),
             "ready_sessions": int(_number(row, f"{field_prefix}_route_readiness_ready_sessions", 0.0)),

@@ -1999,7 +1999,13 @@ counts, failed-check count, route-enable dispatch round-trip failed-check
 count from the round-trip config when present, the round-trip shadow
 broker-readiness aggregate, the broker-readiness-carried shadow broker
 aggregate, plus the nested route dispatch round-trip proof
-batch and quality counters. If the round-trip config carries
+batch and quality counters. If the round-trip config carries shadow-broker
+broker-vendor wrapper aggregates, broker readiness revalidates coverage and
+retains them as `shadow_broker_vendor_data_readiness_*` plus nested
+`shadow_broker_readiness.broker_vendor_data_readiness` config, and as
+`broker_shadow_broker_vendor_data_readiness_*` plus nested
+`broker_shadow_broker_readiness.broker_vendor_data_readiness` config. If the
+round-trip config carries
 `roundtrip_vendor_market_data_batch`, broker readiness revalidates the
 adapter/market, dataset, source-file, header-fingerprint, mapping, and
 comparison proof and retains it as `dispatch_roundtrip_vendor_market_data_batch_*`

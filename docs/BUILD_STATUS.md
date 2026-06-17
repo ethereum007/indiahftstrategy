@@ -687,7 +687,8 @@
   packets can be reviewed. Broker dispatch ack now revalidates the
   sender-carried aggregate before accepted ack evidence can advance. Broker
   dispatch round-trip now revalidates the ack-carried aggregate before final
-  dry-run proof can advance.
+  dry-run proof can advance. Broker readiness now revalidates the
+  roundtrip-carried aggregate before broker integration readiness can pass.
   Scale-up now carries the same
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
@@ -704,7 +705,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 852 tests.
+Current passing suite: 853 tests.
 
 ## Next Build Targets
 
