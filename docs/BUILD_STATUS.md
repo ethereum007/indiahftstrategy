@@ -91,6 +91,8 @@
 - Experiment catalog action queues now promote run-local `*_action_queue.csv`
   sidecars, so broker readiness, broker-vendor data readiness, route, and
   scorecard blockers remain visible in the top-level scheduler queue.
+- Experiment catalog summaries now expose ready, blocked, unknown, and total
+  action-queue counts for scheduler gating without opening the queue CSV.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

@@ -121,8 +121,8 @@ def catalog_experiment_runs(roots: list[str | Path]) -> ExperimentCatalog:
     manifests = _manifest_paths(roots)
     rows = [_catalog_row(path) for path in manifests]
     catalog = pd.DataFrame(rows)
-    summary = _catalog_summary(catalog)
     action_queue = _catalog_action_queue(catalog)
+    summary = _catalog_summary(catalog, action_queue)
     return ExperimentCatalog(catalog=catalog, summary=summary, action_queue=action_queue)
 
 
@@ -227,7 +227,8 @@ def _summary_status(row: dict[str, Any]) -> tuple[str, bool | None]:
     return "", None
 
 
-def _catalog_summary(catalog: pd.DataFrame) -> pd.DataFrame:
+def _catalog_summary(catalog: pd.DataFrame, action_queue: pd.DataFrame | None = None) -> pd.DataFrame:
+    action_counts = _action_queue_counts(action_queue)
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -246,6 +247,7 @@ def _catalog_summary(catalog: pd.DataFrame) -> pd.DataFrame:
                     "input_unfingerprinted_count": 0,
                     "runs_with_directory_inputs": 0,
                     "runs_with_unfingerprinted_inputs": 0,
+                    **action_counts,
                 }
             ]
         )
@@ -267,6 +269,7 @@ def _catalog_summary(catalog: pd.DataFrame) -> pd.DataFrame:
                 "input_unfingerprinted_count": int(catalog["input_unfingerprinted_count"].sum()),
                 "runs_with_directory_inputs": int((catalog["input_directory_count"] > 0).sum()),
                 "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
+                **action_counts,
             }
         ]
     )
@@ -354,6 +357,26 @@ def _catalog_action_queue(catalog: pd.DataFrame) -> pd.DataFrame:
             row.pop("_source_priority", None)
         rows = ordered
     return pd.DataFrame(rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _action_queue_counts(action_queue: pd.DataFrame | None) -> dict[str, int]:
+    if action_queue is None or action_queue.empty:
+        return {
+            "action_queue_count": 0,
+            "action_queue_ready_count": 0,
+            "action_queue_blocked_count": 0,
+            "action_queue_unknown_count": 0,
+        }
+    statuses = action_queue["queue_status"].astype(str)
+    ready_count = int((statuses == "ready").sum())
+    blocked_count = int((statuses == "blocked").sum())
+    total_count = int(len(action_queue))
+    return {
+        "action_queue_count": total_count,
+        "action_queue_ready_count": ready_count,
+        "action_queue_blocked_count": blocked_count,
+        "action_queue_unknown_count": max(total_count - ready_count - blocked_count, 0),
+    }
 
 
 def _sidecar_action_rows(catalog_row: dict[str, Any]) -> list[dict[str, Any]]:
@@ -494,6 +517,9 @@ def _catalog_runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame
         "## Action Queue",
         "",
         f"- Queue rows: {len(action_queue)}",
+        f"- Ready actions: {_int_metric(summary_row.get('action_queue_ready_count'))}",
+        f"- Blocked actions: {_int_metric(summary_row.get('action_queue_blocked_count'))}",
+        f"- Unknown actions: {_int_metric(summary_row.get('action_queue_unknown_count'))}",
         "",
         _action_queue_markdown_table(action_queue),
         "",

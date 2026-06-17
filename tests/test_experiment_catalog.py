@@ -62,6 +62,10 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert (out_dir / "experiment_catalog_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.iloc[0]["run_count"] == 1
+    assert report.summary.iloc[0]["action_queue_count"] == 0
+    assert report.summary.iloc[0]["action_queue_ready_count"] == 0
+    assert report.summary.iloc[0]["action_queue_blocked_count"] == 0
+    assert report.summary.iloc[0]["action_queue_unknown_count"] == 0
     queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
     assert queue.empty
     assert list(queue.columns) == [
@@ -82,6 +86,8 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert "# Experiment Catalog Runbook" in runbook
     assert "- Runs: 1" in runbook
     assert "- Queue rows: 0" in runbook
+    assert "- Ready actions: 0" in runbook
+    assert "- Blocked actions: 0" in runbook
     assert "_None_" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
@@ -251,6 +257,10 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
     assert report.action_queue is not None
     assert len(queue) == 2
+    assert report.summary.iloc[0]["action_queue_count"] == 2
+    assert report.summary.iloc[0]["action_queue_ready_count"] == 1
+    assert report.summary.iloc[0]["action_queue_blocked_count"] == 1
+    assert report.summary.iloc[0]["action_queue_unknown_count"] == 0
     rows = queue.set_index("run_type")
     assert rows.loc["strategy_scorecard", "queue_status"] == "ready"
     assert rows.loc["strategy_scorecard", "strategy"] == "lead_lag_taker"
@@ -264,6 +274,8 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert rows.loc["route_readiness_review", "recommendation"] == "complete_route_readiness_gaps"
     runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
     assert "## Action Queue" in runbook
+    assert "- Ready actions: 1" in runbook
+    assert "- Blocked actions: 1" in runbook
     assert "plan-scaleup" in runbook
     assert "review-strategy-evidence --profile ops_launch --require-file-inputs" in runbook
     assert "complete_route_readiness_gaps" in runbook
@@ -308,6 +320,10 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
     assert report.action_queue is not None
     assert len(queue) == 1
+    assert report.summary.iloc[0]["action_queue_count"] == 1
+    assert report.summary.iloc[0]["action_queue_ready_count"] == 0
+    assert report.summary.iloc[0]["action_queue_blocked_count"] == 1
+    assert report.summary.iloc[0]["action_queue_unknown_count"] == 0
     row = queue.iloc[0]
     assert row["queue_status"] == "blocked"
     assert row["run_type"] == "broker_readiness"
