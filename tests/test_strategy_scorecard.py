@@ -86,10 +86,14 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert ranked.loc["leadlag", "rank"] == 1
     assert bool(ranked.loc["leadlag", "ready"])
     assert ranked.loc["leadlag", "readiness_score"] == 1.0
+    assert ranked.loc["leadlag", "next_gate"] == "plan-scaleup"
     assert not bool(ranked.loc["imbalance", "ready"])
     assert ranked.loc["imbalance", "readiness_score"] < 1.0
     assert "imbalance_replay_walkforward" in ranked.loc["imbalance", "missing_required_run_types"]
+    assert ranked.loc["imbalance", "next_required_run_type"] == "imbalance_replay_walkforward"
+    assert ranked.loc["imbalance", "next_gate"] == "walkforward-imbalance-replay"
     assert report.summary.loc[0, "best_profile"] == "leadlag"
+    assert report.summary.loc[0, "best_next_gate"] == "plan-scaleup"
 
 
 def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
@@ -139,7 +143,10 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     gaps = pd.read_csv(out_dir / "strategy_scorecard_gaps.csv")
     assert code == 2
     assert not bool(scorecard.loc[0, "ready"])
+    assert scorecard.loc[0, "next_gate"] == "walkforward-imbalance-replay"
     assert "missing_required_run_type" in set(gaps["gap"])
+    next_gate = gaps.loc[gaps["required_run_type"] == "imbalance_replay_walkforward", "next_gate"].iloc[0]
+    assert next_gate == "walkforward-imbalance-replay"
 
 
 def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
@@ -162,7 +169,9 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert score["profile"] == "ops_launch"
     assert score["strategy"] == "lead_lag_taker"
     assert score["recommendation"] == "ready_for_live_dryrun_route_review"
+    assert score["next_gate"] == "review-route-readiness"
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
+    assert report.summary.loc[0, "best_next_gate"] == "review-route-readiness"
     assert set(report.gaps["total_runs"]) == {1}
 
 

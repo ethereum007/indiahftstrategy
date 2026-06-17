@@ -297,6 +297,11 @@ manifest.json
 `strategy_scorecard_gaps.csv` lists the missing or non-passing run types for
 each profile, and the summary names the current best candidate plus whether at
 least one strategy is ready for shadow scale-up review.
+The scorecard and gap rows also include `next_required_run_type`/`next_gate`
+or per-gap `next_gate` hints, so a blocked imbalance profile can point directly
+to `walkforward-imbalance-replay`, a missing broker dry-run packet can point to
+`plan-broker-dispatch`, and a ready `ops_launch` profile can point to
+`review-route-readiness`.
 
 ## Market Profile Report
 
