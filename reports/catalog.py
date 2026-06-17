@@ -55,6 +55,7 @@ SUMMARY_FILES = [
     "broker_order_summary.csv",
     "broker_upload_summary.csv",
     "broker_readiness_summary.csv",
+    "broker_vendor_data_readiness_summary.csv",
     "mapped_order_summary.csv",
     "order_mapping_draft_summary.csv",
     "reconciliation_summary.csv",

@@ -69,6 +69,9 @@
 - Broker-vendor data readiness now writes manifest-tracked action queue and
   runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
   wrapper failures expose next CLI gates at the proof root.
+- Experiment catalog now recognizes broker-vendor data readiness summaries,
+  preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
+  for downstream evidence ledgers.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

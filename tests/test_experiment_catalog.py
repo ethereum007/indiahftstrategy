@@ -462,6 +462,39 @@ def test_catalog_experiment_runs_recognizes_broker_upload_and_readiness_status(t
     assert rows.loc["broker_readiness", "summary_adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
 
 
+def test_catalog_experiment_runs_recognizes_broker_vendor_data_readiness_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "broker_vendor_data_readiness",
+        run_type="broker_vendor_data_readiness_pipeline",
+        summary_name="broker_vendor_data_readiness_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "kind": "ticks",
+            "market": "india_nse_index_derivatives",
+            "vendor_batch_ready": True,
+            "broker_readiness_ready": True,
+            "broker_vendor_data_ready": True,
+            "dataset_count": 2,
+            "ready_datasets": 2,
+            "failed_checks": 0,
+            "recommendation": "broker_data_proof_ready",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "broker_vendor_data_readiness_pipeline"
+    assert row["summary_file"] == "broker_vendor_data_readiness_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_adapter"] == "arrow_money"
+    assert bool(row["summary_broker_vendor_data_ready"])
+    assert row["summary_dataset_count"] == 2
+
+
 def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_path):
     root = tmp_path / "runs"
     write_run(
