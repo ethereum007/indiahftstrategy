@@ -68,6 +68,7 @@ RUN_TYPE_NEXT_GATES = {
     "runtime_telemetry_snapshot": "build-runtime-telemetry",
     "runtime_guard": "monitor-scaleup-guard",
     "runtime_session_monitor": "monitor-runtime-session",
+    "broker_vendor_data_readiness_pipeline": "pipeline-broker-vendor-readiness",
     "broker_readiness": "review-broker-readiness",
     "cutover_gate": "review-cutover-gate",
     "route_enable_packet": "review-route-enable",

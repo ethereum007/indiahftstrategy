@@ -56,6 +56,7 @@ def complete_ops_launch_rows(strategy="lead_lag_taker", *, market="india_nse_ind
         ("runtime_telemetry_snapshot", "runtime_telemetry_summary.csv"),
         ("runtime_guard", "runtime_guard_summary.csv"),
         ("runtime_session_monitor", "runtime_session_summary.csv"),
+        ("broker_vendor_data_readiness_pipeline", "broker_vendor_data_readiness_summary.csv"),
         ("broker_readiness", "broker_readiness_summary.csv"),
         ("cutover_gate", "cutover_summary.csv"),
         ("route_enable_packet", "route_enable_summary.csv"),
@@ -243,6 +244,33 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
         "python -m hft_cli review-route-readiness --help"
     )
     assert set(report.gaps["total_runs"]) == {1}
+
+
+def test_strategy_scorecard_points_ops_launch_to_broker_vendor_data_readiness_pipeline():
+    catalog = pd.DataFrame(complete_ops_launch_rows("lead_lag_taker"))
+    catalog = catalog.loc[catalog["run_type"] != "broker_vendor_data_readiness_pipeline"].copy()
+
+    report = evaluate_strategy_scorecard(
+        catalog,
+        thresholds=StrategyScorecardThresholds(
+            profiles=("ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            expected_ops_strategy="leadlag",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    assert not report.ready
+    assert score["next_required_run_type"] == "broker_vendor_data_readiness_pipeline"
+    assert score["next_gate"] == "pipeline-broker-vendor-readiness"
+    assert score["next_gate_help_command"] == "python -m hft_cli pipeline-broker-vendor-readiness --help"
+    gap = report.gaps.loc[
+        report.gaps["required_run_type"] == "broker_vendor_data_readiness_pipeline"
+    ].iloc[0]
+    assert gap["next_gate"] == "pipeline-broker-vendor-readiness"
+    assert gap["next_gate_help_command"] == "python -m hft_cli pipeline-broker-vendor-readiness --help"
+    assert report.config["blocked_actions"][0]["next_required_run_type"] == "broker_vendor_data_readiness_pipeline"
 
 
 def test_cli_strategy_scorecard_ops_launch_fails_closed_on_mixed_strategy_without_filter(tmp_path):

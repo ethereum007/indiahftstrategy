@@ -400,6 +400,11 @@ def ops_launch_catalog_rows(*, commit="abc123", strategy="lead_lag_taker", marke
         ("runtime_telemetry_snapshot", "runs/runtime_telemetry", "runtime_telemetry_summary.csv"),
         ("runtime_guard", "runs/runtime_guard", "runtime_guard_summary.csv"),
         ("runtime_session_monitor", "runs/runtime_session", "runtime_session_summary.csv"),
+        (
+            "broker_vendor_data_readiness_pipeline",
+            "runs/broker_vendor_data_readiness",
+            "broker_vendor_data_readiness_summary.csv",
+        ),
         ("broker_readiness", "runs/broker_readiness", "broker_readiness_summary.csv"),
         ("cutover_gate", "runs/cutover", "cutover_summary.csv"),
         ("route_enable_packet", "runs/route_enable", "route_enable_summary.csv"),
@@ -899,6 +904,20 @@ def test_ops_launch_evidence_profile_fails_without_dispatch_roundtrip():
     assert "required_run_type:broker_dispatch_roundtrip" in failed
 
 
+def test_ops_launch_evidence_profile_fails_without_broker_vendor_data_readiness_pipeline():
+    catalog = ops_launch_catalog_rows()
+    catalog = catalog.loc[catalog["run_type"] != "broker_vendor_data_readiness_pipeline"].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(required_run_types=evidence_profile_run_types("ops_launch")),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:broker_vendor_data_readiness_pipeline" in failed
+
+
 def test_strategy_evidence_can_require_file_input_provenance():
     catalog = ops_launch_catalog_rows()
     catalog["input_count"] = 2
@@ -917,8 +936,8 @@ def test_strategy_evidence_can_require_file_input_provenance():
     )
 
     assert review.ready
-    assert int(review.summary.iloc[0]["input_file_count"]) == 22
-    assert int(review.summary.iloc[0]["input_hashed_count"]) == 22
+    assert int(review.summary.iloc[0]["input_file_count"]) == 24
+    assert int(review.summary.iloc[0]["input_hashed_count"]) == 24
     assert bool(review.summary.iloc[0]["require_file_inputs"])
     assert set(review.evidence["latest_input_directory_count"]) == {0}
 

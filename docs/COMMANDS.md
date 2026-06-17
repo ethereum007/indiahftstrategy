@@ -199,12 +199,16 @@ expands to `surface_quality_report`, `quote_risk_report`,
 `settlement_convergence_walkforward`, `promotion_report`,
 `settlement_order_plan`, and `settlement_launch_pipeline`. The `ops_launch`
 profile expands to `scaleup_plan`, `runtime_telemetry_snapshot`,
-`runtime_guard`, `runtime_session_monitor`, `broker_readiness`,
-`cutover_gate`, `route_enable_packet`, `broker_dispatch_plan`,
+`runtime_guard`, `runtime_session_monitor`,
+`broker_vendor_data_readiness_pipeline`, `broker_readiness`, `cutover_gate`,
+`route_enable_packet`, `broker_dispatch_plan`,
 `broker_dispatch_send_packet`, `broker_dispatch_ack_reconciliation`, and
 `broker_dispatch_roundtrip`; aliases include `broker_dryrun`, `launch_ops`,
 and `live_dryrun`. Explicit `--required-run-type` flags still override the
 profile for custom launch reviews.
+If the broker-vendor wrapper proof is missing, the scorecard next gate points
+to `pipeline-broker-vendor-readiness --help` so Arrow.money/iRage data-readiness
+proof is generated before broker-readiness and dispatch evidence are trusted.
 The `ops_launch` profile automatically requires passed required artifacts to
 have file-resolved input provenance in the experiment catalog, blocking
 directory-tree or unfingerprinted raw inputs before live-dryrun route review.

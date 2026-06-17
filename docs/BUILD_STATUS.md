@@ -72,6 +72,10 @@
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.
+- The `ops_launch` strategy evidence and scorecard profile now requires
+  `broker_vendor_data_readiness_pipeline` proof and points missing wrapper
+  evidence to `pipeline-broker-vendor-readiness --help`, so broker-vendor data
+  readiness is a launch prerequisite rather than a passive catalog signal.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

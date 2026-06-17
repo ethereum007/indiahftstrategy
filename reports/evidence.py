@@ -52,6 +52,7 @@ OPS_LAUNCH_REQUIRED_RUN_TYPES = (
     "runtime_telemetry_snapshot",
     "runtime_guard",
     "runtime_session_monitor",
+    "broker_vendor_data_readiness_pipeline",
     "broker_readiness",
     "cutover_gate",
     "route_enable_packet",
