@@ -306,6 +306,9 @@ to `walkforward-imbalance-replay`, a missing broker dry-run packet can point to
 `review-route-readiness`.
 `strategy_scorecard_next_actions.json` mirrors the ranked next actions and
 open gaps in a machine-readable sidecar for schedulers or follow-up runbooks.
+Both CSV and JSON outputs include `next_gate_help_command` fields such as
+`python -m hft_cli walkforward-imbalance-replay --help`, making the next CLI
+entry point explicit even before concrete data paths are selected.
 
 ## Market Profile Report
 

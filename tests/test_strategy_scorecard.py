@@ -87,6 +87,7 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert bool(ranked.loc["leadlag", "ready"])
     assert ranked.loc["leadlag", "readiness_score"] == 1.0
     assert ranked.loc["leadlag", "next_gate"] == "plan-scaleup"
+    assert ranked.loc["leadlag", "next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert not bool(ranked.loc["imbalance", "ready"])
     assert ranked.loc["imbalance", "readiness_score"] < 1.0
     assert "imbalance_replay_walkforward" in ranked.loc["imbalance", "missing_required_run_types"]
@@ -94,8 +95,10 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert ranked.loc["imbalance", "next_gate"] == "walkforward-imbalance-replay"
     assert report.summary.loc[0, "best_profile"] == "leadlag"
     assert report.summary.loc[0, "best_next_gate"] == "plan-scaleup"
+    assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["best_profile"] == "leadlag"
     assert report.config["next_actions"][0]["next_gate"] == "plan-scaleup"
+    assert report.config["next_actions"][0]["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["next_actions"][1]["missing_required_run_types"] == [
         "imbalance_replay_walkforward",
         "imbalance_research_pipeline",
@@ -156,9 +159,15 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     assert code == 2
     assert not bool(scorecard.loc[0, "ready"])
     assert scorecard.loc[0, "next_gate"] == "walkforward-imbalance-replay"
+    assert scorecard.loc[0, "next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
     assert "missing_required_run_type" in set(gaps["gap"])
     next_gate = gaps.loc[gaps["required_run_type"] == "imbalance_replay_walkforward", "next_gate"].iloc[0]
     assert next_gate == "walkforward-imbalance-replay"
+    help_command = gaps.loc[
+        gaps["required_run_type"] == "imbalance_replay_walkforward",
+        "next_gate_help_command",
+    ].iloc[0]
+    assert help_command == "python -m hft_cli walkforward-imbalance-replay --help"
 
 
 def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
@@ -182,10 +191,16 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert score["strategy"] == "lead_lag_taker"
     assert score["recommendation"] == "ready_for_live_dryrun_route_review"
     assert score["next_gate"] == "review-route-readiness"
+    assert score["next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.summary.loc[0, "best_next_gate"] == "review-route-readiness"
+    assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert report.config["best_next_gate"] == "review-route-readiness"
+    assert report.config["best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert report.config["next_actions"][0]["next_gate"] == "review-route-readiness"
+    assert report.config["next_actions"][0]["next_gate_help_command"] == (
+        "python -m hft_cli review-route-readiness --help"
+    )
     assert set(report.gaps["total_runs"]) == {1}
 
 

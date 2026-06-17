@@ -42,6 +42,9 @@
 - Strategy readiness scorecard writes `strategy_scorecard_next_actions.json`,
   a machine-readable ranked next-action and open-gap sidecar for automated
   research/ops follow-up.
+- Strategy readiness scorecard CSV/JSON outputs include `next_gate_help_command`
+  hints so every blocked research or ops lane exposes the exact CLI entry point
+  to inspect before scheduling the next run.
 - Experiment catalog now recognizes strategy scorecard summaries, preserving
   best-profile and next-gate readiness signals for downstream evidence ledgers.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency

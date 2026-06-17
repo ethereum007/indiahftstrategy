@@ -76,6 +76,10 @@ RUN_TYPE_NEXT_GATES = {
     "broker_dispatch_ack_reconciliation": "reconcile-broker-dispatch",
     "broker_dispatch_roundtrip": "review-broker-dispatch-roundtrip",
 }
+NEXT_GATE_HELP_COMMANDS = {
+    gate: f"python -m hft_cli {gate} --help"
+    for gate in sorted({*READY_NEXT_GATES.values(), *PROMOTION_NEXT_GATES.values(), *RUN_TYPE_NEXT_GATES.values()})
+}
 
 
 @dataclass(frozen=True)
@@ -198,6 +202,7 @@ def _scorecard_row(
         "blocked_required_run_types": ";".join(blocked),
         "next_required_run_type": next_required_run_type,
         "next_gate": _next_gate(profile, ready, next_required_run_type),
+        "next_gate_help_command": _next_gate_help_command(_next_gate(profile, ready, next_required_run_type)),
         "failed_checks": int(_numeric(summary.get("failed_checks", 0))),
         "dirty_runs": int(_numeric(summary.get("dirty_runs", 0))),
         "git_commit_count": int(_numeric(summary.get("git_commit_count", 0))),
@@ -232,6 +237,9 @@ def _gap_rows(
                 "latest_generated_at_utc": row.get("latest_generated_at_utc", ""),
                 "latest_run_dir": row.get("latest_run_dir", ""),
                 "next_gate": "" if passed else _next_gate(profile, False, str(required_run_type)),
+                "next_gate_help_command": ""
+                if passed
+                else _next_gate_help_command(_next_gate(profile, False, str(required_run_type))),
                 "gap": "" if passed else ("missing_required_run_type" if total_runs == 0 else "required_run_type_not_passing"),
             }
         )
@@ -251,9 +259,10 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                     "best_strategy": "",
                     "best_market": "",
                     "best_readiness_score": 0.0,
-                    "best_next_required_run_type": "",
-                    "best_next_gate": "",
-                    "ready_profile_names": "",
+                "best_next_required_run_type": "",
+                "best_next_gate": "",
+                "best_next_gate_help_command": "",
+                "ready_profile_names": "",
                     "blocked_profile_names": "",
                     "recommendation": "no_profiles_to_score",
                 }
@@ -279,6 +288,7 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                 "best_readiness_score": float(best["readiness_score"]),
                 "best_next_required_run_type": best["next_required_run_type"],
                 "best_next_gate": best["next_gate"],
+                "best_next_gate_help_command": best["next_gate_help_command"],
                 "ready_profile_names": ";".join(ready["profile"].astype(str).tolist()),
                 "blocked_profile_names": ";".join(blocked["profile"].astype(str).tolist()),
                 "recommendation": _summary_recommendation(str(best["profile"]), has_ready),
@@ -296,6 +306,7 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "best_market": str(summary_row.get("best_market", "")),
         "best_next_required_run_type": str(summary_row.get("best_next_required_run_type", "")),
         "best_next_gate": str(summary_row.get("best_next_gate", "")),
+        "best_next_gate_help_command": str(summary_row.get("best_next_gate_help_command", "")),
         "recommendation": str(summary_row.get("recommendation", "")),
         "next_actions": [_action(row) for row in _records(scorecard)],
         "gaps": [_gap_action(row) for row in _records(gaps) if str(row.get("gap", ""))],
@@ -314,6 +325,7 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         "required_run_type_count": int(_numeric(row.get("required_run_type_count", 0))),
         "next_required_run_type": str(row.get("next_required_run_type", "")),
         "next_gate": str(row.get("next_gate", "")),
+        "next_gate_help_command": str(row.get("next_gate_help_command", "")),
         "missing_required_run_types": _split_items(row.get("missing_required_run_types", "")),
         "blocked_required_run_types": _split_items(row.get("blocked_required_run_types", "")),
         "recommendation": str(row.get("recommendation", "")),
@@ -328,6 +340,7 @@ def _gap_action(row: dict[str, Any]) -> dict[str, Any]:
         "required_run_type": str(row.get("required_run_type", "")),
         "gap": str(row.get("gap", "")),
         "next_gate": str(row.get("next_gate", "")),
+        "next_gate_help_command": str(row.get("next_gate_help_command", "")),
         "passed_runs": int(_numeric(row.get("passed_runs", 0))),
         "failed_runs": int(_numeric(row.get("failed_runs", 0))),
         "unknown_status_runs": int(_numeric(row.get("unknown_status_runs", 0))),
@@ -406,6 +419,12 @@ def _next_gate(profile: str, ready: bool, required_run_type: str) -> str:
     if required_run_type == "promotion_report":
         return PROMOTION_NEXT_GATES.get(profile, RUN_TYPE_NEXT_GATES[required_run_type])
     return RUN_TYPE_NEXT_GATES.get(required_run_type, "review-strategy-evidence")
+
+
+def _next_gate_help_command(next_gate: str) -> str:
+    if not next_gate:
+        return ""
+    return NEXT_GATE_HELP_COMMANDS.get(next_gate, f"python -m hft_cli {next_gate} --help")
 
 
 def _score_recommendation(profile: str, ready: bool, score: float) -> str:
