@@ -3316,12 +3316,16 @@ The command reads only the CSV header and writes:
 adapter_schema_summary.csv
 adapter_schema_columns.csv
 adapter_mapping_template.csv
+adapter_schema_review_checklist.csv
 manifest.json
 ```
 
 For `arrow_money` and `irage`, the summary is marked
 `placeholder_normalized_pending_vendor_schema` until real vendor source columns
 replace the normalized placeholders.
+`adapter_schema_review_checklist.csv` separates hard blockers such as missing
+required columns from review tasks such as classifying extra vendor fields and
+approving replacement Arrow.money/iRage source mappings.
 
 ## Mapped Vendor Data Normalization
 

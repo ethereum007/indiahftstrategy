@@ -22,6 +22,10 @@ def test_adapter_schema_audit_accepts_normalized_ticks_with_extra_columns():
     assert summary["extra_columns"] == 1
     assert summary["extra_source_columns"] == "venue_code"
     assert set(audit.template["status"]) == {"mapped"}
+    checklist = audit.checklist.set_index("check_name")
+    assert bool(checklist.loc["required_columns_present", "passed"])
+    assert bool(checklist.loc["vendor_schema_reviewed", "passed"])
+    assert checklist.loc["extra_columns_classified", "status"] == "review"
 
 
 def test_adapter_schema_audit_reports_missing_required_columns():
@@ -74,11 +78,19 @@ def test_cli_adapter_schema_audit_writes_outputs_and_fails_on_missing(tmp_path):
 
     summary = pd.read_csv(out_dir / "adapter_schema_summary.csv")
     template = pd.read_csv(out_dir / "adapter_mapping_template.csv")
+    checklist = pd.read_csv(out_dir / "adapter_schema_review_checklist.csv")
     assert code == 2
     assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert int(summary.loc[0, "missing_required_columns"]) == 1
     assert summary.loc[0, "missing_source_columns"] == "price"
     assert "broker_ref" in summary.loc[0, "extra_source_columns"]
     assert "missing" in set(template["status"])
+    checks = checklist.set_index("check_name")
+    assert not bool(checks.loc["required_columns_present", "passed"])
+    assert checks.loc["required_columns_present", "status"] == "blocked"
+    assert not bool(checks.loc["vendor_schema_reviewed", "passed"])
+    assert checks.loc["vendor_schema_reviewed", "status"] == "blocked"
+    assert checks.loc["extra_columns_classified", "status"] == "review"
     assert (out_dir / "adapter_schema_columns.csv").exists()
+    assert (out_dir / "adapter_schema_review_checklist.csv").exists()
     assert (out_dir / "manifest.json").exists()

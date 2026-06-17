@@ -32,6 +32,7 @@ class AdapterSchemaAudit:
     columns: pd.DataFrame
     summary: pd.DataFrame
     template: pd.DataFrame
+    checklist: pd.DataFrame
     output_dir: Path | None = None
 
     @property
@@ -55,12 +56,14 @@ def audit_adapter_schema(
     columns = pd.DataFrame(rows)
     template = _mapping_template(columns, spec.name, canonical_kind)
     summary = _summary(sample_columns, columns, spec.name, canonical_kind)
+    checklist = _review_checklist(summary, template)
     return AdapterSchemaAudit(
         adapter=spec.name,
         kind=canonical_kind,
         columns=columns,
         summary=summary,
         template=template,
+        checklist=checklist,
     )
 
 
@@ -81,6 +84,7 @@ def write_adapter_schema_audit(
     report.summary.to_csv(out / "adapter_schema_summary.csv", index=False)
     report.columns.to_csv(out / "adapter_schema_columns.csv", index=False)
     report.template.to_csv(out / "adapter_mapping_template.csv", index=False)
+    report.checklist.to_csv(out / "adapter_schema_review_checklist.csv", index=False)
     write_experiment_manifest(
         out,
         run_type="adapter_schema_audit",
@@ -98,6 +102,7 @@ def write_adapter_schema_audit(
         columns=report.columns,
         summary=report.summary,
         template=report.template,
+        checklist=report.checklist,
         output_dir=out,
     )
 
@@ -189,6 +194,59 @@ def _summary(sample_columns: list[str], columns: pd.DataFrame, adapter: str, kin
             }
         ]
     )
+
+
+def _review_checklist(summary: pd.DataFrame, template: pd.DataFrame) -> pd.DataFrame:
+    row = summary.iloc[0]
+    schema_status = str(row["adapter_schema_status"])
+    missing_required = int(row["missing_required_columns"])
+    extra_columns = int(row["extra_columns"])
+    placeholder = schema_status == "placeholder_normalized_pending_vendor_schema"
+    missing_mappings = int((template["status"].astype(str) == "missing").sum()) if not template.empty else 0
+    checks = [
+        _check(
+            "required_columns_present",
+            passed=missing_required == 0,
+            status="pass" if missing_required == 0 else "blocked",
+            detail="all required source columns are present"
+            if missing_required == 0
+            else f"{missing_required} required source columns are missing",
+        ),
+        _check(
+            "vendor_schema_reviewed",
+            passed=not placeholder,
+            status="pass" if not placeholder else "blocked",
+            detail="adapter uses a reviewed native schema"
+            if not placeholder
+            else "adapter is still using normalized placeholders; review real Arrow.money/iRage source columns",
+        ),
+        _check(
+            "extra_columns_classified",
+            passed=extra_columns == 0,
+            status="pass" if extra_columns == 0 else "review",
+            detail="no extra vendor columns found"
+            if extra_columns == 0
+            else f"{extra_columns} extra vendor columns need classification or ignore approval",
+        ),
+        _check(
+            "mapping_template_complete",
+            passed=missing_mappings == 0,
+            status="pass" if missing_mappings == 0 else "blocked",
+            detail="mapping template has a source column for every normalized field"
+            if missing_mappings == 0
+            else f"{missing_mappings} mapping rows are missing source columns",
+        ),
+    ]
+    return pd.DataFrame(checks)
+
+
+def _check(check_name: str, *, passed: bool, status: str, detail: str) -> dict[str, object]:
+    return {
+        "check_name": check_name,
+        "passed": bool(passed),
+        "status": status,
+        "detail": detail,
+    }
 
 
 def _template_note(schema_status: str, mapped: bool) -> str:

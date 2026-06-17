@@ -55,6 +55,9 @@
   open gaps, and the next CLI gate/help command for review.
 - Experiment catalog now recognizes strategy scorecard summaries, preserving
   best-profile and next-gate readiness signals for downstream evidence ledgers.
+- Adapter schema audits now emit `adapter_schema_review_checklist.csv` so
+  Arrow.money/iRage onboarding separates missing-column blockers from
+  placeholder-schema and extra-field review tasks.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,
