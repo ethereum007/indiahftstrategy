@@ -88,6 +88,9 @@
 - Experiment catalogs now write a manifest-tracked
   `experiment_catalog_runbook.md` with readiness, input-provenance totals, and
   the consolidated next-action queue for operator review.
+- Experiment catalog action queues now promote run-local `*_action_queue.csv`
+  sidecars, so broker readiness, broker-vendor data readiness, route, and
+  scorecard blockers remain visible in the top-level scheduler queue.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

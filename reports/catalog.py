@@ -287,12 +287,18 @@ ACTION_QUEUE_COLUMNS = [
     "generated_at_utc",
 ]
 
+EXCLUDED_SIDECAR_ACTION_QUEUES = {"experiment_catalog_action_queue.csv"}
+
 
 def _catalog_action_queue(catalog: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     if not catalog.empty:
         for _, row in catalog.iterrows():
             item = row.to_dict()
+            sidecar_rows = _sidecar_action_rows(item)
+            if sidecar_rows:
+                rows.extend(sidecar_rows)
+                continue
             next_gate = _first_text(item, "summary_next_gate", "summary_best_next_gate")
             help_command = _first_text(
                 item,
@@ -329,14 +335,121 @@ def _catalog_action_queue(catalog: pd.DataFrame) -> pd.DataFrame:
                     "next_gate_help_command": help_command,
                     "recommendation": _text(item.get("summary_recommendation")),
                     "generated_at_utc": _text(item.get("generated_at_utc")),
+                    "_source_priority": 0,
                 }
             )
     if rows:
-        ordered = sorted(rows, key=lambda row: (_queue_rank(row["queue_status"]), row["run_type"], row["run_dir"]))
+        ordered = sorted(
+            rows,
+            key=lambda row: (
+                _queue_rank(row["queue_status"]),
+                row["run_type"],
+                row["run_dir"],
+                _int_metric(row.get("_source_priority")),
+                row["next_gate"],
+            ),
+        )
         for priority, row in enumerate(ordered, start=1):
             row["priority"] = priority
+            row.pop("_source_priority", None)
         rows = ordered
     return pd.DataFrame(rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _sidecar_action_rows(catalog_row: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for path in _sidecar_action_queue_paths(catalog_row.get("run_dir")):
+        try:
+            frame = pd.read_csv(path)
+        except pd.errors.EmptyDataError:
+            continue
+        if frame.empty:
+            continue
+        for _, action in frame.iterrows():
+            item = action.to_dict()
+            next_gate = _text(item.get("next_gate"))
+            help_command = _text(item.get("next_gate_help_command"))
+            if not next_gate and not help_command:
+                continue
+            rows.append(
+                {
+                    "queue_status": _first_text(item, "queue_status")
+                    or _queue_status(catalog_row.get("summary_status")),
+                    "run_type": _text(catalog_row.get("run_type")),
+                    "run_dir": _text(catalog_row.get("run_dir")),
+                    "strategy": _first_text_from_sources(
+                        item,
+                        catalog_row,
+                        "strategy",
+                        "summary_strategy",
+                        "summary_best_strategy",
+                        "summary_runtime_strategy",
+                    ),
+                    "market": _first_text_from_sources(
+                        item,
+                        catalog_row,
+                        "market",
+                        "summary_market",
+                        "summary_best_market",
+                        "summary_runtime_market",
+                    ),
+                    "profile": _first_text_from_sources(
+                        item,
+                        catalog_row,
+                        "profile",
+                        "summary_evidence_profile",
+                        "summary_profile",
+                        "summary_best_profile",
+                    ),
+                    "summary_status": catalog_row.get("summary_status"),
+                    "next_gate": next_gate,
+                    "next_gate_help_command": help_command,
+                    "recommendation": _action_recommendation(item, path),
+                    "generated_at_utc": _text(catalog_row.get("generated_at_utc")),
+                    "_source_priority": _int_metric(item.get("priority")),
+                }
+            )
+    return rows
+
+
+def _sidecar_action_queue_paths(run_dir: Any) -> list[Path]:
+    run_dir_text = _text(run_dir)
+    if not run_dir_text:
+        return []
+    path = Path(run_dir_text)
+    if not path.exists() or not path.is_dir():
+        return []
+    return sorted(
+        candidate
+        for candidate in path.glob("*_action_queue.csv")
+        if candidate.name not in EXCLUDED_SIDECAR_ACTION_QUEUES
+    )
+
+
+def _first_text_from_sources(primary: dict[str, Any], fallback: dict[str, Any], *columns: str) -> str:
+    for column in columns:
+        value = _text(primary.get(column))
+        if value:
+            return value
+        value = _text(fallback.get(column))
+        if value:
+            return value
+    return ""
+
+
+def _action_recommendation(action: dict[str, Any], path: Path) -> str:
+    recommendation = _first_text(action, "recommendation", "reason")
+    if recommendation:
+        return recommendation
+    check = _text(action.get("check"))
+    component = _text(action.get("component"))
+    if check and component:
+        return f"{path.name}:{component}:{check}"
+    if check:
+        return f"{path.name}:{check}"
+    if component:
+        return f"{path.name}:{component}"
+    return path.name
 
 
 def _queue_status(value: Any) -> str:

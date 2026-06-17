@@ -68,7 +68,9 @@ unfingerprinted raw inputs. Use these columns to spot broad or unresolved
 handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
 `experiment_catalog_action_queue.csv` consolidates cataloged `next_gate` and
 `next_gate_help_command` signals from scorecards, route reviews, and other
-summary files into one priority-ordered scheduler queue.
+summary files into one priority-ordered scheduler queue. It also promotes
+run-local `*_action_queue.csv` sidecars, such as broker readiness and
+broker-vendor data readiness blockers, into the catalog-level queue.
 `experiment_catalog_runbook.md` mirrors the same queue with catalog readiness
 and input-provenance totals for human operator review.
 

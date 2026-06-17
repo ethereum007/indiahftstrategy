@@ -269,6 +269,58 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert "complete_route_readiness_gaps" in runbook
 
 
+def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    run_dir = root / "broker_readiness"
+    write_run(
+        run_dir,
+        run_type="broker_readiness",
+        summary_name="broker_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "adapter": "arrow_money",
+            "failed_checks": 1,
+            "recommendation": "obtain_vendor_schema_samples",
+        },
+    )
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "check": "schema_reviewed",
+                "component": "schema_audit",
+                "next_gate": "audit-adapter-schema",
+                "next_gate_help_command": "python -m hft_cli audit-adapter-schema --help",
+                "actual": "False",
+                "operator": "==",
+                "expected": "True",
+                "reason": "schema review missing",
+            }
+        ]
+    ).to_csv(run_dir / "broker_readiness_action_queue.csv", index=False)
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
+    assert report.action_queue is not None
+    assert len(queue) == 1
+    row = queue.iloc[0]
+    assert row["queue_status"] == "blocked"
+    assert row["run_type"] == "broker_readiness"
+    assert row["strategy"] == "lead_lag_taker"
+    assert row["market"] == "india_nse_index_derivatives"
+    assert row["next_gate"] == "audit-adapter-schema"
+    assert row["next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
+    assert row["recommendation"] == "schema review missing"
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "audit-adapter-schema" in runbook
+    assert "schema review missing" in runbook
+
+
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):
     root = tmp_path / "runs"
     write_run(
