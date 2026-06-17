@@ -2857,7 +2857,8 @@ the shadow-broker broker-vendor wrapper aggregate, dispatch planning revalidates
 the per-session wrapper coverage and carries it as
 `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and does the
-same for `route_broker_shadow_broker_readiness`. If route-enable carried
+same for `route_broker_shadow_broker_readiness`, failing closed when either
+wrapper aggregate is partial, unready, or dirty. If route-enable carried
 Arrow.money/iRage vendor market-data batch evidence, dispatch planning preserves
 the dataset/header/mapping proof as `route_vendor_market_data_batch_*` fields
 and a nested `route_vendor_market_data_batch` config block. If route-enable

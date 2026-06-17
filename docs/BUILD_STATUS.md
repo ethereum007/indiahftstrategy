@@ -567,7 +567,9 @@
   and cutover now revalidates the same counters as
   `scaleup_broker_shadow_broker_vendor_data_readiness_*`, with route-enable
   regression coverage for partial cutover-carried broker-shadow wrapper
-  coverage before dispatch routing can be enabled, and
+  coverage before dispatch routing can be enabled, broker dispatch regression
+  coverage for the same partial route-carried wrapper before dry-run packets
+  can be armed, and
   route-enable fingerprinting the cutover manifest, carrying the same proof as
   `cutover_broker_shadow_broker_*`, preserving cutover-retained vendor
   market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
@@ -711,7 +713,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 856 tests.
+Current passing suite: 857 tests.
 
 ## Next Build Targets
 
