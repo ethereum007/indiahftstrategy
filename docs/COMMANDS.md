@@ -3078,7 +3078,8 @@ If the component configs retained the shadow-broker broker-vendor wrapper
 aggregate, the round-trip review revalidates component-wide wrapper coverage
 and carries it as `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and does the
-same for `broker_shadow_broker_readiness`. It also retains
+same for `broker_shadow_broker_readiness`, failing closed when either wrapper
+aggregate is partial, unready, or dirty. It also retains
 `roundtrip_vendor_market_data_batch` reconciled from the component configs,
 plus `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch` reconciled
 from the broker-readiness component proof chain and
