@@ -247,8 +247,17 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert int(summary["failed_checks"]) == 0
         assert bool(report.checks["passed"].all())
         assert (out_dir / "broker_vendor_data_readiness_checks.csv").exists()
+        assert (out_dir / "broker_vendor_data_readiness_action_queue.csv").exists()
+        assert (out_dir / "broker_vendor_data_readiness_runbook.md").exists()
         assert (out_dir / "01_vendor_market_data_batch" / "vendor_market_data_batch_config.json").exists()
         assert (out_dir / "02_broker_readiness" / "broker_readiness_config.json").exists()
+        action_queue = pd.read_csv(out_dir / "broker_vendor_data_readiness_action_queue.csv")
+        assert action_queue.empty
+        assert "next_gate_help_command" in action_queue.columns
+        runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(encoding="utf-8")
+        assert "# Broker Vendor Data Readiness Runbook" in runbook
+        assert "- Ready: yes" in runbook
+        assert "broker_data_proof_ready" in runbook
         config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert config["ready"]
@@ -267,6 +276,9 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert manifest["run_type"] == "broker_vendor_data_readiness_pipeline"
         assert "vendor_market_data_batch" in manifest["inputs"]
         assert "broker_readiness" in manifest["inputs"]
+        artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+        assert "broker_vendor_data_readiness_action_queue.csv" in artifact_paths
+        assert "broker_vendor_data_readiness_runbook.md" in artifact_paths
 
 
 def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
@@ -369,6 +381,8 @@ def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batc
 
     summary = pd.read_csv(out_dir / "broker_vendor_data_readiness_summary.csv")
     checks = pd.read_csv(out_dir / "broker_vendor_data_readiness_checks.csv")
+    action_queue = pd.read_csv(out_dir / "broker_vendor_data_readiness_action_queue.csv")
+    runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(encoding="utf-8")
     config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
     failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert code == 2
@@ -384,6 +398,12 @@ def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batc
     } <= failed
     assert config["failed_check_count"] == len(failed)
     assert set(config["failed_checks"]) == failed
+    assert set(action_queue["check"]) == failed
+    assert "pipeline-vendor-market-data-batch" in set(action_queue["next_gate"])
+    assert "review-broker-readiness" in set(action_queue["next_gate"])
+    assert "pipeline-broker-vendor-readiness" in set(action_queue["next_gate"])
+    assert "- Ready: no" in runbook
+    assert "pipeline-vendor-market-data-batch" in runbook
 
 
 def test_cli_broker_vendor_data_readiness_output_feeds_launch_cli(tmp_path):

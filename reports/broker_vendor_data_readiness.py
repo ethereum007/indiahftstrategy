@@ -21,6 +21,11 @@ _VENDOR_BATCH_PREFIXES = (
     "broker_dispatch_roundtrip_vendor_market_data_batch",
     "dispatch_roundtrip_vendor_market_data_batch",
 )
+BROKER_VENDOR_NEXT_GATES = {
+    "vendor_market_data_batch": "pipeline-vendor-market-data-batch",
+    "broker_readiness": "review-broker-readiness",
+    "broker_vendor_data": "pipeline-broker-vendor-readiness",
+}
 
 
 @dataclass(frozen=True)
@@ -151,9 +156,15 @@ def write_broker_vendor_data_readiness_pipeline(
     components.to_csv(out / "broker_vendor_data_readiness_components.csv", index=False)
     summary.to_csv(out / "broker_vendor_data_readiness_summary.csv", index=False)
     checks.to_csv(out / "broker_vendor_data_readiness_checks.csv", index=False)
+    action_queue = _action_queue(checks)
+    action_queue.to_csv(out / "broker_vendor_data_readiness_action_queue.csv", index=False)
     (out / "broker_vendor_data_readiness_config.json").write_text(
         json.dumps(_config(summary.iloc[0], components, checks, config, broker_thresholds), indent=2, sort_keys=True)
         + "\n",
+        encoding="utf-8",
+    )
+    (out / "broker_vendor_data_readiness_runbook.md").write_text(
+        _runbook_markdown(summary.iloc[0], components, action_queue),
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -406,6 +417,143 @@ def _check(
     }
 
 
+def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if not checks.empty and "passed" in checks.columns:
+        failed = checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+        for priority, row in enumerate(failed.to_dict(orient="records"), start=1):
+            check_name = str(row.get("check", ""))
+            component = _action_component(check_name)
+            next_gate = BROKER_VENDOR_NEXT_GATES.get(component, "pipeline-broker-vendor-readiness")
+            rows.append(
+                {
+                    "priority": priority,
+                    "queue_status": "blocked",
+                    "check": check_name,
+                    "component": component,
+                    "next_gate": next_gate,
+                    "next_gate_help_command": _help_command(next_gate),
+                    "actual": _action_value(row.get("observed")),
+                    "operator": _action_value(row.get("operator")),
+                    "expected": _action_value(row.get("expected")),
+                    "reason": str(row.get("message", "")),
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "queue_status",
+            "check",
+            "component",
+            "next_gate",
+            "next_gate_help_command",
+            "actual",
+            "operator",
+            "expected",
+            "reason",
+        ],
+    )
+
+
+def _action_component(check_name: str) -> str:
+    if check_name in {"broker_readiness_ready", "broker_vendor_data_ready"}:
+        return "broker_readiness"
+    if check_name == "failed_components":
+        return "broker_vendor_data"
+    return "vendor_market_data_batch"
+
+
+def _help_command(next_gate: str) -> str:
+    return f"python -m hft_cli {next_gate} --help" if next_gate else ""
+
+
+def _action_value(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value)
+
+
+def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    lines = [
+        "# Broker Vendor Data Readiness Runbook",
+        "",
+        f"- Ready: {_yes_no(_bool(row.get('ready', False)))}",
+        f"- Adapter: {str(row.get('adapter', ''))}",
+        f"- Kind: {str(row.get('kind', ''))}",
+        f"- Market: {str(row.get('market', ''))}",
+        f"- Recommendation: {str(row.get('recommendation', ''))}",
+        f"- Failed checks: {_int(row.get('failed_checks', 0))}",
+        f"- Dataset count: {_int(row.get('dataset_count', 0))}",
+        f"- Ready datasets: {_int(row.get('ready_datasets', 0))}",
+        f"- Broker readiness ready: {_yes_no(_bool(row.get('broker_readiness_ready', False)))}",
+        f"- Broker vendor-data accepted: {_yes_no(_bool(row.get('broker_vendor_data_ready', False)))}",
+        "",
+        "## Components",
+        "",
+        _components_table(components),
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _components_table(components: pd.DataFrame) -> str:
+    if components.empty:
+        return "_None_"
+    rows = [
+        [
+            str(row.get("component", "")),
+            _yes_no(_bool(row.get("ready", False))),
+            str(row.get("status", "")),
+            str(row.get("artifact_dir", "")),
+            str(row.get("recommendation", "")),
+        ]
+        for row in components.to_dict(orient="records")
+    ]
+    return _markdown_table(["Component", "Ready", "Status", "Artifact dir", "Recommendation"], rows)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    rows = [
+        [
+            str(_int(row.get("priority", 0))),
+            str(row.get("check", "")),
+            str(row.get("component", "")),
+            str(row.get("next_gate", "")),
+            str(row.get("next_gate_help_command", "")),
+            str(row.get("reason", "")),
+        ]
+        for row in action_queue.to_dict(orient="records")
+    ]
+    return _markdown_table(["Priority", "Check", "Component", "Next gate", "Help", "Reason"], rows)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _escape_cell(value: str) -> str:
+    return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
+
+
 def _config(
     row: pd.Series,
     components: pd.DataFrame,
@@ -479,6 +627,19 @@ def _float(value: object) -> float:
         return float(value)
     except (TypeError, ValueError):
         return 0.0
+
+
+def _bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "ready", "passed"}
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(value)
 
 
 def _vendor_value(row: pd.Series, suffix: str, fallback: object) -> object:

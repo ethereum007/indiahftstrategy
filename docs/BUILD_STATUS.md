@@ -66,6 +66,9 @@
   commands for Arrow.money/iRage operator or scheduler handoff.
 - Broker readiness now writes a manifest-tracked `broker_readiness_runbook.md`
   with component status and blocked-action next gates for operator review.
+- Broker-vendor data readiness now writes manifest-tracked action queue and
+  runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
+  wrapper failures expose next CLI gates at the proof root.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,
