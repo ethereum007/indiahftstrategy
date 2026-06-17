@@ -252,12 +252,22 @@ def shadow_broker_config(
     route_dispatch_strategy="lead_lag_taker",
     route_dispatch_market="india_nse_index_derivatives",
     route_dispatch_scenario_count=1,
+    broker_vendor_data_readiness_sessions=2,
+    broker_vendor_data_readiness_provided_sessions=2,
+    broker_vendor_data_readiness_ready_sessions=2,
+    broker_vendor_data_readiness_failed_checks=0,
 ):
     return {
         "sessions": sessions,
         "ready_sessions": ready_sessions,
         "adapter": adapter,
         "adapter_count": adapter_count,
+        "broker_vendor_data_readiness": {
+            "sessions": broker_vendor_data_readiness_sessions,
+            "provided_sessions": broker_vendor_data_readiness_provided_sessions,
+            "ready_sessions": broker_vendor_data_readiness_ready_sessions,
+            "failed_checks": broker_vendor_data_readiness_failed_checks,
+        },
         "route_readiness": {
             "sessions": route_sessions,
             "ready_sessions": route_ready_sessions,
@@ -453,11 +463,15 @@ def test_broker_dispatch_ack_carries_send_shadow_broker_readiness():
     summary = report.summary.iloc[0]
     assert int(summary["shadow_broker_readiness_sessions"]) == 2
     assert int(summary["shadow_broker_readiness_ready_sessions"]) == 2
+    assert int(summary["shadow_broker_vendor_data_readiness_sessions"]) == 2
+    assert int(summary["shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
+    assert int(summary["shadow_broker_vendor_data_readiness_failed_checks"]) == 0
     assert summary["shadow_broker_adapter"] == "arrow_money"
     assert summary["shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert summary["shadow_broker_dispatch_roundtrip_scenario_count"] == 1
     assert report.config["shadow_broker_readiness"]["provided"]
     assert report.config["shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"] == 2
     assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
     assert report.config["shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
     assert report.config["shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
@@ -486,6 +500,8 @@ def test_broker_dispatch_ack_blocks_bad_send_shadow_broker_readiness():
         route_dispatch_strategy="surface_mm",
         route_dispatch_market="us_options_regular",
         route_dispatch_scenario_count=2,
+        broker_vendor_data_readiness_ready_sessions=1,
+        broker_vendor_data_readiness_failed_checks=1,
     )
 
     report = evaluate_broker_dispatch_acknowledgements(
@@ -499,6 +515,8 @@ def test_broker_dispatch_ack_blocks_bad_send_shadow_broker_readiness():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
         "send_shadow_broker_readiness_ready",
+        "send_shadow_broker_vendor_data_readiness_ready",
+        "send_shadow_broker_vendor_data_readiness_failed_checks",
         "send_shadow_broker_adapter_matches",
         "send_shadow_broker_adapter_consistent",
         "send_shadow_broker_route_readiness_ready",
@@ -518,7 +536,35 @@ def test_broker_dispatch_ack_blocks_bad_send_shadow_broker_readiness():
         "send_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
     } <= failed
     assert report.config["shadow_broker_readiness"]["adapter"] == "irage"
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["failed_checks"] == 1
     assert report.config["shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
+
+
+def test_broker_dispatch_ack_blocks_partial_send_shadow_broker_vendor_data_readiness():
+    config = dispatch_config()
+    config["shadow_broker_readiness"] = shadow_broker_config(
+        broker_vendor_data_readiness_sessions=1,
+        broker_vendor_data_readiness_provided_sessions=1,
+        broker_vendor_data_readiness_ready_sessions=1,
+    )
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "send_shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "send_shadow_broker_vendor_data_readiness_provided",
+        "send_shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert int(summary["shadow_broker_vendor_data_readiness_sessions"]) == 1
+    assert report.config["shadow_broker_readiness"]["broker_vendor_data_readiness"]["provided_sessions"] == 1
 
 
 def test_broker_dispatch_ack_carries_send_broker_shadow_broker_readiness():
@@ -540,11 +586,18 @@ def test_broker_dispatch_ack_carries_send_broker_shadow_broker_readiness():
     assert summary["route_broker_shadow_broker_readiness_provided"]
     assert int(summary["route_broker_shadow_broker_readiness_sessions"]) == 2
     assert int(summary["route_broker_shadow_broker_readiness_ready_sessions"]) == 2
+    assert int(summary["route_broker_shadow_broker_vendor_data_readiness_sessions"]) == 2
+    assert int(summary["route_broker_shadow_broker_vendor_data_readiness_ready_sessions"]) == 2
+    assert int(summary["route_broker_shadow_broker_vendor_data_readiness_failed_checks"]) == 0
     assert summary["route_broker_shadow_broker_adapter"] == "arrow_money"
     assert summary["route_broker_shadow_broker_route_readiness_strategy"] == "lead_lag_taker"
     assert summary["route_broker_shadow_broker_dispatch_roundtrip_scenario_count"] == 1
     assert report.config["route_broker_shadow_broker_readiness"]["provided"]
     assert report.config["route_broker_shadow_broker_readiness"]["adapter"] == "arrow_money"
+    assert (
+        report.config["route_broker_shadow_broker_readiness"]["broker_vendor_data_readiness"]["ready_sessions"]
+        == 2
+    )
     assert report.config["route_broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 0
     assert report.config["route_broker_shadow_broker_readiness"]["dispatch_roundtrip"]["sessions"] == 2
     assert report.config["route_broker_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
@@ -1068,6 +1121,8 @@ def test_broker_dispatch_ack_blocks_bad_send_broker_shadow_broker_readiness():
             route_dispatch_strategy="surface_mm",
             route_dispatch_market="us_options_regular",
             route_dispatch_scenario_count=2,
+            broker_vendor_data_readiness_ready_sessions=1,
+            broker_vendor_data_readiness_failed_checks=1,
         ),
     }
 
@@ -1082,6 +1137,8 @@ def test_broker_dispatch_ack_blocks_bad_send_broker_shadow_broker_readiness():
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {
         "send_broker_shadow_broker_readiness_ready",
+        "send_broker_shadow_broker_vendor_data_readiness_ready",
+        "send_broker_shadow_broker_vendor_data_readiness_failed_checks",
         "send_broker_shadow_broker_adapter_matches",
         "send_broker_shadow_broker_adapter_consistent",
         "send_broker_shadow_broker_route_readiness_ready",
@@ -1101,6 +1158,7 @@ def test_broker_dispatch_ack_blocks_bad_send_broker_shadow_broker_readiness():
         "send_broker_shadow_broker_route_dispatch_roundtrip_scenario_consistent",
     } <= failed
     assert report.config["route_broker_shadow_broker_readiness"]["adapter"] == "irage"
+    assert report.config["route_broker_shadow_broker_readiness"]["broker_vendor_data_readiness"]["failed_checks"] == 1
     assert report.config["route_broker_shadow_broker_readiness"]["route_readiness"]["max_gap_pairs"] == 2
 
 
