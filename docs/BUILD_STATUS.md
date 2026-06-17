@@ -564,7 +564,8 @@
   `scaleup_broker_shadow_broker_*` authorization/config fields. Scale-up now
   also revalidates broker-readiness-carried shadow broker vendor-data wrapper
   counters as `broker_shadow_broker_vendor_data_readiness_*` before promotion,
-  with
+  and cutover now revalidates the same counters as
+  `scaleup_broker_shadow_broker_vendor_data_readiness_*`, with
   route-enable fingerprinting the cutover manifest, carrying the same proof as
   `cutover_broker_shadow_broker_*`, preserving cutover-retained vendor
   market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
@@ -708,7 +709,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 854 tests.
+Current passing suite: 855 tests.
 
 ## Next Build Targets
 

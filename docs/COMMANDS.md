@@ -2708,6 +2708,10 @@ wrapper proof inside the shadow broker-readiness aggregate, cutover carries it
 as `scaleup_shadow_broker_vendor_data_readiness_*` fields plus
 `scaleup_shadow_broker_readiness.broker_vendor_data_readiness` config and fails
 closed when that comparison-level wrapper proof is partial, unready, or dirty.
+If scale-up carried the broker-readiness shadow broker wrapper, cutover carries
+it as `scaleup_broker_shadow_broker_vendor_data_readiness_*` fields plus
+`scaleup_broker_shadow_broker_readiness.broker_vendor_data_readiness` config and
+fails closed on the same partial, unready, or dirty states.
 If scale-up carried vendor
 market-data batch provenance from Arrow.money/iRage onboarding, cutover carries
 the dataset/header/mapping proof into `cutover_summary.csv` and
