@@ -85,6 +85,9 @@
 - Experiment catalogs now write `experiment_catalog_action_queue.csv`, a
   consolidated scheduler queue of cataloged next-gate/help signals across
   scorecards, route reviews, and future summary-bearing handoffs.
+- Experiment catalogs now write a manifest-tracked
+  `experiment_catalog_runbook.md` with readiness, input-provenance totals, and
+  the consolidated next-action queue for operator review.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

@@ -59,6 +59,7 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert (out_dir / "experiment_catalog.csv").exists()
     assert (out_dir / "experiment_catalog_summary.csv").exists()
     assert (out_dir / "experiment_catalog_action_queue.csv").exists()
+    assert (out_dir / "experiment_catalog_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.iloc[0]["run_count"] == 1
     queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
@@ -77,9 +78,15 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
         "recommendation",
         "generated_at_utc",
     ]
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "# Experiment Catalog Runbook" in runbook
+    assert "- Runs: 1" in runbook
+    assert "- Queue rows: 0" in runbook
+    assert "_None_" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "experiment_catalog_action_queue.csv" in artifact_paths
+    assert "experiment_catalog_runbook.md" in artifact_paths
 
 
 def test_catalog_experiment_runs_reports_input_fingerprint_provenance(tmp_path):
@@ -255,6 +262,11 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
     )
     assert rows.loc["route_readiness_review", "recommendation"] == "complete_route_readiness_gaps"
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "## Action Queue" in runbook
+    assert "plan-scaleup" in runbook
+    assert "review-strategy-evidence --profile ops_launch --require-file-inputs" in runbook
+    assert "complete_route_readiness_gaps" in runbook
 
 
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):

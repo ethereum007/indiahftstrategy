@@ -138,6 +138,10 @@ def write_experiment_catalog(
     report.summary.to_csv(out / "experiment_catalog_summary.csv", index=False)
     action_queue = report.action_queue if report.action_queue is not None else _catalog_action_queue(report.catalog)
     action_queue.to_csv(out / "experiment_catalog_action_queue.csv", index=False)
+    (out / "experiment_catalog_runbook.md").write_text(
+        _catalog_runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="experiment_catalog",
@@ -345,6 +349,107 @@ def _queue_status(value: Any) -> str:
 
 def _queue_rank(status: str) -> int:
     return {"ready": 0, "blocked": 1, "unknown": 2}.get(status, 3)
+
+
+def _catalog_runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready = (
+        _int_metric(summary_row.get("status_false_runs")) == 0
+        and _int_metric(summary_row.get("missing_summary_runs")) == 0
+    )
+    lines = [
+        "# Experiment Catalog Runbook",
+        "",
+        "## Readiness",
+        "",
+        f"- Ready: {'yes' if ready else 'no'}",
+        f"- Runs: {_int_metric(summary_row.get('run_count'))}",
+        f"- Run types: {_int_metric(summary_row.get('run_type_count'))}",
+        f"- Status true runs: {_int_metric(summary_row.get('status_true_runs'))}",
+        f"- Status false runs: {_int_metric(summary_row.get('status_false_runs'))}",
+        f"- Missing summary runs: {_int_metric(summary_row.get('missing_summary_runs'))}",
+        f"- Dirty runs: {_int_metric(summary_row.get('dirty_runs'))}",
+        "",
+        "## Input Provenance",
+        "",
+        f"- Input files: {_int_metric(summary_row.get('input_file_count'))}",
+        f"- Input directories: {_int_metric(summary_row.get('input_directory_count'))}",
+        f"- Input hashes: {_int_metric(summary_row.get('input_hashed_count'))}",
+        f"- Unfingerprinted inputs: {_int_metric(summary_row.get('input_unfingerprinted_count'))}",
+        f"- Runs with directory inputs: {_int_metric(summary_row.get('runs_with_directory_inputs'))}",
+        f"- Runs with unfingerprinted inputs: {_int_metric(summary_row.get('runs_with_unfingerprinted_inputs'))}",
+        "",
+        "## Action Queue",
+        "",
+        f"- Queue rows: {len(action_queue)}",
+        "",
+        _action_queue_markdown_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_markdown_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    columns = [
+        "priority",
+        "queue_status",
+        "run_type",
+        "strategy",
+        "market",
+        "profile",
+        "next_gate",
+        "next_gate_help_command",
+        "recommendation",
+    ]
+    headers = [
+        "Priority",
+        "Status",
+        "Run Type",
+        "Strategy",
+        "Market",
+        "Profile",
+        "Next Gate",
+        "Help Command",
+        "Recommendation",
+    ]
+    rows = [
+        [_format_markdown_cell(row.get(column)) for column in columns]
+        for _, row in action_queue.iterrows()
+    ]
+    return _markdown_table(headers, rows)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    lines = [
+        "| " + " | ".join(_escape_markdown_cell(header) for header in headers) + " |",
+        "| " + " | ".join("---" for _ in headers) + " |",
+    ]
+    lines.extend(
+        "| " + " | ".join(_escape_markdown_cell(value) for value in row) + " |"
+        for row in rows
+    )
+    return "\n".join(lines)
+
+
+def _format_markdown_cell(value: Any) -> str:
+    text = _text(value)
+    if not text:
+        return ""
+    if text.startswith("python -m ") or "--" in text:
+        return f"`{text}`"
+    return text
+
+
+def _escape_markdown_cell(value: Any) -> str:
+    return _text(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _int_metric(value: Any) -> int:
+    numeric = _numeric(value)
+    if pd.isna(numeric):
+        return 0
+    return int(numeric)
 
 
 def _first_text(row: dict[str, Any], *columns: str) -> str:

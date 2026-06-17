@@ -58,6 +58,7 @@ Outputs:
 experiment_catalog.csv
 experiment_catalog_summary.csv
 experiment_catalog_action_queue.csv
+experiment_catalog_runbook.md
 manifest.json
 ```
 
@@ -68,6 +69,8 @@ handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
 `experiment_catalog_action_queue.csv` consolidates cataloged `next_gate` and
 `next_gate_help_command` signals from scorecards, route reviews, and other
 summary files into one priority-ordered scheduler queue.
+`experiment_catalog_runbook.md` mirrors the same queue with catalog readiness
+and input-provenance totals for human operator review.
 
 ## Strategy Evidence Review
 
