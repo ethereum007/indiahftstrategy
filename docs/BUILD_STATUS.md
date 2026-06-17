@@ -42,6 +42,8 @@
 - Strategy readiness scorecard writes `strategy_scorecard_next_actions.json`,
   a machine-readable ranked next-action and open-gap sidecar for automated
   research/ops follow-up.
+- Strategy readiness next-actions JSON now includes a versioned schema plus
+  `ready_actions`/`blocked_actions` queues and counts for scheduler handoff.
 - Strategy readiness scorecard CSV/JSON outputs include `next_gate_help_command`
   hints so every blocked research or ops lane exposes the exact CLI entry point
   to inspect before scheduling the next run.

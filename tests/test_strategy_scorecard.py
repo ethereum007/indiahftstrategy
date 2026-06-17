@@ -96,9 +96,15 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.summary.loc[0, "best_profile"] == "leadlag"
     assert report.summary.loc[0, "best_next_gate"] == "plan-scaleup"
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
+    assert report.config["schema_version"] == 1
     assert report.config["best_profile"] == "leadlag"
+    assert report.config["ready_action_count"] == 1
+    assert report.config["blocked_action_count"] == 1
+    assert report.config["gap_count"] == len(report.config["gaps"])
     assert report.config["next_actions"][0]["next_gate"] == "plan-scaleup"
     assert report.config["next_actions"][0]["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
+    assert report.config["ready_actions"][0]["profile"] == "leadlag"
+    assert report.config["blocked_actions"][0]["profile"] == "imbalance"
     assert report.config["next_actions"][1]["missing_required_run_types"] == [
         "imbalance_replay_walkforward",
         "imbalance_research_pipeline",
@@ -131,6 +137,10 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "manifest.json").exists()
     config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
     assert config == report.config
+    assert config["schema_version"] == 1
+    assert config["ready_action_count"] == 1
+    assert config["blocked_action_count"] == 0
+    assert config["ready_actions"][0]["profile"] == "leadlag"
     assert config["next_actions"][0]["profile"] == "leadlag"
 
 
@@ -156,10 +166,17 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
 
     scorecard = pd.read_csv(out_dir / "strategy_scorecard.csv")
     gaps = pd.read_csv(out_dir / "strategy_scorecard_gaps.csv")
+    config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(scorecard.loc[0, "ready"])
     assert scorecard.loc[0, "next_gate"] == "walkforward-imbalance-replay"
     assert scorecard.loc[0, "next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == 1
+    open_gap_count = int(gaps["gap"].fillna("").astype(str).str.len().gt(0).sum())
+    assert config["gap_count"] == open_gap_count
+    assert config["blocked_actions"][0]["profile"] == "imbalance"
+    assert config["blocked_actions"][0]["next_gate"] == "walkforward-imbalance-replay"
     assert "missing_required_run_type" in set(gaps["gap"])
     next_gate = gaps.loc[gaps["required_run_type"] == "imbalance_replay_walkforward", "next_gate"].iloc[0]
     assert next_gate == "walkforward-imbalance-replay"
@@ -197,6 +214,9 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert report.config["best_next_gate"] == "review-route-readiness"
     assert report.config["best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
+    assert report.config["ready_action_count"] == 1
+    assert report.config["blocked_action_count"] == 0
+    assert report.config["ready_actions"][0]["next_gate"] == "review-route-readiness"
     assert report.config["next_actions"][0]["next_gate"] == "review-route-readiness"
     assert report.config["next_actions"][0]["next_gate_help_command"] == (
         "python -m hft_cli review-route-readiness --help"

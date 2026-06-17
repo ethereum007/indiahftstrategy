@@ -299,7 +299,12 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
 
 def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) -> dict[str, Any]:
     summary_row = _jsonable_row(summary.iloc[0].to_dict()) if not summary.empty else {}
+    next_actions = [_action(row) for row in _records(scorecard)]
+    ready_actions = [action for action in next_actions if action["ready"]]
+    blocked_actions = [action for action in next_actions if not action["ready"]]
+    gap_actions = [_gap_action(row) for row in _records(gaps) if str(row.get("gap", ""))]
     return {
+        "schema_version": 1,
         "ready": bool(summary_row.get("ready", False)),
         "best_profile": str(summary_row.get("best_profile", "")),
         "best_strategy": str(summary_row.get("best_strategy", "")),
@@ -308,8 +313,13 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "best_next_gate": str(summary_row.get("best_next_gate", "")),
         "best_next_gate_help_command": str(summary_row.get("best_next_gate_help_command", "")),
         "recommendation": str(summary_row.get("recommendation", "")),
-        "next_actions": [_action(row) for row in _records(scorecard)],
-        "gaps": [_gap_action(row) for row in _records(gaps) if str(row.get("gap", ""))],
+        "ready_action_count": len(ready_actions),
+        "blocked_action_count": len(blocked_actions),
+        "gap_count": len(gap_actions),
+        "next_actions": next_actions,
+        "ready_actions": ready_actions,
+        "blocked_actions": blocked_actions,
+        "gaps": gap_actions,
     }
 
 
