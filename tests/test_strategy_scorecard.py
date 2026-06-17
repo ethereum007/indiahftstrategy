@@ -134,6 +134,7 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "strategy_scorecard_gaps.csv").exists()
     assert (out_dir / "strategy_scorecard_summary.csv").exists()
     assert (out_dir / "strategy_scorecard_next_actions.json").exists()
+    assert (out_dir / "strategy_scorecard_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
     assert config == report.config
@@ -142,6 +143,14 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert config["blocked_action_count"] == 0
     assert config["ready_actions"][0]["profile"] == "leadlag"
     assert config["next_actions"][0]["profile"] == "leadlag"
+    runbook = (out_dir / "strategy_scorecard_runbook.md").read_text(encoding="utf-8")
+    assert "# Strategy Scorecard Runbook" in runbook
+    assert "- Ready: yes" in runbook
+    assert "## Ready Actions" in runbook
+    assert "`plan-scaleup`" in runbook
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "strategy_scorecard_runbook.md" in artifact_paths
 
 
 def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path):

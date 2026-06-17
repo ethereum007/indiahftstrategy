@@ -292,6 +292,7 @@ strategy_scorecard.csv
 strategy_scorecard_gaps.csv
 strategy_scorecard_summary.csv
 strategy_scorecard_next_actions.json
+strategy_scorecard_runbook.md
 manifest.json
 ```
 
@@ -312,6 +313,8 @@ research or broker-proof lanes.
 Both CSV and JSON outputs include `next_gate_help_command` fields such as
 `python -m hft_cli walkforward-imbalance-replay --help`, making the next CLI
 entry point explicit even before concrete data paths are selected.
+`strategy_scorecard_runbook.md` is a human-readable handoff generated from
+the same next-action data and captured in the manifest artifact fingerprints.
 
 ## Market Profile Report
 

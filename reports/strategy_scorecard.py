@@ -162,6 +162,10 @@ def write_strategy_scorecard(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (out / "strategy_scorecard_runbook.md").write_text(
+        _runbook_markdown(report.config),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="strategy_scorecard",
@@ -356,6 +360,124 @@ def _gap_action(row: dict[str, Any]) -> dict[str, Any]:
         "unknown_status_runs": int(_numeric(row.get("unknown_status_runs", 0))),
         "latest_run_dir": str(row.get("latest_run_dir", "")),
     }
+
+
+def _runbook_markdown(config: dict[str, Any]) -> str:
+    ready_label = "yes" if bool(config.get("ready", False)) else "no"
+    lines = [
+        "# Strategy Scorecard Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Best profile: {_text(config.get('best_profile'))}",
+        f"- Best strategy: {_text(config.get('best_strategy'))}",
+        f"- Best market: {_text(config.get('best_market'))}",
+        f"- Recommendation: {_text(config.get('recommendation'))}",
+        f"- Best next gate: {_code(config.get('best_next_gate'))}",
+        f"- Best next gate help: {_code(config.get('best_next_gate_help_command'))}",
+        f"- Ready actions: {int(_numeric(config.get('ready_action_count', 0)))}",
+        f"- Blocked actions: {int(_numeric(config.get('blocked_action_count', 0)))}",
+        f"- Open gaps: {int(_numeric(config.get('gap_count', 0)))}",
+        "",
+        "## Ready Actions",
+        "",
+        _actions_table(config.get("ready_actions", []), include_gaps=False),
+        "",
+        "## Blocked Actions",
+        "",
+        _actions_table(config.get("blocked_actions", []), include_gaps=True),
+        "",
+        "## Open Gaps",
+        "",
+        _gaps_table(config.get("gaps", [])),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _actions_table(actions: Any, *, include_gaps: bool) -> str:
+    rows = actions if isinstance(actions, list) else []
+    if not rows:
+        return "_None_"
+    headers = ["Rank", "Profile", "Strategy", "Score", "Next gate", "Help"]
+    table_rows = [
+        [
+            str(int(_numeric(row.get("rank", 0)))),
+            _text(row.get("profile")),
+            _text(row.get("strategy")),
+            _format_score(row.get("readiness_score")),
+            _code(row.get("next_gate")),
+            _code(row.get("next_gate_help_command")),
+        ]
+        for row in rows
+        if isinstance(row, dict)
+    ]
+    if include_gaps:
+        headers.extend(["Missing", "Blocked"])
+        for row, source in zip(table_rows, rows):
+            if isinstance(source, dict):
+                row.extend(
+                    [
+                        _list_text(source.get("missing_required_run_types")),
+                        _list_text(source.get("blocked_required_run_types")),
+                    ]
+                )
+    return _markdown_table(headers, table_rows)
+
+
+def _gaps_table(gaps: Any) -> str:
+    rows = gaps if isinstance(gaps, list) else []
+    if not rows:
+        return "_None_"
+    return _markdown_table(
+        ["Profile", "Required run type", "Gap", "Next gate", "Latest run"],
+        [
+            [
+                _text(row.get("profile")),
+                _text(row.get("required_run_type")),
+                _text(row.get("gap")),
+                _code(row.get("next_gate")),
+                _text(row.get("latest_run_dir")),
+            ]
+            for row in rows
+            if isinstance(row, dict)
+        ],
+    )
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _format_score(value: Any) -> str:
+    return f"{_numeric(value):.3f}"
+
+
+def _code(value: Any) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
+
+
+def _list_text(value: Any) -> str:
+    if isinstance(value, list):
+        items = [str(item) for item in value if str(item)]
+    else:
+        items = _split_items(value)
+    return ", ".join(items)
+
+
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _escape_cell(value: str) -> str:
+    return value.replace("|", "\\|").replace("\n", " ")
 
 
 def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
