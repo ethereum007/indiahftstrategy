@@ -1181,6 +1181,40 @@ def test_broker_readiness_blocks_dirty_dispatch_roundtrip_broker_shadow_broker_r
     assert int(summary["broker_shadow_broker_route_readiness_gap_pairs"]) == 2
 
 
+def test_broker_readiness_blocks_partial_dispatch_roundtrip_broker_shadow_broker_vendor_data_readiness():
+    config = dispatch_roundtrip_config()
+    config["broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(
+            broker_vendor_data_readiness_sessions=1,
+            broker_vendor_data_readiness_provided_sessions=1,
+            broker_vendor_data_readiness_ready_sessions=1,
+        ),
+    }
+
+    report = evaluate_broker_readiness(
+        schema_audit_summary=schema_summary("normalized", True),
+        order_export_summary=order_export_summary("normalized", True),
+        upload_pack_summary=upload_summary("normalized", True),
+        dispatch_roundtrip_summary=dispatch_roundtrip_summary("normalized", True),
+        dispatch_roundtrip_config=config,
+        thresholds=BrokerReadinessThresholds(adapter="normalized", require_dispatch_roundtrip=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "broker_shadow_broker_vendor_data_readiness_provided",
+        "broker_shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert int(summary["broker_shadow_broker_vendor_data_readiness_sessions"]) == 1
+    assert report.config["broker_shadow_broker_readiness"]["broker_vendor_data_readiness"][
+        "provided_sessions"
+    ] == 1
+
+
 def test_broker_readiness_fails_for_missing_route_dispatch_roundtrip_proof():
     report = evaluate_broker_readiness(
         schema_audit_summary=schema_summary("normalized", True),

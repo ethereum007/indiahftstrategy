@@ -572,7 +572,8 @@
   can be armed, broker dispatch send coverage before non-submitting sender
   packets can advance, acknowledgement coverage before accepted ack evidence
   can advance, and final round-trip coverage before dry-run bridge proof can
-  feed broker readiness, and
+  feed broker readiness, plus broker readiness coverage before integration
+  readiness can pass, and
   route-enable fingerprinting the cutover manifest, carrying the same proof as
   `cutover_broker_shadow_broker_*`, preserving cutover-retained vendor
   market-data batch provenance as `cutover_vendor_market_data_batch_*`, and
@@ -716,7 +717,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 860 tests.
+Current passing suite: 861 tests.
 
 ## Next Build Targets
 

@@ -2004,7 +2004,8 @@ broker-vendor wrapper aggregates, broker readiness revalidates coverage and
 retains them as `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and as
 `broker_shadow_broker_vendor_data_readiness_*` plus nested
-`broker_shadow_broker_readiness.broker_vendor_data_readiness` config. If the
+`broker_shadow_broker_readiness.broker_vendor_data_readiness` config, failing
+closed when either wrapper aggregate is partial, unready, or dirty. If the
 round-trip config carries
 `roundtrip_vendor_market_data_batch`, broker readiness revalidates the
 adapter/market, dataset, source-file, header-fingerprint, mapping, and
