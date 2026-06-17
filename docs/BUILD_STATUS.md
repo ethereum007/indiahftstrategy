@@ -79,6 +79,9 @@
 - Route readiness now emits manifest-tracked `route_readiness_action_queue.csv`
   and `route_readiness_runbook.md` handoffs, carrying next gates, help commands,
   and strategy/ops evidence status into the final live-dry-run route review.
+- Route readiness summaries now carry primary next-gate/help fields and
+  ready/blocked action counts, making the final route scheduler signal visible
+  directly in experiment catalogs.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

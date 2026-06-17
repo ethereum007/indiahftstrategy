@@ -148,6 +148,42 @@ def test_catalog_experiment_runs_recognizes_strategy_scorecard_status(tmp_path):
     assert row["summary_best_next_gate"] == "plan-scaleup"
 
 
+def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "route_readiness",
+        run_type="route_readiness_review",
+        summary_name="route_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "strategy": "microprice_imbalance",
+            "market": "india_nse_index_derivatives",
+            "route_ready_pairs": 0,
+            "gap_pairs": 1,
+            "ready_action_count": 0,
+            "blocked_action_count": 1,
+            "next_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
+            "next_gate_help_command": (
+                "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+            ),
+            "recommendation": "complete_route_readiness_gaps",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_false_runs"] == 1
+    assert row["run_type"] == "route_readiness_review"
+    assert row["summary_file"] == "route_readiness_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_next_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    assert row["summary_next_gate_help_command"] == (
+        "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+    )
+    assert int(row["summary_blocked_action_count"]) == 1
+
+
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):
     root = tmp_path / "runs"
     write_run(

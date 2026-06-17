@@ -323,6 +323,10 @@ def _summary(
                     "portability_blocked_pairs": 0,
                     "ops_file_provenance_blocked_pairs": 0,
                     "require_ops_file_inputs": bool(require_ops_file_inputs),
+                    "ready_action_count": 0,
+                    "blocked_action_count": 0,
+                    "next_gate": "",
+                    "next_gate_help_command": "",
                     "recommendation": "route_readiness_inputs_missing",
                 }
             ]
@@ -334,6 +338,7 @@ def _summary(
     identity_pairs = route_pairs if not route_pairs.empty else pairs
     strategies = sorted(set(identity_pairs["strategy"].astype(str))) if "strategy" in identity_pairs else []
     markets = sorted(set(identity_pairs["market"].astype(str))) if "market" in identity_pairs else []
+    next_gate = _primary_next_gate(pairs, gaps, ready=ready)
     return pd.DataFrame(
         [
             {
@@ -352,12 +357,27 @@ def _summary(
                     (pairs["status"].astype(str) == "ops_file_provenance_not_gated").sum()
                 ),
                 "require_ops_file_inputs": bool(require_ops_file_inputs),
+                "ready_action_count": route_ready,
+                "blocked_action_count": int((~pairs["route_ready"].astype(bool)).sum()),
+                "next_gate": next_gate,
+                "next_gate_help_command": _next_gate_help_command(next_gate),
                 "recommendation": "eligible_for_live_dryrun_route_review"
                 if ready
                 else "complete_route_readiness_gaps",
             }
         ]
     )
+
+
+def _primary_next_gate(pairs: pd.DataFrame, gaps: pd.DataFrame, *, ready: bool) -> str:
+    if ready:
+        ready_pairs = pairs.loc[pairs["route_ready"].astype(bool)] if not pairs.empty else pairs
+        if not ready_pairs.empty:
+            return _text(ready_pairs.iloc[0].get("next_gate"))
+        return "live_dryrun_route_review"
+    if not gaps.empty:
+        return _text(gaps.iloc[0].get("next_gate"))
+    return ""
 
 
 def _config(

@@ -416,6 +416,9 @@ explicit dry-run investigations that are not route-review candidates.
 priority order with `next_gate`, `next_gate_help_command`, evidence statuses,
 and the route-level recommendation. `route_readiness_runbook.md` mirrors the
 same handoff for operator review before live dry-run routing.
+`route_readiness_summary.csv` also carries the primary `next_gate`,
+`next_gate_help_command`, and ready/blocked action counts so `catalog-runs`
+can preserve the route-level scheduler signal.
 
 ## Instrument Metadata Report
 
