@@ -1159,6 +1159,37 @@ def test_route_enable_blocks_bad_cutover_broker_shadow_broker_readiness():
     ] == 1
 
 
+def test_route_enable_blocks_partial_cutover_broker_shadow_broker_vendor_data_readiness():
+    config = cutover_config()
+    config["scaleup_broker_shadow_broker_readiness"] = {
+        "provided": True,
+        **shadow_broker_config(
+            broker_vendor_data_readiness_sessions=1,
+            broker_vendor_data_readiness_provided_sessions=1,
+            broker_vendor_data_readiness_ready_sessions=1,
+        ),
+    }
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "cutover_broker_shadow_broker_vendor_data_readiness_present_for_broker_sessions",
+        "cutover_broker_shadow_broker_vendor_data_readiness_provided",
+        "cutover_broker_shadow_broker_vendor_data_readiness_ready",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert int(summary["cutover_broker_shadow_broker_vendor_data_readiness_sessions"]) == 1
+    assert report.config["cutover_broker_shadow_broker_readiness"]["broker_vendor_data_readiness"][
+        "provided_sessions"
+    ] == 1
+
+
 def test_route_enable_live_dryrun_requires_cutover_route_readiness():
     report = evaluate_route_enable_packet(
         cutover_summary=cutover_summary(route_readiness_provided=False, route_readiness_ready=False),

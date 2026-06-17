@@ -2789,7 +2789,8 @@ shadow-broker broker-vendor wrapper aggregate, route-enable revalidates the
 per-session wrapper coverage and carries it as
 `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and does the
-same for `cutover_broker_shadow_broker_readiness`. If cutover retained the
+same for `cutover_broker_shadow_broker_readiness`, failing closed when either
+wrapper aggregate is partial, unready, or dirty. If cutover retained the
 broker-readiness final dispatch round-trip vendor market-data batch proof,
 route-enable revalidates adapter, market, dataset, provenance, and comparison
 acceptance checks and carries it as
