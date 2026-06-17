@@ -82,6 +82,9 @@
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
+- Experiment catalogs now write `experiment_catalog_action_queue.csv`, a
+  consolidated scheduler queue of cataloged next-gate/help signals across
+  scorecards, route reviews, and future summary-bearing handoffs.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

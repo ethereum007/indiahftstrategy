@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -56,8 +58,28 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert report.output_dir == out_dir
     assert (out_dir / "experiment_catalog.csv").exists()
     assert (out_dir / "experiment_catalog_summary.csv").exists()
+    assert (out_dir / "experiment_catalog_action_queue.csv").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.iloc[0]["run_count"] == 1
+    queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
+    assert queue.empty
+    assert list(queue.columns) == [
+        "priority",
+        "queue_status",
+        "run_type",
+        "run_dir",
+        "strategy",
+        "market",
+        "profile",
+        "summary_status",
+        "next_gate",
+        "next_gate_help_command",
+        "recommendation",
+        "generated_at_utc",
+    ]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "experiment_catalog_action_queue.csv" in artifact_paths
 
 
 def test_catalog_experiment_runs_reports_input_fingerprint_provenance(tmp_path):
@@ -182,6 +204,57 @@ def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path
         "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
     )
     assert int(row["summary_blocked_action_count"]) == 1
+
+
+def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    write_run(
+        root / "strategy_scorecard",
+        run_type="strategy_scorecard",
+        summary_name="strategy_scorecard_summary.csv",
+        summary_row={
+            "ready": True,
+            "best_profile": "leadlag",
+            "best_strategy": "lead_lag_taker",
+            "best_market": "india_nse_index_derivatives",
+            "best_next_gate": "plan-scaleup",
+            "best_next_gate_help_command": "python -m hft_cli plan-scaleup --help",
+            "recommendation": "promote_ready_strategy_to_shadow_scaleup_review",
+        },
+    )
+    write_run(
+        root / "route_readiness",
+        run_type="route_readiness_review",
+        summary_name="route_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "next_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
+            "next_gate_help_command": (
+                "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+            ),
+            "recommendation": "complete_route_readiness_gaps",
+        },
+    )
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
+    assert report.action_queue is not None
+    assert len(queue) == 2
+    rows = queue.set_index("run_type")
+    assert rows.loc["strategy_scorecard", "queue_status"] == "ready"
+    assert rows.loc["strategy_scorecard", "strategy"] == "lead_lag_taker"
+    assert rows.loc["strategy_scorecard", "profile"] == "leadlag"
+    assert rows.loc["strategy_scorecard", "next_gate"] == "plan-scaleup"
+    assert rows.loc["route_readiness_review", "queue_status"] == "blocked"
+    assert rows.loc["route_readiness_review", "strategy"] == "lead_lag_taker"
+    assert rows.loc["route_readiness_review", "next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
+    assert rows.loc["route_readiness_review", "recommendation"] == "complete_route_readiness_gaps"
 
 
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):

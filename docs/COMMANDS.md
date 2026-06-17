@@ -57,6 +57,7 @@ Outputs:
 ```text
 experiment_catalog.csv
 experiment_catalog_summary.csv
+experiment_catalog_action_queue.csv
 manifest.json
 ```
 
@@ -64,6 +65,9 @@ The catalog includes input provenance counters for each run, including exact
 file fingerprints, directory-tree fingerprints, hashed inputs, and
 unfingerprinted raw inputs. Use these columns to spot broad or unresolved
 handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
+`experiment_catalog_action_queue.csv` consolidates cataloged `next_gate` and
+`next_gate_help_command` signals from scorecards, route reviews, and other
+summary files into one priority-ordered scheduler queue.
 
 ## Strategy Evidence Review
 

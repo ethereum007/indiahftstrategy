@@ -108,6 +108,7 @@ class ExperimentCatalog:
     catalog: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def run_count(self) -> int:
@@ -121,7 +122,8 @@ def catalog_experiment_runs(roots: list[str | Path]) -> ExperimentCatalog:
     rows = [_catalog_row(path) for path in manifests]
     catalog = pd.DataFrame(rows)
     summary = _catalog_summary(catalog)
-    return ExperimentCatalog(catalog=catalog, summary=summary)
+    action_queue = _catalog_action_queue(catalog)
+    return ExperimentCatalog(catalog=catalog, summary=summary, action_queue=action_queue)
 
 
 def write_experiment_catalog(
@@ -134,13 +136,15 @@ def write_experiment_catalog(
     out.mkdir(parents=True, exist_ok=True)
     report.catalog.to_csv(out / "experiment_catalog.csv", index=False)
     report.summary.to_csv(out / "experiment_catalog_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _catalog_action_queue(report.catalog)
+    action_queue.to_csv(out / "experiment_catalog_action_queue.csv", index=False)
     write_experiment_manifest(
         out,
         run_type="experiment_catalog",
         parameters={"roots": [str(Path(root)) for root in roots]},
         inputs={"roots": [Path(root) for root in roots]},
     )
-    return ExperimentCatalog(report.catalog, report.summary, out)
+    return ExperimentCatalog(report.catalog, report.summary, out, action_queue)
 
 
 def _manifest_paths(roots: list[str | Path]) -> list[Path]:
@@ -264,6 +268,93 @@ def _catalog_summary(catalog: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "run_type",
+    "run_dir",
+    "strategy",
+    "market",
+    "profile",
+    "summary_status",
+    "next_gate",
+    "next_gate_help_command",
+    "recommendation",
+    "generated_at_utc",
+]
+
+
+def _catalog_action_queue(catalog: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if not catalog.empty:
+        for _, row in catalog.iterrows():
+            item = row.to_dict()
+            next_gate = _first_text(item, "summary_next_gate", "summary_best_next_gate")
+            help_command = _first_text(
+                item,
+                "summary_next_gate_help_command",
+                "summary_best_next_gate_help_command",
+            )
+            if not next_gate and not help_command:
+                continue
+            rows.append(
+                {
+                    "queue_status": _queue_status(item.get("summary_status")),
+                    "run_type": _text(item.get("run_type")),
+                    "run_dir": _text(item.get("run_dir")),
+                    "strategy": _first_text(
+                        item,
+                        "summary_strategy",
+                        "summary_best_strategy",
+                        "summary_runtime_strategy",
+                    ),
+                    "market": _first_text(
+                        item,
+                        "summary_market",
+                        "summary_best_market",
+                        "summary_runtime_market",
+                    ),
+                    "profile": _first_text(
+                        item,
+                        "summary_evidence_profile",
+                        "summary_profile",
+                        "summary_best_profile",
+                    ),
+                    "summary_status": item.get("summary_status"),
+                    "next_gate": next_gate,
+                    "next_gate_help_command": help_command,
+                    "recommendation": _text(item.get("summary_recommendation")),
+                    "generated_at_utc": _text(item.get("generated_at_utc")),
+                }
+            )
+    if rows:
+        ordered = sorted(rows, key=lambda row: (_queue_rank(row["queue_status"]), row["run_type"], row["run_dir"]))
+        for priority, row in enumerate(ordered, start=1):
+            row["priority"] = priority
+        rows = ordered
+    return pd.DataFrame(rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _queue_status(value: Any) -> str:
+    if value is True:
+        return "ready"
+    if value is False:
+        return "blocked"
+    return "unknown"
+
+
+def _queue_rank(status: str) -> int:
+    return {"ready": 0, "blocked": 1, "unknown": 2}.get(status, 3)
+
+
+def _first_text(row: dict[str, Any], *columns: str) -> str:
+    for column in columns:
+        value = _text(row.get(column))
+        if value:
+            return value
+    return ""
+
+
 def _nested(value: dict[str, Any], *keys: str) -> Any:
     current: Any = value
     for key in keys:
@@ -333,6 +424,17 @@ def _to_bool(value: Any) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value)
 
 
 def _numeric(value: Any) -> float:
