@@ -3237,9 +3237,13 @@ route proof batch id, any dispatch-carried shadow broker-readiness aggregate is
 mixed or dirty, any dispatch-carried broker-readiness shadow broker proof is
 mixed or dirty, the adapter is unknown, payload JSON is invalid, idempotency
 keys are not unique, request limits are exceeded, or any request is not
-dry-run-only. `--require-route-readiness` is automatic for `--target-mode
-live_dryrun`; the explicit flag keeps paper/shadow sender packets equally
-strict. It also carries the dispatch config broker schema review status/mode,
+dry-run-only. If dispatch planning retained strategy portfolio allocation
+evidence, the sender packet preserves the `strategy_portfolio_*` fields and
+`dispatch_total_notional` in summary/config and fails closed when the dispatch
+notional exceeds the selected paper/shadow allocation.
+`--require-route-readiness` is automatic for `--target-mode live_dryrun`; the
+explicit flag keeps paper/shadow sender packets equally strict. It also
+carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
 `route_broker_shadow_broker_readiness` into the sender summary/config. If the
 dispatch config retained the shadow-broker broker-vendor wrapper aggregate, the

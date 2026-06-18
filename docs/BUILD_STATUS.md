@@ -87,6 +87,9 @@
   allocation evidence, computes notional from the resolved upload-order file,
   and blocks dry-run dispatch when that actual upload notional exceeds the
   selected allocation.
+- Broker dispatch send now carries dispatch-retained strategy portfolio
+  allocation evidence into the non-submitting sender packet and blocks packet
+  readiness when dispatch notional exceeds the selected allocation.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.
@@ -674,6 +677,7 @@
   hashes, route-readiness proof, route round-trip proof tags, and
   acknowledgement templates while carrying broker schema review status/mode
   route-enable dispatch round-trip failed-check counters, dispatch-carried
+  strategy portfolio allocation evidence and dispatch notional guards,
   shadow broker-readiness aggregates plus broker-readiness-carried shadow
   broker proof from the dispatch config as `route_broker_shadow_broker_*`, and
   vendor market-data batch provenance as `dispatch_vendor_market_data_batch_*`,
