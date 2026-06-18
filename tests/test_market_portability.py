@@ -191,3 +191,76 @@ def test_cli_market_portability_report_writes_selected_strategy(tmp_path):
     assert (out_dir / "market_portability_config.json").exists()
     assert (out_dir / "market_portability_action_queue.csv").exists()
     assert (out_dir / "market_portability_runbook.md").exists()
+
+
+def test_cli_market_portability_can_fail_on_partial_gap_pairs(tmp_path):
+    out_dir = tmp_path / "cli_portability_gaps"
+
+    code = main(
+        [
+            "market-portability-report",
+            "--market",
+            "india_nse_index_derivatives",
+            "--market",
+            "us_equities_regular",
+            "--strategy",
+            "microprice_imbalance",
+            "--out",
+            str(out_dir),
+            "--fail-on-gaps",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "market_portability_summary.csv")
+    queue = pd.read_csv(out_dir / "market_portability_action_queue.csv")
+    assert code == 2
+    assert bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "gaps"]) == 1
+    assert "blocked" in set(queue["queue_status"])
+
+
+def test_cli_market_portability_can_fail_on_blocked_actions(tmp_path):
+    out_dir = tmp_path / "cli_portability_blocked_actions"
+
+    code = main(
+        [
+            "market-portability-report",
+            "--market",
+            "us_equities_regular",
+            "--strategy",
+            "microprice_imbalance",
+            "--out",
+            str(out_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "market_portability_summary.csv")
+    queue = pd.read_csv(out_dir / "market_portability_action_queue.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert queue.loc[0, "queue_status"] == "blocked"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli market-portability-report --help"
+
+
+def test_cli_market_portability_can_fail_on_breach_when_no_pairs_ready(tmp_path):
+    out_dir = tmp_path / "cli_portability_breach"
+
+    code = main(
+        [
+            "market-portability-report",
+            "--market",
+            "us_equities_regular",
+            "--strategy",
+            "parity_box",
+            "--explicit-fee-model",
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "market_portability_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "select_options_or_derivatives_market"

@@ -395,6 +395,7 @@ python -m hft_cli market-portability-report `
   --strategy parity_box `
   --strategy surface_market_making `
   --explicit-fee-model `
+  --fail-on-gaps `
   --out runs\market_profiles\portability
 ```
 
@@ -423,6 +424,10 @@ and a recommendation. `market_portability_runbook.md` mirrors the same queue
 for operator review, and both files are included in the run manifest so
 `catalog-runs` can promote the portability handoff into the top-level action
 plan.
+Use `--fail-on-breach` to return exit code 2 when no requested pair is ready,
+`--fail-on-gaps` to fail when any requested strategy/market pair still has a
+portability gap, or `--fail-on-blocked-actions` to fail when the generated
+action queue contains blocked work.
 
 ## Route Readiness Review
 

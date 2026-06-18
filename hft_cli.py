@@ -170,6 +170,25 @@ def _catalog_exit_code(
     return 0
 
 
+def _market_portability_exit_code(
+    result,
+    *,
+    fail_on_breach: bool,
+    fail_on_gaps: bool,
+    fail_on_blocked_actions: bool,
+) -> int:
+    if fail_on_breach and not result.ready:
+        return 2
+    if fail_on_gaps and result.gaps is not None and len(result.gaps) > 0:
+        return 2
+    action_queue = result.action_queue
+    if fail_on_blocked_actions and action_queue is not None and not action_queue.empty:
+        statuses = action_queue["queue_status"].astype(str)
+        if int(statuses.isin(["blocked", "unknown"]).sum()) > 0:
+            return 2
+    return 0
+
+
 def _catalog_gap_count(result) -> int:
     summary = result.summary
     if summary.empty:
@@ -1064,6 +1083,9 @@ def main(argv: list[str] | None = None) -> int:
     portability.add_argument("--market", action="append", dest="markets")
     portability.add_argument("--strategy", action="append", dest="strategies")
     portability.add_argument("--explicit-fee-model", action="store_true")
+    portability.add_argument("--fail-on-breach", action="store_true")
+    portability.add_argument("--fail-on-gaps", action="store_true")
+    portability.add_argument("--fail-on-blocked-actions", action="store_true")
 
     proof = sub.add_parser("proof-report", help="Evaluate replay output folders against proof thresholds.")
     proof.add_argument("--runs", nargs="+", required=True)
@@ -3068,7 +3090,12 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 0
+        return _market_portability_exit_code(
+            result,
+            fail_on_breach=args.fail_on_breach,
+            fail_on_gaps=args.fail_on_gaps,
+            fail_on_blocked_actions=args.fail_on_blocked_actions,
+        )
     if args.command == "proof-report":
         result = write_proof_report(
             args.runs,

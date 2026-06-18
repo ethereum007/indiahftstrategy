@@ -86,6 +86,9 @@
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
   next-gate help into catalog-level scheduler plans.
+- `market-portability-report` can now fail closed with `--fail-on-breach`,
+  `--fail-on-gaps`, or `--fail-on-blocked-actions`, giving CI/schedulers a
+  direct gate before non-India research or route-readiness runs are scheduled.
 - Experiment catalogs now write `experiment_catalog_action_queue.csv`, a
   consolidated scheduler queue of cataloged next-gate/help signals across
   scorecards, route reviews, and future summary-bearing handoffs.
