@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -97,6 +99,12 @@ def test_compare_data_readiness_can_require_unique_vendor_sources():
     assert row["unique_source_files"] == 1
     assert row["source_file_fingerprint_coverage"] == 1.0
     assert "unique_source_files" in failed
+    assert report.action_queue is not None
+    queue = report.action_queue.set_index("check")
+    assert queue.loc["unique_source_files", "next_gate"] == "pipeline-vendor-market-data-batch"
+    assert queue.loc["unique_source_files", "next_gate_help_command"] == (
+        "python -m hft_cli pipeline-vendor-market-data-batch --help"
+    )
 
 
 def test_compare_data_readiness_can_require_source_fingerprint_coverage():
@@ -154,6 +162,10 @@ def test_compare_data_readiness_fails_on_missing_ready_dataset():
     assert not report.accepted
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {"ready_datasets", "ready_rate", "total_failed_checks"} <= failed
+    assert report.action_queue is not None
+    queue = report.action_queue.set_index("check")
+    assert queue.loc["ready_datasets", "next_gate"] == "review-data-readiness"
+    assert report.summary.loc[0, "next_gate"] == "review-data-readiness"
 
 
 def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
@@ -180,7 +192,19 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert (out_dir / "data_readiness_runs.csv").exists()
     assert (out_dir / "data_readiness_comparison_checks.csv").exists()
     assert (out_dir / "data_readiness_comparison_summary.csv").exists()
+    assert (out_dir / "data_readiness_comparison_action_queue.csv").exists()
+    assert (out_dir / "data_readiness_comparison_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    action_queue = pd.read_csv(out_dir / "data_readiness_comparison_action_queue.csv")
+    runbook = (out_dir / "data_readiness_comparison_runbook.md").read_text(encoding="utf-8")
+    assert action_queue.empty
+    assert "next_gate_help_command" in action_queue.columns
+    assert "# Data Readiness Comparison Runbook" in runbook
+    assert "- Accepted: yes" in runbook
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "data_readiness_comparison_action_queue.csv" in artifact_paths
+    assert "data_readiness_comparison_runbook.md" in artifact_paths
 
 
 def test_cli_compare_data_readiness_can_fail_on_bad_dataset(tmp_path):
@@ -205,8 +229,13 @@ def test_cli_compare_data_readiness_can_fail_on_bad_dataset(tmp_path):
     )
 
     summary = pd.read_csv(out_dir / "data_readiness_comparison_summary.csv")
+    queue = pd.read_csv(out_dir / "data_readiness_comparison_action_queue.csv")
+    runbook = (out_dir / "data_readiness_comparison_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "accepted"])
+    assert summary.loc[0, "next_gate"] == "review-data-readiness"
+    assert "review-data-readiness" in set(queue["next_gate"])
+    assert "`review-data-readiness`" in runbook
 
 
 def test_cli_compare_data_readiness_can_fail_on_missing_source_fingerprint(tmp_path):
@@ -234,10 +263,12 @@ def test_cli_compare_data_readiness_can_fail_on_missing_source_fingerprint(tmp_p
 
     summary = pd.read_csv(out_dir / "data_readiness_comparison_summary.csv")
     checks = pd.read_csv(out_dir / "data_readiness_comparison_checks.csv")
+    queue = pd.read_csv(out_dir / "data_readiness_comparison_action_queue.csv")
     assert code == 2
     assert not bool(summary.loc[0, "accepted"])
     assert summary.loc[0, "source_file_fingerprint_coverage"] == 0.5
     assert "source_file_fingerprint_coverage" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert queue.loc[0, "next_gate"] == "pipeline-vendor-market-data-batch"
 
 
 def test_cli_compare_data_readiness_can_fail_on_low_mapping_coverage(tmp_path):
@@ -265,7 +296,9 @@ def test_cli_compare_data_readiness_can_fail_on_low_mapping_coverage(tmp_path):
 
     summary = pd.read_csv(out_dir / "data_readiness_comparison_summary.csv")
     checks = pd.read_csv(out_dir / "data_readiness_comparison_checks.csv")
+    queue = pd.read_csv(out_dir / "data_readiness_comparison_action_queue.csv")
     assert code == 2
     assert not bool(summary.loc[0, "accepted"])
     assert summary.loc[0, "min_mapping_coverage"] == 0.8
     assert "min_mapping_coverage" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert queue.loc[0, "recommendation"] == "improve_vendor_mapping_coverage"

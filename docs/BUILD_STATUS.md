@@ -338,6 +338,10 @@
   and can fail closed when vendor-data folds do not come from distinct raw
   source-file fingerprints, when source-fingerprint coverage is incomplete, or
   when any fold falls below the required mapping coverage.
+- Multi-dataset data-readiness comparisons now emit manifest-tracked
+  `data_readiness_comparison_action_queue.csv` and
+  `data_readiness_comparison_runbook.md` handoffs, mapping failed repeatability
+  checks to `review-data-readiness` or `pipeline-vendor-market-data-batch`.
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.

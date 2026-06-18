@@ -26,6 +26,7 @@ class DataReadinessComparisonReport:
     checks: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def accepted(self) -> bool:
@@ -59,10 +60,20 @@ def compare_data_readiness(
     runs["mapping_coverage"] = pd.to_numeric(runs["mapping_coverage"], errors="coerce")
     summary = _summary(runs)
     checks = _checks(summary.iloc[0], thresholds)
+    action_queue = _action_queue(checks)
     accepted = bool(checks["passed"].all()) if not checks.empty else False
     summary["accepted"] = accepted
     summary["recommendation"] = "feed_walkforward_research" if accepted else "collect_or_fix_data"
-    return DataReadinessComparisonReport(dataset_runs=runs, checks=checks, summary=summary)
+    summary["ready_action_count"] = 0
+    summary["blocked_action_count"] = int(len(action_queue))
+    summary["next_gate"] = _primary_next_gate(action_queue)
+    summary["next_gate_help_command"] = summary["next_gate"].map(_next_gate_help_command)
+    return DataReadinessComparisonReport(
+        dataset_runs=runs,
+        checks=checks,
+        summary=summary,
+        action_queue=action_queue,
+    )
 
 
 def write_data_readiness_comparison(
@@ -84,13 +95,19 @@ def write_data_readiness_comparison(
     report.dataset_runs.to_csv(out / "data_readiness_runs.csv", index=False)
     report.checks.to_csv(out / "data_readiness_comparison_checks.csv", index=False)
     report.summary.to_csv(out / "data_readiness_comparison_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks)
+    action_queue.to_csv(out / "data_readiness_comparison_action_queue.csv", index=False)
+    (out / "data_readiness_comparison_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], report.dataset_runs, report.checks, action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="data_readiness_comparison",
         parameters={"labels": labels, "thresholds": asdict(thresholds)},
         inputs={"readiness": readiness_dirs},
     )
-    return DataReadinessComparisonReport(report.dataset_runs, report.checks, report.summary, out)
+    return DataReadinessComparisonReport(report.dataset_runs, report.checks, report.summary, out, action_queue)
 
 
 def _read_readiness_runs(readiness_dirs: list[str | Path], *, labels: list[str] | None) -> pd.DataFrame:
@@ -213,6 +230,192 @@ def _checks(row: pd.Series, thresholds: DataReadinessComparisonThresholds) -> pd
     return pd.DataFrame(checks)
 
 
+def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if not checks.empty and "passed" in checks.columns:
+        failed = checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+        for priority, row in enumerate(failed.to_dict(orient="records"), start=1):
+            check_name = _value_text(row.get("check"))
+            next_gate = _next_gate_for_check(check_name)
+            rows.append(
+                {
+                    "priority": priority,
+                    "queue_status": "blocked",
+                    "check": check_name,
+                    "next_gate": next_gate,
+                    "next_gate_help_command": _next_gate_help_command(next_gate),
+                    "actual": _value_text(row.get("value")),
+                    "operator": _value_text(row.get("operator")),
+                    "expected": _value_text(row.get("threshold")),
+                    "reason": _value_text(row.get("reason")),
+                    "recommendation": _action_recommendation(check_name),
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "queue_status",
+            "check",
+            "next_gate",
+            "next_gate_help_command",
+            "actual",
+            "operator",
+            "expected",
+            "reason",
+            "recommendation",
+        ],
+    )
+
+
+def _next_gate_for_check(check_name: str) -> str:
+    if check_name in {
+        "dataset_count",
+        "unique_source_files",
+        "source_file_fingerprint_coverage",
+        "min_mapping_coverage",
+    }:
+        return "pipeline-vendor-market-data-batch"
+    if check_name in {"ready_datasets", "ready_rate", "total_failed_checks"}:
+        return "review-data-readiness"
+    return "compare-data-readiness"
+
+
+def _next_gate_help_command(next_gate: str) -> str:
+    return f"python -m hft_cli {next_gate} --help" if next_gate else ""
+
+
+def _primary_next_gate(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return ""
+    return _value_text(action_queue.iloc[0].get("next_gate"))
+
+
+def _action_recommendation(check_name: str) -> str:
+    if check_name == "dataset_count":
+        return "collect_additional_vendor_data_days"
+    if check_name in {"ready_datasets", "ready_rate", "total_failed_checks"}:
+        return "fix_failed_data_readiness_runs"
+    if check_name == "unique_source_files":
+        return "rerun_batch_with_distinct_raw_source_files"
+    if check_name == "source_file_fingerprint_coverage":
+        return "rerun_batch_with_source_file_fingerprints"
+    if check_name == "min_mapping_coverage":
+        return "improve_vendor_mapping_coverage"
+    return "review_data_readiness_comparison_gap"
+
+
+def _runbook_markdown(
+    summary_row: pd.Series,
+    dataset_runs: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> str:
+    accepted_label = "yes" if _to_bool(summary_row.get("accepted", False)) else "no"
+    lines = [
+        "# Data Readiness Comparison Runbook",
+        "",
+        f"- Accepted: {accepted_label}",
+        f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
+        f"- Dataset count: {int(_value_number(summary_row.get('dataset_count')))}",
+        f"- Ready datasets: {int(_value_number(summary_row.get('ready_datasets')))}",
+        f"- Failed datasets: {int(_value_number(summary_row.get('failed_datasets')))}",
+        f"- Blocked actions: {int(_value_number(summary_row.get('blocked_action_count')))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+        "## Datasets",
+        "",
+        _dataset_table(dataset_runs),
+        "",
+        "## Failed Checks",
+        "",
+        _failed_checks_table(checks),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Priority", "Check", "Next gate", "Help", "Recommendation"],
+        [
+            [
+                str(int(_value_number(row.get("priority")))),
+                _value_text(row.get("check")),
+                _code(row.get("next_gate")),
+                _code(row.get("next_gate_help_command")),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in action_queue.to_dict(orient="records")
+        ],
+    )
+
+
+def _dataset_table(dataset_runs: pd.DataFrame) -> str:
+    if dataset_runs.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Dataset", "Ready", "Failed checks", "Source hash", "Mapping coverage", "Recommendation"],
+        [
+            [
+                _value_text(row.get("dataset")),
+                "yes" if _to_bool(row.get("ready")) else "no",
+                str(int(_value_number(row.get("failed_checks")))),
+                _value_text(row.get("source_file_sha256")),
+                _format_number(row.get("mapping_coverage")),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in dataset_runs.to_dict(orient="records")
+        ],
+    )
+
+
+def _failed_checks_table(checks: pd.DataFrame) -> str:
+    if checks.empty or "passed" not in checks.columns:
+        return "_None_"
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    if failed.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Check", "Actual", "Op", "Expected", "Reason"],
+        [
+            [
+                _value_text(row.get("check")),
+                _value_text(row.get("value")),
+                _value_text(row.get("operator")),
+                _value_text(row.get("threshold")),
+                _value_text(row.get("reason")),
+            ]
+            for row in failed.to_dict(orient="records")
+        ],
+    )
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _code(value: object) -> str:
+    text = _value_text(value)
+    return f"`{text}`" if text else ""
+
+
+def _escape_cell(value: object) -> str:
+    return _value_text(value).replace("|", "\\|").replace("\n", " ")
+
+
 def _threshold_check(name: str, value: float | int, operator: str, threshold: float | int) -> dict[str, object]:
     value_float = float(value)
     threshold_float = float(threshold)
@@ -290,6 +493,43 @@ def _text(row: pd.Series, column: str, fallback: str = "") -> str:
     if pd.isna(value):
         return fallback
     return str(value).strip()
+
+
+def _value_text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _value_number(value: object) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    try:
+        if pd.isna(number):
+            return 0.0
+    except (TypeError, ValueError):
+        pass
+    return number
+
+
+def _format_number(value: object) -> str:
+    text = _value_text(value)
+    if not text:
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return text
+    if pd.isna(number):
+        return ""
+    return f"{number:.6g}"
 
 
 def _unique_text_count(frame: pd.DataFrame, column: str) -> int:

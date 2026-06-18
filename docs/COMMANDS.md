@@ -3712,8 +3712,17 @@ Outputs:
 data_readiness_runs.csv
 data_readiness_comparison_checks.csv
 data_readiness_comparison_summary.csv
+data_readiness_comparison_action_queue.csv
+data_readiness_comparison_runbook.md
 manifest.json
 ```
+
+`data_readiness_comparison_action_queue.csv` maps failed multi-day checks to
+the next gate, such as `review-data-readiness` for failed dataset readiness or
+`pipeline-vendor-market-data-batch` for missing distinct source files,
+fingerprints, or mapping coverage. `data_readiness_comparison_runbook.md`
+mirrors the blocked actions, dataset rows, and failed checks for operator
+review, and both sidecars are manifest-tracked for catalog promotion.
 
 ## Proof Report
 
