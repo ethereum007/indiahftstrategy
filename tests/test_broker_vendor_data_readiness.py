@@ -236,6 +236,13 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert bool(summary["vendor_batch_ready"])
         assert bool(summary["broker_readiness_ready"])
         assert bool(summary["broker_vendor_data_ready"])
+        assert summary["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+        assert not bool(summary["schema_review_required"])
+        assert not bool(summary["schema_reviewed"])
+        assert summary["schema_review_mode"] == "placeholder_unreviewed"
+        assert bool(summary["placeholder_schema_active"])
+        assert bool(summary["placeholder_schema_allowed"])
+        assert summary["placeholder_schema_warning"] == "placeholder adapter schema allowed for dry-run review only"
         assert int(summary["dataset_count"]) == 2
         assert int(summary["unique_source_files"]) == 2
         assert int(summary["unique_header_fingerprints"]) == 1
@@ -261,16 +268,27 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(encoding="utf-8")
         assert "# Broker Vendor Data Readiness Runbook" in runbook
         assert "- Ready: yes" in runbook
+        assert "- Placeholder schema allowed: yes" in runbook
+        assert "placeholder adapter schema allowed for dry-run review only" in runbook
         assert "broker_data_proof_ready" in runbook
         config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
         manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
         assert config["ready"]
         assert config["adapter"] == adapter
+        assert config["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+        assert not config["schema_review_required"]
+        assert not config["schema_reviewed"]
+        assert config["schema_review_mode"] == "placeholder_unreviewed"
+        assert config["placeholder_schema_active"]
+        assert config["placeholder_schema_allowed"]
+        assert config["placeholder_schema_warning"] == "placeholder adapter schema allowed for dry-run review only"
         assert config["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
         assert config["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
         assert config["vendor_market_data_batch"]["comparison"]["accepted"]
         assert config["broker_readiness"]["broker_vendor_data_ready"]
+        assert config["broker_readiness"]["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+        assert config["broker_readiness"]["placeholder_schema_allowed"]
         assert config["failed_check_count"] == 0
         assert config["failed_checks"] == []
         assert config["first_failed_reason"] == ""
@@ -288,6 +306,10 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert component_by_name["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
         assert component_by_name["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
         assert component_by_name["vendor_market_data_batch"]["unique_mapping_drafts"] == 1
+        assert component_by_name["broker_readiness"]["adapter_schema_status"] == (
+            "placeholder_normalized_pending_vendor_schema"
+        )
+        assert component_by_name["broker_readiness"]["placeholder_schema_active"]
         assert manifest["run_type"] == "broker_vendor_data_readiness_pipeline"
         assert "vendor_market_data_batch" in manifest["inputs"]
         assert "broker_readiness" in manifest["inputs"]
@@ -353,6 +375,76 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
     assert vendor_component["source_file_fingerprint_coverage"] == 1.0
     assert vendor_component["min_mapping_coverage"] == 1.0
     assert int(vendor_component["unique_mapping_drafts"]) == 1
+    assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert bool(summary.loc[0, "placeholder_schema_allowed"])
+
+
+def test_cli_broker_vendor_data_readiness_blocks_placeholder_schema_without_override(tmp_path):
+    paths = write_inputs(tmp_path, "arrow_money")
+    out_dir = tmp_path / "proof"
+
+    code = main(
+        [
+            "pipeline-broker-vendor-readiness",
+            "--input",
+            *(str(path) for path in paths["input"]),
+            "--out",
+            str(out_dir),
+            "--label",
+            "day1",
+            "--label",
+            "day2",
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-rows",
+            "2",
+            "--schema-audit",
+            str(paths["schema"]),
+            "--order-export",
+            str(paths["export"]),
+            "--upload-pack",
+            str(paths["upload"]),
+            "--dispatch-roundtrip",
+            str(paths["roundtrip"]),
+            "--require-dispatch-roundtrip",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_vendor_data_readiness_summary.csv")
+    action_queue = pd.read_csv(out_dir / "broker_vendor_data_readiness_action_queue.csv")
+    config = json.loads((out_dir / "broker_vendor_data_readiness_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(encoding="utf-8")
+    broker_checks = pd.read_csv(out_dir / "02_broker_readiness" / "broker_readiness_checks.csv")
+    broker_failed = set(broker_checks.loc[~broker_checks["passed"].astype(bool), "check"])
+
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert bool(summary.loc[0, "schema_review_required"])
+    assert not bool(summary.loc[0, "schema_reviewed"])
+    assert summary.loc[0, "schema_review_mode"] == "placeholder_unreviewed"
+    assert bool(summary.loc[0, "placeholder_schema_active"])
+    assert not bool(summary.loc[0, "placeholder_schema_allowed"])
+    assert summary.loc[0, "placeholder_schema_warning"] == (
+        "placeholder adapter schema requires reviewed vendor mapping before broker readiness"
+    )
+    assert "schema_reviewed" in broker_failed
+    assert "broker_readiness_ready" in set(action_queue["check"])
+    assert config["schema_review_required"]
+    assert config["placeholder_schema_active"]
+    assert not config["placeholder_schema_allowed"]
+    assert config["broker_readiness"]["schema_review_required"]
+    assert config["broker_readiness"]["placeholder_schema_active"]
+    assert not config["broker_readiness"]["placeholder_schema_allowed"]
+    assert "- Placeholder schema allowed: no" in runbook
+    assert "placeholder adapter schema requires reviewed vendor mapping before broker readiness" in runbook
 
 
 def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batch(tmp_path):

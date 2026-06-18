@@ -947,6 +947,11 @@
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
   incomplete.
+- Broker-vendor data readiness now promotes broker schema review state into the
+  wrapper summary/config/runbook, including `adapter_schema_status`,
+  `schema_review_mode`, and placeholder-schema active/allowed/warning fields so
+  catalog and scheduler review can distinguish dry-run placeholder overrides
+  from broker-reviewed Arrow.money/iRage mappings.
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
@@ -959,7 +964,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 885 tests.
+Current passing suite: 918 tests.
 
 ## Next Build Targets
 

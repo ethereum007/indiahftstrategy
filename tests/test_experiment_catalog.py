@@ -1090,6 +1090,13 @@ def test_catalog_experiment_runs_recognizes_broker_vendor_data_readiness_status(
             "vendor_batch_ready": True,
             "broker_readiness_ready": True,
             "broker_vendor_data_ready": True,
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "schema_review_required": False,
+            "schema_reviewed": False,
+            "schema_review_mode": "placeholder_unreviewed",
+            "placeholder_schema_active": True,
+            "placeholder_schema_allowed": True,
+            "placeholder_schema_warning": "placeholder adapter schema allowed for dry-run review only",
             "dataset_count": 2,
             "ready_datasets": 2,
             "failed_checks": 0,
@@ -1106,6 +1113,10 @@ def test_catalog_experiment_runs_recognizes_broker_vendor_data_readiness_status(
     assert row["summary_status_column"] == "ready"
     assert row["summary_adapter"] == "arrow_money"
     assert bool(row["summary_broker_vendor_data_ready"])
+    assert row["summary_adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert bool(row["summary_placeholder_schema_active"])
+    assert bool(row["summary_placeholder_schema_allowed"])
+    assert row["summary_placeholder_schema_warning"] == "placeholder adapter schema allowed for dry-run review only"
     assert row["summary_dataset_count"] == 2
 
 

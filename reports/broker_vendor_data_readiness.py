@@ -21,6 +21,7 @@ _VENDOR_BATCH_PREFIXES = (
     "broker_dispatch_roundtrip_vendor_market_data_batch",
     "dispatch_roundtrip_vendor_market_data_batch",
 )
+PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
 BROKER_VENDOR_NEXT_GATES = {
     "vendor_market_data_batch": "pipeline-vendor-market-data-batch",
     "broker_readiness": "review-broker-readiness",
@@ -145,7 +146,7 @@ def write_broker_vendor_data_readiness_pipeline(
         thresholds=broker_thresholds,
     )
     components = _components(vendor_batch, vendor_batch_dir, broker_readiness, broker_readiness_dir)
-    summary = _summary(components, vendor_batch, broker_readiness, config)
+    summary = _summary(components, vendor_batch, broker_readiness, config, broker_thresholds)
     checks = _checks(summary.iloc[0], components, config)
     failed_rows = _failed_check_rows(checks)
     failed_checks = int(len(failed_rows)) if not checks.empty else 1
@@ -243,6 +244,10 @@ def _component(name: str, ready: bool, artifact_dir: Path, summary: pd.DataFrame
         "min_mapping_coverage": _float(_vendor_value(row, "min_mapping_coverage", 0.0)),
         "unique_mapping_drafts": _int(_vendor_value(row, "unique_mapping_drafts", 0)),
         "mapping_sources": str(_vendor_value(row, "mapping_sources", "")),
+        "adapter_schema_status": str(row.get("adapter_schema_status", "")),
+        "schema_reviewed": _bool(row.get("schema_reviewed", False)),
+        "schema_review_mode": str(row.get("schema_review_mode", "")),
+        "placeholder_schema_active": _is_placeholder_schema(row.get("adapter_schema_status", "")),
         "failed_checks": _int(row.get("failed_checks", row.get("comparison_failed_checks", 0))),
         "recommendation": str(row.get("recommendation", "")),
     }
@@ -253,10 +258,15 @@ def _summary(
     vendor_batch: VendorMarketDataBatchReport,
     broker_readiness: BrokerReadinessReport,
     config: BrokerVendorDataReadinessConfig,
+    broker_thresholds: BrokerReadinessThresholds,
 ) -> pd.DataFrame:
     vendor_row = vendor_batch.summary.iloc[0] if not vendor_batch.summary.empty else pd.Series(dtype=object)
     broker_row = broker_readiness.summary.iloc[0] if not broker_readiness.summary.empty else pd.Series(dtype=object)
     ready = bool(vendor_batch.ready and broker_readiness.ready)
+    schema_status = str(broker_row.get("adapter_schema_status", ""))
+    schema_reviewed = _bool(broker_row.get("schema_reviewed", False))
+    placeholder_schema_active = _is_placeholder_schema(schema_status)
+    placeholder_schema_allowed = placeholder_schema_active and not bool(broker_thresholds.require_reviewed_schema)
     return pd.DataFrame(
         [
             {
@@ -264,6 +274,17 @@ def _summary(
                 "adapter": config.adapter,
                 "kind": config.kind,
                 "market": config.market,
+                "adapter_schema_status": schema_status,
+                "schema_review_required": bool(broker_thresholds.require_reviewed_schema),
+                "schema_reviewed": schema_reviewed,
+                "schema_review_mode": str(broker_row.get("schema_review_mode", "")),
+                "placeholder_schema_active": placeholder_schema_active,
+                "placeholder_schema_allowed": placeholder_schema_allowed,
+                "placeholder_schema_warning": _placeholder_schema_warning(
+                    schema_status,
+                    schema_reviewed=schema_reviewed,
+                    placeholder_allowed=placeholder_schema_allowed,
+                ),
                 "vendor_batch_ready": bool(vendor_batch.ready),
                 "broker_readiness_ready": bool(broker_readiness.ready),
                 "dataset_count": _int(vendor_row.get("dataset_count", 0)),
@@ -581,6 +602,11 @@ def _runbook_markdown(row: pd.Series, components: pd.DataFrame, action_queue: pd
         f"- Adapter: {str(row.get('adapter', ''))}",
         f"- Kind: {str(row.get('kind', ''))}",
         f"- Market: {str(row.get('market', ''))}",
+        f"- Adapter schema status: {str(row.get('adapter_schema_status', ''))}",
+        f"- Schema review mode: {str(row.get('schema_review_mode', ''))}",
+        f"- Placeholder schema active: {_yes_no(_bool(row.get('placeholder_schema_active', False)))}",
+        f"- Placeholder schema allowed: {_yes_no(_bool(row.get('placeholder_schema_allowed', False)))}",
+        f"- Placeholder schema warning: {str(row.get('placeholder_schema_warning', ''))}",
         f"- Recommendation: {str(row.get('recommendation', ''))}",
         f"- Failed checks: {_int(row.get('failed_checks', 0))}",
         f"- Dataset count: {_int(row.get('dataset_count', 0))}",
@@ -670,6 +696,13 @@ def _config(
         "adapter": config.adapter,
         "kind": config.kind,
         "market": config.market,
+        "adapter_schema_status": str(row.get("adapter_schema_status", "")),
+        "schema_review_required": _bool(row.get("schema_review_required", False)),
+        "schema_reviewed": _bool(row.get("schema_reviewed", False)),
+        "schema_review_mode": str(row.get("schema_review_mode", "")),
+        "placeholder_schema_active": _bool(row.get("placeholder_schema_active", False)),
+        "placeholder_schema_allowed": _bool(row.get("placeholder_schema_allowed", False)),
+        "placeholder_schema_warning": str(row.get("placeholder_schema_warning", "")),
         "vendor_market_data_batch": {
             "ready": bool(row.get("vendor_batch_ready", False)),
             "dataset_count": _int(row.get("dataset_count", 0)),
@@ -689,6 +722,12 @@ def _config(
         "broker_readiness": {
             "ready": bool(row.get("broker_readiness_ready", False)),
             "broker_vendor_data_ready": bool(row.get("broker_vendor_data_ready", False)),
+            "adapter_schema_status": str(row.get("adapter_schema_status", "")),
+            "schema_review_required": _bool(row.get("schema_review_required", False)),
+            "schema_reviewed": _bool(row.get("schema_reviewed", False)),
+            "schema_review_mode": str(row.get("schema_review_mode", "")),
+            "placeholder_schema_active": _bool(row.get("placeholder_schema_active", False)),
+            "placeholder_schema_allowed": _bool(row.get("placeholder_schema_allowed", False)),
         },
         "broker_thresholds": asdict(broker_thresholds),
         "failed_check_count": _int(row.get("failed_check_count", row.get("failed_checks", len(failed)))),
@@ -717,6 +756,10 @@ def _config(
                 ),
                 "min_mapping_coverage": _float(component.get("min_mapping_coverage", 0.0)),
                 "unique_mapping_drafts": _int(component.get("unique_mapping_drafts", 0)),
+                "adapter_schema_status": str(component.get("adapter_schema_status", "")),
+                "schema_reviewed": _bool(component.get("schema_reviewed", False)),
+                "schema_review_mode": str(component.get("schema_review_mode", "")),
+                "placeholder_schema_active": _bool(component.get("placeholder_schema_active", False)),
             }
             for component in components.to_dict(orient="records")
         ],
@@ -753,6 +796,25 @@ def _bool(value: object) -> bool:
     except (TypeError, ValueError):
         pass
     return bool(value)
+
+
+def _is_placeholder_schema(value: object) -> bool:
+    return str(value).strip() == PLACEHOLDER_SCHEMA_STATUS
+
+
+def _placeholder_schema_warning(
+    schema_status: object,
+    *,
+    schema_reviewed: bool,
+    placeholder_allowed: bool,
+) -> str:
+    if not _is_placeholder_schema(schema_status):
+        return ""
+    if schema_reviewed:
+        return "placeholder adapter schema backed by reviewed vendor mapping"
+    if placeholder_allowed:
+        return "placeholder adapter schema allowed for dry-run review only"
+    return "placeholder adapter schema requires reviewed vendor mapping before broker readiness"
 
 
 def _vendor_value(row: pd.Series, suffix: str, fallback: object) -> object:

@@ -3768,7 +3768,12 @@ handoff. The root summary/config also surfaces source-file fingerprint
 coverage, minimum mapping coverage, and mapping-draft provenance, so operators
 can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
-ready. `broker_vendor_data_readiness_summary.csv` also exposes
+ready. The wrapper summary/config/runbook also surfaces `adapter_schema_status`,
+`schema_review_required`, `schema_reviewed`, `schema_review_mode`,
+`placeholder_schema_active`, `placeholder_schema_allowed`, and
+`placeholder_schema_warning`, so dry-run placeholder schema overrides remain
+visible in catalogs until real Arrow.money/iRage mappings are reviewed.
+`broker_vendor_data_readiness_summary.csv` also exposes
 `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
 `primary_blocker_*` fields for the first failed wrapper check.
 `broker_vendor_data_readiness_action_queue.csv` and
