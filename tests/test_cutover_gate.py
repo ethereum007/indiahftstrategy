@@ -531,19 +531,47 @@ def runtime_session_summary(
     strategy="lead_lag_taker",
     market="india_nse_index_derivatives",
     halted=False,
+    strategy_portfolio=False,
+    portfolio_ready=True,
+    portfolio_strategy=None,
+    portfolio_market=None,
+    portfolio_eligible=True,
+    portfolio_allocation_notional=1200.0,
 ):
+    portfolio_strategy = strategy if portfolio_strategy is None else portfolio_strategy
+    portfolio_market = market if portfolio_market is None else portfolio_market
+    row = {
+        "ready": ready,
+        "guard_action": "halt" if halted else "continue",
+        "halted": halted,
+        "target_mode": target_mode,
+        "strategy": strategy,
+        "market": market,
+        "failed_checks": 1 if halted or not ready else 0,
+        "recommendation": "stop_routing_and_execute_halt_response" if halted else "continue_with_controls",
+    }
+    if strategy_portfolio:
+        row.update(
+            {
+                "strategy_portfolio_required": True,
+                "strategy_portfolio_provided": True,
+                "strategy_portfolio_ready": portfolio_ready,
+                "strategy_portfolio_deployment_mode": "paper_shadow",
+                "strategy_portfolio_allocation_mode": "readiness_weighted",
+                "strategy_portfolio_capital_currency": "INR",
+                "strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "strategy_portfolio_selected_strategy": portfolio_strategy,
+                "strategy_portfolio_selected_market": portfolio_market,
+                "strategy_portfolio_selected_eligible": portfolio_eligible,
+                "strategy_portfolio_selected_allocation_weight": 0.0012,
+                "strategy_portfolio_selected_allocation_notional": portfolio_allocation_notional,
+                "strategy_portfolio_notional_cap_applied": True,
+                "pre_portfolio_max_notional_per_session": 25_000.0,
+            }
+        )
     return pd.DataFrame(
         [
-            {
-                "ready": ready,
-                "guard_action": "halt" if halted else "continue",
-                "halted": halted,
-                "target_mode": target_mode,
-                "strategy": strategy,
-                "market": market,
-                "failed_checks": 1 if halted or not ready else 0,
-                "recommendation": "stop_routing_and_execute_halt_response" if halted else "continue_with_controls",
-            }
+            row
         ]
     )
 
@@ -699,6 +727,71 @@ def test_cutover_gate_carries_shadow_broker_readiness_from_scaleup_config():
     assert report.config["scaleup_shadow_broker_readiness"]["route_dispatch_roundtrip"]["market"] == (
         "india_nse_index_derivatives"
     )
+
+
+def test_cutover_gate_carries_runtime_strategy_portfolio_allocation():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(strategy_portfolio=True),
+        operator_review=operator_review(),
+    )
+
+    assert report.ready
+    authorization = report.authorization.iloc[0]
+    summary = report.summary.iloc[0]
+    portfolio = report.config["runtime_session"]["strategy_portfolio"]
+    assert bool(authorization["runtime_strategy_portfolio_required"])
+    assert bool(summary["runtime_strategy_portfolio_ready"])
+    assert summary["runtime_strategy_portfolio_deployment_mode"] == "paper_shadow"
+    assert summary["runtime_strategy_portfolio_allocation_mode"] == "readiness_weighted"
+    assert summary["runtime_strategy_portfolio_capital_currency"] == "INR"
+    assert summary["runtime_strategy_portfolio_selected_profile"] == "leadlag-live-dryrun"
+    assert summary["runtime_strategy_portfolio_selected_strategy"] == "lead_lag_taker"
+    assert summary["runtime_strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
+    assert bool(summary["runtime_strategy_portfolio_selected_eligible"])
+    assert summary["runtime_strategy_portfolio_selected_allocation_weight"] == 0.0012
+    assert summary["runtime_strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert bool(summary["runtime_strategy_portfolio_notional_cap_applied"])
+    assert summary["runtime_pre_portfolio_max_notional_per_session"] == 25_000.0
+    assert portfolio["required"]
+    assert portfolio["provided"]
+    assert portfolio["ready"]
+    assert portfolio["selected_strategy"] == "lead_lag_taker"
+    assert portfolio["selected_market"] == "india_nse_index_derivatives"
+    assert portfolio["selected_allocation_notional"] == 1200.0
+    assert portfolio["pre_portfolio_max_notional_per_session"] == 25_000.0
+
+
+def test_cutover_gate_blocks_bad_runtime_strategy_portfolio_allocation():
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=scaleup_config(),
+        scaleup_checks=scaleup_checks(),
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(
+            strategy_portfolio=True,
+            portfolio_ready=False,
+            portfolio_strategy="surface_mm",
+            portfolio_market="us_options_regular",
+            portfolio_eligible=False,
+            portfolio_allocation_notional=0.0,
+        ),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "runtime_strategy_portfolio_ready",
+        "runtime_strategy_portfolio_allocation_eligible",
+        "runtime_strategy_portfolio_strategy_matches",
+        "runtime_strategy_portfolio_market_matches",
+        "runtime_strategy_portfolio_allocation_notional",
+    } <= failed
+    assert report.config["runtime_session"]["strategy_portfolio"]["selected_strategy"] == "surface_mm"
 
 
 def test_cutover_gate_carries_vendor_market_data_batch_from_scaleup_config():

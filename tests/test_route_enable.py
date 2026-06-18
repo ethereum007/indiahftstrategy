@@ -54,6 +54,13 @@ def cutover_summary(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    strategy_portfolio_required=False,
+    strategy_portfolio_provided=False,
+    strategy_portfolio_ready=False,
+    strategy_portfolio_selected_strategy="lead_lag_taker",
+    strategy_portfolio_selected_market="india_nse_index_derivatives",
+    strategy_portfolio_selected_eligible=False,
+    strategy_portfolio_selected_allocation_notional=0.0,
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -89,6 +96,28 @@ def cutover_summary(
                 "adapter": adapter,
                 "max_orders_per_session": max_orders,
                 "max_notional_per_session": max_notional,
+                "runtime_strategy_portfolio_required": strategy_portfolio_required,
+                "runtime_strategy_portfolio_provided": strategy_portfolio_provided,
+                "runtime_strategy_portfolio_ready": strategy_portfolio_ready,
+                "runtime_strategy_portfolio_deployment_mode": "paper_shadow",
+                "runtime_strategy_portfolio_allocation_mode": "readiness_weighted",
+                "runtime_strategy_portfolio_capital_currency": "INR",
+                "runtime_strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "runtime_strategy_portfolio_selected_strategy": strategy_portfolio_selected_strategy,
+                "runtime_strategy_portfolio_selected_market": strategy_portfolio_selected_market,
+                "runtime_strategy_portfolio_selected_eligible": strategy_portfolio_selected_eligible,
+                "runtime_strategy_portfolio_selected_allocation_weight": 0.0012
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "runtime_strategy_portfolio_selected_allocation_notional": (
+                    strategy_portfolio_selected_allocation_notional
+                ),
+                "runtime_strategy_portfolio_notional_cap_applied": bool(
+                    strategy_portfolio_selected_allocation_notional
+                ),
+                "runtime_pre_portfolio_max_notional_per_session": 25_000.0
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
                 "proof_refresh_ready": True,
                 "proof_refresh_strategy": "lead_lag_taker",
                 "proof_refresh_market": "india_nse_index_derivatives",
@@ -183,6 +212,13 @@ def cutover_config(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    strategy_portfolio_required=False,
+    strategy_portfolio_provided=False,
+    strategy_portfolio_ready=False,
+    strategy_portfolio_selected_strategy="lead_lag_taker",
+    strategy_portfolio_selected_market="india_nse_index_derivatives",
+    strategy_portfolio_selected_eligible=False,
+    strategy_portfolio_selected_allocation_notional=0.0,
 ):
     route_required = dispatch_provided if route_required is None else route_required
     route_provided = dispatch_provided if route_provided is None else route_provided
@@ -224,6 +260,28 @@ def cutover_config(
             "ready": True,
             "strategy": "lead_lag_taker",
             "market": "india_nse_index_derivatives",
+        },
+        "runtime_session": {
+            "strategy_portfolio": {
+                "required": strategy_portfolio_required,
+                "provided": strategy_portfolio_provided,
+                "ready": strategy_portfolio_ready,
+                "deployment_mode": "paper_shadow",
+                "allocation_mode": "readiness_weighted",
+                "capital_currency": "INR",
+                "selected_profile": "leadlag-live-dryrun",
+                "selected_strategy": strategy_portfolio_selected_strategy,
+                "selected_market": strategy_portfolio_selected_market,
+                "selected_eligible": strategy_portfolio_selected_eligible,
+                "selected_allocation_weight": 0.0012
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
+                "notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+                "pre_portfolio_max_notional_per_session": 25_000.0
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+            }
         },
         "scaleup_route_readiness": {
             "required": route_readiness_required,
@@ -570,6 +628,83 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
     assert report.config["route_readiness"]["required"]
     assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_route_enable_carries_strategy_portfolio_allocation():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(
+            max_notional=1200.0,
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+        ),
+        cutover_config=cutover_config(
+            max_notional=1200.0,
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+        ),
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(total_notional=1_000.0),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert report.ready
+    packet = report.packet.iloc[0]
+    summary = report.summary.iloc[0]
+    portfolio = report.config["strategy_portfolio"]
+    assert bool(packet["strategy_portfolio_required"])
+    assert bool(summary["strategy_portfolio_ready"])
+    assert summary["strategy_portfolio_deployment_mode"] == "paper_shadow"
+    assert summary["strategy_portfolio_allocation_mode"] == "readiness_weighted"
+    assert summary["strategy_portfolio_capital_currency"] == "INR"
+    assert summary["strategy_portfolio_selected_profile"] == "leadlag-live-dryrun"
+    assert summary["strategy_portfolio_selected_strategy"] == "lead_lag_taker"
+    assert summary["strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
+    assert bool(summary["strategy_portfolio_selected_eligible"])
+    assert summary["strategy_portfolio_selected_allocation_weight"] == 0.0012
+    assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert bool(summary["strategy_portfolio_notional_cap_applied"])
+    assert summary["pre_portfolio_max_notional_per_session"] == 25_000.0
+    assert portfolio["required"]
+    assert portfolio["provided"]
+    assert portfolio["ready"]
+    assert portfolio["selected_allocation_notional"] == 1200.0
+    assert portfolio["pre_portfolio_max_notional_per_session"] == 25_000.0
+
+
+def test_route_enable_blocks_order_export_above_strategy_portfolio_allocation():
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(
+            max_notional=2_500.0,
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+        ),
+        cutover_config=cutover_config(
+            max_notional=2_500.0,
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+        ),
+        upload_summary=upload_summary(),
+        order_export_summary=order_export_summary(total_notional=1_500.0),
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "order_export_notional_within_strategy_portfolio_allocation" in failed
+    assert "order_export_notional_within_cutover_limit" not in failed
+    assert report.config["primary_blocker"]["check"] == "order_export_notional_within_strategy_portfolio_allocation"
 
 
 def test_route_enable_carries_cutover_shadow_broker_readiness():

@@ -239,6 +239,59 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
             ),
         ]
     )
+    if _strategy_portfolio_active(cutover):
+        checks.extend(
+            [
+                _check(
+                    "strategy_portfolio_ready",
+                    cutover["strategy_portfolio_ready"],
+                    "is",
+                    True,
+                    bool(cutover["strategy_portfolio_ready"]),
+                    "cutover strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_eligible",
+                    cutover["strategy_portfolio_selected_eligible"],
+                    "is",
+                    True,
+                    bool(cutover["strategy_portfolio_selected_eligible"]),
+                    "cutover strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "strategy_portfolio_strategy_matches",
+                    cutover["strategy_portfolio_selected_strategy"],
+                    "==",
+                    cutover["strategy"],
+                    bool(
+                        cutover["strategy_portfolio_selected_strategy"]
+                        and cutover["strategy"]
+                        and cutover["strategy_portfolio_selected_strategy"] == cutover["strategy"]
+                    ),
+                    "cutover strategy portfolio strategy does not match route strategy",
+                ),
+                _check(
+                    "strategy_portfolio_market_matches",
+                    cutover["strategy_portfolio_selected_market"],
+                    "==",
+                    cutover["market"],
+                    bool(
+                        cutover["strategy_portfolio_selected_market"]
+                        and cutover["market"]
+                        and cutover["strategy_portfolio_selected_market"] == cutover["market"]
+                    ),
+                    "cutover strategy portfolio market does not match route market",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_notional",
+                    cutover["strategy_portfolio_selected_allocation_notional"],
+                    ">",
+                    0.0,
+                    float(cutover["strategy_portfolio_selected_allocation_notional"]) > 0.0,
+                    "cutover strategy portfolio allocation notional must be positive",
+                ),
+            ]
+        )
     if _dispatch_roundtrip_required(thresholds) or cutover["dispatch_roundtrip_provided"]:
         checks.extend(_dispatch_roundtrip_checks(cutover, target_mode))
     if _route_dispatch_roundtrip_required(thresholds, cutover):
@@ -299,6 +352,17 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
                 ),
             ]
         )
+        if _strategy_portfolio_active(cutover):
+            checks.append(
+                _check(
+                    "order_export_notional_within_strategy_portfolio_allocation",
+                    export_notional,
+                    "<=",
+                    cutover["strategy_portfolio_selected_allocation_notional"],
+                    export_notional <= float(cutover["strategy_portfolio_selected_allocation_notional"]),
+                    "order export notional exceeds selected strategy portfolio allocation",
+                )
+            )
     return pd.DataFrame(checks)
 
 
@@ -1038,6 +1102,24 @@ def _packet(
                 "max_orders_per_session": int(cutover["max_orders_per_session"]),
                 "max_notional_per_session": float(cutover["max_notional_per_session"]),
                 "stop_loss": cutover["stop_loss"],
+                "strategy_portfolio_required": cutover["strategy_portfolio_required"],
+                "strategy_portfolio_provided": cutover["strategy_portfolio_provided"],
+                "strategy_portfolio_ready": cutover["strategy_portfolio_ready"],
+                "strategy_portfolio_deployment_mode": cutover["strategy_portfolio_deployment_mode"],
+                "strategy_portfolio_allocation_mode": cutover["strategy_portfolio_allocation_mode"],
+                "strategy_portfolio_capital_currency": cutover["strategy_portfolio_capital_currency"],
+                "strategy_portfolio_selected_profile": cutover["strategy_portfolio_selected_profile"],
+                "strategy_portfolio_selected_strategy": cutover["strategy_portfolio_selected_strategy"],
+                "strategy_portfolio_selected_market": cutover["strategy_portfolio_selected_market"],
+                "strategy_portfolio_selected_eligible": cutover["strategy_portfolio_selected_eligible"],
+                "strategy_portfolio_selected_allocation_weight": cutover[
+                    "strategy_portfolio_selected_allocation_weight"
+                ],
+                "strategy_portfolio_selected_allocation_notional": cutover[
+                    "strategy_portfolio_selected_allocation_notional"
+                ],
+                "strategy_portfolio_notional_cap_applied": cutover["strategy_portfolio_notional_cap_applied"],
+                "pre_portfolio_max_notional_per_session": cutover["pre_portfolio_max_notional_per_session"],
                 "upload_ready": upload["ready"],
                 "upload_orders": int(upload["orders"]),
                 "upload_output_file": upload["output_file"],
@@ -1322,6 +1404,26 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "max_orders_per_session": int(packet["max_orders_per_session"]),
                 "max_notional_per_session": float(packet["max_notional_per_session"]),
                 "order_export_total_notional": float(packet["order_export_total_notional"]),
+                "strategy_portfolio_required": _to_bool(packet["strategy_portfolio_required"]),
+                "strategy_portfolio_provided": _to_bool(packet["strategy_portfolio_provided"]),
+                "strategy_portfolio_ready": _to_bool(packet["strategy_portfolio_ready"]),
+                "strategy_portfolio_deployment_mode": str(packet["strategy_portfolio_deployment_mode"]),
+                "strategy_portfolio_allocation_mode": str(packet["strategy_portfolio_allocation_mode"]),
+                "strategy_portfolio_capital_currency": str(packet["strategy_portfolio_capital_currency"]),
+                "strategy_portfolio_selected_profile": str(packet["strategy_portfolio_selected_profile"]),
+                "strategy_portfolio_selected_strategy": str(packet["strategy_portfolio_selected_strategy"]),
+                "strategy_portfolio_selected_market": str(packet["strategy_portfolio_selected_market"]),
+                "strategy_portfolio_selected_eligible": _to_bool(packet["strategy_portfolio_selected_eligible"]),
+                "strategy_portfolio_selected_allocation_weight": float(
+                    packet["strategy_portfolio_selected_allocation_weight"]
+                ),
+                "strategy_portfolio_selected_allocation_notional": float(
+                    packet["strategy_portfolio_selected_allocation_notional"]
+                ),
+                "strategy_portfolio_notional_cap_applied": _to_bool(
+                    packet["strategy_portfolio_notional_cap_applied"]
+                ),
+                "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
                 "adapter_schema_status": str(packet["adapter_schema_status"]),
                 "broker_schema_status": str(packet["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(packet["broker_schema_reviewed"]),
@@ -1624,6 +1726,22 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             "max_orders_per_session": int(packet["max_orders_per_session"]),
             "max_notional_per_session": float(packet["max_notional_per_session"]),
             "stop_loss": _jsonable(packet["stop_loss"]),
+        },
+        "strategy_portfolio": {
+            "required": _to_bool(packet["strategy_portfolio_required"]),
+            "provided": _to_bool(packet["strategy_portfolio_provided"]),
+            "ready": _to_bool(packet["strategy_portfolio_ready"]),
+            "deployment_mode": str(packet["strategy_portfolio_deployment_mode"]),
+            "allocation_mode": str(packet["strategy_portfolio_allocation_mode"]),
+            "capital_currency": str(packet["strategy_portfolio_capital_currency"]),
+            "selected_profile": str(packet["strategy_portfolio_selected_profile"]),
+            "selected_strategy": str(packet["strategy_portfolio_selected_strategy"]),
+            "selected_market": str(packet["strategy_portfolio_selected_market"]),
+            "selected_eligible": _to_bool(packet["strategy_portfolio_selected_eligible"]),
+            "selected_allocation_weight": float(packet["strategy_portfolio_selected_allocation_weight"]),
+            "selected_allocation_notional": float(packet["strategy_portfolio_selected_allocation_notional"]),
+            "notional_cap_applied": _to_bool(packet["strategy_portfolio_notional_cap_applied"]),
+            "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
         },
         "upload": {
             "ready": _to_bool(packet["upload_ready"]),
@@ -2009,6 +2127,8 @@ def _broker_vendor_data_readiness_failed_checks(
 def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
+    runtime_session = config.get("runtime_session", {}) or {}
+    strategy_portfolio = runtime_session.get("strategy_portfolio", {}) or {}
     broker_readiness = config.get("broker_readiness", {}) or {}
     resume = broker_readiness.get("resume_gate", {}) or {}
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
@@ -2046,6 +2166,109 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             _number_from(limits, "max_notional_per_session", _number(row, "max_notional_per_session", 0.0))
         ),
         "stop_loss": _nullable_number(limits.get("stop_loss")),
+        "strategy_portfolio_required": _to_bool(
+            strategy_portfolio.get(
+                "required",
+                row.get("runtime_strategy_portfolio_required", row.get("strategy_portfolio_required", False)),
+            )
+        ),
+        "strategy_portfolio_provided": _to_bool(
+            strategy_portfolio.get(
+                "provided",
+                row.get("runtime_strategy_portfolio_provided", row.get("strategy_portfolio_provided", False)),
+            )
+        ),
+        "strategy_portfolio_ready": _to_bool(
+            strategy_portfolio.get(
+                "ready",
+                row.get("runtime_strategy_portfolio_ready", row.get("strategy_portfolio_ready", False)),
+            )
+        ),
+        "strategy_portfolio_deployment_mode": _first_text(
+            strategy_portfolio.get("deployment_mode", ""),
+            row.get("runtime_strategy_portfolio_deployment_mode", ""),
+            row.get("strategy_portfolio_deployment_mode", ""),
+        ),
+        "strategy_portfolio_allocation_mode": _first_text(
+            strategy_portfolio.get("allocation_mode", ""),
+            row.get("runtime_strategy_portfolio_allocation_mode", ""),
+            row.get("strategy_portfolio_allocation_mode", ""),
+        ),
+        "strategy_portfolio_capital_currency": _first_text(
+            strategy_portfolio.get("capital_currency", ""),
+            row.get("runtime_strategy_portfolio_capital_currency", ""),
+            row.get("strategy_portfolio_capital_currency", ""),
+        ),
+        "strategy_portfolio_selected_profile": _first_text(
+            strategy_portfolio.get("selected_profile", ""),
+            row.get("runtime_strategy_portfolio_selected_profile", ""),
+            row.get("strategy_portfolio_selected_profile", ""),
+        ),
+        "strategy_portfolio_selected_strategy": _strategy_key(
+            _first_text(
+                strategy_portfolio.get("selected_strategy", ""),
+                row.get("runtime_strategy_portfolio_selected_strategy", ""),
+                row.get("strategy_portfolio_selected_strategy", ""),
+            )
+        ),
+        "strategy_portfolio_selected_market": _identity_key(
+            _first_text(
+                strategy_portfolio.get("selected_market", ""),
+                row.get("runtime_strategy_portfolio_selected_market", ""),
+                row.get("strategy_portfolio_selected_market", ""),
+            )
+        ),
+        "strategy_portfolio_selected_eligible": _to_bool(
+            strategy_portfolio.get(
+                "selected_eligible",
+                row.get(
+                    "runtime_strategy_portfolio_selected_eligible",
+                    row.get("strategy_portfolio_selected_eligible", False),
+                ),
+            )
+        ),
+        "strategy_portfolio_selected_allocation_weight": float(
+            _number_from(
+                strategy_portfolio,
+                "selected_allocation_weight",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_selected_allocation_weight",
+                    _number(row, "strategy_portfolio_selected_allocation_weight", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_selected_allocation_notional": float(
+            _number_from(
+                strategy_portfolio,
+                "selected_allocation_notional",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_selected_allocation_notional",
+                    _number(row, "strategy_portfolio_selected_allocation_notional", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_notional_cap_applied": _to_bool(
+            strategy_portfolio.get(
+                "notional_cap_applied",
+                row.get(
+                    "runtime_strategy_portfolio_notional_cap_applied",
+                    row.get("strategy_portfolio_notional_cap_applied", False),
+                ),
+            )
+        ),
+        "pre_portfolio_max_notional_per_session": float(
+            _number_from(
+                strategy_portfolio,
+                "pre_portfolio_max_notional_per_session",
+                _number(
+                    row,
+                    "runtime_pre_portfolio_max_notional_per_session",
+                    _number(row, "pre_portfolio_max_notional_per_session", 0.0),
+                ),
+            )
+        ),
         "proof_refresh_ready": _to_bool(proof.get("ready", row.get("proof_refresh_ready", False))),
         "proof_refresh_strategy": _strategy_key(
             _first_text(proof.get("strategy", ""), row.get("proof_refresh_strategy", ""))
@@ -2807,6 +3030,10 @@ def _route_readiness_required(thresholds: RouteEnableThresholds, cutover: dict[s
         or thresholds.target_mode == "live_dryrun"
         or (cutover is not None and cutover["route_readiness_required"])
     )
+
+
+def _strategy_portfolio_active(cutover: dict[str, Any]) -> bool:
+    return bool(cutover["strategy_portfolio_required"] or cutover["strategy_portfolio_provided"])
 
 
 def _route_dispatch_roundtrip_required(thresholds: RouteEnableThresholds, cutover: dict[str, Any]) -> bool:

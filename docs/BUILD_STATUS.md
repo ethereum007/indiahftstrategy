@@ -79,6 +79,10 @@
   allocation context from telemetry/guard, including selected strategy/market,
   eligibility, allocation weight/notional, pre-cap notional, and cap-applied
   state for paper/shadow operator handoff.
+- Cutover and route-enable gates now carry strategy portfolio allocation
+  evidence downstream from runtime-session proof, fail closed on bad allocation
+  readiness/identity, and block route enablement when exported order notional
+  exceeds the selected paper/shadow allocation.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.
@@ -629,11 +633,13 @@
   broker-readiness-carried vendor market-data batch proof, and operator
   strategy/market/limit acknowledgement agree in one manifest-backed
   authorization artifact that fingerprints resolved scale-up, broker-readiness,
-  runtime-session, and operator-review inputs while exposing the first failed
-  check as a structured config blocker.
+  runtime-session, and operator-review inputs, carries runtime-session strategy
+  portfolio allocation context, and exposes the first failed check as a
+  structured config blocker.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
-  bounds order counts and optional export notional by cutover limits, rechecks
-  cutover route-readiness proof, live-dry-run dispatch round-trip proof,
+  bounds order counts and optional export notional by cutover limits plus any
+  selected strategy portfolio allocation, rechecks cutover route-readiness
+  proof, live-dry-run dispatch round-trip proof,
   carried route-enable failed-check counters, nested route proof, and
   cutover-carried shadow broker-readiness aggregates plus
   broker-readiness-carried shadow broker proof, carries cutover-retained vendor

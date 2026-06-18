@@ -292,6 +292,59 @@ def _checks(
             "scale-up proof freshness market does not match cutover market",
         ),
     ]
+    if _runtime_strategy_portfolio_active(runtime):
+        checks.extend(
+            [
+                _check(
+                    "runtime_strategy_portfolio_ready",
+                    runtime["strategy_portfolio_ready"],
+                    "is",
+                    True,
+                    bool(runtime["strategy_portfolio_ready"]),
+                    "runtime-session strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_allocation_eligible",
+                    runtime["strategy_portfolio_selected_eligible"],
+                    "is",
+                    True,
+                    bool(runtime["strategy_portfolio_selected_eligible"]),
+                    "runtime-session strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_strategy_matches",
+                    runtime["strategy_portfolio_selected_strategy"],
+                    "==",
+                    scaleup["strategy"],
+                    bool(
+                        runtime["strategy_portfolio_selected_strategy"]
+                        and scaleup["strategy"]
+                        and runtime["strategy_portfolio_selected_strategy"] == scaleup["strategy"]
+                    ),
+                    "runtime-session strategy portfolio strategy does not match scale-up strategy",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_market_matches",
+                    runtime["strategy_portfolio_selected_market"],
+                    "==",
+                    scaleup["market"],
+                    bool(
+                        runtime["strategy_portfolio_selected_market"]
+                        and scaleup["market"]
+                        and runtime["strategy_portfolio_selected_market"] == scaleup["market"]
+                    ),
+                    "runtime-session strategy portfolio market does not match scale-up market",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_allocation_notional",
+                    runtime["strategy_portfolio_selected_allocation_notional"],
+                    ">",
+                    0.0,
+                    float(runtime["strategy_portfolio_selected_allocation_notional"]) > 0.0,
+                    "runtime-session strategy portfolio allocation notional must be positive",
+                ),
+            ]
+        )
     route_readiness_required = _route_readiness_required(thresholds)
     route_readiness_active = bool(route_readiness_required or scaleup["route_readiness_provided"])
     if route_readiness_required:
@@ -1349,6 +1402,28 @@ def _authorization(
                 "runtime_strategy": runtime["strategy"],
                 "runtime_market": runtime["market"],
                 "runtime_target_mode": runtime["target_mode"],
+                "runtime_strategy_portfolio_required": runtime["strategy_portfolio_required"],
+                "runtime_strategy_portfolio_provided": runtime["strategy_portfolio_provided"],
+                "runtime_strategy_portfolio_ready": runtime["strategy_portfolio_ready"],
+                "runtime_strategy_portfolio_deployment_mode": runtime["strategy_portfolio_deployment_mode"],
+                "runtime_strategy_portfolio_allocation_mode": runtime["strategy_portfolio_allocation_mode"],
+                "runtime_strategy_portfolio_capital_currency": runtime["strategy_portfolio_capital_currency"],
+                "runtime_strategy_portfolio_selected_profile": runtime["strategy_portfolio_selected_profile"],
+                "runtime_strategy_portfolio_selected_strategy": runtime["strategy_portfolio_selected_strategy"],
+                "runtime_strategy_portfolio_selected_market": runtime["strategy_portfolio_selected_market"],
+                "runtime_strategy_portfolio_selected_eligible": runtime["strategy_portfolio_selected_eligible"],
+                "runtime_strategy_portfolio_selected_allocation_weight": runtime[
+                    "strategy_portfolio_selected_allocation_weight"
+                ],
+                "runtime_strategy_portfolio_selected_allocation_notional": runtime[
+                    "strategy_portfolio_selected_allocation_notional"
+                ],
+                "runtime_strategy_portfolio_notional_cap_applied": runtime[
+                    "strategy_portfolio_notional_cap_applied"
+                ],
+                "runtime_pre_portfolio_max_notional_per_session": runtime[
+                    "pre_portfolio_max_notional_per_session"
+                ],
                 "broker_resume_gate_provided": broker["resume_gate_provided"],
                 "broker_resume_gate_ready": broker["resume_gate_ready"],
                 "broker_resume_strategy": broker["resume_strategy"],
@@ -1753,6 +1828,46 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "runtime_session_ready": _to_bool(authorization["runtime_session_ready"]),
                 "runtime_guard_action": str(authorization["runtime_guard_action"]),
                 "runtime_guard_halted": _to_bool(authorization["runtime_guard_halted"]),
+                "runtime_strategy_portfolio_required": _to_bool(
+                    authorization["runtime_strategy_portfolio_required"]
+                ),
+                "runtime_strategy_portfolio_provided": _to_bool(
+                    authorization["runtime_strategy_portfolio_provided"]
+                ),
+                "runtime_strategy_portfolio_ready": _to_bool(authorization["runtime_strategy_portfolio_ready"]),
+                "runtime_strategy_portfolio_deployment_mode": str(
+                    authorization["runtime_strategy_portfolio_deployment_mode"]
+                ),
+                "runtime_strategy_portfolio_allocation_mode": str(
+                    authorization["runtime_strategy_portfolio_allocation_mode"]
+                ),
+                "runtime_strategy_portfolio_capital_currency": str(
+                    authorization["runtime_strategy_portfolio_capital_currency"]
+                ),
+                "runtime_strategy_portfolio_selected_profile": str(
+                    authorization["runtime_strategy_portfolio_selected_profile"]
+                ),
+                "runtime_strategy_portfolio_selected_strategy": str(
+                    authorization["runtime_strategy_portfolio_selected_strategy"]
+                ),
+                "runtime_strategy_portfolio_selected_market": str(
+                    authorization["runtime_strategy_portfolio_selected_market"]
+                ),
+                "runtime_strategy_portfolio_selected_eligible": _to_bool(
+                    authorization["runtime_strategy_portfolio_selected_eligible"]
+                ),
+                "runtime_strategy_portfolio_selected_allocation_weight": float(
+                    authorization["runtime_strategy_portfolio_selected_allocation_weight"]
+                ),
+                "runtime_strategy_portfolio_selected_allocation_notional": float(
+                    authorization["runtime_strategy_portfolio_selected_allocation_notional"]
+                ),
+                "runtime_strategy_portfolio_notional_cap_applied": _to_bool(
+                    authorization["runtime_strategy_portfolio_notional_cap_applied"]
+                ),
+                "runtime_pre_portfolio_max_notional_per_session": float(
+                    authorization["runtime_pre_portfolio_max_notional_per_session"]
+                ),
                 "broker_resume_gate_provided": _to_bool(authorization["broker_resume_gate_provided"]),
                 "broker_resume_gate_ready": _to_bool(authorization["broker_resume_gate_ready"]),
                 "broker_resume_proof_refresh_ready": _to_bool(
@@ -2179,6 +2294,32 @@ def _config(
             "target_mode": str(authorization["runtime_target_mode"]),
             "strategy": str(authorization["runtime_strategy"]),
             "market": str(authorization["runtime_market"]),
+            "strategy_portfolio": {
+                "required": _to_bool(authorization["runtime_strategy_portfolio_required"]),
+                "provided": _to_bool(authorization["runtime_strategy_portfolio_provided"]),
+                "ready": _to_bool(authorization["runtime_strategy_portfolio_ready"]),
+                "deployment_mode": str(authorization["runtime_strategy_portfolio_deployment_mode"]),
+                "allocation_mode": str(authorization["runtime_strategy_portfolio_allocation_mode"]),
+                "capital_currency": str(authorization["runtime_strategy_portfolio_capital_currency"]),
+                "selected_profile": str(authorization["runtime_strategy_portfolio_selected_profile"]),
+                "selected_strategy": str(authorization["runtime_strategy_portfolio_selected_strategy"]),
+                "selected_market": str(authorization["runtime_strategy_portfolio_selected_market"]),
+                "selected_eligible": _to_bool(
+                    authorization["runtime_strategy_portfolio_selected_eligible"]
+                ),
+                "selected_allocation_weight": float(
+                    authorization["runtime_strategy_portfolio_selected_allocation_weight"]
+                ),
+                "selected_allocation_notional": float(
+                    authorization["runtime_strategy_portfolio_selected_allocation_notional"]
+                ),
+                "notional_cap_applied": _to_bool(
+                    authorization["runtime_strategy_portfolio_notional_cap_applied"]
+                ),
+                "pre_portfolio_max_notional_per_session": float(
+                    authorization["runtime_pre_portfolio_max_notional_per_session"]
+                ),
+            },
         },
         "operator_review": {
             "provided": _to_bool(authorization["operator_review_provided"]),
@@ -3157,6 +3298,7 @@ def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:
         "runtime_target_mode": _identity_key(row.get("runtime_target_mode", "")),
         "runtime_strategy": _strategy_key(row.get("runtime_strategy", "")),
         "runtime_market": _identity_key(row.get("runtime_market", "")),
+        **_strategy_portfolio_state(row, "runtime_strategy_portfolio", "strategy_portfolio"),
         "resume_gate_provided": _to_bool(row.get("resume_gate_provided", False)),
         "resume_gate_ready": _to_bool(row.get("resume_gate_ready", False)),
         "resume_strategy": _strategy_key(row.get("resume_strategy", "")),
@@ -3215,6 +3357,7 @@ def _runtime_state(summary: pd.DataFrame, broker: dict[str, Any]) -> dict[str, A
             "target_mode": _identity_key(row.get("target_mode", "")),
             "strategy": _strategy_key(row.get("strategy", "")),
             "market": _identity_key(row.get("market", "")),
+            **_strategy_portfolio_state(row, "strategy_portfolio"),
         }
     return {
         "provided": bool(broker["runtime_session_provided"]),
@@ -3224,7 +3367,103 @@ def _runtime_state(summary: pd.DataFrame, broker: dict[str, Any]) -> dict[str, A
         "target_mode": broker["runtime_target_mode"],
         "strategy": broker["runtime_strategy"],
         "market": broker["runtime_market"],
+        "strategy_portfolio_required": broker["strategy_portfolio_required"],
+        "strategy_portfolio_provided": broker["strategy_portfolio_provided"],
+        "strategy_portfolio_ready": broker["strategy_portfolio_ready"],
+        "strategy_portfolio_deployment_mode": broker["strategy_portfolio_deployment_mode"],
+        "strategy_portfolio_allocation_mode": broker["strategy_portfolio_allocation_mode"],
+        "strategy_portfolio_capital_currency": broker["strategy_portfolio_capital_currency"],
+        "strategy_portfolio_selected_profile": broker["strategy_portfolio_selected_profile"],
+        "strategy_portfolio_selected_strategy": broker["strategy_portfolio_selected_strategy"],
+        "strategy_portfolio_selected_market": broker["strategy_portfolio_selected_market"],
+        "strategy_portfolio_selected_eligible": broker["strategy_portfolio_selected_eligible"],
+        "strategy_portfolio_selected_allocation_weight": broker["strategy_portfolio_selected_allocation_weight"],
+        "strategy_portfolio_selected_allocation_notional": broker[
+            "strategy_portfolio_selected_allocation_notional"
+        ],
+        "strategy_portfolio_notional_cap_applied": broker["strategy_portfolio_notional_cap_applied"],
+        "pre_portfolio_max_notional_per_session": broker["pre_portfolio_max_notional_per_session"],
     }
+
+
+def _runtime_strategy_portfolio_active(runtime: dict[str, Any]) -> bool:
+    return bool(runtime["strategy_portfolio_required"] or runtime["strategy_portfolio_provided"])
+
+
+def _strategy_portfolio_state(row: pd.Series, *prefixes: str) -> dict[str, Any]:
+    return {
+        "strategy_portfolio_required": _first_bool_field(row, "required", prefixes),
+        "strategy_portfolio_provided": _first_bool_field(row, "provided", prefixes),
+        "strategy_portfolio_ready": _first_bool_field(row, "ready", prefixes),
+        "strategy_portfolio_deployment_mode": _first_text_field(row, "deployment_mode", prefixes),
+        "strategy_portfolio_allocation_mode": _first_text_field(row, "allocation_mode", prefixes),
+        "strategy_portfolio_capital_currency": _first_text_field(row, "capital_currency", prefixes),
+        "strategy_portfolio_selected_profile": _first_text_field(row, "selected_profile", prefixes),
+        "strategy_portfolio_selected_strategy": _strategy_key(
+            _first_text_field(row, "selected_strategy", prefixes)
+        ),
+        "strategy_portfolio_selected_market": _identity_key(_first_text_field(row, "selected_market", prefixes)),
+        "strategy_portfolio_selected_eligible": _first_bool_field(row, "selected_eligible", prefixes),
+        "strategy_portfolio_selected_allocation_weight": _first_number_field(
+            row,
+            "selected_allocation_weight",
+            prefixes,
+        ),
+        "strategy_portfolio_selected_allocation_notional": _first_number_field(
+            row,
+            "selected_allocation_notional",
+            prefixes,
+        ),
+        "strategy_portfolio_notional_cap_applied": _first_bool_field(row, "notional_cap_applied", prefixes),
+        "pre_portfolio_max_notional_per_session": _first_number_field(
+            row,
+            "pre_portfolio_max_notional_per_session",
+            prefixes,
+            allow_unprefixed=True,
+        ),
+    }
+
+
+def _first_bool_field(row: pd.Series, suffix: str, prefixes: tuple[str, ...]) -> bool:
+    value = _first_existing_field(row, suffix, prefixes)
+    return _to_bool(value)
+
+
+def _first_text_field(row: pd.Series, suffix: str, prefixes: tuple[str, ...]) -> str:
+    value = _first_existing_field(row, suffix, prefixes)
+    return _first_text(value)
+
+
+def _first_number_field(
+    row: pd.Series,
+    suffix: str,
+    prefixes: tuple[str, ...],
+    *,
+    allow_unprefixed: bool = False,
+) -> float:
+    value = _first_existing_field(row, suffix, prefixes, allow_unprefixed=allow_unprefixed)
+    if _is_missing(value):
+        return 0.0
+    numeric = pd.to_numeric(value, errors="coerce")
+    return 0.0 if _is_missing(numeric) else float(numeric)
+
+
+def _first_existing_field(
+    row: pd.Series,
+    suffix: str,
+    prefixes: tuple[str, ...],
+    *,
+    allow_unprefixed: bool = False,
+) -> object:
+    if row.empty:
+        return None
+    names = [f"{prefix}_{suffix}" for prefix in prefixes]
+    if allow_unprefixed:
+        names.append(suffix)
+    for name in names:
+        if name in row.index and not _is_missing(row.get(name)):
+            return row.get(name)
+    return None
 
 
 def _operator_state(review: pd.DataFrame, scaleup: dict[str, Any]) -> dict[str, Any]:
