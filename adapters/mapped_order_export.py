@@ -164,7 +164,9 @@ def _map_column(
 
 
 def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: MappedOrderExportConfig) -> pd.DataFrame:
-    failed_mappings = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed_mappings = int(len(failed_rows)) if not checks.empty else 0
     ready = bool(len(orders) > 0 and failed_mappings == 0)
     return pd.DataFrame(
         [
@@ -177,10 +179,52 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: MappedOrderExpo
                 "mapped_columns": int(checks["source_present"].astype(bool).sum()) if not checks.empty else 0,
                 "defaulted_columns": int(checks["default_present"].astype(bool).sum()) if not checks.empty else 0,
                 "failed_mappings": failed_mappings,
+                "failed_check_count": failed_mappings,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "source_column"),
+                "primary_blocker_operator": _check_value(primary_blocker, "transform"),
+                "primary_blocker_threshold": "required"
+                if _to_bool(_check_value(primary_blocker, "required"), default=False)
+                else "",
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "output_file": config.output_filename,
             }
         ]
     )
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    failed_mask = ~checks["passed"].map(lambda value: _to_bool(value, default=False))
+    return checks.loc[failed_mask].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    return _check_value(row, "target_column")
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _cell(row, column)
 
 
 def _schema_frame(orders: pd.DataFrame, checks: pd.DataFrame, config: MappedOrderExportConfig) -> pd.DataFrame:

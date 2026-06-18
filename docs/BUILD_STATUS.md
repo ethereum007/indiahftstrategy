@@ -700,7 +700,8 @@
   mapping checks, summary, and manifest artifacts.
 - Configurable mapped broker-order export that converts broker-neutral launch
   orders into a vendor CSV shape from a reviewed mapping file, with required
-  field checks, simple transforms, and manifests.
+  field checks, simple transforms, manifests, and summary-level primary blocker
+  fields for the first failed vendor target column.
 - Vendor order-mapping draft command that reads a broker-neutral export plus
   an Arrow.money/iRage sample upload header, suggests reviewable mappings, and
   fails closed on unmapped required vendor fields.

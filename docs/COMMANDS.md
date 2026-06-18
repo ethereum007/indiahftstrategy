@@ -2082,6 +2082,12 @@ mapped_order_schema.csv
 manifest.json
 ```
 
+`mapped_order_summary.csv` exposes `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
+the first failed vendor target column, so broker-readiness automation can route
+Arrow.money/iRage mapping gaps directly to the missing field without opening
+`mapped_order_checks.csv`.
+
 ## Broker Integration Readiness
 
 Combine adapter schema review, broker-neutral export, mapped/upload files,

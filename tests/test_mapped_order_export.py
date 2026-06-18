@@ -70,6 +70,9 @@ def test_map_broker_orders_applies_mapping_defaults_and_transforms():
     assert report.orders["product"].tolist() == ["MIS", "MIS"]
     assert str(report.orders["quantity"].dtype) == "Int64"
     assert report.summary.iloc[0]["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
+    assert report.summary.iloc[0]["failed_check_count"] == 0
+    assert report.summary.iloc[0]["failed_check_names"] == ""
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
 
 
 def test_map_broker_orders_fails_closed_for_missing_required_source():
@@ -89,6 +92,14 @@ def test_map_broker_orders_fails_closed_for_missing_required_source():
 
     assert not report.ready
     assert int(report.summary.iloc[0]["failed_mappings"]) == 1
+    assert report.summary.iloc[0]["failed_check_count"] == 1
+    assert report.summary.iloc[0]["failed_check_names"] == "exchange_token"
+    assert report.summary.iloc[0]["first_failed_reason"] == "required target has no available source column or default value"
+    assert report.summary.iloc[0]["primary_blocker_check"] == "exchange_token"
+    assert report.summary.iloc[0]["primary_blocker_value"] == "vendor_exchange_token"
+    assert report.summary.iloc[0]["primary_blocker_operator"] == "string"
+    assert report.summary.iloc[0]["primary_blocker_threshold"] == "required"
+    assert report.summary.iloc[0]["primary_blocker_reason"] == "required target has no available source column or default value"
     failed = report.checks.loc[~report.checks["passed"].astype(bool)].iloc[0]
     assert failed["target_column"] == "exchange_token"
     assert failed["reason"] == "required target has no available source column or default value"
@@ -150,4 +161,8 @@ def test_cli_map_broker_orders_returns_failure_for_required_mapping_gap(tmp_path
     summary = pd.read_csv(out_dir / "mapped_order_summary.csv")
     assert code == 2
     assert int(summary.loc[0, "failed_mappings"]) == 1
+    assert int(summary.loc[0, "failed_check_count"]) == 1
+    assert summary.loc[0, "failed_check_names"] == "exchange_token"
+    assert summary.loc[0, "primary_blocker_check"] == "exchange_token"
+    assert summary.loc[0, "primary_blocker_reason"] == "required target has no available source column or default value"
     assert (out_dir / "mapped_broker_orders.csv").exists()
