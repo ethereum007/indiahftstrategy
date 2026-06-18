@@ -72,6 +72,9 @@
   select the matching strategy/market allocation row, cap per-session notional
   at the allocated notional, and retain the selected portfolio context in
   `scaleup_summary.csv`, `scaleup_config.json`, and manifest inputs.
+- Runtime telemetry and guard reports now carry the selected strategy portfolio
+  allocation context from `scaleup_config.json` and explicitly halt if session
+  notional breaches the selected paper/shadow allocation notional.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.

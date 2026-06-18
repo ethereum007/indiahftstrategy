@@ -2618,6 +2618,10 @@ When scale-up required broker resume-gate evidence, telemetry also carries
 `broker_resume_*` fields from the scale-up config and fails closed if the
 resume authorization, its strategy/market identity, or its proof-refresh
 identity is missing or stale.
+When scale-up required or supplied strategy portfolio allocation evidence,
+telemetry also carries `strategy_portfolio_*` fields from the scale-up config,
+including selected profile, strategy, market, allocation notional, and whether
+the portfolio cap was applied.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
@@ -2662,6 +2666,11 @@ scale-up proof target.
 If broker resume-gate evidence was required or supplied at scale-up, the guard
 also requires runtime telemetry to carry a ready resume authorization and ready
 resume proof-refresh identity matching the scale-up strategy and market.
+If strategy portfolio allocation evidence was required or supplied at scale-up,
+the guard also requires the selected allocation to be ready, eligible, identity
+matched, positive, and large enough for the observed `session_notional`; this
+appears as an explicit `strategy_portfolio_session_notional` check in
+`runtime_guard_checks.csv`.
 
 Outputs:
 

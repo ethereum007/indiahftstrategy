@@ -211,6 +211,9 @@ def _telemetry(
     broker_readiness = scaleup_config.get("broker_readiness", {}) or {}
     if not isinstance(broker_readiness, dict):
         broker_readiness = {}
+    strategy_portfolio = scaleup_config.get("strategy_portfolio", {}) or {}
+    if not isinstance(strategy_portfolio, dict):
+        strategy_portfolio = {}
     broker_resume_gate = broker_readiness.get("resume_gate", {}) or {}
     if not isinstance(broker_resume_gate, dict):
         broker_resume_gate = {}
@@ -240,6 +243,31 @@ def _telemetry(
         "lifecycle_orders": int(_first_number(_number(upload, "lifecycle_orders"), 0.0)),
         "replace_orders": int(_first_number(_number(upload, "replace_orders"), 0.0)),
         "session_notional": float(session_notional),
+        "strategy_portfolio_required": _to_bool(strategy_portfolio.get("required", False)),
+        "strategy_portfolio_provided": _to_bool(strategy_portfolio.get("provided", False)),
+        "strategy_portfolio_ready": _to_bool(strategy_portfolio.get("ready", False)),
+        "strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
+        "strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
+        "strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
+        "strategy_portfolio_selected_profile": str(strategy_portfolio.get("selected_profile", "")),
+        "strategy_portfolio_selected_strategy": _strategy_key(strategy_portfolio.get("selected_strategy", "")),
+        "strategy_portfolio_selected_market": _identity_key(strategy_portfolio.get("selected_market", "")),
+        "strategy_portfolio_selected_eligible": _to_bool(strategy_portfolio.get("selected_eligible", False)),
+        "strategy_portfolio_selected_allocation_weight": float(
+            _first_number(strategy_portfolio.get("selected_allocation_weight"), 0.0)
+        ),
+        "strategy_portfolio_selected_allocation_notional": float(
+            _first_number(strategy_portfolio.get("selected_allocation_notional"), 0.0)
+        ),
+        "strategy_portfolio_notional_cap_applied": _to_bool(strategy_portfolio.get("notional_cap_applied", False)),
+        "pre_portfolio_max_notional_per_session": float(
+            _first_number(
+                (scaleup_config.get("limits", {}) or {}).get("pre_portfolio_max_notional_per_session")
+                if isinstance(scaleup_config.get("limits", {}), dict)
+                else np.nan,
+                np.nan,
+            )
+        ),
         "realized_pnl": float(_first_number(_number(pnl, "realized_pnl"), _number(pnl, "net_pnl"), _number(pnl, "pnl"), 0.0)),
         "total_failed_component_checks": int(total_failed),
         "broker_upload_pack_provided": not upload_summary.empty,
@@ -391,6 +419,71 @@ def _checks(row: pd.Series) -> pd.DataFrame:
                     0,
                     unparsed_ready,
                     "instrument metadata contains unparsed instruments",
+                ),
+            ]
+        )
+    portfolio_required = _to_bool(row.get("strategy_portfolio_required", False))
+    portfolio_provided = _to_bool(row.get("strategy_portfolio_provided", False))
+    if portfolio_required:
+        checks.append(
+            _check(
+                "strategy_portfolio_provided",
+                portfolio_provided,
+                "is",
+                True,
+                portfolio_provided,
+                "strategy portfolio allocation is required but missing from scale-up config",
+            )
+        )
+    if portfolio_required or portfolio_provided:
+        portfolio_ready = _to_bool(row.get("strategy_portfolio_ready", False))
+        portfolio_eligible = _to_bool(row.get("strategy_portfolio_selected_eligible", False))
+        portfolio_strategy = _strategy_key(row.get("strategy_portfolio_selected_strategy", ""))
+        portfolio_market = _identity_key(row.get("strategy_portfolio_selected_market", ""))
+        allocation_notional = _number(row, "strategy_portfolio_selected_allocation_notional")
+        strategy = _strategy_key(row.get("strategy", ""))
+        market = _identity_key(row.get("market", ""))
+        checks.extend(
+            [
+                _check(
+                    "strategy_portfolio_ready",
+                    portfolio_ready,
+                    "is",
+                    True,
+                    portfolio_ready,
+                    "strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_eligible",
+                    portfolio_eligible,
+                    "is",
+                    True,
+                    portfolio_eligible,
+                    "strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "strategy_portfolio_strategy_matches",
+                    portfolio_strategy,
+                    "==",
+                    strategy,
+                    bool(portfolio_strategy and strategy and portfolio_strategy == strategy),
+                    "strategy portfolio allocation strategy does not match runtime telemetry strategy",
+                ),
+                _check(
+                    "strategy_portfolio_market_matches",
+                    portfolio_market,
+                    "==",
+                    market,
+                    bool(portfolio_market and market and portfolio_market == market),
+                    "strategy portfolio allocation market does not match runtime telemetry market",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_positive",
+                    allocation_notional,
+                    ">",
+                    0.0,
+                    not np.isnan(allocation_notional) and allocation_notional > 0.0,
+                    "strategy portfolio allocation notional must be positive",
                 ),
             ]
         )
@@ -547,6 +640,24 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "lifecycle_orders": int(row["lifecycle_orders"]),
                 "replace_orders": int(row["replace_orders"]),
                 "session_notional": float(row["session_notional"]),
+                "strategy_portfolio_required": _to_bool(row["strategy_portfolio_required"]),
+                "strategy_portfolio_provided": _to_bool(row["strategy_portfolio_provided"]),
+                "strategy_portfolio_ready": _to_bool(row["strategy_portfolio_ready"]),
+                "strategy_portfolio_deployment_mode": row["strategy_portfolio_deployment_mode"],
+                "strategy_portfolio_allocation_mode": row["strategy_portfolio_allocation_mode"],
+                "strategy_portfolio_capital_currency": row["strategy_portfolio_capital_currency"],
+                "strategy_portfolio_selected_profile": row["strategy_portfolio_selected_profile"],
+                "strategy_portfolio_selected_strategy": row["strategy_portfolio_selected_strategy"],
+                "strategy_portfolio_selected_market": row["strategy_portfolio_selected_market"],
+                "strategy_portfolio_selected_eligible": _to_bool(row["strategy_portfolio_selected_eligible"]),
+                "strategy_portfolio_selected_allocation_weight": float(
+                    row["strategy_portfolio_selected_allocation_weight"]
+                ),
+                "strategy_portfolio_selected_allocation_notional": float(
+                    row["strategy_portfolio_selected_allocation_notional"]
+                ),
+                "strategy_portfolio_notional_cap_applied": _to_bool(row["strategy_portfolio_notional_cap_applied"]),
+                "pre_portfolio_max_notional_per_session": float(row["pre_portfolio_max_notional_per_session"]),
                 "realized_pnl": float(row["realized_pnl"]),
                 "open_order_notional": float(row["open_order_notional"]),
                 "oldest_open_order_age_ns": float(row["oldest_open_order_age_ns"]),

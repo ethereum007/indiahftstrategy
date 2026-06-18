@@ -6,7 +6,12 @@ from hft_cli import main
 from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
 
 
-def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False, **overrides):
+def scaleup_config(
+    require_proof_refresh=False,
+    require_broker_resume_gate=False,
+    require_strategy_portfolio=False,
+    **overrides,
+):
     config = {
         "schema_version": 1,
         "ready": True,
@@ -64,6 +69,24 @@ def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False
                 "proof_refresh_market": "india_nse_index_derivatives",
             },
         }
+    if require_strategy_portfolio:
+        config["strategy_portfolio"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "deployment_mode": "paper_shadow",
+            "allocation_mode": "readiness_weighted",
+            "capital_currency": "INR",
+            "selected_profile": "leadlag",
+            "selected_strategy": "lead_lag_taker",
+            "selected_market": "india_nse_index_derivatives",
+            "selected_eligible": True,
+            "selected_allocation_weight": 0.0012,
+            "selected_allocation_notional": 1200.0,
+            "notional_cap_applied": True,
+        }
+        config["limits"]["pre_portfolio_max_notional_per_session"] = 3000.0
+        config["limits"]["max_notional_per_session"] = 1200.0
     config.update(overrides)
     return config
 
@@ -409,6 +432,77 @@ def test_runtime_guard_continues_with_required_broker_resume_gate_evidence():
     assert bool(summary["broker_resume_gate_ready"])
     assert summary["broker_resume_strategy"] == "lead_lag_taker"
     assert summary["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
+
+
+def test_runtime_guard_continues_with_required_strategy_portfolio_allocation():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_strategy_portfolio=True),
+        telemetry(
+            session_notional=1_000.0,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_strategy="leadlag",
+            strategy_portfolio_selected_market="india_nse_index_derivatives",
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+            strategy_portfolio_notional_cap_applied=True,
+        ),
+    )
+
+    assert not report.halted
+    row = report.metrics.iloc[0]
+    summary = report.summary.iloc[0]
+    assert row["scaleup_strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert row["runtime_strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert bool(summary["strategy_portfolio_notional_cap_applied"])
+
+
+def test_runtime_guard_halts_when_strategy_portfolio_allocation_is_breached():
+    report = evaluate_runtime_guard(
+        scaleup_config(require_strategy_portfolio=True),
+        telemetry(
+            session_notional=1_500.0,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_strategy="leadlag",
+            strategy_portfolio_selected_market="india_nse_index_derivatives",
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1200.0,
+            strategy_portfolio_notional_cap_applied=True,
+        ),
+    )
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "session_notional" in failed
+    assert "strategy_portfolio_session_notional" in failed
+    assert report.summary.iloc[0]["strategy_portfolio_selected_allocation_notional"] == 1200.0
+
+
+def test_runtime_guard_halts_on_bad_strategy_portfolio_identity():
+    config = scaleup_config(require_strategy_portfolio=True)
+    config["strategy_portfolio"].update(
+        {
+            "ready": False,
+            "selected_strategy": "surface_mm",
+            "selected_market": "us_options_regular",
+            "selected_eligible": False,
+            "selected_allocation_notional": 0.0,
+        }
+    )
+
+    report = evaluate_runtime_guard(config, telemetry(session_notional=0.0))
+
+    assert report.halted
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_strategy_portfolio_ready",
+        "scaleup_strategy_portfolio_allocation_eligible",
+        "scaleup_strategy_portfolio_strategy_matches",
+        "scaleup_strategy_portfolio_market_matches",
+        "scaleup_strategy_portfolio_allocation_notional",
+    } <= failed
 
 
 def test_write_runtime_guard_outputs_artifacts(tmp_path):

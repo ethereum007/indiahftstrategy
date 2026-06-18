@@ -14,6 +14,7 @@ def scaleup_config(
     require_instrument_metadata=False,
     require_proof_refresh=False,
     require_broker_resume_gate=False,
+    require_strategy_portfolio=False,
 ):
     config = {
         "schema_version": 1,
@@ -80,6 +81,23 @@ def scaleup_config(
                 "proof_refresh_market": market,
             },
         }
+    if require_strategy_portfolio:
+        config["strategy_portfolio"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "deployment_mode": "paper_shadow",
+            "allocation_mode": "readiness_weighted",
+            "capital_currency": "INR",
+            "selected_profile": "leadlag",
+            "selected_strategy": strategy,
+            "selected_market": market,
+            "selected_eligible": True,
+            "selected_allocation_weight": 0.0012,
+            "selected_allocation_notional": 1200.0,
+            "notional_cap_applied": True,
+        }
+        config["limits"]["pre_portfolio_max_notional_per_session"] = 3000.0
     return config
 
 
@@ -419,6 +437,51 @@ def test_runtime_telemetry_carries_broker_resume_gate_config():
     assert row["broker_resume_proof_refresh_market"] == "india_nse_index_derivatives"
     assert bool(summary["broker_resume_gate_ready"])
     assert summary["broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
+
+
+def test_runtime_telemetry_carries_strategy_portfolio_config():
+    report = evaluate_runtime_telemetry(scaleup_config(require_strategy_portfolio=True))
+
+    row = report.telemetry.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(row["strategy_portfolio_required"])
+    assert bool(row["strategy_portfolio_provided"])
+    assert bool(row["strategy_portfolio_ready"])
+    assert row["strategy_portfolio_selected_profile"] == "leadlag"
+    assert row["strategy_portfolio_selected_strategy"] == "lead_lag_taker"
+    assert row["strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
+    assert bool(row["strategy_portfolio_selected_eligible"])
+    assert row["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert bool(row["strategy_portfolio_notional_cap_applied"])
+    assert row["pre_portfolio_max_notional_per_session"] == 3000.0
+    assert bool(summary["strategy_portfolio_ready"])
+    assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
+
+
+def test_runtime_telemetry_blocks_bad_strategy_portfolio_config():
+    config = scaleup_config(require_strategy_portfolio=True)
+    config["strategy_portfolio"].update(
+        {
+            "ready": False,
+            "selected_strategy": "surface_mm",
+            "selected_market": "us_options_regular",
+            "selected_eligible": False,
+            "selected_allocation_notional": 0.0,
+        }
+    )
+
+    report = evaluate_runtime_telemetry(config)
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "strategy_portfolio_ready",
+        "strategy_portfolio_allocation_eligible",
+        "strategy_portfolio_strategy_matches",
+        "strategy_portfolio_market_matches",
+        "strategy_portfolio_allocation_positive",
+    } <= failed
 
 
 def test_runtime_telemetry_blocks_bad_broker_resume_gate_config():

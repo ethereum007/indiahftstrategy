@@ -99,6 +99,9 @@ def _metrics(
     broker_readiness = scaleup_config.get("broker_readiness", {}) or {}
     if not isinstance(broker_readiness, dict):
         broker_readiness = {}
+    strategy_portfolio = scaleup_config.get("strategy_portfolio", {}) or {}
+    if not isinstance(strategy_portfolio, dict):
+        strategy_portfolio = {}
     broker_resume_gate = broker_readiness.get("resume_gate", {}) or {}
     if not isinstance(broker_resume_gate, dict):
         broker_resume_gate = {}
@@ -129,6 +132,74 @@ def _metrics(
                 "lifecycle_orders": _number(latest, "lifecycle_orders"),
                 "replace_orders": _number(latest, "replace_orders"),
                 "session_notional": _number(latest, "session_notional", fallback=_number(latest, "total_notional")),
+                "scaleup_strategy_portfolio_required": _bool_from(strategy_portfolio, "required"),
+                "scaleup_strategy_portfolio_provided": _bool_from(strategy_portfolio, "provided"),
+                "scaleup_strategy_portfolio_ready": _bool_from(strategy_portfolio, "ready"),
+                "scaleup_strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
+                "scaleup_strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
+                "scaleup_strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
+                "scaleup_strategy_portfolio_selected_profile": str(strategy_portfolio.get("selected_profile", "")),
+                "scaleup_strategy_portfolio_selected_strategy": _strategy_key(
+                    strategy_portfolio.get("selected_strategy", "")
+                ),
+                "scaleup_strategy_portfolio_selected_market": _identity_key(
+                    strategy_portfolio.get("selected_market", "")
+                ),
+                "scaleup_strategy_portfolio_selected_eligible": _bool_from(
+                    strategy_portfolio,
+                    "selected_eligible",
+                ),
+                "scaleup_strategy_portfolio_selected_allocation_weight": _number_from(
+                    strategy_portfolio,
+                    "selected_allocation_weight",
+                ),
+                "scaleup_strategy_portfolio_selected_allocation_notional": _number_from(
+                    strategy_portfolio,
+                    "selected_allocation_notional",
+                ),
+                "scaleup_strategy_portfolio_notional_cap_applied": _bool_from(
+                    strategy_portfolio,
+                    "notional_cap_applied",
+                ),
+                "runtime_strategy_portfolio_provided": _bool_value(
+                    latest,
+                    "strategy_portfolio_provided",
+                    fallback=_bool_from(strategy_portfolio, "provided"),
+                ),
+                "runtime_strategy_portfolio_ready": _bool_value(
+                    latest,
+                    "strategy_portfolio_ready",
+                    fallback=_bool_from(strategy_portfolio, "ready"),
+                ),
+                "runtime_strategy_portfolio_selected_strategy": _strategy_key(
+                    _value(
+                        latest,
+                        "strategy_portfolio_selected_strategy",
+                        strategy_portfolio.get("selected_strategy", ""),
+                    )
+                ),
+                "runtime_strategy_portfolio_selected_market": _identity_key(
+                    _value(
+                        latest,
+                        "strategy_portfolio_selected_market",
+                        strategy_portfolio.get("selected_market", ""),
+                    )
+                ),
+                "runtime_strategy_portfolio_selected_eligible": _bool_value(
+                    latest,
+                    "strategy_portfolio_selected_eligible",
+                    fallback=_bool_from(strategy_portfolio, "selected_eligible"),
+                ),
+                "runtime_strategy_portfolio_selected_allocation_notional": _number(
+                    latest,
+                    "strategy_portfolio_selected_allocation_notional",
+                    fallback=_number_from(strategy_portfolio, "selected_allocation_notional"),
+                ),
+                "runtime_strategy_portfolio_notional_cap_applied": _bool_value(
+                    latest,
+                    "strategy_portfolio_notional_cap_applied",
+                    fallback=_bool_from(strategy_portfolio, "notional_cap_applied"),
+                ),
                 "realized_pnl": _number(latest, "realized_pnl", fallback=_number(latest, "net_pnl")),
                 "open_order_count": _number(latest, "open_order_count"),
                 "open_order_qty": _number(latest, "open_order_qty"),
@@ -305,6 +376,130 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         _threshold_check("mismatched_orders", row["mismatched_orders"], "<=", row["max_total_mismatched_orders"]),
         _threshold_check("overfilled_orders", row["overfilled_orders"], "<=", row["max_total_overfilled_orders"]),
     ]
+    scaleup_portfolio_active = bool(row["scaleup_strategy_portfolio_required"]) or bool(
+        row["scaleup_strategy_portfolio_provided"]
+    )
+    runtime_portfolio_active = bool(row["runtime_strategy_portfolio_provided"])
+    if bool(row["scaleup_strategy_portfolio_required"]):
+        checks.append(
+            _check(
+                "scaleup_strategy_portfolio_provided",
+                bool(row["scaleup_strategy_portfolio_provided"]),
+                "is",
+                True,
+                bool(row["scaleup_strategy_portfolio_provided"]),
+                "scale-up config requires strategy portfolio allocation but does not record supplied evidence",
+            )
+        )
+    if scaleup_portfolio_active or runtime_portfolio_active:
+        checks.extend(
+            [
+                _check(
+                    "scaleup_strategy_portfolio_ready",
+                    bool(row["scaleup_strategy_portfolio_ready"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_strategy_portfolio_ready"]),
+                    "scale-up strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "scaleup_strategy_portfolio_allocation_eligible",
+                    bool(row["scaleup_strategy_portfolio_selected_eligible"]),
+                    "is",
+                    True,
+                    bool(row["scaleup_strategy_portfolio_selected_eligible"]),
+                    "scale-up strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "scaleup_strategy_portfolio_strategy_matches",
+                    row["scaleup_strategy_portfolio_selected_strategy"],
+                    "==",
+                    row["expected_strategy"],
+                    bool(
+                        row["scaleup_strategy_portfolio_selected_strategy"]
+                        and row["expected_strategy"]
+                        and row["scaleup_strategy_portfolio_selected_strategy"] == row["expected_strategy"]
+                    ),
+                    "scale-up strategy portfolio strategy does not match scale-up identity",
+                ),
+                _check(
+                    "scaleup_strategy_portfolio_market_matches",
+                    row["scaleup_strategy_portfolio_selected_market"],
+                    "==",
+                    row["expected_market"],
+                    bool(
+                        row["scaleup_strategy_portfolio_selected_market"]
+                        and row["expected_market"]
+                        and row["scaleup_strategy_portfolio_selected_market"] == row["expected_market"]
+                    ),
+                    "scale-up strategy portfolio market does not match scale-up identity",
+                ),
+                _check(
+                    "scaleup_strategy_portfolio_allocation_notional",
+                    row["scaleup_strategy_portfolio_selected_allocation_notional"],
+                    ">",
+                    0.0,
+                    not pd.isna(row["scaleup_strategy_portfolio_selected_allocation_notional"])
+                    and float(row["scaleup_strategy_portfolio_selected_allocation_notional"]) > 0.0,
+                    "scale-up strategy portfolio allocation notional must be positive",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_ready",
+                    bool(row["runtime_strategy_portfolio_ready"]),
+                    "is",
+                    True,
+                    bool(row["runtime_strategy_portfolio_ready"]),
+                    "runtime telemetry strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_allocation_eligible",
+                    bool(row["runtime_strategy_portfolio_selected_eligible"]),
+                    "is",
+                    True,
+                    bool(row["runtime_strategy_portfolio_selected_eligible"]),
+                    "runtime telemetry strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_strategy_matches",
+                    row["runtime_strategy_portfolio_selected_strategy"],
+                    "==",
+                    row["expected_strategy"],
+                    bool(
+                        row["runtime_strategy_portfolio_selected_strategy"]
+                        and row["expected_strategy"]
+                        and row["runtime_strategy_portfolio_selected_strategy"] == row["expected_strategy"]
+                    ),
+                    "runtime telemetry strategy portfolio strategy does not match scale-up identity",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_market_matches",
+                    row["runtime_strategy_portfolio_selected_market"],
+                    "==",
+                    row["expected_market"],
+                    bool(
+                        row["runtime_strategy_portfolio_selected_market"]
+                        and row["expected_market"]
+                        and row["runtime_strategy_portfolio_selected_market"] == row["expected_market"]
+                    ),
+                    "runtime telemetry strategy portfolio market does not match scale-up identity",
+                ),
+                _check(
+                    "runtime_strategy_portfolio_allocation_notional",
+                    row["runtime_strategy_portfolio_selected_allocation_notional"],
+                    ">",
+                    0.0,
+                    not pd.isna(row["runtime_strategy_portfolio_selected_allocation_notional"])
+                    and float(row["runtime_strategy_portfolio_selected_allocation_notional"]) > 0.0,
+                    "runtime telemetry strategy portfolio allocation notional must be positive",
+                ),
+                _threshold_check(
+                    "strategy_portfolio_session_notional",
+                    row["session_notional"],
+                    "<=",
+                    row["scaleup_strategy_portfolio_selected_allocation_notional"],
+                ),
+            ]
+        )
     for value_column, threshold_column in (
         ("lifecycle_orders", "max_lifecycle_orders"),
         ("replace_orders", "max_replace_orders"),
@@ -656,6 +851,20 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "abs_net_delta": row["abs_net_delta"],
                 "abs_net_vega": row["abs_net_vega"],
                 "session_notional": row["session_notional"],
+                "strategy_portfolio_required": bool(row["scaleup_strategy_portfolio_required"]),
+                "strategy_portfolio_provided": bool(row["runtime_strategy_portfolio_provided"]),
+                "strategy_portfolio_ready": bool(row["runtime_strategy_portfolio_ready"]),
+                "strategy_portfolio_selected_strategy": row["runtime_strategy_portfolio_selected_strategy"],
+                "strategy_portfolio_selected_market": row["runtime_strategy_portfolio_selected_market"],
+                "strategy_portfolio_selected_eligible": bool(
+                    row["runtime_strategy_portfolio_selected_eligible"]
+                ),
+                "strategy_portfolio_selected_allocation_notional": row[
+                    "runtime_strategy_portfolio_selected_allocation_notional"
+                ],
+                "strategy_portfolio_notional_cap_applied": bool(
+                    row["runtime_strategy_portfolio_notional_cap_applied"]
+                ),
                 "realized_pnl": row["realized_pnl"],
                 "recommendation": "stop_routing_and_investigate" if halted else "continue_with_controls",
             }
