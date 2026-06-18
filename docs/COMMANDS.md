@@ -3481,6 +3481,10 @@ manifest.json
 For `arrow_money` and `irage`, the summary is marked
 `placeholder_normalized_pending_vendor_schema` until real vendor source columns
 replace the normalized placeholders.
+`adapter_schema_summary.csv` also exposes `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
+the first missing required source column, so vendor sample blockers are visible
+without opening the column-level CSV.
 `adapter_schema_review_checklist.csv` separates hard blockers such as missing
 required columns from review tasks such as classifying extra vendor fields and
 approving replacement Arrow.money/iRage source mappings.

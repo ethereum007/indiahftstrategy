@@ -695,7 +695,8 @@
   artifacts, and manifests for later Arrow.money/iRage routing adapters.
 - Adapter schema audit for vendor sample CSV headers, including required,
   missing, and extra source columns plus a mapping template and manifest before
-  real Arrow.money/iRage column maps are finalized.
+  real Arrow.money/iRage column maps are finalized, with the first missing
+  required source column surfaced in the summary.
 - Mapped vendor-data normalization command that applies reviewed header
   mappings to real tick, chain, order, or fill CSVs and emits normalized data,
   mapping checks, summary, and manifest artifacts.

@@ -172,10 +172,13 @@ def _mapping_template(columns: pd.DataFrame, adapter: str, kind: str) -> pd.Data
 def _summary(sample_columns: list[str], columns: pd.DataFrame, adapter: str, kind: str) -> pd.DataFrame:
     present = columns["present"].astype(bool) if not columns.empty else pd.Series(dtype=bool)
     matched = {str(value) for value in columns.loc[present, "matched_source_column"]}
-    missing = [str(value) for value in columns.loc[~present, "expected_source_column"]]
+    missing_rows = columns.loc[~present].copy().reset_index(drop=True)
+    missing = [str(value) for value in missing_rows["expected_source_column"]]
+    primary_blocker = _first_missing_required(missing_rows)
     extra = [column for column in sample_columns if column not in matched]
     required_count = int(len(columns))
     present_count = int(present.sum()) if required_count else 0
+    failed = int(len(missing_rows))
     return pd.DataFrame(
         [
             {
@@ -185,15 +188,56 @@ def _summary(sample_columns: list[str], columns: pd.DataFrame, adapter: str, kin
                 "source_columns": int(len(sample_columns)),
                 "required_columns": required_count,
                 "present_required_columns": present_count,
-                "missing_required_columns": int(len(missing)),
+                "missing_required_columns": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _missing_check_names(missing_rows),
+                "first_failed_reason": _missing_reason(primary_blocker),
+                "primary_blocker_check": _missing_check_name(primary_blocker),
+                "primary_blocker_value": _missing_value(primary_blocker, "expected_source_column"),
+                "primary_blocker_operator": "present",
+                "primary_blocker_threshold": "required",
+                "primary_blocker_reason": _missing_reason(primary_blocker),
                 "extra_columns": int(len(extra)),
                 "pass_rate": float(present_count / required_count) if required_count else 0.0,
-                "all_required_present": bool(len(missing) == 0),
+                "all_required_present": bool(failed == 0),
                 "missing_source_columns": ";".join(missing),
                 "extra_source_columns": ";".join(extra),
             }
         ]
     )
+
+
+def _first_missing_required(missing_rows: pd.DataFrame) -> pd.Series:
+    if missing_rows.empty:
+        return pd.Series(dtype=object)
+    return missing_rows.iloc[0]
+
+
+def _missing_check_names(missing_rows: pd.DataFrame) -> str:
+    names = [_missing_check_name(row) for _, row in missing_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _missing_check_name(row: pd.Series) -> str:
+    source = _missing_value(row, "expected_source_column")
+    return f"missing_required:{source}" if source else ""
+
+
+def _missing_reason(row: pd.Series) -> str:
+    source = _missing_value(row, "expected_source_column")
+    normalized = _missing_value(row, "normalized_column")
+    if not source:
+        return ""
+    return f"{source} source column is missing for {normalized}" if normalized else f"{source} source column is missing"
+
+
+def _missing_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    value = row[column]
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _review_checklist(summary: pd.DataFrame, template: pd.DataFrame) -> pd.DataFrame:

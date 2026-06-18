@@ -19,6 +19,9 @@ def test_adapter_schema_audit_accepts_normalized_ticks_with_extra_columns():
     assert summary["adapter_schema_status"] == "native_normalized"
     assert summary["required_columns"] == len(TICK_COLUMNS)
     assert summary["missing_required_columns"] == 0
+    assert summary["failed_check_count"] == 0
+    assert summary["failed_check_names"] == ""
+    assert summary["primary_blocker_check"] == ""
     assert summary["extra_columns"] == 1
     assert summary["extra_source_columns"] == "venue_code"
     assert set(audit.template["status"]) == {"mapped"}
@@ -39,6 +42,14 @@ def test_adapter_schema_audit_reports_missing_required_columns():
     assert not audit.passed
     assert summary["missing_required_columns"] == 2
     assert summary["missing_source_columns"] == "last;last_qty"
+    assert summary["failed_check_count"] == 2
+    assert summary["failed_check_names"] == "missing_required:last;missing_required:last_qty"
+    assert summary["first_failed_reason"] == "last source column is missing for last"
+    assert summary["primary_blocker_check"] == "missing_required:last"
+    assert summary["primary_blocker_value"] == "last"
+    assert summary["primary_blocker_operator"] == "present"
+    assert summary["primary_blocker_threshold"] == "required"
+    assert summary["primary_blocker_reason"] == "last source column is missing for last"
     assert (audit.template["status"] == "missing").sum() == 2
 
 
@@ -82,6 +93,10 @@ def test_cli_adapter_schema_audit_writes_outputs_and_fails_on_missing(tmp_path):
     assert code == 2
     assert summary.loc[0, "adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert int(summary.loc[0, "missing_required_columns"]) == 1
+    assert int(summary.loc[0, "failed_check_count"]) == 1
+    assert summary.loc[0, "failed_check_names"] == "missing_required:price"
+    assert summary.loc[0, "primary_blocker_check"] == "missing_required:price"
+    assert summary.loc[0, "primary_blocker_reason"] == "price source column is missing for price"
     assert summary.loc[0, "missing_source_columns"] == "price"
     assert "broker_ref" in summary.loc[0, "extra_source_columns"]
     assert "missing" in set(template["status"])
