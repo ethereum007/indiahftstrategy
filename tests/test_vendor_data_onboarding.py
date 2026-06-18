@@ -64,6 +64,7 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert summary["normalized_rows"] == 2
     assert summary["mapping_coverage"] == 1.0
     assert summary["mapping_source"] == "vendor_intake_draft"
+    assert summary["market"] == "india_nse_index_derivatives"
     assert summary["blocked_action_count"] == 0
     assert summary["next_gate"] == ""
     assert report.action_queue is not None
@@ -72,6 +73,7 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert "next_gate_help_command" in action_queue.columns
     assert "# Vendor Market Data Pipeline Runbook" in runbook
     assert "- Ready: yes" in runbook
+    assert "- Market: india_nse_index_derivatives" in runbook
     assert summary["source_file_sha256"] == manifest["inputs"]["input"]["sha256"]
     assert len(summary["source_header_sha256"]) == 64
     assert len(summary["mapping_draft_sha256"]) == 64
@@ -135,6 +137,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert summary["unique_mapping_drafts"] == 1
     assert summary["mapping_sources"] == "vendor_intake_draft"
     assert summary["comparison_accepted"]
+    assert summary["market"] == "india_nse_index_derivatives"
     assert summary["blocked_action_count"] == 0
     assert summary["next_gate"] == ""
     assert report.action_queue is not None
@@ -143,6 +146,7 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert "next_gate_help_command" in action_queue.columns
     assert "# Vendor Market Data Batch Runbook" in runbook
     assert "- Ready: yes" in runbook
+    assert "- Market: india_nse_index_derivatives" in runbook
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
     assert report.datasets["source_file_sha256"].nunique() == 2
     assert report.datasets["source_header_sha256"].nunique() == 1
@@ -241,6 +245,7 @@ def test_vendor_market_data_pipeline_onboards_option_chain_file(tmp_path):
     diagnostics = pd.read_csv(out_dir / "03_diagnostics" / "diagnostic_summary.csv")
     assert report.ready
     assert report.summary.loc[0, "kind"] == "chain"
+    assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert set(diagnostics["scope"]) == {"overall", "expiry"}
     assert bool(pd.read_csv(out_dir / "04_data_readiness" / "data_readiness_summary.csv").loc[0, "ready"])
 
@@ -281,6 +286,7 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     runbook = (out_dir / "vendor_market_data_pipeline_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert summary.loc[0, "blocked_action_count"] > 0
     assert str(summary.loc[0, "next_gate"])
     assert str(summary.loc[0, "next_gate_help_command"]).startswith("python -m hft_cli ")
@@ -289,6 +295,7 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     assert str(action_queue.loc[0, "next_gate_help_command"]).startswith("python -m hft_cli ")
     assert "# Vendor Market Data Pipeline Runbook" in runbook
     assert "- Ready: no" in runbook
+    assert "- Market: india_nse_index_derivatives" in runbook
     assert (out_dir / "04_data_readiness" / "data_readiness_summary.csv").exists()
 
 
@@ -324,6 +331,7 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
     runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert summary.loc[0, "blocked_action_count"] > 0
     assert summary.loc[0, "next_gate"] == "pipeline-vendor-market-data-batch"
     assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli pipeline-vendor-market-data-batch --help"
@@ -331,3 +339,4 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
     assert "dataset_count" in set(action_queue["check"])
     assert "# Vendor Market Data Batch Runbook" in runbook
     assert "- Ready: no" in runbook
+    assert "- Market: india_nse_index_derivatives" in runbook

@@ -14,6 +14,7 @@ import pandas as pd
 
 
 MANIFEST_NAME = "manifest.json"
+FILE_HASH_CHUNK_SIZE = 64 * 1024
 
 
 def write_experiment_manifest(
@@ -71,7 +72,7 @@ def build_experiment_manifest(
 def file_sha256(path: str | Path) -> str:
     hasher = hashlib.sha256()
     with Path(path).open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+        for chunk in iter(lambda: handle.read(FILE_HASH_CHUNK_SIZE), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
 

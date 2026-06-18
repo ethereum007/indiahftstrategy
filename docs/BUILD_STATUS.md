@@ -72,6 +72,9 @@
 - Vendor market-data pipeline and batch roots now also write manifest-tracked
   action queues and runbooks that promote nested data-readiness/comparison
   blockers into catalog-visible next gates for Arrow.money/iRage onboarding.
+- Vendor market-data pipeline and batch summaries now expose explicit market
+  identity, so catalog queues and future US-market expansion can filter vendor
+  onboarding evidence without opening config sidecars.
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.
