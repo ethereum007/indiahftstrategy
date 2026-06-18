@@ -120,6 +120,10 @@ and input-provenance totals for human operator review.
 Use `--fail-on-blocked-actions` to return exit code 2 when blocked or unknown
 catalog actions exist, or `--fail-on-actions` to fail when any ready, blocked,
 or unknown action remains.
+Use `--fail-on-blocked-placeholder-schema` to fail only when cataloged broker
+schema evidence has unreviewed placeholders that were not explicitly allowed,
+or `--fail-on-placeholder-schema` to fail whenever any placeholder broker
+schema remains active in a promotion/live-readiness catalog.
 Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
 summary status, missing summaries, dirty git state, or unfingerprinted inputs.
 When that gate fails, inspect `experiment_catalog_hygiene_gaps.csv` first.

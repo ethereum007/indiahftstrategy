@@ -156,8 +156,17 @@ def _catalog_exit_code(
     fail_on_actions: bool,
     fail_on_blocked_actions: bool,
     fail_on_catalog_gaps: bool,
+    fail_on_placeholder_schema: bool,
+    fail_on_blocked_placeholder_schema: bool,
 ) -> int:
     if fail_on_catalog_gaps and _catalog_gap_count(result) > 0:
+        return 2
+    if fail_on_placeholder_schema and _catalog_summary_metric(result, "placeholder_schema_active_runs") > 0:
+        return 2
+    if (
+        fail_on_blocked_placeholder_schema
+        and _catalog_summary_metric(result, "placeholder_schema_blocked_runs") > 0
+    ):
         return 2
     action_queue = result.action_queue
     action_count = 0 if action_queue is None else int(len(action_queue))
@@ -204,6 +213,13 @@ def _catalog_gap_count(result) -> int:
             "input_unfingerprinted_count",
         ]
     )
+
+
+def _catalog_summary_metric(result, column: str) -> int:
+    summary = result.summary
+    if summary.empty:
+        return 0
+    return _catalog_metric(summary.iloc[0], column)
 
 
 def _catalog_metric(row, column: str) -> int:
@@ -1108,6 +1124,8 @@ def main(argv: list[str] | None = None) -> int:
     catalog.add_argument("--fail-on-actions", action="store_true")
     catalog.add_argument("--fail-on-blocked-actions", action="store_true")
     catalog.add_argument("--fail-on-catalog-gaps", action="store_true")
+    catalog.add_argument("--fail-on-placeholder-schema", action="store_true")
+    catalog.add_argument("--fail-on-blocked-placeholder-schema", action="store_true")
 
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
@@ -3141,6 +3159,8 @@ def main(argv: list[str] | None = None) -> int:
             fail_on_actions=args.fail_on_actions,
             fail_on_blocked_actions=args.fail_on_blocked_actions,
             fail_on_catalog_gaps=args.fail_on_catalog_gaps,
+            fail_on_placeholder_schema=args.fail_on_placeholder_schema,
+            fail_on_blocked_placeholder_schema=args.fail_on_blocked_placeholder_schema,
         )
     if args.command == "review-strategy-evidence":
         required_run_types = (

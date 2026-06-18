@@ -1527,6 +1527,74 @@ def test_cli_catalog_runs_catalog_gap_gate_passes_clean_catalog(tmp_path):
     assert code == 0
 
 
+def test_cli_catalog_runs_can_fail_on_placeholder_schema_gates(tmp_path):
+    allowed_root = tmp_path / "allowed_runs"
+    write_run(
+        allowed_root / "broker_vendor_allowed",
+        run_type="broker_vendor_data_readiness_pipeline",
+        summary_name="broker_vendor_data_readiness_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "schema_reviewed": False,
+            "placeholder_schema_active": True,
+            "placeholder_schema_allowed": True,
+            "failed_checks": 0,
+        },
+    )
+    blocked_root = tmp_path / "blocked_runs"
+    write_run(
+        blocked_root / "broker_readiness_blocked",
+        run_type="broker_readiness",
+        summary_name="broker_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "adapter": "irage",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "schema_reviewed": False,
+            "failed_checks": 1,
+        },
+    )
+
+    allowed_blocked_gate = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(allowed_root),
+            "--out",
+            str(tmp_path / "catalog_allowed_blocked_gate"),
+            "--fail-on-blocked-placeholder-schema",
+        ]
+    )
+    allowed_strict_gate = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(allowed_root),
+            "--out",
+            str(tmp_path / "catalog_allowed_strict_gate"),
+            "--fail-on-placeholder-schema",
+        ]
+    )
+    blocked_gate = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(blocked_root),
+            "--out",
+            str(tmp_path / "catalog_blocked_gate"),
+            "--fail-on-blocked-placeholder-schema",
+        ]
+    )
+
+    summary = pd.read_csv(tmp_path / "catalog_blocked_gate" / "experiment_catalog_summary.csv")
+    assert allowed_blocked_gate == 0
+    assert allowed_strict_gate == 2
+    assert blocked_gate == 2
+    assert int(summary.loc[0, "placeholder_schema_blocked_runs"]) == 1
+
+
 def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):
     root = tmp_path / "runs"
     write_run(
