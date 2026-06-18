@@ -404,6 +404,8 @@ Outputs:
 market_portability_matrix.csv
 market_portability_gaps.csv
 market_portability_summary.csv
+market_portability_action_queue.csv
+market_portability_runbook.md
 market_portability_config.json
 manifest.json
 ```
@@ -411,9 +413,16 @@ manifest.json
 US rows are marked `needs_fee_model` unless explicit fees are acknowledged.
 India-specific settlement convergence remains blocked for US profiles until a
 separate US settlement/microstructure model is implemented. The config JSON
-records ready strategy/market pairs, gap pairs, next gates, the matching
-strategy-evidence profile command, and the file-provenance-gated `ops_launch`
-review command for downstream US research planning.
+records ready strategy/market pairs, gap pairs, next gates, action counts, the
+matching strategy-evidence profile command, and the file-provenance-gated
+`ops_launch` review command for downstream US research planning.
+`market_portability_action_queue.csv` flattens ready and blocked
+strategy/market pairs into scheduler order with `next_gate`,
+`next_gate_help_command`, evidence gates, data requirements, workflow commands,
+and a recommendation. `market_portability_runbook.md` mirrors the same queue
+for operator review, and both files are included in the run manifest so
+`catalog-runs` can promote the portability handoff into the top-level action
+plan.
 
 ## Route Readiness Review
 

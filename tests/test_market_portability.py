@@ -39,6 +39,10 @@ def test_market_portability_report_gates_us_research_on_explicit_fees():
         == "market_microstructure_model_missing"
     )
     assert int(report.summary.loc[0, "gaps"]) == 4
+    assert int(report.summary.loc[0, "ready_action_count"]) == 2
+    assert int(report.summary.loc[0, "blocked_action_count"]) == 4
+    assert report.summary.loc[0, "next_gate"] == "run_market_profile_report_with_fee_assumptions"
+    assert report.summary.loc[0, "next_gate_help_command"] == "python -m hft_cli market-portability-report --help"
 
 
 def test_market_portability_config_records_ready_gap_and_next_gate_pairs():
@@ -60,6 +64,7 @@ def test_market_portability_config_records_ready_gap_and_next_gate_pairs():
         "strategy_evidence_gate",
         "ops_evidence_profile",
         "ops_evidence_gate",
+        "next_gate_help_command",
     } <= set(report.config["gap_pairs"][0])
     assert report.config["ready_pairs"] == [
         {
@@ -72,9 +77,16 @@ def test_market_portability_config_records_ready_gap_and_next_gate_pairs():
             "strategy_evidence_gate": "review-strategy-evidence --profile imbalance",
             "ops_evidence_profile": "ops_launch",
             "ops_evidence_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
+            "next_gate_help_command": "",
         }
     ]
     assert "run_market_profile_report_with_fee_assumptions" in report.config["next_gates"]
+    assert report.config["ready_action_count"] == 1
+    assert report.config["blocked_action_count"] == 1
+    assert report.config["ready_actions"][0]["recommendation"] == "run_strategy_walkforward_and_route_readiness_gates"
+    assert report.config["blocked_actions"][0]["next_gate_help_command"] == (
+        "python -m hft_cli market-portability-report --help"
+    )
 
 
 def test_market_portability_report_marks_us_options_portable_with_fee_model():
@@ -115,8 +127,12 @@ def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "market_portability_matrix.csv").exists()
     assert (out_dir / "market_portability_gaps.csv").exists()
     assert (out_dir / "market_portability_summary.csv").exists()
+    assert (out_dir / "market_portability_action_queue.csv").exists()
+    assert (out_dir / "market_portability_runbook.md").exists()
     config = json.loads((out_dir / "market_portability_config.json").read_text(encoding="utf-8"))
     assert config["ready"]
+    assert config["ready_action_count"] == 1
+    assert config["blocked_action_count"] == 0
     assert config["requested_markets"] == ["us_equities_regular"]
     assert config["ready_pairs"] == [
         {
@@ -129,11 +145,23 @@ def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):
             "strategy_evidence_gate": "review-strategy-evidence --profile leadlag",
             "ops_evidence_profile": "ops_launch",
             "ops_evidence_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
+            "next_gate_help_command": "",
         }
     ]
+    queue = pd.read_csv(out_dir / "market_portability_action_queue.csv")
+    runbook = (out_dir / "market_portability_runbook.md").read_text(encoding="utf-8")
+    assert queue.loc[0, "queue_status"] == "ready"
+    assert queue.loc[0, "next_gate"] == "run_walkforward_and_paper_shadow_gates"
+    assert queue.loc[0, "recommendation"] == "run_strategy_walkforward_and_route_readiness_gates"
+    assert "# Market Portability Runbook" in runbook
+    assert "- Ready: yes" in runbook
     assert "plan-leadlag-orders" in report.matrix.loc[0, "workflow_commands"]
     assert "pipeline-leadlag-launch" in report.matrix.loc[0, "workflow_commands"]
     assert (out_dir / "manifest.json").exists()
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "market_portability_action_queue.csv" in artifact_paths
+    assert "market_portability_runbook.md" in artifact_paths
 
 
 def test_cli_market_portability_report_writes_selected_strategy(tmp_path):
@@ -161,3 +189,5 @@ def test_cli_market_portability_report_writes_selected_strategy(tmp_path):
     assert matrix.loc[0, "ops_evidence_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
     assert bool(summary.loc[0, "ready"])
     assert (out_dir / "market_portability_config.json").exists()
+    assert (out_dir / "market_portability_action_queue.csv").exists()
+    assert (out_dir / "market_portability_runbook.md").exists()
