@@ -2045,9 +2045,11 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresholds) -> dict[str, Any]:
+    failed_check_records = _failed_check_records(checks)
     return {
         "schema_version": 1,
         "ready": bool(plan_row["ready"]),
+        "failed_check_count": len(failed_check_records),
         "target_mode": str(plan_row["target_mode"]),
         "strategy": str(plan_row["strategy"]),
         "market": str(plan_row["market"]),
@@ -2270,9 +2272,30 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             },
             "shadow_broker_readiness": _broker_shadow_broker_config(plan_row),
         },
-        "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+        "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
+        "primary_blocker": failed_check_records[0] if failed_check_records else {},
         "thresholds": asdict(thresholds),
     }
+
+
+def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    return [
+        {str(key): _jsonable_check_value(value) for key, value in row.items()}
+        for row in failed.to_dict(orient="records")
+    ]
+
+
+def _jsonable_check_value(value: object) -> object:
+    value = _jsonable(value)
+    if hasattr(value, "item"):
+        try:
+            return value.item()  # type: ignore[attr-defined]
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return value
 
 
 def _broker_readiness_required(thresholds: ScaleUpThresholds) -> bool:

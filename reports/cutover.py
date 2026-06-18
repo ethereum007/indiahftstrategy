@@ -1993,9 +1993,11 @@ def _config(
     thresholds: CutoverGateThresholds,
     checks: pd.DataFrame,
 ) -> dict[str, Any]:
+    failed_check_records = _failed_check_records(checks)
     return {
         "schema_version": 1,
         "ready": _to_bool(authorization["ready"]),
+        "failed_check_count": len(failed_check_records),
         "target_mode": str(authorization["target_mode"]),
         "strategy": str(authorization["strategy"]),
         "market": str(authorization["market"]),
@@ -2189,8 +2191,29 @@ def _config(
             "limits_ack": _to_bool(authorization["operator_limits_ack"]),
         },
         "thresholds": asdict(thresholds),
-        "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+        "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
+        "primary_blocker": failed_check_records[0] if failed_check_records else {},
     }
+
+
+def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    return [
+        {str(key): _jsonable_check_value(value) for key, value in row.items()}
+        for row in failed.to_dict(orient="records")
+    ]
+
+
+def _jsonable_check_value(value: object) -> object:
+    value = _jsonable(value)
+    if hasattr(value, "item"):
+        try:
+            return value.item()  # type: ignore[attr-defined]
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return value
 
 
 def _broker_shadow_broker_config(authorization: pd.Series) -> dict[str, Any]:

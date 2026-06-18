@@ -2403,6 +2403,10 @@ scaleup_config.json
 manifest.json
 ```
 
+`scaleup_config.json` keeps the legacy `failed_checks` name list and also
+adds `failed_check_count` plus `primary_blocker`, the first failed check as a
+structured record with value, operator, threshold, passed, and reason fields.
+
 For lead-lag, imbalance, parity-box, settlement convergence, or surface
 market-making handoffs, `--launch` may point at the launch-pipeline root. In
 that case scale-up reads the nested launch summary and automatically includes
@@ -2859,6 +2863,10 @@ cutover_config.json
 manifest.json
 ```
 
+`cutover_config.json` keeps the legacy `failed_checks` name list and also adds
+`failed_check_count` plus `primary_blocker`, so schedulers can route the first
+failed authorization check without parsing `cutover_checks.csv`.
+
 For `live_dryrun`, the cutover gate automatically requires route-readiness
 proof retained in the scale-up plan, operator approval, operator
 acknowledgement of the strategy/market identity, acknowledgement of the
@@ -2933,6 +2941,10 @@ route_enable_summary.csv
 route_enable_config.json
 manifest.json
 ```
+
+`route_enable_config.json` keeps the legacy `failed_checks` name list and also
+adds `failed_check_count` plus `primary_blocker`, giving broker-route
+automation one compact blocker record before it reads the full check CSV.
 
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,

@@ -637,6 +637,8 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert bool(summary["runtime_session_ready"])
     assert bool(summary["operator_approval_required"])
     assert summary["recommendation"] == "allow_live_dryrun_cutover"
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.config["runtime_session"]["guard_action"] == "continue"
     assert report.config["limits"]["max_orders_per_session"] == 10
     assert bool(summary["scaleup_broker_schema_reviewed"])
@@ -1503,6 +1505,9 @@ def test_cutover_gate_blocks_dispatch_roundtrip_failed_checks():
         "scaleup_dispatch_roundtrip_failed_checks",
         "broker_dispatch_roundtrip_failed_checks",
     } <= failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert int(report.summary.iloc[0]["scaleup_dispatch_roundtrip_failed_checks"]) == 1
     assert int(report.summary.iloc[0]["broker_dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["scaleup_dispatch_roundtrip"]["failed_checks"] == 1

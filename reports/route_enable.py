@@ -1609,10 +1609,12 @@ def _broker_vendor_data_readiness_summary_fields(packet: pd.Series) -> dict[str,
 
 
 def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.DataFrame) -> dict[str, Any]:
+    failed_check_records = _failed_check_records(checks)
     return {
         "schema_version": 1,
         "route_enabled": _to_bool(packet["route_enabled"]),
         "route_state": str(packet["route_state"]),
+        "failed_check_count": len(failed_check_records),
         "target_mode": str(packet["target_mode"]),
         "strategy": str(packet["strategy"]),
         "market": str(packet["market"]),
@@ -1741,8 +1743,29 @@ def _config(packet: pd.Series, thresholds: RouteEnableThresholds, checks: pd.Dat
             },
         },
         "thresholds": asdict(thresholds),
-        "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+        "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
+        "primary_blocker": failed_check_records[0] if failed_check_records else {},
     }
+
+
+def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    return [
+        {str(key): _jsonable_check_value(value) for key, value in row.items()}
+        for row in failed.to_dict(orient="records")
+    ]
+
+
+def _jsonable_check_value(value: object) -> object:
+    value = _jsonable(value)
+    if hasattr(value, "item"):
+        try:
+            return value.item()  # type: ignore[attr-defined]
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return value
 
 
 def _broker_shadow_broker_config(packet: pd.Series) -> dict[str, Any]:

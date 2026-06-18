@@ -116,6 +116,10 @@
   `next_actions`, `ready_actions`, and `blocked_actions`, plus root-level
   `primary_action_status` and `primary_action`, giving schedulers the final
   live-dry-run route handoff without parsing CSV files.
+- Scale-up, cutover, and route-enable config JSONs now retain their legacy
+  failed-check name lists while adding `failed_check_count` and a structured
+  `primary_blocker` record, so launch schedulers can surface the first failed
+  gate without opening every checks CSV.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
@@ -570,7 +574,8 @@
   broker-readiness-carried vendor market-data batch proof, and operator
   strategy/market/limit acknowledgement agree in one manifest-backed
   authorization artifact that fingerprints resolved scale-up, broker-readiness,
-  runtime-session, and operator-review inputs.
+  runtime-session, and operator-review inputs while exposing the first failed
+  check as a structured config blocker.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits, rechecks
   cutover route-readiness proof, live-dry-run dispatch round-trip proof,
@@ -581,7 +586,7 @@
   cutover-retained broker-readiness vendor market-data batch proof, resolves
   broker upload/export summaries from launch pipeline roots, fingerprints resolved
   cutover/upload/export inputs, and emits the final machine-readable broker
-  route-enable config without submitting orders.
+  route-enable config with a primary blocker record without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, carries broker schema review status/mode plus

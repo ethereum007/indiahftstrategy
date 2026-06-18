@@ -549,6 +549,8 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert int(packet["upload_orders"]) == 2
     assert report.summary.iloc[0]["recommendation"] == "enable_broker_route"
     assert report.config["route_enabled"]
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.config["upload"]["output_file"] == "broker_upload_orders.csv"
     assert bool(report.summary.iloc[0]["broker_schema_reviewed"])
     assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
@@ -1354,6 +1356,9 @@ def test_route_enable_blocks_dispatch_roundtrip_failed_checks():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "cutover_dispatch_roundtrip_failed_checks" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert int(report.summary.iloc[0]["dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["dispatch_roundtrip"]["failed_checks"] == 1
 

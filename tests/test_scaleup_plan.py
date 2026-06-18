@@ -847,6 +847,8 @@ def test_scaleup_plan_accepts_clean_shadow_scaleup():
     assert report.summary.iloc[0]["recommendation"] == "scale_up_with_controls"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.config["identity"]["strategy"] == "lead_lag_taker"
     assert report.config["identity"]["market"] == "india_nse_index_derivatives"
     assert report.config["kill_switches"]["max_worst_adverse_slippage"] == 0.05
@@ -1881,6 +1883,9 @@ def test_scaleup_plan_blocks_broker_dispatch_roundtrip_failed_checks():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "broker_dispatch_roundtrip_failed_checks" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert report.summary.iloc[0]["broker_dispatch_roundtrip_failed_checks"] == 1
     assert report.config["broker_readiness"]["dispatch_roundtrip"]["failed_checks"] == 1
 
