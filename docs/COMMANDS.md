@@ -3524,6 +3524,11 @@ mapped_data_summary.csv
 manifest.json
 ```
 
+`mapped_data_summary.csv` exposes `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
+the first required normalized column that could not be mapped from the vendor
+CSV.
+
 The command fails closed when required normalized columns are not mapped, and
 tick/chain outputs pass through the same session, timestamp, and data-quality
 normalizers used by the strategy backtests.

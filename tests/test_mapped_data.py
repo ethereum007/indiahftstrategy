@@ -50,6 +50,9 @@ def test_normalize_mapped_tick_data_uses_reviewed_vendor_mapping():
     assert int(report.data.loc[0, "ask_qty"]) == 150
     assert "regime" in report.data.columns
     assert int(report.summary.loc[0, "mapped_columns"]) == 7
+    assert int(report.summary.loc[0, "failed_check_count"]) == 0
+    assert report.summary.loc[0, "failed_check_names"] == ""
+    assert report.summary.loc[0, "primary_blocker_check"] == ""
 
 
 def test_normalize_mapped_data_fails_closed_for_missing_required_source():
@@ -78,6 +81,15 @@ def test_normalize_mapped_data_fails_closed_for_missing_required_source():
     assert not report.ready
     assert report.data.empty
     assert int(report.summary.loc[0, "failed_mappings"]) == 1
+    summary = report.summary.iloc[0]
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "unmapped_required:ask_qty"
+    assert summary["first_failed_reason"] == "required normalized column has no available source column or default value"
+    assert summary["primary_blocker_check"] == "unmapped_required:ask_qty"
+    assert summary["primary_blocker_value"] == "missing_ask_size"
+    assert summary["primary_blocker_operator"] == "int"
+    assert summary["primary_blocker_threshold"] == "required"
+    assert summary["primary_blocker_reason"] == "required normalized column has no available source column or default value"
     failed = report.checks.loc[~report.checks["passed"].astype(bool)].iloc[0]
     assert failed["normalized_column"] == "ask_qty"
 

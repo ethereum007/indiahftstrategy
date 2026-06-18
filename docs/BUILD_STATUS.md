@@ -699,7 +699,8 @@
   required source column surfaced in the summary.
 - Mapped vendor-data normalization command that applies reviewed header
   mappings to real tick, chain, order, or fill CSVs and emits normalized data,
-  mapping checks, summary, and manifest artifacts.
+  mapping checks, summary, and manifest artifacts with the first failed
+  required normalized column surfaced in the summary.
 - Configurable mapped broker-order export that converts broker-neutral launch
   orders into a vendor CSV shape from a reviewed mapping file, with required
   field checks, simple transforms, manifests, and summary-level primary blocker
