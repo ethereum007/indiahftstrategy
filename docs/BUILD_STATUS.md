@@ -388,6 +388,11 @@
   and `data_readiness_runbook.md` handoffs, mapping failed vendor intake,
   schema, normalization, diagnostics, market-profile, market-portability, and
   metadata checks to the next CLI gate for catalog-level scheduler plans.
+- Data readiness summaries and JSON handoffs now expose
+  `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
+  structured primary-blocker fields so raw vendor-data blockers can be routed
+  to the exact first failed intake, schema, normalization, diagnostics,
+  market-profile, portability, or metadata check.
 - Data readiness now writes manifest-tracked `data_readiness_config.json`,
   mirroring summary, component, failed-check, and action-queue state as a
   scheduler-readable JSON handoff for raw vendor data blockers.

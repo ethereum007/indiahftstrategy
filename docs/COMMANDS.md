@@ -3807,10 +3807,14 @@ When `--market-portability` is supplied with `--expected-strategy` and
 closed unless that exact strategy-market pair is in `ready_pairs`.
 `data_readiness_action_queue.csv` flattens failed checks into blocked actions
 with the inferred upstream gate, `next_gate_help_command`, observed value,
-threshold, reason, and recommendation. `data_readiness_config.json` mirrors
-the same queue as `next_actions`, `ready_actions`, and `blocked_actions`, plus
-root-level `primary_action_status` and `primary_action` fields, summary,
-component, and failed-check state for scheduler handoff.
+threshold, reason, and recommendation. `data_readiness_summary.csv` also
+exposes `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
+`primary_blocker_*` fields for the first failed readiness check. The
+`data_readiness_config.json` handoff mirrors the same queue as `next_actions`,
+`ready_actions`, and `blocked_actions`, plus root-level
+`primary_action_status`, `primary_action`, `failed_check_count`,
+`failed_checks`, `first_failed_reason`, and structured `primary_blocker`
+fields, summary, component, and failed-check state for scheduler handoff.
 `data_readiness_runbook.md` mirrors the same handoff with component readiness
 and failed checks, and these sidecars are manifest-tracked so `catalog-runs`
 can promote blocked vendor-data work into the top-level action plan.

@@ -450,10 +450,12 @@ def _summary(
     thresholds: DataReadinessThresholds,
     action_queue: pd.DataFrame,
 ) -> pd.DataFrame:
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    failed_rows = _failed_check_rows(checks)
+    failed = int(len(failed_rows)) if not checks.empty else 1
     required = items.loc[items["required"].astype(bool)] if not items.empty else pd.DataFrame()
     ready = failed == 0
     next_gate = _primary_next_gate(action_queue)
+    primary_blocker = _first_failed_check(failed_rows)
     return pd.DataFrame(
         [
             {
@@ -463,6 +465,14 @@ def _summary(
                 "provided_components": int(items["provided"].astype(bool).sum()) if not items.empty else 0,
                 "ready_components": int(items["ready"].astype(bool).sum()) if not items.empty else 0,
                 "failed_checks": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "require_explicit_fee_model": bool(thresholds.require_explicit_fee_model),
                 "expected_strategy": _identity(thresholds.expected_strategy),
                 "expected_market": _identity(thresholds.expected_market),
@@ -509,11 +519,9 @@ def _config(
     ready_actions = _actions_with_status(action_queue, "ready")
     blocked_actions = _actions_with_status(action_queue, "blocked")
     primary_action = _first_action_record(action_queue)
-    failed_checks = (
-        checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
-        if not checks.empty and "passed" in checks.columns
-        else []
-    )
+    failed_rows = _failed_check_rows(checks)
+    failed_checks = _failed_check_list(failed_rows)
+    primary_blocker = _first_failed_check_record(failed_rows)
     return {
         "schema_version": 1,
         "ready": _to_bool(summary_row.get("ready", False)),
@@ -533,7 +541,10 @@ def _config(
         "expected_vendor_data_kind": _value_text(summary_row.get("expected_vendor_data_kind")),
         "data_adapters": _value_text(summary_row.get("data_adapters")),
         "data_kinds": _value_text(summary_row.get("data_kinds")),
+        "failed_check_count": int(_value_number(summary_row.get("failed_check_count", len(failed_checks)))),
         "failed_checks": failed_checks,
+        "first_failed_reason": _value_text(summary_row.get("first_failed_reason")),
+        "primary_blocker": primary_blocker,
         "components": _records(items),
         "ready_action_count": int(len(ready_actions)),
         "blocked_action_count": int(len(blocked_actions)),
@@ -545,6 +556,48 @@ def _config(
         "ready_actions": _records(ready_actions),
         "blocked_actions": _records(blocked_actions),
     }
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[0:0].copy()
+    return checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+
+
+def _failed_check_list(failed_rows: pd.DataFrame) -> list[str]:
+    if failed_rows.empty or "check" not in failed_rows.columns:
+        return []
+    return [_value_text(value) for value in failed_rows["check"].tolist() if _value_text(value)]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    return ";".join(_failed_check_list(failed_rows))
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _first_failed_check_record(failed_rows: pd.DataFrame) -> dict[str, object]:
+    if failed_rows.empty:
+        return {}
+    return _jsonable_record(failed_rows.iloc[0].to_dict())
+
+
+def _check_name(row: pd.Series) -> str:
+    return _check_value(row, "check")
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty:
+        return ""
+    return _value_text(row.get(column, ""))
 
 
 def _first_action_record(frame: pd.DataFrame) -> dict[str, Any]:

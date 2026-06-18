@@ -218,8 +218,17 @@ def test_data_readiness_fails_on_unready_vendor_intake():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     item = report.items.set_index("component").loc["vendor_intake"]
+    summary = report.summary.iloc[0]
     assert "vendor_intake_ready" in failed
     assert int(item["failed_checks"]) == 1
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "vendor_intake_ready"
+    assert summary["first_failed_reason"] == "vendor_intake is not ready"
+    assert summary["primary_blocker_check"] == "vendor_intake_ready"
+    assert summary["primary_blocker_value"] == "False"
+    assert summary["primary_blocker_operator"] == "is"
+    assert summary["primary_blocker_threshold"] == "True"
+    assert summary["primary_blocker_reason"] == "vendor_intake is not ready"
 
 
 def test_data_readiness_exposes_ambiguous_vendor_intake_kind():
@@ -439,10 +448,17 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     action_queue = pd.read_csv(out_dir / "data_readiness_action_queue.csv")
     config = json.loads((out_dir / "data_readiness_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "data_readiness_runbook.md").read_text(encoding="utf-8")
+    saved_summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
     assert action_queue.empty
     assert "next_gate_help_command" in action_queue.columns
+    assert int(saved_summary.loc[0, "failed_check_count"]) == 0
+    assert pd.isna(saved_summary.loc[0, "primary_blocker_check"])
     assert config["ready"]
     assert config["component_counts"]["failed_checks"] == 0
+    assert config["failed_check_count"] == 0
+    assert config["failed_checks"] == []
+    assert config["first_failed_reason"] == ""
+    assert config["primary_blocker"] == {}
     assert config["ready_action_count"] == 0
     assert config["blocked_action_count"] == 0
     assert config["next_gate"] == ""
@@ -476,7 +492,22 @@ def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_pa
     assert summary.loc[0, "next_gate"] == "diagnose-ticks"
     assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli diagnose-ticks --help"
     assert "tick_diagnostics_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert int(summary.loc[0, "failed_check_count"]) == 2
+    assert summary.loc[0, "failed_check_names"] == "tick_diagnostics_provided;tick_diagnostics_ready"
+    assert summary.loc[0, "first_failed_reason"] == "tick_diagnostics summary is required but missing"
+    assert summary.loc[0, "primary_blocker_check"] == "tick_diagnostics_provided"
+    assert not bool(summary.loc[0, "primary_blocker_value"])
+    assert summary.loc[0, "primary_blocker_operator"] == "is"
+    assert bool(summary.loc[0, "primary_blocker_threshold"])
+    assert summary.loc[0, "primary_blocker_reason"] == "tick_diagnostics summary is required but missing"
     assert not config["ready"]
+    assert config["failed_check_count"] == 2
+    assert config["failed_checks"] == ["tick_diagnostics_provided", "tick_diagnostics_ready"]
+    assert config["first_failed_reason"] == "tick_diagnostics summary is required but missing"
+    assert config["primary_blocker"]["check"] == "tick_diagnostics_provided"
+    assert config["primary_blocker"]["operator"] == "is"
+    assert config["primary_blocker"]["threshold"] is True
+    assert config["primary_blocker"]["reason"] == "tick_diagnostics summary is required but missing"
     assert config["blocked_action_count"] == len(queue)
     assert config["ready_action_count"] == 0
     assert config["next_gate"] == queue.loc[0, "next_gate"]
