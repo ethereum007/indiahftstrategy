@@ -90,6 +90,9 @@
 - Broker dispatch send now carries dispatch-retained strategy portfolio
   allocation evidence into the non-submitting sender packet and blocks packet
   readiness when dispatch notional exceeds the selected allocation.
+- Broker dispatch acknowledgement reconciliation now carries dispatch-retained
+  strategy portfolio allocation evidence and blocks acknowledgement pass status
+  when dispatch notional exceeds the selected allocation.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.
@@ -691,8 +694,9 @@
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip
   proof, and route-enable failed-check counters from the dispatch config,
-  validates route-readiness identity, send-stage shadow broker-readiness
-  aggregates, broker-readiness-carried shadow broker proof,
+  validates route-readiness identity, strategy portfolio allocation continuity,
+  send-stage shadow broker-readiness aggregates, broker-readiness-carried
+  shadow broker proof,
   dispatch-carried vendor market-data batch provenance as
   `ack_vendor_market_data_batch_*`, broker-readiness final dispatch
   round-trip vendor market-data proof as

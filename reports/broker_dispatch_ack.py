@@ -223,6 +223,84 @@ def _unmatched_acks(dispatch_orders: pd.DataFrame, acks: pd.DataFrame) -> pd.Dat
 
 def _dispatch_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
     state = row.copy()
+    strategy_portfolio = config.get("strategy_portfolio", {}) or {}
+    upload = config.get("upload", {}) or {}
+    dispatch = config.get("dispatch", {}) or {}
+    if strategy_portfolio:
+        state["strategy_portfolio_required"] = _to_bool(
+            strategy_portfolio.get("required", state.get("strategy_portfolio_required", False))
+        )
+        state["strategy_portfolio_provided"] = _to_bool(
+            strategy_portfolio.get("provided", state.get("strategy_portfolio_provided", False))
+        )
+        state["strategy_portfolio_ready"] = _to_bool(
+            strategy_portfolio.get("ready", state.get("strategy_portfolio_ready", False))
+        )
+        state["strategy_portfolio_deployment_mode"] = _first_text(
+            strategy_portfolio.get("deployment_mode", ""),
+            state.get("strategy_portfolio_deployment_mode", ""),
+        )
+        state["strategy_portfolio_allocation_mode"] = _first_text(
+            strategy_portfolio.get("allocation_mode", ""),
+            state.get("strategy_portfolio_allocation_mode", ""),
+        )
+        state["strategy_portfolio_capital_currency"] = _first_text(
+            strategy_portfolio.get("capital_currency", ""),
+            state.get("strategy_portfolio_capital_currency", ""),
+        )
+        state["strategy_portfolio_selected_profile"] = _first_text(
+            strategy_portfolio.get("selected_profile", ""),
+            state.get("strategy_portfolio_selected_profile", ""),
+        )
+        state["strategy_portfolio_selected_strategy"] = _identity_key(
+            _first_text(
+                strategy_portfolio.get("selected_strategy", ""),
+                state.get("strategy_portfolio_selected_strategy", ""),
+            )
+        )
+        state["strategy_portfolio_selected_market"] = _identity_key(
+            _first_text(
+                strategy_portfolio.get("selected_market", ""),
+                state.get("strategy_portfolio_selected_market", ""),
+            )
+        )
+        state["strategy_portfolio_selected_eligible"] = _to_bool(
+            strategy_portfolio.get("selected_eligible", state.get("strategy_portfolio_selected_eligible", False))
+        )
+        state["strategy_portfolio_selected_allocation_weight"] = _number_value(
+            strategy_portfolio.get(
+                "selected_allocation_weight",
+                state.get("strategy_portfolio_selected_allocation_weight", 0.0),
+            ),
+            _number(state, "strategy_portfolio_selected_allocation_weight", 0.0),
+        )
+        state["strategy_portfolio_selected_allocation_notional"] = _number_value(
+            strategy_portfolio.get(
+                "selected_allocation_notional",
+                state.get("strategy_portfolio_selected_allocation_notional", 0.0),
+            ),
+            _number(state, "strategy_portfolio_selected_allocation_notional", 0.0),
+        )
+        state["strategy_portfolio_notional_cap_applied"] = _to_bool(
+            strategy_portfolio.get(
+                "notional_cap_applied",
+                state.get("strategy_portfolio_notional_cap_applied", False),
+            )
+        )
+        state["pre_portfolio_max_notional_per_session"] = _number_value(
+            strategy_portfolio.get(
+                "pre_portfolio_max_notional_per_session",
+                state.get("pre_portfolio_max_notional_per_session", 0.0),
+            ),
+            _number(state, "pre_portfolio_max_notional_per_session", 0.0),
+        )
+    state["dispatch_total_notional"] = _number_value(
+        upload.get(
+            "total_notional",
+            dispatch.get("total_notional", state.get("dispatch_total_notional", 0.0)),
+        ),
+        _number(state, "dispatch_total_notional", 0.0),
+    )
     broker_readiness = config.get("broker_readiness", {}) or {}
     if "adapter_schema_status" in broker_readiness:
         state["broker_schema_status"] = _object_text(
@@ -863,6 +941,14 @@ def _checks(
             ],
             ignore_index=True,
         )
+    if _strategy_portfolio_active(dispatch_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_strategy_portfolio_checks(dispatch_summary)),
+            ],
+            ignore_index=True,
+        )
     if _broker_vendor_data_readiness_active(dispatch_summary):
         checks = pd.concat(
             [
@@ -925,6 +1011,65 @@ def _route_readiness_checks(dispatch_summary: pd.Series) -> list[dict[str, objec
                 and _identity_key(dispatch_summary.get("route_readiness_market", "")) == market
             ),
             "dispatch route-readiness market does not match acknowledgement market",
+        ),
+    ]
+
+
+def _strategy_portfolio_checks(dispatch_summary: pd.Series) -> list[dict[str, object]]:
+    strategy = _identity_key(dispatch_summary.get("strategy", ""))
+    market = _identity_key(dispatch_summary.get("market", ""))
+    selected_strategy = _identity_key(dispatch_summary.get("strategy_portfolio_selected_strategy", ""))
+    selected_market = _identity_key(dispatch_summary.get("strategy_portfolio_selected_market", ""))
+    selected_allocation = _number(dispatch_summary, "strategy_portfolio_selected_allocation_notional", 0.0)
+    dispatch_total_notional = _number(dispatch_summary, "dispatch_total_notional", 0.0)
+    return [
+        _check(
+            "strategy_portfolio_ready",
+            _to_bool(dispatch_summary.get("strategy_portfolio_ready", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get("strategy_portfolio_ready", False)),
+            "dispatch strategy portfolio allocation is not ready",
+        ),
+        _check(
+            "strategy_portfolio_allocation_eligible",
+            _to_bool(dispatch_summary.get("strategy_portfolio_selected_eligible", False)),
+            "is",
+            True,
+            _to_bool(dispatch_summary.get("strategy_portfolio_selected_eligible", False)),
+            "dispatch strategy portfolio allocation row is not eligible",
+        ),
+        _check(
+            "strategy_portfolio_strategy_matches",
+            selected_strategy,
+            "==",
+            strategy,
+            bool(selected_strategy and strategy and selected_strategy == strategy),
+            "dispatch strategy portfolio strategy does not match acknowledgement strategy",
+        ),
+        _check(
+            "strategy_portfolio_market_matches",
+            selected_market,
+            "==",
+            market,
+            bool(selected_market and market and selected_market == market),
+            "dispatch strategy portfolio market does not match acknowledgement market",
+        ),
+        _check(
+            "strategy_portfolio_allocation_notional",
+            selected_allocation,
+            ">",
+            0.0,
+            selected_allocation > 0.0,
+            "dispatch strategy portfolio allocation notional must be positive",
+        ),
+        _check(
+            "dispatch_notional_within_strategy_portfolio_allocation",
+            dispatch_total_notional,
+            "<=",
+            selected_allocation,
+            dispatch_total_notional <= selected_allocation,
+            "dispatch notional exceeds selected strategy portfolio allocation",
         ),
     ]
 
@@ -1618,6 +1763,47 @@ def _summary(
                 "broker_schema_reviewed": _to_bool(dispatch_summary.get("broker_schema_reviewed", False)),
                 "broker_schema_review_mode": _text(dispatch_summary, "broker_schema_review_mode"),
                 "dispatch_orders": orders,
+                "dispatch_total_notional": _number(dispatch_summary, "dispatch_total_notional", 0.0),
+                "strategy_portfolio_required": _to_bool(
+                    dispatch_summary.get("strategy_portfolio_required", False)
+                ),
+                "strategy_portfolio_provided": _to_bool(
+                    dispatch_summary.get("strategy_portfolio_provided", False)
+                ),
+                "strategy_portfolio_ready": _to_bool(dispatch_summary.get("strategy_portfolio_ready", False)),
+                "strategy_portfolio_deployment_mode": _text(
+                    dispatch_summary, "strategy_portfolio_deployment_mode"
+                ),
+                "strategy_portfolio_allocation_mode": _text(
+                    dispatch_summary, "strategy_portfolio_allocation_mode"
+                ),
+                "strategy_portfolio_capital_currency": _text(
+                    dispatch_summary, "strategy_portfolio_capital_currency"
+                ),
+                "strategy_portfolio_selected_profile": _text(
+                    dispatch_summary, "strategy_portfolio_selected_profile"
+                ),
+                "strategy_portfolio_selected_strategy": _identity_key(
+                    dispatch_summary.get("strategy_portfolio_selected_strategy", "")
+                ),
+                "strategy_portfolio_selected_market": _identity_key(
+                    dispatch_summary.get("strategy_portfolio_selected_market", "")
+                ),
+                "strategy_portfolio_selected_eligible": _to_bool(
+                    dispatch_summary.get("strategy_portfolio_selected_eligible", False)
+                ),
+                "strategy_portfolio_selected_allocation_weight": _number(
+                    dispatch_summary, "strategy_portfolio_selected_allocation_weight", 0.0
+                ),
+                "strategy_portfolio_selected_allocation_notional": _number(
+                    dispatch_summary, "strategy_portfolio_selected_allocation_notional", 0.0
+                ),
+                "strategy_portfolio_notional_cap_applied": _to_bool(
+                    dispatch_summary.get("strategy_portfolio_notional_cap_applied", False)
+                ),
+                "pre_portfolio_max_notional_per_session": _number(
+                    dispatch_summary, "pre_portfolio_max_notional_per_session", 0.0
+                ),
                 "acked_orders": acked,
                 "missing_acks": missing,
                 "rejected_orders": rejected,
@@ -1920,6 +2106,23 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
             "schema_review_mode": _text(summary, "broker_schema_review_mode"),
         },
         "dispatch_orders": int(summary["dispatch_orders"]),
+        "dispatch_total_notional": float(summary["dispatch_total_notional"]),
+        "strategy_portfolio": {
+            "required": _to_bool(summary["strategy_portfolio_required"]),
+            "provided": _to_bool(summary["strategy_portfolio_provided"]),
+            "ready": _to_bool(summary["strategy_portfolio_ready"]),
+            "deployment_mode": _text(summary, "strategy_portfolio_deployment_mode"),
+            "allocation_mode": _text(summary, "strategy_portfolio_allocation_mode"),
+            "capital_currency": _text(summary, "strategy_portfolio_capital_currency"),
+            "selected_profile": _text(summary, "strategy_portfolio_selected_profile"),
+            "selected_strategy": _text(summary, "strategy_portfolio_selected_strategy"),
+            "selected_market": _text(summary, "strategy_portfolio_selected_market"),
+            "selected_eligible": _to_bool(summary["strategy_portfolio_selected_eligible"]),
+            "selected_allocation_weight": float(summary["strategy_portfolio_selected_allocation_weight"]),
+            "selected_allocation_notional": float(summary["strategy_portfolio_selected_allocation_notional"]),
+            "notional_cap_applied": _to_bool(summary["strategy_portfolio_notional_cap_applied"]),
+            "pre_portfolio_max_notional_per_session": float(summary["pre_portfolio_max_notional_per_session"]),
+        },
         "acked_orders": int(summary["acked_orders"]),
         "missing_acks": int(summary["missing_acks"]),
         "rejected_orders": int(summary["rejected_orders"]),
@@ -2136,6 +2339,13 @@ def _route_readiness_required(dispatch_summary: pd.Series, thresholds: BrokerDis
     )
 
 
+def _strategy_portfolio_active(dispatch_summary: pd.Series) -> bool:
+    return bool(
+        _to_bool(dispatch_summary.get("strategy_portfolio_required", False))
+        or _to_bool(dispatch_summary.get("strategy_portfolio_provided", False))
+    )
+
+
 def _validate_thresholds(thresholds: BrokerDispatchAckThresholds) -> None:
     if thresholds.max_duplicate_ack_orders < 0:
         raise ValueError("max_duplicate_ack_orders must be non-negative")
@@ -2159,6 +2369,14 @@ def _object_text(value: object) -> str:
     except (TypeError, ValueError):
         pass
     return str(value).strip()
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        text = _object_text(value)
+        if text:
+            return text
+    return ""
 
 
 def _status_key(value: object) -> str:

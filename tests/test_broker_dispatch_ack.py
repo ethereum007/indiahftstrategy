@@ -40,6 +40,12 @@ def dispatch_summary(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    dispatch_total_notional=1575.0,
+    strategy_portfolio_required=False,
+    strategy_portfolio_provided=False,
+    strategy_portfolio_ready=False,
+    strategy_portfolio_selected_eligible=False,
+    strategy_portfolio_selected_allocation_notional=0.0,
 ):
     route_readiness_recommendation = (
         "eligible_for_live_dryrun_route_review"
@@ -61,6 +67,25 @@ def dispatch_summary(
                 "broker_schema_reviewed": broker_schema_reviewed,
                 "broker_schema_review_mode": broker_schema_review_mode,
                 "dispatch_orders": 2,
+                "dispatch_total_notional": dispatch_total_notional,
+                "strategy_portfolio_required": strategy_portfolio_required,
+                "strategy_portfolio_provided": strategy_portfolio_provided,
+                "strategy_portfolio_ready": strategy_portfolio_ready,
+                "strategy_portfolio_deployment_mode": "paper_shadow",
+                "strategy_portfolio_allocation_mode": "readiness_weighted",
+                "strategy_portfolio_capital_currency": "INR",
+                "strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "strategy_portfolio_selected_strategy": "lead_lag_taker",
+                "strategy_portfolio_selected_market": "india_nse_index_derivatives",
+                "strategy_portfolio_selected_eligible": strategy_portfolio_selected_eligible,
+                "strategy_portfolio_selected_allocation_weight": 0.0012
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
+                "strategy_portfolio_notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+                "pre_portfolio_max_notional_per_session": 25_000.0
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
                 "route_readiness_required": route_readiness_required,
                 "route_readiness_provided": route_readiness_provided,
                 "route_readiness_ready": route_readiness_ready,
@@ -199,6 +224,12 @@ def dispatch_config(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    dispatch_total_notional=1575.0,
+    strategy_portfolio_required=False,
+    strategy_portfolio_provided=False,
+    strategy_portfolio_ready=False,
+    strategy_portfolio_selected_eligible=False,
+    strategy_portfolio_selected_allocation_notional=0.0,
 ):
     route_readiness_recommendation = (
         "eligible_for_live_dryrun_route_review"
@@ -225,7 +256,32 @@ def dispatch_config(
         },
         "route_enable_dispatch_roundtrip": {
             "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
-        }
+        },
+        "strategy_portfolio": {
+            "required": strategy_portfolio_required,
+            "provided": strategy_portfolio_provided,
+            "ready": strategy_portfolio_ready,
+            "deployment_mode": "paper_shadow",
+            "allocation_mode": "readiness_weighted",
+            "capital_currency": "INR",
+            "selected_profile": "leadlag-live-dryrun",
+            "selected_strategy": "lead_lag_taker",
+            "selected_market": "india_nse_index_derivatives",
+            "selected_eligible": strategy_portfolio_selected_eligible,
+            "selected_allocation_weight": 0.0012
+            if strategy_portfolio_selected_allocation_notional
+            else 0.0,
+            "selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
+            "notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+            "pre_portfolio_max_notional_per_session": 25_000.0
+            if strategy_portfolio_selected_allocation_notional
+            else 0.0,
+        },
+        "upload": {
+            "orders": 2,
+            "total_notional": dispatch_total_notional,
+            "output_file": "broker_upload_orders.csv",
+        },
     }
 
 
@@ -448,6 +504,77 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert summary["route_readiness_strategy"] == "lead_lag_taker"
     assert report.config["route_readiness"]["required"]
     assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_broker_dispatch_ack_carries_strategy_portfolio_allocation():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=2_000.0,
+        ),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=dispatch_config(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=2_000.0,
+        ),
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    portfolio = report.config["strategy_portfolio"]
+    assert summary["dispatch_total_notional"] == 1_575.0
+    assert bool(summary["strategy_portfolio_required"])
+    assert bool(summary["strategy_portfolio_ready"])
+    assert summary["strategy_portfolio_deployment_mode"] == "paper_shadow"
+    assert summary["strategy_portfolio_allocation_mode"] == "readiness_weighted"
+    assert summary["strategy_portfolio_capital_currency"] == "INR"
+    assert summary["strategy_portfolio_selected_profile"] == "leadlag-live-dryrun"
+    assert summary["strategy_portfolio_selected_strategy"] == "lead_lag_taker"
+    assert summary["strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
+    assert bool(summary["strategy_portfolio_selected_eligible"])
+    assert summary["strategy_portfolio_selected_allocation_weight"] == 0.0012
+    assert summary["strategy_portfolio_selected_allocation_notional"] == 2_000.0
+    assert bool(summary["strategy_portfolio_notional_cap_applied"])
+    assert summary["pre_portfolio_max_notional_per_session"] == 25_000.0
+    assert report.config["dispatch_total_notional"] == 1_575.0
+    assert portfolio["required"]
+    assert portfolio["provided"]
+    assert portfolio["ready"]
+    assert portfolio["selected_allocation_notional"] == 2_000.0
+
+
+def test_broker_dispatch_ack_blocks_dispatch_above_strategy_portfolio_allocation():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1_200.0,
+        ),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(),
+        dispatch_config=dispatch_config(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1_200.0,
+        ),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "dispatch_notional_within_strategy_portfolio_allocation" in failed
+    assert report.config["primary_blocker"]["check"] == "dispatch_notional_within_strategy_portfolio_allocation"
+    assert report.config["dispatch_total_notional"] == 1_575.0
 
 
 def test_broker_dispatch_ack_carries_send_shadow_broker_readiness():

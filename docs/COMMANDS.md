@@ -3317,8 +3317,12 @@ dirty send-stage shadow broker-readiness aggregates, dirty send-stage
 broker-readiness shadow broker proof, dispatch rows or acknowledgement rows
 that carry a stale route proof batch id, missing
 acknowledgement route proof tags, or acknowledgement rows that do not belong to
-the dispatch batch. `--require-route-readiness` is automatic for `live_dryrun`;
-the explicit flag keeps paper/shadow acknowledgement reviews equally strict.
+the dispatch batch. If dispatch planning retained strategy portfolio
+allocation evidence, the ack gate preserves the `strategy_portfolio_*` fields
+and `dispatch_total_notional` in summary/config and fails closed when dispatch
+notional exceeds the selected paper/shadow allocation.
+`--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
+keeps paper/shadow acknowledgement reviews equally strict.
 It carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
 `route_broker_shadow_broker_readiness` into the ack summary/config. If the
