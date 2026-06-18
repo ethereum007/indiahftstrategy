@@ -3722,7 +3722,8 @@ closed unless that exact strategy-market pair is in `ready_pairs`.
 with the inferred upstream gate, `next_gate_help_command`, observed value,
 threshold, reason, and recommendation. `data_readiness_config.json` mirrors
 the same queue as `next_actions`, `ready_actions`, and `blocked_actions`, plus
-summary, component, and failed-check state for scheduler handoff.
+root-level `primary_action_status` and `primary_action` fields, summary,
+component, and failed-check state for scheduler handoff.
 `data_readiness_runbook.md` mirrors the same handoff with component readiness
 and failed checks, and these sidecars are manifest-tracked so `catalog-runs`
 can promote blocked vendor-data work into the top-level action plan.
@@ -3757,7 +3758,8 @@ the next gate, such as `review-data-readiness` for failed dataset readiness or
 `pipeline-vendor-market-data-batch` for missing distinct source files,
 fingerprints, or mapping coverage. `data_readiness_comparison_config.json`
 mirrors dataset rows, failed-check names, action counts, and
-`next_actions`/`ready_actions`/`blocked_actions` for schedulers.
+`next_actions`/`ready_actions`/`blocked_actions` plus root-level
+`primary_action_status` and `primary_action` fields for schedulers.
 `data_readiness_comparison_runbook.md` mirrors the blocked actions, dataset
 rows, and failed checks for operator review, and these sidecars are
 manifest-tracked for catalog promotion.

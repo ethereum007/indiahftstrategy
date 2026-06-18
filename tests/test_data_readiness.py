@@ -447,6 +447,8 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     assert config["blocked_action_count"] == 0
     assert config["next_gate"] == ""
     assert config["next_gate_help_command"] == ""
+    assert config["primary_action_status"] == ""
+    assert config["primary_action"] == {}
     assert config["next_actions"] == []
     assert config["ready_actions"] == []
     assert config["blocked_actions"] == []
@@ -479,6 +481,9 @@ def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_pa
     assert config["ready_action_count"] == 0
     assert config["next_gate"] == queue.loc[0, "next_gate"]
     assert config["next_gate_help_command"] == queue.loc[0, "next_gate_help_command"]
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["check"] == queue.loc[0, "check"]
+    assert config["primary_action"]["next_gate"] == "diagnose-ticks"
     assert config["ready_actions"] == []
     assert {item["check"] for item in config["next_actions"]} == set(queue["check"])
     assert {item["check"] for item in config["blocked_actions"]} == set(queue["check"])

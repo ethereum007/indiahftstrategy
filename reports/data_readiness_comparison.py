@@ -249,6 +249,7 @@ def _config(
 ) -> dict[str, object]:
     ready_actions = _actions_with_status(action_queue, "ready")
     blocked_actions = _actions_with_status(action_queue, "blocked")
+    primary_action = _first_action_record(action_queue)
     failed_checks = (
         checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
         if not checks.empty and "passed" in checks.columns
@@ -269,10 +270,18 @@ def _config(
         "blocked_action_count": int(len(blocked_actions)),
         "next_gate": _first_action_value(action_queue, "next_gate"),
         "next_gate_help_command": _first_action_value(action_queue, "next_gate_help_command"),
+        "primary_action_status": _value_text(primary_action.get("queue_status")),
+        "primary_action": primary_action,
         "next_actions": _records(action_queue),
         "ready_actions": _records(ready_actions),
         "blocked_actions": _records(blocked_actions),
     }
+
+
+def _first_action_record(frame: pd.DataFrame) -> dict[str, object]:
+    if frame.empty:
+        return {}
+    return _jsonable_record(frame.iloc[0].to_dict())
 
 
 def _records(frame: pd.DataFrame) -> list[dict[str, object]]:

@@ -79,6 +79,10 @@
   as counts, primary next gate/help, and `next_actions`/`ready_actions`/
   `blocked_actions`, so schedulers can consume wrapper blockers without
   parsing CSV files.
+- Data readiness and comparison config JSONs now expose root-level
+  `primary_action_status` and `primary_action` fields next to the existing
+  next-gate aliases, giving Arrow.money/iRage data schedulers the selected
+  failed check or dataset context without parsing every queue row.
 - Vendor market-data pipeline and batch roots now also write manifest-tracked
   action queues and runbooks that promote nested data-readiness/comparison
   blockers into catalog-visible next gates for Arrow.money/iRage onboarding.
