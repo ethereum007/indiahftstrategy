@@ -83,6 +83,10 @@
   evidence downstream from runtime-session proof, fail closed on bad allocation
   readiness/identity, and block route enablement when exported order notional
   exceeds the selected paper/shadow allocation.
+- Broker dispatch planning now carries route-enable strategy portfolio
+  allocation evidence, computes notional from the resolved upload-order file,
+  and blocks dry-run dispatch when that actual upload notional exceeds the
+  selected allocation.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.
@@ -650,7 +654,7 @@
   route-enable config with a primary blocker record without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
-  dry-run dispatch IDs, carries broker schema review status/mode plus
+  dry-run dispatch IDs, computes upload-row notional, carries broker schema review status/mode plus
   route-readiness proof, live-dry-run nested route proof, and route-carried
   shadow broker-readiness aggregates plus broker-readiness-carried shadow
   broker proof from route-enable as `route_broker_shadow_broker_*`, preserves
@@ -658,7 +662,7 @@
   `route_vendor_market_data_batch_*`, preserves route-enable-carried
   broker-readiness vendor market-data batch proof as
   `route_broker_dispatch_roundtrip_vendor_market_data_batch_*`, and fails
-  closed on disabled routes,
+  closed on disabled routes, portfolio allocation breaches,
   nested route-enable dispatch round-trip failed checks, dirty route proof,
   duplicate source order IDs, dirty carried shadow broker proof, or unresolved
   upload-order files while resolving launch pipeline upload roots and

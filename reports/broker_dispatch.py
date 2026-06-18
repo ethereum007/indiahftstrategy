@@ -148,6 +148,7 @@ def _dispatch_orders(upload_orders: pd.DataFrame, route: dict[str, Any], upload_
                 "adapter": route["adapter"],
                 "source_order_id": source_order_id,
                 "source_payload_hash": payload_hash,
+                "source_order_notional": _source_order_notional(row),
                 "upload_file_hash": upload_file_hash,
                 "route_enable_hash": route["route_enable_hash"],
                 "route_dispatch_roundtrip_batch_id": route["dispatch_roundtrip_batch_id"],
@@ -163,6 +164,7 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
     target_mode = _identity_key(thresholds.target_mode)
     route_readiness_required = _route_readiness_required(thresholds, route)
     route_readiness_active = bool(route_readiness_required or route["route_readiness_provided"])
+    dispatch_total_notional = _dispatch_total_notional(dispatch_orders)
     checks = [
         _check(
             "route_enabled",
@@ -256,6 +258,67 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
     )
     if _dispatch_roundtrip_required(thresholds) or route["dispatch_roundtrip_provided"]:
         checks.extend(_dispatch_roundtrip_checks(route, target_mode))
+    if _strategy_portfolio_active(route):
+        checks.extend(
+            [
+                _check(
+                    "strategy_portfolio_ready",
+                    route["strategy_portfolio_ready"],
+                    "is",
+                    True,
+                    bool(route["strategy_portfolio_ready"]),
+                    "route-enable strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_eligible",
+                    route["strategy_portfolio_selected_eligible"],
+                    "is",
+                    True,
+                    bool(route["strategy_portfolio_selected_eligible"]),
+                    "route-enable strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "strategy_portfolio_strategy_matches",
+                    route["strategy_portfolio_selected_strategy"],
+                    "==",
+                    route["strategy"],
+                    bool(
+                        route["strategy_portfolio_selected_strategy"]
+                        and route["strategy"]
+                        and route["strategy_portfolio_selected_strategy"] == route["strategy"]
+                    ),
+                    "route-enable strategy portfolio strategy does not match dispatch strategy",
+                ),
+                _check(
+                    "strategy_portfolio_market_matches",
+                    route["strategy_portfolio_selected_market"],
+                    "==",
+                    route["market"],
+                    bool(
+                        route["strategy_portfolio_selected_market"]
+                        and route["market"]
+                        and route["strategy_portfolio_selected_market"] == route["market"]
+                    ),
+                    "route-enable strategy portfolio market does not match dispatch market",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_notional",
+                    route["strategy_portfolio_selected_allocation_notional"],
+                    ">",
+                    0.0,
+                    float(route["strategy_portfolio_selected_allocation_notional"]) > 0.0,
+                    "route-enable strategy portfolio allocation notional must be positive",
+                ),
+                _check(
+                    "dispatch_notional_within_strategy_portfolio_allocation",
+                    dispatch_total_notional,
+                    "<=",
+                    route["strategy_portfolio_selected_allocation_notional"],
+                    dispatch_total_notional <= float(route["strategy_portfolio_selected_allocation_notional"]),
+                    "dispatch upload notional exceeds selected strategy portfolio allocation",
+                ),
+            ]
+        )
     if _shadow_broker_readiness_active(route):
         checks.extend(_shadow_broker_readiness_checks(route))
     if _broker_shadow_broker_readiness_active(route):
@@ -892,6 +955,25 @@ def _summary(
                 "route_upload_orders": int(route["upload_orders"]),
                 "max_orders_per_session": int(route["max_orders_per_session"]),
                 "max_notional_per_session": float(route["max_notional_per_session"]),
+                "dispatch_total_notional": _dispatch_total_notional(dispatch_orders),
+                "strategy_portfolio_required": route["strategy_portfolio_required"],
+                "strategy_portfolio_provided": route["strategy_portfolio_provided"],
+                "strategy_portfolio_ready": route["strategy_portfolio_ready"],
+                "strategy_portfolio_deployment_mode": route["strategy_portfolio_deployment_mode"],
+                "strategy_portfolio_allocation_mode": route["strategy_portfolio_allocation_mode"],
+                "strategy_portfolio_capital_currency": route["strategy_portfolio_capital_currency"],
+                "strategy_portfolio_selected_profile": route["strategy_portfolio_selected_profile"],
+                "strategy_portfolio_selected_strategy": route["strategy_portfolio_selected_strategy"],
+                "strategy_portfolio_selected_market": route["strategy_portfolio_selected_market"],
+                "strategy_portfolio_selected_eligible": route["strategy_portfolio_selected_eligible"],
+                "strategy_portfolio_selected_allocation_weight": route[
+                    "strategy_portfolio_selected_allocation_weight"
+                ],
+                "strategy_portfolio_selected_allocation_notional": route[
+                    "strategy_portfolio_selected_allocation_notional"
+                ],
+                "strategy_portfolio_notional_cap_applied": route["strategy_portfolio_notional_cap_applied"],
+                "pre_portfolio_max_notional_per_session": route["pre_portfolio_max_notional_per_session"],
                 "upload_file_hash": upload_file_hash,
                 "dispatch_batch_id": str(dispatch_orders.iloc[0]["dispatch_batch_id"]) if not dispatch_orders.empty else "",
                 "route_readiness_required": _route_readiness_required(thresholds, route),
@@ -1265,8 +1347,25 @@ def _config(
             "max_notional_per_session": float(route["max_notional_per_session"]),
             "stop_loss": _jsonable(route["stop_loss"]),
         },
+        "strategy_portfolio": {
+            "required": _to_bool(summary["strategy_portfolio_required"]),
+            "provided": _to_bool(summary["strategy_portfolio_provided"]),
+            "ready": _to_bool(summary["strategy_portfolio_ready"]),
+            "deployment_mode": str(summary["strategy_portfolio_deployment_mode"]),
+            "allocation_mode": str(summary["strategy_portfolio_allocation_mode"]),
+            "capital_currency": str(summary["strategy_portfolio_capital_currency"]),
+            "selected_profile": str(summary["strategy_portfolio_selected_profile"]),
+            "selected_strategy": str(summary["strategy_portfolio_selected_strategy"]),
+            "selected_market": str(summary["strategy_portfolio_selected_market"]),
+            "selected_eligible": _to_bool(summary["strategy_portfolio_selected_eligible"]),
+            "selected_allocation_weight": float(summary["strategy_portfolio_selected_allocation_weight"]),
+            "selected_allocation_notional": float(summary["strategy_portfolio_selected_allocation_notional"]),
+            "notional_cap_applied": _to_bool(summary["strategy_portfolio_notional_cap_applied"]),
+            "pre_portfolio_max_notional_per_session": float(summary["pre_portfolio_max_notional_per_session"]),
+        },
         "upload": {
             "orders": int(route["upload_orders"]),
+            "total_notional": float(summary["dispatch_total_notional"]),
             "file_hash": upload_file_hash,
             "output_file": route["upload_output_file"],
         },
@@ -1365,6 +1464,7 @@ def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
 
 def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
+    strategy_portfolio = config.get("strategy_portfolio", {}) or {}
     upload = config.get("upload", {}) or {}
     broker_readiness = config.get("broker_readiness", {}) or {}
     route_readiness = config.get("route_readiness", {}) or {}
@@ -1417,6 +1517,73 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
             _number_from(limits, "max_notional_per_session", _number(row, "max_notional_per_session", 0.0))
         ),
         "stop_loss": _nullable_number(limits.get("stop_loss")),
+        "strategy_portfolio_required": _to_bool(
+            strategy_portfolio.get("required", row.get("strategy_portfolio_required", False))
+        ),
+        "strategy_portfolio_provided": _to_bool(
+            strategy_portfolio.get("provided", row.get("strategy_portfolio_provided", False))
+        ),
+        "strategy_portfolio_ready": _to_bool(
+            strategy_portfolio.get("ready", row.get("strategy_portfolio_ready", False))
+        ),
+        "strategy_portfolio_deployment_mode": _first_text(
+            strategy_portfolio.get("deployment_mode", ""),
+            row.get("strategy_portfolio_deployment_mode", ""),
+        ),
+        "strategy_portfolio_allocation_mode": _first_text(
+            strategy_portfolio.get("allocation_mode", ""),
+            row.get("strategy_portfolio_allocation_mode", ""),
+        ),
+        "strategy_portfolio_capital_currency": _first_text(
+            strategy_portfolio.get("capital_currency", ""),
+            row.get("strategy_portfolio_capital_currency", ""),
+        ),
+        "strategy_portfolio_selected_profile": _first_text(
+            strategy_portfolio.get("selected_profile", ""),
+            row.get("strategy_portfolio_selected_profile", ""),
+        ),
+        "strategy_portfolio_selected_strategy": _strategy_key(
+            _first_text(
+                strategy_portfolio.get("selected_strategy", ""),
+                row.get("strategy_portfolio_selected_strategy", ""),
+            )
+        ),
+        "strategy_portfolio_selected_market": _identity_key(
+            _first_text(
+                strategy_portfolio.get("selected_market", ""),
+                row.get("strategy_portfolio_selected_market", ""),
+            )
+        ),
+        "strategy_portfolio_selected_eligible": _to_bool(
+            strategy_portfolio.get("selected_eligible", row.get("strategy_portfolio_selected_eligible", False))
+        ),
+        "strategy_portfolio_selected_allocation_weight": float(
+            _number_from(
+                strategy_portfolio,
+                "selected_allocation_weight",
+                _number(row, "strategy_portfolio_selected_allocation_weight", 0.0),
+            )
+        ),
+        "strategy_portfolio_selected_allocation_notional": float(
+            _number_from(
+                strategy_portfolio,
+                "selected_allocation_notional",
+                _number(row, "strategy_portfolio_selected_allocation_notional", 0.0),
+            )
+        ),
+        "strategy_portfolio_notional_cap_applied": _to_bool(
+            strategy_portfolio.get(
+                "notional_cap_applied",
+                row.get("strategy_portfolio_notional_cap_applied", False),
+            )
+        ),
+        "pre_portfolio_max_notional_per_session": float(
+            _number_from(
+                strategy_portfolio,
+                "pre_portfolio_max_notional_per_session",
+                _number(row, "pre_portfolio_max_notional_per_session", 0.0),
+            )
+        ),
         "upload_orders": int(_number_from(upload, "orders", _number(row, "upload_orders", 0.0))),
         "upload_output_file": _first_text(upload.get("output_file", "")),
         "route_enable_hash": route_hash,
@@ -1983,6 +2150,36 @@ def _batch_id(route: dict[str, Any], upload_orders: pd.DataFrame, upload_file_ha
         "orders": len(upload_orders),
     }
     return f"BDP-{hashlib.sha256(json.dumps(seed, sort_keys=True).encode('utf-8')).hexdigest()[:16]}"
+
+
+def _strategy_portfolio_active(route: dict[str, Any]) -> bool:
+    return bool(route["strategy_portfolio_required"] or route["strategy_portfolio_provided"])
+
+
+def _dispatch_total_notional(dispatch_orders: pd.DataFrame) -> float:
+    if dispatch_orders.empty or "source_order_notional" not in dispatch_orders.columns:
+        return 0.0
+    return float(pd.to_numeric(dispatch_orders["source_order_notional"], errors="coerce").fillna(0.0).sum())
+
+
+def _source_order_notional(row: pd.Series) -> float:
+    for column in ("notional", "order_notional", "total_notional", "value", "amount"):
+        if column in row.index:
+            value = pd.to_numeric(row[column], errors="coerce")
+            if not pd.isna(value):
+                return abs(float(value))
+    qty = _first_numeric(row, "quantity", "qty", "order_qty", "lots")
+    price = _first_numeric(row, "price", "limit_price", "order_price")
+    return abs(qty * price)
+
+
+def _first_numeric(row: pd.Series, *columns: str) -> float:
+    for column in columns:
+        if column in row.index:
+            value = pd.to_numeric(row[column], errors="coerce")
+            if not pd.isna(value):
+                return float(value)
+    return 0.0
 
 
 def _vendor_market_data_batch_state(

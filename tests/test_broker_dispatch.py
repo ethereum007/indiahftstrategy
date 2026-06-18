@@ -51,6 +51,13 @@ def route_summary(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    strategy_portfolio_required=False,
+    strategy_portfolio_provided=False,
+    strategy_portfolio_ready=False,
+    strategy_portfolio_selected_strategy="lead_lag_taker",
+    strategy_portfolio_selected_market="india_nse_index_derivatives",
+    strategy_portfolio_selected_eligible=False,
+    strategy_portfolio_selected_allocation_notional=0.0,
 ):
     route_provided = dispatch_provided if route_provided is None else route_provided
     route_ready = dispatch_ready if route_ready is None else route_ready
@@ -90,6 +97,24 @@ def route_summary(
                 "upload_orders": upload_orders,
                 "max_orders_per_session": 10,
                 "max_notional_per_session": 100_000.0,
+                "strategy_portfolio_required": strategy_portfolio_required,
+                "strategy_portfolio_provided": strategy_portfolio_provided,
+                "strategy_portfolio_ready": strategy_portfolio_ready,
+                "strategy_portfolio_deployment_mode": "paper_shadow",
+                "strategy_portfolio_allocation_mode": "readiness_weighted",
+                "strategy_portfolio_capital_currency": "INR",
+                "strategy_portfolio_selected_profile": "leadlag-live-dryrun",
+                "strategy_portfolio_selected_strategy": strategy_portfolio_selected_strategy,
+                "strategy_portfolio_selected_market": strategy_portfolio_selected_market,
+                "strategy_portfolio_selected_eligible": strategy_portfolio_selected_eligible,
+                "strategy_portfolio_selected_allocation_weight": 0.0012
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
+                "strategy_portfolio_notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+                "pre_portfolio_max_notional_per_session": 25_000.0
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
                 "route_readiness_required": route_readiness_required,
                 "route_readiness_provided": route_readiness_provided,
                 "route_readiness_ready": route_readiness_ready,
@@ -173,6 +198,13 @@ def route_config(
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
+    strategy_portfolio_required=False,
+    strategy_portfolio_provided=False,
+    strategy_portfolio_ready=False,
+    strategy_portfolio_selected_strategy="lead_lag_taker",
+    strategy_portfolio_selected_market="india_nse_index_derivatives",
+    strategy_portfolio_selected_eligible=False,
+    strategy_portfolio_selected_allocation_notional=0.0,
 ):
     route_provided = dispatch_provided if route_provided is None else route_provided
     route_ready = dispatch_ready if route_ready is None else route_ready
@@ -214,6 +246,24 @@ def route_config(
             "max_orders_per_session": 10,
             "max_notional_per_session": 100_000.0,
             "stop_loss": 5_000.0,
+        },
+        "strategy_portfolio": {
+            "required": strategy_portfolio_required,
+            "provided": strategy_portfolio_provided,
+            "ready": strategy_portfolio_ready,
+            "deployment_mode": "paper_shadow",
+            "allocation_mode": "readiness_weighted",
+            "capital_currency": "INR",
+            "selected_profile": "leadlag-live-dryrun",
+            "selected_strategy": strategy_portfolio_selected_strategy,
+            "selected_market": strategy_portfolio_selected_market,
+            "selected_eligible": strategy_portfolio_selected_eligible,
+            "selected_allocation_weight": 0.0012 if strategy_portfolio_selected_allocation_notional else 0.0,
+            "selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
+            "notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+            "pre_portfolio_max_notional_per_session": 25_000.0
+            if strategy_portfolio_selected_allocation_notional
+            else 0.0,
         },
         "upload": {
             "ready": True,
@@ -525,6 +575,78 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
     assert report.config["route_readiness"]["required"]
     assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_broker_dispatch_carries_strategy_portfolio_allocation():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=2_000.0,
+        ),
+        route_enable_config=route_config(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=2_000.0,
+        ),
+        upload_orders=upload_orders(),
+        upload_file_hash="abc123",
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    portfolio = report.config["strategy_portfolio"]
+    assert report.dispatch_orders["source_order_notional"].tolist() == [750.0, 825.0]
+    assert summary["dispatch_total_notional"] == 1_575.0
+    assert bool(summary["strategy_portfolio_required"])
+    assert bool(summary["strategy_portfolio_ready"])
+    assert summary["strategy_portfolio_deployment_mode"] == "paper_shadow"
+    assert summary["strategy_portfolio_allocation_mode"] == "readiness_weighted"
+    assert summary["strategy_portfolio_capital_currency"] == "INR"
+    assert summary["strategy_portfolio_selected_profile"] == "leadlag-live-dryrun"
+    assert summary["strategy_portfolio_selected_strategy"] == "lead_lag_taker"
+    assert summary["strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
+    assert bool(summary["strategy_portfolio_selected_eligible"])
+    assert summary["strategy_portfolio_selected_allocation_weight"] == 0.0012
+    assert summary["strategy_portfolio_selected_allocation_notional"] == 2_000.0
+    assert bool(summary["strategy_portfolio_notional_cap_applied"])
+    assert summary["pre_portfolio_max_notional_per_session"] == 25_000.0
+    assert portfolio["required"]
+    assert portfolio["provided"]
+    assert portfolio["ready"]
+    assert portfolio["selected_allocation_notional"] == 2_000.0
+    assert report.config["upload"]["total_notional"] == 1_575.0
+
+
+def test_broker_dispatch_blocks_upload_above_strategy_portfolio_allocation():
+    report = evaluate_broker_dispatch_plan(
+        route_enable_summary=route_summary(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1_200.0,
+        ),
+        route_enable_config=route_config(
+            strategy_portfolio_required=True,
+            strategy_portfolio_provided=True,
+            strategy_portfolio_ready=True,
+            strategy_portfolio_selected_eligible=True,
+            strategy_portfolio_selected_allocation_notional=1_200.0,
+        ),
+        upload_orders=upload_orders(),
+        upload_file_hash="abc123",
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "dispatch_notional_within_strategy_portfolio_allocation" in failed
+    assert report.config["primary_blocker"]["check"] == "dispatch_notional_within_strategy_portfolio_allocation"
+    assert report.config["upload"]["total_notional"] == 1_575.0
 
 
 def test_broker_dispatch_carries_route_shadow_broker_readiness():
