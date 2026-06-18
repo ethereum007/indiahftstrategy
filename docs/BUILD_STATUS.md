@@ -69,6 +69,10 @@
 - Broker-vendor data readiness now writes manifest-tracked action queue and
   runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
   wrapper failures expose next CLI gates at the proof root.
+- Broker-vendor data readiness config JSON now mirrors the root action queue
+  as counts, primary next gate/help, and `next_actions`/`ready_actions`/
+  `blocked_actions`, so schedulers can consume wrapper blockers without
+  parsing CSV files.
 - Vendor market-data pipeline and batch roots now also write manifest-tracked
   action queues and runbooks that promote nested data-readiness/comparison
   blockers into catalog-visible next gates for Arrow.money/iRage onboarding.

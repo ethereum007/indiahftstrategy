@@ -3568,6 +3568,10 @@ the checks file names the exact fail-closed reason when the wrapper root is not
 ready. `broker_vendor_data_readiness_action_queue.csv` and
 `broker_vendor_data_readiness_runbook.md` turn those failed checks into
 next-gate handoffs for vendor batch, broker-readiness, or wrapper reruns.
+`broker_vendor_data_readiness_config.json` mirrors the same queue as
+`ready_action_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, `next_actions`, `ready_actions`, and
+`blocked_actions`, so schedulers can read the wrapper handoff from JSON.
 Launch and broker-readiness commands honor the wrapper root's own
 `broker_vendor_data_readiness_config.json`, so a failed wrapper root cannot be
 masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper

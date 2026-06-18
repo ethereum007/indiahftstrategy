@@ -269,6 +269,13 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["broker_readiness"]["broker_vendor_data_ready"]
         assert config["failed_check_count"] == 0
         assert config["failed_checks"] == []
+        assert config["ready_action_count"] == 0
+        assert config["blocked_action_count"] == 0
+        assert config["next_gate"] == ""
+        assert config["next_gate_help_command"] == ""
+        assert config["next_actions"] == []
+        assert config["ready_actions"] == []
+        assert config["blocked_actions"] == []
         component_by_name = {item["component"]: item for item in config["components"]}
         assert component_by_name["vendor_market_data_batch"]["source_file_fingerprint_coverage"] == 1.0
         assert component_by_name["vendor_market_data_batch"]["min_mapping_coverage"] == 1.0
@@ -398,6 +405,13 @@ def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batc
     } <= failed
     assert config["failed_check_count"] == len(failed)
     assert set(config["failed_checks"]) == failed
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == len(action_queue)
+    assert config["next_gate"] == action_queue.loc[0, "next_gate"]
+    assert config["next_gate_help_command"] == action_queue.loc[0, "next_gate_help_command"]
+    assert config["ready_actions"] == []
+    assert {item["check"] for item in config["next_actions"]} == failed
+    assert {item["check"] for item in config["blocked_actions"]} == failed
     assert set(action_queue["check"]) == failed
     assert "pipeline-vendor-market-data-batch" in set(action_queue["next_gate"])
     assert "review-broker-readiness" in set(action_queue["next_gate"])

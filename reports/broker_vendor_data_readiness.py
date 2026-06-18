@@ -159,7 +159,11 @@ def write_broker_vendor_data_readiness_pipeline(
     action_queue = _action_queue(checks)
     action_queue.to_csv(out / "broker_vendor_data_readiness_action_queue.csv", index=False)
     (out / "broker_vendor_data_readiness_config.json").write_text(
-        json.dumps(_config(summary.iloc[0], components, checks, config, broker_thresholds), indent=2, sort_keys=True)
+        json.dumps(
+            _config(summary.iloc[0], components, checks, action_queue, config, broker_thresholds),
+            indent=2,
+            sort_keys=True,
+        )
         + "\n",
         encoding="utf-8",
     )
@@ -456,6 +460,40 @@ def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _action_records(frame: pd.DataFrame) -> list[dict[str, object]]:
+    if frame.empty:
+        return []
+    return [_jsonable_record(row) for row in frame.to_dict(orient="records")]
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    record: dict[str, object] = {}
+    for key, value in row.items():
+        if isinstance(value, Path):
+            record[str(key)] = str(value)
+            continue
+        try:
+            if pd.isna(value):
+                record[str(key)] = None
+                continue
+        except (TypeError, ValueError):
+            pass
+        record[str(key)] = value
+    return record
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _action_value(action_queue.iloc[0].get(column))
+
+
 def _action_component(check_name: str) -> str:
     if check_name in {"broker_readiness_ready", "broker_vendor_data_ready"}:
         return "broker_readiness"
@@ -558,10 +596,13 @@ def _config(
     row: pd.Series,
     components: pd.DataFrame,
     checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
     config: BrokerVendorDataReadinessConfig,
     broker_thresholds: BrokerReadinessThresholds,
 ) -> dict[str, object]:
     failed = checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+    ready_actions = _actions_with_status(action_queue, "ready")
+    blocked_actions = _actions_with_status(action_queue, "blocked")
     return {
         "schema_version": 1,
         "ready": bool(row.get("ready", False)),
@@ -591,6 +632,13 @@ def _config(
         "broker_thresholds": asdict(broker_thresholds),
         "failed_check_count": _int(row.get("failed_checks", len(failed))),
         "failed_checks": failed,
+        "ready_action_count": int(len(ready_actions)),
+        "blocked_action_count": int(len(blocked_actions)),
+        "next_gate": _first_action_value(action_queue, "next_gate"),
+        "next_gate_help_command": _first_action_value(action_queue, "next_gate_help_command"),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(ready_actions),
+        "blocked_actions": _action_records(blocked_actions),
         "components": [
             {
                 "component": str(component.get("component", "")),
