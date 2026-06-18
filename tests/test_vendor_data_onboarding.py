@@ -86,6 +86,8 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert config["blocked_action_count"] == 0
     assert config["next_gate"] == ""
     assert config["next_gate_help_command"] == ""
+    assert config["primary_action_status"] == ""
+    assert config["primary_action"] == {}
     assert config["next_actions"] == []
     assert config["ready_actions"] == []
     assert config["blocked_actions"] == []
@@ -165,6 +167,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["blocked_action_count"] == 0
     assert config["next_gate"] == ""
     assert config["next_gate_help_command"] == ""
+    assert config["primary_action_status"] == ""
+    assert config["primary_action"] == {}
     assert config["next_actions"] == []
     assert config["ready_actions"] == []
     assert config["blocked_actions"] == []
@@ -224,6 +228,9 @@ def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_p
     assert config["ready_action_count"] == 0
     assert config["next_gate"] == "pipeline-vendor-market-data-batch"
     assert config["next_gate_help_command"] == "python -m hft_cli pipeline-vendor-market-data-batch --help"
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["check"] == "unique_source_files"
+    assert config["primary_action"]["next_gate"] == "pipeline-vendor-market-data-batch"
     assert config["ready_actions"] == []
     assert config["blocked_actions"][0]["check"] == "unique_source_files"
     assert config["blocked_actions"][0]["source"] == "comparison"
@@ -321,6 +328,9 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     assert config["ready_action_count"] == 0
     assert config["next_gate"] == summary.loc[0, "next_gate"]
     assert config["next_gate_help_command"] == summary.loc[0, "next_gate_help_command"]
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["next_gate"] == summary.loc[0, "next_gate"]
+    assert config["primary_action"]["next_gate_help_command"] == summary.loc[0, "next_gate_help_command"]
     assert config["ready_actions"] == []
     assert config["blocked_actions"][0]["next_gate"] == summary.loc[0, "next_gate"]
     assert config["blocked_actions"][0]["next_gate_help_command"] == summary.loc[0, "next_gate_help_command"]
@@ -371,6 +381,9 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
     assert "dataset_count" in set(action_queue["check"])
     assert config["blocked_action_count"] == len(action_queue)
     assert config["next_gate"] == "pipeline-vendor-market-data-batch"
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["check"] == "dataset_count"
+    assert config["primary_action"]["next_gate"] == "pipeline-vendor-market-data-batch"
     assert config["blocked_actions"][0]["check"] == "dataset_count"
     assert config["blocked_actions"][0]["next_gate_help_command"] == (
         "python -m hft_cli pipeline-vendor-market-data-batch --help"

@@ -723,6 +723,7 @@ def _pipeline_config(
     thresholds: DataReadinessThresholds,
     config: VendorMarketDataPipelineConfig,
 ) -> dict[str, Any]:
+    primary_action = _first_action_record(action_queue)
     component_rows = [
         {
             "component": str(item.get("component", "")),
@@ -781,6 +782,8 @@ def _pipeline_config(
         "blocked_action_count": int(_number(row, "blocked_action_count", fallback=0.0)),
         "next_gate": _text(row, "next_gate"),
         "next_gate_help_command": _text(row, "next_gate_help_command"),
+        "primary_action_status": _value_text(primary_action.get("queue_status")),
+        "primary_action": primary_action,
         "next_actions": _action_records(action_queue),
         "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
         "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
@@ -795,6 +798,7 @@ def _batch_config(
     thresholds: DataReadinessComparisonThresholds,
     config: VendorMarketDataPipelineConfig,
 ) -> dict[str, Any]:
+    primary_action = _first_action_record(action_queue)
     dataset_rows = [
         {
             "dataset": str(item.get("dataset", "")),
@@ -840,11 +844,19 @@ def _batch_config(
         "blocked_action_count": int(_number(row, "blocked_action_count", fallback=0.0)),
         "next_gate": _text(row, "next_gate"),
         "next_gate_help_command": _text(row, "next_gate_help_command"),
+        "primary_action_status": _value_text(primary_action.get("queue_status")),
+        "primary_action": primary_action,
         "next_actions": _action_records(action_queue),
         "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
         "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "recommendation": _text(row, "recommendation"),
     }
+
+
+def _first_action_record(frame: pd.DataFrame) -> dict[str, object]:
+    if frame.empty:
+        return {}
+    return _jsonable_record(frame.iloc[0].to_dict())
 
 
 def _action_records(frame: pd.DataFrame) -> list[dict[str, object]]:

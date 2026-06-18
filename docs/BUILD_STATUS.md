@@ -92,6 +92,10 @@
 - Vendor market-data pipeline and batch config JSON now mirrors root action
   queues as `next_actions`, `ready_actions`, and `blocked_actions`, so
   schedulers can consume vendor onboarding blockers without parsing CSV files.
+- Vendor market-data pipeline and batch config JSON now also exposes
+  root-level `primary_action_status` and `primary_action`, carrying the
+  selected failed check, dataset, and next-gate context for Arrow.money/iRage
+  onboarding schedulers.
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.
