@@ -109,6 +109,9 @@
 - Catalog hygiene gaps now carry source-summary `next_gate` and
   `next_gate_help_command` repair hints when available, keeping failed
   summary remediation schedulable from the hygiene sidecar.
+- Experiment catalog action plans now expose `catalog_hygiene_ready` and
+  prioritize hygiene repair recommendations before any queued strategy,
+  broker, or route action scheduling.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

@@ -114,6 +114,7 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert action_plan["action_queue_count"] == 0
     assert action_plan["ready_action_count"] == 0
     assert action_plan["blocked_action_count"] == 0
+    assert action_plan["catalog_hygiene_ready"] is True
     assert action_plan["hygiene_gap_count"] == 0
     assert action_plan["hygiene_gaps"] == []
     assert action_plan["scheduler_recommendation"] == "no_catalog_actions"
@@ -205,12 +206,36 @@ def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
     assert "summary_failed" in runbook
     assert "replace_unfingerprinted_inputs_with_file_or_directory_manifest_inputs" in runbook
     action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["catalog_hygiene_ready"] is False
     assert action_plan["hygiene_gap_count"] == 4
+    assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps_before_scheduling_actions"
     assert action_plan["top_hygiene_gap"]["gap_type"] == "summary_failed"
     assert action_plan["top_hygiene_gap"]["next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
     )
     assert {gap["gap_type"] for gap in action_plan["hygiene_gaps"]} == set(gaps["gap_type"])
+
+
+def test_write_experiment_catalog_action_plan_prioritizes_hygiene_without_actions(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    missing_summary = root / "missing_summary"
+    missing_summary.mkdir(parents=True)
+    write_experiment_manifest(
+        missing_summary,
+        run_type="custom_report",
+        parameters={},
+        inputs={},
+    )
+
+    write_experiment_catalog([root], output_dir=out_dir)
+
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["catalog_hygiene_ready"] is False
+    assert action_plan["hygiene_gap_count"] == 1
+    assert action_plan["action_queue_count"] == 0
+    assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps"
+    assert action_plan["top_hygiene_gap"]["gap_type"] == "missing_summary"
 
 
 def test_catalog_experiment_runs_reports_input_fingerprint_provenance(tmp_path):
@@ -402,7 +427,8 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert action_plan["ready_action_count"] == 1
     assert action_plan["blocked_action_count"] == 1
     assert action_plan["unknown_action_count"] == 0
-    assert action_plan["scheduler_recommendation"] == "run_ready_actions_and_resolve_blocked_actions"
+    assert action_plan["catalog_hygiene_ready"] is False
+    assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps_before_scheduling_actions"
     assert action_plan["ready_actions"][0]["next_gate"] == "plan-scaleup"
     assert action_plan["blocked_actions"][0]["next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
@@ -466,7 +492,8 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     assert "audit-adapter-schema" in runbook
     assert "schema review missing" in runbook
     action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
-    assert action_plan["scheduler_recommendation"] == "resolve_blocked_actions"
+    assert action_plan["catalog_hygiene_ready"] is False
+    assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps_before_scheduling_actions"
     assert action_plan["blocked_actions"][0]["next_gate"] == "audit-adapter-schema"
     assert action_plan["blocked_actions"][0]["recommendation"] == "schema review missing"
 

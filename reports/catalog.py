@@ -526,12 +526,14 @@ def _catalog_action_plan(
         "run_type_count": _int_metric(summary_row.get("run_type_count")),
         "status_false_runs": _int_metric(summary_row.get("status_false_runs")),
         "missing_summary_runs": _int_metric(summary_row.get("missing_summary_runs")),
+        "catalog_hygiene_ready": len(gaps) == 0,
         "hygiene_gap_count": len(gaps),
         "action_queue_count": len(actions),
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
         "unknown_action_count": len(unknown_actions),
         "scheduler_recommendation": _action_plan_recommendation(
+            gaps,
             ready_actions,
             blocked_actions,
             unknown_actions,
@@ -582,10 +584,15 @@ def _hygiene_gap_plan_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _action_plan_recommendation(
+    hygiene_gaps: list[dict[str, Any]],
     ready_actions: list[dict[str, Any]],
     blocked_actions: list[dict[str, Any]],
     unknown_actions: list[dict[str, Any]],
 ) -> str:
+    if hygiene_gaps and (ready_actions or blocked_actions or unknown_actions):
+        return "repair_catalog_hygiene_gaps_before_scheduling_actions"
+    if hygiene_gaps:
+        return "repair_catalog_hygiene_gaps"
     if ready_actions and blocked_actions:
         return "run_ready_actions_and_resolve_blocked_actions"
     if ready_actions:

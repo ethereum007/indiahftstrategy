@@ -87,7 +87,8 @@ run-local `*_action_queue.csv` sidecars, such as broker readiness and
 broker-vendor data readiness blockers, into the catalog-level queue.
 `experiment_catalog_action_plan.json` mirrors that queue as typed
 `ready_actions`, `blocked_actions`, `unknown_actions`, top actions, counts, and
-a scheduler recommendation for automation.
+a scheduler recommendation for automation. Its `catalog_hygiene_ready` flag and
+recommendation prioritize hygiene repair before scheduling queued actions.
 `experiment_catalog_runbook.md` mirrors the same queue with catalog readiness
 and input-provenance totals for human operator review.
 Use `--fail-on-blocked-actions` to return exit code 2 when blocked or unknown
