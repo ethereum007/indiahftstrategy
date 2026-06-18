@@ -83,6 +83,12 @@ also carry `broker_roundtrip_runs`, `broker_roundtrip_passed_runs`,
 `broker_roundtrip_portfolio_breach_runs` so final Arrow.money/iRage dry-run
 review can prove whether dispatch notional stayed inside the selected strategy
 portfolio allocation.
+For broker schema review, the catalog summary/action plan/runbook carry
+`placeholder_schema_active_runs`, `placeholder_schema_allowed_runs`,
+`placeholder_schema_reviewed_runs`, `placeholder_schema_unreviewed_runs`, and
+`placeholder_schema_blocked_runs`, so scheduler review can separate
+broker-reviewed mappings from dry-run-only placeholder Arrow.money/iRage
+schemas.
 `experiment_catalog_hygiene_gaps.csv` names each catalog hygiene gap with the
 run directory, gap type, and recommended fix before the catalog is reused as
 strategy, broker, route, or live-dryrun proof. When the source summary exposes

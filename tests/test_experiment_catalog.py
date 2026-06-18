@@ -1120,6 +1120,90 @@ def test_catalog_experiment_runs_recognizes_broker_vendor_data_readiness_status(
     assert row["summary_dataset_count"] == 2
 
 
+def test_write_experiment_catalog_summarizes_placeholder_schema_state(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    write_run(
+        root / "broker_vendor_allowed",
+        run_type="broker_vendor_data_readiness_pipeline",
+        summary_name="broker_vendor_data_readiness_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "schema_review_required": False,
+            "schema_reviewed": False,
+            "schema_review_mode": "placeholder_unreviewed",
+            "placeholder_schema_active": True,
+            "placeholder_schema_allowed": True,
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "broker_readiness_reviewed",
+        run_type="broker_readiness",
+        summary_name="broker_readiness_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "arrow_money",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "schema_review_required": True,
+            "schema_reviewed": True,
+            "schema_review_mode": "reviewed_vendor_mapping",
+            "failed_checks": 0,
+        },
+    )
+    write_run(
+        root / "broker_readiness_blocked",
+        run_type="broker_readiness",
+        summary_name="broker_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "adapter": "irage",
+            "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+            "schema_review_required": True,
+            "schema_reviewed": False,
+            "schema_review_mode": "placeholder_unreviewed",
+            "failed_checks": 1,
+        },
+    )
+    write_run(
+        root / "native_readiness",
+        run_type="broker_readiness",
+        summary_name="broker_readiness_summary.csv",
+        summary_row={
+            "ready": True,
+            "adapter": "normalized",
+            "adapter_schema_status": "native_normalized",
+            "schema_review_required": True,
+            "schema_reviewed": True,
+            "schema_review_mode": "native_schema",
+            "failed_checks": 0,
+        },
+    )
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    summary = report.summary.iloc[0]
+    assert int(summary["placeholder_schema_active_runs"]) == 3
+    assert int(summary["placeholder_schema_allowed_runs"]) == 1
+    assert int(summary["placeholder_schema_reviewed_runs"]) == 1
+    assert int(summary["placeholder_schema_unreviewed_runs"]) == 2
+    assert int(summary["placeholder_schema_blocked_runs"]) == 1
+    persisted = pd.read_csv(out_dir / "experiment_catalog_summary.csv")
+    assert int(persisted.loc[0, "placeholder_schema_blocked_runs"]) == 1
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["placeholder_schema_active_runs"] == 3
+    assert action_plan["placeholder_schema_allowed_runs"] == 1
+    assert action_plan["placeholder_schema_reviewed_runs"] == 1
+    assert action_plan["placeholder_schema_unreviewed_runs"] == 2
+    assert action_plan["placeholder_schema_blocked_runs"] == 1
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "## Broker Schema Review" in runbook
+    assert "- Placeholder-schema allowed runs: 1" in runbook
+    assert "- Placeholder-schema blocked runs: 1" in runbook
+
+
 def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_path):
     root = tmp_path / "runs"
     write_run(

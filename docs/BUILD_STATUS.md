@@ -210,6 +210,10 @@
   dispatch round-trip portfolio proof counts, including portfolio-provided,
   portfolio-ready, portfolio-safe, and portfolio-breach runs for Arrow.money or
   iRage dry-run launch review.
+- Experiment catalog summaries, action plans, and runbooks now aggregate
+  placeholder broker schema state, counting active, allowed, reviewed,
+  unreviewed, and blocked placeholder-schema runs so Arrow.money/iRage dry-run
+  catalogs expose remaining vendor-schema review debt at the top level.
 - Experiment catalogs now write manifest-tracked
   `experiment_catalog_action_plan.json`, a typed ready/blocked/unknown action
   plan with top actions and scheduler recommendation for automation handoff.
@@ -964,7 +968,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 918 tests.
+Current passing suite: 919 tests.
 
 ## Next Build Targets
 

@@ -92,6 +92,8 @@ SUMMARY_FILES = [
     "calibration_summary.csv",
 ]
 
+PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
+
 STATUS_COLUMNS = [
     "passed",
     "all_passed",
@@ -254,6 +256,7 @@ def _catalog_summary(
     action_counts = _action_queue_counts(action_queue)
     hygiene_counts = _hygiene_gap_counts(hygiene_gaps)
     broker_roundtrip_counts = _broker_roundtrip_portfolio_counts(catalog)
+    placeholder_schema_counts = _placeholder_schema_counts(catalog)
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -273,6 +276,7 @@ def _catalog_summary(
                     "runs_with_directory_inputs": 0,
                     "runs_with_unfingerprinted_inputs": 0,
                     **broker_roundtrip_counts,
+                    **placeholder_schema_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -297,6 +301,7 @@ def _catalog_summary(
                 "runs_with_directory_inputs": int((catalog["input_directory_count"] > 0).sum()),
                 "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
                 **broker_roundtrip_counts,
+                **placeholder_schema_counts,
                 **action_counts,
                 **hygiene_counts,
             }
@@ -339,6 +344,38 @@ def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:
     return keys
 
 
+def _placeholder_schema_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "placeholder_schema_active_runs": 0,
+        "placeholder_schema_allowed_runs": 0,
+        "placeholder_schema_reviewed_runs": 0,
+        "placeholder_schema_unreviewed_runs": 0,
+        "placeholder_schema_blocked_runs": 0,
+    }
+    if catalog.empty:
+        return keys
+    explicit_active = _bool_column(catalog, "summary_placeholder_schema_active")
+    if "summary_adapter_schema_status" in catalog.columns:
+        status_active = catalog["summary_adapter_schema_status"].map(_is_placeholder_schema)
+    else:
+        status_active = pd.Series(False, index=catalog.index)
+    active = explicit_active | status_active
+    allowed = active & _bool_column(catalog, "summary_placeholder_schema_allowed")
+    reviewed = active & _bool_column(catalog, "summary_schema_reviewed")
+    unreviewed = active & ~reviewed
+    blocked = unreviewed & ~allowed
+    keys.update(
+        {
+            "placeholder_schema_active_runs": int(active.sum()),
+            "placeholder_schema_allowed_runs": int(allowed.sum()),
+            "placeholder_schema_reviewed_runs": int(reviewed.sum()),
+            "placeholder_schema_unreviewed_runs": int(unreviewed.sum()),
+            "placeholder_schema_blocked_runs": int(blocked.sum()),
+        }
+    )
+    return keys
+
+
 def _bool_column(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(False, index=frame.index)
@@ -349,6 +386,10 @@ def _numeric_column(frame: pd.DataFrame, column: str) -> pd.Series:
     if column not in frame.columns:
         return pd.Series(0.0, index=frame.index)
     return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
+
+
+def _is_placeholder_schema(value: Any) -> bool:
+    return str(value).strip() == PLACEHOLDER_SCHEMA_STATUS
 
 
 ACTION_QUEUE_COLUMNS = [
@@ -622,6 +663,13 @@ def _catalog_action_plan(
         "broker_roundtrip_portfolio_breach_runs": _int_metric(
             summary_row.get("broker_roundtrip_portfolio_breach_runs")
         ),
+        "placeholder_schema_active_runs": _int_metric(summary_row.get("placeholder_schema_active_runs")),
+        "placeholder_schema_allowed_runs": _int_metric(summary_row.get("placeholder_schema_allowed_runs")),
+        "placeholder_schema_reviewed_runs": _int_metric(summary_row.get("placeholder_schema_reviewed_runs")),
+        "placeholder_schema_unreviewed_runs": _int_metric(
+            summary_row.get("placeholder_schema_unreviewed_runs")
+        ),
+        "placeholder_schema_blocked_runs": _int_metric(summary_row.get("placeholder_schema_blocked_runs")),
         "action_queue_count": len(actions),
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
@@ -1053,6 +1101,17 @@ def _catalog_runbook_markdown(
             "- Portfolio-breach broker round-trip runs: "
             f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_breach_runs'))}"
         ),
+        "",
+        "## Broker Schema Review",
+        "",
+        f"- Placeholder-schema active runs: {_int_metric(summary_row.get('placeholder_schema_active_runs'))}",
+        f"- Placeholder-schema allowed runs: {_int_metric(summary_row.get('placeholder_schema_allowed_runs'))}",
+        f"- Placeholder-schema reviewed runs: {_int_metric(summary_row.get('placeholder_schema_reviewed_runs'))}",
+        (
+            "- Placeholder-schema unreviewed runs: "
+            f"{_int_metric(summary_row.get('placeholder_schema_unreviewed_runs'))}"
+        ),
+        f"- Placeholder-schema blocked runs: {_int_metric(summary_row.get('placeholder_schema_blocked_runs'))}",
         "",
         "## Hygiene Gaps",
         "",
