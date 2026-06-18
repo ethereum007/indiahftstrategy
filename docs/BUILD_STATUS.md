@@ -93,6 +93,9 @@
 - Broker dispatch acknowledgement reconciliation now carries dispatch-retained
   strategy portfolio allocation evidence and blocks acknowledgement pass status
   when dispatch notional exceeds the selected allocation.
+- Broker dispatch round-trip review now reconciles strategy portfolio
+  allocation evidence across dispatch/send/ack artifacts and blocks the final
+  proof on identity, allocation, or dispatch-notional inconsistencies.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.
@@ -713,6 +716,7 @@
   route-enable failed-check counters and broker schema review status/mode from
   upstream configs, shadow broker-readiness consistency across dispatch, send,
   and acknowledgement configs, broker-readiness shadow broker consistency,
+  strategy portfolio allocation consistency across dispatch, send, and ack,
   vendor market-data batch provenance consistency, broker-readiness final
   dispatch round-trip vendor market-data consistency, hydrating missing broker
   vendor-data proof through dispatch/route-enable/cutover manifests when

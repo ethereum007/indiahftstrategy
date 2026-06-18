@@ -273,6 +273,84 @@ def _roundtrip_orders(
 
 def _component_summary_state(row: pd.Series, config: dict[str, Any]) -> pd.Series:
     state = row.copy()
+    strategy_portfolio = config.get("strategy_portfolio", {}) or {}
+    upload = config.get("upload", {}) or {}
+    dispatch = config.get("dispatch", {}) or {}
+    if strategy_portfolio:
+        state["strategy_portfolio_required"] = _to_bool(
+            strategy_portfolio.get("required", state.get("strategy_portfolio_required", False))
+        )
+        state["strategy_portfolio_provided"] = _to_bool(
+            strategy_portfolio.get("provided", state.get("strategy_portfolio_provided", False))
+        )
+        state["strategy_portfolio_ready"] = _to_bool(
+            strategy_portfolio.get("ready", state.get("strategy_portfolio_ready", False))
+        )
+        state["strategy_portfolio_deployment_mode"] = _first_text(
+            strategy_portfolio.get("deployment_mode", ""),
+            state.get("strategy_portfolio_deployment_mode", ""),
+        )
+        state["strategy_portfolio_allocation_mode"] = _first_text(
+            strategy_portfolio.get("allocation_mode", ""),
+            state.get("strategy_portfolio_allocation_mode", ""),
+        )
+        state["strategy_portfolio_capital_currency"] = _first_text(
+            strategy_portfolio.get("capital_currency", ""),
+            state.get("strategy_portfolio_capital_currency", ""),
+        )
+        state["strategy_portfolio_selected_profile"] = _first_text(
+            strategy_portfolio.get("selected_profile", ""),
+            state.get("strategy_portfolio_selected_profile", ""),
+        )
+        state["strategy_portfolio_selected_strategy"] = _identity_key(
+            _first_text(
+                strategy_portfolio.get("selected_strategy", ""),
+                state.get("strategy_portfolio_selected_strategy", ""),
+            )
+        )
+        state["strategy_portfolio_selected_market"] = _identity_key(
+            _first_text(
+                strategy_portfolio.get("selected_market", ""),
+                state.get("strategy_portfolio_selected_market", ""),
+            )
+        )
+        state["strategy_portfolio_selected_eligible"] = _to_bool(
+            strategy_portfolio.get("selected_eligible", state.get("strategy_portfolio_selected_eligible", False))
+        )
+        state["strategy_portfolio_selected_allocation_weight"] = _number_value(
+            strategy_portfolio.get(
+                "selected_allocation_weight",
+                state.get("strategy_portfolio_selected_allocation_weight", 0.0),
+            ),
+            _number(state, "strategy_portfolio_selected_allocation_weight", 0.0),
+        )
+        state["strategy_portfolio_selected_allocation_notional"] = _number_value(
+            strategy_portfolio.get(
+                "selected_allocation_notional",
+                state.get("strategy_portfolio_selected_allocation_notional", 0.0),
+            ),
+            _number(state, "strategy_portfolio_selected_allocation_notional", 0.0),
+        )
+        state["strategy_portfolio_notional_cap_applied"] = _to_bool(
+            strategy_portfolio.get(
+                "notional_cap_applied",
+                state.get("strategy_portfolio_notional_cap_applied", False),
+            )
+        )
+        state["pre_portfolio_max_notional_per_session"] = _number_value(
+            strategy_portfolio.get(
+                "pre_portfolio_max_notional_per_session",
+                state.get("pre_portfolio_max_notional_per_session", 0.0),
+            ),
+            _number(state, "pre_portfolio_max_notional_per_session", 0.0),
+        )
+    state["dispatch_total_notional"] = _number_value(
+        upload.get(
+            "total_notional",
+            dispatch.get("total_notional", state.get("dispatch_total_notional", 0.0)),
+        ),
+        _number(state, "dispatch_total_notional", 0.0),
+    )
     broker_readiness = config.get("broker_readiness", {}) or {}
     if "adapter_schema_status" in broker_readiness:
         state["broker_schema_status"] = _object_text(
@@ -1029,6 +1107,14 @@ def _checks(
             ],
             ignore_index=True,
         )
+    if _strategy_portfolio_active(dispatch_summary, send_summary, ack_summary):
+        checks = pd.concat(
+            [
+                checks,
+                pd.DataFrame(_strategy_portfolio_checks(dispatch_summary, send_summary, ack_summary)),
+            ],
+            ignore_index=True,
+        )
     if _broker_vendor_data_readiness_active(dispatch_summary, send_summary, ack_summary):
         checks = pd.concat(
             [
@@ -1122,6 +1208,93 @@ def _route_readiness_checks(
             0,
             gap_pairs == 0,
             "route-readiness proof still reports market/strategy gaps",
+        ),
+    ]
+
+
+def _strategy_portfolio_checks(*rows: pd.Series) -> list[dict[str, object]]:
+    dispatch_total_notional = _strategy_portfolio_dispatch_total_notional(rows)
+    selected_allocation = _strategy_portfolio_number_min(rows, "strategy_portfolio_selected_allocation_notional")
+    return [
+        _check(
+            "strategy_portfolio_provided",
+            _strategy_portfolio_provided(*rows),
+            "is",
+            True,
+            _strategy_portfolio_provided(*rows),
+            "strategy portfolio allocation evidence is missing from one or more round-trip artifacts",
+        ),
+        _check(
+            "strategy_portfolio_ready",
+            _strategy_portfolio_bool_all(rows, "strategy_portfolio_ready"),
+            "is",
+            True,
+            _strategy_portfolio_bool_all(rows, "strategy_portfolio_ready"),
+            "strategy portfolio allocation is not ready in every round-trip artifact",
+        ),
+        _check(
+            "strategy_portfolio_allocation_eligible",
+            _strategy_portfolio_bool_all(rows, "strategy_portfolio_selected_eligible"),
+            "is",
+            True,
+            _strategy_portfolio_bool_all(rows, "strategy_portfolio_selected_eligible"),
+            "strategy portfolio allocation row is not eligible in every round-trip artifact",
+        ),
+        _check(
+            "strategy_portfolio_strategy_matches",
+            _strategy_portfolio_identity_mismatches(rows, "strategy"),
+            "==",
+            0,
+            _strategy_portfolio_identity_mismatches(rows, "strategy") == 0,
+            "strategy portfolio strategy does not match round-trip strategy evidence",
+        ),
+        _check(
+            "strategy_portfolio_market_matches",
+            _strategy_portfolio_identity_mismatches(rows, "market"),
+            "==",
+            0,
+            _strategy_portfolio_identity_mismatches(rows, "market") == 0,
+            "strategy portfolio market does not match round-trip market evidence",
+        ),
+        _check(
+            "strategy_portfolio_profile_consistent",
+            _strategy_portfolio_text_unique_count(rows, "strategy_portfolio_selected_profile"),
+            "==",
+            1,
+            _strategy_portfolio_text_unique_count(rows, "strategy_portfolio_selected_profile") == 1,
+            "strategy portfolio selected profile is not consistent across round-trip artifacts",
+        ),
+        _check(
+            "strategy_portfolio_allocation_notional",
+            selected_allocation,
+            ">",
+            0.0,
+            selected_allocation > 0.0,
+            "strategy portfolio allocation notional must be positive",
+        ),
+        _check(
+            "strategy_portfolio_allocation_notional_consistent",
+            _strategy_portfolio_number_unique_count(rows, "strategy_portfolio_selected_allocation_notional"),
+            "==",
+            1,
+            _strategy_portfolio_number_unique_count(rows, "strategy_portfolio_selected_allocation_notional") == 1,
+            "strategy portfolio allocation notional is not consistent across round-trip artifacts",
+        ),
+        _check(
+            "dispatch_total_notional_consistent",
+            _strategy_portfolio_number_unique_count(rows, "dispatch_total_notional"),
+            "==",
+            1,
+            _strategy_portfolio_number_unique_count(rows, "dispatch_total_notional") == 1,
+            "dispatch total notional is not consistent across round-trip artifacts",
+        ),
+        _check(
+            "dispatch_notional_within_strategy_portfolio_allocation",
+            dispatch_total_notional,
+            "<=",
+            selected_allocation,
+            dispatch_total_notional <= selected_allocation,
+            "dispatch notional exceeds selected strategy portfolio allocation",
         ),
     ]
 
@@ -1898,6 +2071,54 @@ def _summary(
                 "dispatch_batch_id": _text(dispatch_summary, "dispatch_batch_id")
                 or _text(send_summary, "dispatch_batch_id"),
                 "dispatch_orders": int(_number(dispatch_summary, "dispatch_orders", len(roundtrip_orders))),
+                "dispatch_total_notional": _strategy_portfolio_dispatch_total_notional(proof_rows),
+                "strategy_portfolio_required": _strategy_portfolio_required(*proof_rows),
+                "strategy_portfolio_provided": _strategy_portfolio_provided(*proof_rows),
+                "strategy_portfolio_ready": _strategy_portfolio_bool_all(proof_rows, "strategy_portfolio_ready"),
+                "strategy_portfolio_deployment_mode": _strategy_portfolio_text_value(
+                    proof_rows,
+                    "strategy_portfolio_deployment_mode",
+                ),
+                "strategy_portfolio_allocation_mode": _strategy_portfolio_text_value(
+                    proof_rows,
+                    "strategy_portfolio_allocation_mode",
+                ),
+                "strategy_portfolio_capital_currency": _strategy_portfolio_text_value(
+                    proof_rows,
+                    "strategy_portfolio_capital_currency",
+                ),
+                "strategy_portfolio_selected_profile": _strategy_portfolio_text_value(
+                    proof_rows,
+                    "strategy_portfolio_selected_profile",
+                ),
+                "strategy_portfolio_selected_strategy": _strategy_portfolio_identity_value(
+                    proof_rows,
+                    "strategy",
+                ),
+                "strategy_portfolio_selected_market": _strategy_portfolio_identity_value(
+                    proof_rows,
+                    "market",
+                ),
+                "strategy_portfolio_selected_eligible": _strategy_portfolio_bool_all(
+                    proof_rows,
+                    "strategy_portfolio_selected_eligible",
+                ),
+                "strategy_portfolio_selected_allocation_weight": _strategy_portfolio_number_max(
+                    proof_rows,
+                    "strategy_portfolio_selected_allocation_weight",
+                ),
+                "strategy_portfolio_selected_allocation_notional": _strategy_portfolio_number_min(
+                    proof_rows,
+                    "strategy_portfolio_selected_allocation_notional",
+                ),
+                "strategy_portfolio_notional_cap_applied": _strategy_portfolio_bool_all(
+                    proof_rows,
+                    "strategy_portfolio_notional_cap_applied",
+                ),
+                "pre_portfolio_max_notional_per_session": _strategy_portfolio_number_max(
+                    proof_rows,
+                    "pre_portfolio_max_notional_per_session",
+                ),
                 "send_requests": int(_number(send_summary, "requests", 0.0)),
                 "acked_orders": int(_number(ack_summary, "acked_orders", 0.0)),
                 "missing_request_acks": _missing_request_acks(roundtrip_orders),
@@ -2301,6 +2522,23 @@ def _config(
         },
         "dispatch_batch_id": _text(summary, "dispatch_batch_id"),
         "dispatch_orders": int(summary["dispatch_orders"]),
+        "dispatch_total_notional": float(summary["dispatch_total_notional"]),
+        "strategy_portfolio": {
+            "required": _to_bool(summary["strategy_portfolio_required"]),
+            "provided": _to_bool(summary["strategy_portfolio_provided"]),
+            "ready": _to_bool(summary["strategy_portfolio_ready"]),
+            "deployment_mode": _text(summary, "strategy_portfolio_deployment_mode"),
+            "allocation_mode": _text(summary, "strategy_portfolio_allocation_mode"),
+            "capital_currency": _text(summary, "strategy_portfolio_capital_currency"),
+            "selected_profile": _text(summary, "strategy_portfolio_selected_profile"),
+            "selected_strategy": _text(summary, "strategy_portfolio_selected_strategy"),
+            "selected_market": _text(summary, "strategy_portfolio_selected_market"),
+            "selected_eligible": _to_bool(summary["strategy_portfolio_selected_eligible"]),
+            "selected_allocation_weight": float(summary["strategy_portfolio_selected_allocation_weight"]),
+            "selected_allocation_notional": float(summary["strategy_portfolio_selected_allocation_notional"]),
+            "notional_cap_applied": _to_bool(summary["strategy_portfolio_notional_cap_applied"]),
+            "pre_portfolio_max_notional_per_session": float(summary["pre_portfolio_max_notional_per_session"]),
+        },
         "send_requests": int(summary["send_requests"]),
         "acked_orders": int(summary["acked_orders"]),
         "missing_request_acks": int(summary["missing_request_acks"]),
@@ -2480,6 +2718,82 @@ def _route_readiness_provided(*rows: pd.Series) -> bool:
 
 def _route_roundtrip_provided(*rows: pd.Series) -> bool:
     return all(_to_bool(row.get("route_dispatch_roundtrip_provided", False)) for row in rows)
+
+
+def _strategy_portfolio_active(*rows: pd.Series) -> bool:
+    return any(
+        _to_bool(row.get("strategy_portfolio_required", False))
+        or _to_bool(row.get("strategy_portfolio_provided", False))
+        for row in rows
+    )
+
+
+def _strategy_portfolio_required(*rows: pd.Series) -> bool:
+    return any(_to_bool(row.get("strategy_portfolio_required", False)) for row in rows)
+
+
+def _strategy_portfolio_provided(*rows: pd.Series) -> bool:
+    return bool(
+        rows
+        and _strategy_portfolio_active(*rows)
+        and all(_to_bool(row.get("strategy_portfolio_provided", False)) for row in rows)
+    )
+
+
+def _strategy_portfolio_bool_all(rows: tuple[pd.Series, ...], column: str) -> bool:
+    return bool(rows and all(_to_bool(row.get(column, False)) for row in rows))
+
+
+def _strategy_portfolio_identity_mismatches(rows: tuple[pd.Series, ...], column: str) -> int:
+    selected_column = f"strategy_portfolio_selected_{column}"
+    component_values = {
+        _identity_value(row, column)
+        for row in rows
+        if not row.empty and _identity_value(row, column)
+    }
+    proof_values = [_identity_key(row.get(selected_column, "")) for row in rows if not row.empty]
+    if any(not value for value in proof_values):
+        return 1
+    return 0 if len(component_values | set(proof_values)) == 1 else 1
+
+
+def _strategy_portfolio_identity_value(rows: tuple[pd.Series, ...], column: str) -> str:
+    selected_column = f"strategy_portfolio_selected_{column}"
+    for row in rows:
+        value = _identity_key(row.get(selected_column, ""))
+        if value:
+            return value
+    return ""
+
+
+def _strategy_portfolio_text_value(rows: tuple[pd.Series, ...], column: str) -> str:
+    for row in rows:
+        value = _text(row, column)
+        if value:
+            return value
+    return ""
+
+
+def _strategy_portfolio_text_unique_count(rows: tuple[pd.Series, ...], column: str) -> int:
+    return len({_text(row, column) for row in rows})
+
+
+def _strategy_portfolio_number_unique_count(rows: tuple[pd.Series, ...], column: str) -> int:
+    return len({round(_number(row, column, 0.0), 8) for row in rows})
+
+
+def _strategy_portfolio_number_min(rows: tuple[pd.Series, ...], column: str) -> float:
+    values = [_number(row, column, 0.0) for row in rows]
+    return min(values) if values else 0.0
+
+
+def _strategy_portfolio_number_max(rows: tuple[pd.Series, ...], column: str) -> float:
+    values = [_number(row, column, 0.0) for row in rows]
+    return max(values) if values else 0.0
+
+
+def _strategy_portfolio_dispatch_total_notional(rows: tuple[pd.Series, ...]) -> float:
+    return _strategy_portfolio_number_max(rows, "dispatch_total_notional")
 
 
 def _route_readiness_identity_mismatches(rows: tuple[pd.Series, ...]) -> int:
@@ -2856,6 +3170,14 @@ def _object_text(value: object) -> str:
     except (TypeError, ValueError):
         pass
     return str(value).strip()
+
+
+def _first_text(*values: object) -> str:
+    for value in values:
+        text = _object_text(value)
+        if text:
+            return text
+    return ""
 
 
 def _identity_key(value: object) -> str:
