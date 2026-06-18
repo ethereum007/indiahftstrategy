@@ -102,6 +102,14 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
         "dataset",
         "component",
         "check",
+        "failed_check_count",
+        "failed_check_names",
+        "first_failed_reason",
+        "primary_blocker_check",
+        "primary_blocker_value",
+        "primary_blocker_operator",
+        "primary_blocker_threshold",
+        "primary_blocker_reason",
         "pipeline_dir",
         "next_gate",
         "next_gate_help_command",
@@ -124,6 +132,10 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert action_plan["hygiene_gap_count"] == 0
     assert action_plan["hygiene_gaps"] == []
     assert action_plan["scheduler_recommendation"] == "no_catalog_actions"
+    assert action_plan["failed_check_count"] == 0
+    assert action_plan["failed_checks"] == []
+    assert action_plan["first_failed_reason"] == ""
+    assert action_plan["primary_blocker"] == {}
     assert action_plan["next_gate"] == ""
     assert action_plan["next_gate_help_command"] == ""
     assert action_plan["primary_action_status"] == ""
@@ -320,6 +332,14 @@ def test_catalog_experiment_runs_recognizes_strategy_scorecard_status(tmp_path):
             "best_profile": "leadlag",
             "best_strategy": "lead_lag_taker",
             "best_next_gate": "plan-scaleup",
+            "failed_check_count": 1,
+            "failed_check_names": "profile_ready:imbalance",
+            "first_failed_reason": "imbalance profile is missing required run type imbalance_replay_walkforward",
+            "primary_blocker_check": "profile_ready:imbalance",
+            "primary_blocker_value": False,
+            "primary_blocker_operator": "is",
+            "primary_blocker_threshold": True,
+            "primary_blocker_reason": "imbalance profile is missing required run type imbalance_replay_walkforward",
             "ready_profiles": 1,
             "blocked_profiles": 4,
         },
@@ -334,6 +354,11 @@ def test_catalog_experiment_runs_recognizes_strategy_scorecard_status(tmp_path):
     assert row["summary_status_column"] == "ready"
     assert row["summary_best_profile"] == "leadlag"
     assert row["summary_best_next_gate"] == "plan-scaleup"
+    assert int(row["summary_failed_check_count"]) == 1
+    assert row["summary_primary_blocker_check"] == "profile_ready:imbalance"
+    assert row["summary_first_failed_reason"] == (
+        "imbalance profile is missing required run type imbalance_replay_walkforward"
+    )
 
 
 def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path):
@@ -354,6 +379,14 @@ def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path
             "next_gate_help_command": (
                 "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
             ),
+            "failed_check_count": 1,
+            "failed_check_names": "route_pairs_ready",
+            "first_failed_reason": "ops-launch route evidence is not ready",
+            "primary_blocker_check": "route_pairs_ready",
+            "primary_blocker_value": False,
+            "primary_blocker_operator": "is",
+            "primary_blocker_threshold": True,
+            "primary_blocker_reason": "ops-launch route evidence is not ready",
             "recommendation": "complete_route_readiness_gaps",
         },
     )
@@ -401,6 +434,14 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
             "next_gate_help_command": (
                 "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
             ),
+            "failed_check_count": 1,
+            "failed_check_names": "route_pairs_ready",
+            "first_failed_reason": "ops-launch route evidence is not ready",
+            "primary_blocker_check": "route_pairs_ready",
+            "primary_blocker_value": False,
+            "primary_blocker_operator": "is",
+            "primary_blocker_threshold": True,
+            "primary_blocker_reason": "ops-launch route evidence is not ready",
             "recommendation": "complete_route_readiness_gaps",
         },
     )
@@ -424,6 +465,15 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert rows.loc["route_readiness_review", "next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
     )
+    assert rows.loc["route_readiness_review", "check"] == "route_pairs_ready"
+    assert int(rows.loc["route_readiness_review", "failed_check_count"]) == 1
+    assert rows.loc["route_readiness_review", "failed_check_names"] == "route_pairs_ready"
+    assert rows.loc["route_readiness_review", "first_failed_reason"] == "ops-launch route evidence is not ready"
+    assert rows.loc["route_readiness_review", "primary_blocker_check"] == "route_pairs_ready"
+    assert str(rows.loc["route_readiness_review", "primary_blocker_value"]) == "False"
+    assert rows.loc["route_readiness_review", "primary_blocker_operator"] == "is"
+    assert str(rows.loc["route_readiness_review", "primary_blocker_threshold"]) == "True"
+    assert rows.loc["route_readiness_review", "primary_blocker_reason"] == "ops-launch route evidence is not ready"
     assert rows.loc["route_readiness_review", "recommendation"] == "complete_route_readiness_gaps"
     runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
     assert "## Action Queue" in runbook
@@ -443,6 +493,14 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert action_plan["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert action_plan["primary_action_status"] == "ready"
     assert action_plan["primary_action"]["strategy"] == "lead_lag_taker"
+    assert action_plan["failed_check_count"] == 1
+    assert action_plan["failed_checks"] == ["route_pairs_ready"]
+    assert action_plan["first_failed_reason"] == "ops-launch route evidence is not ready"
+    assert action_plan["primary_blocker"]["check"] == "route_pairs_ready"
+    assert action_plan["primary_blocker"]["reason"] == "ops-launch route evidence is not ready"
+    assert action_plan["primary_blocker"]["next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
     assert action_plan["ready_actions"][0]["next_gate"] == "plan-scaleup"
     assert action_plan["blocked_actions"][0]["next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
@@ -502,6 +560,14 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     assert row["action_source_file"] == "broker_readiness_action_queue.csv"
     assert row["component"] == "schema_audit"
     assert row["check"] == "schema_reviewed"
+    assert int(row["failed_check_count"]) == 1
+    assert row["failed_check_names"] == "schema_reviewed"
+    assert row["first_failed_reason"] == "schema review missing"
+    assert row["primary_blocker_check"] == "schema_reviewed"
+    assert not bool(row["primary_blocker_value"])
+    assert row["primary_blocker_operator"] == "=="
+    assert bool(row["primary_blocker_threshold"])
+    assert row["primary_blocker_reason"] == "schema review missing"
     assert row["next_gate"] == "audit-adapter-schema"
     assert row["next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
     assert row["recommendation"] == "schema review missing"
@@ -514,6 +580,13 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     assert action_plan["next_gate"] == "audit-adapter-schema"
     assert action_plan["next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
     assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["failed_check_count"] == 1
+    assert action_plan["failed_checks"] == ["schema_reviewed"]
+    assert action_plan["primary_blocker"]["check"] == "schema_reviewed"
+    assert action_plan["primary_blocker"]["value"] is False
+    assert action_plan["primary_blocker"]["operator"] == "=="
+    assert action_plan["primary_blocker"]["threshold"] is True
+    assert action_plan["primary_blocker"]["reason"] == "schema review missing"
     assert action_plan["primary_action"]["action_source_file"] == "broker_readiness_action_queue.csv"
     assert action_plan["blocked_actions"][0]["next_gate"] == "audit-adapter-schema"
     assert action_plan["blocked_actions"][0]["action_source_file"] == "broker_readiness_action_queue.csv"

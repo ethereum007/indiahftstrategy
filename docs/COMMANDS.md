@@ -86,14 +86,21 @@ summary files into one priority-ordered scheduler queue. It also promotes
 run-local `*_action_queue.csv` sidecars, such as broker readiness and
 broker-vendor data readiness blockers, into the catalog-level queue while
 preserving sidecar context columns such as `action_source_file`,
-`action_source`, `dataset`, `component`, `check`, and `pipeline_dir`.
+`action_source`, `dataset`, `component`, `check`, and `pipeline_dir`. When
+the source summary or sidecar carries first-blocker evidence, the catalog queue
+also preserves `failed_check_count`, `failed_check_names`,
+`first_failed_reason`, and `primary_blocker_*` columns for the selected failed
+check.
 `experiment_catalog_action_plan.json` mirrors that queue as typed
 `ready_actions`, `blocked_actions`, `unknown_actions`, top actions, counts, and
 a scheduler recommendation for automation. It also exposes root-level
 `next_gate`, `next_gate_help_command`, `primary_action_status`, and
 `primary_action` fields so schedulers can pick one primary handoff without
-parsing every action array. Its `catalog_hygiene_ready` flag and recommendation
-prioritize hygiene repair before scheduling queued actions.
+parsing every action array. The action plan also exposes root-level
+`failed_check_count`, `failed_checks`, `first_failed_reason`, and structured
+`primary_blocker` fields for the first blocked catalog action. Its
+`catalog_hygiene_ready` flag and recommendation prioritize hygiene repair
+before scheduling queued actions.
 `experiment_catalog_runbook.md` mirrors the same queue with catalog readiness
 and input-provenance totals for human operator review.
 Use `--fail-on-blocked-actions` to return exit code 2 when blocked or unknown

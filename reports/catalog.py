@@ -314,6 +314,14 @@ ACTION_QUEUE_COLUMNS = [
     "dataset",
     "component",
     "check",
+    "failed_check_count",
+    "failed_check_names",
+    "first_failed_reason",
+    "primary_blocker_check",
+    "primary_blocker_value",
+    "primary_blocker_operator",
+    "primary_blocker_threshold",
+    "primary_blocker_reason",
     "pipeline_dir",
     "next_gate",
     "next_gate_help_command",
@@ -333,6 +341,7 @@ def _catalog_action_queue(catalog: pd.DataFrame) -> pd.DataFrame:
             if sidecar_rows:
                 rows.extend(sidecar_rows)
                 continue
+            blocker_fields = _summary_blocker_fields(item)
             next_gate = _first_text(item, "summary_next_gate", "summary_best_next_gate")
             help_command = _first_text(
                 item,
@@ -369,7 +378,8 @@ def _catalog_action_queue(catalog: pd.DataFrame) -> pd.DataFrame:
                     "action_source": "",
                     "dataset": "",
                     "component": "",
-                    "check": "",
+                    "check": blocker_fields["primary_blocker_check"],
+                    **blocker_fields,
                     "pipeline_dir": "",
                     "next_gate": next_gate,
                     "next_gate_help_command": help_command,
@@ -537,6 +547,8 @@ def _catalog_action_plan(
         blocked_actions,
         unknown_actions,
     )
+    failed_checks = [_action_failed_check(action) for action in blocked_actions if _action_failed_check(action)]
+    primary_blocker = _catalog_primary_blocker(blocked_actions[0]) if blocked_actions else {}
     return {
         "schema_version": 1,
         "run_count": _int_metric(summary_row.get("run_count")),
@@ -549,6 +561,10 @@ def _catalog_action_plan(
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
         "unknown_action_count": len(unknown_actions),
+        "failed_check_count": len(failed_checks),
+        "failed_checks": failed_checks,
+        "first_failed_reason": _text(primary_blocker.get("reason")),
+        "primary_blocker": primary_blocker,
         "next_gate": _text(primary_action.get("next_gate")),
         "next_gate_help_command": _text(primary_action.get("next_gate_help_command")),
         "primary_action_status": primary_action_status,
@@ -585,6 +601,35 @@ def _primary_catalog_action(
     return {}, ""
 
 
+def _action_failed_check(action: dict[str, Any]) -> str:
+    return _text(action.get("primary_blocker_check")) or _text(action.get("check"))
+
+
+def _catalog_primary_blocker(action: dict[str, Any]) -> dict[str, Any]:
+    if not action:
+        return {}
+    check = _action_failed_check(action)
+    return {
+        "check": check,
+        "run_type": _text(action.get("run_type")),
+        "run_dir": _text(action.get("run_dir")),
+        "strategy": _text(action.get("strategy")),
+        "market": _text(action.get("market")),
+        "profile": _text(action.get("profile")),
+        "component": _text(action.get("component")),
+        "value": _jsonable(action.get("primary_blocker_value")),
+        "operator": _text(action.get("primary_blocker_operator")),
+        "threshold": _jsonable(action.get("primary_blocker_threshold")),
+        "reason": _text(action.get("primary_blocker_reason"))
+        or _text(action.get("first_failed_reason"))
+        or _text(action.get("recommendation")),
+        "next_gate": _text(action.get("next_gate")),
+        "next_gate_help_command": _text(action.get("next_gate_help_command")),
+        "action_source_file": _text(action.get("action_source_file")),
+        "action_source": _text(action.get("action_source")),
+    }
+
+
 def _action_plan_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "priority": _int_metric(row.get("priority")),
@@ -600,6 +645,14 @@ def _action_plan_row(row: dict[str, Any]) -> dict[str, Any]:
         "dataset": _text(row.get("dataset")),
         "component": _text(row.get("component")),
         "check": _text(row.get("check")),
+        "failed_check_count": _int_metric(row.get("failed_check_count")),
+        "failed_check_names": _text(row.get("failed_check_names")),
+        "first_failed_reason": _text(row.get("first_failed_reason")),
+        "primary_blocker_check": _text(row.get("primary_blocker_check")),
+        "primary_blocker_value": _jsonable(row.get("primary_blocker_value")),
+        "primary_blocker_operator": _text(row.get("primary_blocker_operator")),
+        "primary_blocker_threshold": _jsonable(row.get("primary_blocker_threshold")),
+        "primary_blocker_reason": _text(row.get("primary_blocker_reason")),
         "pipeline_dir": _text(row.get("pipeline_dir")),
         "next_gate": _text(row.get("next_gate")),
         "next_gate_help_command": _text(row.get("next_gate_help_command")),
@@ -661,6 +714,7 @@ def _sidecar_action_rows(catalog_row: dict[str, Any]) -> list[dict[str, Any]]:
             help_command = _text(item.get("next_gate_help_command"))
             if not next_gate and not help_command:
                 continue
+            blocker_fields = _action_blocker_fields(item, catalog_row)
             rows.append(
                 {
                     "queue_status": _first_text(item, "queue_status")
@@ -696,7 +750,8 @@ def _sidecar_action_rows(catalog_row: dict[str, Any]) -> list[dict[str, Any]]:
                     "action_source": _text(item.get("source")),
                     "dataset": _text(item.get("dataset")),
                     "component": _text(item.get("component")),
-                    "check": _text(item.get("check")),
+                    "check": blocker_fields["primary_blocker_check"],
+                    **blocker_fields,
                     "pipeline_dir": _text(item.get("pipeline_dir")),
                     "next_gate": next_gate,
                     "next_gate_help_command": help_command,
@@ -706,6 +761,127 @@ def _sidecar_action_rows(catalog_row: dict[str, Any]) -> list[dict[str, Any]]:
                 }
             )
     return rows
+
+
+def _summary_blocker_fields(row: dict[str, Any]) -> dict[str, Any]:
+    check = _first_text(row, "summary_primary_blocker_check", "summary_check")
+    reason = _first_text(row, "summary_primary_blocker_reason", "summary_first_failed_reason")
+    failed_check_names = _summary_failed_check_names(row, check)
+    return {
+        "failed_check_count": _summary_failed_check_count(row, failed_check_names, check),
+        "failed_check_names": failed_check_names,
+        "first_failed_reason": _first_text(row, "summary_first_failed_reason", "summary_primary_blocker_reason"),
+        "primary_blocker_check": check,
+        "primary_blocker_value": _jsonable(_first_existing(row, "summary_primary_blocker_value")),
+        "primary_blocker_operator": _first_text(row, "summary_primary_blocker_operator"),
+        "primary_blocker_threshold": _jsonable(_first_existing(row, "summary_primary_blocker_threshold")),
+        "primary_blocker_reason": reason,
+    }
+
+
+def _action_blocker_fields(action: dict[str, Any], catalog_row: dict[str, Any]) -> dict[str, Any]:
+    status = _first_text(action, "queue_status") or _queue_status(catalog_row.get("summary_status"))
+    check = _action_check_name(action)
+    reason = _action_blocker_reason(action)
+    failed_count = _int_metric(_first_existing(action, "failed_check_count"))
+    if failed_count == 0 and status == "blocked" and check:
+        failed_count = 1
+    failed_names = _first_text(action, "failed_check_names", "failed_checks")
+    if not failed_names and status == "blocked":
+        failed_names = check
+    return {
+        "failed_check_count": failed_count,
+        "failed_check_names": failed_names,
+        "first_failed_reason": _first_text(action, "first_failed_reason", "primary_blocker_reason") or reason,
+        "primary_blocker_check": check,
+        "primary_blocker_value": _jsonable(
+            _first_existing(action, "primary_blocker_value", "actual", "observed", "value")
+        ),
+        "primary_blocker_operator": _first_text(action, "primary_blocker_operator", "operator"),
+        "primary_blocker_threshold": _jsonable(
+            _first_existing(action, "primary_blocker_threshold", "expected", "threshold")
+        ),
+        "primary_blocker_reason": reason,
+    }
+
+
+def _action_check_name(action: dict[str, Any]) -> str:
+    check = _first_text(action, "primary_blocker_check", "check")
+    if check:
+        return check
+    profile = _text(action.get("profile"))
+    if profile:
+        return f"profile_ready:{profile}"
+    component = _text(action.get("component"))
+    if component:
+        return f"{component}_ready"
+    return ""
+
+
+def _action_blocker_reason(action: dict[str, Any]) -> str:
+    reason = _first_text(action, "primary_blocker_reason", "reason", "message")
+    if reason:
+        return reason
+    profile = _text(action.get("profile"))
+    missing = _split_action_items(action.get("missing_required_run_types"))
+    blocked = _split_action_items(action.get("blocked_required_run_types"))
+    if profile and missing:
+        return f"{profile} profile is missing required run type {missing[0]}"
+    if profile and blocked:
+        return f"{profile} profile has non-passing required run type {blocked[0]}"
+    recommendation = _text(action.get("recommendation"))
+    return recommendation
+
+
+def _summary_failed_check_count(row: dict[str, Any], failed_check_names: str, check: str) -> int:
+    explicit = _int_metric(_first_existing(row, "summary_failed_check_count"))
+    if explicit:
+        return explicit
+    failed_checks = _first_existing(row, "summary_failed_checks")
+    numeric = _int_metric(failed_checks)
+    if numeric:
+        return numeric
+    if failed_check_names:
+        return len(_split_action_items(failed_check_names))
+    return 1 if check else 0
+
+
+def _summary_failed_check_names(row: dict[str, Any], check: str) -> str:
+    names = _first_text(row, "summary_failed_check_names")
+    if names:
+        return names
+    failed_checks = _first_existing(row, "summary_failed_checks")
+    if _is_numeric_text(failed_checks):
+        return check
+    return _text(failed_checks) or check
+
+
+def _first_existing(row: dict[str, Any], *columns: str) -> Any:
+    for column in columns:
+        if column not in row:
+            continue
+        value = row.get(column)
+        if _text(value):
+            return value
+    return ""
+
+
+def _split_action_items(value: Any) -> list[str]:
+    text = _text(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _is_numeric_text(value: Any) -> bool:
+    if _text(value) == "":
+        return False
+    try:
+        float(value)
+    except (TypeError, ValueError):
+        return False
+    return True
 
 
 def _sidecar_action_queue_paths(run_dir: Any) -> list[Path]:
@@ -856,6 +1032,7 @@ def _action_queue_markdown_table(action_queue: pd.DataFrame) -> str:
         "dataset",
         "component",
         "check",
+        "first_failed_reason",
         "next_gate",
         "next_gate_help_command",
         "recommendation",
@@ -872,6 +1049,7 @@ def _action_queue_markdown_table(action_queue: pd.DataFrame) -> str:
         "Dataset",
         "Component",
         "Check",
+        "First Failed Reason",
         "Next Gate",
         "Help Command",
         "Recommendation",

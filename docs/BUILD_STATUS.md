@@ -164,6 +164,11 @@
 - Experiment catalog action queues now preserve promoted sidecar source,
   dataset, component, check, and pipeline-dir context, so vendor market-data
   pipeline/batch blockers remain explainable after catalog consolidation.
+- Experiment catalog action queues and action-plan JSON now preserve
+  `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
+  `primary_blocker_*` fields from source summaries or sidecar queues, and the
+  action plan exposes the first blocked catalog action as a structured
+  `primary_blocker`.
 - Experiment catalog summaries now expose ready, blocked, unknown, and total
   action-queue counts for scheduler gating without opening the queue CSV.
 - Experiment catalogs now write manifest-tracked
