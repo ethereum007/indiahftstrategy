@@ -3662,14 +3662,18 @@ handoff. The root summary/config also surfaces source-file fingerprint
 coverage, minimum mapping coverage, and mapping-draft provenance, so operators
 can verify the broker-vendor proof without drilling into nested batch files;
 the checks file names the exact fail-closed reason when the wrapper root is not
-ready. `broker_vendor_data_readiness_action_queue.csv` and
+ready. `broker_vendor_data_readiness_summary.csv` also exposes
+`failed_check_count`, `failed_check_names`, `first_failed_reason`, and
+`primary_blocker_*` fields for the first failed wrapper check.
+`broker_vendor_data_readiness_action_queue.csv` and
 `broker_vendor_data_readiness_runbook.md` turn those failed checks into
 next-gate handoffs for vendor batch, broker-readiness, or wrapper reruns.
 `broker_vendor_data_readiness_config.json` mirrors the same queue as
 `ready_action_count`, `blocked_action_count`, `next_gate`,
 `next_gate_help_command`, `next_actions`, `ready_actions`, `blocked_actions`,
-`primary_action_status`, and `primary_action`, so schedulers can read the
-wrapper handoff from JSON.
+`primary_action_status`, and `primary_action`, plus `failed_check_count`,
+`failed_checks`, `first_failed_reason`, and structured `primary_blocker`, so
+schedulers can read the wrapper handoff from JSON.
 Launch and broker-readiness commands honor the wrapper root's own
 `broker_vendor_data_readiness_config.json`, so a failed wrapper root cannot be
 masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper

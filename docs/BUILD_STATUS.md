@@ -180,6 +180,11 @@
 - Experiment catalog action plans now expose `catalog_hygiene_ready` and
   prioritize hygiene repair recommendations before any queued strategy,
   broker, or route action scheduling.
+- Broker vendor-data readiness summaries and JSON configs now surface
+  `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
+  structured primary-blocker fields for the first failed wrapper root check,
+  so Arrow.money/iRage proof blockers route to vendor batch, broker-readiness,
+  or wrapper reruns without opening nested artifacts.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

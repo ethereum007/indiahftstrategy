@@ -147,8 +147,18 @@ def write_broker_vendor_data_readiness_pipeline(
     components = _components(vendor_batch, vendor_batch_dir, broker_readiness, broker_readiness_dir)
     summary = _summary(components, vendor_batch, broker_readiness, config)
     checks = _checks(summary.iloc[0], components, config)
-    failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    failed_rows = _failed_check_rows(checks)
+    failed_checks = int(len(failed_rows)) if not checks.empty else 1
+    primary_blocker = _first_failed_check(failed_rows)
     summary.loc[summary.index[0], "failed_checks"] = failed_checks
+    summary.loc[summary.index[0], "failed_check_count"] = failed_checks
+    summary.loc[summary.index[0], "failed_check_names"] = _failed_check_names(failed_rows)
+    summary.loc[summary.index[0], "first_failed_reason"] = _check_reason(primary_blocker)
+    summary.loc[summary.index[0], "primary_blocker_check"] = _check_name(primary_blocker)
+    summary.loc[summary.index[0], "primary_blocker_value"] = _check_value(primary_blocker, "observed")
+    summary.loc[summary.index[0], "primary_blocker_operator"] = _check_value(primary_blocker, "operator")
+    summary.loc[summary.index[0], "primary_blocker_threshold"] = _check_value(primary_blocker, "expected")
+    summary.loc[summary.index[0], "primary_blocker_reason"] = _check_reason(primary_blocker)
     summary.loc[summary.index[0], "ready"] = failed_checks == 0
     summary.loc[summary.index[0], "recommendation"] = (
         "broker_data_proof_ready" if failed_checks == 0 else "fix_vendor_or_broker_readiness_proof"
@@ -424,7 +434,7 @@ def _check(
 def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     if not checks.empty and "passed" in checks.columns:
-        failed = checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+        failed = _failed_check_rows(checks)
         for priority, row in enumerate(failed.to_dict(orient="records"), start=1):
             check_name = str(row.get("check", ""))
             component = _action_component(check_name)
@@ -458,6 +468,48 @@ def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
             "reason",
         ],
     )
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[0:0].copy()
+    return checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+
+
+def _failed_check_list(failed_rows: pd.DataFrame) -> list[str]:
+    if failed_rows.empty or "check" not in failed_rows.columns:
+        return []
+    return [_action_value(value) for value in failed_rows["check"].tolist() if _action_value(value)]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    return ";".join(_failed_check_list(failed_rows))
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _first_failed_check_record(failed_rows: pd.DataFrame) -> dict[str, object]:
+    if failed_rows.empty:
+        return {}
+    return _jsonable_record(failed_rows.iloc[0].to_dict())
+
+
+def _check_name(row: pd.Series) -> str:
+    return _check_value(row, "check")
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "message")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty:
+        return ""
+    return _action_value(row.get(column, ""))
 
 
 def _first_action_record(frame: pd.DataFrame) -> dict[str, object]:
@@ -606,7 +658,9 @@ def _config(
     config: BrokerVendorDataReadinessConfig,
     broker_thresholds: BrokerReadinessThresholds,
 ) -> dict[str, object]:
-    failed = checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+    failed_rows = _failed_check_rows(checks)
+    failed = _failed_check_list(failed_rows)
+    primary_blocker = _first_failed_check_record(failed_rows)
     ready_actions = _actions_with_status(action_queue, "ready")
     blocked_actions = _actions_with_status(action_queue, "blocked")
     primary_action = _first_action_record(action_queue)
@@ -637,8 +691,10 @@ def _config(
             "broker_vendor_data_ready": bool(row.get("broker_vendor_data_ready", False)),
         },
         "broker_thresholds": asdict(broker_thresholds),
-        "failed_check_count": _int(row.get("failed_checks", len(failed))),
+        "failed_check_count": _int(row.get("failed_check_count", row.get("failed_checks", len(failed)))),
         "failed_checks": failed,
+        "first_failed_reason": str(row.get("first_failed_reason", "")),
+        "primary_blocker": primary_blocker,
         "ready_action_count": int(len(ready_actions)),
         "blocked_action_count": int(len(blocked_actions)),
         "next_gate": _first_action_value(action_queue, "next_gate"),
