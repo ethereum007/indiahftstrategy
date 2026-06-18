@@ -71,14 +71,16 @@
   with component status and blocked-action next gates for operator review.
 - Broker readiness config JSON now mirrors the readiness action queue as
   counts, primary next gate/help, and `next_actions`/`ready_actions`/
-  `blocked_actions`, giving schedulers one JSON handoff for broker blockers.
+  `blocked_actions`, plus root-level `primary_action_status` and
+  `primary_action`, giving schedulers one JSON handoff for broker blockers.
 - Broker-vendor data readiness now writes manifest-tracked action queue and
   runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
   wrapper failures expose next CLI gates at the proof root.
 - Broker-vendor data readiness config JSON now mirrors the root action queue
   as counts, primary next gate/help, and `next_actions`/`ready_actions`/
-  `blocked_actions`, so schedulers can consume wrapper blockers without
-  parsing CSV files.
+  `blocked_actions`, plus root-level `primary_action_status` and
+  `primary_action`, so schedulers can consume wrapper blockers without parsing
+  CSV files.
 - Data readiness and comparison config JSONs now expose root-level
   `primary_action_status` and `primary_action` fields next to the existing
   next-gate aliases, giving Arrow.money/iRage data schedulers the selected

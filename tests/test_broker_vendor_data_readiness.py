@@ -273,6 +273,8 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["blocked_action_count"] == 0
         assert config["next_gate"] == ""
         assert config["next_gate_help_command"] == ""
+        assert config["primary_action_status"] == ""
+        assert config["primary_action"] == {}
         assert config["next_actions"] == []
         assert config["ready_actions"] == []
         assert config["blocked_actions"] == []
@@ -409,6 +411,9 @@ def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batc
     assert config["blocked_action_count"] == len(action_queue)
     assert config["next_gate"] == action_queue.loc[0, "next_gate"]
     assert config["next_gate_help_command"] == action_queue.loc[0, "next_gate_help_command"]
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["check"] == action_queue.loc[0, "check"]
+    assert config["primary_action"]["next_gate"] == action_queue.loc[0, "next_gate"]
     assert config["ready_actions"] == []
     assert {item["check"] for item in config["next_actions"]} == failed
     assert {item["check"] for item in config["blocked_actions"]} == failed

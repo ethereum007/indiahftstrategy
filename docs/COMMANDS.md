@@ -2203,8 +2203,9 @@ priority-ordered blocked-action queue with the inferred component, next CLI
 gate, and `next_gate_help_command` for runner or operator handoff.
 `broker_readiness_config.json` mirrors that queue as `ready_action_count`,
 `blocked_action_count`, `next_gate`, `next_gate_help_command`, `next_actions`,
-`ready_actions`, and `blocked_actions`, so schedulers can consume broker
-readiness blockers from JSON without parsing the CSV.
+`ready_actions`, `blocked_actions`, `primary_action_status`, and
+`primary_action`, so schedulers can consume broker readiness blockers from JSON
+without parsing the CSV.
 `broker_readiness_runbook.md` is a human-readable handoff generated from the
 same summary, component, and action-queue data and is fingerprinted in the
 manifest.
@@ -3583,8 +3584,9 @@ ready. `broker_vendor_data_readiness_action_queue.csv` and
 next-gate handoffs for vendor batch, broker-readiness, or wrapper reruns.
 `broker_vendor_data_readiness_config.json` mirrors the same queue as
 `ready_action_count`, `blocked_action_count`, `next_gate`,
-`next_gate_help_command`, `next_actions`, `ready_actions`, and
-`blocked_actions`, so schedulers can read the wrapper handoff from JSON.
+`next_gate_help_command`, `next_actions`, `ready_actions`, `blocked_actions`,
+`primary_action_status`, and `primary_action`, so schedulers can read the
+wrapper handoff from JSON.
 Launch and broker-readiness commands honor the wrapper root's own
 `broker_vendor_data_readiness_config.json`, so a failed wrapper root cannot be
 masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper
