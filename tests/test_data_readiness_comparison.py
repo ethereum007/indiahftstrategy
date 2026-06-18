@@ -193,17 +193,28 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert (out_dir / "data_readiness_comparison_checks.csv").exists()
     assert (out_dir / "data_readiness_comparison_summary.csv").exists()
     assert (out_dir / "data_readiness_comparison_action_queue.csv").exists()
+    assert (out_dir / "data_readiness_comparison_config.json").exists()
     assert (out_dir / "data_readiness_comparison_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     action_queue = pd.read_csv(out_dir / "data_readiness_comparison_action_queue.csv")
+    config = json.loads((out_dir / "data_readiness_comparison_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "data_readiness_comparison_runbook.md").read_text(encoding="utf-8")
     assert action_queue.empty
     assert "next_gate_help_command" in action_queue.columns
+    assert config["accepted"]
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == ""
+    assert config["next_gate_help_command"] == ""
+    assert config["next_actions"] == []
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"] == []
     assert "# Data Readiness Comparison Runbook" in runbook
     assert "- Accepted: yes" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "data_readiness_comparison_action_queue.csv" in artifact_paths
+    assert "data_readiness_comparison_config.json" in artifact_paths
     assert "data_readiness_comparison_runbook.md" in artifact_paths
 
 
@@ -230,10 +241,19 @@ def test_cli_compare_data_readiness_can_fail_on_bad_dataset(tmp_path):
 
     summary = pd.read_csv(out_dir / "data_readiness_comparison_summary.csv")
     queue = pd.read_csv(out_dir / "data_readiness_comparison_action_queue.csv")
+    config = json.loads((out_dir / "data_readiness_comparison_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "data_readiness_comparison_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "accepted"])
     assert summary.loc[0, "next_gate"] == "review-data-readiness"
+    assert not config["accepted"]
+    assert config["blocked_action_count"] == len(queue)
+    assert config["ready_action_count"] == 0
+    assert config["next_gate"] == queue.loc[0, "next_gate"]
+    assert config["next_gate_help_command"] == queue.loc[0, "next_gate_help_command"]
+    assert config["ready_actions"] == []
+    assert {item["check"] for item in config["next_actions"]} == set(queue["check"])
+    assert {item["check"] for item in config["blocked_actions"]} == set(queue["check"])
     assert "review-data-readiness" in set(queue["next_gate"])
     assert "`review-data-readiness`" in runbook
 

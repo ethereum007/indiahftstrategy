@@ -130,6 +130,15 @@ def write_data_readiness_report(
     report.summary.to_csv(out / "data_readiness_summary.csv", index=False)
     action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks, report.items)
     action_queue.to_csv(out / "data_readiness_action_queue.csv", index=False)
+    (out / "data_readiness_config.json").write_text(
+        json.dumps(
+            _config(report.summary.iloc[0], report.items, report.checks, action_queue, thresholds),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (out / "data_readiness_runbook.md").write_text(
         _runbook_markdown(report.summary.iloc[0], report.items, report.checks, action_queue),
         encoding="utf-8",
@@ -488,6 +497,88 @@ def _summary(
             }
         ]
     )
+
+
+def _config(
+    summary_row: pd.Series,
+    items: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+    thresholds: DataReadinessThresholds,
+) -> dict[str, Any]:
+    ready_actions = _actions_with_status(action_queue, "ready")
+    blocked_actions = _actions_with_status(action_queue, "blocked")
+    failed_checks = (
+        checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+        if not checks.empty and "passed" in checks.columns
+        else []
+    )
+    return {
+        "schema_version": 1,
+        "ready": _to_bool(summary_row.get("ready", False)),
+        "recommendation": _value_text(summary_row.get("recommendation")),
+        "thresholds": asdict(thresholds),
+        "summary": _jsonable_record(summary_row.to_dict()),
+        "component_counts": {
+            "components": int(_value_number(summary_row.get("components"))),
+            "required": int(_value_number(summary_row.get("required_components"))),
+            "provided": int(_value_number(summary_row.get("provided_components"))),
+            "ready": int(_value_number(summary_row.get("ready_components"))),
+            "failed_checks": int(_value_number(summary_row.get("failed_checks"))),
+        },
+        "expected_strategy": _value_text(summary_row.get("expected_strategy")),
+        "expected_market": _value_text(summary_row.get("expected_market")),
+        "expected_adapter": _value_text(summary_row.get("expected_adapter")),
+        "expected_vendor_data_kind": _value_text(summary_row.get("expected_vendor_data_kind")),
+        "data_adapters": _value_text(summary_row.get("data_adapters")),
+        "data_kinds": _value_text(summary_row.get("data_kinds")),
+        "failed_checks": failed_checks,
+        "components": _records(items),
+        "ready_action_count": int(len(ready_actions)),
+        "blocked_action_count": int(len(blocked_actions)),
+        "next_gate": _first_action_value(action_queue, "next_gate"),
+        "next_gate_help_command": _first_action_value(action_queue, "next_gate_help_command"),
+        "next_actions": _records(action_queue),
+        "ready_actions": _records(ready_actions),
+        "blocked_actions": _records(blocked_actions),
+    }
+
+
+def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    return [_jsonable_record(row) for row in frame.to_dict(orient="records")]
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    record: dict[str, object] = {}
+    for key, value in row.items():
+        if isinstance(value, Path):
+            record[str(key)] = str(value)
+            continue
+        try:
+            if pd.isna(value):
+                record[str(key)] = None
+                continue
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, np.generic):
+            record[str(key)] = value.item()
+            continue
+        record[str(key)] = value
+    return record
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _value_text(action_queue.iloc[0].get(column))
 
 
 def _action_queue(checks: pd.DataFrame, items: pd.DataFrame) -> pd.DataFrame:

@@ -433,17 +433,29 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     assert (out_dir / "data_readiness_checks.csv").exists()
     assert (out_dir / "data_readiness_summary.csv").exists()
     assert (out_dir / "data_readiness_action_queue.csv").exists()
+    assert (out_dir / "data_readiness_config.json").exists()
     assert (out_dir / "data_readiness_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     action_queue = pd.read_csv(out_dir / "data_readiness_action_queue.csv")
+    config = json.loads((out_dir / "data_readiness_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "data_readiness_runbook.md").read_text(encoding="utf-8")
     assert action_queue.empty
     assert "next_gate_help_command" in action_queue.columns
+    assert config["ready"]
+    assert config["component_counts"]["failed_checks"] == 0
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == ""
+    assert config["next_gate_help_command"] == ""
+    assert config["next_actions"] == []
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"] == []
     assert "# Data Readiness Runbook" in runbook
     assert "- Ready: yes" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "data_readiness_action_queue.csv" in artifact_paths
+    assert "data_readiness_config.json" in artifact_paths
     assert "data_readiness_runbook.md" in artifact_paths
 
 
@@ -455,12 +467,21 @@ def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_pa
     summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
     checks = pd.read_csv(out_dir / "data_readiness_checks.csv")
     queue = pd.read_csv(out_dir / "data_readiness_action_queue.csv")
+    config = json.loads((out_dir / "data_readiness_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "data_readiness_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert summary.loc[0, "next_gate"] == "diagnose-ticks"
     assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli diagnose-ticks --help"
     assert "tick_diagnostics_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert not config["ready"]
+    assert config["blocked_action_count"] == len(queue)
+    assert config["ready_action_count"] == 0
+    assert config["next_gate"] == queue.loc[0, "next_gate"]
+    assert config["next_gate_help_command"] == queue.loc[0, "next_gate_help_command"]
+    assert config["ready_actions"] == []
+    assert {item["check"] for item in config["next_actions"]} == set(queue["check"])
+    assert {item["check"] for item in config["blocked_actions"]} == set(queue["check"])
     assert queue.loc[0, "next_gate"] == "diagnose-ticks"
     assert "`diagnose-ticks`" in runbook
 

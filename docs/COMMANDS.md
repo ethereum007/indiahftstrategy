@@ -3703,6 +3703,7 @@ data_readiness_items.csv
 data_readiness_checks.csv
 data_readiness_summary.csv
 data_readiness_action_queue.csv
+data_readiness_config.json
 data_readiness_runbook.md
 manifest.json
 ```
@@ -3712,10 +3713,12 @@ When `--market-portability` is supplied with `--expected-strategy` and
 closed unless that exact strategy-market pair is in `ready_pairs`.
 `data_readiness_action_queue.csv` flattens failed checks into blocked actions
 with the inferred upstream gate, `next_gate_help_command`, observed value,
-threshold, reason, and recommendation. `data_readiness_runbook.md` mirrors the
-same handoff with component readiness and failed checks, and both sidecars are
-manifest-tracked so `catalog-runs` can promote blocked vendor-data work into
-the top-level action plan.
+threshold, reason, and recommendation. `data_readiness_config.json` mirrors
+the same queue as `next_actions`, `ready_actions`, and `blocked_actions`, plus
+summary, component, and failed-check state for scheduler handoff.
+`data_readiness_runbook.md` mirrors the same handoff with component readiness
+and failed checks, and these sidecars are manifest-tracked so `catalog-runs`
+can promote blocked vendor-data work into the top-level action plan.
 
 Compare multiple data-readiness runs before walk-forward research:
 
@@ -3737,6 +3740,7 @@ data_readiness_runs.csv
 data_readiness_comparison_checks.csv
 data_readiness_comparison_summary.csv
 data_readiness_comparison_action_queue.csv
+data_readiness_comparison_config.json
 data_readiness_comparison_runbook.md
 manifest.json
 ```
@@ -3744,9 +3748,12 @@ manifest.json
 `data_readiness_comparison_action_queue.csv` maps failed multi-day checks to
 the next gate, such as `review-data-readiness` for failed dataset readiness or
 `pipeline-vendor-market-data-batch` for missing distinct source files,
-fingerprints, or mapping coverage. `data_readiness_comparison_runbook.md`
-mirrors the blocked actions, dataset rows, and failed checks for operator
-review, and both sidecars are manifest-tracked for catalog promotion.
+fingerprints, or mapping coverage. `data_readiness_comparison_config.json`
+mirrors dataset rows, failed-check names, action counts, and
+`next_actions`/`ready_actions`/`blocked_actions` for schedulers.
+`data_readiness_comparison_runbook.md` mirrors the blocked actions, dataset
+rows, and failed checks for operator review, and these sidecars are
+manifest-tracked for catalog promotion.
 
 ## Proof Report
 
