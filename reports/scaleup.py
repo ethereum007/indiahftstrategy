@@ -53,6 +53,7 @@ class ScaleUpThresholds:
     require_instrument_metadata: bool = False
     require_data_readiness: bool = False
     require_data_readiness_comparison: bool = False
+    require_strategy_portfolio: bool = False
     require_route_readiness: bool = False
     require_broker_readiness: bool = False
     require_resume_gate: bool = False
@@ -87,6 +88,8 @@ def evaluate_scaleup_plan(
     instrument_metadata_summary: pd.DataFrame | None = None,
     data_readiness_summary: pd.DataFrame | None = None,
     data_readiness_comparison_summary: pd.DataFrame | None = None,
+    strategy_portfolio_summary: pd.DataFrame | None = None,
+    strategy_portfolio_allocations: pd.DataFrame | None = None,
     route_readiness_summary: pd.DataFrame | None = None,
     broker_readiness_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
@@ -103,8 +106,18 @@ def evaluate_scaleup_plan(
     data_readiness_comparison = (
         data_readiness_comparison_summary if data_readiness_comparison_summary is not None else pd.DataFrame()
     )
+    strategy_portfolio = strategy_portfolio_summary if strategy_portfolio_summary is not None else pd.DataFrame()
+    strategy_portfolio_allocations = (
+        strategy_portfolio_allocations if strategy_portfolio_allocations is not None else pd.DataFrame()
+    )
     route_readiness = route_readiness_summary if route_readiness_summary is not None else pd.DataFrame()
     broker_readiness = broker_readiness_summary if broker_readiness_summary is not None else pd.DataFrame()
+    strategy_portfolio_state = _strategy_portfolio_state(
+        strategy_portfolio,
+        strategy_portfolio_allocations,
+        evidence_summary.iloc[0],
+        thresholds,
+    )
 
     rows = {
         "evidence": evidence_summary.iloc[0],
@@ -117,6 +130,7 @@ def evaluate_scaleup_plan(
         "data_readiness_comparison": data_readiness_comparison.iloc[0]
         if not data_readiness_comparison.empty
         else pd.Series(dtype=object),
+        "strategy_portfolio": strategy_portfolio_state,
         "route_readiness": route_readiness.iloc[0] if not route_readiness.empty else pd.Series(dtype=object),
         "broker_readiness": broker_readiness.iloc[0] if not broker_readiness.empty else pd.Series(dtype=object),
     }
@@ -139,6 +153,7 @@ def write_scaleup_plan(
     instrument_metadata_dir: str | Path | None = None,
     data_readiness_dir: str | Path | None = None,
     data_readiness_comparison_dir: str | Path | None = None,
+    strategy_portfolio_dir: str | Path | None = None,
     route_readiness_dir: str | Path | None = None,
     broker_readiness_dir: str | Path | None = None,
     thresholds: ScaleUpThresholds | None = None,
@@ -154,6 +169,11 @@ def write_scaleup_plan(
     data_readiness_comparison_path = _optional_summary_input(
         data_readiness_comparison_dir,
         "data_readiness_comparison_summary.csv",
+    )
+    strategy_portfolio_path = _optional_summary_input(strategy_portfolio_dir, "strategy_portfolio_summary.csv")
+    strategy_portfolio_allocations_path = _optional_summary_input(
+        strategy_portfolio_dir,
+        "strategy_portfolio_allocations.csv",
     )
     vendor_market_data_batch_config_path = _optional_vendor_market_data_batch_config(
         data_readiness_comparison_path or data_readiness_comparison_dir
@@ -205,6 +225,16 @@ def write_scaleup_plan(
         if data_readiness_comparison_path
         else None
     )
+    strategy_portfolio = (
+        _read_optional_summary(strategy_portfolio_path, "strategy_portfolio_summary.csv")
+        if strategy_portfolio_path
+        else None
+    )
+    strategy_portfolio_allocations = (
+        _read_optional_summary(strategy_portfolio_allocations_path, "strategy_portfolio_allocations.csv")
+        if strategy_portfolio_allocations_path
+        else None
+    )
     route_readiness = (
         _read_optional_summary(route_readiness_path, "route_readiness_summary.csv")
         if route_readiness_path
@@ -220,6 +250,8 @@ def write_scaleup_plan(
         instrument_metadata_summary=instrument_metadata,
         data_readiness_summary=data_readiness,
         data_readiness_comparison_summary=data_readiness_comparison,
+        strategy_portfolio_summary=strategy_portfolio,
+        strategy_portfolio_allocations=strategy_portfolio_allocations,
         route_readiness_summary=route_readiness,
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
@@ -252,6 +284,10 @@ def write_scaleup_plan(
         inputs["data_readiness"] = data_readiness_path
     if data_readiness_comparison_path is not None:
         inputs["data_readiness_comparison"] = data_readiness_comparison_path
+    if strategy_portfolio_path is not None:
+        inputs["strategy_portfolio"] = strategy_portfolio_path
+    if strategy_portfolio_allocations_path is not None:
+        inputs["strategy_portfolio_allocations"] = strategy_portfolio_allocations_path
     if vendor_market_data_batch_config_path is not None:
         inputs["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
     if route_readiness_path is not None:
@@ -278,6 +314,7 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
     instrument_metadata = rows["instrument_metadata"]
     data_readiness = rows["data_readiness"]
     data_readiness_comparison = rows["data_readiness_comparison"]
+    strategy_portfolio = rows["strategy_portfolio"]
     route_readiness = rows["route_readiness"]
     broker_readiness = rows["broker_readiness"]
     adapter = str(launch.get("adapter", ""))
@@ -841,6 +878,58 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                 "data readiness comparison is not accepted",
             )
         )
+    if thresholds.require_strategy_portfolio:
+        checks.append(
+            _check(
+                "strategy_portfolio_available",
+                _to_bool(strategy_portfolio.get("provided", False)),
+                "is",
+                True,
+                _to_bool(strategy_portfolio.get("provided", False)),
+                "strategy portfolio allocation is required but no summary was supplied",
+            )
+        )
+    if _to_bool(strategy_portfolio.get("provided", False)):
+        portfolio_ready = _to_bool(strategy_portfolio.get("ready", False))
+        allocation_available = _to_bool(strategy_portfolio.get("selected_allocation_provided", False))
+        allocation_eligible = _to_bool(strategy_portfolio.get("selected_eligible", False))
+        allocation_notional = _number(strategy_portfolio, "selected_allocation_notional", fallback=0.0)
+        checks.extend(
+            [
+                _check(
+                    "strategy_portfolio_ready",
+                    portfolio_ready,
+                    "is",
+                    True,
+                    portfolio_ready,
+                    "strategy portfolio allocation is not ready",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_available",
+                    allocation_available,
+                    "is",
+                    True,
+                    allocation_available,
+                    "strategy portfolio has no row for the scale-up strategy and market",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_eligible",
+                    allocation_eligible,
+                    "is",
+                    True,
+                    allocation_eligible,
+                    "strategy portfolio allocation row is not eligible",
+                ),
+                _check(
+                    "strategy_portfolio_allocation_positive",
+                    allocation_notional,
+                    ">",
+                    0.0,
+                    allocation_notional > 0.0,
+                    "strategy portfolio allocation notional must be positive",
+                ),
+            ]
+        )
     route_readiness_required = _route_readiness_required(thresholds)
     if route_readiness_required:
         checks.append(
@@ -1331,6 +1420,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
     instrument_metadata = rows["instrument_metadata"]
     data_readiness = rows["data_readiness"]
     data_readiness_comparison = rows["data_readiness_comparison"]
+    strategy_portfolio = rows["strategy_portfolio"]
     route_readiness = rows["route_readiness"]
     broker_readiness = rows["broker_readiness"]
     accepted_orders = int(_number(launch, "accepted_orders", fallback=0.0))
@@ -1341,6 +1431,13 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
         scaled_orders = min(scaled_orders, int(thresholds.max_orders_per_session))
     if thresholds.max_session_notional is not None:
         scaled_notional = min(scaled_notional, float(thresholds.max_session_notional))
+    pre_portfolio_scaled_notional = float(scaled_notional)
+    portfolio_allocation_notional = _number(strategy_portfolio, "selected_allocation_notional", fallback=0.0)
+    if portfolio_allocation_notional > 0.0:
+        scaled_notional = min(scaled_notional, portfolio_allocation_notional)
+    portfolio_notional_cap_applied = bool(
+        portfolio_allocation_notional > 0.0 and pre_portfolio_scaled_notional > portfolio_allocation_notional
+    )
     return pd.DataFrame(
         [
             {
@@ -1390,6 +1487,40 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "max_scale_multiplier": float(thresholds.max_scale_multiplier),
                 "max_orders_per_session": scaled_orders,
                 "max_notional_per_session": scaled_notional,
+                "pre_portfolio_max_notional_per_session": pre_portfolio_scaled_notional,
+                "strategy_portfolio_required": thresholds.require_strategy_portfolio,
+                "strategy_portfolio_provided": _to_bool(strategy_portfolio.get("provided", False)),
+                "strategy_portfolio_ready": _to_bool(strategy_portfolio.get("ready", False)),
+                "strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
+                "strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
+                "strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
+                "strategy_portfolio_total_capital": _number(strategy_portfolio, "total_capital", fallback=0.0),
+                "strategy_portfolio_allocated_weight": _number(strategy_portfolio, "allocated_weight", fallback=0.0),
+                "strategy_portfolio_allocated_notional": _number(
+                    strategy_portfolio,
+                    "allocated_notional",
+                    fallback=0.0,
+                ),
+                "strategy_portfolio_selected_profile": str(strategy_portfolio.get("selected_profile", "")),
+                "strategy_portfolio_selected_strategy": _strategy_key(
+                    strategy_portfolio.get("selected_strategy", "")
+                ),
+                "strategy_portfolio_selected_market": _identity_key(
+                    strategy_portfolio.get("selected_market", "")
+                ),
+                "strategy_portfolio_selected_eligible": _to_bool(
+                    strategy_portfolio.get("selected_eligible", False)
+                ),
+                "strategy_portfolio_selected_allocation_weight": _number(
+                    strategy_portfolio,
+                    "selected_allocation_weight",
+                    fallback=0.0,
+                ),
+                "strategy_portfolio_selected_allocation_notional": portfolio_allocation_notional,
+                "strategy_portfolio_selected_eligibility_reason": str(
+                    strategy_portfolio.get("selected_eligibility_reason", "")
+                ),
+                "strategy_portfolio_notional_cap_applied": portfolio_notional_cap_applied,
                 "stop_loss": _jsonable(thresholds.stop_loss),
                 "min_required_shadow_sessions": int(thresholds.min_shadow_sessions),
                 "observed_shadow_sessions": int(_number(shadow, "session_count", fallback=0.0)),
@@ -1827,6 +1958,38 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "surface_launch_market": str(plan_row["surface_launch_market"]),
                 "max_orders_per_session": int(plan_row["max_orders_per_session"]),
                 "max_notional_per_session": float(plan_row["max_notional_per_session"]),
+                "pre_portfolio_max_notional_per_session": float(
+                    plan_row["pre_portfolio_max_notional_per_session"]
+                ),
+                "strategy_portfolio_required": _to_bool(plan_row["strategy_portfolio_required"]),
+                "strategy_portfolio_provided": _to_bool(plan_row["strategy_portfolio_provided"]),
+                "strategy_portfolio_ready": _to_bool(plan_row["strategy_portfolio_ready"]),
+                "strategy_portfolio_deployment_mode": str(plan_row["strategy_portfolio_deployment_mode"]),
+                "strategy_portfolio_allocation_mode": str(plan_row["strategy_portfolio_allocation_mode"]),
+                "strategy_portfolio_capital_currency": str(plan_row["strategy_portfolio_capital_currency"]),
+                "strategy_portfolio_total_capital": float(plan_row["strategy_portfolio_total_capital"]),
+                "strategy_portfolio_allocated_weight": float(plan_row["strategy_portfolio_allocated_weight"]),
+                "strategy_portfolio_allocated_notional": float(
+                    plan_row["strategy_portfolio_allocated_notional"]
+                ),
+                "strategy_portfolio_selected_profile": str(plan_row["strategy_portfolio_selected_profile"]),
+                "strategy_portfolio_selected_strategy": str(plan_row["strategy_portfolio_selected_strategy"]),
+                "strategy_portfolio_selected_market": str(plan_row["strategy_portfolio_selected_market"]),
+                "strategy_portfolio_selected_eligible": _to_bool(
+                    plan_row["strategy_portfolio_selected_eligible"]
+                ),
+                "strategy_portfolio_selected_allocation_weight": float(
+                    plan_row["strategy_portfolio_selected_allocation_weight"]
+                ),
+                "strategy_portfolio_selected_allocation_notional": float(
+                    plan_row["strategy_portfolio_selected_allocation_notional"]
+                ),
+                "strategy_portfolio_selected_eligibility_reason": str(
+                    plan_row["strategy_portfolio_selected_eligibility_reason"]
+                ),
+                "strategy_portfolio_notional_cap_applied": _to_bool(
+                    plan_row["strategy_portfolio_notional_cap_applied"]
+                ),
                 "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
                 "proof_refresh_strategy": str(plan_row["proof_refresh_strategy"]),
                 "proof_refresh_market": str(plan_row["proof_refresh_market"]),
@@ -2086,8 +2249,30 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
         "limits": {
             "max_orders_per_session": int(plan_row["max_orders_per_session"]),
             "max_notional_per_session": float(plan_row["max_notional_per_session"]),
+            "pre_portfolio_max_notional_per_session": float(
+                plan_row["pre_portfolio_max_notional_per_session"]
+            ),
             "max_scale_multiplier": float(plan_row["max_scale_multiplier"]),
             "stop_loss": _jsonable(plan_row["stop_loss"]),
+        },
+        "strategy_portfolio": {
+            "required": _to_bool(plan_row["strategy_portfolio_required"]),
+            "provided": _to_bool(plan_row["strategy_portfolio_provided"]),
+            "ready": _to_bool(plan_row["strategy_portfolio_ready"]),
+            "deployment_mode": str(plan_row["strategy_portfolio_deployment_mode"]),
+            "allocation_mode": str(plan_row["strategy_portfolio_allocation_mode"]),
+            "capital_currency": str(plan_row["strategy_portfolio_capital_currency"]),
+            "total_capital": float(plan_row["strategy_portfolio_total_capital"]),
+            "allocated_weight": float(plan_row["strategy_portfolio_allocated_weight"]),
+            "allocated_notional": float(plan_row["strategy_portfolio_allocated_notional"]),
+            "selected_profile": str(plan_row["strategy_portfolio_selected_profile"]),
+            "selected_strategy": str(plan_row["strategy_portfolio_selected_strategy"]),
+            "selected_market": str(plan_row["strategy_portfolio_selected_market"]),
+            "selected_eligible": _to_bool(plan_row["strategy_portfolio_selected_eligible"]),
+            "selected_allocation_weight": float(plan_row["strategy_portfolio_selected_allocation_weight"]),
+            "selected_allocation_notional": float(plan_row["strategy_portfolio_selected_allocation_notional"]),
+            "selected_eligibility_reason": str(plan_row["strategy_portfolio_selected_eligibility_reason"]),
+            "notional_cap_applied": _to_bool(plan_row["strategy_portfolio_notional_cap_applied"]),
         },
         "kill_switches": {
             "max_total_failed_component_checks": thresholds.max_total_failed_component_checks,
@@ -3186,6 +3371,81 @@ def _broker_vendor_market_data_batch_config(plan_row: pd.Series) -> dict[str, ob
         },
         "datasets": _json_list(plan_row[f"{field_prefix}_datasets_json"]),
     }
+
+
+def _strategy_portfolio_state(
+    summary: pd.DataFrame,
+    allocations: pd.DataFrame,
+    evidence: pd.Series,
+    thresholds: ScaleUpThresholds,
+) -> pd.Series:
+    expected_strategy = _strategy_key(thresholds.expected_strategy) or _strategy_key(evidence.get("strategy", ""))
+    expected_market = _identity_key(thresholds.expected_market) or _identity_key(evidence.get("market", ""))
+    summary_row = summary.iloc[0] if summary is not None and not summary.empty else pd.Series(dtype=object)
+    selected = _select_strategy_portfolio_allocation(allocations, expected_strategy, expected_market)
+    return pd.Series(
+        {
+            "provided": summary is not None and not summary.empty,
+            "ready": _to_bool(summary_row.get("ready", False)) if not summary_row.empty else False,
+            "deployment_mode": str(summary_row.get("deployment_mode", "")) if not summary_row.empty else "",
+            "allocation_mode": str(summary_row.get("allocation_mode", "")) if not summary_row.empty else "",
+            "capital_currency": str(summary_row.get("capital_currency", "")) if not summary_row.empty else "",
+            "total_capital": _number(summary_row, "total_capital", fallback=0.0) if not summary_row.empty else 0.0,
+            "allocated_weight": _number(summary_row, "allocated_weight", fallback=0.0)
+            if not summary_row.empty
+            else 0.0,
+            "allocated_notional": _number(summary_row, "allocated_notional", fallback=0.0)
+            if not summary_row.empty
+            else 0.0,
+            "selected_allocation_provided": not selected.empty,
+            "selected_profile": str(selected.get("profile", "")) if not selected.empty else "",
+            "selected_strategy": _strategy_key(selected.get("strategy", "")) if not selected.empty else "",
+            "selected_market": _identity_key(selected.get("market", "")) if not selected.empty else "",
+            "selected_eligible": _to_bool(selected.get("eligible", False)) if not selected.empty else False,
+            "selected_allocation_weight": _number(selected, "allocation_weight", fallback=0.0)
+            if not selected.empty
+            else 0.0,
+            "selected_allocation_notional": _number(selected, "allocation_notional", fallback=0.0)
+            if not selected.empty
+            else 0.0,
+            "selected_eligibility_reason": str(selected.get("eligibility_reason", "")) if not selected.empty else "",
+        }
+    )
+
+
+def _select_strategy_portfolio_allocation(
+    allocations: pd.DataFrame,
+    expected_strategy: str,
+    expected_market: str,
+) -> pd.Series:
+    if allocations is None or allocations.empty or not expected_strategy:
+        return pd.Series(dtype=object)
+    rows: list[dict[str, object]] = []
+    for _, row in allocations.iterrows():
+        strategy = _strategy_key(row.get("strategy", ""))
+        market = _identity_key(row.get("market", ""))
+        if strategy != expected_strategy:
+            continue
+        if expected_market and market != expected_market:
+            continue
+        rows.append(row.to_dict())
+    if not rows:
+        return pd.Series(dtype=object)
+    frame = pd.DataFrame(rows)
+    frame["_eligible_sort"] = frame["eligible"].map(_to_bool) if "eligible" in frame.columns else False
+    frame["_allocation_weight_sort"] = frame.apply(
+        lambda row: _number(row, "allocation_weight", fallback=0.0),
+        axis=1,
+    )
+    frame["_allocation_notional_sort"] = frame.apply(
+        lambda row: _number(row, "allocation_notional", fallback=0.0),
+        axis=1,
+    )
+    ordered = frame.sort_values(
+        ["_eligible_sort", "_allocation_weight_sort", "_allocation_notional_sort"],
+        ascending=[False, False, False],
+    )
+    return ordered.drop(columns=["_eligible_sort", "_allocation_weight_sort", "_allocation_notional_sort"]).iloc[0]
 
 
 def _strategy_key(value: object) -> str:

@@ -68,6 +68,10 @@
   conservative paper/shadow capital plan with reserve, per-profile caps,
   checks, config JSON, runbook, manifest, and fail-closed primary blocker
   fields when no strategy lane is eligible.
+- Controlled scale-up can now require that strategy portfolio allocation,
+  select the matching strategy/market allocation row, cap per-session notional
+  at the allocated notional, and retain the selected portfolio context in
+  `scaleup_summary.csv`, `scaleup_config.json`, and manifest inputs.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.

@@ -2422,6 +2422,7 @@ python -m hft_cli plan-scaleup `
   --proof-refresh runs\proof_refresh\leadlag_shadow_latest `
   --data-readiness runs\data_readiness\india_nse_2026_06_10 `
   --data-readiness-comparison runs\data_readiness\india_nse_comparison `
+  --strategy-portfolio runs\strategy_portfolios\india_research_paper `
   --route-readiness runs\evidence\leadlag_route_readiness `
   --broker-readiness runs\broker_readiness\leadlag_shadow_arrow `
   --out runs\scaleup\leadlag_shadow `
@@ -2453,6 +2454,7 @@ python -m hft_cli plan-scaleup `
   --require-proof-refresh `
   --require-data-readiness `
   --require-data-readiness-comparison `
+  --require-strategy-portfolio `
   --require-route-readiness `
   --require-broker-readiness `
   --require-resume-gate `
@@ -2498,7 +2500,15 @@ launch-pipeline, proof-refresh, metadata, data-readiness, data-readiness
 comparison, exposure, route-readiness, broker-readiness summary CSVs, and
 broker-readiness config JSON sidecars rather than only the input folders, so
 scale-up handoffs can prove the exact records behind each recommendation. If a
-launch-pipeline broker-readiness summary is thin but its
+strategy portfolio allocation is supplied, scale-up reads
+`strategy_portfolio_summary.csv` and `strategy_portfolio_allocations.csv`,
+requires a ready positive allocation for the scale-up strategy/market when
+`--require-strategy-portfolio` is set, and caps
+`max_notional_per_session` at the selected allocation notional. The previous
+pre-portfolio notional cap, selected allocation, eligibility reason, and
+whether the portfolio cap was applied are retained in `scaleup_summary.csv`
+and the nested `strategy_portfolio` block in `scaleup_config.json`.
+If a launch-pipeline broker-readiness summary is thin but its
 `broker_readiness_config.json` retains
 `broker_dispatch_roundtrip_vendor_market_data_batch`, scale-up hydrates the
 operator-visible `broker_dispatch_roundtrip_vendor_market_data_batch_*` summary

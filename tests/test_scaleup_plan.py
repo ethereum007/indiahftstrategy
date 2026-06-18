@@ -656,6 +656,71 @@ def data_readiness_comparison_summary(accepted=True):
     )
 
 
+def strategy_portfolio_summary(ready=True):
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "deployment_mode": "paper_shadow",
+                "allocation_mode": "readiness_weighted",
+                "capital_currency": "INR",
+                "total_capital": 1_000_000.0,
+                "reserve_weight": 0.10,
+                "allocated_weight": 0.90 if ready else 0.0,
+                "allocated_notional": 900_000.0 if ready else 0.0,
+                "top_profile": "leadlag" if ready else "",
+                "top_strategy": "lead_lag_taker" if ready else "",
+                "top_market": "india_nse_index_derivatives" if ready else "",
+                "failed_check_count": 0 if ready else 1,
+                "failed_check_names": "" if ready else "eligible_profile_count",
+                "first_failed_reason": "" if ready else "at least one strategy profile must pass readiness filters",
+                "recommendation": "paper_shadow_allocation_ready" if ready else "complete_strategy_scorecard_evidence",
+            }
+        ]
+    )
+
+
+def strategy_portfolio_allocations(
+    *,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    profile="leadlag",
+    eligible=True,
+    allocation_weight=0.0012,
+    allocation_notional=1200.0,
+):
+    return pd.DataFrame(
+        [
+            {
+                "rank": 1,
+                "profile": profile,
+                "strategy": strategy,
+                "market": market,
+                "ready": eligible,
+                "readiness_score": 1.0 if eligible else 0.5,
+                "passed_required_run_types": 6 if eligible else 3,
+                "required_run_type_count": 6,
+                "eligible": eligible,
+                "eligibility_reason": "eligible_for_paper_shadow_allocation"
+                if eligible
+                else "profile_not_ready",
+                "allocation_score": 1.0 if eligible else 0.0,
+                "allocation_weight": allocation_weight,
+                "allocation_notional": allocation_notional,
+                "reserve_weight": 0.10,
+                "max_profile_weight": 0.40,
+                "capital_currency": "INR",
+                "deployment_mode": "paper_shadow",
+                "allocation_mode": "readiness_weighted",
+                "next_required_run_type": "",
+                "next_gate": "plan-scaleup",
+                "next_gate_help_command": "python -m hft_cli plan-scaleup --help",
+                "recommendation": "ready_for_shadow_scaleup_review",
+            }
+        ]
+    )
+
+
 def route_readiness_summary(
     ready=True,
     strategy="lead_lag_taker",
@@ -709,6 +774,17 @@ def write_inputs(
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
     exposure_summary(exposure_passed).to_csv(exposure / "order_exposure_summary.csv", index=False)
     return evidence, shadow, launch, exposure
+
+
+def write_strategy_portfolio(root, *, ready=True, allocation_notional=1200.0):
+    portfolio = root / "strategy_portfolio"
+    portfolio.mkdir(parents=True, exist_ok=True)
+    strategy_portfolio_summary(ready).to_csv(portfolio / "strategy_portfolio_summary.csv", index=False)
+    strategy_portfolio_allocations(allocation_notional=allocation_notional).to_csv(
+        portfolio / "strategy_portfolio_allocations.csv",
+        index=False,
+    )
+    return portfolio
 
 
 def write_settlement_pipeline(root, *, launch_ready=True, broker_ready=True):
@@ -879,6 +955,71 @@ def test_scaleup_plan_can_require_expected_strategy_and_market():
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["expected_strategy"] == "lead_lag_taker"
     assert report.config["identity"]["expected_market"] == "india_nse_index_derivatives"
+
+
+def test_scaleup_plan_caps_notional_with_strategy_portfolio_allocation():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        strategy_portfolio_summary=strategy_portfolio_summary(True),
+        strategy_portfolio_allocations=strategy_portfolio_allocations(allocation_notional=1200.0),
+        thresholds=ScaleUpThresholds(max_scale_multiplier=2.0, require_strategy_portfolio=True),
+    )
+
+    assert report.ready
+    plan = report.plan.iloc[0]
+    assert plan["pre_portfolio_max_notional_per_session"] == 3000.0
+    assert plan["max_notional_per_session"] == 1200.0
+    assert plan["strategy_portfolio_notional_cap_applied"]
+    assert report.summary.iloc[0]["strategy_portfolio_ready"]
+    assert report.summary.iloc[0]["strategy_portfolio_selected_profile"] == "leadlag"
+    assert report.summary.iloc[0]["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert report.config["strategy_portfolio"]["required"]
+    assert report.config["strategy_portfolio"]["selected_strategy"] == "lead_lag_taker"
+    assert report.config["strategy_portfolio"]["selected_market"] == "india_nse_index_derivatives"
+    assert report.config["strategy_portfolio"]["selected_allocation_notional"] == 1200.0
+    assert report.config["strategy_portfolio"]["notional_cap_applied"]
+    assert report.config["limits"]["pre_portfolio_max_notional_per_session"] == 3000.0
+    assert report.config["limits"]["max_notional_per_session"] == 1200.0
+
+
+def test_scaleup_plan_blocks_required_missing_strategy_portfolio():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "strategy_portfolio_available" in failed
+    assert report.config["strategy_portfolio"]["required"]
+    assert not report.config["strategy_portfolio"]["provided"]
+    assert report.config["primary_blocker"]["check"] == "strategy_portfolio_available"
+
+
+def test_scaleup_plan_blocks_strategy_portfolio_without_matching_allocation():
+    report = evaluate_scaleup_plan(
+        evidence_summary=evidence_summary(True),
+        shadow_comparison_summary=shadow_summary(True),
+        launch_summary=launch_summary(True),
+        strategy_portfolio_summary=strategy_portfolio_summary(True),
+        strategy_portfolio_allocations=strategy_portfolio_allocations(
+            strategy="parity_box",
+            profile="parity",
+            allocation_notional=1200.0,
+        ),
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "strategy_portfolio_allocation_available" in failed
+    assert "strategy_portfolio_allocation_positive" in failed
+    assert not report.summary.iloc[0]["strategy_portfolio_selected_eligible"]
+    assert report.config["strategy_portfolio"]["selected_allocation_notional"] == 0.0
 
 
 def test_scaleup_plan_blocks_wrong_evidence_identity():
@@ -2202,6 +2343,37 @@ def test_write_scaleup_plan_carries_vendor_market_data_batch_config(tmp_path):
     )
 
 
+def test_write_scaleup_plan_carries_strategy_portfolio_inputs(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    out_dir = tmp_path / "scaleup"
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=out_dir,
+        thresholds=ScaleUpThresholds(max_scale_multiplier=2.0, require_strategy_portfolio=True),
+    )
+
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert config["strategy_portfolio"]["required"]
+    assert config["strategy_portfolio"]["provided"]
+    assert config["strategy_portfolio"]["selected_profile"] == "leadlag"
+    assert config["strategy_portfolio"]["selected_allocation_notional"] == 1200.0
+    assert config["strategy_portfolio"]["notional_cap_applied"]
+    assert config["limits"]["max_notional_per_session"] == 1200.0
+    assert path_tail(manifest["inputs"]["strategy_portfolio"]["path"]).endswith(
+        "/strategy_portfolio/strategy_portfolio_summary.csv"
+    )
+    assert path_tail(manifest["inputs"]["strategy_portfolio_allocations"]["path"]).endswith(
+        "/strategy_portfolio/strategy_portfolio_allocations.csv"
+    )
+
+
 def test_scaleup_plan_fails_on_instrument_metadata_gap():
     report = evaluate_scaleup_plan(
         evidence_summary=evidence_summary(True),
@@ -2366,6 +2538,41 @@ def test_cli_scaleup_plan_can_require_expected_identity(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert {"evidence_strategy_matches", "evidence_market_matches"} <= failed
+
+
+def test_cli_scaleup_plan_can_require_strategy_portfolio(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(launch),
+            "--strategy-portfolio",
+            str(portfolio),
+            "--require-strategy-portfolio",
+            "--max-scale-multiplier",
+            "2.0",
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "max_notional_per_session"] == 1200.0
+    assert bool(summary.loc[0, "strategy_portfolio_notional_cap_applied"])
+    assert config["strategy_portfolio"]["required"]
+    assert config["strategy_portfolio"]["selected_allocation_notional"] == 1200.0
 
 
 def test_cli_scaleup_plan_can_require_proof_refresh(tmp_path):
