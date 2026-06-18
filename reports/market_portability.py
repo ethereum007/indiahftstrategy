@@ -339,6 +339,8 @@ def _config(
         "next_gates": sorted(set(gaps["next_gate"].astype(str))) if not gaps.empty else [],
         "ready_action_count": int(summary_row.get("ready_action_count", 0) or 0),
         "blocked_action_count": int(summary_row.get("blocked_action_count", 0) or 0),
+        "next_gate": _text(summary_row.get("next_gate")),
+        "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
         "next_actions": _action_records(action_queue),
         "ready_actions": _action_records(
             action_queue.loc[action_queue["queue_status"].astype(str) == "ready"]

@@ -105,6 +105,9 @@
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
   next-gate help into catalog-level scheduler plans.
+- Market portability config JSON now exposes primary `next_gate` and
+  `next_gate_help_command` alongside action counts and action arrays, matching
+  downstream route/broker scheduler handoffs.
 - `market-portability-report` can now fail closed with `--fail-on-breach`,
   `--fail-on-gaps`, or `--fail-on-blocked-actions`, giving CI/schedulers a
   direct gate before non-India research or route-readiness runs are scheduled.

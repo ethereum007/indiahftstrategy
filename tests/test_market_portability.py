@@ -83,6 +83,8 @@ def test_market_portability_config_records_ready_gap_and_next_gate_pairs():
     assert "run_market_profile_report_with_fee_assumptions" in report.config["next_gates"]
     assert report.config["ready_action_count"] == 1
     assert report.config["blocked_action_count"] == 1
+    assert report.config["next_gate"] == "run_market_profile_report_with_fee_assumptions"
+    assert report.config["next_gate_help_command"] == "python -m hft_cli market-portability-report --help"
     assert report.config["ready_actions"][0]["recommendation"] == "run_strategy_walkforward_and_route_readiness_gates"
     assert report.config["blocked_actions"][0]["next_gate_help_command"] == (
         "python -m hft_cli market-portability-report --help"
@@ -133,6 +135,8 @@ def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):
     assert config["ready"]
     assert config["ready_action_count"] == 1
     assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == "run_walkforward_and_paper_shadow_gates"
+    assert config["next_gate_help_command"] == ""
     assert config["requested_markets"] == ["us_equities_regular"]
     assert config["ready_pairs"] == [
         {
