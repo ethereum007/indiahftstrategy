@@ -107,6 +107,9 @@ def test_export_halt_response_maps_cancel_and_flatten_actions():
     assert report.cancel_orders.iloc[0].to_dict() == {"orderRef": "ARW-1", "instruction": "CANCEL"}
     assert report.flatten_orders.iloc[0]["side"] == "SELL"
     assert report.flatten_orders.iloc[0]["quantity"] == 75
+    assert report.summary.iloc[0]["failed_check_count"] == 0
+    assert report.summary.iloc[0]["failed_check_names"] == ""
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
     assert report.summary.iloc[0]["recommendation"] == "send_halt_actions_to_broker"
 
 
@@ -202,3 +205,9 @@ def test_cli_halt_response_export_fails_on_missing_required_mapping(tmp_path):
     summary = pd.read_csv(out_dir / "halt_response_export_summary.csv")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "failed_check_count"] == 1
+    assert summary.loc[0, "failed_check_names"] == "cancel:broker_cancel_orders.csv:orderRef"
+    assert summary.loc[0, "first_failed_reason"] == "required target has no available source column or default value"
+    assert summary.loc[0, "primary_blocker_check"] == "cancel:broker_cancel_orders.csv:orderRef"
+    assert summary.loc[0, "primary_blocker_operator"] == "identity"
+    assert summary.loc[0, "primary_blocker_reason"] == "required target has no available source column or default value"

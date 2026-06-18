@@ -191,6 +191,14 @@ def test_halt_incident_fails_when_execution_is_incomplete():
     assert not report.passed
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "halt_execution_passed" in failed
+    summary = report.summary.iloc[0]
+    assert summary["failed_check_count"] == 1
+    assert summary["failed_check_names"] == "halt_execution_passed"
+    assert summary["first_failed_reason"] == "halt execution reconciliation did not pass"
+    assert summary["primary_blocker_check"] == "halt_execution_passed"
+    assert summary["primary_blocker_operator"] == "is"
+    assert summary["primary_blocker_threshold"] == "True"
+    assert summary["primary_blocker_reason"] == "halt execution reconciliation did not pass"
 
 
 def test_write_halt_incident_report_outputs_artifacts(tmp_path):
@@ -262,3 +270,7 @@ def test_cli_halt_incident_can_require_export(tmp_path):
     summary = pd.read_csv(out_dir / "halt_incident_summary.csv")
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
+    assert summary.loc[0, "failed_check_count"] == 1
+    assert summary.loc[0, "failed_check_names"] == "halt_export_ready"
+    assert summary.loc[0, "primary_blocker_check"] == "halt_export_ready"
+    assert summary.loc[0, "primary_blocker_reason"] == "halt response export is missing or not ready"

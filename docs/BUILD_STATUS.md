@@ -560,16 +560,19 @@
   summary/check files plus open-order and position snapshots.
 - Halt response export mapper that turns emergency cancel and flatten actions
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
-  Arrow.money/iRage emergency schemas are finalized, and fingerprints the
-  exact halt-response action files plus optional mapping files.
+  Arrow.money/iRage emergency schemas are finalized, fingerprints the exact
+  halt-response action files plus optional mapping files, and surfaces the
+  first failed export mapping/readiness blocker in the one-row summary.
 - Halt execution reconciliation gate that verifies emergency cancel
   acknowledgements, flatten fills, and final flat positions after a guard halt,
   while fingerprinting the halt-response action files and supplied execution
-  evidence snapshots.
+  evidence snapshots and surfacing the first failed acknowledgement, fill, or
+  residual-position blocker in the summary.
 - Halt incident review that combines guard, response, export, and execution
   evidence into one incident-closure timeline, check set, and summary with
   guard trigger plus strategy/market context carried through the review and
-  fingerprints each component summary/check file.
+  fingerprints each component summary/check file while exposing the first
+  failed closure gate as primary blocker fields in the summary.
 - Post-halt resume gate that requires a closed incident, ready scale-up plan,
   scenario/adapter, strategy/market, and proof-refresh continuity, optional
   operator approval, and emits resume authorization/config artifacts carrying

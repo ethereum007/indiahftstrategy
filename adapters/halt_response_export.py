@@ -258,7 +258,9 @@ def _summary(
     checks: pd.DataFrame,
     config: HaltResponseExportConfig,
 ) -> pd.DataFrame:
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed = int(len(failed_rows)) if not checks.empty else 1
     ready = failed == 0
     return pd.DataFrame(
         [
@@ -270,12 +272,59 @@ def _summary(
                 "cancel_orders": int(len(cancel_orders)),
                 "flatten_orders": int(len(flatten_orders)),
                 "failed_checks": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator")
+                or _check_value(primary_blocker, "transform"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "cancel_output_file": config.cancel_output_filename,
                 "flatten_output_file": config.flatten_output_filename,
                 "recommendation": "send_halt_actions_to_broker" if ready else "fix_halt_action_export",
             }
         ]
     )
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    return checks.loc[~checks["passed"].map(_to_bool)].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    explicit = _check_value(row, "check")
+    target = explicit or _check_value(row, "target_column")
+    action_type = _check_value(row, "action_type")
+    output_file = _check_value(row, "output_file")
+    pieces = [piece for piece in (action_type, output_file, target) if piece and piece != "*"]
+    return ":".join(pieces)
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row[column])
 
 
 def _schema_frame(

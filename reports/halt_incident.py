@@ -319,7 +319,9 @@ def _summary(
     execution: pd.Series,
     checks: pd.DataFrame,
 ) -> pd.DataFrame:
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed = int(len(failed_rows)) if not checks.empty else 1
     passed = failed == 0
     guard_halted = _guard_halted(guard)
     status = "halt_completed" if passed and guard_halted else "halt_incomplete"
@@ -353,10 +355,49 @@ def _summary(
                 "cancel_actions": int(_number(response, "cancel_orders", fallback=_number(execution, "cancel_actions", 0.0))),
                 "flatten_actions": int(_number(response, "flatten_orders", fallback=_number(execution, "flatten_actions", 0.0))),
                 "failed_checks": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "recommendation": "resume_only_after_new_scaleup_review" if passed else "keep_trading_disabled_and_investigate",
             }
         ]
     )
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    return checks.loc[~checks["passed"].map(_to_bool)].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    return _check_value(row, "check")
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row[column])
 
 
 def _component_failed_checks(summary: pd.Series, checks: pd.DataFrame) -> int:

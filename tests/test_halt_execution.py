@@ -124,6 +124,14 @@ def test_halt_execution_fails_when_cancel_ack_is_missing():
     assert not report.passed
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "cancel_acks_complete" in failed
+    summary = report.summary.iloc[0]
+    assert summary["failed_check_count"] == 1
+    assert summary["failed_check_names"] == "cancel_acks_complete"
+    assert summary["first_failed_reason"] == "not all cancel actions have terminal acknowledgements"
+    assert summary["primary_blocker_check"] == "cancel_acks_complete"
+    assert summary["primary_blocker_operator"] == "=="
+    assert summary["primary_blocker_threshold"] == "1"
+    assert summary["primary_blocker_reason"] == "not all cancel actions have terminal acknowledgements"
 
 
 def test_write_halt_execution_report_outputs_artifacts(tmp_path):
@@ -206,3 +214,7 @@ def test_cli_halt_execution_fails_on_residual_position(tmp_path):
     summary = pd.read_csv(out_dir / "halt_execution_summary.csv")
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
+    assert summary.loc[0, "failed_check_count"] == 1
+    assert summary.loc[0, "failed_check_names"] == "final_positions_flat"
+    assert summary.loc[0, "primary_blocker_check"] == "final_positions_flat"
+    assert summary.loc[0, "primary_blocker_reason"] == "final position snapshot is missing or contains residual positions"

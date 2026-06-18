@@ -279,7 +279,9 @@ def _summary(
     position_execution: pd.DataFrame,
     checks: pd.DataFrame,
 ) -> pd.DataFrame:
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed = int(len(failed_rows)) if not checks.empty else 1
     passed = failed == 0
     cancel_acked = int(cancel_execution["acked"].sum()) if not cancel_execution.empty else 0
     flatten_complete = int(flatten_execution["complete"].sum()) if not flatten_execution.empty else 0
@@ -296,10 +298,49 @@ def _summary(
                 "flatten_filled": flatten_complete,
                 "nonflat_positions": nonflat_positions,
                 "failed_checks": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "recommendation": "halt_completed" if passed else "continue_halt_investigation",
             }
         ]
     )
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    return checks.loc[~checks["passed"].map(_to_bool)].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    return _check_value(row, "check")
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row[column])
 
 
 def _match_rows(action: pd.Series, frame: pd.DataFrame, columns: list[str]) -> tuple[pd.DataFrame, str]:

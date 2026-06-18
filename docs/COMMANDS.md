@@ -2728,6 +2728,11 @@ halt_response_export_schema.csv
 manifest.json
 ```
 
+`halt_response_export_summary.csv` carries `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
+automation can identify the first broker mapping or readiness blocker without
+opening the per-column checks file.
+
 ## Halt Execution Reconciliation
 
 Verify that emergency cancels were acknowledged, flatten orders were filled,
@@ -2758,6 +2763,10 @@ halt_execution_summary.csv
 manifest.json
 ```
 
+`halt_execution_summary.csv` carries `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
+post-halt schedulers can distinguish missing acknowledgements, incomplete
+flatten fills, and residual positions from the one-row summary.
 The manifest fingerprints the halt-response summary/action files plus the
 cancel acknowledgement, flatten fill, and final-position snapshots supplied for
 execution reconciliation.
@@ -2791,6 +2800,10 @@ The timeline and summary retain guard-trigger, strategy, market, and
 `proof_refresh_*` fields so the incident closure record shows both the failed
 guard checks that caused the halt and the proof-freshness context that fed the
 scaled runtime.
+The incident summary also exposes `failed_check_count`, `failed_check_names`,
+`first_failed_reason`, and `primary_blocker_*` fields for the first failed
+closure gate, such as missing export evidence or incomplete execution
+reconciliation.
 The manifest fingerprints each component summary/check file from the guard,
 halt response, optional halt export, and halt execution folders.
 
