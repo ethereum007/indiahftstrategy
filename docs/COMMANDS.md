@@ -375,6 +375,45 @@ entry point explicit even before concrete data paths are selected.
 `strategy_scorecard_runbook.md` is a human-readable handoff generated from
 the same next-action data and captured in the manifest artifact fingerprints.
 
+## Strategy Portfolio Allocation
+
+Allocate paper/shadow capital across strategy profiles that passed the
+strategy readiness scorecard:
+
+```powershell
+python -m hft_cli allocate-strategy-portfolio `
+  --scorecard runs\scorecards\india_research `
+  --out runs\strategy_portfolios\india_research_paper `
+  --total-capital 1000000 `
+  --capital-currency INR `
+  --reserve-weight 0.10 `
+  --max-profile-weight 0.40 `
+  --fail-on-breach
+```
+
+Outputs:
+
+```text
+strategy_portfolio_allocations.csv
+strategy_portfolio_checks.csv
+strategy_portfolio_summary.csv
+strategy_portfolio_config.json
+strategy_portfolio_runbook.md
+manifest.json
+```
+
+The allocator is deliberately paper/shadow-only. By default it only allocates
+to scorecard profiles where `ready=true` and `readiness_score >= 1.0`, keeps
+10% unallocated as reserve, and caps any one profile at 40% of capital.
+`strategy_portfolio_allocations.csv` keeps one row per scorecard profile with
+eligibility reason, allocation weight, notional, and next-gate context.
+`strategy_portfolio_checks.csv`, `strategy_portfolio_summary.csv`, and
+`strategy_portfolio_config.json` expose `failed_check_count`, failed-check
+names, `first_failed_reason`, and a structured `primary_blocker`, so automation
+fails closed when no strategy lane is ready instead of creating a borrowed
+allocation. `strategy_portfolio_runbook.md` mirrors the same allocation,
+blocked-profile, and failed-check handoff for review.
+
 ## Market Profile Report
 
 Export India/US market assumptions before a run:

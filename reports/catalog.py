@@ -37,6 +37,7 @@ SUMMARY_FILES = [
     "proof_refresh_summary.csv",
     "strategy_evidence_summary.csv",
     "strategy_scorecard_summary.csv",
+    "strategy_portfolio_summary.csv",
     "scaleup_summary.csv",
     "market_profile_summary.csv",
     "market_portability_summary.csv",

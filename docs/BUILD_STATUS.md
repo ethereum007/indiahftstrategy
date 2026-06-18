@@ -64,6 +64,13 @@
   open gaps, and the next CLI gate/help command for review.
 - Experiment catalog now recognizes strategy scorecard summaries, preserving
   best-profile and next-gate readiness signals for downstream evidence ledgers.
+- Strategy portfolio allocation now converts ready scorecard profiles into a
+  conservative paper/shadow capital plan with reserve, per-profile caps,
+  checks, config JSON, runbook, manifest, and fail-closed primary blocker
+  fields when no strategy lane is eligible.
+- Experiment catalog now recognizes strategy portfolio allocation summaries,
+  preserving paper/shadow allocation readiness, top-profile, and allocated
+  weight signals for downstream research ledgers.
 - Adapter schema audits now emit `adapter_schema_review_checklist.csv` so
   Arrow.money/iRage onboarding separates missing-column blockers from
   placeholder-schema and extra-field review tasks.

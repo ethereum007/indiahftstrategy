@@ -113,6 +113,7 @@ from reports.settlement_launch_pipeline import (
 from reports.settlement_order_plan import SettlementOrderPlanConfig, write_settlement_order_plan
 from reports.shadow_comparison import ShadowComparisonThresholds, write_shadow_session_comparison
 from reports.shadow_session import ShadowSessionThresholds, write_shadow_session_report
+from reports.strategy_portfolio import StrategyPortfolioConfig, write_strategy_portfolio_allocations
 from reports.strategy_scorecard import StrategyScorecardThresholds, write_strategy_scorecard
 from reports.stress import StressConfig, write_stress_report
 from reports.sweeps import write_sweep_comparison
@@ -1136,6 +1137,22 @@ def main(argv: list[str] | None = None) -> int:
     scorecard.add_argument("--allow-dirty-git", action="store_true")
     scorecard.add_argument("--require-file-inputs", action="store_true")
     scorecard.add_argument("--fail-on-breach", action="store_true")
+
+    strategy_portfolio = sub.add_parser(
+        "allocate-strategy-portfolio",
+        help="Allocate paper/shadow capital across ready strategy scorecard profiles.",
+    )
+    strategy_portfolio.add_argument("--scorecard", required=True)
+    strategy_portfolio.add_argument("--out", required=True)
+    strategy_portfolio.add_argument("--total-capital", type=float, default=1_000_000.0)
+    strategy_portfolio.add_argument("--capital-currency", default="INR")
+    strategy_portfolio.add_argument("--reserve-weight", type=float, default=0.10)
+    strategy_portfolio.add_argument("--max-profile-weight", type=float, default=0.40)
+    strategy_portfolio.add_argument("--min-readiness-score", type=float, default=1.0)
+    strategy_portfolio.add_argument("--allow-unready", action="store_true")
+    strategy_portfolio.add_argument("--include-profile", action="append", dest="include_profiles")
+    strategy_portfolio.add_argument("--exclude-profile", action="append", dest="exclude_profiles")
+    strategy_portfolio.add_argument("--fail-on-breach", action="store_true")
 
     route_readiness = sub.add_parser(
         "review-route-readiness",
@@ -3156,6 +3173,23 @@ def main(argv: list[str] | None = None) -> int:
                 expected_ops_strategy=args.ops_strategy,
                 allow_dirty_git=args.allow_dirty_git,
                 require_file_inputs=args.require_file_inputs,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        return 2 if args.fail_on_breach and not result.ready else 0
+    if args.command == "allocate-strategy-portfolio":
+        result = write_strategy_portfolio_allocations(
+            args.scorecard,
+            output_dir=args.out,
+            config=StrategyPortfolioConfig(
+                total_capital=args.total_capital,
+                capital_currency=args.capital_currency,
+                reserve_weight=args.reserve_weight,
+                max_profile_weight=args.max_profile_weight,
+                min_readiness_score=args.min_readiness_score,
+                require_ready=not args.allow_unready,
+                include_profiles=tuple(args.include_profiles or ()),
+                exclude_profiles=tuple(args.exclude_profiles or ()),
             ),
         )
         print(result.summary.to_string(index=False))

@@ -361,6 +361,41 @@ def test_catalog_experiment_runs_recognizes_strategy_scorecard_status(tmp_path):
     )
 
 
+def test_catalog_experiment_runs_recognizes_strategy_portfolio_status(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "strategy_portfolio",
+        run_type="strategy_portfolio_allocation",
+        summary_name="strategy_portfolio_summary.csv",
+        summary_row={
+            "ready": True,
+            "deployment_mode": "paper_shadow",
+            "allocation_mode": "readiness_weighted",
+            "capital_currency": "INR",
+            "total_capital": 1_000_000.0,
+            "allocated_weight": 0.90,
+            "allocated_notional": 900_000.0,
+            "reserve_weight": 0.10,
+            "top_profile": "leadlag",
+            "top_strategy": "lead_lag_taker",
+            "failed_check_count": 0,
+            "failed_check_names": "",
+            "first_failed_reason": "",
+        },
+    )
+
+    report = catalog_experiment_runs([root])
+
+    row = report.catalog.iloc[0]
+    assert report.summary.iloc[0]["status_true_runs"] == 1
+    assert row["run_type"] == "strategy_portfolio_allocation"
+    assert row["summary_file"] == "strategy_portfolio_summary.csv"
+    assert row["summary_status_column"] == "ready"
+    assert row["summary_top_profile"] == "leadlag"
+    assert row["summary_top_strategy"] == "lead_lag_taker"
+    assert float(row["summary_allocated_weight"]) == 0.90
+
+
 def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path):
     root = tmp_path / "runs"
     write_run(
