@@ -96,6 +96,9 @@
 - Experiment catalogs now write manifest-tracked
   `experiment_catalog_action_plan.json`, a typed ready/blocked/unknown action
   plan with top actions and scheduler recommendation for automation handoff.
+- `catalog-runs` can now fail closed with `--fail-on-blocked-actions` or
+  `--fail-on-actions`, giving CI/schedulers a direct exit-code gate on the
+  catalog action queue.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

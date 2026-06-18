@@ -149,6 +149,19 @@ def _add_generic_cost_args(parser: argparse.ArgumentParser, *, default: float | 
     parser.add_argument("--generic-per-order-fee", type=float, default=default)
 
 
+def _catalog_exit_code(result, *, fail_on_actions: bool, fail_on_blocked_actions: bool) -> int:
+    action_queue = result.action_queue
+    action_count = 0 if action_queue is None else int(len(action_queue))
+    if fail_on_actions and action_count > 0:
+        return 2
+    if fail_on_blocked_actions and action_count > 0:
+        statuses = action_queue["queue_status"].astype(str)
+        blocked_or_unknown = int(statuses.isin(["blocked", "unknown"]).sum())
+        if blocked_or_unknown > 0:
+            return 2
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="hft", description="India HFT research command runner.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1034,6 +1047,8 @@ def main(argv: list[str] | None = None) -> int:
     catalog = sub.add_parser("catalog-runs", help="Build an experiment catalog from manifest-bearing run folders.")
     catalog.add_argument("--roots", nargs="+", required=True)
     catalog.add_argument("--out", required=True)
+    catalog.add_argument("--fail-on-actions", action="store_true")
+    catalog.add_argument("--fail-on-blocked-actions", action="store_true")
 
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
@@ -3039,7 +3054,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "catalog-runs":
         result = write_experiment_catalog(args.roots, output_dir=args.out)
         print(result.summary.to_string(index=False))
-        return 0
+        return _catalog_exit_code(
+            result,
+            fail_on_actions=args.fail_on_actions,
+            fail_on_blocked_actions=args.fail_on_blocked_actions,
+        )
     if args.command == "review-strategy-evidence":
         required_run_types = (
             tuple(args.required_run_types) if args.required_run_types else evidence_profile_run_types(args.profile)

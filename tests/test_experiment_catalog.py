@@ -984,3 +984,74 @@ def test_cli_catalog_runs_writes_catalog(tmp_path):
     assert int(summary.loc[0, "run_count"]) == 1
     assert int(summary.loc[0, "status_false_runs"]) == 1
     assert catalog.loc[0, "run_type"] == "stress_report"
+
+
+def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "scorecard",
+        run_type="strategy_scorecard",
+        summary_name="strategy_scorecard_summary.csv",
+        summary_row={
+            "ready": True,
+            "best_strategy": "lead_lag_taker",
+            "best_market": "india_nse_index_derivatives",
+            "best_next_gate": "plan-scaleup",
+            "best_next_gate_help_command": "python -m hft_cli plan-scaleup --help",
+        },
+    )
+
+    blocked_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(root),
+            "--out",
+            str(tmp_path / "catalog_blocked_only"),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    any_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(root),
+            "--out",
+            str(tmp_path / "catalog_any_action"),
+            "--fail-on-actions",
+        ]
+    )
+
+    assert blocked_code == 0
+    assert any_code == 2
+
+
+def test_cli_catalog_runs_can_fail_on_blocked_actions(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "route_readiness",
+        run_type="route_readiness_review",
+        summary_name="route_readiness_summary.csv",
+        summary_row={
+            "ready": False,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "next_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
+            "next_gate_help_command": (
+                "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+            ),
+        },
+    )
+
+    code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(root),
+            "--out",
+            str(tmp_path / "catalog"),
+            "--fail-on-blocked-actions",
+        ]
+    )
+
+    assert code == 2

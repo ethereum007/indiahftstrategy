@@ -49,7 +49,8 @@ Collect manifest-bearing run folders into one evidence ledger:
 ```powershell
 python -m hft_cli catalog-runs `
   --roots runs `
-  --out runs\catalog\latest
+  --out runs\catalog\latest `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -80,6 +81,9 @@ broker-vendor data readiness blockers, into the catalog-level queue.
 a scheduler recommendation for automation.
 `experiment_catalog_runbook.md` mirrors the same queue with catalog readiness
 and input-provenance totals for human operator review.
+Use `--fail-on-blocked-actions` to return exit code 2 when blocked or unknown
+catalog actions exist, or `--fail-on-actions` to fail when any ready, blocked,
+or unknown action remains.
 
 ## Strategy Evidence Review
 
