@@ -97,6 +97,12 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
         "market",
         "profile",
         "summary_status",
+        "action_source_file",
+        "action_source",
+        "dataset",
+        "component",
+        "check",
+        "pipeline_dir",
         "next_gate",
         "next_gate_help_command",
         "recommendation",
@@ -485,6 +491,9 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     assert row["run_type"] == "broker_readiness"
     assert row["strategy"] == "lead_lag_taker"
     assert row["market"] == "india_nse_index_derivatives"
+    assert row["action_source_file"] == "broker_readiness_action_queue.csv"
+    assert row["component"] == "schema_audit"
+    assert row["check"] == "schema_reviewed"
     assert row["next_gate"] == "audit-adapter-schema"
     assert row["next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
     assert row["recommendation"] == "schema review missing"
@@ -495,7 +504,78 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     assert action_plan["catalog_hygiene_ready"] is False
     assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps_before_scheduling_actions"
     assert action_plan["blocked_actions"][0]["next_gate"] == "audit-adapter-schema"
+    assert action_plan["blocked_actions"][0]["action_source_file"] == "broker_readiness_action_queue.csv"
+    assert action_plan["blocked_actions"][0]["component"] == "schema_audit"
+    assert action_plan["blocked_actions"][0]["check"] == "schema_reviewed"
     assert action_plan["blocked_actions"][0]["recommendation"] == "schema review missing"
+
+
+def test_write_experiment_catalog_preserves_vendor_action_queue_context(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    run_dir = root / "vendor_batch"
+    write_run(
+        run_dir,
+        run_type="vendor_market_data_batch_pipeline",
+        summary_name="vendor_market_data_batch_summary.csv",
+        summary_row={
+            "ready": False,
+            "adapter": "arrow_money",
+            "kind": "ticks",
+            "market": "india_nse_index_derivatives",
+            "dataset_count": 2,
+            "blocked_action_count": 1,
+            "next_gate": "pipeline-vendor-market-data-batch",
+            "next_gate_help_command": "python -m hft_cli pipeline-vendor-market-data-batch --help",
+            "recommendation": "fix_vendor_market_data_batch",
+        },
+    )
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "source": "comparison",
+                "dataset": "day1",
+                "component": "data_readiness",
+                "check": "unique_source_files",
+                "next_gate": "pipeline-vendor-market-data-batch",
+                "next_gate_help_command": "python -m hft_cli pipeline-vendor-market-data-batch --help",
+                "reason": "source file fingerprint reused across datasets",
+                "recommendation": "provide_distinct_vendor_export_files",
+                "pipeline_dir": "comparison",
+            }
+        ]
+    ).to_csv(run_dir / "vendor_market_data_batch_action_queue.csv", index=False)
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    queue = pd.read_csv(out_dir / "experiment_catalog_action_queue.csv")
+    row = queue.iloc[0]
+    assert report.action_queue is not None
+    assert len(queue) == 1
+    assert report.summary.iloc[0]["action_queue_blocked_count"] == 1
+    assert row["run_type"] == "vendor_market_data_batch_pipeline"
+    assert row["market"] == "india_nse_index_derivatives"
+    assert row["action_source_file"] == "vendor_market_data_batch_action_queue.csv"
+    assert row["action_source"] == "comparison"
+    assert row["dataset"] == "day1"
+    assert row["component"] == "data_readiness"
+    assert row["check"] == "unique_source_files"
+    assert row["pipeline_dir"] == "comparison"
+    assert row["next_gate"] == "pipeline-vendor-market-data-batch"
+    assert row["recommendation"] == "provide_distinct_vendor_export_files"
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "vendor_market_data_batch_action_queue.csv" in runbook
+    assert "unique_source_files" in runbook
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    action = action_plan["blocked_actions"][0]
+    assert action["action_source_file"] == "vendor_market_data_batch_action_queue.csv"
+    assert action["action_source"] == "comparison"
+    assert action["dataset"] == "day1"
+    assert action["component"] == "data_readiness"
+    assert action["check"] == "unique_source_files"
+    assert action["pipeline_dir"] == "comparison"
 
 
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):

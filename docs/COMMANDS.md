@@ -84,7 +84,9 @@ the hygiene sidecar and action-plan JSON.
 `next_gate_help_command` signals from scorecards, route reviews, and other
 summary files into one priority-ordered scheduler queue. It also promotes
 run-local `*_action_queue.csv` sidecars, such as broker readiness and
-broker-vendor data readiness blockers, into the catalog-level queue.
+broker-vendor data readiness blockers, into the catalog-level queue while
+preserving sidecar context columns such as `action_source_file`,
+`action_source`, `dataset`, `component`, `check`, and `pipeline_dir`.
 `experiment_catalog_action_plan.json` mirrors that queue as typed
 `ready_actions`, `blocked_actions`, `unknown_actions`, top actions, counts, and
 a scheduler recommendation for automation. Its `catalog_hygiene_ready` flag and

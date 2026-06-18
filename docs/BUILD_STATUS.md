@@ -101,6 +101,9 @@
 - Experiment catalog action queues now promote run-local `*_action_queue.csv`
   sidecars, so broker readiness, broker-vendor data readiness, route, and
   scorecard blockers remain visible in the top-level scheduler queue.
+- Experiment catalog action queues now preserve promoted sidecar source,
+  dataset, component, check, and pipeline-dir context, so vendor market-data
+  pipeline/batch blockers remain explainable after catalog consolidation.
 - Experiment catalog summaries now expose ready, blocked, unknown, and total
   action-queue counts for scheduler gating without opening the queue CSV.
 - Experiment catalogs now write manifest-tracked
@@ -818,7 +821,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 884 tests.
+Current passing suite: 885 tests.
 
 ## Next Build Targets
 
