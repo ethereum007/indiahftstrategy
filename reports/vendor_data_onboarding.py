@@ -51,6 +51,7 @@ class VendorMarketDataPipelineReport:
     diagnostics: DiagnosticResult
     readiness: DataReadinessReport
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -65,6 +66,7 @@ class VendorMarketDataBatchReport:
     summary: pd.DataFrame
     comparison: DataReadinessComparisonReport
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -133,6 +135,7 @@ def write_vendor_market_data_pipeline(
         thresholds=thresholds,
     )
     components = _components(intake, mapped, diagnostics, readiness)
+    action_queue = _pipeline_action_queue(components, readiness.action_queue)
     summary = _summary(
         source_file,
         mapping_file,
@@ -146,9 +149,15 @@ def write_vendor_market_data_pipeline(
         intake_dir=intake_dir,
         mapped_dir=mapped_dir,
         readiness_dir=readiness_dir,
+        action_queue=action_queue,
     )
     components.to_csv(out / "vendor_market_data_pipeline_components.csv", index=False)
     summary.to_csv(out / "vendor_market_data_pipeline_summary.csv", index=False)
+    action_queue.to_csv(out / "vendor_market_data_pipeline_action_queue.csv", index=False)
+    (out / "vendor_market_data_pipeline_runbook.md").write_text(
+        _pipeline_runbook_markdown(summary.iloc[0], components, action_queue),
+        encoding="utf-8",
+    )
     pipeline_config = _pipeline_config(summary.iloc[0], components, thresholds, config)
     (out / "vendor_market_data_pipeline_config.json").write_text(
         json.dumps(pipeline_config, indent=2, sort_keys=True) + "\n",
@@ -176,7 +185,7 @@ def write_vendor_market_data_pipeline(
         },
         inputs=inputs,
     )
-    return VendorMarketDataPipelineReport(components, summary, intake, mapped, diagnostics, readiness, out)
+    return VendorMarketDataPipelineReport(components, summary, intake, mapped, diagnostics, readiness, out, action_queue)
 
 
 def write_vendor_market_data_batch_pipeline(
@@ -204,6 +213,7 @@ def write_vendor_market_data_batch_pipeline(
     out.mkdir(parents=True, exist_ok=True)
     dataset_rows = []
     dataset_manifest_paths = []
+    dataset_action_rows = []
     readiness_dirs = []
     comparison_labels = []
     for idx, path in enumerate(paths):
@@ -215,6 +225,14 @@ def write_vendor_market_data_batch_pipeline(
             mapping_path=mapping_path,
             config=config,
             readiness_thresholds=readiness_thresholds,
+        )
+        dataset_action_rows.extend(
+            _promote_action_rows(
+                report.action_queue,
+                source="dataset_pipeline",
+                dataset=label,
+                pipeline_dir=dataset_dir,
+            )
         )
         readiness_dir = dataset_dir / "04_data_readiness"
         readiness_dirs.append(readiness_dir)
@@ -257,9 +275,19 @@ def write_vendor_market_data_batch_pipeline(
         thresholds=thresholds,
     )
     datasets = pd.DataFrame(dataset_rows)
+    action_queue = _batch_action_queue(dataset_action_rows, comparison.action_queue)
     summary = _batch_summary(datasets, comparison, config)
+    summary["blocked_action_count"] = int(len(action_queue))
+    summary["ready_action_count"] = 0
+    summary["next_gate"] = _primary_next_gate(action_queue)
+    summary["next_gate_help_command"] = summary["next_gate"].map(_next_gate_help_command)
     datasets.to_csv(out / "vendor_market_data_batch_datasets.csv", index=False)
     summary.to_csv(out / "vendor_market_data_batch_summary.csv", index=False)
+    action_queue.to_csv(out / "vendor_market_data_batch_action_queue.csv", index=False)
+    (out / "vendor_market_data_batch_runbook.md").write_text(
+        _batch_runbook_markdown(summary.iloc[0], datasets, action_queue),
+        encoding="utf-8",
+    )
     batch_config = _batch_config(summary.iloc[0], datasets, thresholds, config)
     (out / "vendor_market_data_batch_config.json").write_text(
         json.dumps(batch_config, indent=2, sort_keys=True) + "\n",
@@ -289,7 +317,7 @@ def write_vendor_market_data_batch_pipeline(
         },
         inputs=inputs,
     )
-    return VendorMarketDataBatchReport(datasets, summary, comparison, out)
+    return VendorMarketDataBatchReport(datasets, summary, comparison, out, action_queue)
 
 
 def _write_diagnostics(data: pd.DataFrame, output_dir: Path, config: VendorMarketDataPipelineConfig) -> DiagnosticResult:
@@ -371,11 +399,13 @@ def _summary(
     intake_dir: Path,
     mapped_dir: Path,
     readiness_dir: Path,
+    action_queue: pd.DataFrame,
 ) -> pd.DataFrame:
     failed = int((~components["ready"].astype(bool)).sum()) if not components.empty else 1
     intake_row = _first(intake.summary)
     mapped_row = _first(mapped.summary)
     diagnostic_row = _diagnostic_overall(diagnostics)
+    next_gate = _primary_next_gate(action_queue)
     return pd.DataFrame(
         [
             {
@@ -399,10 +429,248 @@ def _summary(
                 "vendor_intake_manifest_path": _manifest_path(intake_dir),
                 "mapped_data_manifest_path": _manifest_path(mapped_dir),
                 "data_readiness_manifest_path": _manifest_path(readiness_dir),
+                "ready_action_count": 0,
+                "blocked_action_count": int(len(action_queue)),
+                "next_gate": next_gate,
+                "next_gate_help_command": _next_gate_help_command(next_gate),
                 "recommendation": "feed_strategy_research" if readiness.ready and failed == 0 else "fix_vendor_market_data_pipeline",
             }
         ]
     )
+
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "dataset",
+    "component",
+    "check",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+    "pipeline_dir",
+]
+
+
+def _pipeline_action_queue(components: pd.DataFrame, readiness_queue: pd.DataFrame | None) -> pd.DataFrame:
+    rows = _promote_action_rows(readiness_queue, source="data_readiness", dataset="", pipeline_dir="")
+    if not rows and not components.empty:
+        for item in components.loc[~components["ready"].astype(bool)].to_dict(orient="records"):
+            rows.append(
+                {
+                    "queue_status": "blocked",
+                    "source": "component",
+                    "dataset": "",
+                    "component": _value_text(item.get("component")),
+                    "check": f"{_value_text(item.get('component'))}_ready",
+                    "next_gate": "pipeline-vendor-market-data",
+                    "next_gate_help_command": _next_gate_help_command("pipeline-vendor-market-data"),
+                    "reason": _value_text(item.get("status")),
+                    "recommendation": _value_text(item.get("recommendation"))
+                    or "fix_vendor_market_data_pipeline",
+                    "pipeline_dir": "",
+                }
+            )
+    return _action_queue_frame(rows)
+
+
+def _batch_action_queue(
+    dataset_action_rows: list[dict[str, object]],
+    comparison_queue: pd.DataFrame | None,
+) -> pd.DataFrame:
+    rows = list(dataset_action_rows)
+    rows.extend(_promote_action_rows(comparison_queue, source="comparison", dataset="", pipeline_dir="comparison"))
+    return _action_queue_frame(rows)
+
+
+def _promote_action_rows(
+    action_queue: pd.DataFrame | None,
+    *,
+    source: str,
+    dataset: str,
+    pipeline_dir: Path | str,
+) -> list[dict[str, object]]:
+    if action_queue is None or action_queue.empty:
+        return []
+    rows: list[dict[str, object]] = []
+    for item in action_queue.to_dict(orient="records"):
+        next_gate = _value_text(item.get("next_gate"))
+        help_command = _value_text(item.get("next_gate_help_command")) or _next_gate_help_command(next_gate)
+        rows.append(
+            {
+                "queue_status": _value_text(item.get("queue_status")) or "blocked",
+                "source": source,
+                "dataset": dataset,
+                "component": _value_text(item.get("component")),
+                "check": _value_text(item.get("check")),
+                "next_gate": next_gate,
+                "next_gate_help_command": help_command,
+                "reason": _value_text(item.get("reason")),
+                "recommendation": _value_text(item.get("recommendation")),
+                "pipeline_dir": str(pipeline_dir),
+            }
+        )
+    return rows
+
+
+def _action_queue_frame(rows: list[dict[str, object]]) -> pd.DataFrame:
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        ordered = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        ordered["priority"] = priority
+        if not ordered["queue_status"]:
+            ordered["queue_status"] = "blocked"
+        ordered_rows.append(ordered)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _primary_next_gate(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return ""
+    return _value_text(action_queue.iloc[0].get("next_gate"))
+
+
+def _next_gate_help_command(next_gate: str) -> str:
+    gate = _value_text(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _pipeline_runbook_markdown(
+    summary_row: pd.Series,
+    components: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> str:
+    ready_label = "yes" if _truthy(summary_row.get("ready", False)) else "no"
+    lines = [
+        "# Vendor Market Data Pipeline Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_value_text(summary_row.get('adapter'))}",
+        f"- Kind: {_value_text(summary_row.get('kind'))}",
+        f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
+        f"- Failed components: {int(_number_from_value(summary_row.get('failed_components', 0)))}",
+        f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+        "## Components",
+        "",
+        _components_table(components),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _batch_runbook_markdown(
+    summary_row: pd.Series,
+    datasets: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> str:
+    ready_label = "yes" if _truthy(summary_row.get("ready", False)) else "no"
+    lines = [
+        "# Vendor Market Data Batch Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_value_text(summary_row.get('adapter'))}",
+        f"- Kind: {_value_text(summary_row.get('kind'))}",
+        f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
+        f"- Dataset count: {int(_number_from_value(summary_row.get('dataset_count', 0)))}",
+        f"- Ready datasets: {int(_number_from_value(summary_row.get('ready_datasets', 0)))}",
+        f"- Failed datasets: {int(_number_from_value(summary_row.get('failed_datasets', 0)))}",
+        f"- Blocked actions: {int(_number_from_value(summary_row.get('blocked_action_count', 0)))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+        "## Datasets",
+        "",
+        _datasets_table(datasets),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Priority", "Source", "Dataset", "Check", "Next gate", "Help", "Recommendation"],
+        [
+            [
+                str(int(_number_from_value(row.get("priority", 0)))),
+                _value_text(row.get("source")),
+                _value_text(row.get("dataset")),
+                _value_text(row.get("check")),
+                _code(row.get("next_gate")),
+                _code(row.get("next_gate_help_command")),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in action_queue.to_dict(orient="records")
+        ],
+    )
+
+
+def _components_table(components: pd.DataFrame) -> str:
+    if components.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Component", "Ready", "Rows", "Failed checks", "Recommendation"],
+        [
+            [
+                _value_text(row.get("component")),
+                "yes" if _truthy(row.get("ready")) else "no",
+                str(int(_number_from_value(row.get("rows", 0)))),
+                str(int(_number_from_value(row.get("failed_checks", 0)))),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in components.to_dict(orient="records")
+        ],
+    )
+
+
+def _datasets_table(datasets: pd.DataFrame) -> str:
+    if datasets.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Dataset", "Ready", "Rows", "Failed components", "Recommendation"],
+        [
+            [
+                _value_text(row.get("dataset")),
+                "yes" if _truthy(row.get("ready")) else "no",
+                str(int(_number_from_value(row.get("normalized_rows", 0)))),
+                str(int(_number_from_value(row.get("failed_components", 0)))),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in datasets.to_dict(orient="records")
+        ],
+    )
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _code(value: object) -> str:
+    text = _value_text(value)
+    return f"`{text}`" if text else ""
+
+
+def _escape_cell(value: object) -> str:
+    return _value_text(value).replace("|", "\\|").replace("\n", " ")
 
 
 def _batch_summary(
@@ -595,6 +863,17 @@ def _text(row: pd.Series, column: str, fallback: str = "") -> str:
     value = row.get(column, fallback)
     if pd.isna(value):
         return fallback
+    return str(value).strip()
+
+
+def _value_text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
     return str(value).strip()
 
 

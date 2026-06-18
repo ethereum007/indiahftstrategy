@@ -69,6 +69,9 @@
 - Broker-vendor data readiness now writes manifest-tracked action queue and
   runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
   wrapper failures expose next CLI gates at the proof root.
+- Vendor market-data pipeline and batch roots now also write manifest-tracked
+  action queues and runbooks that promote nested data-readiness/comparison
+  blockers into catalog-visible next gates for Arrow.money/iRage onboarding.
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.
@@ -815,7 +818,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 867 tests.
+Current passing suite: 884 tests.
 
 ## Next Build Targets
 

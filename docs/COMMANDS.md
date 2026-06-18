@@ -3469,6 +3469,8 @@ Outputs:
 04_data_readiness\data_readiness_summary.csv
 vendor_market_data_pipeline_components.csv
 vendor_market_data_pipeline_config.json
+vendor_market_data_pipeline_action_queue.csv
+vendor_market_data_pipeline_runbook.md
 vendor_market_data_pipeline_summary.csv
 manifest.json
 ```
@@ -3478,7 +3480,10 @@ hash, mapping source, and component manifest paths. The root manifest
 fingerprints the intake, mapped-data, and data-readiness manifests, so reruns
 can prove whether a changed Arrow.money/iRage file, header, or mapping is the
 reason readiness changed. `vendor_market_data_pipeline_config.json` is the
-machine-readable handoff for strategy research or future vendor adapters.
+machine-readable handoff for strategy research or future vendor adapters. The
+root action queue and runbook promote nested data-readiness blockers into
+catalog-visible next gates, so operators do not have to inspect
+`04_data_readiness` before deciding the next command to run.
 
 For multi-day onboarding, run each raw file through the same pipeline and
 compare data-readiness evidence before walk-forward research:
@@ -3505,6 +3510,8 @@ datasets\<label>\vendor_market_data_pipeline_summary.csv
 comparison\data_readiness_comparison_summary.csv
 vendor_market_data_batch_datasets.csv
 vendor_market_data_batch_config.json
+vendor_market_data_batch_action_queue.csv
+vendor_market_data_batch_runbook.md
 vendor_market_data_batch_summary.csv
 manifest.json
 ```
@@ -3513,7 +3520,9 @@ The batch summary adds `unique_source_files`, `unique_header_fingerprints`, and
 `mapping_sources`; the batch manifest fingerprints each dataset pipeline
 manifest plus the comparison manifest. `vendor_market_data_batch_config.json`
 keeps the accepted dataset list, comparison thresholds, and per-dataset
-fingerprints together for walk-forward research handoff.
+fingerprints together for walk-forward research handoff. The batch action queue
+promotes per-dataset pipeline blockers and comparison blockers to the batch
+root, including the exact `python -m hft_cli ... --help` next-gate command.
 
 To run the vendor batch proof and broker-readiness review as one auditable
 handoff recipe:

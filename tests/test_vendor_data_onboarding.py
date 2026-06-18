@@ -57,10 +57,21 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     components = report.components.set_index("component")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     config = json.loads((out_dir / "vendor_market_data_pipeline_config.json").read_text(encoding="utf-8"))
+    action_queue = pd.read_csv(out_dir / "vendor_market_data_pipeline_action_queue.csv")
+    runbook = (out_dir / "vendor_market_data_pipeline_runbook.md").read_text(encoding="utf-8")
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert report.ready
     assert summary["normalized_rows"] == 2
     assert summary["mapping_coverage"] == 1.0
     assert summary["mapping_source"] == "vendor_intake_draft"
+    assert summary["blocked_action_count"] == 0
+    assert summary["next_gate"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert action_queue.empty
+    assert "next_gate_help_command" in action_queue.columns
+    assert "# Vendor Market Data Pipeline Runbook" in runbook
+    assert "- Ready: yes" in runbook
     assert summary["source_file_sha256"] == manifest["inputs"]["input"]["sha256"]
     assert len(summary["source_header_sha256"]) == 64
     assert len(summary["mapping_draft_sha256"]) == 64
@@ -84,6 +95,8 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert (out_dir / "02_normalized" / "normalized_ticks.csv").exists()
     assert (out_dir / "03_diagnostics" / "diagnostic_summary.csv").exists()
     assert (out_dir / "04_data_readiness" / "data_readiness_summary.csv").exists()
+    assert "vendor_market_data_pipeline_action_queue.csv" in artifact_paths
+    assert "vendor_market_data_pipeline_runbook.md" in artifact_paths
     assert manifest["run_type"] == "vendor_market_data_pipeline"
 
 
@@ -110,6 +123,9 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     summary = report.summary.iloc[0]
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     config = json.loads((out_dir / "vendor_market_data_batch_config.json").read_text(encoding="utf-8"))
+    action_queue = pd.read_csv(out_dir / "vendor_market_data_batch_action_queue.csv")
+    runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(encoding="utf-8")
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert report.ready
     assert summary["dataset_count"] == 2
     assert summary["unique_source_files"] == 2
@@ -119,6 +135,14 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert summary["unique_mapping_drafts"] == 1
     assert summary["mapping_sources"] == "vendor_intake_draft"
     assert summary["comparison_accepted"]
+    assert summary["blocked_action_count"] == 0
+    assert summary["next_gate"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert action_queue.empty
+    assert "next_gate_help_command" in action_queue.columns
+    assert "# Vendor Market Data Batch Runbook" in runbook
+    assert "- Ready: yes" in runbook
     assert set(report.datasets["dataset"]) == {"day1", "day2"}
     assert report.datasets["source_file_sha256"].nunique() == 2
     assert report.datasets["source_header_sha256"].nunique() == 1
@@ -140,6 +164,8 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert config["datasets"][0]["data_readiness_manifest_path"].endswith("manifest.json")
     assert (out_dir / "datasets" / "day1" / "vendor_market_data_pipeline_summary.csv").exists()
     assert (out_dir / "comparison" / "data_readiness_comparison_summary.csv").exists()
+    assert "vendor_market_data_batch_action_queue.csv" in artifact_paths
+    assert "vendor_market_data_batch_runbook.md" in artifact_paths
     assert manifest["run_type"] == "vendor_market_data_batch_pipeline"
 
 
@@ -162,12 +188,21 @@ def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_p
     )
 
     checks = pd.read_csv(out_dir / "comparison" / "data_readiness_comparison_checks.csv")
+    action_queue = pd.read_csv(out_dir / "vendor_market_data_batch_action_queue.csv")
+    runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(encoding="utf-8")
     summary = report.summary.iloc[0]
     assert not report.ready
     assert summary["ready_datasets"] == 2
     assert summary["unique_source_files"] == 1
     assert not summary["comparison_accepted"]
+    assert summary["blocked_action_count"] > 0
+    assert summary["next_gate"] == "pipeline-vendor-market-data-batch"
+    assert summary["next_gate_help_command"] == "python -m hft_cli pipeline-vendor-market-data-batch --help"
     assert "unique_source_files" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert "unique_source_files" in set(action_queue["check"])
+    assert "pipeline-vendor-market-data-batch" in set(action_queue["next_gate"])
+    assert "# Vendor Market Data Batch Runbook" in runbook
+    assert "- Ready: no" in runbook
 
 
 def test_vendor_market_data_pipeline_onboards_option_chain_file(tmp_path):
@@ -242,9 +277,18 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
 
     summary = pd.read_csv(out_dir / "vendor_market_data_pipeline_summary.csv")
     components = pd.read_csv(out_dir / "vendor_market_data_pipeline_components.csv")
+    action_queue = pd.read_csv(out_dir / "vendor_market_data_pipeline_action_queue.csv")
+    runbook = (out_dir / "vendor_market_data_pipeline_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "blocked_action_count"] > 0
+    assert str(summary.loc[0, "next_gate"])
+    assert str(summary.loc[0, "next_gate_help_command"]).startswith("python -m hft_cli ")
     assert "not_ready" in set(components["status"])
+    assert not action_queue.empty
+    assert str(action_queue.loc[0, "next_gate_help_command"]).startswith("python -m hft_cli ")
+    assert "# Vendor Market Data Pipeline Runbook" in runbook
+    assert "- Ready: no" in runbook
     assert (out_dir / "04_data_readiness" / "data_readiness_summary.csv").exists()
 
 
@@ -276,6 +320,14 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
 
     summary = pd.read_csv(out_dir / "vendor_market_data_batch_summary.csv")
     checks = pd.read_csv(out_dir / "comparison" / "data_readiness_comparison_checks.csv")
+    action_queue = pd.read_csv(out_dir / "vendor_market_data_batch_action_queue.csv")
+    runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "blocked_action_count"] > 0
+    assert summary.loc[0, "next_gate"] == "pipeline-vendor-market-data-batch"
+    assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli pipeline-vendor-market-data-batch --help"
     assert "dataset_count" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert "dataset_count" in set(action_queue["check"])
+    assert "# Vendor Market Data Batch Runbook" in runbook
+    assert "- Ready: no" in runbook
