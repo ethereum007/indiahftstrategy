@@ -77,7 +77,9 @@ handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
 summaries, dirty runs, and unfingerprinted inputs.
 `experiment_catalog_hygiene_gaps.csv` names each catalog hygiene gap with the
 run directory, gap type, and recommended fix before the catalog is reused as
-strategy, broker, route, or live-dryrun proof.
+strategy, broker, route, or live-dryrun proof. When the source summary exposes
+`next_gate` and `next_gate_help_command`, those repair hints are carried into
+the hygiene sidecar and action-plan JSON.
 `experiment_catalog_action_queue.csv` consolidates cataloged `next_gate` and
 `next_gate_help_command` signals from scorecards, route reviews, and other
 summary files into one priority-ordered scheduler queue. It also promotes

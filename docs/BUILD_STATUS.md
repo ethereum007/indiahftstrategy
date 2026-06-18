@@ -106,6 +106,9 @@
   `experiment_catalog_hygiene_gaps.csv` plus runbook/action-plan hygiene
   entries, naming each failed summary, missing summary, dirty run, and
   unfingerprinted input with a recommended fix.
+- Catalog hygiene gaps now carry source-summary `next_gate` and
+  `next_gate_help_command` repair hints when available, keeping failed
+  summary remediation schedulable from the hygiene sidecar.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

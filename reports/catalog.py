@@ -413,6 +413,8 @@ HYGIENE_GAP_COLUMNS = [
     "summary_status",
     "git_dirty",
     "input_unfingerprinted_count",
+    "next_gate",
+    "next_gate_help_command",
     "recommendation",
     "generated_at_utc",
 ]
@@ -465,6 +467,12 @@ def _hygiene_gap(row: dict[str, Any], gap_type: str, recommendation: str) -> dic
         "summary_status": row.get("summary_status"),
         "git_dirty": row.get("git_dirty"),
         "input_unfingerprinted_count": _int_metric(row.get("input_unfingerprinted_count")),
+        "next_gate": _first_text(row, "summary_next_gate", "summary_best_next_gate"),
+        "next_gate_help_command": _first_text(
+            row,
+            "summary_next_gate_help_command",
+            "summary_best_next_gate_help_command",
+        ),
         "recommendation": recommendation,
         "generated_at_utc": _text(row.get("generated_at_utc")),
     }
@@ -566,6 +574,8 @@ def _hygiene_gap_plan_row(row: dict[str, Any]) -> dict[str, Any]:
         "summary_status": _jsonable(row.get("summary_status")),
         "git_dirty": _jsonable(row.get("git_dirty")),
         "input_unfingerprinted_count": _int_metric(row.get("input_unfingerprinted_count")),
+        "next_gate": _text(row.get("next_gate")),
+        "next_gate_help_command": _text(row.get("next_gate_help_command")),
         "recommendation": _text(row.get("recommendation")),
         "generated_at_utc": _text(row.get("generated_at_utc")),
     }
@@ -755,6 +765,8 @@ def _hygiene_gap_table(hygiene_gaps: pd.DataFrame) -> str:
         "run_type",
         "summary_file",
         "input_unfingerprinted_count",
+        "next_gate",
+        "next_gate_help_command",
         "recommendation",
     ]
     headers = [
@@ -763,6 +775,8 @@ def _hygiene_gap_table(hygiene_gaps: pd.DataFrame) -> str:
         "Run Type",
         "Summary File",
         "Unfingerprinted Inputs",
+        "Next Gate",
+        "Help Command",
         "Recommendation",
     ]
     rows = [

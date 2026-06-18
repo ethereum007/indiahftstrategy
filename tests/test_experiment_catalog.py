@@ -77,6 +77,8 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
         "summary_status",
         "git_dirty",
         "input_unfingerprinted_count",
+        "next_gate",
+        "next_gate_help_command",
         "recommendation",
         "generated_at_utc",
     ]
@@ -131,7 +133,15 @@ def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
         root / "stress",
         run_type="stress_report",
         summary_name="stress_summary.csv",
-        summary_row={"all_scenarios_passed": False, "failed_rows": 2, "worst_stressed_net_pnl": -10.0},
+        summary_row={
+            "all_scenarios_passed": False,
+            "failed_rows": 2,
+            "worst_stressed_net_pnl": -10.0,
+            "next_gate": "review-strategy-evidence --profile ops_launch --require-file-inputs",
+            "next_gate_help_command": (
+                "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+            ),
+        },
     )
     missing_summary = root / "missing_summary"
     missing_summary.mkdir(parents=True)
@@ -181,6 +191,12 @@ def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
     }
     rows = gaps.set_index("gap_type")
     assert rows.loc["summary_failed", "recommendation"] == "resolve_failed_summary_status"
+    assert rows.loc["summary_failed", "next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
+    assert rows.loc["summary_failed", "next_gate_help_command"] == (
+        "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+    )
     assert rows.loc["missing_summary", "recommendation"] == "write_recognized_summary_artifact"
     assert rows.loc["dirty_git", "recommendation"] == "rerun_from_clean_git_state"
     assert rows.loc["unfingerprinted_inputs", "input_unfingerprinted_count"] == 1
@@ -191,6 +207,9 @@ def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
     action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
     assert action_plan["hygiene_gap_count"] == 4
     assert action_plan["top_hygiene_gap"]["gap_type"] == "summary_failed"
+    assert action_plan["top_hygiene_gap"]["next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
     assert {gap["gap_type"] for gap in action_plan["hygiene_gaps"]} == set(gaps["gap_type"])
 
 
