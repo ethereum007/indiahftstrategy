@@ -82,6 +82,13 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert "mapped_data_manifest" in manifest["inputs"]
     assert "data_readiness_manifest" in manifest["inputs"]
     assert config["ready"]
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == ""
+    assert config["next_gate_help_command"] == ""
+    assert config["next_actions"] == []
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"] == []
     assert config["source"]["file_sha256"] == summary["source_file_sha256"]
     assert config["source"]["header_sha256"] == summary["source_header_sha256"]
     assert config["mapping"]["source"] == "vendor_intake_draft"
@@ -154,6 +161,13 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert len(manifest["inputs"]["dataset_manifests"]) == 2
     assert "comparison_manifest" in manifest["inputs"]
     assert config["ready"]
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == ""
+    assert config["next_gate_help_command"] == ""
+    assert config["next_actions"] == []
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"] == []
     assert config["dataset_count"] == 2
     assert config["unique_source_files"] == 2
     assert config["source_file_fingerprint_coverage"] == 1.0
@@ -194,6 +208,7 @@ def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_p
     checks = pd.read_csv(out_dir / "comparison" / "data_readiness_comparison_checks.csv")
     action_queue = pd.read_csv(out_dir / "vendor_market_data_batch_action_queue.csv")
     runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(encoding="utf-8")
+    config = json.loads((out_dir / "vendor_market_data_batch_config.json").read_text(encoding="utf-8"))
     summary = report.summary.iloc[0]
     assert not report.ready
     assert summary["ready_datasets"] == 2
@@ -205,6 +220,14 @@ def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_p
     assert "unique_source_files" in set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert "unique_source_files" in set(action_queue["check"])
     assert "pipeline-vendor-market-data-batch" in set(action_queue["next_gate"])
+    assert config["blocked_action_count"] == len(action_queue)
+    assert config["ready_action_count"] == 0
+    assert config["next_gate"] == "pipeline-vendor-market-data-batch"
+    assert config["next_gate_help_command"] == "python -m hft_cli pipeline-vendor-market-data-batch --help"
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"][0]["check"] == "unique_source_files"
+    assert config["blocked_actions"][0]["source"] == "comparison"
+    assert config["blocked_actions"][0]["next_gate"] == "pipeline-vendor-market-data-batch"
     assert "# Vendor Market Data Batch Runbook" in runbook
     assert "- Ready: no" in runbook
 
@@ -284,6 +307,7 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     components = pd.read_csv(out_dir / "vendor_market_data_pipeline_components.csv")
     action_queue = pd.read_csv(out_dir / "vendor_market_data_pipeline_action_queue.csv")
     runbook = (out_dir / "vendor_market_data_pipeline_runbook.md").read_text(encoding="utf-8")
+    config = json.loads((out_dir / "vendor_market_data_pipeline_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
@@ -293,6 +317,13 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     assert "not_ready" in set(components["status"])
     assert not action_queue.empty
     assert str(action_queue.loc[0, "next_gate_help_command"]).startswith("python -m hft_cli ")
+    assert config["blocked_action_count"] == len(action_queue)
+    assert config["ready_action_count"] == 0
+    assert config["next_gate"] == summary.loc[0, "next_gate"]
+    assert config["next_gate_help_command"] == summary.loc[0, "next_gate_help_command"]
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"][0]["next_gate"] == summary.loc[0, "next_gate"]
+    assert config["blocked_actions"][0]["next_gate_help_command"] == summary.loc[0, "next_gate_help_command"]
     assert "# Vendor Market Data Pipeline Runbook" in runbook
     assert "- Ready: no" in runbook
     assert "- Market: india_nse_index_derivatives" in runbook
@@ -329,6 +360,7 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
     checks = pd.read_csv(out_dir / "comparison" / "data_readiness_comparison_checks.csv")
     action_queue = pd.read_csv(out_dir / "vendor_market_data_batch_action_queue.csv")
     runbook = (out_dir / "vendor_market_data_batch_runbook.md").read_text(encoding="utf-8")
+    config = json.loads((out_dir / "vendor_market_data_batch_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
@@ -337,6 +369,12 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
     assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli pipeline-vendor-market-data-batch --help"
     assert "dataset_count" in set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert "dataset_count" in set(action_queue["check"])
+    assert config["blocked_action_count"] == len(action_queue)
+    assert config["next_gate"] == "pipeline-vendor-market-data-batch"
+    assert config["blocked_actions"][0]["check"] == "dataset_count"
+    assert config["blocked_actions"][0]["next_gate_help_command"] == (
+        "python -m hft_cli pipeline-vendor-market-data-batch --help"
+    )
     assert "# Vendor Market Data Batch Runbook" in runbook
     assert "- Ready: no" in runbook
     assert "- Market: india_nse_index_derivatives" in runbook

@@ -3486,6 +3486,8 @@ the machine-readable handoff for strategy research or future vendor adapters.
 The root action queue and runbook promote nested data-readiness blockers into
 catalog-visible next gates, so operators do not have to inspect
 `04_data_readiness` before deciding the next command to run.
+`vendor_market_data_pipeline_config.json` also mirrors the queue as
+`next_actions`, `ready_actions`, and `blocked_actions` for scheduler handoff.
 
 For multi-day onboarding, run each raw file through the same pipeline and
 compare data-readiness evidence before walk-forward research:
@@ -3526,6 +3528,8 @@ comparison thresholds, and per-dataset fingerprints together for walk-forward
 research handoff. The batch action queue promotes per-dataset pipeline blockers
 and comparison blockers to the batch root, including the exact
 `python -m hft_cli ... --help` next-gate command.
+`vendor_market_data_batch_config.json` also mirrors the promoted queue as
+`next_actions`, `ready_actions`, and `blocked_actions`.
 
 To run the vendor batch proof and broker-readiness review as one auditable
 handoff recipe:

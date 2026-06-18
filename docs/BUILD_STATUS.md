@@ -75,6 +75,9 @@
 - Vendor market-data pipeline and batch summaries now expose explicit market
   identity, so catalog queues and future US-market expansion can filter vendor
   onboarding evidence without opening config sidecars.
+- Vendor market-data pipeline and batch config JSON now mirrors root action
+  queues as `next_actions`, `ready_actions`, and `blocked_actions`, so
+  schedulers can consume vendor onboarding blockers without parsing CSV files.
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.

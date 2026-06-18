@@ -158,7 +158,7 @@ def write_vendor_market_data_pipeline(
         _pipeline_runbook_markdown(summary.iloc[0], components, action_queue),
         encoding="utf-8",
     )
-    pipeline_config = _pipeline_config(summary.iloc[0], components, thresholds, config)
+    pipeline_config = _pipeline_config(summary.iloc[0], components, action_queue, thresholds, config)
     (out / "vendor_market_data_pipeline_config.json").write_text(
         json.dumps(pipeline_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -288,7 +288,7 @@ def write_vendor_market_data_batch_pipeline(
         _batch_runbook_markdown(summary.iloc[0], datasets, action_queue),
         encoding="utf-8",
     )
-    batch_config = _batch_config(summary.iloc[0], datasets, thresholds, config)
+    batch_config = _batch_config(summary.iloc[0], datasets, action_queue, thresholds, config)
     (out / "vendor_market_data_batch_config.json").write_text(
         json.dumps(batch_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -719,6 +719,7 @@ def _batch_summary(
 def _pipeline_config(
     row: pd.Series,
     components: pd.DataFrame,
+    action_queue: pd.DataFrame,
     thresholds: DataReadinessThresholds,
     config: VendorMarketDataPipelineConfig,
 ) -> dict[str, Any]:
@@ -776,6 +777,13 @@ def _pipeline_config(
         },
         "components": component_rows,
         "failed_components": int(_number(row, "failed_components", fallback=0.0)),
+        "ready_action_count": int(_number(row, "ready_action_count", fallback=0.0)),
+        "blocked_action_count": int(_number(row, "blocked_action_count", fallback=0.0)),
+        "next_gate": _text(row, "next_gate"),
+        "next_gate_help_command": _text(row, "next_gate_help_command"),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "recommendation": _text(row, "recommendation"),
     }
 
@@ -783,6 +791,7 @@ def _pipeline_config(
 def _batch_config(
     row: pd.Series,
     datasets: pd.DataFrame,
+    action_queue: pd.DataFrame,
     thresholds: DataReadinessComparisonThresholds,
     config: VendorMarketDataPipelineConfig,
 ) -> dict[str, Any]:
@@ -827,8 +836,43 @@ def _batch_config(
             "thresholds": asdict(thresholds),
         },
         "datasets": dataset_rows,
+        "ready_action_count": int(_number(row, "ready_action_count", fallback=0.0)),
+        "blocked_action_count": int(_number(row, "blocked_action_count", fallback=0.0)),
+        "next_gate": _text(row, "next_gate"),
+        "next_gate_help_command": _text(row, "next_gate_help_command"),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "recommendation": _text(row, "recommendation"),
     }
+
+
+def _action_records(frame: pd.DataFrame) -> list[dict[str, object]]:
+    if frame.empty:
+        return []
+    return [_jsonable_record(row) for row in frame.to_dict(orient="records")]
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    record: dict[str, object] = {}
+    for key, value in row.items():
+        if isinstance(value, Path):
+            record[str(key)] = str(value)
+            continue
+        try:
+            if pd.isna(value):
+                record[str(key)] = None
+                continue
+        except (TypeError, ValueError):
+            pass
+        record[str(key)] = value
+    return record
 
 
 def _diagnostics_ready(diagnostics: DiagnosticResult) -> bool:
