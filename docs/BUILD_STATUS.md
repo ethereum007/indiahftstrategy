@@ -50,6 +50,9 @@
 - Strategy readiness scorecard CSV/JSON outputs include `next_gate_help_command`
   hints so every blocked research or ops lane exposes the exact CLI entry point
   to inspect before scheduling the next run.
+- Strategy readiness next-actions JSON now exposes root `next_gate` and
+  `next_gate_help_command` aliases for the best ranked action, matching the
+  downstream data, route, and broker handoff configs.
 - Strategy readiness scorecard now writes a manifest-tracked
   `strategy_scorecard_runbook.md` handoff with ready actions, blocked actions,
   open gaps, and the next CLI gate/help command for review.

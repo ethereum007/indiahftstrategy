@@ -347,7 +347,8 @@ to `walkforward-imbalance-replay`, a missing broker dry-run packet can point to
 `review-route-readiness`.
 `strategy_scorecard_next_actions.json` mirrors the ranked next actions and
 open gaps in a machine-readable sidecar for schedulers or follow-up runbooks.
-It includes `schema_version`, `ready_actions`, `blocked_actions`, and action
+It includes `schema_version`, root `next_gate`/`next_gate_help_command` aliases
+for the best ranked action, `ready_actions`, `blocked_actions`, and action
 counts so automation can consume ready scale-up lanes separately from blocked
 research or broker-proof lanes.
 `strategy_scorecard_action_queue.csv` flattens those ranked actions into one

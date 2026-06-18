@@ -318,6 +318,8 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "best_next_required_run_type": str(summary_row.get("best_next_required_run_type", "")),
         "best_next_gate": str(summary_row.get("best_next_gate", "")),
         "best_next_gate_help_command": str(summary_row.get("best_next_gate_help_command", "")),
+        "next_gate": str(summary_row.get("best_next_gate", "")),
+        "next_gate_help_command": str(summary_row.get("best_next_gate_help_command", "")),
         "recommendation": str(summary_row.get("recommendation", "")),
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),

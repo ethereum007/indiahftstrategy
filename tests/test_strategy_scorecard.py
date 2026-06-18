@@ -99,6 +99,8 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["schema_version"] == 1
     assert report.config["best_profile"] == "leadlag"
+    assert report.config["next_gate"] == "plan-scaleup"
+    assert report.config["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["ready_action_count"] == 1
     assert report.config["blocked_action_count"] == 1
     assert report.config["gap_count"] == len(report.config["gaps"])
@@ -147,6 +149,8 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
     assert config == report.config
     assert config["schema_version"] == 1
+    assert config["next_gate"] == "plan-scaleup"
+    assert config["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert config["ready_action_count"] == 1
     assert config["blocked_action_count"] == 0
     assert config["ready_actions"][0]["profile"] == "leadlag"
@@ -193,6 +197,8 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     assert queue.loc[0, "queue_status"] == "blocked"
     assert queue.loc[0, "next_required_run_type"] == "imbalance_replay_walkforward"
     assert queue.loc[0, "next_gate"] == "walkforward-imbalance-replay"
+    assert config["next_gate"] == "walkforward-imbalance-replay"
+    assert config["next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
     assert config["ready_action_count"] == 0
     assert config["blocked_action_count"] == 1
     open_gap_count = int(gaps["gap"].fillna("").astype(str).str.len().gt(0).sum())
@@ -236,6 +242,8 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert report.config["best_next_gate"] == "review-route-readiness"
     assert report.config["best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
+    assert report.config["next_gate"] == "review-route-readiness"
+    assert report.config["next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert report.config["ready_action_count"] == 1
     assert report.config["blocked_action_count"] == 0
     assert report.config["ready_actions"][0]["next_gate"] == "review-route-readiness"
