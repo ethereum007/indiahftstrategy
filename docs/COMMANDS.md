@@ -75,6 +75,14 @@ handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
 `action_queue_unknown_count` for scheduler-level gating. It also carries
 `hygiene_gap_count` and per-gap hygiene totals for failed summaries, missing
 summaries, dirty runs, and unfingerprinted inputs.
+For broker dispatch round-trip proof, the summary, action plan, and runbook
+also carry `broker_roundtrip_runs`, `broker_roundtrip_passed_runs`,
+`broker_roundtrip_portfolio_provided_runs`,
+`broker_roundtrip_portfolio_ready_runs`,
+`broker_roundtrip_portfolio_safe_runs`, and
+`broker_roundtrip_portfolio_breach_runs` so final Arrow.money/iRage dry-run
+review can prove whether dispatch notional stayed inside the selected strategy
+portfolio allocation.
 `experiment_catalog_hygiene_gaps.csv` names each catalog hygiene gap with the
 run directory, gap type, and recommended fix before the catalog is reused as
 strategy, broker, route, or live-dryrun proof. When the source summary exposes

@@ -206,6 +206,10 @@
   `primary_blocker`.
 - Experiment catalog summaries now expose ready, blocked, unknown, and total
   action-queue counts for scheduler gating without opening the queue CSV.
+- Experiment catalog summaries, action plans, and runbooks now expose broker
+  dispatch round-trip portfolio proof counts, including portfolio-provided,
+  portfolio-ready, portfolio-safe, and portfolio-breach runs for Arrow.money or
+  iRage dry-run launch review.
 - Experiment catalogs now write manifest-tracked
   `experiment_catalog_action_plan.json`, a typed ready/blocked/unknown action
   plan with top actions and scheduler recommendation for automation handoff.

@@ -253,6 +253,7 @@ def _catalog_summary(
 ) -> pd.DataFrame:
     action_counts = _action_queue_counts(action_queue)
     hygiene_counts = _hygiene_gap_counts(hygiene_gaps)
+    broker_roundtrip_counts = _broker_roundtrip_portfolio_counts(catalog)
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -271,6 +272,7 @@ def _catalog_summary(
                     "input_unfingerprinted_count": 0,
                     "runs_with_directory_inputs": 0,
                     "runs_with_unfingerprinted_inputs": 0,
+                    **broker_roundtrip_counts,
                     **action_counts,
                     **hygiene_counts,
                 }
@@ -294,11 +296,59 @@ def _catalog_summary(
                 "input_unfingerprinted_count": int(catalog["input_unfingerprinted_count"].sum()),
                 "runs_with_directory_inputs": int((catalog["input_directory_count"] > 0).sum()),
                 "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
+                **broker_roundtrip_counts,
                 **action_counts,
                 **hygiene_counts,
             }
         ]
     )
+
+
+def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "broker_roundtrip_runs": 0,
+        "broker_roundtrip_passed_runs": 0,
+        "broker_roundtrip_portfolio_provided_runs": 0,
+        "broker_roundtrip_portfolio_ready_runs": 0,
+        "broker_roundtrip_portfolio_safe_runs": 0,
+        "broker_roundtrip_portfolio_breach_runs": 0,
+    }
+    if catalog.empty or "run_type" not in catalog.columns:
+        return keys
+    frame = catalog.loc[catalog["run_type"].astype(str) == "broker_dispatch_roundtrip"].copy()
+    if frame.empty:
+        return keys
+    provided = _bool_column(frame, "summary_strategy_portfolio_provided")
+    ready = _bool_column(frame, "summary_strategy_portfolio_ready")
+    passed = _bool_column(frame, "summary_status")
+    dispatch_notional = _numeric_column(frame, "summary_dispatch_total_notional")
+    selected_allocation = _numeric_column(frame, "summary_strategy_portfolio_selected_allocation_notional")
+    valid_allocation = selected_allocation > 0.0
+    breach = provided & valid_allocation & (dispatch_notional > selected_allocation)
+    safe = provided & ready & passed & valid_allocation & (dispatch_notional <= selected_allocation)
+    keys.update(
+        {
+            "broker_roundtrip_runs": int(len(frame)),
+            "broker_roundtrip_passed_runs": int(passed.sum()),
+            "broker_roundtrip_portfolio_provided_runs": int(provided.sum()),
+            "broker_roundtrip_portfolio_ready_runs": int((provided & ready).sum()),
+            "broker_roundtrip_portfolio_safe_runs": int(safe.sum()),
+            "broker_roundtrip_portfolio_breach_runs": int(breach.sum()),
+        }
+    )
+    return keys
+
+
+def _bool_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(False, index=frame.index)
+    return frame[column].map(_to_bool)
+
+
+def _numeric_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(0.0, index=frame.index)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
 
 
 ACTION_QUEUE_COLUMNS = [
@@ -558,6 +608,20 @@ def _catalog_action_plan(
         "missing_summary_runs": _int_metric(summary_row.get("missing_summary_runs")),
         "catalog_hygiene_ready": len(gaps) == 0,
         "hygiene_gap_count": len(gaps),
+        "broker_roundtrip_runs": _int_metric(summary_row.get("broker_roundtrip_runs")),
+        "broker_roundtrip_passed_runs": _int_metric(summary_row.get("broker_roundtrip_passed_runs")),
+        "broker_roundtrip_portfolio_provided_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_provided_runs")
+        ),
+        "broker_roundtrip_portfolio_ready_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_ready_runs")
+        ),
+        "broker_roundtrip_portfolio_safe_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_safe_runs")
+        ),
+        "broker_roundtrip_portfolio_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_breach_runs")
+        ),
         "action_queue_count": len(actions),
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
@@ -968,6 +1032,27 @@ def _catalog_runbook_markdown(
         f"- Unfingerprinted inputs: {_int_metric(summary_row.get('input_unfingerprinted_count'))}",
         f"- Runs with directory inputs: {_int_metric(summary_row.get('runs_with_directory_inputs'))}",
         f"- Runs with unfingerprinted inputs: {_int_metric(summary_row.get('runs_with_unfingerprinted_inputs'))}",
+        "",
+        "## Broker Round-Trip Portfolio Proofs",
+        "",
+        f"- Broker round-trip runs: {_int_metric(summary_row.get('broker_roundtrip_runs'))}",
+        f"- Passed broker round-trip runs: {_int_metric(summary_row.get('broker_roundtrip_passed_runs'))}",
+        (
+            "- Portfolio-provided broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_provided_runs'))}"
+        ),
+        (
+            "- Portfolio-ready broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_ready_runs'))}"
+        ),
+        (
+            "- Portfolio-safe broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_safe_runs'))}"
+        ),
+        (
+            "- Portfolio-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_breach_runs'))}"
+        ),
         "",
         "## Hygiene Gaps",
         "",
