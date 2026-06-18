@@ -89,8 +89,11 @@ preserving sidecar context columns such as `action_source_file`,
 `action_source`, `dataset`, `component`, `check`, and `pipeline_dir`.
 `experiment_catalog_action_plan.json` mirrors that queue as typed
 `ready_actions`, `blocked_actions`, `unknown_actions`, top actions, counts, and
-a scheduler recommendation for automation. Its `catalog_hygiene_ready` flag and
-recommendation prioritize hygiene repair before scheduling queued actions.
+a scheduler recommendation for automation. It also exposes root-level
+`next_gate`, `next_gate_help_command`, `primary_action_status`, and
+`primary_action` fields so schedulers can pick one primary handoff without
+parsing every action array. Its `catalog_hygiene_ready` flag and recommendation
+prioritize hygiene repair before scheduling queued actions.
 `experiment_catalog_runbook.md` mirrors the same queue with catalog readiness
 and input-provenance totals for human operator review.
 Use `--fail-on-blocked-actions` to return exit code 2 when blocked or unknown

@@ -532,6 +532,11 @@ def _catalog_action_plan(
         for action in actions
         if action["queue_status"] not in {"ready", "blocked"}
     ]
+    primary_action, primary_action_status = _primary_catalog_action(
+        ready_actions,
+        blocked_actions,
+        unknown_actions,
+    )
     return {
         "schema_version": 1,
         "run_count": _int_metric(summary_row.get("run_count")),
@@ -544,6 +549,10 @@ def _catalog_action_plan(
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
         "unknown_action_count": len(unknown_actions),
+        "next_gate": _text(primary_action.get("next_gate")),
+        "next_gate_help_command": _text(primary_action.get("next_gate_help_command")),
+        "primary_action_status": primary_action_status,
+        "primary_action": primary_action,
         "scheduler_recommendation": _action_plan_recommendation(
             gaps,
             ready_actions,
@@ -558,7 +567,22 @@ def _catalog_action_plan(
         "top_hygiene_gap": gaps[0] if gaps else {},
         "top_ready_action": ready_actions[0] if ready_actions else {},
         "top_blocked_action": blocked_actions[0] if blocked_actions else {},
+        "top_unknown_action": unknown_actions[0] if unknown_actions else {},
     }
+
+
+def _primary_catalog_action(
+    ready_actions: list[dict[str, Any]],
+    blocked_actions: list[dict[str, Any]],
+    unknown_actions: list[dict[str, Any]],
+) -> tuple[dict[str, Any], str]:
+    if ready_actions:
+        return ready_actions[0], "ready"
+    if blocked_actions:
+        return blocked_actions[0], "blocked"
+    if unknown_actions:
+        return unknown_actions[0], "unknown"
+    return {}, ""
 
 
 def _action_plan_row(row: dict[str, Any]) -> dict[str, Any]:

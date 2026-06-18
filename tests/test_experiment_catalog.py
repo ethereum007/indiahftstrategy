@@ -124,6 +124,10 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert action_plan["hygiene_gap_count"] == 0
     assert action_plan["hygiene_gaps"] == []
     assert action_plan["scheduler_recommendation"] == "no_catalog_actions"
+    assert action_plan["next_gate"] == ""
+    assert action_plan["next_gate_help_command"] == ""
+    assert action_plan["primary_action_status"] == ""
+    assert action_plan["primary_action"] == {}
     assert action_plan["next_actions"] == []
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
@@ -435,6 +439,10 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert action_plan["unknown_action_count"] == 0
     assert action_plan["catalog_hygiene_ready"] is False
     assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps_before_scheduling_actions"
+    assert action_plan["next_gate"] == "plan-scaleup"
+    assert action_plan["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
+    assert action_plan["primary_action_status"] == "ready"
+    assert action_plan["primary_action"]["strategy"] == "lead_lag_taker"
     assert action_plan["ready_actions"][0]["next_gate"] == "plan-scaleup"
     assert action_plan["blocked_actions"][0]["next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
@@ -503,6 +511,10 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
     assert action_plan["catalog_hygiene_ready"] is False
     assert action_plan["scheduler_recommendation"] == "repair_catalog_hygiene_gaps_before_scheduling_actions"
+    assert action_plan["next_gate"] == "audit-adapter-schema"
+    assert action_plan["next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["action_source_file"] == "broker_readiness_action_queue.csv"
     assert action_plan["blocked_actions"][0]["next_gate"] == "audit-adapter-schema"
     assert action_plan["blocked_actions"][0]["action_source_file"] == "broker_readiness_action_queue.csv"
     assert action_plan["blocked_actions"][0]["component"] == "schema_audit"

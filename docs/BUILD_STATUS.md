@@ -117,6 +117,10 @@
 - Experiment catalogs now write `experiment_catalog_action_queue.csv`, a
   consolidated scheduler queue of cataloged next-gate/help signals across
   scorecards, route reviews, and future summary-bearing handoffs.
+- `experiment_catalog_action_plan.json` now exposes root-level `next_gate`,
+  `next_gate_help_command`, `primary_action_status`, and `primary_action`
+  fields so automation can schedule the highest-priority ready or blocked
+  catalog handoff without parsing every action array.
 - Experiment catalogs now write a manifest-tracked
   `experiment_catalog_runbook.md` with readiness, input-provenance totals, and
   the consolidated next-action queue for operator review.
