@@ -238,7 +238,9 @@ def _summary(
     checks: pd.DataFrame,
     config: OrderMappingDraftConfig,
 ) -> pd.DataFrame:
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed = int(len(failed_rows)) if not checks.empty else 0
     required = int(checks["required"].astype(bool).sum()) if not checks.empty else 0
     mapped_required = int((checks["required"].astype(bool) & checks["mapped"].astype(bool)).sum())
     defaulted = int((checks["default_present"].astype(bool)).sum()) if not checks.empty else 0
@@ -255,10 +257,51 @@ def _summary(
                 "mapped_required_columns": mapped_required,
                 "defaulted_columns": defaulted,
                 "unmapped_required_columns": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "target_column"),
+                "primary_blocker_operator": "mapped",
+                "primary_blocker_threshold": "source_or_default",
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "output_file": config.output_filename,
             }
         ]
     )
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    failed_mask = ~checks["passed"].map(_to_bool)
+    return checks.loc[failed_mask].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    target = _check_value(row, "target_column")
+    return f"unmapped_required:{target}" if target else ""
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row[column])
 
 
 def _is_required(target: str, required_keys: set[str], optional_keys: set[str]) -> bool:
@@ -341,6 +384,20 @@ def _key_lookup(columns: list[str]) -> dict[str, str]:
     for column in columns:
         lookup.setdefault(_key(column), column)
     return lookup
+
+
+def _to_bool(value: object) -> bool:
+    if pd.isna(value):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
+def _clean(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _key(value: str) -> str:

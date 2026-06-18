@@ -2045,6 +2045,10 @@ manifest.json
 The draft marks suggested mappings, manual defaults, optional gaps, and
 unmapped required vendor columns before any broker-specific upload file is
 generated.
+`order_mapping_draft_summary.csv` exposes `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
+the first unmapped required Arrow.money/iRage vendor column is schedulable from
+the summary row.
 
 ## Mapped Broker Order Export
 

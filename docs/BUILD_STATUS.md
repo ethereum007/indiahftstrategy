@@ -705,7 +705,8 @@
   fields for the first failed vendor target column.
 - Vendor order-mapping draft command that reads a broker-neutral export plus
   an Arrow.money/iRage sample upload header, suggests reviewable mappings, and
-  fails closed on unmapped required vendor fields.
+  fails closed on unmapped required vendor fields while surfacing the first
+  unmapped required vendor column in the summary.
 - Vendor CSV intake report that profiles unknown Arrow.money/iRage samples,
   infers tick/chain/order/fill shape, scores normalized mapping coverage, and
   emits a reviewed-mapping draft plus source/header/mapping fingerprints for

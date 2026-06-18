@@ -57,6 +57,9 @@ def test_order_mapping_draft_suggests_reviewable_vendor_upload_mapping():
     assert rows.loc["product", "default_value"] == "MIS"
     assert rows.loc["validity", "source_column"] == "time_in_force"
     assert int(report.summary.loc[0, "defaulted_columns"]) == 1
+    assert int(report.summary.loc[0, "failed_check_count"]) == 0
+    assert report.summary.loc[0, "failed_check_names"] == ""
+    assert report.summary.loc[0, "primary_blocker_check"] == ""
 
     mapped = map_broker_orders(
         broker_orders(),
@@ -79,6 +82,15 @@ def test_order_mapping_draft_fails_closed_for_unmapped_required_vendor_columns()
     assert not report.ready
     assert rows.loc["exchange_token", "status"] == "unmapped_required"
     assert int(report.summary.loc[0, "unmapped_required_columns"]) == 1
+    summary = report.summary.iloc[0]
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "unmapped_required:exchange_token"
+    assert summary["first_failed_reason"] == "required vendor column is not mapped to a source or default"
+    assert summary["primary_blocker_check"] == "unmapped_required:exchange_token"
+    assert summary["primary_blocker_value"] == "exchange_token"
+    assert summary["primary_blocker_operator"] == "mapped"
+    assert summary["primary_blocker_threshold"] == "source_or_default"
+    assert summary["primary_blocker_reason"] == "required vendor column is not mapped to a source or default"
     failed = report.checks.loc[~report.checks["passed"].astype(bool)].iloc[0]
     assert failed["target_column"] == "exchange_token"
 
@@ -132,4 +144,8 @@ def test_cli_draft_order_mapping_returns_failure_for_unmapped_required_column(tm
     mapping = pd.read_csv(out_dir / "order_mapping_draft.csv")
     assert code == 2
     assert int(summary.loc[0, "unmapped_required_columns"]) == 1
+    assert int(summary.loc[0, "failed_check_count"]) == 1
+    assert summary.loc[0, "failed_check_names"] == "unmapped_required:exchange_token"
+    assert summary.loc[0, "primary_blocker_check"] == "unmapped_required:exchange_token"
+    assert summary.loc[0, "primary_blocker_reason"] == "required vendor column is not mapped to a source or default"
     assert "unmapped_required" in set(mapping["status"])
