@@ -201,6 +201,7 @@ def _checks(
     mapping_ready = bool(mapped_summary.iloc[0]["ready"]) if not mapped_summary.empty else False
     mapping_failures = int((~mapped_checks["passed"].astype(bool)).sum()) if not mapped_checks.empty else 0
     reviewed_schema = schema_status != "placeholder_normalized_pending_vendor_schema"
+    mapping_failure_reason = _mapping_failure_reason(mapped_summary)
     return pd.DataFrame(
         [
             _check(
@@ -211,7 +212,7 @@ def _checks(
                 len(broker_orders) > 0,
                 "broker_orders.csv is empty",
             ),
-            _check("mapping_ready", mapping_failures, "==", 0, mapping_ready, "built-in upload mapping has failures"),
+            _check("mapping_ready", mapping_failures, "==", 0, mapping_ready, mapping_failure_reason),
             _check(
                 "schema_reviewed",
                 schema_status,
@@ -226,7 +227,9 @@ def _checks(
 
 def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPackConfig) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed = int(len(failed_rows)) if not checks.empty else 0
     schema_status = adapter_schema_status(config.adapter)
     recommendation = "review_vendor_schema"
     if ready and schema_status == "native_normalized":
@@ -244,12 +247,64 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPack
                 "lifecycle_orders": _lifecycle_order_count(orders),
                 "replace_orders": _replace_order_count(orders),
                 "failed_checks": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "output_file": config.output_filename,
                 "mapping_file": config.mapping_filename,
                 "recommendation": recommendation,
             }
         ]
     )
+
+
+def _mapping_failure_reason(mapped_summary: pd.DataFrame) -> str:
+    fallback = "built-in upload mapping has failures"
+    if mapped_summary.empty:
+        return fallback
+    row = mapped_summary.iloc[0]
+    blocker = _clean(row.get("primary_blocker_check", ""))
+    reason = _clean(row.get("primary_blocker_reason", "")) or _clean(row.get("first_failed_reason", ""))
+    if blocker and reason:
+        return f"{blocker}: {reason}"
+    return reason or fallback
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    failed_mask = ~checks["passed"].map(_to_bool)
+    return checks.loc[failed_mask].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    return _check_value(row, "check")
+
+
+def _check_reason(row: pd.Series) -> str:
+    return _check_value(row, "reason")
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row[column])
 
 
 def _broker_orders_path(export_path: str | Path) -> Path:
@@ -285,6 +340,20 @@ def _replace_order_count(orders: pd.DataFrame) -> int:
         return 0
     values = orders["lifecycle_action"].astype("string").str.strip().str.lower()
     return int(values.eq("replace").fillna(False).sum())
+
+
+def _to_bool(value: object) -> bool:
+    if pd.isna(value):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    return bool(value)
+
+
+def _clean(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
 
 
 def _check(

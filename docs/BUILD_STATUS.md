@@ -453,8 +453,9 @@
 - Broker upload pack command that applies built-in Arrow.money/iRage review
   templates to broker-neutral exports, emits the upload-shaped CSV plus the
   mapping used, carries quote lifecycle metadata for submit/replace review,
-  and fails closed unless placeholder schemas are explicitly allowed for
-  dry-run review.
+  surfaces the first schema or built-in mapping blocker in the summary, and
+  fails closed unless placeholder schemas are explicitly allowed for dry-run
+  review.
 - Broker/drop-copy fill reconciliation for exported orders, including
   order-level fill status, unmatched fills, side/instrument mismatches,
   adverse slippage, latency, pass/fail checks, and manifests.

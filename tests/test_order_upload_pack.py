@@ -88,6 +88,9 @@ def test_build_order_upload_pack_maps_arrow_money_template_for_dry_run():
     assert report.orders["lifecycle_action"].tolist() == ["submit", "replace"]
     assert report.orders.loc[1, "replaces_order_id"] == "QLF-000001"
     assert int(report.summary.loc[0, "replace_orders"]) == 1
+    assert int(report.summary.loc[0, "failed_check_count"]) == 0
+    assert report.summary.loc[0, "failed_check_names"] == ""
+    assert report.summary.loc[0, "primary_blocker_check"] == ""
     assert report.summary.iloc[0]["recommendation"] == "dry_run_or_paper_review"
 
 
@@ -102,6 +105,35 @@ def test_order_upload_pack_fails_closed_for_placeholder_schema_by_default():
     failed = report.checks.loc[~report.checks["passed"].astype(bool)].iloc[0]
     assert failed["check"] == "schema_reviewed"
     assert "placeholder" in failed["reason"]
+    summary = report.summary.iloc[0]
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "schema_reviewed"
+    assert summary["first_failed_reason"] == "adapter schema is still a placeholder; review vendor sample before live upload"
+    assert summary["primary_blocker_check"] == "schema_reviewed"
+    assert summary["primary_blocker_value"] == "placeholder_normalized_pending_vendor_schema"
+    assert summary["primary_blocker_operator"] == "!="
+    assert summary["primary_blocker_threshold"] == "placeholder"
+    assert summary["primary_blocker_reason"] == "adapter schema is still a placeholder; review vendor sample before live upload"
+
+
+def test_order_upload_pack_surfaces_first_failed_mapping_field():
+    orders = broker_orders().drop(columns=["price"])
+
+    report = build_order_upload_pack(
+        orders,
+        config=OrderUploadPackConfig(adapter="arrow_money", require_reviewed_schema=False),
+    )
+
+    assert not report.ready
+    summary = report.summary.iloc[0]
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "mapping_ready"
+    assert summary["first_failed_reason"] == "price: required target has no available source column or default value"
+    assert summary["primary_blocker_check"] == "mapping_ready"
+    assert summary["primary_blocker_value"] == "1"
+    assert summary["primary_blocker_operator"] == "=="
+    assert summary["primary_blocker_threshold"] == "0"
+    assert summary["primary_blocker_reason"] == "price: required target has no available source column or default value"
 
 
 def test_write_order_upload_pack_outputs_files_and_manifest(tmp_path):
@@ -150,4 +182,8 @@ def test_cli_pack_broker_upload_returns_failure_until_schema_allowed(tmp_path):
     summary = pd.read_csv(out_dir / "broker_upload_summary.csv")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "failed_check_count"]) == 1
+    assert summary.loc[0, "failed_check_names"] == "schema_reviewed"
+    assert summary.loc[0, "primary_blocker_check"] == "schema_reviewed"
+    assert summary.loc[0, "primary_blocker_reason"] == "adapter schema is still a placeholder; review vendor sample before live upload"
     assert (out_dir / "broker_upload_orders.csv").exists()

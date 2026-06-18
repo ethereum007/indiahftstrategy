@@ -1979,6 +1979,10 @@ manifest.json
 The mapping file is emitted beside the upload-shaped orders so the final
 Arrow.money/iRage column semantics can be reviewed before any live route is
 enabled.
+`broker_upload_summary.csv` also exposes `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
+schema-placeholder and built-in mapping blockers can be routed from the one-row
+upload handoff.
 
 ## Vendor CSV Intake
 
