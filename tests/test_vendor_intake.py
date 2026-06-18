@@ -31,6 +31,9 @@ def test_vendor_intake_detects_tick_file_and_drafts_mapping():
     assert report.ready
     assert summary["best_kind"] == "ticks"
     assert summary["mapping_coverage"] == 1.0
+    assert int(summary["failed_check_count"]) == 0
+    assert summary["failed_check_names"] == ""
+    assert summary["primary_blocker_check"] == ""
     assert mapping.loc["ts", "source_column"] == "exchange_ts"
     assert mapping.loc["bid", "source_column"] == "best_bid"
     assert mapping.loc["ask_qty", "transform"] == "int"
@@ -56,6 +59,14 @@ def test_vendor_intake_fails_closed_for_incomplete_tick_sample():
     assert not report.ready
     assert summary["best_kind"] == "ticks"
     assert int(summary["unmapped_required_columns"]) == 4
+    assert int(summary["failed_check_count"]) == 4
+    assert summary["failed_check_names"].split(";")[0] == "unmapped_required:bid_qty"
+    assert summary["first_failed_reason"] == "bid_qty normalized column is not mapped to a source column"
+    assert summary["primary_blocker_check"] == "unmapped_required:bid_qty"
+    assert summary["primary_blocker_value"] == "bid_qty"
+    assert summary["primary_blocker_operator"] == "mapped"
+    assert summary["primary_blocker_threshold"] == "source_column"
+    assert summary["primary_blocker_reason"] == "bid_qty normalized column is not mapped to a source column"
     assert "bid_qty" in summary["unmapped_normalized_columns"]
 
 
@@ -123,6 +134,15 @@ def test_vendor_intake_fails_closed_when_auto_kind_is_ambiguous():
     assert bool(summary["selected_kind_ambiguous"])
     assert summary["kind_selection"] == "ambiguous"
     assert set(summary["ambiguous_kinds"].split(";")) == {"orders", "fills"}
+    ambiguous_kinds = summary["ambiguous_kinds"]
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "ambiguous_kind_selection"
+    assert summary["first_failed_reason"] == f"auto kind selection is ambiguous: {ambiguous_kinds}"
+    assert summary["primary_blocker_check"] == "ambiguous_kind_selection"
+    assert summary["primary_blocker_value"] == ambiguous_kinds
+    assert summary["primary_blocker_operator"] == "unique_kind"
+    assert summary["primary_blocker_threshold"] == "required"
+    assert summary["primary_blocker_reason"] == f"auto kind selection is ambiguous: {ambiguous_kinds}"
     assert summary["recommendation"] == "set_vendor_kind_explicitly_before_normalizing"
 
 
@@ -180,3 +200,7 @@ def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "unmapped_required_columns"]) == 5
+    assert int(summary.loc[0, "failed_check_count"]) == 5
+    assert summary.loc[0, "failed_check_names"].split(";")[0] == "unmapped_required:ask"
+    assert summary.loc[0, "primary_blocker_check"] == "unmapped_required:ask"
+    assert summary.loc[0, "primary_blocker_reason"] == "ask normalized column is not mapped to a source column"

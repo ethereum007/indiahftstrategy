@@ -247,6 +247,14 @@ def _summary(
     ambiguous_kinds = _top_ambiguous_kinds(kind_scores, config)
     ambiguous = len(ambiguous_kinds) > 1
     ready = bool(best["ready"]) and not ambiguous
+    unmapped_columns = _unmapped_normalized_columns(mapping_draft)
+    blockers = _summary_blockers(
+        ambiguous=ambiguous,
+        ambiguous_kinds=ambiguous_kinds,
+        mapping_blocked=not bool(best["ready"]),
+        unmapped_columns=unmapped_columns,
+    )
+    primary_blocker = blockers[0] if blockers else {}
     return pd.DataFrame(
         [
             {
@@ -266,6 +274,14 @@ def _summary(
                 "exact_columns": int(best["exact_columns"]),
                 "alias_columns": int(best["alias_columns"]),
                 "unmapped_required_columns": unmapped,
+                "failed_check_count": int(len(blockers)),
+                "failed_check_names": ";".join(str(blocker.get("check", "")) for blocker in blockers),
+                "first_failed_reason": str(primary_blocker.get("reason", "")),
+                "primary_blocker_check": str(primary_blocker.get("check", "")),
+                "primary_blocker_value": str(primary_blocker.get("value", "")),
+                "primary_blocker_operator": str(primary_blocker.get("operator", "")),
+                "primary_blocker_threshold": str(primary_blocker.get("threshold", "")),
+                "primary_blocker_reason": str(primary_blocker.get("reason", "")),
                 "mapping_coverage": float(best["mapping_coverage"]),
                 "min_mapping_coverage": float(config.min_mapping_coverage),
                 "kind_selection": _kind_selection(config, ambiguous),
@@ -274,15 +290,51 @@ def _summary(
                 "output_mapping_file": config.output_mapping_file,
                 "mapping_draft_sha256": "",
                 "recommendation": _recommendation(ready, ambiguous),
-                "unmapped_normalized_columns": ";".join(
-                    mapping_draft.loc[
-                        mapping_draft["source_column"].astype(str) == "",
-                        "normalized_column",
-                    ].astype(str)
-                ),
+                "unmapped_normalized_columns": ";".join(unmapped_columns),
             }
         ]
     )
+
+
+def _unmapped_normalized_columns(mapping_draft: pd.DataFrame) -> list[str]:
+    if mapping_draft.empty or "source_column" not in mapping_draft.columns:
+        return []
+    frame = mapping_draft.copy()
+    missing = frame["source_column"].astype(str) == ""
+    return [str(value) for value in frame.loc[missing, "normalized_column"].tolist()]
+
+
+def _summary_blockers(
+    *,
+    ambiguous: bool,
+    ambiguous_kinds: list[str],
+    mapping_blocked: bool,
+    unmapped_columns: list[str],
+) -> list[dict[str, str]]:
+    blockers: list[dict[str, str]] = []
+    if ambiguous:
+        kinds = ";".join(ambiguous_kinds)
+        blockers.append(
+            {
+                "check": "ambiguous_kind_selection",
+                "value": kinds,
+                "operator": "unique_kind",
+                "threshold": "required",
+                "reason": f"auto kind selection is ambiguous: {kinds}",
+            }
+        )
+    if mapping_blocked:
+        for column in unmapped_columns:
+            blockers.append(
+                {
+                    "check": f"unmapped_required:{column}",
+                    "value": column,
+                    "operator": "mapped",
+                    "threshold": "source_column",
+                    "reason": f"{column} normalized column is not mapped to a source column",
+                }
+            )
+    return blockers
 
 
 def _top_ambiguous_kinds(kind_scores: pd.DataFrame, config: VendorCsvIntakeConfig) -> list[str]:

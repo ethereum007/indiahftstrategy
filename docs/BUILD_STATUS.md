@@ -711,7 +711,8 @@
 - Vendor CSV intake report that profiles unknown Arrow.money/iRage samples,
   infers tick/chain/order/fill shape, scores normalized mapping coverage, and
   emits a reviewed-mapping draft plus source/header/mapping fingerprints for
-  market-data normalization.
+  market-data normalization while surfacing ambiguous kind selection or the
+  first unmapped normalized column in the summary.
 - Vendor CSV intake now fails closed when automatic kind detection is
   ambiguous, for example when a broker file can be interpreted equally well as
   orders or fills, and requires an explicit `--kind` before normalization.

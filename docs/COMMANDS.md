@@ -2016,6 +2016,9 @@ The generated `vendor_mapping_draft.csv` uses `normalized_column`,
 be reviewed and then passed to `normalize-mapped-data`. The source profile and
 manifest retain file, header, and mapping-draft SHA-256 fingerprints so a later
 Arrow.money/iRage sample can be matched exactly to the reviewed mapping.
+`vendor_intake_summary.csv` also exposes `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
+ambiguous auto-kind detection or the first unmapped normalized column.
 
 ## Vendor Order Mapping Draft
 
