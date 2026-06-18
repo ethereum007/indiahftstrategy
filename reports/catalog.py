@@ -109,6 +109,7 @@ class ExperimentCatalog:
     summary: pd.DataFrame
     output_dir: Path | None = None
     action_queue: pd.DataFrame | None = None
+    hygiene_gaps: pd.DataFrame | None = None
 
     @property
     def run_count(self) -> int:
@@ -122,8 +123,14 @@ def catalog_experiment_runs(roots: list[str | Path]) -> ExperimentCatalog:
     rows = [_catalog_row(path) for path in manifests]
     catalog = pd.DataFrame(rows)
     action_queue = _catalog_action_queue(catalog)
-    summary = _catalog_summary(catalog, action_queue)
-    return ExperimentCatalog(catalog=catalog, summary=summary, action_queue=action_queue)
+    hygiene_gaps = _catalog_hygiene_gaps(catalog)
+    summary = _catalog_summary(catalog, action_queue, hygiene_gaps)
+    return ExperimentCatalog(
+        catalog=catalog,
+        summary=summary,
+        action_queue=action_queue,
+        hygiene_gaps=hygiene_gaps,
+    )
 
 
 def write_experiment_catalog(
@@ -137,10 +144,12 @@ def write_experiment_catalog(
     report.catalog.to_csv(out / "experiment_catalog.csv", index=False)
     report.summary.to_csv(out / "experiment_catalog_summary.csv", index=False)
     action_queue = report.action_queue if report.action_queue is not None else _catalog_action_queue(report.catalog)
+    hygiene_gaps = report.hygiene_gaps if report.hygiene_gaps is not None else _catalog_hygiene_gaps(report.catalog)
     action_queue.to_csv(out / "experiment_catalog_action_queue.csv", index=False)
+    hygiene_gaps.to_csv(out / "experiment_catalog_hygiene_gaps.csv", index=False)
     (out / "experiment_catalog_action_plan.json").write_text(
         json.dumps(
-            _catalog_action_plan(report.summary.iloc[0], action_queue),
+            _catalog_action_plan(report.summary.iloc[0], action_queue, hygiene_gaps),
             indent=2,
             sort_keys=True,
         )
@@ -148,7 +157,7 @@ def write_experiment_catalog(
         encoding="utf-8",
     )
     (out / "experiment_catalog_runbook.md").write_text(
-        _catalog_runbook_markdown(report.summary.iloc[0], action_queue),
+        _catalog_runbook_markdown(report.summary.iloc[0], action_queue, hygiene_gaps),
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -157,7 +166,7 @@ def write_experiment_catalog(
         parameters={"roots": [str(Path(root)) for root in roots]},
         inputs={"roots": [Path(root) for root in roots]},
     )
-    return ExperimentCatalog(report.catalog, report.summary, out, action_queue)
+    return ExperimentCatalog(report.catalog, report.summary, out, action_queue, hygiene_gaps)
 
 
 def _manifest_paths(roots: list[str | Path]) -> list[Path]:
@@ -236,8 +245,13 @@ def _summary_status(row: dict[str, Any]) -> tuple[str, bool | None]:
     return "", None
 
 
-def _catalog_summary(catalog: pd.DataFrame, action_queue: pd.DataFrame | None = None) -> pd.DataFrame:
+def _catalog_summary(
+    catalog: pd.DataFrame,
+    action_queue: pd.DataFrame | None = None,
+    hygiene_gaps: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     action_counts = _action_queue_counts(action_queue)
+    hygiene_counts = _hygiene_gap_counts(hygiene_gaps)
     if catalog.empty:
         return pd.DataFrame(
             [
@@ -257,6 +271,7 @@ def _catalog_summary(catalog: pd.DataFrame, action_queue: pd.DataFrame | None = 
                     "runs_with_directory_inputs": 0,
                     "runs_with_unfingerprinted_inputs": 0,
                     **action_counts,
+                    **hygiene_counts,
                 }
             ]
         )
@@ -279,6 +294,7 @@ def _catalog_summary(catalog: pd.DataFrame, action_queue: pd.DataFrame | None = 
                 "runs_with_directory_inputs": int((catalog["input_directory_count"] > 0).sum()),
                 "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
                 **action_counts,
+                **hygiene_counts,
             }
         ]
     )
@@ -388,8 +404,107 @@ def _action_queue_counts(action_queue: pd.DataFrame | None) -> dict[str, int]:
     }
 
 
-def _catalog_action_plan(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any]:
+HYGIENE_GAP_COLUMNS = [
+    "priority",
+    "gap_type",
+    "run_type",
+    "run_dir",
+    "summary_file",
+    "summary_status",
+    "git_dirty",
+    "input_unfingerprinted_count",
+    "recommendation",
+    "generated_at_utc",
+]
+
+
+def _catalog_hygiene_gaps(catalog: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if not catalog.empty:
+        for _, row in catalog.iterrows():
+            item = row.to_dict()
+            rows.extend(_catalog_row_hygiene_gaps(item))
+    rows = sorted(
+        rows,
+        key=lambda row: (
+            _hygiene_gap_rank(row.get("gap_type")),
+            _text(row.get("run_type")),
+            _text(row.get("run_dir")),
+        ),
+    )
+    for priority, row in enumerate(rows, start=1):
+        row["priority"] = priority
+    return pd.DataFrame(rows, columns=HYGIENE_GAP_COLUMNS)
+
+
+def _catalog_row_hygiene_gaps(row: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    if row.get("summary_status") is False:
+        rows.append(_hygiene_gap(row, "summary_failed", "resolve_failed_summary_status"))
+    if not _text(row.get("summary_file")):
+        rows.append(_hygiene_gap(row, "missing_summary", "write_recognized_summary_artifact"))
+    if _to_bool(row.get("git_dirty")):
+        rows.append(_hygiene_gap(row, "dirty_git", "rerun_from_clean_git_state"))
+    if _int_metric(row.get("input_unfingerprinted_count")) > 0:
+        rows.append(
+            _hygiene_gap(
+                row,
+                "unfingerprinted_inputs",
+                "replace_unfingerprinted_inputs_with_file_or_directory_manifest_inputs",
+            )
+        )
+    return rows
+
+
+def _hygiene_gap(row: dict[str, Any], gap_type: str, recommendation: str) -> dict[str, Any]:
+    return {
+        "gap_type": gap_type,
+        "run_type": _text(row.get("run_type")),
+        "run_dir": _text(row.get("run_dir")),
+        "summary_file": _text(row.get("summary_file")),
+        "summary_status": row.get("summary_status"),
+        "git_dirty": row.get("git_dirty"),
+        "input_unfingerprinted_count": _int_metric(row.get("input_unfingerprinted_count")),
+        "recommendation": recommendation,
+        "generated_at_utc": _text(row.get("generated_at_utc")),
+    }
+
+
+def _hygiene_gap_rank(gap_type: Any) -> int:
+    return {
+        "summary_failed": 0,
+        "missing_summary": 1,
+        "dirty_git": 2,
+        "unfingerprinted_inputs": 3,
+    }.get(_text(gap_type), 4)
+
+
+def _hygiene_gap_counts(hygiene_gaps: pd.DataFrame | None) -> dict[str, int]:
+    if hygiene_gaps is None or hygiene_gaps.empty:
+        return {
+            "hygiene_gap_count": 0,
+            "hygiene_failed_status_count": 0,
+            "hygiene_missing_summary_count": 0,
+            "hygiene_dirty_run_count": 0,
+            "hygiene_unfingerprinted_input_count": 0,
+        }
+    gap_types = hygiene_gaps["gap_type"].astype(str)
+    return {
+        "hygiene_gap_count": int(len(hygiene_gaps)),
+        "hygiene_failed_status_count": int((gap_types == "summary_failed").sum()),
+        "hygiene_missing_summary_count": int((gap_types == "missing_summary").sum()),
+        "hygiene_dirty_run_count": int((gap_types == "dirty_git").sum()),
+        "hygiene_unfingerprinted_input_count": int((gap_types == "unfingerprinted_inputs").sum()),
+    }
+
+
+def _catalog_action_plan(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    hygiene_gaps: pd.DataFrame,
+) -> dict[str, Any]:
     actions = [_action_plan_row(row) for row in action_queue.to_dict(orient="records")]
+    gaps = [_hygiene_gap_plan_row(row) for row in hygiene_gaps.to_dict(orient="records")]
     ready_actions = [action for action in actions if action["queue_status"] == "ready"]
     blocked_actions = [action for action in actions if action["queue_status"] == "blocked"]
     unknown_actions = [
@@ -403,6 +518,7 @@ def _catalog_action_plan(summary_row: pd.Series, action_queue: pd.DataFrame) -> 
         "run_type_count": _int_metric(summary_row.get("run_type_count")),
         "status_false_runs": _int_metric(summary_row.get("status_false_runs")),
         "missing_summary_runs": _int_metric(summary_row.get("missing_summary_runs")),
+        "hygiene_gap_count": len(gaps),
         "action_queue_count": len(actions),
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
@@ -416,6 +532,8 @@ def _catalog_action_plan(summary_row: pd.Series, action_queue: pd.DataFrame) -> 
         "ready_actions": ready_actions,
         "blocked_actions": blocked_actions,
         "unknown_actions": unknown_actions,
+        "hygiene_gaps": gaps,
+        "top_hygiene_gap": gaps[0] if gaps else {},
         "top_ready_action": ready_actions[0] if ready_actions else {},
         "top_blocked_action": blocked_actions[0] if blocked_actions else {},
     }
@@ -433,6 +551,21 @@ def _action_plan_row(row: dict[str, Any]) -> dict[str, Any]:
         "summary_status": _jsonable(row.get("summary_status")),
         "next_gate": _text(row.get("next_gate")),
         "next_gate_help_command": _text(row.get("next_gate_help_command")),
+        "recommendation": _text(row.get("recommendation")),
+        "generated_at_utc": _text(row.get("generated_at_utc")),
+    }
+
+
+def _hygiene_gap_plan_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "priority": _int_metric(row.get("priority")),
+        "gap_type": _text(row.get("gap_type")),
+        "run_type": _text(row.get("run_type")),
+        "run_dir": _text(row.get("run_dir")),
+        "summary_file": _text(row.get("summary_file")),
+        "summary_status": _jsonable(row.get("summary_status")),
+        "git_dirty": _jsonable(row.get("git_dirty")),
+        "input_unfingerprinted_count": _int_metric(row.get("input_unfingerprinted_count")),
         "recommendation": _text(row.get("recommendation")),
         "generated_at_utc": _text(row.get("generated_at_utc")),
     }
@@ -562,7 +695,11 @@ def _queue_rank(status: str) -> int:
     return {"ready": 0, "blocked": 1, "unknown": 2}.get(status, 3)
 
 
-def _catalog_runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+def _catalog_runbook_markdown(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    hygiene_gaps: pd.DataFrame,
+) -> str:
     ready = (
         _int_metric(summary_row.get("status_false_runs")) == 0
         and _int_metric(summary_row.get("missing_summary_runs")) == 0
@@ -579,6 +716,7 @@ def _catalog_runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame
         f"- Status false runs: {_int_metric(summary_row.get('status_false_runs'))}",
         f"- Missing summary runs: {_int_metric(summary_row.get('missing_summary_runs'))}",
         f"- Dirty runs: {_int_metric(summary_row.get('dirty_runs'))}",
+        f"- Hygiene gaps: {_int_metric(summary_row.get('hygiene_gap_count'))}",
         "",
         "## Input Provenance",
         "",
@@ -588,6 +726,12 @@ def _catalog_runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame
         f"- Unfingerprinted inputs: {_int_metric(summary_row.get('input_unfingerprinted_count'))}",
         f"- Runs with directory inputs: {_int_metric(summary_row.get('runs_with_directory_inputs'))}",
         f"- Runs with unfingerprinted inputs: {_int_metric(summary_row.get('runs_with_unfingerprinted_inputs'))}",
+        "",
+        "## Hygiene Gaps",
+        "",
+        f"- Gap rows: {len(hygiene_gaps)}",
+        "",
+        _hygiene_gap_table(hygiene_gaps),
         "",
         "## Action Queue",
         "",
@@ -600,6 +744,32 @@ def _catalog_runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame
         "",
     ]
     return "\n".join(lines)
+
+
+def _hygiene_gap_table(hygiene_gaps: pd.DataFrame) -> str:
+    if hygiene_gaps.empty:
+        return "_None_"
+    columns = [
+        "priority",
+        "gap_type",
+        "run_type",
+        "summary_file",
+        "input_unfingerprinted_count",
+        "recommendation",
+    ]
+    headers = [
+        "Priority",
+        "Gap",
+        "Run Type",
+        "Summary File",
+        "Unfingerprinted Inputs",
+        "Recommendation",
+    ]
+    rows = [
+        [_format_markdown_cell(row.get(column)) for column in columns]
+        for _, row in hygiene_gaps.iterrows()
+    ]
+    return _markdown_table(headers, rows)
 
 
 def _action_queue_markdown_table(action_queue: pd.DataFrame) -> str:

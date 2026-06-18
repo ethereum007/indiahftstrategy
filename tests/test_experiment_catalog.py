@@ -60,9 +60,26 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert (out_dir / "experiment_catalog_summary.csv").exists()
     assert (out_dir / "experiment_catalog_action_queue.csv").exists()
     assert (out_dir / "experiment_catalog_action_plan.json").exists()
+    assert (out_dir / "experiment_catalog_hygiene_gaps.csv").exists()
     assert (out_dir / "experiment_catalog_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.iloc[0]["run_count"] == 1
+    assert report.summary.iloc[0]["hygiene_gap_count"] == 0
+    assert report.hygiene_gaps is not None
+    hygiene = pd.read_csv(out_dir / "experiment_catalog_hygiene_gaps.csv")
+    assert hygiene.empty
+    assert list(hygiene.columns) == [
+        "priority",
+        "gap_type",
+        "run_type",
+        "run_dir",
+        "summary_file",
+        "summary_status",
+        "git_dirty",
+        "input_unfingerprinted_count",
+        "recommendation",
+        "generated_at_utc",
+    ]
     assert report.summary.iloc[0]["action_queue_count"] == 0
     assert report.summary.iloc[0]["action_queue_ready_count"] == 0
     assert report.summary.iloc[0]["action_queue_blocked_count"] == 0
@@ -95,13 +112,86 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert action_plan["action_queue_count"] == 0
     assert action_plan["ready_action_count"] == 0
     assert action_plan["blocked_action_count"] == 0
+    assert action_plan["hygiene_gap_count"] == 0
+    assert action_plan["hygiene_gaps"] == []
     assert action_plan["scheduler_recommendation"] == "no_catalog_actions"
     assert action_plan["next_actions"] == []
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "experiment_catalog_action_queue.csv" in artifact_paths
     assert "experiment_catalog_action_plan.json" in artifact_paths
+    assert "experiment_catalog_hygiene_gaps.csv" in artifact_paths
     assert "experiment_catalog_runbook.md" in artifact_paths
+
+
+def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    write_run(
+        root / "stress",
+        run_type="stress_report",
+        summary_name="stress_summary.csv",
+        summary_row={"all_scenarios_passed": False, "failed_rows": 2, "worst_stressed_net_pnl": -10.0},
+    )
+    missing_summary = root / "missing_summary"
+    missing_summary.mkdir(parents=True)
+    write_experiment_manifest(
+        missing_summary,
+        run_type="custom_report",
+        parameters={},
+        inputs={},
+    )
+    write_run(
+        root / "dirty",
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={"all_passed": True, "failed_runs": 0},
+    )
+    dirty_manifest = root / "dirty" / "manifest.json"
+    dirty_payload = json.loads(dirty_manifest.read_text(encoding="utf-8"))
+    dirty_payload["git"]["dirty"] = True
+    dirty_manifest.write_text(json.dumps(dirty_payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    inline_input = root / "inline_input"
+    inline_input.mkdir(parents=True)
+    pd.DataFrame([{"ready": True, "failed_steps": 0}]).to_csv(
+        inline_input / "runtime_session_summary.csv",
+        index=False,
+    )
+    write_experiment_manifest(
+        inline_input,
+        run_type="runtime_session_monitor",
+        parameters={},
+        inputs={"inline_payload": "inline"},
+    )
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    gaps = pd.read_csv(out_dir / "experiment_catalog_hygiene_gaps.csv")
+    assert report.hygiene_gaps is not None
+    assert int(report.summary.iloc[0]["hygiene_gap_count"]) == 4
+    assert int(report.summary.iloc[0]["hygiene_failed_status_count"]) == 1
+    assert int(report.summary.iloc[0]["hygiene_missing_summary_count"]) == 1
+    assert int(report.summary.iloc[0]["hygiene_dirty_run_count"]) == 1
+    assert int(report.summary.iloc[0]["hygiene_unfingerprinted_input_count"]) == 1
+    assert set(gaps["gap_type"]) == {
+        "summary_failed",
+        "missing_summary",
+        "dirty_git",
+        "unfingerprinted_inputs",
+    }
+    rows = gaps.set_index("gap_type")
+    assert rows.loc["summary_failed", "recommendation"] == "resolve_failed_summary_status"
+    assert rows.loc["missing_summary", "recommendation"] == "write_recognized_summary_artifact"
+    assert rows.loc["dirty_git", "recommendation"] == "rerun_from_clean_git_state"
+    assert rows.loc["unfingerprinted_inputs", "input_unfingerprinted_count"] == 1
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "## Hygiene Gaps" in runbook
+    assert "summary_failed" in runbook
+    assert "replace_unfingerprinted_inputs_with_file_or_directory_manifest_inputs" in runbook
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["hygiene_gap_count"] == 4
+    assert action_plan["top_hygiene_gap"]["gap_type"] == "summary_failed"
+    assert {gap["gap_type"] for gap in action_plan["hygiene_gaps"]} == set(gaps["gap_type"])
 
 
 def test_catalog_experiment_runs_reports_input_fingerprint_provenance(tmp_path):

@@ -102,6 +102,10 @@
 - `catalog-runs --fail-on-catalog-gaps` now fails on failed summaries,
   missing summaries, dirty runs, or unfingerprinted inputs before a catalog is
   reused as proof for strategy, broker, or route gates.
+- Experiment catalogs now write manifest-tracked
+  `experiment_catalog_hygiene_gaps.csv` plus runbook/action-plan hygiene
+  entries, naming each failed summary, missing summary, dirty run, and
+  unfingerprinted input with a recommended fix.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

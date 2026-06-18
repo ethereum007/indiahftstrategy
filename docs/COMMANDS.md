@@ -61,6 +61,7 @@ experiment_catalog.csv
 experiment_catalog_summary.csv
 experiment_catalog_action_queue.csv
 experiment_catalog_action_plan.json
+experiment_catalog_hygiene_gaps.csv
 experiment_catalog_runbook.md
 manifest.json
 ```
@@ -71,7 +72,12 @@ unfingerprinted raw inputs. Use these columns to spot broad or unresolved
 handoffs before relying on a broker, scale-up, or live-dryrun evidence chain.
 `experiment_catalog_summary.csv` also carries `action_queue_count`,
 `action_queue_ready_count`, `action_queue_blocked_count`, and
-`action_queue_unknown_count` for scheduler-level gating.
+`action_queue_unknown_count` for scheduler-level gating. It also carries
+`hygiene_gap_count` and per-gap hygiene totals for failed summaries, missing
+summaries, dirty runs, and unfingerprinted inputs.
+`experiment_catalog_hygiene_gaps.csv` names each catalog hygiene gap with the
+run directory, gap type, and recommended fix before the catalog is reused as
+strategy, broker, route, or live-dryrun proof.
 `experiment_catalog_action_queue.csv` consolidates cataloged `next_gate` and
 `next_gate_help_command` signals from scorecards, route reviews, and other
 summary files into one priority-ordered scheduler queue. It also promotes
@@ -87,6 +93,7 @@ catalog actions exist, or `--fail-on-actions` to fail when any ready, blocked,
 or unknown action remains.
 Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
 summary status, missing summaries, dirty git state, or unfingerprinted inputs.
+When that gate fails, inspect `experiment_catalog_hygiene_gaps.csv` first.
 
 ## Strategy Evidence Review
 
