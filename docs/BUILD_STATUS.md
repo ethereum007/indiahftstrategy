@@ -93,6 +93,9 @@
   scorecard blockers remain visible in the top-level scheduler queue.
 - Experiment catalog summaries now expose ready, blocked, unknown, and total
   action-queue counts for scheduler gating without opening the queue CSV.
+- Experiment catalogs now write manifest-tracked
+  `experiment_catalog_action_plan.json`, a typed ready/blocked/unknown action
+  plan with top actions and scheduler recommendation for automation handoff.
 - Lead-lag research: lag-grid correlations, event lag profile, and latency
   viability curve.
 - Lead-lag edge audit that gates measured relationships on events,

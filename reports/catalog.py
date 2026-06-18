@@ -138,6 +138,15 @@ def write_experiment_catalog(
     report.summary.to_csv(out / "experiment_catalog_summary.csv", index=False)
     action_queue = report.action_queue if report.action_queue is not None else _catalog_action_queue(report.catalog)
     action_queue.to_csv(out / "experiment_catalog_action_queue.csv", index=False)
+    (out / "experiment_catalog_action_plan.json").write_text(
+        json.dumps(
+            _catalog_action_plan(report.summary.iloc[0], action_queue),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     (out / "experiment_catalog_runbook.md").write_text(
         _catalog_runbook_markdown(report.summary.iloc[0], action_queue),
         encoding="utf-8",
@@ -377,6 +386,72 @@ def _action_queue_counts(action_queue: pd.DataFrame | None) -> dict[str, int]:
         "action_queue_blocked_count": blocked_count,
         "action_queue_unknown_count": max(total_count - ready_count - blocked_count, 0),
     }
+
+
+def _catalog_action_plan(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any]:
+    actions = [_action_plan_row(row) for row in action_queue.to_dict(orient="records")]
+    ready_actions = [action for action in actions if action["queue_status"] == "ready"]
+    blocked_actions = [action for action in actions if action["queue_status"] == "blocked"]
+    unknown_actions = [
+        action
+        for action in actions
+        if action["queue_status"] not in {"ready", "blocked"}
+    ]
+    return {
+        "schema_version": 1,
+        "run_count": _int_metric(summary_row.get("run_count")),
+        "run_type_count": _int_metric(summary_row.get("run_type_count")),
+        "status_false_runs": _int_metric(summary_row.get("status_false_runs")),
+        "missing_summary_runs": _int_metric(summary_row.get("missing_summary_runs")),
+        "action_queue_count": len(actions),
+        "ready_action_count": len(ready_actions),
+        "blocked_action_count": len(blocked_actions),
+        "unknown_action_count": len(unknown_actions),
+        "scheduler_recommendation": _action_plan_recommendation(
+            ready_actions,
+            blocked_actions,
+            unknown_actions,
+        ),
+        "next_actions": actions,
+        "ready_actions": ready_actions,
+        "blocked_actions": blocked_actions,
+        "unknown_actions": unknown_actions,
+        "top_ready_action": ready_actions[0] if ready_actions else {},
+        "top_blocked_action": blocked_actions[0] if blocked_actions else {},
+    }
+
+
+def _action_plan_row(row: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "priority": _int_metric(row.get("priority")),
+        "queue_status": _text(row.get("queue_status")) or "unknown",
+        "run_type": _text(row.get("run_type")),
+        "run_dir": _text(row.get("run_dir")),
+        "strategy": _text(row.get("strategy")),
+        "market": _text(row.get("market")),
+        "profile": _text(row.get("profile")),
+        "summary_status": _jsonable(row.get("summary_status")),
+        "next_gate": _text(row.get("next_gate")),
+        "next_gate_help_command": _text(row.get("next_gate_help_command")),
+        "recommendation": _text(row.get("recommendation")),
+        "generated_at_utc": _text(row.get("generated_at_utc")),
+    }
+
+
+def _action_plan_recommendation(
+    ready_actions: list[dict[str, Any]],
+    blocked_actions: list[dict[str, Any]],
+    unknown_actions: list[dict[str, Any]],
+) -> str:
+    if ready_actions and blocked_actions:
+        return "run_ready_actions_and_resolve_blocked_actions"
+    if ready_actions:
+        return "run_ready_actions"
+    if blocked_actions:
+        return "resolve_blocked_actions"
+    if unknown_actions:
+        return "review_unknown_actions"
+    return "no_catalog_actions"
 
 
 def _sidecar_action_rows(catalog_row: dict[str, Any]) -> list[dict[str, Any]]:

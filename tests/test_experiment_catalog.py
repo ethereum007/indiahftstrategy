@@ -59,6 +59,7 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert (out_dir / "experiment_catalog.csv").exists()
     assert (out_dir / "experiment_catalog_summary.csv").exists()
     assert (out_dir / "experiment_catalog_action_queue.csv").exists()
+    assert (out_dir / "experiment_catalog_action_plan.json").exists()
     assert (out_dir / "experiment_catalog_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.iloc[0]["run_count"] == 1
@@ -89,9 +90,17 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert "- Ready actions: 0" in runbook
     assert "- Blocked actions: 0" in runbook
     assert "_None_" in runbook
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["schema_version"] == 1
+    assert action_plan["action_queue_count"] == 0
+    assert action_plan["ready_action_count"] == 0
+    assert action_plan["blocked_action_count"] == 0
+    assert action_plan["scheduler_recommendation"] == "no_catalog_actions"
+    assert action_plan["next_actions"] == []
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "experiment_catalog_action_queue.csv" in artifact_paths
+    assert "experiment_catalog_action_plan.json" in artifact_paths
     assert "experiment_catalog_runbook.md" in artifact_paths
 
 
@@ -279,6 +288,18 @@ def test_write_experiment_catalog_outputs_next_action_queue(tmp_path):
     assert "plan-scaleup" in runbook
     assert "review-strategy-evidence --profile ops_launch --require-file-inputs" in runbook
     assert "complete_route_readiness_gaps" in runbook
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["action_queue_count"] == 2
+    assert action_plan["ready_action_count"] == 1
+    assert action_plan["blocked_action_count"] == 1
+    assert action_plan["unknown_action_count"] == 0
+    assert action_plan["scheduler_recommendation"] == "run_ready_actions_and_resolve_blocked_actions"
+    assert action_plan["ready_actions"][0]["next_gate"] == "plan-scaleup"
+    assert action_plan["blocked_actions"][0]["next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
+    assert action_plan["top_ready_action"]["strategy"] == "lead_lag_taker"
+    assert action_plan["top_blocked_action"]["recommendation"] == "complete_route_readiness_gaps"
 
 
 def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
@@ -335,6 +356,10 @@ def test_write_experiment_catalog_promotes_sidecar_action_queue(tmp_path):
     runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
     assert "audit-adapter-schema" in runbook
     assert "schema review missing" in runbook
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["scheduler_recommendation"] == "resolve_blocked_actions"
+    assert action_plan["blocked_actions"][0]["next_gate"] == "audit-adapter-schema"
+    assert action_plan["blocked_actions"][0]["recommendation"] == "schema review missing"
 
 
 def test_catalog_experiment_runs_recognizes_imbalance_edge_status(tmp_path):
