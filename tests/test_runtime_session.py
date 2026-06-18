@@ -10,7 +10,12 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
-def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False, **kill_switch_overrides):
+def scaleup_config(
+    require_proof_refresh=False,
+    require_broker_resume_gate=False,
+    require_strategy_portfolio=False,
+    **kill_switch_overrides,
+):
     kill_switches = {
         "max_total_failed_component_checks": 0,
         "max_total_unmatched_fills": 0,
@@ -72,6 +77,24 @@ def scaleup_config(require_proof_refresh=False, require_broker_resume_gate=False
                 "proof_refresh_strategy": "surface_mm",
                 "proof_refresh_market": "india_nse_index_derivatives",
             },
+        }
+    if require_strategy_portfolio:
+        config["limits"]["pre_portfolio_max_notional_per_session"] = 100_000.0
+        config["limits"]["max_notional_per_session"] = 1200.0
+        config["strategy_portfolio"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "deployment_mode": "paper_shadow",
+            "allocation_mode": "readiness_weighted",
+            "capital_currency": "INR",
+            "selected_profile": "surface-mm-demo",
+            "selected_strategy": "surface_mm",
+            "selected_market": "india_nse_index_derivatives",
+            "selected_eligible": True,
+            "selected_allocation_weight": 0.0012,
+            "selected_allocation_notional": 1200.0,
+            "notional_cap_applied": True,
         }
     return config
 
@@ -232,6 +255,40 @@ def test_runtime_session_monitor_carries_broker_resume_gate_state(tmp_path):
     assert summary["broker_resume_proof_refresh_strategy"] == "surface_mm"
     assert set(report.steps["broker_resume_strategy"]) == {"surface_mm"}
     assert set(report.steps["broker_resume_proof_refresh_market"]) == {"india_nse_index_derivatives"}
+
+
+def test_runtime_session_monitor_carries_strategy_portfolio_allocation(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    write_scaleup_dir(scaleup_dir, scaleup_config(require_strategy_portfolio=True))
+
+    report = write_runtime_session_monitor(
+        scaleup_dir=scaleup_dir,
+        output_dir=out_dir,
+        snapshot_ts_ns=1_000,
+        as_of_ts_ns=1_500,
+        max_telemetry_age_ns=1_000,
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(summary["strategy_portfolio_required"])
+    assert bool(summary["strategy_portfolio_provided"])
+    assert bool(summary["strategy_portfolio_ready"])
+    assert summary["strategy_portfolio_deployment_mode"] == "paper_shadow"
+    assert summary["strategy_portfolio_allocation_mode"] == "readiness_weighted"
+    assert summary["strategy_portfolio_capital_currency"] == "INR"
+    assert summary["strategy_portfolio_selected_profile"] == "surface-mm-demo"
+    assert summary["strategy_portfolio_selected_strategy"] == "surface_mm"
+    assert summary["strategy_portfolio_selected_market"] == "india_nse_index_derivatives"
+    assert bool(summary["strategy_portfolio_selected_eligible"])
+    assert summary["strategy_portfolio_selected_allocation_weight"] == 0.0012
+    assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert bool(summary["strategy_portfolio_notional_cap_applied"])
+    assert summary["pre_portfolio_max_notional_per_session"] == 100_000.0
+    assert set(report.steps["strategy_portfolio_selected_strategy"]) == {"surface_mm"}
+    assert set(report.steps["strategy_portfolio_selected_market"]) == {"india_nse_index_derivatives"}
+    assert set(report.steps["strategy_portfolio_selected_allocation_notional"]) == {1200.0}
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):

@@ -252,6 +252,7 @@ def _steps(
             ),
             "broker_resume_proof_refresh_strategy": _text(telemetry_row, "broker_resume_proof_refresh_strategy"),
             "broker_resume_proof_refresh_market": _text(telemetry_row, "broker_resume_proof_refresh_market"),
+            **_portfolio_fields(telemetry_row),
             "recommendation": str(telemetry_row.get("recommendation", "")),
         },
         {
@@ -303,6 +304,7 @@ def _steps(
                 telemetry_row,
                 "broker_resume_proof_refresh_market",
             ),
+            **_portfolio_fields(guard_row, telemetry_row),
             "recommendation": str(guard_row.get("recommendation", "")),
         },
     ]
@@ -358,6 +360,7 @@ def _steps(
                     telemetry_row,
                     "broker_resume_proof_refresh_market",
                 ),
+                **_portfolio_fields(guard_row, telemetry_row),
                 "recommendation": str(response_row.get("recommendation", "")),
             }
         )
@@ -412,6 +415,7 @@ def _steps(
                     telemetry_row,
                     "broker_resume_proof_refresh_market",
                 ),
+                **_portfolio_fields(guard_row, telemetry_row),
                 "recommendation": "manual_halt_response_required" if not plan_halt_response else "not_created",
             }
         )
@@ -495,6 +499,7 @@ def _summary(
                     telemetry_row,
                     "broker_resume_proof_refresh_market",
                 ),
+                **_portfolio_fields(guard_row, telemetry_row),
                 "telemetry_ready": bool(telemetry.ready),
                 "halt_response_created": halt_response is not None,
                 "halt_response_ready": response_ready,
@@ -522,6 +527,82 @@ def _identity_bool(primary: pd.Series, fallback: pd.Series, column: str) -> bool
     if column in primary and not pd.isna(primary.get(column)):
         return _to_bool(primary.get(column))
     return _bool_text(fallback, column)
+
+
+def _portfolio_fields(primary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
+    fallback = primary if fallback is None else fallback
+    return {
+        "strategy_portfolio_required": _identity_bool(primary, fallback, "strategy_portfolio_required"),
+        "strategy_portfolio_provided": _identity_bool(primary, fallback, "strategy_portfolio_provided"),
+        "strategy_portfolio_ready": _identity_bool(primary, fallback, "strategy_portfolio_ready"),
+        "strategy_portfolio_deployment_mode": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_deployment_mode",
+        ),
+        "strategy_portfolio_allocation_mode": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_allocation_mode",
+        ),
+        "strategy_portfolio_capital_currency": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_capital_currency",
+        ),
+        "strategy_portfolio_selected_profile": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_selected_profile",
+        ),
+        "strategy_portfolio_selected_strategy": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_selected_strategy",
+        ),
+        "strategy_portfolio_selected_market": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_selected_market",
+        ),
+        "strategy_portfolio_selected_eligible": _identity_bool(
+            primary,
+            fallback,
+            "strategy_portfolio_selected_eligible",
+        ),
+        "strategy_portfolio_selected_allocation_weight": _identity_float(
+            primary,
+            fallback,
+            "strategy_portfolio_selected_allocation_weight",
+        ),
+        "strategy_portfolio_selected_allocation_notional": _identity_float(
+            primary,
+            fallback,
+            "strategy_portfolio_selected_allocation_notional",
+        ),
+        "strategy_portfolio_notional_cap_applied": _identity_bool(
+            primary,
+            fallback,
+            "strategy_portfolio_notional_cap_applied",
+        ),
+        "pre_portfolio_max_notional_per_session": _identity_float(
+            primary,
+            fallback,
+            "pre_portfolio_max_notional_per_session",
+        ),
+    }
+
+
+def _identity_float(primary: pd.Series, fallback: pd.Series, column: str) -> float:
+    if column in primary and not pd.isna(primary.get(column)):
+        return _to_float(primary.get(column))
+    return _to_float(fallback.get(column, 0.0))
+
+
+def _to_float(value: object) -> float:
+    if value is None or pd.isna(value):
+        return 0.0
+    return float(value)
 
 
 def _bool_text(row: pd.Series, column: str) -> bool:

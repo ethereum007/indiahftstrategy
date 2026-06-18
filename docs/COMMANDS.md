@@ -2722,7 +2722,10 @@ guard blocks routing, plus `proof_refresh_*` fields from telemetry/guard so
 shadow-session and broker-readiness reviews can trace the proof freshness state
 that fed the monitor. It also retains `broker_resume_*` fields so post-halt
 resume authorization and proof identity remain visible after runtime guard
-evaluation.
+evaluation. When scale-up uses strategy portfolio allocation, the session
+steps and summary also retain `strategy_portfolio_*` fields, including selected
+strategy/market, eligibility, allocation weight/notional, pre-cap notional, and
+whether the portfolio cap constrained session notional.
 The top-level `manifest.json` fingerprints the resolved scale-up config,
 runtime source snapshots, telemetry artifacts, guard artifacts, child
 manifests, and halt-response artifacts when a halt packet is created, so the
