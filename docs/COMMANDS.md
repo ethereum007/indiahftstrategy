@@ -50,6 +50,7 @@ Collect manifest-bearing run folders into one evidence ledger:
 python -m hft_cli catalog-runs `
   --roots runs `
   --out runs\catalog\latest `
+  --fail-on-catalog-gaps `
   --fail-on-blocked-actions
 ```
 
@@ -84,6 +85,8 @@ and input-provenance totals for human operator review.
 Use `--fail-on-blocked-actions` to return exit code 2 when blocked or unknown
 catalog actions exist, or `--fail-on-actions` to fail when any ready, blocked,
 or unknown action remains.
+Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
+summary status, missing summaries, dirty git state, or unfingerprinted inputs.
 
 ## Strategy Evidence Review
 

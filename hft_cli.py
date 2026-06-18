@@ -149,7 +149,15 @@ def _add_generic_cost_args(parser: argparse.ArgumentParser, *, default: float | 
     parser.add_argument("--generic-per-order-fee", type=float, default=default)
 
 
-def _catalog_exit_code(result, *, fail_on_actions: bool, fail_on_blocked_actions: bool) -> int:
+def _catalog_exit_code(
+    result,
+    *,
+    fail_on_actions: bool,
+    fail_on_blocked_actions: bool,
+    fail_on_catalog_gaps: bool,
+) -> int:
+    if fail_on_catalog_gaps and _catalog_gap_count(result) > 0:
+        return 2
     action_queue = result.action_queue
     action_count = 0 if action_queue is None else int(len(action_queue))
     if fail_on_actions and action_count > 0:
@@ -160,6 +168,33 @@ def _catalog_exit_code(result, *, fail_on_actions: bool, fail_on_blocked_actions
         if blocked_or_unknown > 0:
             return 2
     return 0
+
+
+def _catalog_gap_count(result) -> int:
+    summary = result.summary
+    if summary.empty:
+        return 0
+    row = summary.iloc[0]
+    return sum(
+        _catalog_metric(row, column)
+        for column in [
+            "status_false_runs",
+            "missing_summary_runs",
+            "dirty_runs",
+            "input_unfingerprinted_count",
+        ]
+    )
+
+
+def _catalog_metric(row, column: str) -> int:
+    try:
+        value = row.get(column, 0)
+    except AttributeError:
+        return 0
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -1049,6 +1084,7 @@ def main(argv: list[str] | None = None) -> int:
     catalog.add_argument("--out", required=True)
     catalog.add_argument("--fail-on-actions", action="store_true")
     catalog.add_argument("--fail-on-blocked-actions", action="store_true")
+    catalog.add_argument("--fail-on-catalog-gaps", action="store_true")
 
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
@@ -3058,6 +3094,7 @@ def main(argv: list[str] | None = None) -> int:
             result,
             fail_on_actions=args.fail_on_actions,
             fail_on_blocked_actions=args.fail_on_blocked_actions,
+            fail_on_catalog_gaps=args.fail_on_catalog_gaps,
         )
     if args.command == "review-strategy-evidence":
         required_run_types = (

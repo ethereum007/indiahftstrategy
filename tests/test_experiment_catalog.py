@@ -986,6 +986,52 @@ def test_cli_catalog_runs_writes_catalog(tmp_path):
     assert catalog.loc[0, "run_type"] == "stress_report"
 
 
+def test_cli_catalog_runs_can_fail_on_catalog_gaps(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "stress",
+        run_type="stress_report",
+        summary_name="stress_summary.csv",
+        summary_row={"all_scenarios_passed": False, "failed_rows": 2, "worst_stressed_net_pnl": -10.0},
+    )
+
+    code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(root),
+            "--out",
+            str(tmp_path / "catalog"),
+            "--fail-on-catalog-gaps",
+        ]
+    )
+
+    assert code == 2
+
+
+def test_cli_catalog_runs_catalog_gap_gate_passes_clean_catalog(tmp_path):
+    root = tmp_path / "runs"
+    write_run(
+        root / "proof",
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={"all_passed": True, "failed_runs": 0, "total_net_pnl": 42.0},
+    )
+
+    code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(root),
+            "--out",
+            str(tmp_path / "catalog"),
+            "--fail-on-catalog-gaps",
+        ]
+    )
+
+    assert code == 0
+
+
 def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):
     root = tmp_path / "runs"
     write_run(
