@@ -1595,6 +1595,86 @@ def test_cli_catalog_runs_can_fail_on_placeholder_schema_gates(tmp_path):
     assert int(summary.loc[0, "placeholder_schema_blocked_runs"]) == 1
 
 
+def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
+    safe_root = tmp_path / "safe_runs"
+    write_run(
+        safe_root / "broker_roundtrip_safe",
+        run_type="broker_dispatch_roundtrip",
+        summary_name="broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": True,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "dispatch_total_notional": 1500.0,
+            "strategy_portfolio_provided": True,
+            "strategy_portfolio_ready": True,
+            "strategy_portfolio_selected_allocation_notional": 2000.0,
+            "failed_checks": 0,
+        },
+    )
+    breach_root = tmp_path / "breach_runs"
+    write_run(
+        breach_root / "broker_roundtrip_breach",
+        run_type="broker_dispatch_roundtrip",
+        summary_name="broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": False,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "dispatch_total_notional": 2500.0,
+            "strategy_portfolio_provided": True,
+            "strategy_portfolio_ready": True,
+            "strategy_portfolio_selected_allocation_notional": 2000.0,
+            "failed_checks": 1,
+        },
+    )
+    missing_root = tmp_path / "missing_runs"
+    write_run(
+        missing_root / "proof",
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={"all_passed": True, "failed_runs": 0},
+    )
+
+    safe_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(safe_root),
+            "--out",
+            str(tmp_path / "catalog_safe"),
+            "--require-broker-roundtrip-portfolio-safe",
+            "--fail-on-broker-roundtrip-portfolio-breach",
+        ]
+    )
+    breach_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(breach_root),
+            "--out",
+            str(tmp_path / "catalog_breach"),
+            "--fail-on-broker-roundtrip-portfolio-breach",
+        ]
+    )
+    missing_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(missing_root),
+            "--out",
+            str(tmp_path / "catalog_missing"),
+            "--require-broker-roundtrip-portfolio-safe",
+        ]
+    )
+
+    breach_summary = pd.read_csv(tmp_path / "catalog_breach" / "experiment_catalog_summary.csv")
+    assert safe_code == 0
+    assert breach_code == 2
+    assert missing_code == 2
+    assert int(breach_summary.loc[0, "broker_roundtrip_portfolio_breach_runs"]) == 1
+
+
 def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):
     root = tmp_path / "runs"
     write_run(

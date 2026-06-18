@@ -224,6 +224,11 @@
   `--fail-on-blocked-placeholder-schema` or strict
   `--fail-on-placeholder-schema`, giving schedulers separate dry-run and
   promotion/live-readiness gates for Arrow.money/iRage schema review debt.
+- `catalog-runs` can now fail closed with
+  `--fail-on-broker-roundtrip-portfolio-breach` or
+  `--require-broker-roundtrip-portfolio-safe`, so Arrow.money/iRage dry-run
+  catalogs can enforce final dispatch notional stayed inside the selected
+  strategy portfolio allocation.
 - `catalog-runs --fail-on-catalog-gaps` now fails on failed summaries,
   missing summaries, dirty runs, or unfingerprinted inputs before a catalog is
   reused as proof for strategy, broker, or route gates.
@@ -972,7 +977,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 920 tests.
+Current passing suite: 921 tests.
 
 ## Next Build Targets
 
