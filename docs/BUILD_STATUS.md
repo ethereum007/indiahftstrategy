@@ -124,6 +124,10 @@
   expose the same `failed_check_count` plus structured `primary_blocker`
   contract, so broker-stage automation can route the first failed dry-run gate
   without parsing every component checks CSV.
+- Resume gate config JSON now exposes `failed_check_count` and structured
+  `primary_blocker` while keeping the legacy failed-check name list, so
+  post-halt automation can route the first failed resume condition directly
+  from `resume_config.json`.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
@@ -567,7 +571,7 @@
   the incident guard trigger and proof context from the prior halt, with
   automatic operator approval and guard-trigger acknowledgement required for
   `live_dryrun` resumes while fingerprinting resolved incident, scale-up, and
-  operator-review inputs.
+  operator-review inputs and exposing the first failed resume check in config.
 - Cutover gate that authorizes the final paper/shadow/live-dryrun route only
   after scale-up, route-readiness proof, broker readiness, runtime-session
   guard, proof freshness, required dispatch round-trip proof plus nested route

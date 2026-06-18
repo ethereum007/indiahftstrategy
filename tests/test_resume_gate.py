@@ -209,6 +209,8 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.config["proof_freshness"]["strategy"] == "lead_lag_taker"
     assert report.config["proof_freshness"]["incident"]["market"] == "india_nse_index_derivatives"
     assert report.config["ready"]
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
 
 
 def test_resume_gate_blocks_scenario_mismatch():
@@ -221,6 +223,9 @@ def test_resume_gate_blocks_scenario_mismatch():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "scenario_match" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
 
 
 def test_resume_gate_blocks_strategy_and_market_mismatch():

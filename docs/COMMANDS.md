@@ -2815,6 +2815,10 @@ resume_config.json
 manifest.json
 ```
 
+`resume_config.json` keeps the legacy `failed_checks` name list and also adds
+`failed_check_count` plus `primary_blocker`, so post-halt resume automation can
+surface the first failed resume gate without parsing `resume_checks.csv`.
+
 `resume_authorization.csv`, `resume_summary.csv`, and `resume_config.json`
 retain the prior incident's guard-trigger, strategy, market, and proof-refresh
 fields so resume approval is tied back to the exact halt that was closed.
