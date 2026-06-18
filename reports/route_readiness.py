@@ -50,7 +50,8 @@ def build_route_readiness_review(
     pairs = pd.DataFrame(pair_rows)
     gaps = pairs.loc[~pairs["route_ready"].astype(bool)].reset_index(drop=True) if not pairs.empty else pairs
     summary = _summary(pairs, gaps, require_ops_file_inputs=require_ops_file_inputs)
-    config = _config(pairs, gaps, summary, market_portability_config, require_ops_file_inputs)
+    action_queue = _action_queue(pairs)
+    config = _config(pairs, gaps, summary, action_queue, market_portability_config, require_ops_file_inputs)
     return RouteReadinessReview(pairs=pairs, gaps=gaps, summary=summary, config=config)
 
 
@@ -384,11 +385,14 @@ def _config(
     pairs: pd.DataFrame,
     gaps: pd.DataFrame,
     summary: pd.DataFrame,
+    action_queue: pd.DataFrame,
     market_portability_config: dict[str, Any],
     require_ops_file_inputs: bool,
 ) -> dict[str, Any]:
     summary_row = summary.iloc[0].to_dict() if not summary.empty else {}
     ready_pairs = pairs.loc[pairs["route_ready"].astype(bool)].copy() if not pairs.empty else pairs
+    ready_actions = _actions_with_status(action_queue, "ready")
+    blocked_actions = _actions_with_status(action_queue, "blocked")
     return {
         "schema_version": 1,
         "ready": bool(summary_row.get("ready", False)),
@@ -400,7 +404,24 @@ def _config(
         "next_gates": sorted(set(gaps["next_gate"].astype(str))) if not gaps.empty else [],
         "ready_action_count": int(pairs["route_ready"].astype(bool).sum()) if not pairs.empty else 0,
         "blocked_action_count": int((~pairs["route_ready"].astype(bool)).sum()) if not pairs.empty else 0,
+        "next_gate": _text(summary_row.get("next_gate")),
+        "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(ready_actions),
+        "blocked_actions": _action_records(blocked_actions),
     }
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _action_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    return [_jsonable_row(row) for row in frame.to_dict(orient="records")]
 
 
 def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:

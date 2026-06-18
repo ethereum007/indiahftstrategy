@@ -463,8 +463,10 @@ with file-fingerprinted inputs. Use `--allow-non-file-ops-inputs` only for
 explicit dry-run investigations that are not route-review candidates.
 `route_readiness_action_queue.csv` flattens ready and blocked route pairs into
 priority order with `next_gate`, `next_gate_help_command`, evidence statuses,
-and the route-level recommendation. `route_readiness_runbook.md` mirrors the
-same handoff for operator review before live dry-run routing.
+and the route-level recommendation. `route_readiness_config.json` mirrors the
+queue as `next_actions`, `ready_actions`, and `blocked_actions`, plus the
+primary next gate/help for scheduler handoff. `route_readiness_runbook.md`
+mirrors the same handoff for operator review before live dry-run routing.
 `route_readiness_summary.csv` also carries the primary `next_gate`,
 `next_gate_help_command`, and ready/blocked action counts so `catalog-runs`
 can preserve the route-level scheduler signal.

@@ -75,6 +75,12 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert review.config["route_ready_pairs"][0]["strategy"] == "microprice_imbalance"
     assert review.config["ready_action_count"] == 1
     assert review.config["blocked_action_count"] == 0
+    assert review.config["next_gate"] == "live_dryrun_route_review"
+    assert review.config["next_gate_help_command"] == ""
+    assert review.config["next_actions"][0]["queue_status"] == "ready"
+    assert review.config["next_actions"][0]["next_gate"] == "live_dryrun_route_review"
+    assert review.config["ready_actions"][0]["strategy"] == "microprice_imbalance"
+    assert review.config["blocked_actions"] == []
 
 
 def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
@@ -107,6 +113,15 @@ def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
     assert int(summary["ready_action_count"]) == 0
     assert int(summary["blocked_action_count"]) == 1
     assert review.config["next_gates"] == ["review-strategy-evidence --profile ops_launch --require-file-inputs"]
+    assert review.config["next_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    assert review.config["next_gate_help_command"] == (
+        "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+    )
+    assert review.config["ready_actions"] == []
+    assert review.config["blocked_actions"][0]["queue_status"] == "blocked"
+    assert review.config["blocked_actions"][0]["next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
 
 
 def test_route_readiness_blocks_incomplete_ops_evidence_with_action_hint(tmp_path):
@@ -217,6 +232,11 @@ def test_write_route_readiness_outputs_files_and_manifest(tmp_path):
     assert config["route_ready_pairs"][0]["route_ready"]
     assert config["ready_action_count"] == 1
     assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == "live_dryrun_route_review"
+    assert config["next_gate_help_command"] == ""
+    assert config["next_actions"][0]["queue_status"] == "ready"
+    assert config["ready_actions"][0]["next_gate"] == "live_dryrun_route_review"
+    assert config["blocked_actions"] == []
     assert config["summary"]["next_gate"] == "live_dryrun_route_review"
     assert config["summary"]["ready_action_count"] == 1
     assert config["summary"]["blocked_action_count"] == 0

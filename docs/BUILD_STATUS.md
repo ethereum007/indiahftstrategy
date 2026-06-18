@@ -98,6 +98,9 @@
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
+- Route readiness config JSON now mirrors the route action queue as
+  `next_actions`, `ready_actions`, and `blocked_actions`, giving schedulers the
+  final live-dry-run route handoff without parsing CSV files.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
