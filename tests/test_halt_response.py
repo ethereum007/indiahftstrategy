@@ -124,6 +124,9 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
     assert report.config["guard_failed_checks"] == ["orders_sent"]
+    assert report.config["failed_check_count"] == 0
+    assert report.config["failed_checks"] == []
+    assert report.config["primary_blocker"] == {}
     assert report.config["strategy"] == "lead_lag_taker"
     assert report.config["market"] == "india_nse_index_derivatives"
     assert report.config["proof_freshness"] == {
@@ -143,6 +146,9 @@ def test_halt_response_fails_when_guard_not_halted_by_default():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert failed == {"guard_halted"}
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] == "guard_halted"
+    assert not report.config["primary_blocker"]["passed"]
 
 
 def test_write_halt_response_plan_outputs_artifacts(tmp_path):
@@ -172,6 +178,8 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     assert (out_dir / "manifest.json").exists()
     saved_config = json.loads((out_dir / "halt_response_config.json").read_text(encoding="utf-8"))
     assert saved_config["guard_failed_checks"] == ["orders_sent"]
+    assert saved_config["failed_check_count"] == 0
+    assert saved_config["primary_blocker"] == {}
     assert saved_config["proof_freshness"]["strategy"] == "lead_lag_taker"
     assert saved_config["proof_freshness"]["ready"]
     saved_summary = pd.read_csv(out_dir / "halt_response_summary.csv")

@@ -2672,6 +2672,11 @@ halt_response_config.json
 manifest.json
 ```
 
+`halt_response_config.json` keeps the guard-trigger context and also exposes
+the response-plan `failed_check_count`, `failed_checks`, and structured
+`primary_blocker`, so emergency automation can distinguish the guard halt from
+the first failed cancel/flatten packet check.
+
 `halt_response_summary.csv`, `halt_cancel_orders.csv`, and
 `halt_flatten_orders.csv` include the guard failed check names, first halt
 reason, strategy, and market so emergency action files show why the

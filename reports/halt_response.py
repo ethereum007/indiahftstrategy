@@ -101,10 +101,14 @@ def evaluate_halt_response(
     flatten_orders = _flatten_actions(positions, config, guard_context)
     checks = _checks(guard_row, cancel_orders, flatten_orders, config)
     summary = _summary(guard_row, cancel_orders, flatten_orders, checks, guard_context)
+    failed_check_records = _failed_check_records(checks)
     response_config = {
         **asdict(config),
         "strategy": guard_context["strategy"],
         "market": guard_context["market"],
+        "failed_check_count": len(failed_check_records),
+        "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
+        "primary_blocker": failed_check_records[0] if failed_check_records else {},
         "guard_failed_checks": guard_context["failed_check_names"],
         "guard_failed_check_reasons": guard_context["failed_check_reasons"],
         "proof_freshness": _proof_freshness_config(guard_context),
@@ -290,6 +294,31 @@ def _checks(
         )
     )
     return pd.DataFrame(checks)
+
+
+def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    return [_jsonable_check_record(row) for row in failed.to_dict(orient="records")]
+
+
+def _jsonable_check_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable(value) for key, value in row.items()}
+
+
+def _jsonable(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
 
 
 def _summary(

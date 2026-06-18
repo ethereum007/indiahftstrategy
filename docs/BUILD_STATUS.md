@@ -128,6 +128,10 @@
   `primary_blocker` while keeping the legacy failed-check name list, so
   post-halt automation can route the first failed resume condition directly
   from `resume_config.json`.
+- Halt response config JSON now exposes response-plan `failed_check_count`,
+  `failed_checks`, and structured `primary_blocker` next to the guard trigger
+  context, so emergency automation can route packet-construction blockers
+  without confusing them with the original guard halt reason.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
@@ -551,8 +555,9 @@
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests, stamping guard failed check names and first halt reasons onto
   the summary and action CSVs for operator review while carrying strategy and
-  market identity into the emergency action packet, and fingerprinting resolved
-  guard summary/check files plus open-order and position snapshots.
+  market identity into the emergency action packet, exposing the first failed
+  response-plan check in config, and fingerprinting resolved guard
+  summary/check files plus open-order and position snapshots.
 - Halt response export mapper that turns emergency cancel and flatten actions
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
   Arrow.money/iRage emergency schemas are finalized, and fingerprints the
