@@ -153,6 +153,9 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert config["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert config["ready_action_count"] == 1
     assert config["blocked_action_count"] == 0
+    assert config["primary_action_status"] == "ready"
+    assert config["primary_action"]["profile"] == "leadlag"
+    assert config["primary_action"]["next_gate"] == "plan-scaleup"
     assert config["ready_actions"][0]["profile"] == "leadlag"
     assert config["next_actions"][0]["profile"] == "leadlag"
     runbook = (out_dir / "strategy_scorecard_runbook.md").read_text(encoding="utf-8")
@@ -201,6 +204,9 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     assert config["next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
     assert config["ready_action_count"] == 0
     assert config["blocked_action_count"] == 1
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["profile"] == "imbalance"
+    assert config["primary_action"]["next_gate"] == "walkforward-imbalance-replay"
     open_gap_count = int(gaps["gap"].fillna("").astype(str).str.len().gt(0).sum())
     assert config["gap_count"] == open_gap_count
     assert config["blocked_actions"][0]["profile"] == "imbalance"

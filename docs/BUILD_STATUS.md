@@ -43,7 +43,8 @@
   a machine-readable ranked next-action and open-gap sidecar for automated
   research/ops follow-up.
 - Strategy readiness next-actions JSON now includes a versioned schema plus
-  `ready_actions`/`blocked_actions` queues and counts for scheduler handoff.
+  `primary_action_status`, `primary_action`, `ready_actions`/
+  `blocked_actions` queues, and counts for scheduler handoff.
 - Strategy readiness scorecard now emits `strategy_scorecard_action_queue.csv`,
   a priority-ordered ready/blocked queue with next CLI gate/help fields for
   simple scheduler handoff.
@@ -112,15 +113,17 @@
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
 - Route readiness config JSON now mirrors the route action queue as
-  `next_actions`, `ready_actions`, and `blocked_actions`, giving schedulers the
-  final live-dry-run route handoff without parsing CSV files.
+  `next_actions`, `ready_actions`, and `blocked_actions`, plus root-level
+  `primary_action_status` and `primary_action`, giving schedulers the final
+  live-dry-run route handoff without parsing CSV files.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
   next-gate help into catalog-level scheduler plans.
 - Market portability config JSON now exposes primary `next_gate` and
-  `next_gate_help_command` alongside action counts and action arrays, matching
-  downstream route/broker scheduler handoffs.
+  `next_gate_help_command` alongside `primary_action_status`,
+  `primary_action`, action counts, and action arrays, matching downstream
+  route/broker scheduler handoffs.
 - `market-portability-report` can now fail closed with `--fail-on-breach`,
   `--fail-on-gaps`, or `--fail-on-blocked-actions`, giving CI/schedulers a
   direct gate before non-India research or route-readiness runs are scheduled.

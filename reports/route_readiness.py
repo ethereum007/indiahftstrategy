@@ -393,6 +393,7 @@ def _config(
     ready_pairs = pairs.loc[pairs["route_ready"].astype(bool)].copy() if not pairs.empty else pairs
     ready_actions = _actions_with_status(action_queue, "ready")
     blocked_actions = _actions_with_status(action_queue, "blocked")
+    primary_action = _first_action_record(action_queue)
     return {
         "schema_version": 1,
         "ready": bool(summary_row.get("ready", False)),
@@ -406,10 +407,18 @@ def _config(
         "blocked_action_count": int((~pairs["route_ready"].astype(bool)).sum()) if not pairs.empty else 0,
         "next_gate": _text(summary_row.get("next_gate")),
         "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _text(primary_action.get("queue_status")),
+        "primary_action": primary_action,
         "next_actions": _action_records(action_queue),
         "ready_actions": _action_records(ready_actions),
         "blocked_actions": _action_records(blocked_actions),
     }
+
+
+def _first_action_record(frame: pd.DataFrame) -> dict[str, Any]:
+    if frame.empty:
+        return {}
+    return _jsonable_row(frame.iloc[0].to_dict())
 
 
 def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:

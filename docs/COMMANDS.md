@@ -351,9 +351,10 @@ to `walkforward-imbalance-replay`, a missing broker dry-run packet can point to
 `strategy_scorecard_next_actions.json` mirrors the ranked next actions and
 open gaps in a machine-readable sidecar for schedulers or follow-up runbooks.
 It includes `schema_version`, root `next_gate`/`next_gate_help_command` aliases
-for the best ranked action, `ready_actions`, `blocked_actions`, and action
-counts so automation can consume ready scale-up lanes separately from blocked
-research or broker-proof lanes.
+for the best ranked action, `primary_action_status`, `primary_action`,
+`ready_actions`, `blocked_actions`, and action counts so automation can
+consume ready scale-up lanes separately from blocked research or broker-proof
+lanes.
 `strategy_scorecard_action_queue.csv` flattens those ranked actions into one
 priority-ordered row per profile with `queue_status`, `next_gate`, and
 `next_gate_help_command` for simple runner or scheduler handoff.
@@ -421,9 +422,10 @@ US rows are marked `needs_fee_model` unless explicit fees are acknowledged.
 India-specific settlement convergence remains blocked for US profiles until a
 separate US settlement/microstructure model is implemented. The config JSON
 records ready strategy/market pairs, gap pairs, primary `next_gate`,
-`next_gate_help_command`, next-gate sets, action counts, the matching
-strategy-evidence profile command, and the file-provenance-gated `ops_launch`
-review command for downstream US research planning.
+`next_gate_help_command`, `primary_action_status`, `primary_action`, next-gate
+sets, action counts, the matching strategy-evidence profile command, and the
+file-provenance-gated `ops_launch` review command for downstream US research
+planning.
 `market_portability_action_queue.csv` flattens ready and blocked
 strategy/market pairs into scheduler order with `next_gate`,
 `next_gate_help_command`, evidence gates, data requirements, workflow commands,
@@ -470,8 +472,9 @@ explicit dry-run investigations that are not route-review candidates.
 priority order with `next_gate`, `next_gate_help_command`, evidence statuses,
 and the route-level recommendation. `route_readiness_config.json` mirrors the
 queue as `next_actions`, `ready_actions`, and `blocked_actions`, plus the
-primary next gate/help for scheduler handoff. `route_readiness_runbook.md`
-mirrors the same handoff for operator review before live dry-run routing.
+primary next gate/help, `primary_action_status`, and `primary_action` for
+scheduler handoff. `route_readiness_runbook.md` mirrors the same handoff for
+operator review before live dry-run routing.
 `route_readiness_summary.csv` also carries the primary `next_gate`,
 `next_gate_help_command`, and ready/blocked action counts so `catalog-runs`
 can preserve the route-level scheduler signal.

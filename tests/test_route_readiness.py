@@ -77,6 +77,9 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert review.config["blocked_action_count"] == 0
     assert review.config["next_gate"] == "live_dryrun_route_review"
     assert review.config["next_gate_help_command"] == ""
+    assert review.config["primary_action_status"] == "ready"
+    assert review.config["primary_action"]["next_gate"] == "live_dryrun_route_review"
+    assert review.config["primary_action"]["strategy"] == "microprice_imbalance"
     assert review.config["next_actions"][0]["queue_status"] == "ready"
     assert review.config["next_actions"][0]["next_gate"] == "live_dryrun_route_review"
     assert review.config["ready_actions"][0]["strategy"] == "microprice_imbalance"
@@ -116,6 +119,10 @@ def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
     assert review.config["next_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
     assert review.config["next_gate_help_command"] == (
         "python -m hft_cli review-strategy-evidence --profile ops_launch --require-file-inputs --help"
+    )
+    assert review.config["primary_action_status"] == "blocked"
+    assert review.config["primary_action"]["next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
     )
     assert review.config["ready_actions"] == []
     assert review.config["blocked_actions"][0]["queue_status"] == "blocked"
@@ -234,6 +241,8 @@ def test_write_route_readiness_outputs_files_and_manifest(tmp_path):
     assert config["blocked_action_count"] == 0
     assert config["next_gate"] == "live_dryrun_route_review"
     assert config["next_gate_help_command"] == ""
+    assert config["primary_action_status"] == "ready"
+    assert config["primary_action"]["next_gate"] == "live_dryrun_route_review"
     assert config["next_actions"][0]["queue_status"] == "ready"
     assert config["ready_actions"][0]["next_gate"] == "live_dryrun_route_review"
     assert config["blocked_actions"] == []

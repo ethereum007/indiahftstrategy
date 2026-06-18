@@ -308,6 +308,7 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
     next_actions = [_action(row) for row in _records(scorecard)]
     ready_actions = [action for action in next_actions if action["ready"]]
     blocked_actions = [action for action in next_actions if not action["ready"]]
+    primary_action = next_actions[0] if next_actions else {}
     gap_actions = [_gap_action(row) for row in _records(gaps) if str(row.get("gap", ""))]
     return {
         "schema_version": 1,
@@ -324,11 +325,19 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
         "gap_count": len(gap_actions),
+        "primary_action_status": _primary_action_status(primary_action),
+        "primary_action": primary_action,
         "next_actions": next_actions,
         "ready_actions": ready_actions,
         "blocked_actions": blocked_actions,
         "gaps": gap_actions,
     }
+
+
+def _primary_action_status(action: dict[str, Any]) -> str:
+    if not action:
+        return ""
+    return "ready" if action.get("ready") else "blocked"
 
 
 def _action(row: dict[str, Any]) -> dict[str, Any]:

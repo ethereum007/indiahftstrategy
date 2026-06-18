@@ -327,6 +327,7 @@ def _config(
         if not matrix.empty
         else matrix
     )
+    primary_action = _first_action_record(action_queue)
     return {
         "schema_version": 1,
         "ready": bool(summary_row.get("ready", False)),
@@ -341,6 +342,8 @@ def _config(
         "blocked_action_count": int(summary_row.get("blocked_action_count", 0) or 0),
         "next_gate": _text(summary_row.get("next_gate")),
         "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _text(primary_action.get("queue_status")),
+        "primary_action": primary_action,
         "next_actions": _action_records(action_queue),
         "ready_actions": _action_records(
             action_queue.loc[action_queue["queue_status"].astype(str) == "ready"]
@@ -353,6 +356,12 @@ def _config(
             else action_queue
         ),
     }
+
+
+def _first_action_record(frame: pd.DataFrame) -> dict[str, object]:
+    if frame.empty:
+        return {}
+    return _jsonable_row(frame.iloc[0].to_dict())
 
 
 def _pair_records(frame: pd.DataFrame) -> list[dict[str, object]]:
