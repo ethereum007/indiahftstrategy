@@ -122,7 +122,8 @@ def evaluate_broker_readiness(
     items = _items(summaries, thresholds, schema_review_checklist=schema_review_checklist)
     checks = _checks(items, thresholds)
     summary = _summary(items, checks, thresholds)
-    config = _config(items, checks, summary, thresholds)
+    action_queue = _action_queue(checks)
+    config = _config(items, checks, summary, action_queue, thresholds)
     return BrokerReadinessReport(items=items, checks=checks, summary=summary, config=config)
 
 
@@ -2372,6 +2373,7 @@ def _config(
     items: pd.DataFrame,
     checks: pd.DataFrame,
     summary: pd.DataFrame,
+    action_queue: pd.DataFrame,
     thresholds: BrokerReadinessThresholds,
 ) -> dict[str, Any]:
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -2380,6 +2382,8 @@ def _config(
         if not checks.empty and "passed" in checks.columns
         else []
     )
+    ready_actions = _actions_with_status(action_queue, "ready")
+    blocked_actions = _actions_with_status(action_queue, "blocked")
     return {
         "ready": _item_bool(row, "ready"),
         "adapter": _item_text(row, "adapter"),
@@ -2404,6 +2408,13 @@ def _config(
             "failed_checks": int(_number(row, "failed_checks", 0.0)),
         },
         "failed_checks": failed_checks,
+        "ready_action_count": int(len(ready_actions)),
+        "blocked_action_count": int(len(blocked_actions)),
+        "next_gate": _first_action_value(action_queue, "next_gate"),
+        "next_gate_help_command": _first_action_value(action_queue, "next_gate_help_command"),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(ready_actions),
+        "blocked_actions": _action_records(blocked_actions),
         "components": {
             component: _component_config(items, component)
             for component in SUMMARY_FILES
@@ -2456,6 +2467,40 @@ def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
             "reason",
         ],
     )
+
+
+def _action_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
+    if frame.empty:
+        return []
+    return [_jsonable_record(row) for row in frame.to_dict(orient="records")]
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _jsonable_record(row: dict[str, Any]) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for key, value in row.items():
+        if isinstance(value, Path):
+            record[str(key)] = str(value)
+            continue
+        try:
+            if pd.isna(value):
+                record[str(key)] = None
+                continue
+        except (TypeError, ValueError):
+            pass
+        record[str(key)] = value
+    return record
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _action_value(action_queue.iloc[0].get(column))
 
 
 def _action_component(check_name: str) -> str:

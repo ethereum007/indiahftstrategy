@@ -2194,6 +2194,10 @@ and `broker_readiness_config.json`.
 `broker_readiness_action_queue.csv` flattens failed readiness checks into a
 priority-ordered blocked-action queue with the inferred component, next CLI
 gate, and `next_gate_help_command` for runner or operator handoff.
+`broker_readiness_config.json` mirrors that queue as `ready_action_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`, `next_actions`,
+`ready_actions`, and `blocked_actions`, so schedulers can consume broker
+readiness blockers from JSON without parsing the CSV.
 `broker_readiness_runbook.md` is a human-readable handoff generated from the
 same summary, component, and action-queue data and is fingerprinted in the
 manifest.

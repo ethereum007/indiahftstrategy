@@ -66,6 +66,9 @@
   commands for Arrow.money/iRage operator or scheduler handoff.
 - Broker readiness now writes a manifest-tracked `broker_readiness_runbook.md`
   with component status and blocked-action next gates for operator review.
+- Broker readiness config JSON now mirrors the readiness action queue as
+  counts, primary next gate/help, and `next_actions`/`ready_actions`/
+  `blocked_actions`, giving schedulers one JSON handoff for broker blockers.
 - Broker-vendor data readiness now writes manifest-tracked action queue and
   runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
   wrapper failures expose next CLI gates at the proof root.

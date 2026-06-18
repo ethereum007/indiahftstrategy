@@ -1754,6 +1754,13 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert config == report.config
     assert config["ready"]
     assert config["adapter"] == "arrow_money"
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == ""
+    assert config["next_gate_help_command"] == ""
+    assert config["next_actions"] == []
+    assert config["ready_actions"] == []
+    assert config["blocked_actions"] == []
     assert config["schema_review_checklist"]["provided"]
     assert config["schema_review_checklist"]["blocked_check_names"] == ["vendor_schema_reviewed"]
     assert config["schema_review_checklist"]["review_check_names"] == ["extra_columns_classified"]
@@ -2230,9 +2237,17 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     checks = pd.read_csv(out_dir / "broker_readiness_checks.csv")
     action_queue = pd.read_csv(out_dir / "broker_readiness_action_queue.csv")
     runbook = (out_dir / "broker_readiness_runbook.md").read_text(encoding="utf-8")
+    config = json.loads((out_dir / "broker_readiness_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "schema_reviewed" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert config["ready_action_count"] == 0
+    assert config["blocked_action_count"] == len(action_queue)
+    assert config["next_gate"] == action_queue.loc[0, "next_gate"]
+    assert config["next_gate_help_command"] == action_queue.loc[0, "next_gate_help_command"]
+    assert config["ready_actions"] == []
+    assert {item["check"] for item in config["next_actions"]} == set(action_queue["check"])
+    assert {item["check"] for item in config["blocked_actions"]} == set(action_queue["check"])
     assert action_queue.loc[0, "check"] == "schema_reviewed"
     assert action_queue.loc[0, "component"] == "schema_audit"
     assert action_queue.loc[0, "next_gate"] == "audit-adapter-schema"
