@@ -58,6 +58,7 @@ class DataReadinessReport:
     checks: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -91,8 +92,9 @@ def evaluate_data_readiness(
     }
     items = _items(summaries, thresholds)
     checks = _checks(summaries, items, thresholds)
-    summary = _summary(items, checks, thresholds)
-    return DataReadinessReport(items=items, checks=checks, summary=summary)
+    action_queue = _action_queue(checks, items)
+    summary = _summary(items, checks, thresholds, action_queue)
+    return DataReadinessReport(items=items, checks=checks, summary=summary, action_queue=action_queue)
 
 
 def write_data_readiness_report(
@@ -126,6 +128,12 @@ def write_data_readiness_report(
     report.items.to_csv(out / "data_readiness_items.csv", index=False)
     report.checks.to_csv(out / "data_readiness_checks.csv", index=False)
     report.summary.to_csv(out / "data_readiness_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks, report.items)
+    action_queue.to_csv(out / "data_readiness_action_queue.csv", index=False)
+    (out / "data_readiness_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], report.items, report.checks, action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="data_readiness",
@@ -141,7 +149,7 @@ def write_data_readiness_report(
             "instrument_metadata": instrument_metadata_dir,
         },
     )
-    return DataReadinessReport(report.items, report.checks, report.summary, out)
+    return DataReadinessReport(report.items, report.checks, report.summary, out, action_queue)
 
 
 def _items(summaries: dict[str, pd.DataFrame], thresholds: DataReadinessThresholds) -> pd.DataFrame:
@@ -431,10 +439,12 @@ def _summary(
     items: pd.DataFrame,
     checks: pd.DataFrame,
     thresholds: DataReadinessThresholds,
+    action_queue: pd.DataFrame,
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     required = items.loc[items["required"].astype(bool)] if not items.empty else pd.DataFrame()
     ready = failed == 0
+    next_gate = _primary_next_gate(action_queue)
     return pd.DataFrame(
         [
             {
@@ -470,10 +480,251 @@ def _summary(
                 "vendor_intake_source_header_sha256": _component_text(items, "vendor_intake", "source_header_sha256"),
                 "vendor_intake_mapping_draft_sha256": _component_text(items, "vendor_intake", "mapping_draft_sha256"),
                 "vendor_intake_mapping_coverage": _component_number(items, "vendor_intake", "mapping_coverage"),
+                "ready_action_count": 0,
+                "blocked_action_count": int(len(action_queue)),
+                "next_gate": next_gate,
+                "next_gate_help_command": _next_gate_help_command(next_gate),
                 "recommendation": "feed_strategy_research" if ready else "fix_data_readiness_gaps",
             }
         ]
     )
+
+
+def _action_queue(checks: pd.DataFrame, items: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if not checks.empty and "passed" in checks.columns:
+        failed = checks.loc[~checks["passed"].astype(bool)].reset_index(drop=True)
+        item_recommendations = _item_recommendations(items)
+        for priority, row in enumerate(failed.to_dict(orient="records"), start=1):
+            check_name = _value_text(row.get("check"))
+            component = _action_component(check_name)
+            next_gate = _next_gate_for_check(check_name, component)
+            rows.append(
+                {
+                    "priority": priority,
+                    "queue_status": "blocked",
+                    "check": check_name,
+                    "component": component,
+                    "next_gate": next_gate,
+                    "next_gate_help_command": _next_gate_help_command(next_gate),
+                    "actual": _value_text(row.get("value")),
+                    "operator": _value_text(row.get("operator")),
+                    "expected": _value_text(row.get("threshold")),
+                    "reason": _value_text(row.get("reason")),
+                    "recommendation": _action_recommendation(
+                        check_name,
+                        component,
+                        item_recommendations.get(component, ""),
+                    ),
+                }
+            )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "queue_status",
+            "check",
+            "component",
+            "next_gate",
+            "next_gate_help_command",
+            "actual",
+            "operator",
+            "expected",
+            "reason",
+            "recommendation",
+        ],
+    )
+
+
+def _item_recommendations(items: pd.DataFrame) -> dict[str, str]:
+    if items.empty or "component" not in items.columns or "recommendation" not in items.columns:
+        return {}
+    return {
+        _value_text(row.get("component")): _value_text(row.get("recommendation"))
+        for row in items.to_dict(orient="records")
+    }
+
+
+def _action_component(check_name: str) -> str:
+    if check_name in {"data_kind_consistency", "data_adapter_consistency"}:
+        return "vendor_market_data_pipeline"
+    if check_name == "explicit_fee_model":
+        return "market_profile"
+    known_components = [
+        "vendor_intake",
+        "schema_audit",
+        "mapped_data",
+        "tick_diagnostics",
+        "chain_diagnostics",
+        "market_profile",
+        "market_portability",
+        "instrument_metadata",
+    ]
+    for component in known_components:
+        if check_name == component or check_name.startswith(f"{component}_"):
+            return component
+    if check_name.startswith("tick_"):
+        return "tick_diagnostics"
+    if check_name.startswith("chain_"):
+        return "chain_diagnostics"
+    return "data_readiness"
+
+
+def _next_gate_for_check(check_name: str, component: str) -> str:
+    if check_name in {"data_kind_consistency", "data_adapter_consistency"}:
+        return "pipeline-vendor-market-data"
+    if check_name == "explicit_fee_model":
+        return "market-profile-report"
+    return {
+        "vendor_intake": "intake-vendor-csv",
+        "schema_audit": "audit-adapter-schema",
+        "mapped_data": "normalize-mapped-data",
+        "tick_diagnostics": "diagnose-ticks",
+        "chain_diagnostics": "diagnose-chain",
+        "market_profile": "market-profile-report",
+        "market_portability": "market-portability-report",
+        "instrument_metadata": "instrument-metadata-report",
+    }.get(component, "review-data-readiness")
+
+
+def _next_gate_help_command(next_gate: str) -> str:
+    return f"python -m hft_cli {next_gate} --help" if next_gate else ""
+
+
+def _primary_next_gate(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return ""
+    return _value_text(action_queue.iloc[0].get("next_gate"))
+
+
+def _action_recommendation(check_name: str, component: str, item_recommendation: str) -> str:
+    if item_recommendation and item_recommendation != "accepted":
+        return item_recommendation
+    if check_name in {"data_kind_consistency", "data_adapter_consistency"}:
+        return "rerun_vendor_market_data_pipeline_with_consistent_adapter_and_kind"
+    if check_name == "explicit_fee_model":
+        return "rerun_market_profile_with_explicit_fee_assumptions"
+    if check_name.endswith("_provided"):
+        return f"run_{component}"
+    if check_name.endswith("_ready"):
+        return f"fix_{component}"
+    return f"fix_{component}_check"
+
+
+def _runbook_markdown(
+    summary_row: pd.Series,
+    items: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready", False)) else "no"
+    lines = [
+        "# Data Readiness Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Recommendation: {_value_text(summary_row.get('recommendation'))}",
+        f"- Failed checks: {int(_value_number(summary_row.get('failed_checks')))}",
+        f"- Ready components: {int(_value_number(summary_row.get('ready_components')))}",
+        f"- Required components: {int(_value_number(summary_row.get('required_components')))}",
+        f"- Blocked actions: {int(_value_number(summary_row.get('blocked_action_count')))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+        "## Components",
+        "",
+        _items_table(items),
+        "",
+        "## Failed Checks",
+        "",
+        _failed_checks_table(checks),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Priority", "Check", "Component", "Next gate", "Help", "Recommendation"],
+        [
+            [
+                str(int(_value_number(row.get("priority")))),
+                _value_text(row.get("check")),
+                _value_text(row.get("component")),
+                _code(row.get("next_gate")),
+                _code(row.get("next_gate_help_command")),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in action_queue.to_dict(orient="records")
+        ],
+    )
+
+
+def _items_table(items: pd.DataFrame) -> str:
+    if items.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Component", "Required", "Provided", "Ready", "Rows", "Recommendation"],
+        [
+            [
+                _value_text(row.get("component")),
+                _yes_no(_to_bool(row.get("required"))),
+                _yes_no(_to_bool(row.get("provided"))),
+                _yes_no(_to_bool(row.get("ready"))),
+                str(int(_value_number(row.get("rows")))),
+                _value_text(row.get("recommendation")),
+            ]
+            for row in items.to_dict(orient="records")
+        ],
+    )
+
+
+def _failed_checks_table(checks: pd.DataFrame) -> str:
+    if checks.empty or "passed" not in checks.columns:
+        return "_None_"
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    if failed.empty:
+        return "_None_"
+    return _markdown_table(
+        ["Check", "Actual", "Op", "Expected", "Reason"],
+        [
+            [
+                _value_text(row.get("check")),
+                _value_text(row.get("value")),
+                _value_text(row.get("operator")),
+                _value_text(row.get("threshold")),
+                _value_text(row.get("reason")),
+            ]
+            for row in failed.to_dict(orient="records")
+        ],
+    )
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(_escape_cell(value) for value in headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(_escape_cell(value) for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _code(value: object) -> str:
+    text = _value_text(value)
+    return f"`{text}`" if text else ""
+
+
+def _escape_cell(value: object) -> str:
+    return _value_text(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _yes_no(value: bool) -> str:
+    return "yes" if value else "no"
 
 
 def _component_required(component: str, thresholds: DataReadinessThresholds) -> bool:
@@ -775,6 +1026,30 @@ def _text(row: pd.Series, column: str, fallback: str = "") -> str:
     if pd.isna(value):
         return fallback
     return str(value).strip()
+
+
+def _value_text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _value_number(value: object) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    try:
+        if pd.isna(number):
+            return 0.0
+    except (TypeError, ValueError):
+        pass
+    return number
 
 
 def _to_bool(value: object) -> bool:

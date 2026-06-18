@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from hft_cli import main
@@ -146,6 +148,11 @@ def test_data_readiness_fails_on_bad_tick_diagnostics():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert {"tick_crossed_quote_rows", "tick_out_of_session_rows"} <= failed
+    assert report.action_queue is not None
+    queue = report.action_queue.set_index("check")
+    assert queue.loc["tick_crossed_quote_rows", "next_gate"] == "diagnose-ticks"
+    assert queue.loc["tick_crossed_quote_rows", "next_gate_help_command"] == "python -m hft_cli diagnose-ticks --help"
+    assert report.summary.loc[0, "next_gate"] == "diagnose-ticks"
 
 
 def test_data_readiness_can_require_vendor_fee_and_metadata_evidence():
@@ -241,6 +248,10 @@ def test_data_readiness_exposes_ambiguous_vendor_intake_kind():
     assert item["recommendation"] == "set_vendor_kind_explicitly"
     assert bool(summary["vendor_intake_selected_kind_ambiguous"])
     assert summary["vendor_intake_ambiguous_kinds"] == "orders;fills"
+    assert report.action_queue is not None
+    queue = report.action_queue.set_index("check")
+    assert queue.loc["vendor_intake_kind_unambiguous", "next_gate"] == "intake-vendor-csv"
+    assert queue.loc["vendor_intake_kind_unambiguous", "recommendation"] == "set_vendor_kind_explicitly"
 
 
 def test_data_readiness_carries_vendor_intake_fingerprints():
@@ -383,6 +394,12 @@ def test_data_readiness_blocks_nonportable_expected_pair():
     assert not report.ready
     assert {"market_portability_ready", "market_portability_pair_ready"} <= failed
     assert int(item["failed_checks"]) == 1
+    assert report.action_queue is not None
+    queue = report.action_queue.set_index("check")
+    assert queue.loc["market_portability_pair_ready", "next_gate"] == "market-portability-report"
+    assert queue.loc["market_portability_pair_ready", "next_gate_help_command"] == (
+        "python -m hft_cli market-portability-report --help"
+    )
 
 
 def test_data_readiness_fails_on_chain_coverage_and_spread_gaps():
@@ -415,7 +432,19 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     assert (out_dir / "data_readiness_items.csv").exists()
     assert (out_dir / "data_readiness_checks.csv").exists()
     assert (out_dir / "data_readiness_summary.csv").exists()
+    assert (out_dir / "data_readiness_action_queue.csv").exists()
+    assert (out_dir / "data_readiness_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    action_queue = pd.read_csv(out_dir / "data_readiness_action_queue.csv")
+    runbook = (out_dir / "data_readiness_runbook.md").read_text(encoding="utf-8")
+    assert action_queue.empty
+    assert "next_gate_help_command" in action_queue.columns
+    assert "# Data Readiness Runbook" in runbook
+    assert "- Ready: yes" in runbook
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "data_readiness_action_queue.csv" in artifact_paths
+    assert "data_readiness_runbook.md" in artifact_paths
 
 
 def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_path):
@@ -425,9 +454,15 @@ def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_pa
 
     summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
     checks = pd.read_csv(out_dir / "data_readiness_checks.csv")
+    queue = pd.read_csv(out_dir / "data_readiness_action_queue.csv")
+    runbook = (out_dir / "data_readiness_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "diagnose-ticks"
+    assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli diagnose-ticks --help"
     assert "tick_diagnostics_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert queue.loc[0, "next_gate"] == "diagnose-ticks"
+    assert "`diagnose-ticks`" in runbook
 
 
 def test_cli_data_readiness_can_require_vendor_intake(tmp_path):
@@ -450,9 +485,11 @@ def test_cli_data_readiness_can_require_vendor_intake(tmp_path):
 
     summary = pd.read_csv(out_dir / "data_readiness_summary.csv")
     checks = pd.read_csv(out_dir / "data_readiness_checks.csv")
+    queue = pd.read_csv(out_dir / "data_readiness_action_queue.csv")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "vendor_intake_provided" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert "intake-vendor-csv" in set(queue["next_gate"])
 
 
 def test_cli_data_readiness_can_require_vendor_intake_kind(tmp_path):

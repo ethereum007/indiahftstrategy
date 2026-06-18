@@ -323,6 +323,10 @@
   mapping-draft, file-size, and mapping-coverage fingerprints into both
   component rows and the top-level summary for catalog and broker handoff
   traceability.
+- Data readiness now emits manifest-tracked `data_readiness_action_queue.csv`
+  and `data_readiness_runbook.md` handoffs, mapping failed vendor intake,
+  schema, normalization, diagnostics, market-profile, market-portability, and
+  metadata checks to the next CLI gate for catalog-level scheduler plans.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
