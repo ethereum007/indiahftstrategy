@@ -45,6 +45,11 @@
 - Strategy readiness next-actions JSON now includes a versioned schema plus
   `primary_action_status`, `primary_action`, `ready_actions`/
   `blocked_actions` queues, and counts for scheduler handoff.
+- Strategy readiness scorecard summaries and JSON handoffs now expose
+  `failed_check_count`, blocked-profile `failed_check_names`,
+  `first_failed_reason`, and structured `primary_blocker` fields for the first
+  blocked strategy profile, so schedulers can distinguish a ready scale-up lane
+  from the next missing research or broker-proof artifact.
 - Strategy readiness scorecard now emits `strategy_scorecard_action_queue.csv`,
   a priority-ordered ready/blocked queue with next CLI gate/help fields for
   simple scheduler handoff.

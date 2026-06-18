@@ -265,11 +265,23 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                     "best_strategy": "",
                     "best_market": "",
                     "best_readiness_score": 0.0,
-                "best_next_required_run_type": "",
-                "best_next_gate": "",
-                "best_next_gate_help_command": "",
-                "ready_profile_names": "",
+                    "best_next_required_run_type": "",
+                    "best_next_gate": "",
+                    "best_next_gate_help_command": "",
+                    "ready_profile_names": "",
                     "blocked_profile_names": "",
+                    "failed_check_count": 0,
+                    "failed_check_names": "",
+                    "first_failed_reason": "",
+                    "primary_blocker_check": "",
+                    "primary_blocker_value": "",
+                    "primary_blocker_operator": "",
+                    "primary_blocker_threshold": "",
+                    "primary_blocker_reason": "",
+                    "primary_blocker_profile": "",
+                    "primary_blocker_strategy": "",
+                    "primary_blocker_next_gate": "",
+                    "primary_blocker_next_gate_help_command": "",
                     "recommendation": "no_profiles_to_score",
                 }
             ]
@@ -281,6 +293,7 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
         ascending=[False, False, False, False],
     ).iloc[0]
     has_ready = not ready.empty
+    primary_blocker = _first_blocked_profile(blocked)
     return pd.DataFrame(
         [
             {
@@ -297,6 +310,20 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                 "best_next_gate_help_command": best["next_gate_help_command"],
                 "ready_profile_names": ";".join(ready["profile"].astype(str).tolist()),
                 "blocked_profile_names": ";".join(blocked["profile"].astype(str).tolist()),
+                "failed_check_count": int(len(blocked)),
+                "failed_check_names": _blocked_check_names(blocked),
+                "first_failed_reason": _blocked_reason(primary_blocker),
+                "primary_blocker_check": _blocked_check_name(primary_blocker),
+                "primary_blocker_value": _blocked_check_value(primary_blocker),
+                "primary_blocker_operator": _blocked_operator(primary_blocker),
+                "primary_blocker_threshold": _blocked_threshold(primary_blocker),
+                "primary_blocker_reason": _blocked_reason(primary_blocker),
+                "primary_blocker_profile": _text(primary_blocker.get("profile", "")) if not primary_blocker.empty else "",
+                "primary_blocker_strategy": _text(primary_blocker.get("strategy", "")) if not primary_blocker.empty else "",
+                "primary_blocker_next_gate": _text(primary_blocker.get("next_gate", "")) if not primary_blocker.empty else "",
+                "primary_blocker_next_gate_help_command": _text(primary_blocker.get("next_gate_help_command", ""))
+                if not primary_blocker.empty
+                else "",
                 "recommendation": _summary_recommendation(str(best["profile"]), has_ready),
             }
         ]
@@ -309,6 +336,8 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
     ready_actions = [action for action in next_actions if action["ready"]]
     blocked_actions = [action for action in next_actions if not action["ready"]]
     primary_action = next_actions[0] if next_actions else {}
+    primary_blocker = _first_blocked_action(blocked_actions)
+    failed_checks = [_blocked_action_check_name(action) for action in blocked_actions]
     gap_actions = [_gap_action(row) for row in _records(gaps) if str(row.get("gap", ""))]
     return {
         "schema_version": 1,
@@ -325,12 +354,113 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "ready_action_count": len(ready_actions),
         "blocked_action_count": len(blocked_actions),
         "gap_count": len(gap_actions),
+        "failed_check_count": len(failed_checks),
+        "failed_checks": failed_checks,
+        "first_failed_reason": _blocked_action_reason(primary_blocker),
+        "primary_blocker": _primary_blocker_record(primary_blocker),
         "primary_action_status": _primary_action_status(primary_action),
         "primary_action": primary_action,
         "next_actions": next_actions,
         "ready_actions": ready_actions,
         "blocked_actions": blocked_actions,
         "gaps": gap_actions,
+    }
+
+
+def _first_blocked_profile(blocked: pd.DataFrame) -> pd.Series:
+    if blocked.empty:
+        return pd.Series(dtype=object)
+    return blocked.iloc[0]
+
+
+def _blocked_check_names(blocked: pd.DataFrame) -> str:
+    if blocked.empty:
+        return ""
+    return ";".join(_blocked_check_name(row) for _, row in blocked.iterrows())
+
+
+def _blocked_check_name(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    return f"profile_ready:{_text(row.get('profile', ''))}"
+
+
+def _blocked_check_value(row: pd.Series) -> object:
+    if row.empty:
+        return ""
+    return bool(row.get("ready", False))
+
+
+def _blocked_operator(row: pd.Series) -> str:
+    return "" if row.empty else "is"
+
+
+def _blocked_threshold(row: pd.Series) -> object:
+    return "" if row.empty else True
+
+
+def _blocked_reason(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    profile = _text(row.get("profile"))
+    missing = _split_items(row.get("missing_required_run_types", ""))
+    blocked = _split_items(row.get("blocked_required_run_types", ""))
+    if missing:
+        return f"{profile} profile is missing required run type {missing[0]}"
+    if blocked:
+        return f"{profile} profile has non-passing required run type {blocked[0]}"
+    next_required = _text(row.get("next_required_run_type"))
+    if next_required:
+        return f"{profile} profile is blocked at required run type {next_required}"
+    return f"{profile} profile is not ready"
+
+
+def _first_blocked_action(blocked_actions: list[dict[str, Any]]) -> dict[str, Any]:
+    return blocked_actions[0] if blocked_actions else {}
+
+
+def _blocked_action_check_name(action: dict[str, Any]) -> str:
+    profile = str(action.get("profile", ""))
+    return f"profile_ready:{profile}" if profile else "profile_ready"
+
+
+def _blocked_action_reason(action: dict[str, Any]) -> str:
+    if not action:
+        return ""
+    profile = str(action.get("profile", ""))
+    missing = action.get("missing_required_run_types")
+    blocked = action.get("blocked_required_run_types")
+    missing_items = missing if isinstance(missing, list) else _split_items(missing)
+    blocked_items = blocked if isinstance(blocked, list) else _split_items(blocked)
+    if missing_items:
+        return f"{profile} profile is missing required run type {missing_items[0]}"
+    if blocked_items:
+        return f"{profile} profile has non-passing required run type {blocked_items[0]}"
+    next_required = str(action.get("next_required_run_type", ""))
+    if next_required:
+        return f"{profile} profile is blocked at required run type {next_required}"
+    return f"{profile} profile is not ready"
+
+
+def _primary_blocker_record(action: dict[str, Any]) -> dict[str, Any]:
+    if not action:
+        return {}
+    return {
+        "check": _blocked_action_check_name(action),
+        "passed": False,
+        "profile": str(action.get("profile", "")),
+        "strategy": str(action.get("strategy", "")),
+        "market": str(action.get("market", "")),
+        "value": bool(action.get("ready", False)),
+        "operator": "is",
+        "threshold": True,
+        "reason": _blocked_action_reason(action),
+        "readiness_score": float(_numeric(action.get("readiness_score", 0.0))),
+        "next_required_run_type": str(action.get("next_required_run_type", "")),
+        "next_gate": str(action.get("next_gate", "")),
+        "next_gate_help_command": str(action.get("next_gate_help_command", "")),
+        "missing_required_run_types": action.get("missing_required_run_types", []),
+        "blocked_required_run_types": action.get("blocked_required_run_types", []),
     }
 
 

@@ -354,7 +354,11 @@ It includes `schema_version`, root `next_gate`/`next_gate_help_command` aliases
 for the best ranked action, `primary_action_status`, `primary_action`,
 `ready_actions`, `blocked_actions`, and action counts so automation can
 consume ready scale-up lanes separately from blocked research or broker-proof
-lanes.
+lanes. `strategy_scorecard_summary.csv` and
+`strategy_scorecard_next_actions.json` also expose `failed_check_count`,
+`failed_checks`/`failed_check_names`, `first_failed_reason`, and structured
+`primary_blocker` fields for the first blocked strategy profile, including
+the missing or non-passing required run type and next CLI gate.
 `strategy_scorecard_action_queue.csv` flattens those ranked actions into one
 priority-ordered row per profile with `queue_status`, `next_gate`, and
 `next_gate_help_command` for simple runner or scheduler handoff.

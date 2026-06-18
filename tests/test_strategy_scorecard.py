@@ -97,6 +97,17 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.summary.loc[0, "best_profile"] == "leadlag"
     assert report.summary.loc[0, "best_next_gate"] == "plan-scaleup"
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
+    assert int(report.summary.loc[0, "failed_check_count"]) == 1
+    assert report.summary.loc[0, "failed_check_names"] == "profile_ready:imbalance"
+    assert report.summary.loc[0, "first_failed_reason"] == (
+        "imbalance profile is missing required run type imbalance_replay_walkforward"
+    )
+    assert report.summary.loc[0, "primary_blocker_check"] == "profile_ready:imbalance"
+    assert not bool(report.summary.loc[0, "primary_blocker_value"])
+    assert report.summary.loc[0, "primary_blocker_operator"] == "is"
+    assert bool(report.summary.loc[0, "primary_blocker_threshold"])
+    assert report.summary.loc[0, "primary_blocker_profile"] == "imbalance"
+    assert report.summary.loc[0, "primary_blocker_next_gate"] == "walkforward-imbalance-replay"
     assert report.config["schema_version"] == 1
     assert report.config["best_profile"] == "leadlag"
     assert report.config["next_gate"] == "plan-scaleup"
@@ -104,6 +115,15 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.config["ready_action_count"] == 1
     assert report.config["blocked_action_count"] == 1
     assert report.config["gap_count"] == len(report.config["gaps"])
+    assert report.config["failed_check_count"] == 1
+    assert report.config["failed_checks"] == ["profile_ready:imbalance"]
+    assert report.config["first_failed_reason"] == (
+        "imbalance profile is missing required run type imbalance_replay_walkforward"
+    )
+    assert report.config["primary_blocker"]["check"] == "profile_ready:imbalance"
+    assert report.config["primary_blocker"]["profile"] == "imbalance"
+    assert report.config["primary_blocker"]["next_required_run_type"] == "imbalance_replay_walkforward"
+    assert report.config["primary_blocker"]["next_gate"] == "walkforward-imbalance-replay"
     assert report.config["next_actions"][0]["next_gate"] == "plan-scaleup"
     assert report.config["next_actions"][0]["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["ready_actions"][0]["profile"] == "leadlag"
@@ -153,6 +173,10 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert config["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert config["ready_action_count"] == 1
     assert config["blocked_action_count"] == 0
+    assert config["failed_check_count"] == 0
+    assert config["failed_checks"] == []
+    assert config["first_failed_reason"] == ""
+    assert config["primary_blocker"] == {}
     assert config["primary_action_status"] == "ready"
     assert config["primary_action"]["profile"] == "leadlag"
     assert config["primary_action"]["next_gate"] == "plan-scaleup"
@@ -190,6 +214,7 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     )
 
     scorecard = pd.read_csv(out_dir / "strategy_scorecard.csv")
+    summary = pd.read_csv(out_dir / "strategy_scorecard_summary.csv")
     gaps = pd.read_csv(out_dir / "strategy_scorecard_gaps.csv")
     queue = pd.read_csv(out_dir / "strategy_scorecard_action_queue.csv")
     config = json.loads((out_dir / "strategy_scorecard_next_actions.json").read_text(encoding="utf-8"))
@@ -197,6 +222,15 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     assert not bool(scorecard.loc[0, "ready"])
     assert scorecard.loc[0, "next_gate"] == "walkforward-imbalance-replay"
     assert scorecard.loc[0, "next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
+    assert int(summary.loc[0, "failed_check_count"]) == 1
+    assert summary.loc[0, "failed_check_names"] == "profile_ready:imbalance"
+    assert summary.loc[0, "first_failed_reason"] == (
+        "imbalance profile is missing required run type imbalance_replay_walkforward"
+    )
+    assert summary.loc[0, "primary_blocker_check"] == "profile_ready:imbalance"
+    assert not bool(summary.loc[0, "primary_blocker_value"])
+    assert bool(summary.loc[0, "primary_blocker_threshold"])
+    assert summary.loc[0, "primary_blocker_next_gate"] == "walkforward-imbalance-replay"
     assert queue.loc[0, "queue_status"] == "blocked"
     assert queue.loc[0, "next_required_run_type"] == "imbalance_replay_walkforward"
     assert queue.loc[0, "next_gate"] == "walkforward-imbalance-replay"
@@ -204,6 +238,14 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
     assert config["next_gate_help_command"] == "python -m hft_cli walkforward-imbalance-replay --help"
     assert config["ready_action_count"] == 0
     assert config["blocked_action_count"] == 1
+    assert config["failed_check_count"] == 1
+    assert config["failed_checks"] == ["profile_ready:imbalance"]
+    assert config["first_failed_reason"] == (
+        "imbalance profile is missing required run type imbalance_replay_walkforward"
+    )
+    assert config["primary_blocker"]["check"] == "profile_ready:imbalance"
+    assert config["primary_blocker"]["next_required_run_type"] == "imbalance_replay_walkforward"
+    assert config["primary_blocker"]["next_gate"] == "walkforward-imbalance-replay"
     assert config["primary_action_status"] == "blocked"
     assert config["primary_action"]["profile"] == "imbalance"
     assert config["primary_action"]["next_gate"] == "walkforward-imbalance-replay"
