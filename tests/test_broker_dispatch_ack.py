@@ -431,6 +431,8 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert summary["ack_rate"] == 1.0
     assert summary["recommendation"] == "broker_dispatch_acknowledged"
     assert report.acknowledgements["match_key"].tolist() == ["source_order_id", "source_order_id"]
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.acknowledgements["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.acknowledgements["ack_route_dispatch_roundtrip_batch_ids"].tolist() == ["BDP-0", "BDP-0"]
     assert summary["broker_schema_status"] == "placeholder_normalized_pending_vendor_schema"
@@ -1279,6 +1281,9 @@ def test_broker_dispatch_ack_blocks_route_enable_dispatch_roundtrip_failed_check
     assert not report.passed
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
     assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1

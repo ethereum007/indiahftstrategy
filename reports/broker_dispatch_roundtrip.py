@@ -2284,9 +2284,11 @@ def _config(
     thresholds: BrokerDispatchRoundTripThresholds,
     checks: pd.DataFrame,
 ) -> dict[str, Any]:
+    failed_check_records = _failed_check_records(checks)
     return {
         "schema_version": 1,
         "passed": _to_bool(summary["passed"]),
+        "failed_check_count": len(failed_check_records),
         "target_mode": _text(summary, "target_mode"),
         "strategy": _text(summary, "strategy"),
         "market": _text(summary, "market"),
@@ -2385,8 +2387,20 @@ def _config(
             "failed_checks": int(summary["route_enable_dispatch_roundtrip_failed_checks"]),
         },
         "thresholds": asdict(thresholds),
-        "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+        "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
+        "primary_blocker": failed_check_records[0] if failed_check_records else {},
     }
+
+
+def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    return [_jsonable_check_record(row) for row in failed.to_dict(orient="records")]
+
+
+def _jsonable_check_record(row: dict[str, Any]) -> dict[str, object]:
+    return {str(key): _jsonable(value) for key, value in row.items()}
 
 
 def _matches(frame: pd.DataFrame, column: str, value: str) -> pd.DataFrame:

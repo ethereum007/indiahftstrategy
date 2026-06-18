@@ -120,6 +120,10 @@
   failed-check name lists while adding `failed_check_count` and a structured
   `primary_blocker` record, so launch schedulers can surface the first failed
   gate without opening every checks CSV.
+- Broker dispatch, send, acknowledgement, and round-trip config JSONs now
+  expose the same `failed_check_count` plus structured `primary_blocker`
+  contract, so broker-stage automation can route the first failed dry-run gate
+  without parsing every component checks CSV.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
@@ -602,7 +606,8 @@
   duplicate source order IDs, dirty carried shadow broker proof, or unresolved
   upload-order files while resolving launch pipeline upload roots and
   fingerprinting the route-enable summary/config, route-enable manifest, and
-  upload CSV without sending orders.
+  upload CSV without sending orders while exposing the first failed dispatch
+  check as a structured config blocker.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route-readiness proof, route round-trip proof tags, and
@@ -615,7 +620,8 @@
   `dispatch_broker_dispatch_roundtrip_vendor_market_data_batch_*`, validating route-readiness identity,
   carried shadow proof quality, and route proof batch continuity, forcing live
   submission off, and fingerprinting exact dispatch input files plus the
-  dispatch manifest when present.
+  dispatch manifest when present while carrying the first failed sender check
+  in config.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip
@@ -631,7 +637,7 @@
   needed, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch, dispatch
-  manifest, and ack log inputs.
+  manifest, and ack log inputs plus the first failed ack check in config.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, route-readiness consistency, raw ack-log route proof consistency,
@@ -644,7 +650,7 @@
   component configs are thin,
   request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files and
-  manifests.
+  manifests and exposing the first failed cross-component check in config.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.

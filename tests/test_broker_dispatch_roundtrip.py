@@ -676,6 +676,8 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
 
     assert report.passed
     assert report.summary.iloc[0]["recommendation"] == "broker_dry_run_roundtrip_proved"
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.orders["request_id"].tolist() == ["BDR-1", "BDR-2"]
     assert report.orders["acked"].tolist() == [True, True]
     assert report.orders["dispatch_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
@@ -1722,6 +1724,9 @@ def test_broker_dispatch_roundtrip_blocks_route_enable_dispatch_roundtrip_failed
     assert not report.passed
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
 

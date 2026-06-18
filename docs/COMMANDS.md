@@ -3018,6 +3018,11 @@ broker_dispatch_config.json
 manifest.json
 ```
 
+`broker_dispatch_config.json` keeps the legacy `failed_checks` name list and
+also adds `failed_check_count` plus `primary_blocker`, giving sender
+automation the first failed dispatch gate as a structured record before it
+opens `broker_dispatch_checks.csv`.
+
 This command still does not submit orders. It hashes the route-enable
 authorization and upload file, creates one dry-run dispatch row per upload
 order, and requires unique source order IDs, unique dispatch IDs, route-enabled
@@ -3089,6 +3094,11 @@ broker_dispatch_send_summary.csv
 broker_dispatch_send_config.json
 manifest.json
 ```
+
+`broker_dispatch_send_config.json` keeps the legacy `failed_checks` name list
+and also adds `failed_check_count` plus `primary_blocker`, so a non-submitting
+sender loop can surface the first request-packet blocker without parsing the
+full check CSV.
 
 This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and
@@ -3164,6 +3174,11 @@ broker_dispatch_ack_config.json
 manifest.json
 ```
 
+`broker_dispatch_ack_config.json` keeps the legacy `failed_checks` name list
+and also adds `failed_check_count` plus `primary_blocker`, giving
+ack-reconciliation automation the first failed broker acknowledgement gate as a
+compact JSON record.
+
 The gate matches acknowledgements by `dispatch_order_id` with
 `source_order_id` fallback, accepts common broker success status names, and
 fails closed on unready dispatch plans, missing acknowledgements, rejected
@@ -3232,6 +3247,11 @@ broker_dispatch_roundtrip_summary.csv
 broker_dispatch_roundtrip_config.json
 manifest.json
 ```
+
+`broker_dispatch_roundtrip_config.json` keeps the legacy `failed_checks` name
+list and also adds `failed_check_count` plus `primary_blocker`, so the final
+broker dry-run proof exposes the first failed cross-component check directly in
+the config.
 
 This gate proves the broker dry-run bridge as a whole. It joins dispatch rows
 to sender requests and acknowledgement rows, including the raw ack-log route

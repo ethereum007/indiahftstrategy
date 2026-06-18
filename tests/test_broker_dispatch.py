@@ -508,6 +508,8 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert report.dispatch_orders["source_order_id"].tolist() == ["ORD-1", "ORD-2"]
     assert report.dispatch_orders["dispatch_batch_id"].nunique() == 1
     assert report.config["dry_run_only"]
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.dispatch_orders["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.summary.iloc[0]["route_dispatch_roundtrip_ready"]
     assert report.summary.iloc[0]["broker_schema_status"] == "placeholder_normalized_pending_vendor_schema"
@@ -1233,6 +1235,9 @@ def test_broker_dispatch_blocks_route_enable_dispatch_roundtrip_failed_checks():
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
 

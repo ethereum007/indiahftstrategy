@@ -387,6 +387,8 @@ def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
     assert report.ready
     assert report.summary.iloc[0]["request_state"] == "dry_run_send_packet_ready"
     assert report.summary.iloc[0]["recommendation"] == "ready_for_non_submitting_broker_sender_review"
+    assert report.config["failed_check_count"] == 0
+    assert report.config["primary_blocker"] == {}
     assert report.requests["endpoint"].tolist() == [
         "arrow_money.orders.dry_run_submit",
         "arrow_money.orders.dry_run_submit",
@@ -1056,6 +1058,9 @@ def test_broker_dispatch_send_reads_nested_route_enable_dispatch_roundtrip_faile
     assert not report.ready
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "route_enable_dispatch_roundtrip_failed_checks" in failed
+    assert report.config["failed_check_count"] == len(failed)
+    assert report.config["primary_blocker"]["check"] in failed
+    assert not report.config["primary_blocker"]["passed"]
     assert int(report.summary.iloc[0]["route_enable_dispatch_roundtrip_failed_checks"]) == 1
     assert report.config["route_enable_dispatch_roundtrip"]["failed_checks"] == 1
 

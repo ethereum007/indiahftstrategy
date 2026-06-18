@@ -1242,9 +1242,11 @@ def _config(
     checks: pd.DataFrame,
     upload_file_hash: str,
 ) -> dict[str, Any]:
+    failed_check_records = _failed_check_records(checks)
     return {
         "schema_version": 1,
         "ready": _to_bool(summary["ready"]),
+        "failed_check_count": len(failed_check_records),
         "dispatch_state": str(summary["dispatch_state"]),
         "dry_run_only": True,
         "dispatch_batch_id": str(summary["dispatch_batch_id"]),
@@ -1349,8 +1351,16 @@ def _config(
             "failed_checks": int(route["route_enable_dispatch_roundtrip_failed_checks"]),
         },
         "thresholds": asdict(thresholds),
-        "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+        "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
+        "primary_blocker": failed_check_records[0] if failed_check_records else {},
     }
+
+
+def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
+    if checks.empty or "passed" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    return [_jsonable_row(row) for row in failed.to_dict(orient="records")]
 
 
 def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
