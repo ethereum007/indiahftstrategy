@@ -2675,7 +2675,10 @@ fingerprints the sibling `vendor_market_data_batch_config.json` and carries its
 dataset/header/mapping proof into `scaleup_config.json`.
 Use `--route-readiness` with `--require-route-readiness` to fail closed unless
 the market-portability, strategy-evidence, and file-provenance-gated
-`ops_launch` evidence chain has accepted the exact strategy/market route.
+`ops_launch` evidence chain has accepted the exact strategy/market route. The
+scale-up gate now also verifies that supplied route-readiness summaries carry
+launch-grade ops broker controls, and it preserves blocked/breach counts in
+`scaleup_summary.csv` and `scaleup_config.json`.
 If broker readiness included resume-gate evidence, scale-up also retains the
 resume authorization identity, prior incident identity, and resume
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless broker
@@ -2688,7 +2691,9 @@ route-enable dispatch round-trip failed-check count, and missing, rejected, and
 unmatched acknowledgement counts, plus the nested route proof target, identity,
 batch, request, and ack quality fields. `--require-dispatch-roundtrip` fails
 closed unless that broker dry-run proof and its route proof are present, ready,
-identity-matched, count-matched, and clean.
+identity-matched, count-matched, and clean. If broker readiness carried
+route-readiness ops broker controls, scale-up revalidates those allocation and
+concentration proof counts before allowing promotion.
 If broker readiness carried final vendor market-data batch proof from the dry-run
 round-trip, scale-up revalidates the adapter/market, dataset, source-file,
 header-fingerprint, mapping, and comparison evidence and retains it as

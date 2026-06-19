@@ -264,6 +264,10 @@
   failed-check name lists while adding `failed_check_count` and a structured
   `primary_blocker` record, so launch schedulers can surface the first failed
   gate without opening every checks CSV.
+- Scale-up now fails closed on stale route-readiness ops broker controls from
+  either direct route-readiness summaries or broker-readiness-carried route
+  proof, preserving allocation/concentration blocked/breach counts in the
+  scale-up summary/config.
 - Cutover gate now emits manifest-tracked `cutover_action_queue.csv` and
   `cutover_runbook.md` handoffs, routing failed scale-up, route-readiness,
   broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,
