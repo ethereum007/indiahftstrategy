@@ -2628,7 +2628,11 @@ requires a ready positive allocation for the scale-up strategy/market when
 `max_notional_per_session` at the selected allocation notional. The previous
 pre-portfolio notional cap, selected allocation, eligibility reason, and
 whether the portfolio cap was applied are retained in `scaleup_summary.csv`
-and the nested `strategy_portfolio` block in `scaleup_config.json`.
+and the nested `strategy_portfolio` block in `scaleup_config.json`. Scale-up
+also carries the portfolio-level strategy/market diversity requirements,
+allocated strategy/market counts, top concentration names, and maximum
+strategy/market allocation weights so later runtime and broker gates can audit
+why the selected allocation was allowed without reopening the portfolio folder.
 If a launch-pipeline broker-readiness summary is thin but its
 `broker_readiness_config.json` retains
 `broker_dispatch_roundtrip_vendor_market_data_batch`, scale-up hydrates the

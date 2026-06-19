@@ -1501,6 +1501,44 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                     "allocated_notional",
                     fallback=0.0,
                 ),
+                "strategy_portfolio_min_strategy_count": int(
+                    _number(strategy_portfolio, "min_strategy_count", fallback=0.0)
+                ),
+                "strategy_portfolio_min_market_count": int(
+                    _number(strategy_portfolio, "min_market_count", fallback=0.0)
+                ),
+                "strategy_portfolio_max_strategy_weight": _number(
+                    strategy_portfolio,
+                    "max_strategy_weight",
+                    fallback=0.0,
+                ),
+                "strategy_portfolio_max_market_weight": _number(
+                    strategy_portfolio,
+                    "max_market_weight",
+                    fallback=0.0,
+                ),
+                "strategy_portfolio_allocated_strategy_count": int(
+                    _number(strategy_portfolio, "allocated_strategy_count", fallback=0.0)
+                ),
+                "strategy_portfolio_allocated_market_count": int(
+                    _number(strategy_portfolio, "allocated_market_count", fallback=0.0)
+                ),
+                "strategy_portfolio_top_strategy_by_weight": str(
+                    strategy_portfolio.get("top_strategy_by_weight", "")
+                ),
+                "strategy_portfolio_top_market_by_weight": str(
+                    strategy_portfolio.get("top_market_by_weight", "")
+                ),
+                "strategy_portfolio_max_strategy_allocation_weight": _number(
+                    strategy_portfolio,
+                    "max_strategy_allocation_weight",
+                    fallback=0.0,
+                ),
+                "strategy_portfolio_max_market_allocation_weight": _number(
+                    strategy_portfolio,
+                    "max_market_allocation_weight",
+                    fallback=0.0,
+                ),
                 "strategy_portfolio_selected_profile": str(strategy_portfolio.get("selected_profile", "")),
                 "strategy_portfolio_selected_strategy": _strategy_key(
                     strategy_portfolio.get("selected_strategy", "")
@@ -1972,6 +2010,32 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_allocated_notional": float(
                     plan_row["strategy_portfolio_allocated_notional"]
                 ),
+                "strategy_portfolio_min_strategy_count": int(
+                    plan_row["strategy_portfolio_min_strategy_count"]
+                ),
+                "strategy_portfolio_min_market_count": int(plan_row["strategy_portfolio_min_market_count"]),
+                "strategy_portfolio_max_strategy_weight": float(
+                    plan_row["strategy_portfolio_max_strategy_weight"]
+                ),
+                "strategy_portfolio_max_market_weight": float(plan_row["strategy_portfolio_max_market_weight"]),
+                "strategy_portfolio_allocated_strategy_count": int(
+                    plan_row["strategy_portfolio_allocated_strategy_count"]
+                ),
+                "strategy_portfolio_allocated_market_count": int(
+                    plan_row["strategy_portfolio_allocated_market_count"]
+                ),
+                "strategy_portfolio_top_strategy_by_weight": str(
+                    plan_row["strategy_portfolio_top_strategy_by_weight"]
+                ),
+                "strategy_portfolio_top_market_by_weight": str(
+                    plan_row["strategy_portfolio_top_market_by_weight"]
+                ),
+                "strategy_portfolio_max_strategy_allocation_weight": float(
+                    plan_row["strategy_portfolio_max_strategy_allocation_weight"]
+                ),
+                "strategy_portfolio_max_market_allocation_weight": float(
+                    plan_row["strategy_portfolio_max_market_allocation_weight"]
+                ),
                 "strategy_portfolio_selected_profile": str(plan_row["strategy_portfolio_selected_profile"]),
                 "strategy_portfolio_selected_strategy": str(plan_row["strategy_portfolio_selected_strategy"]),
                 "strategy_portfolio_selected_market": str(plan_row["strategy_portfolio_selected_market"]),
@@ -2265,6 +2329,20 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "total_capital": float(plan_row["strategy_portfolio_total_capital"]),
             "allocated_weight": float(plan_row["strategy_portfolio_allocated_weight"]),
             "allocated_notional": float(plan_row["strategy_portfolio_allocated_notional"]),
+            "min_strategy_count": int(plan_row["strategy_portfolio_min_strategy_count"]),
+            "min_market_count": int(plan_row["strategy_portfolio_min_market_count"]),
+            "max_strategy_weight": float(plan_row["strategy_portfolio_max_strategy_weight"]),
+            "max_market_weight": float(plan_row["strategy_portfolio_max_market_weight"]),
+            "allocated_strategy_count": int(plan_row["strategy_portfolio_allocated_strategy_count"]),
+            "allocated_market_count": int(plan_row["strategy_portfolio_allocated_market_count"]),
+            "top_strategy_by_weight": str(plan_row["strategy_portfolio_top_strategy_by_weight"]),
+            "top_market_by_weight": str(plan_row["strategy_portfolio_top_market_by_weight"]),
+            "max_strategy_allocation_weight": float(
+                plan_row["strategy_portfolio_max_strategy_allocation_weight"]
+            ),
+            "max_market_allocation_weight": float(
+                plan_row["strategy_portfolio_max_market_allocation_weight"]
+            ),
             "selected_profile": str(plan_row["strategy_portfolio_selected_profile"]),
             "selected_strategy": str(plan_row["strategy_portfolio_selected_strategy"]),
             "selected_market": str(plan_row["strategy_portfolio_selected_market"]),
@@ -3397,6 +3475,46 @@ def _strategy_portfolio_state(
             "allocated_notional": _number(summary_row, "allocated_notional", fallback=0.0)
             if not summary_row.empty
             else 0.0,
+            "min_strategy_count": int(_number(summary_row, "min_strategy_count", fallback=0.0))
+            if not summary_row.empty
+            else 0,
+            "min_market_count": int(_number(summary_row, "min_market_count", fallback=0.0))
+            if not summary_row.empty
+            else 0,
+            "max_strategy_weight": _number(summary_row, "max_strategy_weight", fallback=0.0)
+            if not summary_row.empty
+            else 0.0,
+            "max_market_weight": _number(summary_row, "max_market_weight", fallback=0.0)
+            if not summary_row.empty
+            else 0.0,
+            "allocated_strategy_count": int(
+                _number(summary_row, "allocated_strategy_count", fallback=0.0)
+            )
+            if not summary_row.empty
+            else 0,
+            "allocated_market_count": int(_number(summary_row, "allocated_market_count", fallback=0.0))
+            if not summary_row.empty
+            else 0,
+            "top_strategy_by_weight": str(summary_row.get("top_strategy_by_weight", ""))
+            if not summary_row.empty
+            else "",
+            "top_market_by_weight": str(summary_row.get("top_market_by_weight", ""))
+            if not summary_row.empty
+            else "",
+            "max_strategy_allocation_weight": _number(
+                summary_row,
+                "max_strategy_allocation_weight",
+                fallback=0.0,
+            )
+            if not summary_row.empty
+            else 0.0,
+            "max_market_allocation_weight": _number(
+                summary_row,
+                "max_market_allocation_weight",
+                fallback=0.0,
+            )
+            if not summary_row.empty
+            else 0.0,
             "selected_allocation_provided": not selected.empty,
             "selected_profile": str(selected.get("profile", "")) if not selected.empty else "",
             "selected_strategy": _strategy_key(selected.get("strategy", "")) if not selected.empty else "",
@@ -3903,9 +4021,10 @@ def _check(
 
 def _number(row: pd.Series, column: str, fallback: float = np.nan) -> float:
     value = row.get(column, fallback)
-    if pd.isna(value):
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
         return float(fallback)
-    return float(value)
+    return float(parsed)
 
 
 def _number_from(mapping: dict[str, Any], key: str, fallback: float = np.nan) -> float:

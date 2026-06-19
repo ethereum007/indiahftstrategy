@@ -82,6 +82,9 @@
   select the matching strategy/market allocation row, cap per-session notional
   at the allocated notional, and retain the selected portfolio context in
   `scaleup_summary.csv`, `scaleup_config.json`, and manifest inputs.
+- Controlled scale-up now also carries strategy portfolio concentration
+  context, including distinct strategy/market counts and maximum aggregate
+  strategy/market allocation weights, into summary/config handoffs.
 - Runtime telemetry and guard reports now carry the selected strategy portfolio
   allocation context from `scaleup_config.json` and explicitly halt if session
   notional breaches the selected paper/shadow allocation notional.

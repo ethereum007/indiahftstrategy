@@ -668,6 +668,16 @@ def strategy_portfolio_summary(ready=True):
                 "reserve_weight": 0.10,
                 "allocated_weight": 0.90 if ready else 0.0,
                 "allocated_notional": 900_000.0 if ready else 0.0,
+                "min_strategy_count": 2 if ready else 0,
+                "min_market_count": 1 if ready else 0,
+                "max_strategy_weight": 0.60 if ready else 0.0,
+                "max_market_weight": 0.90 if ready else 0.0,
+                "allocated_strategy_count": 2 if ready else 0,
+                "allocated_market_count": 1 if ready else 0,
+                "top_strategy_by_weight": "lead_lag_taker" if ready else "",
+                "top_market_by_weight": "india_nse_index_derivatives" if ready else "",
+                "max_strategy_allocation_weight": 0.45 if ready else 0.0,
+                "max_market_allocation_weight": 0.90 if ready else 0.0,
                 "top_profile": "leadlag" if ready else "",
                 "top_strategy": "lead_lag_taker" if ready else "",
                 "top_market": "india_nse_index_derivatives" if ready else "",
@@ -975,10 +985,25 @@ def test_scaleup_plan_caps_notional_with_strategy_portfolio_allocation():
     assert report.summary.iloc[0]["strategy_portfolio_ready"]
     assert report.summary.iloc[0]["strategy_portfolio_selected_profile"] == "leadlag"
     assert report.summary.iloc[0]["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert report.summary.iloc[0]["strategy_portfolio_allocated_strategy_count"] == 2
+    assert report.summary.iloc[0]["strategy_portfolio_allocated_market_count"] == 1
+    assert report.summary.iloc[0]["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["strategy_portfolio_max_strategy_allocation_weight"] == 0.45
+    assert report.summary.iloc[0]["strategy_portfolio_max_market_allocation_weight"] == 0.90
     assert report.config["strategy_portfolio"]["required"]
     assert report.config["strategy_portfolio"]["selected_strategy"] == "lead_lag_taker"
     assert report.config["strategy_portfolio"]["selected_market"] == "india_nse_index_derivatives"
     assert report.config["strategy_portfolio"]["selected_allocation_notional"] == 1200.0
+    assert report.config["strategy_portfolio"]["min_strategy_count"] == 2
+    assert report.config["strategy_portfolio"]["min_market_count"] == 1
+    assert report.config["strategy_portfolio"]["max_strategy_weight"] == 0.60
+    assert report.config["strategy_portfolio"]["max_market_weight"] == 0.90
+    assert report.config["strategy_portfolio"]["allocated_strategy_count"] == 2
+    assert report.config["strategy_portfolio"]["allocated_market_count"] == 1
+    assert report.config["strategy_portfolio"]["top_strategy_by_weight"] == "lead_lag_taker"
+    assert report.config["strategy_portfolio"]["top_market_by_weight"] == "india_nse_index_derivatives"
+    assert report.config["strategy_portfolio"]["max_strategy_allocation_weight"] == 0.45
+    assert report.config["strategy_portfolio"]["max_market_allocation_weight"] == 0.90
     assert report.config["strategy_portfolio"]["notional_cap_applied"]
     assert report.config["limits"]["pre_portfolio_max_notional_per_session"] == 3000.0
     assert report.config["limits"]["max_notional_per_session"] == 1200.0
