@@ -176,6 +176,10 @@
   `primary_blocker` while keeping the legacy failed-check name list, so
   post-halt automation can route the first failed resume condition directly
   from `resume_config.json`.
+- Resume gate now emits manifest-tracked `resume_action_queue.csv` and
+  `resume_runbook.md` handoffs, routing open incidents, stale scale-up plans,
+  identity mismatches, proof-refresh blockers, and operator-review gaps to the
+  next CLI gate before broker/runtime resume automation can continue.
 - Halt response config JSON now exposes response-plan `failed_check_count`,
   `failed_checks`, and structured `primary_blocker` next to the guard trigger
   context, so emergency automation can route packet-construction blockers
@@ -1028,7 +1032,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 945 tests.
+Current passing suite: 947 tests.
 
 ## Next Build Targets
 

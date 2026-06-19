@@ -15,6 +15,7 @@ from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.manifest import write_experiment_manifest
 from reports.proof_refresh import write_proof_refresh_report
+from reports.resume import write_resume_gate_report
 
 
 def write_run(path, *, run_type, summary_name, summary_row):
@@ -1802,6 +1803,105 @@ def test_catalog_experiment_runs_recognizes_runtime_and_halt_control_status(tmp_
     assert rows.loc["halt_execution_reconciliation", "summary_status_column"] == "passed"
     assert rows.loc["halt_incident_review", "summary_file"] == "halt_incident_summary.csv"
     assert rows.loc["resume_gate", "summary_status_column"] == "ready"
+
+
+def test_experiment_catalog_promotes_resume_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    incident = root / "incident"
+    scaleup = root / "scaleup"
+    resume = root / "resume"
+    incident.mkdir(parents=True)
+    scaleup.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": True,
+                "incident_status": "halt_completed",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "guard_failed_check_names": "open_order_count",
+                "guard_first_failed_reason": "open_order_count: limit breached",
+            }
+        ]
+    ).to_csv(incident / "halt_incident_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "target_mode": "shadow",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "max_orders_per_session": 10,
+                "max_notional_per_session": 100000.0,
+                "failed_checks": 1,
+            }
+        ]
+    ).to_csv(scaleup / "scaleup_summary.csv", index=False)
+    pd.DataFrame([{"check": "scaleup_ready", "passed": False, "reason": "blocked"}]).to_csv(
+        scaleup / "scaleup_checks.csv",
+        index=False,
+    )
+    (scaleup / "scaleup_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ready": False,
+                "target_mode": "shadow",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "identity": {
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                },
+                "proof_freshness": {
+                    "required": True,
+                    "provided": True,
+                    "ready": True,
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                    "mixed_identity": False,
+                    "proof_source": "latest",
+                },
+                "limits": {"max_orders_per_session": 10, "max_notional_per_session": 100000.0},
+                "kill_switches": {},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    write_resume_gate_report(incident_dir=incident, scaleup_dir=scaleup, output_dir=resume)
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"resume_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "resume_gate"
+    assert queue.loc[0, "component"] == "scaleup_plan"
+    assert queue.loc[0, "check"] == "scaleup_ready"
+    assert queue.loc[0, "next_gate"] == "plan-scaleup"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 2
 
 
 def test_catalog_experiment_runs_recognizes_scaleup_calibration_and_data_ops_status(tmp_path):

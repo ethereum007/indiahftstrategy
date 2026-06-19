@@ -211,6 +211,10 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.config["ready"]
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
+    assert report.action_queue is not None
+    assert report.action_queue.empty
 
 
 def test_resume_gate_blocks_scenario_mismatch():
@@ -347,7 +351,9 @@ def test_write_resume_gate_outputs_artifacts(tmp_path):
     assert (out_dir / "resume_authorization.csv").exists()
     assert (out_dir / "resume_checks.csv").exists()
     assert (out_dir / "resume_summary.csv").exists()
+    assert (out_dir / "resume_action_queue.csv").exists()
     assert (out_dir / "resume_config.json").exists()
+    assert (out_dir / "resume_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {
@@ -364,10 +370,15 @@ def test_write_resume_gate_outputs_artifacts(tmp_path):
     assert path_tail(manifest["inputs"]["scaleup_config"]["path"]).endswith("/scaleup/scaleup_config.json")
     assert path_tail(manifest["inputs"]["scaleup_checks"]["path"]).endswith("/scaleup/scaleup_checks.csv")
     assert path_tail(manifest["inputs"]["operator_review"]["path"]).endswith("/operator_review.csv")
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("resume_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("resume_runbook.md") for path in artifact_paths)
     saved_summary = pd.read_csv(out_dir / "resume_summary.csv")
     assert saved_summary.loc[0, "incident_guard_failed_check_names"] == "open_order_count"
     assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
     assert bool(saved_summary.loc[0, "proof_refresh_ready"])
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    assert (out_dir / "resume_runbook.md").read_text(encoding="utf-8").startswith("# Resume Gate Runbook")
 
 
 def test_cli_resume_gate_fails_when_operator_approval_required(tmp_path):
@@ -385,12 +396,50 @@ def test_cli_resume_gate_fails_when_operator_approval_required(tmp_path):
             str(out_dir),
             "--require-operator-approval",
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "resume_summary.csv")
+    queue = pd.read_csv(out_dir / "resume_action_queue.csv")
+    config = json.loads((out_dir / "resume_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert queue.loc[0, "component"] == "operator_review"
+    assert queue.loc[0, "check"] == "operator_approved"
+    assert queue.loc[0, "next_gate"] == "review-resume-gate"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-resume-gate --help"
+    assert config["primary_action"]["check"] == "operator_approved"
+    assert "operator_approved" in (out_dir / "resume_runbook.md").read_text(encoding="utf-8")
+
+
+def test_cli_resume_gate_can_fail_on_actions(tmp_path):
+    incident, scaleup = write_inputs(tmp_path, scaleup_ready=False)
+    out_dir = tmp_path / "resume"
+
+    code = main(
+        [
+            "review-resume-gate",
+            "--incident",
+            str(incident),
+            "--scaleup",
+            str(scaleup),
+            "--out",
+            str(out_dir),
+            "--allow-unready-scaleup",
+            "--fail-on-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "resume_summary.csv")
+    queue = pd.read_csv(out_dir / "resume_action_queue.csv")
+    assert code == 2
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert queue.loc[0, "check"] == "scaleup_failed_checks"
+    assert queue.loc[0, "component"] == "scaleup_plan"
+    assert queue.loc[0, "next_gate"] == "plan-scaleup"
 
 
 def test_cli_resume_gate_fails_when_operator_trigger_ack_missing(tmp_path):

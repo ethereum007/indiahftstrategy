@@ -2998,7 +2998,8 @@ python -m hft_cli review-resume-gate `
   --out runs\resume\leadlag_shadow_latest `
   --require-operator-approval `
   --require-operator-trigger-ack `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3007,13 +3008,23 @@ Outputs:
 resume_authorization.csv
 resume_checks.csv
 resume_summary.csv
+resume_action_queue.csv
 resume_config.json
+resume_runbook.md
 manifest.json
 ```
 
 `resume_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so post-halt resume automation can
 surface the first failed resume gate without parsing `resume_checks.csv`.
+`resume_summary.csv` and `resume_config.json` also expose `failed_check_names`,
+`first_failed_reason`, `primary_blocker_*`, `action_queue_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`, and
+`primary_action_status`. `resume_action_queue.csv` and `resume_runbook.md`
+map open incident, scale-up, identity, proof-refresh, and operator-review
+blockers to their next CLI gate. Use `--fail-on-blocked-actions` to fail only
+when blocked resume actions exist, or `--fail-on-actions` when any resume
+action should stop automation.
 
 `resume_authorization.csv`, `resume_summary.csv`, and `resume_config.json`
 retain the prior incident's guard-trigger, strategy, market, and proof-refresh
