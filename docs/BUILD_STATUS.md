@@ -124,6 +124,9 @@
 - Broker dispatch send now carries dispatch-retained strategy portfolio
   allocation evidence into the non-submitting sender packet and blocks packet
   readiness when dispatch notional exceeds the selected allocation.
+- Broker dispatch send now also preserves dispatch-retained strategy portfolio
+  concentration context in sender summary/config artifacts before expected
+  acknowledgements are generated.
 - Broker dispatch send now emits manifest-tracked
   `broker_dispatch_send_action_queue.csv` and
   `broker_dispatch_send_runbook.md` scheduler handoffs, routing dispatch-plan,
