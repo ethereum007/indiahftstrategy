@@ -132,6 +132,10 @@
 - Broker dispatch send now also preserves dispatch-retained strategy portfolio
   concentration context in sender summary/config artifacts before expected
   acknowledgements are generated.
+- Broker dispatch send now revalidates dispatch-retained route-readiness ops
+  broker controls before non-submitting sender packets advance, preserving
+  direct route breach counters and broker-carried route proof in send
+  summary/config artifacts.
 - Broker dispatch send now emits manifest-tracked
   `broker_dispatch_send_action_queue.csv` and
   `broker_dispatch_send_runbook.md` scheduler handoffs, routing dispatch-plan,

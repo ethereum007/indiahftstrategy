@@ -3583,8 +3583,15 @@ the dispatch notional exceeds the selected paper/shadow allocation.
 explicit flag keeps paper/shadow sender packets equally strict. It also
 carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
-`route_broker_shadow_broker_readiness` into the sender summary/config. If the
-dispatch config retained the shadow-broker broker-vendor wrapper aggregate, the
+`route_broker_shadow_broker_readiness` into the sender summary/config. It
+revalidates the route-readiness ops broker controls before the sender packet is
+trusted: the direct route proof must retain launch controls and zero allocation
+or concentration breach pairs, and any broker-carried route proof must retain
+clean launch-control, allocation-safe, and concentration-OK dry-run counts. The
+sender artifacts preserve these controls as `route_readiness_*` and
+`route_broker_route_readiness` fields in `broker_dispatch_send_summary.csv` and
+`broker_dispatch_send_config.json`. If the dispatch config retained the
+shadow-broker broker-vendor wrapper aggregate, the
 sender packet revalidates the per-session wrapper coverage and carries it as
 `shadow_broker_vendor_data_readiness_*` plus nested
 `shadow_broker_readiness.broker_vendor_data_readiness` config, and does the
