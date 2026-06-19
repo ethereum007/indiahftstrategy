@@ -799,6 +799,10 @@
   orders into a vendor CSV shape from a reviewed mapping file, with required
   field checks, simple transforms, manifests, and summary-level primary blocker
   fields for the first failed vendor target column.
+- Mapped broker-order export now also emits manifest-tracked
+  `mapped_order_action_queue.csv`, `mapped_order_config.json`, and
+  `mapped_order_runbook.md` handoffs, making missing or blank final vendor
+  upload fields catalog-visible before broker readiness trusts mapped orders.
 - Vendor order-mapping draft command that reads a broker-neutral export plus
   an Arrow.money/iRage sample upload header, suggests reviewable mappings, and
   fails closed on unmapped required vendor fields while surfacing the first
@@ -999,7 +1003,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 933 tests.
+Current passing suite: 935 tests.
 
 ## Next Build Targets
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -27,6 +28,7 @@ class MappedOrderExportReport:
     summary: pd.DataFrame
     schema: pd.DataFrame
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -54,8 +56,16 @@ def map_broker_orders(
     orders = pd.DataFrame(mapped)
     checks_frame = pd.DataFrame(checks)
     summary = _summary(orders, checks_frame, config)
+    action_queue = _action_queue(summary.iloc[0], checks_frame)
+    summary = _summary_with_actions(summary, action_queue)
     schema = _schema_frame(orders, checks_frame, config)
-    return MappedOrderExportReport(orders=orders, checks=checks_frame, summary=summary, schema=schema)
+    return MappedOrderExportReport(
+        orders=orders,
+        checks=checks_frame,
+        summary=summary,
+        schema=schema,
+        action_queue=action_queue,
+    )
 
 
 def write_mapped_order_export(
@@ -81,13 +91,39 @@ def write_mapped_order_export(
     report.checks.to_csv(out / "mapped_order_checks.csv", index=False)
     report.summary.to_csv(out / "mapped_order_summary.csv", index=False)
     report.schema.to_csv(out / "mapped_order_schema.csv", index=False)
+    action_queue = (
+        report.action_queue
+        if report.action_queue is not None
+        else _action_queue(report.summary.iloc[0], report.checks)
+    )
+    action_queue.to_csv(out / "mapped_order_action_queue.csv", index=False)
+    (out / "mapped_order_config.json").write_text(
+        json.dumps(
+            _config(report.summary.iloc[0], action_queue, config, orders_file, mapping_file),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (out / "mapped_order_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="mapped_order_export",
         parameters={"config": asdict(config)},
         inputs={"broker_orders": orders_file, "mapping": mapping_file},
     )
-    return MappedOrderExportReport(report.orders, report.checks, report.summary, report.schema, out)
+    return MappedOrderExportReport(
+        report.orders,
+        report.checks,
+        report.summary,
+        report.schema,
+        out,
+        action_queue,
+    )
 
 
 def _mapping_rows(mapping: pd.DataFrame) -> list[dict[str, Any]]:
@@ -193,6 +229,215 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: MappedOrderExpo
             }
         ]
     )
+
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "adapter",
+    "check",
+    "target_column",
+    "source_column",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    blocked = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    ready = int((statuses == "ready").sum()) if not statuses.empty else 0
+    review = int((statuses == "review").sum()) if not statuses.empty else 0
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = ready
+    out["blocked_action_count"] = blocked
+    out["review_action_count"] = review
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(summary_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    failed_rows = _failed_check_rows(checks)
+    for _, row in failed_rows.iterrows():
+        target = _check_value(row, "target_column")
+        rows.append(
+            _action_row(
+                source="mapped_order_checks",
+                component="mapping",
+                adapter=_text(summary_row.get("adapter")),
+                check=f"unmapped_required:{target}" if target else "",
+                target_column=target,
+                source_column=_check_value(row, "source_column"),
+                actual=_failed_mapping_actual(row),
+                operator=_check_value(row, "transform"),
+                expected="required_source_or_default_with_values",
+                reason=_check_reason(row),
+                recommendation="fix_mapped_order_export_mapping_before_broker_upload",
+            )
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _action_row(
+    *,
+    source: str,
+    component: str,
+    adapter: str,
+    check: str,
+    target_column: str,
+    source_column: str,
+    actual: object,
+    operator: str,
+    expected: object,
+    reason: str,
+    recommendation: str,
+) -> dict[str, object]:
+    next_gate = "map-broker-orders"
+    return {
+        "queue_status": "blocked",
+        "source": source,
+        "component": component,
+        "adapter": adapter,
+        "check": check,
+        "target_column": target_column,
+        "source_column": source_column,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "reason": reason,
+        "recommendation": recommendation,
+    }
+
+
+def _failed_mapping_actual(row: pd.Series) -> str:
+    source_present = _to_bool(row.get("source_present"), default=False)
+    default_present = _to_bool(row.get("default_present"), default=False)
+    values_present = _to_bool(row.get("values_present"), default=False)
+    if not source_present and not default_present:
+        return "source_missing_default_missing"
+    if not values_present:
+        return "blank_mapped_values"
+    return "failed"
+
+
+def _config(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    config: MappedOrderExportConfig,
+    orders_file: Path,
+    mapping_file: Path,
+) -> dict[str, Any]:
+    primary_action = _first_action_record(action_queue)
+    return {
+        "schema_version": 1,
+        "ready": _to_bool(summary_row.get("ready"), default=False),
+        "adapter": _text(summary_row.get("adapter")),
+        "adapter_schema_status": _text(summary_row.get("adapter_schema_status")),
+        "inputs": {
+            "broker_orders": str(orders_file),
+            "mapping": str(mapping_file),
+        },
+        "mapping": {
+            "output_file": _text(summary_row.get("output_file")),
+            "orders": _int(summary_row.get("orders")),
+            "target_columns": _int(summary_row.get("target_columns")),
+            "mapped_columns": _int(summary_row.get("mapped_columns")),
+            "defaulted_columns": _int(summary_row.get("defaulted_columns")),
+            "failed_mappings": _int(summary_row.get("failed_mappings")),
+            "require_all_mapped": bool(config.require_all_mapped),
+        },
+        "failed_check_count": _int(summary_row.get("failed_check_count")),
+        "failed_check_names": _split_items(summary_row.get("failed_check_names")),
+        "first_failed_reason": _text(summary_row.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _text(summary_row.get("primary_blocker_check")),
+            "value": _text(summary_row.get("primary_blocker_value")),
+            "operator": _text(summary_row.get("primary_blocker_operator")),
+            "threshold": _text(summary_row.get("primary_blocker_threshold")),
+            "reason": _text(summary_row.get("primary_blocker_reason")),
+        },
+        "action_queue_count": _int(summary_row.get("action_queue_count")),
+        "ready_action_count": _int(summary_row.get("ready_action_count")),
+        "blocked_action_count": _int(summary_row.get("blocked_action_count")),
+        "review_action_count": _int(summary_row.get("review_action_count")),
+        "next_gate": _text(summary_row.get("next_gate")),
+        "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _text(summary_row.get("primary_action_status")),
+        "primary_action": primary_action,
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+    }
+
+
+def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready"), default=False) else "no"
+    lines = [
+        "# Mapped Broker Order Export Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_text(summary_row.get('adapter'))}",
+        f"- Schema status: {_text(summary_row.get('adapter_schema_status'))}",
+        f"- Orders: {_int(summary_row.get('orders'))}",
+        f"- Target columns: {_int(summary_row.get('target_columns'))}",
+        f"- Failed mappings: {_int(summary_row.get('failed_mappings'))}",
+        f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No mapped-order actions."
+    rows = [
+        "| priority | status | check | target column | source column | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _text(item.get("priority")),
+                    _text(item.get("queue_status")),
+                    _text(item.get("check")),
+                    _text(item.get("target_column")),
+                    _text(item.get("source_column")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _text(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
 
 
 def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
@@ -326,6 +571,81 @@ def _to_bool(value: object, *, default: bool) -> bool:
             return default
         return normalized in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _text(action_queue.iloc[0].get(column))
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_value(value) for key, value in row.items()}
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _text(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _text(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
+
+
+def _text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _int(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _nonempty_mask(values: pd.Series) -> pd.Series:

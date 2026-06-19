@@ -2167,6 +2167,7 @@ python -m hft_cli map-broker-orders `
   --out runs\exports\leadlag_shadow_arrow_mapped `
   --adapter arrow_money `
   --output-file arrow_orders.csv `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -2190,6 +2191,9 @@ Outputs:
 ```text
 mapped_broker_orders.csv
 mapped_order_checks.csv
+mapped_order_action_queue.csv
+mapped_order_config.json
+mapped_order_runbook.md
 mapped_order_summary.csv
 mapped_order_schema.csv
 manifest.json
@@ -2199,7 +2203,14 @@ manifest.json
 `failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
 the first failed vendor target column, so broker-readiness automation can route
 Arrow.money/iRage mapping gaps directly to the missing field without opening
-`mapped_order_checks.csv`.
+`mapped_order_checks.csv`. It also carries `action_queue_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`, and
+`primary_action_status`. `mapped_order_action_queue.csv`,
+`mapped_order_config.json`, and `mapped_order_runbook.md` mirror missing or
+blank mapped vendor targets so `catalog-runs` can route final upload-shape
+mapping repairs back to `map-broker-orders`. Use `--fail-on-blocked-actions`
+to fail only when blocked mapped-order actions exist, or `--fail-on-actions`
+when any mapped-order action should stop the scheduler.
 
 ## Broker Integration Readiness
 
