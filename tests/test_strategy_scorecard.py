@@ -50,7 +50,12 @@ def incomplete_imbalance_rows():
     ]
 
 
-def complete_ops_launch_rows(strategy="lead_lag_taker", *, market="india_nse_index_derivatives"):
+def complete_ops_launch_rows(
+    strategy="lead_lag_taker",
+    *,
+    market="india_nse_index_derivatives",
+    concentration_breach=False,
+):
     run_types = [
         ("scaleup_plan", "scaleup_summary.csv"),
         ("runtime_telemetry_snapshot", "runtime_telemetry_summary.csv"),
@@ -65,10 +70,28 @@ def complete_ops_launch_rows(strategy="lead_lag_taker", *, market="india_nse_ind
         ("broker_dispatch_ack_reconciliation", "broker_dispatch_ack_summary.csv"),
         ("broker_dispatch_roundtrip", "broker_dispatch_roundtrip_summary.csv"),
     ]
-    return [
+    rows = [
         row(run_type, summary_file, strategy, market=market, minute=10 + index)
         for index, (run_type, summary_file) in enumerate(run_types)
     ]
+    for item in rows:
+        if item["run_type"] != "broker_dispatch_roundtrip":
+            continue
+        item["summary_dispatch_total_notional"] = 1500.0
+        item["summary_strategy_portfolio_provided"] = True
+        item["summary_strategy_portfolio_ready"] = True
+        item["summary_strategy_portfolio_selected_allocation_notional"] = 2000.0
+        item["summary_strategy_portfolio_min_strategy_count"] = 2
+        item["summary_strategy_portfolio_min_market_count"] = 1
+        item["summary_strategy_portfolio_max_strategy_weight"] = 0.60
+        item["summary_strategy_portfolio_max_market_weight"] = 0.90
+        item["summary_strategy_portfolio_allocated_strategy_count"] = 1 if concentration_breach else 2
+        item["summary_strategy_portfolio_allocated_market_count"] = 1
+        item["summary_strategy_portfolio_max_strategy_allocation_weight"] = (
+            0.80 if concentration_breach else 0.45
+        )
+        item["summary_strategy_portfolio_max_market_allocation_weight"] = 0.80
+    return rows
 
 
 def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separate():
@@ -356,6 +379,10 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert score["recommendation"] == "ready_for_live_dryrun_route_review"
     assert score["next_gate"] == "review-route-readiness"
     assert score["next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
+    assert int(score["broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert int(score["broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
+    assert int(score["broker_roundtrip_portfolio_concentration_breach_runs"]) == 0
+    assert score["evidence_failed_checks"] == ""
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.summary.loc[0, "best_next_gate"] == "review-route-readiness"
     assert report.summary.loc[0, "best_next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
@@ -371,6 +398,43 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
         "python -m hft_cli review-route-readiness --help"
     )
     assert set(report.gaps["total_runs"]) == {1}
+
+
+def test_strategy_scorecard_ops_launch_blocks_portfolio_concentration_breach():
+    catalog = pd.DataFrame(complete_ops_launch_rows("lead_lag_taker", concentration_breach=True))
+
+    report = evaluate_strategy_scorecard(
+        catalog,
+        thresholds=StrategyScorecardThresholds(
+            profiles=("ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            expected_ops_strategy="leadlag",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    failed_checks = set(str(score["evidence_failed_checks"]).split(";"))
+    assert not report.ready
+    assert not bool(score["ready"])
+    assert score["readiness_score"] == 1.0
+    assert score["recommendation"] == "review_ops_launch_checks"
+    assert score["next_required_run_type"] == ""
+    assert score["next_gate"] == "review-strategy-evidence"
+    assert "broker_roundtrip_portfolio_concentration_ok" in failed_checks
+    assert "broker_roundtrip_portfolio_concentration_breach" in failed_checks
+    assert int(score["broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
+    assert report.summary.loc[0, "first_failed_reason"] == (
+        "ops_launch profile failed evidence check broker_roundtrip_portfolio_concentration_ok"
+    )
+    assert report.config["primary_blocker"]["evidence_failed_checks"] == [
+        "broker_roundtrip_portfolio_concentration_ok",
+        "broker_roundtrip_portfolio_concentration_breach",
+    ]
+    assert report.action_queue is not None
+    assert "broker_roundtrip_portfolio_concentration_breach" in str(
+        report.action_queue.loc[0, "evidence_failed_checks"]
+    )
 
 
 def test_strategy_scorecard_points_ops_launch_to_broker_vendor_data_readiness_pipeline():

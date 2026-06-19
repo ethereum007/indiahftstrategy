@@ -36,6 +36,11 @@
 - Strategy readiness scorecard can also score the file-provenance-gated
   `ops_launch` live-dry-run evidence lane for a named strategy, and fails
   closed on mixed strategy identities when no explicit ops strategy is supplied.
+- Strategy readiness scorecard now applies the same `ops_launch` broker gates
+  as strategy evidence review, including blocked placeholder schemas, final
+  broker round-trip allocation breaches, and final broker portfolio
+  concentration OK/breach proof, with failed evidence-check names preserved in
+  scorecard rows and scheduler action outputs.
 - Strategy readiness scorecard rows, gap rows, and summary now name the next
   required run type and CLI gate so blocked research or broker dry-run lanes
   can move directly to the missing proof step.

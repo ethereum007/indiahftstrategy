@@ -383,7 +383,12 @@ python -m hft_cli score-strategy-readiness `
 If `ops_launch` is scored without `--ops-strategy`, all required artifacts must
 still carry one consistent strategy identity, so mixed lead-lag/imbalance
 broker evidence fails closed instead of producing a borrowed live-dry-run
-readiness signal.
+readiness signal. The scorecard applies the same `ops_launch` broker controls
+as strategy evidence review: blocked placeholder schemas fail, final broker
+round-trip allocation breaches fail, and final broker round-trip concentration
+must include at least one concentration-OK proof with no concentration
+breaches. Blocked scorecard actions include the failed evidence-check names in
+`strategy_scorecard_action_queue.csv` and `strategy_scorecard_next_actions.json`.
 
 Outputs:
 

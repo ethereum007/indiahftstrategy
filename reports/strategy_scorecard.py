@@ -133,6 +133,11 @@ def evaluate_strategy_scorecard(
                 expected_strategy=expected_strategy or None,
                 expected_market=expected_market or None,
                 require_file_inputs=thresholds.require_file_inputs,
+                require_no_blocked_placeholder_schema=profile_key == "ops_launch",
+                require_broker_roundtrip_portfolio_safe=profile_key == "ops_launch",
+                fail_on_broker_roundtrip_portfolio_breach=profile_key == "ops_launch",
+                require_broker_roundtrip_portfolio_concentration_ok=profile_key == "ops_launch",
+                fail_on_broker_roundtrip_portfolio_concentration_breach=profile_key == "ops_launch",
             ),
         )
         rows.append(_scorecard_row(profile_key, expected_strategy, expected_market, evidence))
@@ -212,6 +217,7 @@ def _scorecard_row(
     score = passed_count / required_count if required_count else 0.0
     ready = bool(summary.get("ready", False))
     next_required_run_type = _next_required_run_type(items)
+    evidence_failed_checks = _failed_evidence_checks(evidence.checks)
     return {
         "profile": profile,
         "strategy": expected_strategy or str(summary.get("strategy", "")),
@@ -226,6 +232,23 @@ def _scorecard_row(
         "next_gate": _next_gate(profile, ready, next_required_run_type),
         "next_gate_help_command": _next_gate_help_command(_next_gate(profile, ready, next_required_run_type)),
         "failed_checks": int(_numeric(summary.get("failed_checks", 0))),
+        "evidence_failed_checks": ";".join(evidence_failed_checks),
+        "evidence_first_failed_reason": _first_evidence_failed_reason(evidence.checks),
+        "broker_roundtrip_portfolio_safe_runs": int(
+            _numeric(summary.get("broker_roundtrip_portfolio_safe_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_portfolio_breach_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_concentration_runs": int(
+            _numeric(summary.get("broker_roundtrip_portfolio_concentration_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _numeric(summary.get("broker_roundtrip_portfolio_concentration_ok_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))
+        ),
         "dirty_runs": int(_numeric(summary.get("dirty_runs", 0))),
         "git_commit_count": int(_numeric(summary.get("git_commit_count", 0))),
         "latest_generated_at_utc": latest_generated,
@@ -421,10 +444,13 @@ def _blocked_reason(row: pd.Series) -> str:
     profile = _text(row.get("profile"))
     missing = _split_items(row.get("missing_required_run_types", ""))
     blocked = _split_items(row.get("blocked_required_run_types", ""))
+    evidence_failed = _split_items(row.get("evidence_failed_checks", ""))
     if missing:
         return f"{profile} profile is missing required run type {missing[0]}"
     if blocked:
         return f"{profile} profile has non-passing required run type {blocked[0]}"
+    if evidence_failed:
+        return f"{profile} profile failed evidence check {evidence_failed[0]}"
     next_required = _text(row.get("next_required_run_type"))
     if next_required:
         return f"{profile} profile is blocked at required run type {next_required}"
@@ -446,12 +472,16 @@ def _blocked_action_reason(action: dict[str, Any]) -> str:
     profile = str(action.get("profile", ""))
     missing = action.get("missing_required_run_types")
     blocked = action.get("blocked_required_run_types")
+    evidence_failed = action.get("evidence_failed_checks")
     missing_items = missing if isinstance(missing, list) else _split_items(missing)
     blocked_items = blocked if isinstance(blocked, list) else _split_items(blocked)
+    evidence_failed_items = evidence_failed if isinstance(evidence_failed, list) else _split_items(evidence_failed)
     if missing_items:
         return f"{profile} profile is missing required run type {missing_items[0]}"
     if blocked_items:
         return f"{profile} profile has non-passing required run type {blocked_items[0]}"
+    if evidence_failed_items:
+        return f"{profile} profile failed evidence check {evidence_failed_items[0]}"
     next_required = str(action.get("next_required_run_type", ""))
     if next_required:
         return f"{profile} profile is blocked at required run type {next_required}"
@@ -477,6 +507,8 @@ def _primary_blocker_record(action: dict[str, Any]) -> dict[str, Any]:
         "next_gate_help_command": str(action.get("next_gate_help_command", "")),
         "missing_required_run_types": action.get("missing_required_run_types", []),
         "blocked_required_run_types": action.get("blocked_required_run_types", []),
+        "evidence_failed_checks": action.get("evidence_failed_checks", []),
+        "evidence_first_failed_reason": str(action.get("evidence_first_failed_reason", "")),
     }
 
 
@@ -501,6 +533,20 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         "next_gate_help_command": str(row.get("next_gate_help_command", "")),
         "missing_required_run_types": _split_items(row.get("missing_required_run_types", "")),
         "blocked_required_run_types": _split_items(row.get("blocked_required_run_types", "")),
+        "evidence_failed_checks": _split_items(row.get("evidence_failed_checks", "")),
+        "evidence_first_failed_reason": str(row.get("evidence_first_failed_reason", "")),
+        "broker_roundtrip_portfolio_safe_runs": int(
+            _numeric(row.get("broker_roundtrip_portfolio_safe_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_portfolio_breach_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _numeric(row.get("broker_roundtrip_portfolio_concentration_ok_runs", 0))
+        ),
+        "broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))
+        ),
         "recommendation": str(row.get("recommendation", "")),
     }
 
@@ -541,6 +587,8 @@ def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
                 "next_gate_help_command": str(action.get("next_gate_help_command", "")),
                 "missing_required_run_types": _list_text(action.get("missing_required_run_types")),
                 "blocked_required_run_types": _list_text(action.get("blocked_required_run_types")),
+                "evidence_failed_checks": _list_text(action.get("evidence_failed_checks")),
+                "evidence_first_failed_reason": str(action.get("evidence_first_failed_reason", "")),
                 "recommendation": str(action.get("recommendation", "")),
             }
         )
@@ -560,6 +608,8 @@ def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
             "next_gate_help_command",
             "missing_required_run_types",
             "blocked_required_run_types",
+            "evidence_failed_checks",
+            "evidence_first_failed_reason",
             "recommendation",
         ],
     )
@@ -615,13 +665,14 @@ def _actions_table(actions: Any, *, include_gaps: bool) -> str:
         if isinstance(row, dict)
     ]
     if include_gaps:
-        headers.extend(["Missing", "Blocked"])
+        headers.extend(["Missing", "Blocked", "Failed checks"])
         for row, source in zip(table_rows, rows):
             if isinstance(source, dict):
                 row.extend(
                     [
                         _list_text(source.get("missing_required_run_types")),
                         _list_text(source.get("blocked_required_run_types")),
+                        _list_text(source.get("evidence_failed_checks")),
                     ]
                 )
     return _markdown_table(headers, table_rows)
@@ -737,6 +788,22 @@ def _latest_generated_at(items: pd.DataFrame) -> str:
         return ""
     values = [str(value) for value in items["latest_generated_at_utc"].dropna() if str(value)]
     return max(values) if values else ""
+
+
+def _failed_evidence_checks(checks: pd.DataFrame) -> list[str]:
+    if checks.empty or "passed" not in checks.columns or "check" not in checks.columns:
+        return []
+    failed = checks.loc[~checks["passed"].astype(bool), "check"]
+    return [str(value) for value in failed.dropna().tolist() if str(value)]
+
+
+def _first_evidence_failed_reason(checks: pd.DataFrame) -> str:
+    if checks.empty or "passed" not in checks.columns or "reason" not in checks.columns:
+        return ""
+    failed = checks.loc[~checks["passed"].astype(bool)]
+    if failed.empty:
+        return ""
+    return str(failed.iloc[0].get("reason", ""))
 
 
 def _next_required_run_type(items: pd.DataFrame) -> str:
