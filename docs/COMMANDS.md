@@ -3796,6 +3796,15 @@ dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON
 files plus component manifests that formed the proof, and the final
 summary/config retain the broker schema review status/mode, route-readiness
 proof, and shadow broker-readiness proof plus `broker_shadow_broker_readiness`.
+The final proof revalidates route-readiness ops broker controls across
+dispatch, send, and ack artifacts: direct route proof must retain launch
+controls with zero blocked, allocation-breach, or concentration-breach pairs,
+and broker-carried route proof must remain present, ready, identity-consistent,
+allocation-safe, and concentration-OK in every component. The round-trip
+artifacts preserve these controls as `route_readiness_*` and
+`route_broker_route_readiness` fields in
+`broker_dispatch_roundtrip_summary.csv` and
+`broker_dispatch_roundtrip_config.json`.
 If the component configs retained the shadow-broker broker-vendor wrapper
 aggregate, the round-trip review revalidates component-wide wrapper coverage
 and carries it as `shadow_broker_vendor_data_readiness_*` plus nested

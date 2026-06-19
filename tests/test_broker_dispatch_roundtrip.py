@@ -37,6 +37,24 @@ def dispatch_summary(
     route_readiness_route_ready_pairs=1,
     route_readiness_gap_pairs=0,
     route_readiness_recommendation=None,
+    route_ops_launch_controls_present=True,
+    route_ops_launch_controls_blocked_pairs=0,
+    route_ops_broker_roundtrip_portfolio_breach_pairs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs=0,
+    broker_route_readiness_required=True,
+    broker_route_readiness_provided=True,
+    broker_route_readiness_ready=True,
+    broker_route_readiness_strategy="lead_lag_taker",
+    broker_route_readiness_market="india_nse_index_derivatives",
+    broker_route_readiness_route_ready_pairs=1,
+    broker_route_readiness_gap_pairs=0,
+    broker_route_readiness_recommendation=None,
+    broker_route_readiness_ops_launch_controls_ready=True,
+    broker_route_readiness_ops_launch_control_failures="",
+    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs=0,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -55,6 +73,13 @@ def dispatch_summary(
         else "complete_route_readiness_gaps"
         if route_readiness_recommendation is None
         else route_readiness_recommendation
+    )
+    broker_route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if broker_route_readiness_recommendation is None and broker_route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if broker_route_readiness_recommendation is None
+        else broker_route_readiness_recommendation
     )
     return pd.DataFrame(
         [
@@ -131,6 +156,40 @@ def dispatch_summary(
                 "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
                 "route_readiness_gap_pairs": route_readiness_gap_pairs,
                 "route_readiness_recommendation": route_readiness_recommendation,
+                "route_readiness_ops_launch_controls_present": route_ops_launch_controls_present,
+                "route_readiness_ops_launch_controls_blocked_pairs": route_ops_launch_controls_blocked_pairs,
+                "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": (
+                    route_ops_broker_roundtrip_portfolio_breach_pairs
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs
+                ),
+                "route_broker_route_readiness_required": broker_route_readiness_required,
+                "route_broker_route_readiness_provided": broker_route_readiness_provided,
+                "route_broker_route_readiness_ready": broker_route_readiness_ready,
+                "route_broker_route_readiness_strategy": broker_route_readiness_strategy,
+                "route_broker_route_readiness_market": broker_route_readiness_market,
+                "route_broker_route_readiness_route_ready_pairs": broker_route_readiness_route_ready_pairs,
+                "route_broker_route_readiness_gap_pairs": broker_route_readiness_gap_pairs,
+                "route_broker_route_readiness_recommendation": broker_route_readiness_recommendation,
+                "route_broker_route_readiness_ops_launch_controls_ready": (
+                    broker_route_readiness_ops_launch_controls_ready
+                ),
+                "route_broker_route_readiness_ops_launch_control_failures": (
+                    broker_route_readiness_ops_launch_control_failures
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_roundtrip_ready,
@@ -207,6 +266,24 @@ def send_summary(
     route_readiness_route_ready_pairs=1,
     route_readiness_gap_pairs=0,
     route_readiness_recommendation=None,
+    route_ops_launch_controls_present=True,
+    route_ops_launch_controls_blocked_pairs=0,
+    route_ops_broker_roundtrip_portfolio_breach_pairs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs=0,
+    broker_route_readiness_required=True,
+    broker_route_readiness_provided=True,
+    broker_route_readiness_ready=True,
+    broker_route_readiness_strategy="lead_lag_taker",
+    broker_route_readiness_market="india_nse_index_derivatives",
+    broker_route_readiness_route_ready_pairs=1,
+    broker_route_readiness_gap_pairs=0,
+    broker_route_readiness_recommendation=None,
+    broker_route_readiness_ops_launch_controls_ready=True,
+    broker_route_readiness_ops_launch_control_failures="",
+    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs=0,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -225,6 +302,13 @@ def send_summary(
         else "complete_route_readiness_gaps"
         if route_readiness_recommendation is None
         else route_readiness_recommendation
+    )
+    broker_route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if broker_route_readiness_recommendation is None and broker_route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if broker_route_readiness_recommendation is None
+        else broker_route_readiness_recommendation
     )
     return pd.DataFrame(
         [
@@ -303,6 +387,40 @@ def send_summary(
                 "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
                 "route_readiness_gap_pairs": route_readiness_gap_pairs,
                 "route_readiness_recommendation": route_readiness_recommendation,
+                "route_readiness_ops_launch_controls_present": route_ops_launch_controls_present,
+                "route_readiness_ops_launch_controls_blocked_pairs": route_ops_launch_controls_blocked_pairs,
+                "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": (
+                    route_ops_broker_roundtrip_portfolio_breach_pairs
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs
+                ),
+                "route_broker_route_readiness_required": broker_route_readiness_required,
+                "route_broker_route_readiness_provided": broker_route_readiness_provided,
+                "route_broker_route_readiness_ready": broker_route_readiness_ready,
+                "route_broker_route_readiness_strategy": broker_route_readiness_strategy,
+                "route_broker_route_readiness_market": broker_route_readiness_market,
+                "route_broker_route_readiness_route_ready_pairs": broker_route_readiness_route_ready_pairs,
+                "route_broker_route_readiness_gap_pairs": broker_route_readiness_gap_pairs,
+                "route_broker_route_readiness_recommendation": broker_route_readiness_recommendation,
+                "route_broker_route_readiness_ops_launch_controls_ready": (
+                    broker_route_readiness_ops_launch_controls_ready
+                ),
+                "route_broker_route_readiness_ops_launch_control_failures": (
+                    broker_route_readiness_ops_launch_control_failures
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_roundtrip_ready,
@@ -391,6 +509,24 @@ def ack_summary(
     route_readiness_route_ready_pairs=1,
     route_readiness_gap_pairs=0,
     route_readiness_recommendation=None,
+    route_ops_launch_controls_present=True,
+    route_ops_launch_controls_blocked_pairs=0,
+    route_ops_broker_roundtrip_portfolio_breach_pairs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs=0,
+    broker_route_readiness_required=True,
+    broker_route_readiness_provided=True,
+    broker_route_readiness_ready=True,
+    broker_route_readiness_strategy="lead_lag_taker",
+    broker_route_readiness_market="india_nse_index_derivatives",
+    broker_route_readiness_route_ready_pairs=1,
+    broker_route_readiness_gap_pairs=0,
+    broker_route_readiness_recommendation=None,
+    broker_route_readiness_ops_launch_controls_ready=True,
+    broker_route_readiness_ops_launch_control_failures="",
+    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs=0,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -409,6 +545,13 @@ def ack_summary(
         else "complete_route_readiness_gaps"
         if route_readiness_recommendation is None
         else route_readiness_recommendation
+    )
+    broker_route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if broker_route_readiness_recommendation is None and broker_route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if broker_route_readiness_recommendation is None
+        else broker_route_readiness_recommendation
     )
     return pd.DataFrame(
         [
@@ -487,6 +630,40 @@ def ack_summary(
                 "route_readiness_route_ready_pairs": route_readiness_route_ready_pairs,
                 "route_readiness_gap_pairs": route_readiness_gap_pairs,
                 "route_readiness_recommendation": route_readiness_recommendation,
+                "route_readiness_ops_launch_controls_present": route_ops_launch_controls_present,
+                "route_readiness_ops_launch_controls_blocked_pairs": route_ops_launch_controls_blocked_pairs,
+                "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": (
+                    route_ops_broker_roundtrip_portfolio_breach_pairs
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs
+                ),
+                "route_broker_route_readiness_required": broker_route_readiness_required,
+                "route_broker_route_readiness_provided": broker_route_readiness_provided,
+                "route_broker_route_readiness_ready": broker_route_readiness_ready,
+                "route_broker_route_readiness_strategy": broker_route_readiness_strategy,
+                "route_broker_route_readiness_market": broker_route_readiness_market,
+                "route_broker_route_readiness_route_ready_pairs": broker_route_readiness_route_ready_pairs,
+                "route_broker_route_readiness_gap_pairs": broker_route_readiness_gap_pairs,
+                "route_broker_route_readiness_recommendation": broker_route_readiness_recommendation,
+                "route_broker_route_readiness_ops_launch_controls_ready": (
+                    broker_route_readiness_ops_launch_controls_ready
+                ),
+                "route_broker_route_readiness_ops_launch_control_failures": (
+                    broker_route_readiness_ops_launch_control_failures
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs
+                ),
+                "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
                 "route_dispatch_roundtrip_required": True,
                 "route_dispatch_roundtrip_provided": route_roundtrip_provided,
                 "route_dispatch_roundtrip_ready": route_roundtrip_ready,
@@ -573,6 +750,24 @@ def route_enable_config(
     route_readiness_route_ready_pairs=1,
     route_readiness_gap_pairs=0,
     route_readiness_recommendation=None,
+    route_ops_launch_controls_present=True,
+    route_ops_launch_controls_blocked_pairs=0,
+    route_ops_broker_roundtrip_portfolio_breach_pairs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_pairs=0,
+    broker_route_readiness_required=True,
+    broker_route_readiness_provided=True,
+    broker_route_readiness_ready=True,
+    broker_route_readiness_strategy="lead_lag_taker",
+    broker_route_readiness_market="india_nse_index_derivatives",
+    broker_route_readiness_route_ready_pairs=1,
+    broker_route_readiness_gap_pairs=0,
+    broker_route_readiness_recommendation=None,
+    broker_route_readiness_ops_launch_controls_ready=True,
+    broker_route_readiness_ops_launch_control_failures="",
+    broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs=0,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
     broker_schema_status="placeholder_normalized_pending_vendor_schema",
     broker_schema_reviewed=True,
     broker_schema_review_mode="reviewed_vendor_mapping",
@@ -592,6 +787,13 @@ def route_enable_config(
         if route_readiness_recommendation is None
         else route_readiness_recommendation
     )
+    broker_route_readiness_recommendation = (
+        "eligible_for_live_dryrun_route_review"
+        if broker_route_readiness_recommendation is None and broker_route_readiness_ready
+        else "complete_route_readiness_gaps"
+        if broker_route_readiness_recommendation is None
+        else broker_route_readiness_recommendation
+    )
     return {
         "broker_readiness": {
             "adapter_schema_status": broker_schema_status,
@@ -606,7 +808,39 @@ def route_enable_config(
             "market": route_readiness_market,
             "route_ready_pairs": route_readiness_route_ready_pairs,
             "gap_pairs": route_readiness_gap_pairs,
+            "ops_launch_controls_present": route_ops_launch_controls_present,
+            "ops_launch_controls_blocked_pairs": route_ops_launch_controls_blocked_pairs,
+            "ops_broker_roundtrip_portfolio_breach_pairs": (
+                route_ops_broker_roundtrip_portfolio_breach_pairs
+            ),
+            "ops_broker_roundtrip_portfolio_concentration_breach_pairs": (
+                route_ops_broker_roundtrip_portfolio_concentration_breach_pairs
+            ),
             "recommendation": route_readiness_recommendation,
+        },
+        "route_broker_route_readiness": {
+            "required": broker_route_readiness_required,
+            "provided": broker_route_readiness_provided,
+            "ready": broker_route_readiness_ready,
+            "strategy": broker_route_readiness_strategy,
+            "market": broker_route_readiness_market,
+            "route_ready_pairs": broker_route_readiness_route_ready_pairs,
+            "gap_pairs": broker_route_readiness_gap_pairs,
+            "recommendation": broker_route_readiness_recommendation,
+            "ops_launch_controls_ready": broker_route_readiness_ops_launch_controls_ready,
+            "ops_launch_control_failures": broker_route_readiness_ops_launch_control_failures,
+            "ops_broker_roundtrip_portfolio_safe_runs": (
+                broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs
+            ),
+            "ops_broker_roundtrip_portfolio_breach_runs": (
+                broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs
+            ),
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs
+            ),
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs
+            ),
         },
         "route_enable_dispatch_roundtrip": {
             "failed_checks": route_enable_dispatch_roundtrip_failed_checks,
@@ -939,6 +1173,16 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert report.summary.iloc[0]["route_readiness_strategy"] == "lead_lag_taker"
     assert report.config["route_readiness"]["required"]
     assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.iloc[0]["route_readiness_ops_launch_controls_present"])
+    assert int(report.summary.iloc[0]["route_readiness_ops_launch_controls_blocked_pairs"]) == 0
+    assert int(report.summary.iloc[0]["route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]) == 0
+    assert report.config["route_readiness"]["ops_launch_controls_present"]
+    assert report.config["route_readiness"]["ops_broker_roundtrip_portfolio_concentration_breach_pairs"] == 0
+    assert bool(report.summary.iloc[0]["route_broker_route_readiness_ready"])
+    assert report.summary.iloc[0]["route_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(report.summary.iloc[0]["route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert report.config["route_broker_route_readiness"]["ops_launch_controls_ready"]
+    assert report.config["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
 
 
 def test_broker_dispatch_roundtrip_carries_strategy_portfolio_allocation():
@@ -2008,6 +2252,84 @@ def test_broker_dispatch_roundtrip_blocks_route_readiness_identity_mismatch():
     assert "route_readiness_identity_match" in failed
     assert report.summary.iloc[0]["route_readiness_strategy"] == "surface_mm"
     assert report.config["route_readiness"]["market"] == "india_nse_index_derivatives"
+
+
+def test_broker_dispatch_roundtrip_blocks_stale_route_readiness_ops_controls():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(
+            route_ops_launch_controls_present=False,
+            route_ops_launch_controls_blocked_pairs=1,
+            route_ops_broker_roundtrip_portfolio_breach_pairs=1,
+            route_ops_broker_roundtrip_portfolio_concentration_breach_pairs=1,
+        ),
+        acknowledgements=acknowledgements(),
+        ack_config=route_enable_config(
+            route_ops_launch_controls_present=False,
+            route_ops_launch_controls_blocked_pairs=1,
+            route_ops_broker_roundtrip_portfolio_breach_pairs=1,
+            route_ops_broker_roundtrip_portfolio_concentration_breach_pairs=1,
+        ),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_readiness_ops_launch_controls_present",
+        "route_readiness_ops_launch_controls_blocked_pairs",
+        "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs",
+        "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert not bool(summary["route_readiness_ops_launch_controls_present"])
+    assert int(summary["route_readiness_ops_launch_controls_blocked_pairs"]) == 1
+    assert report.config["route_readiness"]["ops_broker_roundtrip_portfolio_breach_pairs"] == 1
+    assert report.config["route_readiness"]["ops_broker_roundtrip_portfolio_concentration_breach_pairs"] == 1
+
+
+def test_broker_dispatch_roundtrip_blocks_stale_route_broker_route_readiness_ops_controls():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(
+            broker_route_readiness_ops_launch_controls_ready=False,
+            broker_route_readiness_ops_launch_control_failures="concentration breach on BANKNIFTY weekly",
+            broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs=0,
+            broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs=1,
+            broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
+            broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=1,
+        ),
+        acknowledgements=acknowledgements(),
+        ack_config=route_enable_config(
+            broker_route_readiness_ops_launch_controls_ready=False,
+            broker_route_readiness_ops_launch_control_failures="concentration breach on BANKNIFTY weekly",
+            broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs=0,
+            broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs=1,
+            broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
+            broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=1,
+        ),
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_broker_route_readiness_ops_launch_controls_ready",
+        "route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+        "route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+        "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert not bool(summary["route_broker_route_readiness_ops_launch_controls_ready"])
+    assert int(summary["route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"]) == 1
+    route_proof = report.config["route_broker_route_readiness"]
+    assert route_proof["ops_launch_control_failures"] == "concentration breach on BANKNIFTY weekly"
+    assert route_proof["ops_broker_roundtrip_portfolio_concentration_breach_runs"] == 1
 
 
 def test_broker_dispatch_roundtrip_requires_route_roundtrip_proof():
