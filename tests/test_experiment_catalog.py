@@ -20,6 +20,7 @@ from reports.halt_response import write_halt_response_plan
 from reports.manifest import write_experiment_manifest
 from reports.proof_refresh import write_proof_refresh_report
 from reports.resume import write_resume_gate_report
+from reports.runtime_guard import write_runtime_guard_report
 
 
 def write_run(path, *, run_type, summary_name, summary_row):
@@ -2052,6 +2053,80 @@ def test_experiment_catalog_promotes_halt_response_action_queue(tmp_path):
     assert queue.loc[0, "next_gate"] == "plan-halt-response"
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-halt-response --help"
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
+def test_experiment_catalog_promotes_runtime_guard_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    scaleup = root / "scaleup"
+    guard = root / "runtime_guard"
+    telemetry_path = root / "runtime_telemetry.csv"
+    scaleup.mkdir(parents=True)
+    (scaleup / "scaleup_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ready": True,
+                "target_mode": "shadow",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "identity": {
+                    "strategy": "lead_lag_taker",
+                    "market": "india_nse_index_derivatives",
+                },
+                "limits": {
+                    "max_orders_per_session": 10,
+                    "max_notional_per_session": 100_000.0,
+                    "stop_loss": 5_000.0,
+                },
+                "kill_switches": {
+                    "max_total_failed_component_checks": 0,
+                    "max_total_unmatched_fills": 0,
+                    "max_total_mismatched_orders": 0,
+                    "max_total_overfilled_orders": 0,
+                    "max_worst_adverse_slippage": 0.05,
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame(
+        [
+            {
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "orders_sent": 12,
+                "session_notional": 40_000.0,
+                "realized_pnl": -500.0,
+                "total_failed_component_checks": 0,
+                "unmatched_fills": 0,
+                "mismatched_orders": 0,
+                "overfilled_orders": 0,
+                "worst_adverse_slippage": 0.02,
+            }
+        ]
+    ).to_csv(telemetry_path, index=False)
+
+    write_runtime_guard_report(
+        scaleup_dir=scaleup,
+        telemetry_path=telemetry_path,
+        output_dir=guard,
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"runtime_guard_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "runtime_guard"
+    assert queue.loc[0, "component"] == "runtime_limits"
+    assert queue.loc[0, "check"] == "orders_sent"
+    assert queue.loc[0, "next_gate"] == "plan-halt-response"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-halt-response --help"
+    assert int(report.summary.iloc[0]["action_queue_ready_count"]) == 1
 
 
 def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):

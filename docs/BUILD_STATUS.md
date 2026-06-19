@@ -201,6 +201,11 @@
   `runtime_session_runbook.md` handoffs, routing blocked telemetry repairs,
   skipped or failed halt-response packets, and ready halt packets to the next
   runtime or halt-response CLI gate from the top-level session folder.
+- Runtime scale-up guard now emits manifest-tracked
+  `runtime_guard_action_queue.csv`, `runtime_guard_config.json`, and
+  `runtime_guard_runbook.md` handoffs, turning guard halts into scheduler-ready
+  `plan-halt-response` actions while routing scale-up, proof-refresh, and
+  resume-gate blockers to their repair gates.
 - Halt incident review now emits manifest-tracked
   `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
   routing guard, response, export, and execution blockers to the next recovery
@@ -683,7 +688,8 @@
   metadata plus strategy/market continuity, accepts telemetry output folders
   directly, validates required proof-refresh readiness and strategy/market
   identity plus broker resume-gate proof identity, and returns explicit
-  continue/halt decisions with failed check names and first halt reasons.
+  continue/halt decisions with failed check names, first halt reasons, config
+  JSON, action queue, and runbook handoffs.
 - Runtime session monitor that chains telemetry building, scale-up guard
   evaluation, and automatic halt-response planning into one manifest-backed
   paper/shadow go/no-go artifact, preserving the guard halt trigger and
@@ -1060,7 +1066,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 956 tests.
+Current passing suite: 958 tests.
 
 ## Next Build Targets
 

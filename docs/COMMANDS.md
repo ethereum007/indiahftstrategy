@@ -2735,7 +2735,8 @@ python -m hft_cli monitor-scaleup-guard `
   --out runs\guards\leadlag_shadow_latest `
   --as-of-ts-ns 1781248200000000000 `
   --max-telemetry-age-ns 5000000000 `
-  --fail-on-halt
+  --fail-on-halt `
+  --fail-on-actions
 ```
 
 `--telemetry` accepts either the telemetry output folder or the
@@ -2767,8 +2768,23 @@ Outputs:
 runtime_guard_metrics.csv
 runtime_guard_checks.csv
 runtime_guard_summary.csv
+runtime_guard_action_queue.csv
+runtime_guard_config.json
+runtime_guard_runbook.md
 manifest.json
 ```
+
+`runtime_guard_summary.csv` and `runtime_guard_config.json` expose
+`failed_check_count`, `failed_check_names`, `first_failed_reason`,
+`primary_blocker_*`, `action_queue_count`, `ready_action_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`, and
+`primary_action_status`. `runtime_guard_action_queue.csv` and
+`runtime_guard_runbook.md` turn guard halts into scheduler-ready actions,
+usually routing runtime limit and risk breaches to `plan-halt-response`, while
+scale-up readiness, proof-refresh, and resume-gate identity blockers point back
+to their repair gates. Use `--fail-on-actions` to fail whenever a guard action
+is queued, or `--fail-on-blocked-actions` to fail only when blocked guard
+actions appear.
 
 ## Runtime Session Monitor
 

@@ -1670,6 +1670,8 @@ def main(argv: list[str] | None = None) -> int:
     runtime_guard.add_argument("--as-of-ts-ns", type=float, default=None)
     runtime_guard.add_argument("--max-telemetry-age-ns", type=float, default=None)
     runtime_guard.add_argument("--fail-on-halt", action="store_true")
+    runtime_guard.add_argument("--fail-on-blocked-actions", action="store_true")
+    runtime_guard.add_argument("--fail-on-actions", action="store_true")
 
     halt_response = sub.add_parser("plan-halt-response", help="Create cancel/flatten actions after a guard halt.")
     halt_response.add_argument("--guard", required=True)
@@ -3924,7 +3926,18 @@ def main(argv: list[str] | None = None) -> int:
             max_telemetry_age_ns=args.max_telemetry_age_ns,
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_halt and result.halted else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_halt and result.halted:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "plan-halt-response":
         result = write_halt_response_plan(
             guard_dir=args.guard,

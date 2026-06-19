@@ -11,12 +11,30 @@ import pandas as pd
 from reports.manifest import write_experiment_manifest
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
 @dataclass(frozen=True)
 class RuntimeGuardReport:
     metrics: pd.DataFrame
     checks: pd.DataFrame
     summary: pd.DataFrame
     output_dir: Path | None = None
+    config: dict[str, Any] | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def halted(self) -> bool:
@@ -41,8 +59,10 @@ def evaluate_runtime_guard(
         max_telemetry_age_ns=max_telemetry_age_ns,
     )
     checks = _checks(metrics.iloc[0], scaleup_config)
-    summary = _summary(metrics.iloc[0], checks)
-    return RuntimeGuardReport(metrics=metrics, checks=checks, summary=summary)
+    action_queue = _action_queue(metrics.iloc[0], checks)
+    summary = _summary_with_actions(_summary(metrics.iloc[0], checks), checks, action_queue)
+    guard_config = _config(summary.iloc[0], action_queue)
+    return RuntimeGuardReport(metrics=metrics, checks=checks, summary=summary, config=guard_config, action_queue=action_queue)
 
 
 def write_runtime_guard_report(
@@ -69,6 +89,17 @@ def write_runtime_guard_report(
     report.metrics.to_csv(out / "runtime_guard_metrics.csv", index=False)
     report.checks.to_csv(out / "runtime_guard_checks.csv", index=False)
     report.summary.to_csv(out / "runtime_guard_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.metrics.iloc[0], report.checks)
+    action_queue.to_csv(out / "runtime_guard_action_queue.csv", index=False)
+    guard_config = report.config if report.config is not None else _config(report.summary.iloc[0], action_queue)
+    (out / "runtime_guard_config.json").write_text(
+        json.dumps(guard_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "runtime_guard_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="runtime_guard",
@@ -79,7 +110,7 @@ def write_runtime_guard_report(
         },
         inputs={"scaleup": scaleup_file, "telemetry": telemetry_file},
     )
-    return RuntimeGuardReport(report.metrics, report.checks, report.summary, out)
+    return RuntimeGuardReport(report.metrics, report.checks, report.summary, out, guard_config, action_queue)
 
 
 def _metrics(
@@ -814,15 +845,22 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     failed_names = _failed_check_names(checks)
     failed_reasons = _failed_check_reasons(checks)
+    primary_blocker = _first_failed_check(_failed_check_rows(checks))
     return pd.DataFrame(
         [
             {
                 "guard_action": "halt" if halted else "continue",
                 "halted": halted,
                 "failed_checks": failed,
+                "failed_check_count": failed,
                 "failed_check_names": ";".join(failed_names),
                 "first_failed_reason": failed_reasons[0] if failed_reasons else "",
                 "failed_check_reasons": ";".join(failed_reasons),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "target_mode": row["target_mode"],
                 "strategy": row["strategy"],
                 "market": row["market"],
@@ -872,6 +910,213 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _summary_with_actions(
+    summary: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> pd.DataFrame:
+    out = summary.copy()
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["failed_check_count"] = int(len(failed_rows))
+    out["failed_check_names"] = ";".join(_failed_check_names(checks))
+    out["first_failed_reason"] = _prefixed_check_reason(primary_blocker)
+    out["primary_blocker_check"] = _check_name(primary_blocker)
+    out["primary_blocker_value"] = _check_value(primary_blocker, "value")
+    out["primary_blocker_operator"] = _check_value(primary_blocker, "operator")
+    out["primary_blocker_threshold"] = _check_value(primary_blocker, "threshold")
+    out["primary_blocker_reason"] = _check_reason(primary_blocker)
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for _, check in _failed_check_rows(checks).iterrows():
+        next_gate = _next_gate(check)
+        rows.append(
+            {
+                "queue_status": "ready",
+                "source": "runtime_guard_checks",
+                "component": _component(check),
+                "check": _check_name(check),
+                "actual": check.get("value"),
+                "operator": _check_value(check, "operator"),
+                "expected": check.get("threshold"),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
+                "reason": _check_reason(check),
+                "recommendation": _action_recommendation(check, row),
+            }
+        )
+    ordered_rows = []
+    for priority, action in enumerate(rows, start=1):
+        item = {column: action.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _component(row: pd.Series) -> str:
+    check = _check_name(row)
+    if check in {"scaleup_ready", "manual_halt"}:
+        return "scaleup_plan"
+    if check in {"strategy_matches", "market_matches"}:
+        return "runtime_identity"
+    if check in {"runtime_telemetry_age_ns", "snapshot_ts_ns"}:
+        return "runtime_telemetry"
+    if check.startswith("runtime_proof_refresh"):
+        return "proof_refresh"
+    if check.startswith("runtime_broker_resume"):
+        return "broker_resume_gate"
+    if check.startswith("runtime_strategy_portfolio") or check.startswith("scaleup_strategy_portfolio"):
+        return "strategy_portfolio"
+    if check in {
+        "open_order_count",
+        "open_order_qty",
+        "open_order_notional",
+        "oldest_open_order_age_ns",
+    }:
+        return "open_order_risk"
+    if check in {
+        "gross_position_qty",
+        "abs_net_position_qty",
+        "gross_position_notional",
+        "net_position_notional",
+        "abs_net_position_notional",
+        "abs_net_delta",
+        "abs_net_vega",
+    }:
+        return "position_risk"
+    if check in {"orders_sent", "lifecycle_orders", "replace_orders", "session_notional", "realized_pnl"}:
+        return "runtime_limits"
+    return "runtime_guard"
+
+
+def _next_gate(row: pd.Series) -> str:
+    check = _check_name(row)
+    if check == "scaleup_ready":
+        return "plan-scaleup"
+    if check.startswith("runtime_proof_refresh"):
+        return "refresh-proof"
+    if check.startswith("runtime_broker_resume"):
+        return "review-resume-gate"
+    return "plan-halt-response"
+
+
+def _action_recommendation(row: pd.Series, metrics_row: pd.Series) -> str:
+    check = _check_name(row)
+    if check == "scaleup_ready":
+        return "repair_scaleup_plan_before_runtime_routing"
+    if check == "manual_halt":
+        return "clear_manual_halt_or_prepare_halt_response"
+    if check.startswith("runtime_proof_refresh"):
+        return "refresh_or_repair_runtime_proof_before_routing"
+    if check.startswith("runtime_broker_resume"):
+        return "repair_broker_resume_gate_before_routing"
+    if check.startswith("runtime_strategy_portfolio") or check.startswith("scaleup_strategy_portfolio"):
+        return "repair_strategy_portfolio_allocation_before_routing"
+    if _clean(metrics_row.get("target_mode")) in {"live", "paper", "shadow"}:
+        return "stop_routing_and_prepare_halt_response"
+    return "investigate_runtime_guard_halt"
+
+
+def _config(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "guard_action": _clean(summary_row.get("guard_action")),
+        "halted": _to_bool(summary_row.get("halted")),
+        "strategy": _clean(summary_row.get("strategy")),
+        "market": _clean(summary_row.get("market")),
+        "scenario_key": _clean(summary_row.get("scenario_key")),
+        "adapter": _clean(summary_row.get("adapter")),
+        "failed_check_count": _int_value(summary_row.get("failed_check_count")),
+        "failed_check_names": _split_items(summary_row.get("failed_check_names")),
+        "first_failed_reason": _clean(summary_row.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _clean(summary_row.get("primary_blocker_check")),
+            "value": _clean(summary_row.get("primary_blocker_value")),
+            "operator": _clean(summary_row.get("primary_blocker_operator")),
+            "threshold": _clean(summary_row.get("primary_blocker_threshold")),
+            "reason": _clean(summary_row.get("primary_blocker_reason")),
+        },
+        "action_queue_count": _int_value(summary_row.get("action_queue_count")),
+        "ready_action_count": _int_value(summary_row.get("ready_action_count")),
+        "blocked_action_count": _int_value(summary_row.get("blocked_action_count")),
+        "review_action_count": _int_value(summary_row.get("review_action_count")),
+        "next_gate": _clean(summary_row.get("next_gate")),
+        "next_gate_help_command": _clean(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _clean(summary_row.get("primary_action_status")),
+        "primary_action": _first_action_record(action_queue),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+    }
+
+
+def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
+    halted_label = "yes" if _to_bool(summary.get("halted")) else "no"
+    lines = [
+        "# Runtime Guard Runbook",
+        "",
+        f"- Halted: {halted_label}",
+        f"- Guard action: {_clean(summary.get('guard_action'))}",
+        f"- Strategy: {_clean(summary.get('strategy'))}",
+        f"- Market: {_clean(summary.get('market'))}",
+        f"- Scenario: {_clean(summary.get('scenario_key'))}",
+        f"- Adapter: {_clean(summary.get('adapter'))}",
+        f"- Failed checks: {_int_value(summary.get('failed_check_count'))}",
+        f"- Ready actions: {_int_value(summary.get('ready_action_count'))}",
+        f"- Blocked actions: {_int_value(summary.get('blocked_action_count'))}",
+        f"- Recommendation: {_clean(summary.get('recommendation'))}",
+        f"- Primary next gate: {_code(summary.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No runtime-guard actions."
+    rows = [
+        "| priority | status | component | check | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _clean(item.get("priority")),
+                    _clean(item.get("queue_status")),
+                    _clean(item.get("component")),
+                    _clean(item.get("check")),
+                    _clean(item.get("actual")),
+                    _clean(item.get("expected")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _clean(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
 def _scaleup_config_path(path: str | Path) -> Path:
     candidate = Path(path)
     if candidate.is_dir():
@@ -906,17 +1151,29 @@ def _threshold_check(name: str, value: float | int, operator: str, threshold: fl
     return _check(name, value_float, operator, threshold_float, passed, reason)
 
 
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    return checks.loc[~checks["passed"].map(_to_bool)].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
 def _failed_check_names(checks: pd.DataFrame) -> list[str]:
     if checks.empty or "passed" not in checks.columns or "check" not in checks.columns:
         return []
-    failed = checks.loc[~checks["passed"].astype(bool), "check"]
+    failed = _failed_check_rows(checks)["check"]
     return [str(value) for value in failed.tolist()]
 
 
 def _failed_check_reasons(checks: pd.DataFrame) -> list[str]:
     if checks.empty or "passed" not in checks.columns:
         return []
-    failed = checks.loc[~checks["passed"].astype(bool)].copy()
+    failed = _failed_check_rows(checks)
     if failed.empty:
         return []
     names = failed["check"].astype(str) if "check" in failed.columns else pd.Series(["check"] * len(failed))
@@ -926,6 +1183,112 @@ def _failed_check_reasons(checks: pd.DataFrame) -> list[str]:
         clean_reason = reason.strip()
         out.append(f"{name}: {clean_reason}" if clean_reason else str(name))
     return out
+
+
+def _check_name(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    return _check_value(row, "check")
+
+
+def _check_reason(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    return _check_value(row, "reason")
+
+
+def _prefixed_check_reason(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    name = _check_name(row)
+    reason = _check_reason(row)
+    return f"{name}: {reason}" if name and reason else name or reason
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty or column not in row.index:
+        return ""
+    return _clean(row.get(column))
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _clean(action_queue.iloc[0].get(column))
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_value(value) for key, value in row.items()}
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _clean(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _clean(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _clean(value)
+    return f"`{text}`" if text else ""
+
+
+def _int_value(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _clean(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
 
 
 def _check(

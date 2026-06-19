@@ -6,6 +6,10 @@ from hft_cli import main
 from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
 
 
+def path_tail(value):
+    return str(value).replace("\\", "/")
+
+
 def scaleup_config(
     require_proof_refresh=False,
     require_broker_resume_gate=False,
@@ -129,6 +133,14 @@ def test_runtime_guard_continues_when_telemetry_is_inside_limits():
     assert report.summary.iloc[0]["target_mode"] == "shadow"
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
+    assert int(report.summary.iloc[0]["failed_check_count"]) == 0
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert report.config is not None
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
     assert set(report.checks["passed"]) == {True}
     assert report.metrics.iloc[0]["max_orders_per_session"] == 10
 
@@ -165,6 +177,14 @@ def test_runtime_guard_halts_on_limit_and_kill_switch_breaches():
     assert "orders_sent" in summary["failed_check_names"].split(";")
     assert summary["first_failed_reason"].startswith("orders_sent:")
     assert "worst_adverse_slippage:" in summary["failed_check_reasons"]
+    assert int(summary["action_queue_count"]) >= 1
+    assert int(summary["ready_action_count"]) >= 1
+    assert summary["next_gate"] == "plan-halt-response"
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "queue_status"] == "ready"
+    assert report.action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-halt-response --help"
+    assert report.config is not None
+    assert report.config["primary_action"]["next_gate"] == "plan-halt-response"
 
 
 def test_runtime_guard_halts_on_manual_halt_flag():
@@ -523,7 +543,23 @@ def test_write_runtime_guard_outputs_artifacts(tmp_path):
     assert (out_dir / "runtime_guard_metrics.csv").exists()
     assert (out_dir / "runtime_guard_checks.csv").exists()
     assert (out_dir / "runtime_guard_summary.csv").exists()
+    assert (out_dir / "runtime_guard_action_queue.csv").exists()
+    assert (out_dir / "runtime_guard_config.json").exists()
+    assert (out_dir / "runtime_guard_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    saved_summary = pd.read_csv(out_dir / "runtime_guard_summary.csv")
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    saved_config = json.loads((out_dir / "runtime_guard_config.json").read_text(encoding="utf-8"))
+    assert saved_config["action_queue_count"] == 0
+    assert saved_config["next_actions"] == []
+    assert (out_dir / "runtime_guard_runbook.md").read_text(encoding="utf-8").startswith(
+        "# Runtime Guard Runbook"
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("runtime_guard_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("runtime_guard_config.json") for path in artifact_paths)
+    assert any(path.endswith("runtime_guard_runbook.md") for path in artifact_paths)
 
 
 def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
@@ -548,8 +584,43 @@ def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
     )
 
     summary = pd.read_csv(out_dir / "runtime_guard_summary.csv")
+    queue = pd.read_csv(out_dir / "runtime_guard_action_queue.csv")
+    saved_config = json.loads((out_dir / "runtime_guard_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert summary.loc[0, "guard_action"] == "halt"
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "ready_action_count"]) == 1
+    assert queue.loc[0, "check"] == "orders_sent"
+    assert queue.loc[0, "component"] == "runtime_limits"
+    assert queue.loc[0, "next_gate"] == "plan-halt-response"
+    assert saved_config["ready_actions"][0]["check"] == "orders_sent"
+
+
+def test_cli_runtime_guard_can_fail_on_actions(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "guard"
+    telemetry_path = tmp_path / "telemetry.csv"
+    scaleup_dir.mkdir()
+    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    telemetry(orders_sent=12).to_csv(telemetry_path, index=False)
+
+    code = main(
+        [
+            "monitor-scaleup-guard",
+            "--scaleup",
+            str(scaleup_dir),
+            "--telemetry",
+            str(telemetry_path),
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+
+    queue = pd.read_csv(out_dir / "runtime_guard_action_queue.csv")
+    assert code == 2
+    assert len(queue) == 1
+    assert queue.loc[0, "next_gate"] == "plan-halt-response"
 
 
 def test_cli_runtime_guard_reads_runtime_telemetry_output_dir(tmp_path):
