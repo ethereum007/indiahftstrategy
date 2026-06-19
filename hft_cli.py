@@ -1728,6 +1728,8 @@ def main(argv: list[str] | None = None) -> int:
     halt_execution.add_argument("--allow-missing-final-positions", action="store_true")
     halt_execution.add_argument("--position-tolerance", type=float, default=0.0)
     halt_execution.add_argument("--fail-on-breach", action="store_true")
+    halt_execution.add_argument("--fail-on-blocked-actions", action="store_true")
+    halt_execution.add_argument("--fail-on-actions", action="store_true")
 
     halt_incident = sub.add_parser("review-halt-incident", help="Summarize guard, response, export, and execution evidence.")
     halt_incident.add_argument("--guard", required=True)
@@ -3988,7 +3990,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.passed else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "review-halt-incident":
         result = write_halt_incident_report(
             guard_dir=args.guard,

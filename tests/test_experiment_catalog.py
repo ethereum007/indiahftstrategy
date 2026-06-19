@@ -13,6 +13,7 @@ from hft_cli import main
 from reports.catalog import catalog_experiment_runs, write_experiment_catalog
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
+from reports.halt_execution import write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.manifest import write_experiment_manifest
 from reports.proof_refresh import write_proof_refresh_report
@@ -1996,6 +1997,83 @@ def test_experiment_catalog_promotes_halt_incident_action_queue(tmp_path):
     assert queue.loc[0, "check"] == "halt_export_ready"
     assert queue.loc[0, "next_gate"] == "export-halt-response"
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
+def test_experiment_catalog_promotes_halt_execution_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    halt = root / "halt_response"
+    execution = root / "halt_execution"
+    halt.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "guard_action": "halt",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "cancel_orders": 1,
+                "flatten_orders": 1,
+            }
+        ]
+    ).to_csv(halt / "halt_response_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "action_id": "CXL-000000",
+                "client_order_id": "STG-1",
+                "broker_order_id": "ARW-1",
+                "instrument_id": "NIFTY_C_22000",
+                "open_qty": 50,
+            }
+        ]
+    ).to_csv(halt / "halt_cancel_orders.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "action_id": "FLT-000000",
+                "instrument_id": "NIFTY_C_22000",
+                "side": -1,
+                "qty": 75,
+                "price": 11.2,
+            }
+        ]
+    ).to_csv(halt / "halt_flatten_orders.csv", index=False)
+    cancel_acks = root / "cancel_acks.csv"
+    flatten_fills = root / "flatten_fills.csv"
+    positions = root / "positions.csv"
+    pd.DataFrame([{"broker_order_id": "ARW-1", "cancel_status": "cancelled"}]).to_csv(cancel_acks, index=False)
+    pd.DataFrame(
+        [
+            {
+                "action_id": "FLT-000000",
+                "instrument_id": "NIFTY_C_22000",
+                "side": "SELL",
+                "qty": 75,
+                "price": 11.15,
+                "status": "filled",
+            }
+        ]
+    ).to_csv(flatten_fills, index=False)
+    pd.DataFrame([{"instrument_id": "NIFTY_C_22000", "net_qty": 25}]).to_csv(positions, index=False)
+
+    write_halt_execution_report(
+        halt_response_dir=halt,
+        cancel_acks_path=cancel_acks,
+        flatten_fills_path=flatten_fills,
+        positions_path=positions,
+        output_dir=execution,
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"halt_execution_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "halt_execution_reconciliation"
+    assert queue.loc[0, "component"] == "position_reconciliation"
+    assert queue.loc[0, "check"] == "final_positions_flat"
+    assert queue.loc[0, "next_gate"] == "reconcile-halt-execution"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli reconcile-halt-execution --help"
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 

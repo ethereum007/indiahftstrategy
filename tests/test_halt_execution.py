@@ -109,6 +109,9 @@ def test_halt_execution_accepts_cancel_ack_flatten_fill_and_flat_positions():
     assert report.cancel_execution.iloc[0]["acked"]
     assert report.flatten_execution.iloc[0]["complete"]
     assert report.summary.iloc[0]["recommendation"] == "halt_completed"
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert report.action_queue is not None
+    assert report.action_queue.empty
 
 
 def test_halt_execution_fails_when_cancel_ack_is_missing():
@@ -159,6 +162,8 @@ def test_write_halt_execution_report_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_position_execution.csv").exists()
     assert (out_dir / "halt_execution_checks.csv").exists()
     assert (out_dir / "halt_execution_summary.csv").exists()
+    assert (out_dir / "halt_execution_action_queue.csv").exists()
+    assert (out_dir / "halt_execution_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {
@@ -181,6 +186,14 @@ def test_write_halt_execution_report_outputs_artifacts(tmp_path):
     assert path_tail(manifest["inputs"]["cancel_acks"]["path"]).endswith("/cancel_acks.csv")
     assert path_tail(manifest["inputs"]["flatten_fills"]["path"]).endswith("/flatten_fills.csv")
     assert path_tail(manifest["inputs"]["positions"]["path"]).endswith("/positions.csv")
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("halt_execution_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("halt_execution_runbook.md") for path in artifact_paths)
+    saved_summary = pd.read_csv(out_dir / "halt_execution_summary.csv")
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    assert (out_dir / "halt_execution_runbook.md").read_text(encoding="utf-8").startswith(
+        "# Halt Execution Runbook"
+    )
 
 
 def test_cli_halt_execution_fails_on_residual_position(tmp_path):
@@ -208,13 +221,56 @@ def test_cli_halt_execution_fails_on_residual_position(tmp_path):
             "--out",
             str(out_dir),
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "halt_execution_summary.csv")
+    queue = pd.read_csv(out_dir / "halt_execution_action_queue.csv")
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
     assert summary.loc[0, "failed_check_count"] == 1
     assert summary.loc[0, "failed_check_names"] == "final_positions_flat"
     assert summary.loc[0, "primary_blocker_check"] == "final_positions_flat"
     assert summary.loc[0, "primary_blocker_reason"] == "final position snapshot is missing or contains residual positions"
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert summary.loc[0, "next_gate"] == "reconcile-halt-execution"
+    assert queue.loc[0, "component"] == "position_reconciliation"
+    assert queue.loc[0, "check"] == "final_positions_flat"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli reconcile-halt-execution --help"
+    assert "final_positions_flat" in (out_dir / "halt_execution_runbook.md").read_text(encoding="utf-8")
+
+
+def test_cli_halt_execution_can_fail_on_actions(tmp_path):
+    halt_dir = tmp_path / "halt"
+    out_dir = tmp_path / "execution"
+    cancel_acks_path = tmp_path / "cancel_acks.csv"
+    flatten_fills_path = tmp_path / "flatten_fills.csv"
+    positions_path = tmp_path / "positions.csv"
+    write_halt_dir(halt_dir)
+    cancel_acks().to_csv(cancel_acks_path, index=False)
+    flatten_fills().to_csv(flatten_fills_path, index=False)
+    positions(25).to_csv(positions_path, index=False)
+
+    code = main(
+        [
+            "reconcile-halt-execution",
+            "--halt-response",
+            str(halt_dir),
+            "--cancel-acks",
+            str(cancel_acks_path),
+            "--flatten-fills",
+            str(flatten_fills_path),
+            "--positions",
+            str(positions_path),
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+
+    queue = pd.read_csv(out_dir / "halt_execution_action_queue.csv")
+    assert code == 2
+    assert len(queue) == 1
+    assert queue.loc[0, "check"] == "final_positions_flat"

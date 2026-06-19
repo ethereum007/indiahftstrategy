@@ -188,6 +188,11 @@
   `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
   routing guard, response, export, and execution blockers to the next recovery
   CLI before resume-gate automation trusts a closed incident.
+- Halt execution reconciliation now emits manifest-tracked
+  `halt_execution_action_queue.csv` and `halt_execution_runbook.md` handoffs,
+  routing missing cancel acknowledgements, incomplete flatten fills, and
+  residual final positions back to recovery reconciliation before incident
+  closure can pass.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
@@ -1036,7 +1041,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 949 tests.
+Current passing suite: 951 tests.
 
 ## Next Build Targets
 

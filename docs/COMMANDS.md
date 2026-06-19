@@ -2923,7 +2923,8 @@ python -m hft_cli reconcile-halt-execution `
   --flatten-fills logs\flatten_fills.csv `
   --positions logs\positions_after_halt.csv `
   --out runs\halt_execution\leadlag_shadow_latest `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Cancel acknowledgements can match on `action_id`, `broker_order_id`, or
@@ -2938,6 +2939,8 @@ halt_flatten_execution.csv
 halt_position_execution.csv
 halt_execution_checks.csv
 halt_execution_summary.csv
+halt_execution_action_queue.csv
+halt_execution_runbook.md
 manifest.json
 ```
 
@@ -2945,6 +2948,13 @@ manifest.json
 `failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
 post-halt schedulers can distinguish missing acknowledgements, incomplete
 flatten fills, and residual positions from the one-row summary.
+It also carries `action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, and `primary_action_status`.
+`halt_execution_action_queue.csv` and `halt_execution_runbook.md` mirror failed
+response, cancel-ack, flatten-fill, and final-position checks back to the next
+recovery CLI gate. Use `--fail-on-blocked-actions` to fail only when blocked
+halt-execution actions exist, or `--fail-on-actions` when any halt-execution
+action should stop automation.
 The manifest fingerprints the halt-response summary/action files plus the
 cancel acknowledgement, flatten fill, and final-position snapshots supplied for
 execution reconciliation.
