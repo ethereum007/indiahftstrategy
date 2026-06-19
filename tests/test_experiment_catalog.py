@@ -12,6 +12,7 @@ from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intak
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs, write_experiment_catalog
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
+from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.manifest import write_experiment_manifest
 
 
@@ -523,6 +524,64 @@ def test_experiment_catalog_promotes_fill_model_action_queue(tmp_path):
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["action_source_file"] == "fill_model_action_queue.csv"
     assert action_plan["primary_action"]["check"] == "mismatch_rate"
+
+
+def test_experiment_catalog_promotes_fill_model_drift_action_queue(tmp_path):
+    baseline_dir = tmp_path / "baseline_fill_model"
+    latest_dir = tmp_path / "latest_fill_model"
+    drift_dir = tmp_path / "fill_model_drift"
+    catalog_dir = tmp_path / "catalog"
+    baseline_dir.mkdir()
+    latest_dir.mkdir()
+    baseline_config = {
+        "schema_version": 1,
+        "ready": True,
+        "global": {
+            "queue_conservatism": 2.0,
+            "order_latency_us": 100.0,
+            "slippage_ticks": 1.0,
+            "min_edge_ticks": 2.0,
+        },
+        "by_instrument": [],
+        "failed_checks": [],
+    }
+    latest_config = {
+        **baseline_config,
+        "global": {
+            **baseline_config["global"],
+            "queue_conservatism": 3.0,
+        },
+    }
+    (baseline_dir / "fill_model_config.json").write_text(
+        json.dumps(baseline_config, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    (latest_dir / "fill_model_config.json").write_text(
+        json.dumps(latest_config, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    write_fill_model_drift_report(
+        baseline_path=baseline_dir,
+        latest_path=latest_dir,
+        output_dir=drift_dir,
+        thresholds=FillModelDriftThresholds(max_queue_conservatism_increase_pct=0.25),
+    )
+
+    report = write_experiment_catalog([drift_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 1
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+    assert set(queue["action_source_file"]) == {"fill_model_drift_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "fill_model_drift"
+    assert queue.loc[0, "check"] == "queue_conservatism_delta_pct"
+    assert queue.loc[0, "component"] == "queue_model"
+    assert queue.loc[0, "next_gate"] == "compare-fill-models"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli compare-fill-models --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["action_source_file"] == "fill_model_drift_action_queue.csv"
+    assert action_plan["primary_action"]["check"] == "queue_conservatism_delta_pct"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):

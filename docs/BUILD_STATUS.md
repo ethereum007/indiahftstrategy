@@ -417,6 +417,11 @@
 - Fill-model drift gate that compares baseline and latest calibration configs
   to decide whether existing proof assumptions can be reused or calibrated
   proof must be rerun.
+- Fill-model drift now emits manifest-tracked
+  `fill_model_drift_action_queue.csv`, `fill_model_drift_config.json`, and
+  `fill_model_drift_runbook.md` handoffs, making unready calibration configs,
+  instrument-set changes, and queue/latency/slippage/edge drift
+  catalog-visible before proof refresh reuses old evidence.
 - Calibrated replay planning and replay CLI hooks that apply fill-model
   recommendations to lead-lag, parity, and surface-MM replay latency/depth/edge
   assumptions without loosening explicit conservative inputs.
@@ -1018,7 +1023,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 941 tests.
+Current passing suite: 943 tests.
 
 ## Next Build Targets
 

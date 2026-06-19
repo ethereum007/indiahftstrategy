@@ -3591,7 +3591,8 @@ python -m hft_cli compare-fill-models `
   --max-queue-conservatism-increase-pct 0.25 `
   --max-order-latency-increase-us 100 `
   --require-same-instruments `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3600,8 +3601,22 @@ Outputs:
 fill_model_drift.csv
 fill_model_drift_checks.csv
 fill_model_drift_summary.csv
+fill_model_drift_action_queue.csv
+fill_model_drift_config.json
+fill_model_drift_runbook.md
 manifest.json
 ```
+
+`fill_model_drift_summary.csv` carries `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
+`action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, and `primary_action_status` so unready calibration
+configs, instrument-set changes, and queue/latency/slippage/edge drift are
+scheduler-visible before proof reuse. `fill_model_drift_action_queue.csv`,
+`fill_model_drift_config.json`, and `fill_model_drift_runbook.md` mirror those
+actions back to `compare-fill-models`. Use `--fail-on-blocked-actions` to fail
+only when blocked drift actions exist, or `--fail-on-actions` when any drift
+action should stop automation.
 
 ## Calibrated Replay Plan
 

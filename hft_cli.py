@@ -855,6 +855,8 @@ def main(argv: list[str] | None = None) -> int:
     fill_model_drift.add_argument("--max-slippage-tick-increase", type=float, default=1.0)
     fill_model_drift.add_argument("--max-min-edge-tick-increase", type=float, default=1.0)
     fill_model_drift.add_argument("--fail-on-breach", action="store_true")
+    fill_model_drift.add_argument("--fail-on-blocked-actions", action="store_true")
+    fill_model_drift.add_argument("--fail-on-actions", action="store_true")
 
     calibrated_replay = sub.add_parser("plan-calibrated-replay", help="Apply fill-model config to replay parameters.")
     calibrated_replay.add_argument("--fill-model", required=True)
@@ -2856,7 +2858,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.passed else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "plan-calibrated-replay":
         base_params = {
             key: value
