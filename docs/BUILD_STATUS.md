@@ -587,6 +587,9 @@
 - Data readiness now writes manifest-tracked `data_readiness_config.json`,
   mirroring summary, component, failed-check, and action-queue state as a
   scheduler-readable JSON handoff for raw vendor data blockers.
+- `review-data-readiness` can now fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`, giving schedulers a
+  direct exit-code gate on raw vendor-data repair work.
 - Vendor market-data onboarding pipelines that run Arrow.money/iRage CSV
   intake, normalized mapping, tick/chain diagnostics, data-readiness gates, and
   multi-day readiness comparison before walk-forward research, carrying raw
@@ -605,6 +608,9 @@
 - Multi-dataset data-readiness comparisons now also write manifest-tracked
   `data_readiness_comparison_config.json`, preserving dataset rows,
   failed-check names, and ready/blocked action queues for batch schedulers.
+- `compare-data-readiness` can now fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`, matching the single-run
+  data-readiness gate before walk-forward research is scheduled.
 - Market profile layer for India NSE index derivatives and US regular-hours
   equities/options, with shared session filtering and configurable generic
   costs for non-India workflows.

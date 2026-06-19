@@ -431,6 +431,8 @@ def test_data_readiness_fails_on_chain_coverage_and_spread_gaps():
 def test_write_data_readiness_outputs_artifacts(tmp_path):
     tick_dir = tmp_path / "tick_diag"
     out_dir = tmp_path / "data_readiness"
+    blocked_gate_dir = tmp_path / "data_readiness_blocked_gate"
+    action_gate_dir = tmp_path / "data_readiness_action_gate"
     tick_dir.mkdir()
     tick_summary().to_csv(tick_dir / "diagnostic_summary.csv", index=False)
 
@@ -476,9 +478,34 @@ def test_write_data_readiness_outputs_artifacts(tmp_path):
     assert "data_readiness_config.json" in artifact_paths
     assert "data_readiness_runbook.md" in artifact_paths
 
+    blocked_gate_code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(blocked_gate_dir),
+            "--tick-diagnostics",
+            str(tick_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    action_gate_code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(action_gate_dir),
+            "--tick-diagnostics",
+            str(tick_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_gate_code == 0
+    assert action_gate_code == 0
+
 
 def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_path):
     out_dir = tmp_path / "data_readiness"
+    blocked_gate_dir = tmp_path / "data_readiness_blocked_gate"
+    action_gate_dir = tmp_path / "data_readiness_action_gate"
 
     code = main(["review-data-readiness", "--out", str(out_dir), "--fail-on-breach"])
 
@@ -520,6 +547,25 @@ def test_cli_data_readiness_can_fail_on_missing_required_tick_diagnostics(tmp_pa
     assert {item["check"] for item in config["blocked_actions"]} == set(queue["check"])
     assert queue.loc[0, "next_gate"] == "diagnose-ticks"
     assert "`diagnose-ticks`" in runbook
+
+    blocked_gate_code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(blocked_gate_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    action_gate_code = main(
+        [
+            "review-data-readiness",
+            "--out",
+            str(action_gate_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_gate_code == 2
+    assert action_gate_code == 2
 
 
 def test_cli_data_readiness_can_require_vendor_intake(tmp_path):

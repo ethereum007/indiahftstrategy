@@ -172,6 +172,8 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
     out_dir = tmp_path / "comparison"
+    blocked_gate_dir = tmp_path / "comparison_blocked_gate"
+    action_gate_dir = tmp_path / "comparison_action_gate"
     write_readiness_dir(day1, source_hash="a" * 64, header_hash="b" * 64, mapping_hash="c" * 64)
     write_readiness_dir(day2, source_hash="d" * 64, header_hash="b" * 64, mapping_hash="c" * 64)
 
@@ -219,11 +221,42 @@ def test_write_data_readiness_comparison_outputs_artifacts(tmp_path):
     assert "data_readiness_comparison_config.json" in artifact_paths
     assert "data_readiness_comparison_runbook.md" in artifact_paths
 
+    blocked_gate_code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(blocked_gate_dir),
+            "--min-datasets",
+            "2",
+            "--fail-on-blocked-actions",
+        ]
+    )
+    action_gate_code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(action_gate_dir),
+            "--min-datasets",
+            "2",
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_gate_code == 0
+    assert action_gate_code == 0
+
 
 def test_cli_compare_data_readiness_can_fail_on_bad_dataset(tmp_path):
     day1 = tmp_path / "day1"
     day2 = tmp_path / "day2"
     out_dir = tmp_path / "comparison"
+    blocked_gate_dir = tmp_path / "comparison_blocked_gate"
+    action_gate_dir = tmp_path / "comparison_action_gate"
     write_readiness_dir(day1)
     write_readiness_dir(day2, ready=False, failed_checks=1)
 
@@ -261,6 +294,35 @@ def test_cli_compare_data_readiness_can_fail_on_bad_dataset(tmp_path):
     assert {item["check"] for item in config["blocked_actions"]} == set(queue["check"])
     assert "review-data-readiness" in set(queue["next_gate"])
     assert "`review-data-readiness`" in runbook
+
+    blocked_gate_code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(blocked_gate_dir),
+            "--min-datasets",
+            "2",
+            "--fail-on-blocked-actions",
+        ]
+    )
+    action_gate_code = main(
+        [
+            "compare-data-readiness",
+            "--readiness",
+            str(day1),
+            str(day2),
+            "--out",
+            str(action_gate_dir),
+            "--min-datasets",
+            "2",
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_gate_code == 2
+    assert action_gate_code == 2
 
 
 def test_cli_compare_data_readiness_can_fail_on_missing_source_fingerprint(tmp_path):

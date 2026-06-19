@@ -1082,6 +1082,8 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness.add_argument("--max-tick-median-spread-ticks", type=float, default=None)
     data_readiness.add_argument("--max-chain-median-spread-ticks", type=float, default=None)
     data_readiness.add_argument("--fail-on-breach", action="store_true")
+    data_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
+    data_readiness.add_argument("--fail-on-actions", action="store_true")
 
     data_readiness_compare = sub.add_parser(
         "compare-data-readiness",
@@ -1098,6 +1100,8 @@ def main(argv: list[str] | None = None) -> int:
     data_readiness_compare.add_argument("--min-source-file-fingerprint-coverage", type=float, default=None)
     data_readiness_compare.add_argument("--min-mapping-coverage", type=float, default=None)
     data_readiness_compare.add_argument("--fail-on-breach", action="store_true")
+    data_readiness_compare.add_argument("--fail-on-blocked-actions", action="store_true")
+    data_readiness_compare.add_argument("--fail-on-actions", action="store_true")
 
     instrument_metadata = sub.add_parser(
         "instrument-metadata-report",
@@ -3218,7 +3222,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "compare-data-readiness":
         result = write_data_readiness_comparison(
             args.readiness,
@@ -3235,7 +3250,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.accepted else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.accepted:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "instrument-metadata-report":
         result = write_instrument_metadata_report(
             args.input,

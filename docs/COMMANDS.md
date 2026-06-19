@@ -4242,7 +4242,8 @@ python -m hft_cli review-data-readiness `
   --max-tick-p99-gap-ns 1000000000 `
   --max-tick-median-spread-ticks 2 `
   --max-chain-median-spread-ticks 20 `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -4273,6 +4274,9 @@ fields, summary, component, and failed-check state for scheduler handoff.
 `data_readiness_runbook.md` mirrors the same handoff with component readiness
 and failed checks, and these sidecars are manifest-tracked so `catalog-runs`
 can promote blocked vendor-data work into the top-level action plan.
+Use `--fail-on-blocked-actions` to stop when blocked data-readiness actions
+remain, or `--fail-on-actions` when any queued data-readiness handoff should
+stop automation for operator review.
 
 Compare multiple data-readiness runs before walk-forward research:
 
@@ -4284,7 +4288,8 @@ python -m hft_cli compare-data-readiness `
   --out runs\data_readiness\india_nse_comparison `
   --min-datasets 2 `
   --min-ready-rate 1 `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -4309,6 +4314,9 @@ mirrors dataset rows, failed-check names, action counts, and
 `data_readiness_comparison_runbook.md` mirrors the blocked actions, dataset
 rows, and failed checks for operator review, and these sidecars are
 manifest-tracked for catalog promotion.
+Use `--fail-on-blocked-actions` to stop on blocked multi-day data-proof
+actions, or `--fail-on-actions` when any queued comparison action should pause
+the scheduler.
 
 ## Proof Report
 
