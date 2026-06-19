@@ -5,6 +5,7 @@ import pandas as pd
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
+from adapters.order_reconciliation import ReconciliationThresholds, write_order_reconciliation
 from adapters.order_upload_pack import OrderUploadPackConfig, write_order_upload_pack
 from adapters.schema_audit import write_adapter_schema_audit
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
@@ -404,6 +405,76 @@ def test_experiment_catalog_promotes_broker_upload_action_queue(tmp_path):
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["action_source_file"] == "broker_upload_action_queue.csv"
     assert action_plan["primary_action"]["check"] == "schema_reviewed"
+
+
+def test_experiment_catalog_promotes_reconciliation_action_queue(tmp_path):
+    export_dir = tmp_path / "export"
+    reconciliation_dir = tmp_path / "reconciliation"
+    catalog_dir = tmp_path / "catalog"
+    fills = tmp_path / "fills.csv"
+    export_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "side": 1,
+                "qty": 75,
+                "price": 10.0,
+                "ts_signal_ns": 100,
+            },
+            {
+                "client_order_id": "STG-2",
+                "instrument_id": "NIFTY24JUN22500PE",
+                "side": -1,
+                "qty": 75,
+                "price": 11.0,
+                "ts_signal_ns": 100,
+            },
+        ]
+    ).to_csv(export_dir / "broker_orders.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "ts_fill_ns": 150,
+                "side": 1,
+                "qty": 75,
+                "price": 10.05,
+            },
+            {
+                "client_order_id": "STG-2",
+                "instrument_id": "WRONG",
+                "ts_fill_ns": 160,
+                "side": -1,
+                "qty": 75,
+                "price": 10.95,
+            },
+        ]
+    ).to_csv(fills, index=False)
+    write_order_reconciliation(
+        export_dir=export_dir,
+        fills_path=fills,
+        output_dir=reconciliation_dir,
+        thresholds=ReconciliationThresholds(min_order_fill_rate=1.0),
+    )
+
+    report = write_experiment_catalog([reconciliation_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 1
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+    assert set(queue["action_source_file"]) == {"reconciliation_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "order_reconciliation"
+    assert queue.loc[0, "check"] == "mismatched_orders"
+    assert queue.loc[0, "component"] == "execution_match"
+    assert queue.loc[0, "next_gate"] == "reconcile-broker-fills"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli reconcile-broker-fills --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["action_source_file"] == "reconciliation_action_queue.csv"
+    assert action_plan["primary_action"]["check"] == "mismatched_orders"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):

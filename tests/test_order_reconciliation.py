@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from adapters.order_reconciliation import (
@@ -76,6 +78,11 @@ def test_evaluate_order_reconciliation_scores_fill_quality():
     assert report.summary.iloc[0]["order_fill_rate"] == 1.0
     assert set(report.orders["fill_status"]) == {"full"}
     assert round(report.summary.iloc[0]["max_adverse_slippage"], 6) == 0.05
+    assert int(report.summary.iloc[0]["failed_check_count"]) == 0
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert report.summary.iloc[0]["next_gate"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
 
 
 def test_write_order_reconciliation_outputs_artifacts_and_manifest(tmp_path):
@@ -97,7 +104,25 @@ def test_write_order_reconciliation_outputs_artifacts_and_manifest(tmp_path):
     assert (out_dir / "unmatched_fills.csv").exists()
     assert (out_dir / "reconciliation_checks.csv").exists()
     assert (out_dir / "reconciliation_summary.csv").exists()
+    assert (out_dir / "reconciliation_action_queue.csv").exists()
+    assert (out_dir / "reconciliation_config.json").exists()
+    assert (out_dir / "reconciliation_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    queue = pd.read_csv(out_dir / "reconciliation_action_queue.csv")
+    config = json.loads((out_dir / "reconciliation_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "reconciliation_runbook.md").read_text(encoding="utf-8")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert queue.empty
+    assert config["passed"] is True
+    assert config["metrics"]["order_fill_rate"] == 1.0
+    assert config["action_queue_count"] == 0
+    assert config["primary_action"] == {}
+    assert "# Broker Fill Reconciliation Runbook" in runbook
+    assert "No reconciliation actions." in runbook
+    assert "reconciliation_action_queue.csv" in artifact_paths
+    assert "reconciliation_config.json" in artifact_paths
+    assert "reconciliation_runbook.md" in artifact_paths
 
 
 def test_unified_cli_reconcile_broker_fills_fails_on_unmatched_and_mismatch(tmp_path):
@@ -145,9 +170,56 @@ def test_unified_cli_reconcile_broker_fills_fails_on_unmatched_and_mismatch(tmp_
             "--min-order-fill-rate",
             "1",
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
+    summary = pd.read_csv(out_dir / "reconciliation_summary.csv")
+    queue = pd.read_csv(out_dir / "reconciliation_action_queue.csv")
+    config = json.loads((out_dir / "reconciliation_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "reconciliation_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert (out_dir / "reconciliation_checks.csv").exists()
     assert (out_dir / "unmatched_fills.csv").exists()
+    assert int(summary.loc[0, "failed_check_count"]) == 2
+    assert summary.loc[0, "failed_check_names"] == "mismatched_orders;unmatched_fills"
+    assert summary.loc[0, "primary_blocker_check"] == "mismatched_orders"
+    assert int(summary.loc[0, "action_queue_count"]) == 2
+    assert int(summary.loc[0, "blocked_action_count"]) == 2
+    assert summary.loc[0, "next_gate"] == "reconcile-broker-fills"
+    assert set(queue["check"]) == {"mismatched_orders", "unmatched_fills"}
+    assert queue.loc[0, "component"] == "execution_match"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli reconcile-broker-fills --help"
+    assert config["primary_action"]["check"] == "mismatched_orders"
+    assert "mismatched_orders" in runbook
+
+
+def test_cli_reconcile_broker_fills_can_fail_on_actions(tmp_path):
+    export_dir = tmp_path / "export"
+    fills_path = tmp_path / "fills.csv"
+    out_dir = tmp_path / "cli_reconciliation"
+    write_export(export_dir)
+    bad_fills = live_fills().iloc[:1].copy()
+    bad_fills.to_csv(fills_path, index=False)
+
+    code = main(
+        [
+            "reconcile-broker-fills",
+            "--export",
+            str(export_dir),
+            "--fills",
+            str(fills_path),
+            "--out",
+            str(out_dir),
+            "--min-order-fill-rate",
+            "1",
+            "--fail-on-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "reconciliation_summary.csv")
+    queue = pd.read_csv(out_dir / "reconciliation_action_queue.csv")
+    assert code == 2
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert queue.loc[0, "check"] == "order_fill_rate"
+    assert queue.loc[0, "component"] == "fill_rate"

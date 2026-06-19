@@ -548,6 +548,11 @@
 - Broker/drop-copy fill reconciliation for exported orders, including
   order-level fill status, unmatched fills, side/instrument mismatches,
   adverse slippage, latency, pass/fail checks, and manifests.
+- Broker/drop-copy fill reconciliation now also emits manifest-tracked
+  `reconciliation_action_queue.csv`, `reconciliation_config.json`, and
+  `reconciliation_runbook.md` handoffs, making fill-rate, overfill, mismatch,
+  unmatched-fill, and slippage blockers catalog-visible before broker readiness
+  trusts paper/shadow execution evidence.
 - Broker readiness gate that fingerprints supplied dispatch round-trip config
   files so carried route-enable dispatch failed-check counters stay auditable
   when round-trip evidence is passed as either a folder or sibling files.
@@ -1008,7 +1013,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 937 tests.
+Current passing suite: 939 tests.
 
 ## Next Build Targets
 

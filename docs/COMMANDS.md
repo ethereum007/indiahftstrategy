@@ -2369,7 +2369,8 @@ python -m hft_cli reconcile-broker-fills `
   --max-mismatched-orders 0 `
   --max-unmatched-fills 0 `
   --max-adverse-slippage 0.05 `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -2379,8 +2380,23 @@ order_reconciliation.csv
 unmatched_fills.csv
 reconciliation_checks.csv
 reconciliation_summary.csv
+reconciliation_action_queue.csv
+reconciliation_config.json
+reconciliation_runbook.md
 manifest.json
 ```
+
+`reconciliation_summary.csv` carries `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
+`action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, and `primary_action_status` so failed fill-rate,
+overfill, mismatch, unmatched-fill, and slippage gates are scheduler-visible.
+`reconciliation_action_queue.csv`, `reconciliation_config.json`, and
+`reconciliation_runbook.md` mirror those failed checks back to
+`reconcile-broker-fills` for broker-readiness handoff. Use
+`--fail-on-blocked-actions` to fail only when blocked reconciliation actions
+exist, or `--fail-on-actions` when any reconciliation action should stop
+automation.
 
 ## Shadow Session Report
 
