@@ -1163,6 +1163,24 @@ def _packet(
                     "strategy_portfolio_selected_allocation_notional"
                 ],
                 "strategy_portfolio_notional_cap_applied": cutover["strategy_portfolio_notional_cap_applied"],
+                "strategy_portfolio_min_strategy_count": cutover["strategy_portfolio_min_strategy_count"],
+                "strategy_portfolio_min_market_count": cutover["strategy_portfolio_min_market_count"],
+                "strategy_portfolio_max_strategy_weight": cutover["strategy_portfolio_max_strategy_weight"],
+                "strategy_portfolio_max_market_weight": cutover["strategy_portfolio_max_market_weight"],
+                "strategy_portfolio_allocated_strategy_count": cutover[
+                    "strategy_portfolio_allocated_strategy_count"
+                ],
+                "strategy_portfolio_allocated_market_count": cutover[
+                    "strategy_portfolio_allocated_market_count"
+                ],
+                "strategy_portfolio_top_strategy_by_weight": cutover["strategy_portfolio_top_strategy_by_weight"],
+                "strategy_portfolio_top_market_by_weight": cutover["strategy_portfolio_top_market_by_weight"],
+                "strategy_portfolio_max_strategy_allocation_weight": cutover[
+                    "strategy_portfolio_max_strategy_allocation_weight"
+                ],
+                "strategy_portfolio_max_market_allocation_weight": cutover[
+                    "strategy_portfolio_max_market_allocation_weight"
+                ],
                 "pre_portfolio_max_notional_per_session": cutover["pre_portfolio_max_notional_per_session"],
                 "upload_ready": upload["ready"],
                 "upload_orders": int(upload["orders"]),
@@ -1466,6 +1484,26 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "strategy_portfolio_notional_cap_applied": _to_bool(
                     packet["strategy_portfolio_notional_cap_applied"]
+                ),
+                "strategy_portfolio_min_strategy_count": int(packet["strategy_portfolio_min_strategy_count"]),
+                "strategy_portfolio_min_market_count": int(packet["strategy_portfolio_min_market_count"]),
+                "strategy_portfolio_max_strategy_weight": float(packet["strategy_portfolio_max_strategy_weight"]),
+                "strategy_portfolio_max_market_weight": float(packet["strategy_portfolio_max_market_weight"]),
+                "strategy_portfolio_allocated_strategy_count": int(
+                    packet["strategy_portfolio_allocated_strategy_count"]
+                ),
+                "strategy_portfolio_allocated_market_count": int(
+                    packet["strategy_portfolio_allocated_market_count"]
+                ),
+                "strategy_portfolio_top_strategy_by_weight": str(
+                    packet["strategy_portfolio_top_strategy_by_weight"]
+                ),
+                "strategy_portfolio_top_market_by_weight": str(packet["strategy_portfolio_top_market_by_weight"]),
+                "strategy_portfolio_max_strategy_allocation_weight": float(
+                    packet["strategy_portfolio_max_strategy_allocation_weight"]
+                ),
+                "strategy_portfolio_max_market_allocation_weight": float(
+                    packet["strategy_portfolio_max_market_allocation_weight"]
                 ),
                 "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
                 "adapter_schema_status": str(packet["adapter_schema_status"]),
@@ -1928,6 +1966,16 @@ def _config(
             "selected_allocation_weight": float(packet["strategy_portfolio_selected_allocation_weight"]),
             "selected_allocation_notional": float(packet["strategy_portfolio_selected_allocation_notional"]),
             "notional_cap_applied": _to_bool(packet["strategy_portfolio_notional_cap_applied"]),
+            "min_strategy_count": int(packet["strategy_portfolio_min_strategy_count"]),
+            "min_market_count": int(packet["strategy_portfolio_min_market_count"]),
+            "max_strategy_weight": float(packet["strategy_portfolio_max_strategy_weight"]),
+            "max_market_weight": float(packet["strategy_portfolio_max_market_weight"]),
+            "allocated_strategy_count": int(packet["strategy_portfolio_allocated_strategy_count"]),
+            "allocated_market_count": int(packet["strategy_portfolio_allocated_market_count"]),
+            "top_strategy_by_weight": str(packet["strategy_portfolio_top_strategy_by_weight"]),
+            "top_market_by_weight": str(packet["strategy_portfolio_top_market_by_weight"]),
+            "max_strategy_allocation_weight": float(packet["strategy_portfolio_max_strategy_allocation_weight"]),
+            "max_market_allocation_weight": float(packet["strategy_portfolio_max_market_allocation_weight"]),
             "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
         },
         "upload": {
@@ -2558,6 +2606,108 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
                 row.get(
                     "runtime_strategy_portfolio_notional_cap_applied",
                     row.get("strategy_portfolio_notional_cap_applied", False),
+                ),
+            )
+        ),
+        "strategy_portfolio_min_strategy_count": int(
+            _number_from(
+                strategy_portfolio,
+                "min_strategy_count",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_min_strategy_count",
+                    _number(row, "strategy_portfolio_min_strategy_count", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_min_market_count": int(
+            _number_from(
+                strategy_portfolio,
+                "min_market_count",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_min_market_count",
+                    _number(row, "strategy_portfolio_min_market_count", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_max_strategy_weight": float(
+            _number_from(
+                strategy_portfolio,
+                "max_strategy_weight",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_max_strategy_weight",
+                    _number(row, "strategy_portfolio_max_strategy_weight", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_max_market_weight": float(
+            _number_from(
+                strategy_portfolio,
+                "max_market_weight",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_max_market_weight",
+                    _number(row, "strategy_portfolio_max_market_weight", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_allocated_strategy_count": int(
+            _number_from(
+                strategy_portfolio,
+                "allocated_strategy_count",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_allocated_strategy_count",
+                    _number(row, "strategy_portfolio_allocated_strategy_count", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_allocated_market_count": int(
+            _number_from(
+                strategy_portfolio,
+                "allocated_market_count",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_allocated_market_count",
+                    _number(row, "strategy_portfolio_allocated_market_count", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_top_strategy_by_weight": _strategy_key(
+            _first_text(
+                strategy_portfolio.get("top_strategy_by_weight", ""),
+                row.get("runtime_strategy_portfolio_top_strategy_by_weight", ""),
+                row.get("strategy_portfolio_top_strategy_by_weight", ""),
+            )
+        ),
+        "strategy_portfolio_top_market_by_weight": _identity_key(
+            _first_text(
+                strategy_portfolio.get("top_market_by_weight", ""),
+                row.get("runtime_strategy_portfolio_top_market_by_weight", ""),
+                row.get("strategy_portfolio_top_market_by_weight", ""),
+            )
+        ),
+        "strategy_portfolio_max_strategy_allocation_weight": float(
+            _number_from(
+                strategy_portfolio,
+                "max_strategy_allocation_weight",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_max_strategy_allocation_weight",
+                    _number(row, "strategy_portfolio_max_strategy_allocation_weight", 0.0),
+                ),
+            )
+        ),
+        "strategy_portfolio_max_market_allocation_weight": float(
+            _number_from(
+                strategy_portfolio,
+                "max_market_allocation_weight",
+                _number(
+                    row,
+                    "runtime_strategy_portfolio_max_market_allocation_weight",
+                    _number(row, "strategy_portfolio_max_market_allocation_weight", 0.0),
                 ),
             )
         ),

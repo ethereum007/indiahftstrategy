@@ -3250,7 +3250,10 @@ When runtime-session evidence carries strategy portfolio allocation, cutover
 preserves it as `runtime_strategy_portfolio_*` fields and
 `runtime_session.strategy_portfolio` config, and fails closed if that selected
 allocation is unready, ineligible, nonpositive, or for a different
-strategy/market than the scale-up identity.
+strategy/market than the scale-up identity. The same handoff preserves
+portfolio concentration context, including minimum distinct strategy/market
+counts, observed allocated strategy/market counts, top concentration names, and
+maximum strategy/market allocation weights.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,
@@ -3317,9 +3320,11 @@ shadow broker proof is mixed or dirty, the upload order count exceeds the
 cutover limit, or the optional order-export notional exceeds the cutover
 notional cap. If cutover retained strategy portfolio allocation from the
 runtime-session guard chain, route-enable carries it as `strategy_portfolio_*`
-fields and a `strategy_portfolio` config block, and also fails closed when the
-optional order-export notional exceeds the selected paper/shadow allocation
-even if the broader cutover notional limit would allow it. `--require-route-readiness` is automatic for `--target-mode
+fields and a `strategy_portfolio` config block, including the carried
+concentration counts, top concentration names, and maximum allocation weights.
+It also fails closed when the optional order-export notional exceeds the
+selected paper/shadow allocation even if the broader cutover notional limit
+would allow it. `--require-route-readiness` is automatic for `--target-mode
 live_dryrun`; the explicit flag keeps paper/shadow route reviews equally
 strict. If `cutover_config.json` retained Arrow.money/iRage vendor market-data
 batch evidence, route-enable carries the dataset/header/mapping proof into

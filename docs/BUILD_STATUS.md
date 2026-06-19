@@ -100,6 +100,10 @@
   evidence downstream from runtime-session proof, fail closed on bad allocation
   readiness/identity, and block route enablement when exported order notional
   exceeds the selected paper/shadow allocation.
+- Cutover and route-enable handoffs now also preserve runtime strategy
+  portfolio concentration context, including minimum distinct counts, observed
+  allocated strategy/market counts, top concentration names, and maximum
+  strategy/market allocation weights.
 - Broker dispatch planning now carries route-enable strategy portfolio
   allocation evidence, computes notional from the resolved upload-order file,
   and blocks dry-run dispatch when that actual upload notional exceeds the

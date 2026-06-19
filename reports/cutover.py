@@ -1465,6 +1465,36 @@ def _authorization(
                 "runtime_strategy_portfolio_notional_cap_applied": runtime[
                     "strategy_portfolio_notional_cap_applied"
                 ],
+                "runtime_strategy_portfolio_min_strategy_count": runtime[
+                    "strategy_portfolio_min_strategy_count"
+                ],
+                "runtime_strategy_portfolio_min_market_count": runtime[
+                    "strategy_portfolio_min_market_count"
+                ],
+                "runtime_strategy_portfolio_max_strategy_weight": runtime[
+                    "strategy_portfolio_max_strategy_weight"
+                ],
+                "runtime_strategy_portfolio_max_market_weight": runtime[
+                    "strategy_portfolio_max_market_weight"
+                ],
+                "runtime_strategy_portfolio_allocated_strategy_count": runtime[
+                    "strategy_portfolio_allocated_strategy_count"
+                ],
+                "runtime_strategy_portfolio_allocated_market_count": runtime[
+                    "strategy_portfolio_allocated_market_count"
+                ],
+                "runtime_strategy_portfolio_top_strategy_by_weight": runtime[
+                    "strategy_portfolio_top_strategy_by_weight"
+                ],
+                "runtime_strategy_portfolio_top_market_by_weight": runtime[
+                    "strategy_portfolio_top_market_by_weight"
+                ],
+                "runtime_strategy_portfolio_max_strategy_allocation_weight": runtime[
+                    "strategy_portfolio_max_strategy_allocation_weight"
+                ],
+                "runtime_strategy_portfolio_max_market_allocation_weight": runtime[
+                    "strategy_portfolio_max_market_allocation_weight"
+                ],
                 "runtime_pre_portfolio_max_notional_per_session": runtime[
                     "pre_portfolio_max_notional_per_session"
                 ],
@@ -1908,6 +1938,36 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "runtime_strategy_portfolio_notional_cap_applied": _to_bool(
                     authorization["runtime_strategy_portfolio_notional_cap_applied"]
+                ),
+                "runtime_strategy_portfolio_min_strategy_count": int(
+                    authorization["runtime_strategy_portfolio_min_strategy_count"]
+                ),
+                "runtime_strategy_portfolio_min_market_count": int(
+                    authorization["runtime_strategy_portfolio_min_market_count"]
+                ),
+                "runtime_strategy_portfolio_max_strategy_weight": float(
+                    authorization["runtime_strategy_portfolio_max_strategy_weight"]
+                ),
+                "runtime_strategy_portfolio_max_market_weight": float(
+                    authorization["runtime_strategy_portfolio_max_market_weight"]
+                ),
+                "runtime_strategy_portfolio_allocated_strategy_count": int(
+                    authorization["runtime_strategy_portfolio_allocated_strategy_count"]
+                ),
+                "runtime_strategy_portfolio_allocated_market_count": int(
+                    authorization["runtime_strategy_portfolio_allocated_market_count"]
+                ),
+                "runtime_strategy_portfolio_top_strategy_by_weight": str(
+                    authorization["runtime_strategy_portfolio_top_strategy_by_weight"]
+                ),
+                "runtime_strategy_portfolio_top_market_by_weight": str(
+                    authorization["runtime_strategy_portfolio_top_market_by_weight"]
+                ),
+                "runtime_strategy_portfolio_max_strategy_allocation_weight": float(
+                    authorization["runtime_strategy_portfolio_max_strategy_allocation_weight"]
+                ),
+                "runtime_strategy_portfolio_max_market_allocation_weight": float(
+                    authorization["runtime_strategy_portfolio_max_market_allocation_weight"]
                 ),
                 "runtime_pre_portfolio_max_notional_per_session": float(
                     authorization["runtime_pre_portfolio_max_notional_per_session"]
@@ -2503,6 +2563,28 @@ def _config(
                 ),
                 "notional_cap_applied": _to_bool(
                     authorization["runtime_strategy_portfolio_notional_cap_applied"]
+                ),
+                "min_strategy_count": int(authorization["runtime_strategy_portfolio_min_strategy_count"]),
+                "min_market_count": int(authorization["runtime_strategy_portfolio_min_market_count"]),
+                "max_strategy_weight": float(authorization["runtime_strategy_portfolio_max_strategy_weight"]),
+                "max_market_weight": float(authorization["runtime_strategy_portfolio_max_market_weight"]),
+                "allocated_strategy_count": int(
+                    authorization["runtime_strategy_portfolio_allocated_strategy_count"]
+                ),
+                "allocated_market_count": int(
+                    authorization["runtime_strategy_portfolio_allocated_market_count"]
+                ),
+                "top_strategy_by_weight": str(
+                    authorization["runtime_strategy_portfolio_top_strategy_by_weight"]
+                ),
+                "top_market_by_weight": str(
+                    authorization["runtime_strategy_portfolio_top_market_by_weight"]
+                ),
+                "max_strategy_allocation_weight": float(
+                    authorization["runtime_strategy_portfolio_max_strategy_allocation_weight"]
+                ),
+                "max_market_allocation_weight": float(
+                    authorization["runtime_strategy_portfolio_max_market_allocation_weight"]
                 ),
                 "pre_portfolio_max_notional_per_session": float(
                     authorization["runtime_pre_portfolio_max_notional_per_session"]
@@ -3686,6 +3768,20 @@ def _runtime_state(summary: pd.DataFrame, broker: dict[str, Any]) -> dict[str, A
             "strategy_portfolio_selected_allocation_notional"
         ],
         "strategy_portfolio_notional_cap_applied": broker["strategy_portfolio_notional_cap_applied"],
+        "strategy_portfolio_min_strategy_count": broker["strategy_portfolio_min_strategy_count"],
+        "strategy_portfolio_min_market_count": broker["strategy_portfolio_min_market_count"],
+        "strategy_portfolio_max_strategy_weight": broker["strategy_portfolio_max_strategy_weight"],
+        "strategy_portfolio_max_market_weight": broker["strategy_portfolio_max_market_weight"],
+        "strategy_portfolio_allocated_strategy_count": broker["strategy_portfolio_allocated_strategy_count"],
+        "strategy_portfolio_allocated_market_count": broker["strategy_portfolio_allocated_market_count"],
+        "strategy_portfolio_top_strategy_by_weight": broker["strategy_portfolio_top_strategy_by_weight"],
+        "strategy_portfolio_top_market_by_weight": broker["strategy_portfolio_top_market_by_weight"],
+        "strategy_portfolio_max_strategy_allocation_weight": broker[
+            "strategy_portfolio_max_strategy_allocation_weight"
+        ],
+        "strategy_portfolio_max_market_allocation_weight": broker[
+            "strategy_portfolio_max_market_allocation_weight"
+        ],
         "pre_portfolio_max_notional_per_session": broker["pre_portfolio_max_notional_per_session"],
     }
 
@@ -3719,6 +3815,42 @@ def _strategy_portfolio_state(row: pd.Series, *prefixes: str) -> dict[str, Any]:
             prefixes,
         ),
         "strategy_portfolio_notional_cap_applied": _first_bool_field(row, "notional_cap_applied", prefixes),
+        "strategy_portfolio_min_strategy_count": int(
+            _first_number_field(row, "min_strategy_count", prefixes)
+        ),
+        "strategy_portfolio_min_market_count": int(_first_number_field(row, "min_market_count", prefixes)),
+        "strategy_portfolio_max_strategy_weight": _first_number_field(
+            row,
+            "max_strategy_weight",
+            prefixes,
+        ),
+        "strategy_portfolio_max_market_weight": _first_number_field(
+            row,
+            "max_market_weight",
+            prefixes,
+        ),
+        "strategy_portfolio_allocated_strategy_count": int(
+            _first_number_field(row, "allocated_strategy_count", prefixes)
+        ),
+        "strategy_portfolio_allocated_market_count": int(
+            _first_number_field(row, "allocated_market_count", prefixes)
+        ),
+        "strategy_portfolio_top_strategy_by_weight": _strategy_key(
+            _first_text_field(row, "top_strategy_by_weight", prefixes)
+        ),
+        "strategy_portfolio_top_market_by_weight": _identity_key(
+            _first_text_field(row, "top_market_by_weight", prefixes)
+        ),
+        "strategy_portfolio_max_strategy_allocation_weight": _first_number_field(
+            row,
+            "max_strategy_allocation_weight",
+            prefixes,
+        ),
+        "strategy_portfolio_max_market_allocation_weight": _first_number_field(
+            row,
+            "max_market_allocation_weight",
+            prefixes,
+        ),
         "pre_portfolio_max_notional_per_session": _first_number_field(
             row,
             "pre_portfolio_max_notional_per_session",

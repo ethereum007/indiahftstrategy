@@ -566,6 +566,16 @@ def runtime_session_summary(
                 "strategy_portfolio_selected_allocation_weight": 0.0012,
                 "strategy_portfolio_selected_allocation_notional": portfolio_allocation_notional,
                 "strategy_portfolio_notional_cap_applied": True,
+                "strategy_portfolio_min_strategy_count": 2,
+                "strategy_portfolio_min_market_count": 1,
+                "strategy_portfolio_max_strategy_weight": 0.60,
+                "strategy_portfolio_max_market_weight": 0.90,
+                "strategy_portfolio_allocated_strategy_count": 2,
+                "strategy_portfolio_allocated_market_count": 1,
+                "strategy_portfolio_top_strategy_by_weight": portfolio_strategy,
+                "strategy_portfolio_top_market_by_weight": portfolio_market,
+                "strategy_portfolio_max_strategy_allocation_weight": 0.45,
+                "strategy_portfolio_max_market_allocation_weight": 0.80,
                 "pre_portfolio_max_notional_per_session": 25_000.0,
             }
         )
@@ -762,6 +772,16 @@ def test_cutover_gate_carries_runtime_strategy_portfolio_allocation():
     assert summary["runtime_strategy_portfolio_selected_allocation_weight"] == 0.0012
     assert summary["runtime_strategy_portfolio_selected_allocation_notional"] == 1200.0
     assert bool(summary["runtime_strategy_portfolio_notional_cap_applied"])
+    assert summary["runtime_strategy_portfolio_min_strategy_count"] == 2
+    assert summary["runtime_strategy_portfolio_min_market_count"] == 1
+    assert summary["runtime_strategy_portfolio_max_strategy_weight"] == 0.60
+    assert summary["runtime_strategy_portfolio_max_market_weight"] == 0.90
+    assert summary["runtime_strategy_portfolio_allocated_strategy_count"] == 2
+    assert summary["runtime_strategy_portfolio_allocated_market_count"] == 1
+    assert summary["runtime_strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert summary["runtime_strategy_portfolio_top_market_by_weight"] == "india_nse_index_derivatives"
+    assert summary["runtime_strategy_portfolio_max_strategy_allocation_weight"] == 0.45
+    assert summary["runtime_strategy_portfolio_max_market_allocation_weight"] == 0.80
     assert summary["runtime_pre_portfolio_max_notional_per_session"] == 25_000.0
     assert portfolio["required"]
     assert portfolio["provided"]
@@ -769,6 +789,10 @@ def test_cutover_gate_carries_runtime_strategy_portfolio_allocation():
     assert portfolio["selected_strategy"] == "lead_lag_taker"
     assert portfolio["selected_market"] == "india_nse_index_derivatives"
     assert portfolio["selected_allocation_notional"] == 1200.0
+    assert portfolio["min_strategy_count"] == 2
+    assert portfolio["allocated_strategy_count"] == 2
+    assert portfolio["top_strategy_by_weight"] == "lead_lag_taker"
+    assert portfolio["max_strategy_allocation_weight"] == 0.45
     assert portfolio["pre_portfolio_max_notional_per_session"] == 25_000.0
 
 
