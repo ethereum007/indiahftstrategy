@@ -241,6 +241,12 @@
 - Route readiness now emits manifest-tracked `route_readiness_action_queue.csv`
   and `route_readiness_runbook.md` handoffs, carrying next gates, help commands,
   and strategy/ops evidence status into the final live-dry-run route review.
+- Route readiness now independently verifies `ops_launch` evidence summaries
+  carry launch-grade broker controls, including blocked placeholder schema
+  gates, final broker round-trip portfolio-safe proof, and final broker
+  portfolio concentration OK/breach proof, while surfacing
+  `ops_launch_control_failures` in route pairs, JSON config, action queue, and
+  runbook outputs.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.

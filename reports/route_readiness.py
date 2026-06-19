@@ -12,6 +12,25 @@ from reports.manifest import write_experiment_manifest
 
 ROUTE_READY_STATUS = "ready_for_live_dryrun_route_review"
 PORTABLE_STATUSES = {"india_ready", "portable_research"}
+_EVIDENCE_BOOL_COLUMNS = {
+    "ready",
+    "require_file_inputs",
+    "require_no_blocked_placeholder_schema",
+    "require_broker_roundtrip_portfolio_safe",
+    "fail_on_broker_roundtrip_portfolio_breach",
+    "require_broker_roundtrip_portfolio_concentration_ok",
+    "fail_on_broker_roundtrip_portfolio_concentration_breach",
+}
+_EVIDENCE_COUNT_COLUMNS = {
+    "placeholder_schema_blocked_runs",
+    "broker_roundtrip_portfolio_safe_runs",
+    "broker_roundtrip_portfolio_breach_runs",
+    "broker_roundtrip_portfolio_concentration_ok_runs",
+    "broker_roundtrip_portfolio_concentration_breach_runs",
+    "input_directory_count",
+    "input_other_count",
+    "input_unfingerprinted_count",
+}
 
 
 @dataclass(frozen=True)
@@ -164,12 +183,15 @@ def _pair_row(
     )
     ops_file_inputs_required = _to_bool(ops_match.row.get("require_file_inputs", False)) if ops_match.row else False
     ops_file_inputs_clean = bool(ops_file_inputs_required and ops_non_file_inputs == 0)
+    ops_control_failures = _ops_launch_control_failures(ops_match.row) if ops_match.row else []
+    ops_launch_controls_ready = bool(not ops_control_failures)
     status = _route_status(
         portability_ready=portability_ready,
         strategy_match=strategy_match,
         ops_match=ops_match,
         require_ops_file_inputs=require_ops_file_inputs,
         ops_file_inputs_clean=ops_file_inputs_clean,
+        ops_launch_controls_ready=ops_launch_controls_ready,
     )
     route_ready = status == ROUTE_READY_STATUS
     return {
@@ -189,6 +211,31 @@ def _pair_row(
         "ops_evidence_recommendation": ops_match.recommendation,
         "ops_file_inputs_required": bool(ops_file_inputs_required),
         "ops_non_file_input_count": int(ops_non_file_inputs),
+        "ops_launch_controls_ready": bool(ops_launch_controls_ready),
+        "ops_launch_control_failures": ";".join(ops_control_failures),
+        "ops_placeholder_schema_blocked_runs": int(_number(ops_match.row.get("placeholder_schema_blocked_runs", 0)))
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_portfolio_safe_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_portfolio_safe_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_portfolio_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_portfolio_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_portfolio_concentration_ok_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
         "route_ready": bool(route_ready),
         "status": status,
         "blocker": "" if route_ready else _blocker(pair, status),
@@ -266,6 +313,7 @@ def _route_status(
     ops_match: EvidenceMatch,
     require_ops_file_inputs: bool,
     ops_file_inputs_clean: bool,
+    ops_launch_controls_ready: bool,
 ) -> str:
     if not portability_ready:
         return "blocked_by_portability"
@@ -279,7 +327,52 @@ def _route_status(
         return "ops_evidence_incomplete"
     if require_ops_file_inputs and not ops_file_inputs_clean:
         return "ops_file_provenance_not_gated"
+    if not ops_launch_controls_ready:
+        return "ops_launch_controls_not_gated"
     return ROUTE_READY_STATUS
+
+
+def _ops_launch_control_failures(row: dict[str, Any]) -> list[str]:
+    checks = [
+        (
+            "require_no_blocked_placeholder_schema",
+            _to_bool(row.get("require_no_blocked_placeholder_schema", False)),
+        ),
+        ("placeholder_schema_blocked_runs", int(_number(row.get("placeholder_schema_blocked_runs", 0))) == 0),
+        (
+            "require_broker_roundtrip_portfolio_safe",
+            _to_bool(row.get("require_broker_roundtrip_portfolio_safe", False)),
+        ),
+        (
+            "fail_on_broker_roundtrip_portfolio_breach",
+            _to_bool(row.get("fail_on_broker_roundtrip_portfolio_breach", False)),
+        ),
+        (
+            "broker_roundtrip_portfolio_safe_runs",
+            int(_number(row.get("broker_roundtrip_portfolio_safe_runs", 0))) >= 1,
+        ),
+        (
+            "broker_roundtrip_portfolio_breach_runs",
+            int(_number(row.get("broker_roundtrip_portfolio_breach_runs", 0))) == 0,
+        ),
+        (
+            "require_broker_roundtrip_portfolio_concentration_ok",
+            _to_bool(row.get("require_broker_roundtrip_portfolio_concentration_ok", False)),
+        ),
+        (
+            "fail_on_broker_roundtrip_portfolio_concentration_breach",
+            _to_bool(row.get("fail_on_broker_roundtrip_portfolio_concentration_breach", False)),
+        ),
+        (
+            "broker_roundtrip_portfolio_concentration_ok_runs",
+            int(_number(row.get("broker_roundtrip_portfolio_concentration_ok_runs", 0))) >= 1,
+        ),
+        (
+            "broker_roundtrip_portfolio_concentration_breach_runs",
+            int(_number(row.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))) == 0,
+        ),
+    ]
+    return [name for name, passed in checks if not passed]
 
 
 def _next_gate(pair: dict[str, Any], status: str) -> str:
@@ -337,6 +430,9 @@ def _summary(
                     "ops_evidence_ready_pairs": 0,
                     "portability_blocked_pairs": 0,
                     "ops_file_provenance_blocked_pairs": 0,
+                    "ops_launch_controls_blocked_pairs": 0,
+                    "ops_broker_roundtrip_portfolio_breach_pairs": 0,
+                    "ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
                     "require_ops_file_inputs": bool(require_ops_file_inputs),
                     "ready_action_count": 0,
                     "blocked_action_count": 0,
@@ -371,6 +467,19 @@ def _summary(
                 "ops_file_provenance_blocked_pairs": int(
                     (pairs["status"].astype(str) == "ops_file_provenance_not_gated").sum()
                 ),
+                "ops_launch_controls_blocked_pairs": int(
+                    (pairs["status"].astype(str) == "ops_launch_controls_not_gated").sum()
+                ),
+                "ops_broker_roundtrip_portfolio_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_portfolio_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_portfolio_breach_runs" in pairs
+                else 0,
+                "ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_portfolio_concentration_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_portfolio_concentration_breach_runs" in pairs
+                else 0,
                 "require_ops_file_inputs": bool(require_ops_file_inputs),
                 "ready_action_count": route_ready,
                 "blocked_action_count": int((~pairs["route_ready"].astype(bool)).sum()),
@@ -466,6 +575,13 @@ def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         "ops_evidence_ready",
         "ops_file_inputs_required",
         "ops_non_file_input_count",
+        "ops_launch_controls_ready",
+        "ops_launch_control_failures",
+        "ops_placeholder_schema_blocked_runs",
+        "ops_broker_roundtrip_portfolio_safe_runs",
+        "ops_broker_roundtrip_portfolio_breach_runs",
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs",
         "route_ready",
         "status",
         "blocker",
@@ -497,6 +613,20 @@ def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
                     "ops_evidence_status": _text(row.get("ops_evidence_status")),
                     "ops_file_inputs_required": bool(row.get("ops_file_inputs_required", False)),
                     "ops_non_file_input_count": int(_number(row.get("ops_non_file_input_count", 0))),
+                    "ops_launch_controls_ready": bool(row.get("ops_launch_controls_ready", False)),
+                    "ops_launch_control_failures": _text(row.get("ops_launch_control_failures")),
+                    "ops_broker_roundtrip_portfolio_safe_runs": int(
+                        _number(row.get("ops_broker_roundtrip_portfolio_safe_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_portfolio_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_portfolio_breach_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+                        _number(row.get("ops_broker_roundtrip_portfolio_concentration_ok_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_portfolio_concentration_breach_runs", 0))
+                    ),
                     "recommendation": _route_action_recommendation(row),
                 }
             )
@@ -517,6 +647,12 @@ def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
             "ops_evidence_status",
             "ops_file_inputs_required",
             "ops_non_file_input_count",
+            "ops_launch_controls_ready",
+            "ops_launch_control_failures",
+            "ops_broker_roundtrip_portfolio_safe_runs",
+            "ops_broker_roundtrip_portfolio_breach_runs",
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs",
             "recommendation",
         ],
     )
@@ -575,7 +711,7 @@ def _action_queue_table(action_queue: pd.DataFrame) -> str:
     if action_queue.empty:
         return "_None_"
     return _markdown_table(
-        ["Priority", "Status", "Strategy", "Market", "Next gate", "Help", "Recommendation"],
+        ["Priority", "Status", "Strategy", "Market", "Next gate", "Help", "Ops controls", "Recommendation"],
         [
             [
                 str(int(_number(row.get("priority", 0)))),
@@ -584,6 +720,7 @@ def _action_queue_table(action_queue: pd.DataFrame) -> str:
                 _text(row.get("market")),
                 _code(row.get("next_gate")),
                 _code(row.get("next_gate_help_command")),
+                _text(row.get("ops_launch_control_failures")),
                 _text(row.get("recommendation")),
             ]
             for row in action_queue.to_dict(orient="records")
@@ -595,13 +732,14 @@ def _pairs_table(frame: pd.DataFrame) -> str:
     if frame.empty:
         return "_None_"
     return _markdown_table(
-        ["Strategy", "Market", "Status", "Blocker", "Next gate"],
+        ["Strategy", "Market", "Status", "Blocker", "Ops controls", "Next gate"],
         [
             [
                 _text(row.get("strategy")),
                 _text(row.get("market")),
                 _text(row.get("status")),
                 _text(row.get("blocker")),
+                _text(row.get("ops_launch_control_failures")),
                 _code(row.get("next_gate")),
             ]
             for row in frame.to_dict(orient="records")
@@ -663,13 +801,23 @@ def _normalize_evidence_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
         "market",
         "recommendation",
         "require_file_inputs",
+        "require_no_blocked_placeholder_schema",
+        "placeholder_schema_blocked_runs",
+        "require_broker_roundtrip_portfolio_safe",
+        "fail_on_broker_roundtrip_portfolio_breach",
+        "broker_roundtrip_portfolio_safe_runs",
+        "broker_roundtrip_portfolio_breach_runs",
+        "require_broker_roundtrip_portfolio_concentration_ok",
+        "fail_on_broker_roundtrip_portfolio_concentration_breach",
+        "broker_roundtrip_portfolio_concentration_ok_runs",
+        "broker_roundtrip_portfolio_concentration_breach_runs",
         "input_directory_count",
         "input_other_count",
         "input_unfingerprinted_count",
         "source_path",
     ]:
         if column not in normalized.columns:
-            normalized[column] = "" if column not in {"ready", "require_file_inputs"} else False
+            normalized[column] = False if column in _EVIDENCE_BOOL_COLUMNS else 0 if column in _EVIDENCE_COUNT_COLUMNS else ""
     return normalized
 
 

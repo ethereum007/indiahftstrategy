@@ -14,35 +14,51 @@ def evidence_summary(
     market: str = "india_nse_index_derivatives",
     ready: bool = True,
     require_file_inputs: bool = False,
+    include_ops_broker_controls: bool = True,
+    concentration_breach: bool = False,
     input_directory_count: int = 0,
     input_other_count: int = 0,
     input_unfingerprinted_count: int = 0,
 ) -> pd.DataFrame:
-    return pd.DataFrame(
-        [
+    row = {
+        "ready": ready,
+        "failed_checks": 0 if ready else 1,
+        "recommendation": (
+            "eligible_for_live_dryrun_route_review"
+            if profile == "ops_launch" and ready
+            else "ops_launch_evidence_incomplete"
+            if profile == "ops_launch"
+            else "eligible_for_shadow_scaleup_review"
+            if ready
+            else "strategy_evidence_incomplete"
+        ),
+        "evidence_profile": profile,
+        "strategy": strategy,
+        "market": market,
+        "require_file_inputs": require_file_inputs,
+        "input_file_count": 3,
+        "input_directory_count": input_directory_count,
+        "input_other_count": input_other_count,
+        "input_unfingerprinted_count": input_unfingerprinted_count,
+        "source_path": f"runs/evidence/{profile}/strategy_evidence_summary.csv",
+    }
+    if profile == "ops_launch" and include_ops_broker_controls:
+        row.update(
             {
-                "ready": ready,
-                "failed_checks": 0 if ready else 1,
-                "recommendation": (
-                    "eligible_for_live_dryrun_route_review"
-                    if profile == "ops_launch" and ready
-                    else "ops_launch_evidence_incomplete"
-                    if profile == "ops_launch"
-                    else "eligible_for_shadow_scaleup_review"
-                    if ready
-                    else "strategy_evidence_incomplete"
-                ),
-                "evidence_profile": profile,
-                "strategy": strategy,
-                "market": market,
-                "require_file_inputs": require_file_inputs,
-                "input_file_count": 3,
-                "input_directory_count": input_directory_count,
-                "input_other_count": input_other_count,
-                "input_unfingerprinted_count": input_unfingerprinted_count,
-                "source_path": f"runs/evidence/{profile}/strategy_evidence_summary.csv",
+                "require_no_blocked_placeholder_schema": True,
+                "placeholder_schema_blocked_runs": 0,
+                "require_broker_roundtrip_portfolio_safe": True,
+                "fail_on_broker_roundtrip_portfolio_breach": True,
+                "broker_roundtrip_portfolio_safe_runs": 1,
+                "broker_roundtrip_portfolio_breach_runs": 0,
+                "require_broker_roundtrip_portfolio_concentration_ok": True,
+                "fail_on_broker_roundtrip_portfolio_concentration_breach": True,
+                "broker_roundtrip_portfolio_concentration_ok_runs": 0 if concentration_breach else 1,
+                "broker_roundtrip_portfolio_concentration_breach_runs": 1 if concentration_breach else 0,
             }
-        ]
+        )
+    return pd.DataFrame(
+        [row]
     )
 
 
@@ -66,6 +82,9 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert row["status"] == "ready_for_live_dryrun_route_review"
     assert row["next_gate"] == "live_dryrun_route_review"
     assert row["next_gate_help_command"] == ""
+    assert row["ops_launch_controls_ready"]
+    assert row["ops_launch_control_failures"] == ""
+    assert row["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
     assert review.summary.iloc[0]["strategy"] == "microprice_imbalance"
     assert review.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert review.summary.iloc[0]["next_gate"] == "live_dryrun_route_review"
@@ -87,6 +106,7 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert review.action_queue is not None
     assert list(review.action_queue["queue_status"]) == ["ready"]
     assert review.action_queue.loc[0, "next_gate"] == "live_dryrun_route_review"
+    assert review.action_queue.loc[0, "ops_launch_controls_ready"]
 
 
 def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
@@ -136,6 +156,51 @@ def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
     assert list(review.action_queue["queue_status"]) == ["blocked"]
     assert review.action_queue.loc[0, "next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
+
+
+def test_route_readiness_blocks_ops_evidence_without_broker_concentration_gate():
+    portability = build_market_portability_report(
+        MarketPortabilityReportConfig(
+            markets=("india_nse_index_derivatives",),
+            strategies=("microprice_imbalance",),
+        )
+    )
+
+    stale = build_route_readiness_review(
+        portability.config,
+        strategy_evidence_summaries=evidence_summary(profile="imbalance"),
+        ops_evidence_summaries=evidence_summary(
+            profile="ops_launch",
+            require_file_inputs=True,
+            include_ops_broker_controls=False,
+        ),
+    )
+    breached = build_route_readiness_review(
+        portability.config,
+        strategy_evidence_summaries=evidence_summary(profile="imbalance"),
+        ops_evidence_summaries=evidence_summary(
+            profile="ops_launch",
+            require_file_inputs=True,
+            concentration_breach=True,
+        ),
+    )
+
+    stale_row = stale.pairs.iloc[0]
+    breached_row = breached.pairs.iloc[0]
+    assert not stale.ready
+    assert stale_row["status"] == "ops_launch_controls_not_gated"
+    assert "require_broker_roundtrip_portfolio_concentration_ok" in stale_row["ops_launch_control_failures"]
+    assert stale.summary.iloc[0]["next_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    assert int(stale.summary.iloc[0]["ops_launch_controls_blocked_pairs"]) == 1
+    assert not breached.ready
+    assert breached_row["status"] == "ops_launch_controls_not_gated"
+    assert "broker_roundtrip_portfolio_concentration_breach_runs" in breached_row["ops_launch_control_failures"]
+    assert int(breached_row["ops_broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
+    assert int(breached.summary.iloc[0]["ops_broker_roundtrip_portfolio_concentration_breach_pairs"]) == 1
+    assert breached.config["blocked_actions"][0]["ops_launch_control_failures"] == (
+        "broker_roundtrip_portfolio_concentration_ok_runs;"
+        "broker_roundtrip_portfolio_concentration_breach_runs"
     )
 
 
