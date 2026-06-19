@@ -2124,6 +2124,7 @@ python -m hft_cli draft-order-mapping `
   --out mappings\arrow_order_upload_draft `
   --adapter arrow_money `
   --default product=MIS `
+  --fail-on-blocked-actions `
   --fail-on-unmapped
 ```
 
@@ -2132,6 +2133,9 @@ Outputs:
 ```text
 order_mapping_draft.csv
 order_mapping_draft_checks.csv
+order_mapping_draft_action_queue.csv
+order_mapping_draft_config.json
+order_mapping_draft_runbook.md
 order_mapping_draft_summary.csv
 manifest.json
 ```
@@ -2142,7 +2146,14 @@ generated.
 `order_mapping_draft_summary.csv` exposes `failed_check_count`,
 `failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
 the first unmapped required Arrow.money/iRage vendor column is schedulable from
-the summary row.
+the summary row. It also carries `action_queue_count`, `blocked_action_count`,
+`next_gate`, `next_gate_help_command`, and `primary_action_status`.
+`order_mapping_draft_action_queue.csv`, `order_mapping_draft_config.json`, and
+`order_mapping_draft_runbook.md` mirror unmapped required vendor upload fields
+so `catalog-runs` can route the broker-upload mapping repair back to
+`draft-order-mapping`. Use `--fail-on-blocked-actions` to fail only when
+blocked draft actions exist, or `--fail-on-actions` when any draft action should
+stop the scheduler.
 
 ## Mapped Broker Order Export
 

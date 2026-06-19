@@ -803,6 +803,11 @@
   an Arrow.money/iRage sample upload header, suggests reviewable mappings, and
   fails closed on unmapped required vendor fields while surfacing the first
   unmapped required vendor column in the summary.
+- Vendor order-mapping drafts now also emit manifest-tracked
+  `order_mapping_draft_action_queue.csv`, `order_mapping_draft_config.json`,
+  and `order_mapping_draft_runbook.md` handoffs, making unmapped required
+  broker-upload sample columns catalog-visible before mapped order exports are
+  trusted.
 - Vendor CSV intake report that profiles unknown Arrow.money/iRage samples,
   infers tick/chain/order/fill shape, scores normalized mapping coverage, and
   emits a reviewed-mapping draft plus source/header/mapping fingerprints for
@@ -994,7 +999,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 931 tests.
+Current passing suite: 933 tests.
 
 ## Next Build Targets
 

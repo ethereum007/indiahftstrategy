@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
+from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
 from adapters.schema_audit import write_adapter_schema_audit
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from hft_cli import main
@@ -264,6 +265,48 @@ def test_experiment_catalog_promotes_mapped_data_action_queue(tmp_path):
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli normalize-mapped-data --help"
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["check"] == "unmapped_required:ask_qty"
+
+
+def test_experiment_catalog_promotes_order_mapping_draft_action_queue(tmp_path):
+    export_dir = tmp_path / "export"
+    sample = tmp_path / "arrow_order_upload_sample.csv"
+    draft_dir = tmp_path / "order_mapping_draft"
+    catalog_dir = tmp_path / "catalog"
+    export_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "side": 1,
+                "side_text": "BUY",
+                "qty": 75,
+                "price": 10.0,
+            }
+        ]
+    ).to_csv(export_dir / "broker_orders.csv", index=False)
+    pd.DataFrame(columns=["symbol", "transaction_type", "exchange_token"]).to_csv(sample, index=False)
+    write_order_mapping_draft(
+        export_dir,
+        sample,
+        output_dir=draft_dir,
+        config=OrderMappingDraftConfig(adapter="arrow_money"),
+    )
+
+    report = write_experiment_catalog([draft_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 1
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+    assert set(queue["action_source_file"]) == {"order_mapping_draft_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "order_mapping_draft"
+    assert queue.loc[0, "check"] == "unmapped_required:exchange_token"
+    assert queue.loc[0, "component"] == "mapping"
+    assert queue.loc[0, "next_gate"] == "draft-order-mapping"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli draft-order-mapping --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["check"] == "unmapped_required:exchange_token"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
