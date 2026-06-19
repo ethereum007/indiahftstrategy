@@ -429,6 +429,11 @@
   proof, latest proof, and calibrated replay evidence to decide whether proof
   can be reused or must be rerun before promotion/scale-up, while failing
   closed on mixed strategy/market proof identities.
+- Proof refresh now emits manifest-tracked `proof_refresh_action_queue.csv`,
+  `proof_refresh_config.json`, and `proof_refresh_runbook.md` handoffs, making
+  missing proof, failed latest proof, calibrated replay, and strategy/market
+  identity blockers catalog-visible before promotion or scale-up trusts reused
+  evidence.
 - Experiment catalog, strategy evidence review, and controlled scale-up planning
   can now require proof-refresh evidence before size increases, and scale-up
   validates proof-refresh strategy/market identity against the promotion target.
@@ -1023,7 +1028,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 943 tests.
+Current passing suite: 945 tests.
 
 ## Next Build Targets
 

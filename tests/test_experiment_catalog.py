@@ -14,6 +14,7 @@ from reports.catalog import catalog_experiment_runs, write_experiment_catalog
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.manifest import write_experiment_manifest
+from reports.proof_refresh import write_proof_refresh_report
 
 
 def write_run(path, *, run_type, summary_name, summary_row):
@@ -582,6 +583,56 @@ def test_experiment_catalog_promotes_fill_model_drift_action_queue(tmp_path):
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["action_source_file"] == "fill_model_drift_action_queue.csv"
     assert action_plan["primary_action"]["check"] == "queue_conservatism_delta_pct"
+
+
+def test_experiment_catalog_promotes_proof_refresh_action_queue(tmp_path):
+    drift_dir = tmp_path / "drift"
+    baseline_dir = tmp_path / "baseline_proof"
+    refresh_dir = tmp_path / "proof_refresh"
+    catalog_dir = tmp_path / "catalog"
+    drift_dir.mkdir()
+    baseline_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "passed": False,
+                "failed_checks": 1,
+                "recommendation": "rerun_calibrated_proof_before_promotion",
+            }
+        ]
+    ).to_csv(drift_dir / "fill_model_drift_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "all_passed": True,
+                "strategy": "leadlag",
+                "strategy_count": 1,
+                "market": "india_nse_index_derivatives",
+                "market_count": 1,
+            }
+        ]
+    ).to_csv(baseline_dir / "proof_summary.csv", index=False)
+    write_proof_refresh_report(
+        drift_path=drift_dir,
+        baseline_proof_path=baseline_dir,
+        output_dir=refresh_dir,
+    )
+
+    report = write_experiment_catalog([refresh_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 2
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 2
+    assert set(queue["action_source_file"]) == {"proof_refresh_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "proof_refresh_gate"
+    assert queue.loc[0, "check"] == "latest_proof_available"
+    assert queue.loc[0, "component"] == "proof_evidence"
+    assert queue.loc[0, "next_gate"] == "review-proof-refresh"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-proof-refresh --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["action_source_file"] == "proof_refresh_action_queue.csv"
+    assert action_plan["primary_action"]["check"] == "latest_proof_available"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
