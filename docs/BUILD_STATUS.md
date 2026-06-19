@@ -139,6 +139,9 @@
 - Broker dispatch acknowledgement reconciliation now carries dispatch-retained
   strategy portfolio allocation evidence and blocks acknowledgement pass status
   when dispatch notional exceeds the selected allocation.
+- Broker dispatch acknowledgement reconciliation now also preserves
+  dispatch-retained strategy portfolio concentration context in ack
+  summary/config artifacts before round-trip proof review.
 - Broker dispatch acknowledgement reconciliation now emits manifest-tracked
   `broker_dispatch_ack_action_queue.csv` and
   `broker_dispatch_ack_runbook.md` scheduler handoffs, routing missing,
