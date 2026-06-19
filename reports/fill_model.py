@@ -36,6 +36,7 @@ class FillModelCalibrationReport:
     summary: pd.DataFrame
     config: dict[str, Any]
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -56,8 +57,10 @@ def evaluate_fill_model_calibration(
     recommendations = _recommendations(metrics, thresholds)
     checks = _checks(metrics.iloc[0], summary_input, thresholds)
     summary = _summary(metrics.iloc[0], recommendations.iloc[0], checks)
-    config = _config(recommendations, summary.iloc[0], checks, thresholds)
-    return FillModelCalibrationReport(metrics, recommendations, checks, summary, config)
+    action_queue = _action_queue(checks)
+    summary = _summary_with_actions(summary, checks, action_queue)
+    config = _config(recommendations, summary.iloc[0], checks, thresholds, action_queue)
+    return FillModelCalibrationReport(metrics, recommendations, checks, summary, config, action_queue=action_queue)
 
 
 def write_fill_model_calibration(
@@ -84,8 +87,14 @@ def write_fill_model_calibration(
     report.recommendations.to_csv(out / "fill_model_recommendations.csv", index=False)
     report.checks.to_csv(out / "fill_model_checks.csv", index=False)
     report.summary.to_csv(out / "fill_model_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks)
+    action_queue.to_csv(out / "fill_model_action_queue.csv", index=False)
     (out / "fill_model_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "fill_model_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -101,6 +110,7 @@ def write_fill_model_calibration(
         report.summary,
         report.config,
         out,
+        action_queue,
     )
 
 
@@ -234,11 +244,104 @@ def _summary(all_metrics: pd.Series, all_recommendation: pd.Series, checks: pd.D
     )
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
+def _summary_with_actions(
+    summary: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> pd.DataFrame:
+    out = summary.copy()
+    failed = _failed_check_rows(checks)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["failed_check_count"] = int(len(failed))
+    out["failed_check_names"] = ";".join(failed["check"].astype(str).tolist()) if not failed.empty else ""
+    out["first_failed_reason"] = _text(failed.iloc[0].get("reason")) if not failed.empty else ""
+    out["primary_blocker_check"] = _text(failed.iloc[0].get("check")) if not failed.empty else ""
+    out["primary_blocker_value"] = _text(failed.iloc[0].get("value")) if not failed.empty else ""
+    out["primary_blocker_operator"] = _text(failed.iloc[0].get("operator")) if not failed.empty else ""
+    out["primary_blocker_threshold"] = _text(failed.iloc[0].get("threshold")) if not failed.empty else ""
+    out["primary_blocker_reason"] = _text(failed.iloc[0].get("reason")) if not failed.empty else ""
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for _, row in _failed_check_rows(checks).iterrows():
+        check = _text(row.get("check"))
+        rows.append(
+            _action_row(
+                component=_component(check),
+                check=check,
+                actual=row.get("value"),
+                operator=_text(row.get("operator")),
+                expected=row.get("threshold"),
+                reason=_text(row.get("reason")),
+                recommendation=_recommendation(check),
+            )
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _action_row(
+    *,
+    component: str,
+    check: str,
+    actual: object,
+    operator: str,
+    expected: object,
+    reason: str,
+    recommendation: str,
+) -> dict[str, object]:
+    next_gate = "calibrate-fill-model"
+    return {
+        "queue_status": "blocked",
+        "source": "fill_model_checks",
+        "component": component,
+        "check": check,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "reason": reason,
+        "recommendation": recommendation,
+    }
+
+
 def _config(
     recommendations: pd.DataFrame,
     summary: pd.Series,
     checks: pd.DataFrame,
     thresholds: FillModelCalibrationThresholds,
+    action_queue: pd.DataFrame,
 ) -> dict[str, Any]:
     global_row = recommendations.iloc[0]
     return {
@@ -263,7 +366,116 @@ def _config(
         ],
         "thresholds": asdict(thresholds),
         "failed_checks": checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist(),
+        "failed_check_count": _int(summary.get("failed_check_count")),
+        "failed_check_names": _split_items(summary.get("failed_check_names")),
+        "first_failed_reason": _text(summary.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _text(summary.get("primary_blocker_check")),
+            "value": _text(summary.get("primary_blocker_value")),
+            "operator": _text(summary.get("primary_blocker_operator")),
+            "threshold": _text(summary.get("primary_blocker_threshold")),
+            "reason": _text(summary.get("primary_blocker_reason")),
+        },
+        "action_queue_count": _int(summary.get("action_queue_count")),
+        "ready_action_count": _int(summary.get("ready_action_count")),
+        "blocked_action_count": _int(summary.get("blocked_action_count")),
+        "review_action_count": _int(summary.get("review_action_count")),
+        "next_gate": _text(summary.get("next_gate")),
+        "next_gate_help_command": _text(summary.get("next_gate_help_command")),
+        "primary_action_status": _text(summary.get("primary_action_status")),
+        "primary_action": _first_action_record(action_queue),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
     }
+
+
+def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if bool(summary.get("ready")) else "no"
+    lines = [
+        "# Fill Model Calibration Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Orders: {_int(summary.get('orders'))}",
+        f"- Live fill rate: {_text(summary.get('live_fill_rate'))}",
+        f"- Average fill ratio: {_text(summary.get('avg_fill_ratio'))}",
+        f"- Queue conservatism: {_text(summary.get('recommended_queue_conservatism'))}",
+        f"- Order latency us: {_text(summary.get('recommended_order_latency_us'))}",
+        f"- Slippage ticks: {_text(summary.get('recommended_slippage_ticks'))}",
+        f"- Minimum edge ticks: {_text(summary.get('recommended_min_edge_ticks'))}",
+        f"- Failed checks: {_int(summary.get('failed_check_count'))}",
+        f"- Blocked actions: {_int(summary.get('blocked_action_count'))}",
+        f"- Recommendation: {_text(summary.get('recommendation'))}",
+        f"- Primary next gate: {_code(summary.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No fill-model calibration actions."
+    rows = [
+        "| priority | status | component | check | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _text(item.get("priority")),
+                    _text(item.get("queue_status")),
+                    _text(item.get("component")),
+                    _text(item.get("check")),
+                    _text(item.get("actual")),
+                    _text(item.get("expected")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _text(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty:
+        return checks.iloc[0:0].copy()
+    return checks.loc[~checks["passed"].astype(bool)].copy()
+
+
+def _component(check: str) -> str:
+    if check == "orders":
+        return "sample_size"
+    if check in {"live_fill_rate", "overfill_rate"}:
+        return "fill_quality"
+    if check in {"mismatch_rate", "unmatched_fills"}:
+        return "reconciliation_quality"
+    if check == "max_adverse_slippage_ticks":
+        return "slippage"
+    return "fill_model"
+
+
+def _recommendation(check: str) -> str:
+    if check == "orders":
+        return "collect_more_shadow_orders_before_replay_calibration"
+    if check == "live_fill_rate":
+        return "review_route_quality_or_raise_queue_conservatism"
+    if check in {"mismatch_rate", "unmatched_fills"}:
+        return "repair_broker_reconciliation_before_calibration"
+    if check == "overfill_rate":
+        return "investigate_duplicate_fills_or_order_controls"
+    if check == "max_adverse_slippage_ticks":
+        return "increase_replay_slippage_or_tighten_limit_prices"
+    return "repair_fill_model_calibration_inputs"
 
 
 def _unmatched_fills(reconciliation_summary: pd.DataFrame) -> int:
@@ -340,6 +552,87 @@ def _require(frame: pd.DataFrame, columns: list[str], name: str) -> None:
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         raise ValueError(f"{name} missing required columns: {missing}")
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _text(action_queue.iloc[0].get(column))
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_value(value) for key, value in row.items()}
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, np.bool_):
+        return bool(value)
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _text(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _text(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
+
+
+def _text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _int(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _to_bool(value: object) -> bool:

@@ -3549,7 +3549,8 @@ python -m hft_cli calibrate-fill-model `
   --min-live-fill-rate 0.5 `
   --max-adverse-slippage-ticks 2 `
   --base-edge-ticks 1 `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3559,9 +3560,23 @@ fill_model_metrics.csv
 fill_model_recommendations.csv
 fill_model_checks.csv
 fill_model_summary.csv
+fill_model_action_queue.csv
 fill_model_config.json
+fill_model_runbook.md
 manifest.json
 ```
+
+`fill_model_summary.csv` carries `failed_check_count`,
+`failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
+`action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, and `primary_action_status` so sample-size,
+fill-rate, mismatch, overfill, unmatched-fill, and slippage calibration blockers
+are scheduler-visible. `fill_model_action_queue.csv`,
+`fill_model_config.json`, and `fill_model_runbook.md` mirror those actions back
+to `calibrate-fill-model` while preserving the replay-ready `global` and
+`by_instrument` config blocks. Use `--fail-on-blocked-actions` to fail only
+when blocked calibration actions exist, or `--fail-on-actions` when any
+calibration action should stop automation.
 
 ## Fill-Model Drift
 

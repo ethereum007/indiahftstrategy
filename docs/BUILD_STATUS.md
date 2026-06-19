@@ -409,6 +409,11 @@
 - Fill-model calibration report that converts broker/drop-copy reconciliation
   into replay-ready queue conservatism, order latency, slippage, and edge
   buffer recommendations.
+- Fill-model calibration now emits manifest-tracked
+  `fill_model_action_queue.csv` and `fill_model_runbook.md` handoffs, with
+  matching action metadata inside `fill_model_config.json`, making sample-size,
+  fill-rate, mismatch, overfill, unmatched-fill, and slippage blockers
+  catalog-visible before calibrated replay assumptions are trusted.
 - Fill-model drift gate that compares baseline and latest calibration configs
   to decide whether existing proof assumptions can be reused or calibrated
   proof must be rerun.
@@ -1013,7 +1018,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 939 tests.
+Current passing suite: 941 tests.
 
 ## Next Build Targets
 

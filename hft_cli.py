@@ -840,6 +840,8 @@ def main(argv: list[str] | None = None) -> int:
     fill_model.add_argument("--max-queue-conservatism", type=float, default=10.0)
     fill_model.add_argument("--base-edge-ticks", type=float, default=0.0)
     fill_model.add_argument("--fail-on-breach", action="store_true")
+    fill_model.add_argument("--fail-on-blocked-actions", action="store_true")
+    fill_model.add_argument("--fail-on-actions", action="store_true")
 
     fill_model_drift = sub.add_parser("compare-fill-models", help="Gate drift between two fill-model configs.")
     fill_model_drift.add_argument("--baseline", required=True)
@@ -2826,7 +2828,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "compare-fill-models":
         result = write_fill_model_drift_report(
             baseline_path=args.baseline,

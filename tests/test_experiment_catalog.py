@@ -11,6 +11,7 @@ from adapters.schema_audit import write_adapter_schema_audit
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs, write_experiment_catalog
+from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.manifest import write_experiment_manifest
 
 
@@ -475,6 +476,53 @@ def test_experiment_catalog_promotes_reconciliation_action_queue(tmp_path):
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["action_source_file"] == "reconciliation_action_queue.csv"
     assert action_plan["primary_action"]["check"] == "mismatched_orders"
+
+
+def test_experiment_catalog_promotes_fill_model_action_queue(tmp_path):
+    reconciliation_dir = tmp_path / "reconciliation"
+    fill_model_dir = tmp_path / "fill_model"
+    catalog_dir = tmp_path / "catalog"
+    reconciliation_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "qty": 75,
+                "live_qty": 75,
+                "filled_live": True,
+                "fill_status": "full",
+                "latency_ns": 100,
+                "adverse_slippage": 0.05,
+                "mismatch": True,
+            }
+        ]
+    ).to_csv(reconciliation_dir / "order_reconciliation.csv", index=False)
+    pd.DataFrame([{"orders": 1, "unmatched_fills": 1}]).to_csv(
+        reconciliation_dir / "reconciliation_summary.csv",
+        index=False,
+    )
+    write_fill_model_calibration(
+        reconciliation_dir=reconciliation_dir,
+        output_dir=fill_model_dir,
+        thresholds=FillModelCalibrationThresholds(max_mismatch_rate=0.0, max_unmatched_fills=0),
+    )
+
+    report = write_experiment_catalog([fill_model_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 2
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 2
+    assert set(queue["action_source_file"]) == {"fill_model_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "fill_model_calibration"
+    assert queue.loc[0, "check"] == "mismatch_rate"
+    assert queue.loc[0, "component"] == "reconciliation_quality"
+    assert queue.loc[0, "next_gate"] == "calibrate-fill-model"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli calibrate-fill-model --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["action_source_file"] == "fill_model_action_queue.csv"
+    assert action_plan["primary_action"]["check"] == "mismatch_rate"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):
