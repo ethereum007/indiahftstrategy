@@ -665,8 +665,15 @@ def test_cutover_gate_authorizes_clean_live_dryrun():
     assert bool(summary["runtime_session_ready"])
     assert bool(summary["operator_approval_required"])
     assert summary["recommendation"] == "allow_live_dryrun_cutover"
+    assert int(summary["failed_check_count"]) == 0
+    assert summary["primary_blocker_check"] == ""
+    assert int(summary["action_queue_count"]) == 0
+    assert report.action_queue is not None
+    assert report.action_queue.empty
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
     assert report.config["runtime_session"]["guard_action"] == "continue"
     assert report.config["limits"]["max_orders_per_session"] == 10
     assert bool(summary["scaleup_broker_schema_reviewed"])
@@ -1709,9 +1716,20 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     assert (out_dir / "cutover_authorization.csv").exists()
     assert (out_dir / "cutover_checks.csv").exists()
     assert (out_dir / "cutover_summary.csv").exists()
+    assert (out_dir / "cutover_action_queue.csv").exists()
     assert (out_dir / "cutover_config.json").exists()
+    assert (out_dir / "cutover_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    saved_summary = pd.read_csv(out_dir / "cutover_summary.csv")
+    saved_config = json.loads((out_dir / "cutover_config.json").read_text(encoding="utf-8"))
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    assert saved_config["action_queue_count"] == 0
+    assert saved_config["next_actions"] == []
+    assert (out_dir / "cutover_runbook.md").read_text(encoding="utf-8").startswith("# Cutover Gate Runbook")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {item["path"] for item in manifest["artifacts"]}
+    assert "cutover_action_queue.csv" in artifact_paths
+    assert "cutover_runbook.md" in artifact_paths
     assert {
         "scaleup_summary",
         "scaleup_config",
@@ -1954,8 +1972,44 @@ def test_cli_cutover_gate_fails_without_operator_review(tmp_path):
     assert code == 2
     summary = pd.read_csv(out_dir / "cutover_summary.csv")
     checks = pd.read_csv(out_dir / "cutover_checks.csv")
+    queue = pd.read_csv(out_dir / "cutover_action_queue.csv")
+    config = json.loads((out_dir / "cutover_config.json").read_text(encoding="utf-8"))
     assert not bool(summary.loc[0, "ready"])
     assert "operator_approved" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert int(summary.loc[0, "action_queue_count"]) == 3
+    assert int(summary.loc[0, "blocked_action_count"]) == 3
+    assert summary.loc[0, "next_gate"] == "review-cutover-gate"
+    assert queue.loc[0, "check"] == "operator_approved"
+    assert queue.loc[0, "component"] == "operator_review"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-cutover-gate --help"
+    assert config["primary_action"]["check"] == "operator_approved"
+    assert len(config["blocked_actions"]) == 3
+
+
+def test_cli_cutover_gate_can_fail_on_actions(tmp_path):
+    scaleup, broker, runtime, _review_path = write_inputs(tmp_path, operator=False)
+    out_dir = tmp_path / "cutover"
+
+    code = main(
+        [
+            "review-cutover-gate",
+            "--scaleup",
+            str(scaleup),
+            "--broker-readiness",
+            str(broker),
+            "--runtime-session",
+            str(runtime),
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "cutover_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "action_queue_count"]) == 3
+    assert summary.loc[0, "primary_action_status"] == "blocked"
 
 
 def test_cli_cutover_gate_can_require_dispatch_roundtrip(tmp_path):

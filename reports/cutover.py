@@ -11,6 +11,27 @@ from reports.manifest import write_experiment_manifest
 from reports.vendor_market_data import vendor_market_data_batch_source_active
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "target_mode",
+    "strategy",
+    "market",
+    "scenario_key",
+    "adapter",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
 @dataclass(frozen=True)
 class CutoverGateThresholds:
     target_mode: str = "live_dryrun"
@@ -34,6 +55,7 @@ class CutoverGateReport:
     summary: pd.DataFrame
     config: dict[str, Any]
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -65,9 +87,16 @@ def evaluate_cutover_gate(
     operator = _operator_state(operator_review, scaleup)
     checks = _checks(scaleup, broker, runtime, operator, thresholds)
     authorization = _authorization(scaleup, broker, runtime, operator, thresholds, checks)
-    summary = _summary(authorization.iloc[0], checks)
-    config = _config(authorization.iloc[0], thresholds, checks)
-    return CutoverGateReport(authorization=authorization, checks=checks, summary=summary, config=config)
+    action_queue = _action_queue(authorization.iloc[0], checks)
+    summary = _summary_with_actions(_summary(authorization.iloc[0], checks), checks, action_queue)
+    config = _config(authorization.iloc[0], thresholds, checks, action_queue)
+    return CutoverGateReport(
+        authorization=authorization,
+        checks=checks,
+        summary=summary,
+        config=config,
+        action_queue=action_queue,
+    )
 
 
 def write_cutover_gate_report(
@@ -127,7 +156,15 @@ def write_cutover_gate_report(
     report.authorization.to_csv(out / "cutover_authorization.csv", index=False)
     report.checks.to_csv(out / "cutover_checks.csv", index=False)
     report.summary.to_csv(out / "cutover_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(
+        report.authorization.iloc[0], report.checks
+    )
+    action_queue.to_csv(out / "cutover_action_queue.csv", index=False)
     (out / "cutover_config.json").write_text(json.dumps(report.config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (out / "cutover_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     inputs: dict[str, Any] = {
         "scaleup_summary": scaleup_summary_path,
         "scaleup_config": scaleup_config_path,
@@ -147,7 +184,14 @@ def write_cutover_gate_report(
         parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
     )
-    return CutoverGateReport(report.authorization, report.checks, report.summary, report.config, out)
+    return CutoverGateReport(
+        authorization=report.authorization,
+        checks=report.checks,
+        summary=report.summary,
+        config=report.config,
+        output_dir=out,
+        action_queue=action_queue,
+    )
 
 
 def _checks(
@@ -1973,6 +2017,147 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def _summary_with_actions(
+    summary: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> pd.DataFrame:
+    out = summary.copy()
+    failed = _failed_check_rows(checks)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["failed_check_count"] = int(len(failed))
+    out["failed_check_names"] = ";".join(failed["check"].astype(str).tolist()) if not failed.empty else ""
+    out["first_failed_reason"] = _object_text(failed.iloc[0].get("reason")).strip() if not failed.empty else ""
+    out["primary_blocker_check"] = _object_text(failed.iloc[0].get("check")).strip() if not failed.empty else ""
+    out["primary_blocker_value"] = _object_text(failed.iloc[0].get("value")).strip() if not failed.empty else ""
+    out["primary_blocker_operator"] = _object_text(failed.iloc[0].get("operator")).strip() if not failed.empty else ""
+    out["primary_blocker_threshold"] = _object_text(failed.iloc[0].get("threshold")).strip() if not failed.empty else ""
+    out["primary_blocker_reason"] = _object_text(failed.iloc[0].get("reason")).strip() if not failed.empty else ""
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for _, row in _failed_check_rows(checks).iterrows():
+        check = _object_text(row.get("check")).strip()
+        next_gate = _next_gate(check)
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "cutover_checks",
+                "component": _component(check),
+                "check": check,
+                "actual": row.get("value"),
+                "operator": _object_text(row.get("operator")).strip(),
+                "expected": row.get("threshold"),
+                "target_mode": _object_text(authorization.get("target_mode")).strip(),
+                "strategy": _object_text(authorization.get("strategy")).strip(),
+                "market": _object_text(authorization.get("market")).strip(),
+                "scenario_key": _object_text(authorization.get("scenario_key")).strip(),
+                "adapter": _object_text(authorization.get("adapter")).strip(),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
+                "reason": _object_text(row.get("reason")).strip(),
+                "recommendation": _action_recommendation(check),
+            }
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[0:0].copy()
+    return checks.loc[~checks["passed"].astype(bool)].copy()
+
+
+def _component(check: str) -> str:
+    if check.startswith("proof_refresh_"):
+        return "proof_refresh"
+    if "route_readiness" in check:
+        return "route_readiness"
+    if "dispatch_roundtrip" in check or check in {
+        "dispatch_roundtrip_batch_matches",
+        "route_dispatch_roundtrip_batch_matches",
+    }:
+        return "broker_dispatch_roundtrip"
+    if "vendor_market_data_batch" in check:
+        return "vendor_market_data"
+    if "broker_vendor_data_readiness" in check:
+        return "broker_vendor_data_readiness"
+    if check.startswith("broker_resume_"):
+        return "resume_gate"
+    if check.startswith("broker_"):
+        return "broker_readiness"
+    if check.startswith("runtime_"):
+        return "runtime_session"
+    if check.startswith("operator_"):
+        return "operator_review"
+    if check.startswith("scaleup_"):
+        return "scaleup_plan"
+    return "cutover_gate"
+
+
+def _next_gate(check: str) -> str:
+    component = _component(check)
+    if component == "proof_refresh":
+        return "review-proof-refresh"
+    if component == "route_readiness":
+        return "review-route-readiness"
+    if component == "broker_dispatch_roundtrip":
+        return "review-broker-dispatch-roundtrip"
+    if component == "vendor_market_data":
+        return "pipeline-vendor-market-data-batch"
+    if component == "broker_vendor_data_readiness":
+        return "pipeline-broker-vendor-readiness"
+    if component == "resume_gate":
+        return "review-resume-gate"
+    if component == "broker_readiness":
+        return "review-broker-readiness"
+    if component == "runtime_session":
+        return "monitor-runtime-session"
+    if component == "scaleup_plan":
+        return "plan-scaleup"
+    return "review-cutover-gate"
+
+
+def _action_recommendation(check: str) -> str:
+    component = _component(check)
+    if component == "proof_refresh":
+        return "refresh_or_repair_scaleup_proof_freshness"
+    if component == "route_readiness":
+        return "rerun_route_readiness_before_cutover"
+    if component == "broker_dispatch_roundtrip":
+        return "rerun_broker_dispatch_roundtrip_before_cutover"
+    if component == "vendor_market_data":
+        return "refresh_vendor_market_data_batch_proof"
+    if component == "broker_vendor_data_readiness":
+        return "refresh_broker_vendor_data_readiness_wrapper"
+    if component == "resume_gate":
+        return "repair_resume_gate_authorization_for_cutover"
+    if component == "broker_readiness":
+        return "repair_broker_readiness_before_cutover"
+    if component == "runtime_session":
+        return "rerun_runtime_session_monitor_before_cutover"
+    if component == "operator_review":
+        return "capture_cutover_operator_review"
+    if component == "scaleup_plan":
+        return "repair_scaleup_plan_before_cutover"
+    return "repair_cutover_gate_inputs"
+
+
 def _broker_shadow_broker_summary_fields(authorization: pd.Series) -> dict[str, Any]:
     return {
         "scaleup_broker_shadow_broker_readiness_provided": _to_bool(
@@ -2107,8 +2292,11 @@ def _config(
     authorization: pd.Series,
     thresholds: CutoverGateThresholds,
     checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
 ) -> dict[str, Any]:
     failed_check_records = _failed_check_records(checks)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
     return {
         "schema_version": 1,
         "ready": _to_bool(authorization["ready"]),
@@ -2334,6 +2522,18 @@ def _config(
         "thresholds": asdict(thresholds),
         "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
         "primary_blocker": failed_check_records[0] if failed_check_records else {},
+        "action_queue_count": int(len(action_queue)),
+        "ready_action_count": int((statuses == "ready").sum()) if not statuses.empty else 0,
+        "blocked_action_count": int((statuses == "blocked").sum()) if not statuses.empty else 0,
+        "review_action_count": int((statuses == "review").sum()) if not statuses.empty else 0,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "primary_action_status": _first_action_value(action_queue, "queue_status"),
+        "primary_action": _first_action_record(action_queue),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
     }
 
 
@@ -2355,6 +2555,110 @@ def _jsonable_check_value(value: object) -> object:
         except (AttributeError, TypeError, ValueError):
             pass
     return value
+
+
+def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready", False)) else "no"
+    lines = [
+        "# Cutover Gate Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Target mode: {_object_text(summary_row.get('target_mode')).strip()}",
+        f"- Strategy: {_object_text(summary_row.get('strategy')).strip()}",
+        f"- Market: {_object_text(summary_row.get('market')).strip()}",
+        f"- Scenario: {_object_text(summary_row.get('scenario_key')).strip()}",
+        f"- Adapter: {_object_text(summary_row.get('adapter')).strip()}",
+        f"- Broker readiness ready: {_object_text(summary_row.get('broker_readiness_ready')).strip()}",
+        f"- Runtime session ready: {_object_text(summary_row.get('runtime_session_ready')).strip()}",
+        f"- Runtime guard action: {_object_text(summary_row.get('runtime_guard_action')).strip()}",
+        f"- Operator review provided: {_object_text(summary_row.get('operator_review_provided')).strip()}",
+        f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
+        f"- Blocked actions: {_int_value(summary_row.get('blocked_action_count'))}",
+        f"- Recommendation: {_object_text(summary_row.get('recommendation')).strip()}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No cutover-gate actions."
+    rows = [
+        "| priority | status | component | check | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _object_text(item.get("priority")).strip(),
+                    _object_text(item.get("queue_status")).strip(),
+                    _object_text(item.get("component")).strip(),
+                    _object_text(item.get("check")).strip(),
+                    _object_text(item.get("actual")).strip(),
+                    _object_text(item.get("expected")).strip(),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _object_text(item.get("reason")).strip(),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _object_text(action_queue.iloc[0].get(column)).strip()
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_check_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_check_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_check_record(record: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_check_value(value) for key, value in record.items()}
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _object_text(next_gate).strip()
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _object_text(value).strip()
+    return f"`{text}`" if text else ""
+
+
+def _int_value(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _broker_shadow_broker_config(authorization: pd.Series) -> dict[str, Any]:

@@ -168,6 +168,11 @@
   failed-check name lists while adding `failed_check_count` and a structured
   `primary_blocker` record, so launch schedulers can surface the first failed
   gate without opening every checks CSV.
+- Cutover gate now emits manifest-tracked `cutover_action_queue.csv` and
+  `cutover_runbook.md` handoffs, routing failed scale-up, route-readiness,
+  broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,
+  resume-gate, and operator-review checks to their next CLI gate before
+  route-enable automation can proceed.
 - Broker dispatch, send, acknowledgement, and round-trip config JSONs now
   expose the same `failed_check_count` plus structured `primary_blocker`
   contract, so broker-stage automation can route the first failed dry-run gate
@@ -740,7 +745,7 @@
   authorization artifact that fingerprints resolved scale-up, broker-readiness,
   runtime-session, and operator-review inputs, carries runtime-session strategy
   portfolio allocation context, and exposes the first failed check as a
-  structured config blocker.
+  structured config blocker plus scheduler action queue/runbook handoff.
 - Route-enable packet that consumes ready cutover and broker upload evidence,
   bounds order counts and optional export notional by cutover limits plus any
   selected strategy portfolio allocation, rechecks cutover route-readiness
@@ -1066,7 +1071,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 958 tests.
+Current passing suite: 960 tests.
 
 ## Next Build Targets
 

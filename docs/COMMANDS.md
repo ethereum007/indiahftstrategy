@@ -3135,7 +3135,8 @@ python -m hft_cli review-cutover-gate `
   --target-mode live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3144,13 +3145,23 @@ Outputs:
 cutover_authorization.csv
 cutover_checks.csv
 cutover_summary.csv
+cutover_action_queue.csv
 cutover_config.json
+cutover_runbook.md
 manifest.json
 ```
 
 `cutover_config.json` keeps the legacy `failed_checks` name list and also adds
 `failed_check_count` plus `primary_blocker`, so schedulers can route the first
-failed authorization check without parsing `cutover_checks.csv`.
+failed authorization check without parsing `cutover_checks.csv`. It also
+mirrors `action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, `primary_action_status`, `primary_action`, and the
+`next_actions` arrays from the scheduler queue. `cutover_action_queue.csv` and
+`cutover_runbook.md` route failed scale-up, route-readiness, broker-readiness,
+runtime-session, dispatch-roundtrip, vendor-data, resume-gate, and operator
+review checks to the next CLI gate before route-enable automation can proceed.
+Use `--fail-on-blocked-actions` to fail only when blocked cutover actions exist,
+or `--fail-on-actions` when any cutover action should stop automation.
 
 For `live_dryrun`, the cutover gate automatically requires route-readiness
 proof retained in the scale-up plan, operator approval, operator
