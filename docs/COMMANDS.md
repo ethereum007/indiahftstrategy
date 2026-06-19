@@ -2316,7 +2316,11 @@ records `schema_review_mode=reviewed_vendor_mapping` and can emit
 `broker_integration_ready`. When dispatch round-trip evidence is supplied for
 live dry-run readiness, broker readiness also verifies the carried
 `route_readiness` proof for strategy/market identity and zero route gaps before
-Arrow.money/iRage handoff. Scale-up, cutover, and route-enable artifacts carry
+Arrow.money/iRage handoff. When route-readiness proof is required, broker
+readiness also verifies that the route proof preserved
+`ops_launch_control_failures` plus broker allocation/concentration proof counts,
+and fails closed if those controls are missing, stale, or breached. Scale-up,
+cutover, and route-enable artifacts carry
 `schema_reviewed` and `schema_review_mode` forward so downstream route decisions
 can distinguish reviewed vendor mappings from unreviewed placeholders.
 When broker-neutral exports contain quote lifecycle fields, the built-in

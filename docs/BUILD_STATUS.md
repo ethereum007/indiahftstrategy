@@ -187,6 +187,9 @@
 - Broker readiness now emits `broker_readiness_action_queue.csv`, a
   manifest-tracked failed-check queue with inferred next CLI gates and help
   commands for Arrow.money/iRage operator or scheduler handoff.
+- Broker readiness now fails closed on stale route-readiness proof that does
+  not preserve launch-grade ops broker controls and allocation/concentration
+  proof counts.
 - Broker readiness now writes a manifest-tracked `broker_readiness_runbook.md`
   with component status and blocked-action next gates for operator review.
 - Broker readiness config JSON now mirrors the readiness action queue as
