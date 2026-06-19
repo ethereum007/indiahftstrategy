@@ -2890,7 +2890,8 @@ python -m hft_cli export-halt-response `
   --cancel-output-file arrow_cancel_orders.csv `
   --flatten-output-file arrow_flatten_orders.csv `
   --out runs\halt_exports\leadlag_shadow_latest `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Both mapping files use:
@@ -2914,13 +2915,24 @@ broker_flatten_orders.csv
 halt_response_export_checks.csv
 halt_response_export_summary.csv
 halt_response_export_schema.csv
+halt_response_export_action_queue.csv
+halt_response_export_config.json
+halt_response_export_runbook.md
 manifest.json
 ```
 
 `halt_response_export_summary.csv` carries `failed_check_count`,
 `failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
 automation can identify the first broker mapping or readiness blocker without
-opening the per-column checks file.
+opening the per-column checks file. It also carries `action_queue_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`, and
+`primary_action_status`. `halt_response_export_action_queue.csv`,
+`halt_response_export_config.json`, and `halt_response_export_runbook.md`
+mirror response-readiness, adapter-consistency, cancel-mapping, and
+flatten-mapping blockers back to `plan-halt-response` or
+`export-halt-response`. Add `--fail-on-actions` to fail on any queued export
+action, or `--fail-on-blocked-actions` to fail only when export actions are
+blocked.
 
 ## Halt Execution Reconciliation
 

@@ -189,6 +189,13 @@
   routing non-halt guard states and missing flatten-price blockers back to
   `plan-halt-response` or runtime guard review before cancel/flatten packets
   are trusted.
+- Halt response export now emits manifest-tracked
+  `halt_response_export_action_queue.csv`,
+  `halt_response_export_config.json`, and
+  `halt_response_export_runbook.md` handoffs, routing unready halt-response
+  packets, adapter mismatches, and cancel/flatten mapping blockers back to
+  `plan-halt-response` or `export-halt-response` before broker emergency files
+  are trusted.
 - Halt incident review now emits manifest-tracked
   `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
   routing guard, response, export, and execution blockers to the next recovery
@@ -691,7 +698,8 @@
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
   Arrow.money/iRage emergency schemas are finalized, fingerprints the exact
   halt-response action files plus optional mapping files, and surfaces the
-  first failed export mapping/readiness blocker in the one-row summary.
+  first failed export mapping/readiness blocker in the one-row summary,
+  config JSON, action queue, and runbook.
 - Halt execution reconciliation gate that verifies emergency cancel
   acknowledgements, flatten fills, and final flat positions after a guard halt,
   while fingerprinting the halt-response action files and supplied execution
@@ -1047,7 +1055,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 953 tests.
+Current passing suite: 955 tests.
 
 ## Next Build Targets
 

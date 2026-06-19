@@ -110,6 +110,14 @@ def test_export_halt_response_maps_cancel_and_flatten_actions():
     assert report.summary.iloc[0]["failed_check_count"] == 0
     assert report.summary.iloc[0]["failed_check_names"] == ""
     assert report.summary.iloc[0]["primary_blocker_check"] == ""
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert int(report.summary.iloc[0]["blocked_action_count"]) == 0
+    assert report.summary.iloc[0]["next_gate"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert report.config is not None
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
     assert report.summary.iloc[0]["recommendation"] == "send_halt_actions_to_broker"
 
 
@@ -154,7 +162,19 @@ def test_write_halt_response_export_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_response_export_checks.csv").exists()
     assert (out_dir / "halt_response_export_summary.csv").exists()
     assert (out_dir / "halt_response_export_schema.csv").exists()
+    assert (out_dir / "halt_response_export_action_queue.csv").exists()
+    assert (out_dir / "halt_response_export_config.json").exists()
+    assert (out_dir / "halt_response_export_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    saved_summary = pd.read_csv(out_dir / "halt_response_export_summary.csv")
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    saved_config = json.loads((out_dir / "halt_response_export_config.json").read_text(encoding="utf-8"))
+    assert saved_config["adapter"] == "arrow_money"
+    assert saved_config["action_queue_count"] == 0
+    assert saved_config["next_actions"] == []
+    assert (out_dir / "halt_response_export_runbook.md").read_text(encoding="utf-8").startswith(
+        "# Halt Response Export Runbook"
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {
         "halt_response_summary",
@@ -174,6 +194,10 @@ def test_write_halt_response_export_outputs_artifacts(tmp_path):
     )
     assert path_tail(manifest["inputs"]["cancel_mapping"]["path"]).endswith("/cancel_mapping.csv")
     assert path_tail(manifest["inputs"]["flatten_mapping"]["path"]).endswith("/flatten_mapping.csv")
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("halt_response_export_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("halt_response_export_config.json") for path in artifact_paths)
+    assert any(path.endswith("halt_response_export_runbook.md") for path in artifact_paths)
 
 
 def test_cli_halt_response_export_fails_on_missing_required_mapping(tmp_path):
@@ -199,10 +223,13 @@ def test_cli_halt_response_export_fails_on_missing_required_mapping(tmp_path):
             "--out",
             str(out_dir),
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "halt_response_export_summary.csv")
+    queue = pd.read_csv(out_dir / "halt_response_export_action_queue.csv")
+    saved_config = json.loads((out_dir / "halt_response_export_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert summary.loc[0, "failed_check_count"] == 1
@@ -211,3 +238,47 @@ def test_cli_halt_response_export_fails_on_missing_required_mapping(tmp_path):
     assert summary.loc[0, "primary_blocker_check"] == "cancel:broker_cancel_orders.csv:orderRef"
     assert summary.loc[0, "primary_blocker_operator"] == "identity"
     assert summary.loc[0, "primary_blocker_reason"] == "required target has no available source column or default value"
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert summary.loc[0, "next_gate"] == "export-halt-response"
+    assert queue.loc[0, "component"] == "cancel_mapping"
+    assert queue.loc[0, "check"] == "cancel:broker_cancel_orders.csv:orderRef"
+    assert queue.loc[0, "actual"] == "source_missing_default_missing"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
+    assert saved_config["primary_action"]["check"] == "cancel:broker_cancel_orders.csv:orderRef"
+    assert saved_config["blocked_actions"][0]["component"] == "cancel_mapping"
+    assert "cancel:broker_cancel_orders.csv:orderRef" in (
+        out_dir / "halt_response_export_runbook.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_cli_halt_response_export_can_fail_on_actions(tmp_path):
+    halt_dir = tmp_path / "halt"
+    out_dir = tmp_path / "export"
+    cancel_mapping_path = tmp_path / "bad_cancel_mapping.csv"
+    write_halt_dir(halt_dir)
+    pd.DataFrame(
+        [
+            {"target_column": "orderRef", "source_column": "missing_source", "required": True},
+        ]
+    ).to_csv(cancel_mapping_path, index=False)
+
+    code = main(
+        [
+            "export-halt-response",
+            "--halt-response",
+            str(halt_dir),
+            "--cancel-mapping",
+            str(cancel_mapping_path),
+            "--adapter",
+            "arrow_money",
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+
+    queue = pd.read_csv(out_dir / "halt_response_export_action_queue.csv")
+    assert code == 2
+    assert len(queue) == 1
+    assert queue.loc[0, "check"] == "cancel:broker_cancel_orders.csv:orderRef"

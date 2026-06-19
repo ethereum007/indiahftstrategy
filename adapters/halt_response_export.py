@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -9,6 +10,27 @@ import pandas as pd
 from adapters.broker import adapter_schema_status, get_adapter
 from adapters.mapped_order_export import MAPPING_COLUMNS, MappedOrderExportConfig, map_broker_orders
 from reports.manifest import write_experiment_manifest
+
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "adapter",
+    "check",
+    "action_type",
+    "output_file",
+    "target_column",
+    "source_column",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
 
 
 @dataclass(frozen=True)
@@ -28,6 +50,8 @@ class HaltResponseExportReport:
     summary: pd.DataFrame
     schema: pd.DataFrame
     output_dir: Path | None = None
+    config: dict[str, Any] | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -71,13 +95,20 @@ def export_halt_response_actions(
         ignore_index=True,
     )
     schema = pd.concat([cancel_schema, flatten_schema], ignore_index=True)
-    summary = _summary(halt_summary.iloc[0], cancel_orders, flatten_orders, checks, config)
+    action_queue = _action_queue(checks, config)
+    summary = _summary_with_actions(
+        _summary(halt_summary.iloc[0], cancel_orders, flatten_orders, checks, config),
+        action_queue,
+    )
+    export_config = _config(summary.iloc[0], action_queue, config)
     return HaltResponseExportReport(
         cancel_orders=cancel_orders,
         flatten_orders=flatten_orders,
         checks=checks,
         summary=summary,
         schema=schema,
+        config=export_config,
+        action_queue=action_queue,
     )
 
 
@@ -119,6 +150,17 @@ def write_halt_response_export(
     report.checks.to_csv(out / "halt_response_export_checks.csv", index=False)
     report.summary.to_csv(out / "halt_response_export_summary.csv", index=False)
     report.schema.to_csv(out / "halt_response_export_schema.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks, config)
+    action_queue.to_csv(out / "halt_response_export_action_queue.csv", index=False)
+    (out / "halt_response_export_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
+    export_config = report.config if report.config is not None else _config(report.summary.iloc[0], action_queue, config)
+    (out / "halt_response_export_config.json").write_text(
+        json.dumps(export_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     inputs: dict[str, Any] = {
         "halt_response_summary": halt_summary_path,
         "halt_cancel_orders": cancel_path,
@@ -141,6 +183,8 @@ def write_halt_response_export(
         report.summary,
         report.schema,
         out,
+        export_config,
+        action_queue,
     )
 
 
@@ -289,6 +333,206 @@ def _summary(
     )
 
 
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(checks: pd.DataFrame, config: HaltResponseExportConfig) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for _, row in _failed_check_rows(checks).iterrows():
+        check = _check_name(row)
+        next_gate = _next_gate(check)
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "halt_response_export_checks",
+                "component": _component(row),
+                "adapter": config.adapter,
+                "check": check,
+                "action_type": _check_value(row, "action_type"),
+                "output_file": _check_value(row, "output_file"),
+                "target_column": _check_value(row, "target_column"),
+                "source_column": _check_value(row, "source_column"),
+                "actual": _failed_action_actual(row),
+                "operator": _check_value(row, "transform"),
+                "expected": _expected_value(row),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
+                "reason": _check_reason(row),
+                "recommendation": _action_recommendation(row),
+            }
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _component(row: pd.Series) -> str:
+    target = _check_value(row, "target_column")
+    action_type = _check_value(row, "action_type")
+    if action_type == "response" and target == "response_ready":
+        return "halt_response"
+    if action_type == "response" and target == "adapter_consistent":
+        return "adapter_selection"
+    if action_type == "cancel":
+        return "cancel_mapping"
+    if action_type == "flatten":
+        return "flatten_mapping"
+    return "halt_response_export"
+
+
+def _next_gate(check: str) -> str:
+    if check == "response:response_ready":
+        return "plan-halt-response"
+    return "export-halt-response"
+
+
+def _action_recommendation(row: pd.Series) -> str:
+    target = _check_value(row, "target_column")
+    action_type = _check_value(row, "action_type")
+    if action_type == "response" and target == "response_ready":
+        return "repair_or_rerun_halt_response_plan"
+    if action_type == "response" and target == "adapter_consistent":
+        return "align_export_adapter_with_halt_response_or_use_normalized"
+    if action_type == "cancel":
+        return "repair_cancel_action_mapping_before_emergency_export"
+    if action_type == "flatten":
+        return "repair_flatten_action_mapping_before_emergency_export"
+    return "repair_halt_response_export_inputs"
+
+
+def _failed_action_actual(row: pd.Series) -> str:
+    if "value" in row.index:
+        value = _check_value(row, "value")
+        if value:
+            return value
+    source_present = _to_bool(row.get("source_present"), default=False)
+    default_present = _to_bool(row.get("default_present"), default=False)
+    values_present = _to_bool(row.get("values_present"), default=False)
+    if not source_present and not default_present:
+        return "source_missing_default_missing"
+    if not values_present:
+        return "blank_mapped_values"
+    return "failed"
+
+
+def _expected_value(row: pd.Series) -> str:
+    if "threshold" in row.index:
+        threshold = _check_value(row, "threshold")
+        if threshold:
+            return threshold
+    return "required_source_or_default_with_values"
+
+
+def _config(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    config: HaltResponseExportConfig,
+) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "ready": _to_bool(summary_row.get("ready"), default=False),
+        "adapter": _clean(summary_row.get("adapter")),
+        "adapter_schema_status": _clean(summary_row.get("adapter_schema_status")),
+        "cancel_output_file": _clean(summary_row.get("cancel_output_file")),
+        "flatten_output_file": _clean(summary_row.get("flatten_output_file")),
+        "require_response_ready": bool(config.require_response_ready),
+        "require_all_mapped": bool(config.require_all_mapped),
+        "failed_check_count": _int_value(summary_row.get("failed_check_count")),
+        "failed_check_names": _split_items(summary_row.get("failed_check_names")),
+        "first_failed_reason": _clean(summary_row.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _clean(summary_row.get("primary_blocker_check")),
+            "value": _clean(summary_row.get("primary_blocker_value")),
+            "operator": _clean(summary_row.get("primary_blocker_operator")),
+            "threshold": _clean(summary_row.get("primary_blocker_threshold")),
+            "reason": _clean(summary_row.get("primary_blocker_reason")),
+        },
+        "action_queue_count": _int_value(summary_row.get("action_queue_count")),
+        "ready_action_count": _int_value(summary_row.get("ready_action_count")),
+        "blocked_action_count": _int_value(summary_row.get("blocked_action_count")),
+        "review_action_count": _int_value(summary_row.get("review_action_count")),
+        "next_gate": _clean(summary_row.get("next_gate")),
+        "next_gate_help_command": _clean(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _clean(summary_row.get("primary_action_status")),
+        "primary_action": _first_action_record(action_queue),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+    }
+
+
+def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary.get("ready"), default=False) else "no"
+    lines = [
+        "# Halt Response Export Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_clean(summary.get('adapter'))}",
+        f"- Schema status: {_clean(summary.get('adapter_schema_status'))}",
+        f"- Scenario: {_clean(summary.get('scenario_key'))}",
+        f"- Cancel orders: {_int_value(summary.get('cancel_orders'))}",
+        f"- Flatten orders: {_int_value(summary.get('flatten_orders'))}",
+        f"- Cancel output file: {_code(summary.get('cancel_output_file'))}",
+        f"- Flatten output file: {_code(summary.get('flatten_output_file'))}",
+        f"- Failed checks: {_int_value(summary.get('failed_check_count'))}",
+        f"- Blocked actions: {_int_value(summary.get('blocked_action_count'))}",
+        f"- Recommendation: {_clean(summary.get('recommendation'))}",
+        f"- Primary next gate: {_code(summary.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No halt-response-export actions."
+    rows = [
+        "| priority | status | component | check | target column | source column | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _clean(item.get("priority")),
+                    _clean(item.get("queue_status")),
+                    _clean(item.get("component")),
+                    _clean(item.get("check")),
+                    _clean(item.get("target_column")),
+                    _clean(item.get("source_column")),
+                    _clean(item.get("actual")),
+                    _clean(item.get("expected")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _clean(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
 def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
     if checks.empty or "passed" not in checks.columns:
         return checks.iloc[:0].copy()
@@ -325,6 +569,75 @@ def _check_value(row: pd.Series, column: str) -> str:
     if row.empty or column not in row.index:
         return ""
     return _clean(row[column])
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _clean(action_queue.iloc[0].get(column))
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_value(value) for key, value in row.items()}
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _clean(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _clean(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _clean(value)
+    return f"`{text}`" if text else ""
+
+
+def _int_value(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _schema_frame(

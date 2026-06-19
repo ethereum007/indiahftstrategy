@@ -2,6 +2,7 @@ import json
 
 import pandas as pd
 
+from adapters.halt_response_export import HaltResponseExportConfig, write_halt_response_export
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
@@ -2050,6 +2051,64 @@ def test_experiment_catalog_promotes_halt_response_action_queue(tmp_path):
     assert queue.loc[0, "check"] == "flatten_prices_available"
     assert queue.loc[0, "next_gate"] == "plan-halt-response"
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-halt-response --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
+def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    halt = root / "halt_response"
+    export = root / "halt_response_export"
+    cancel_mapping = root / "bad_cancel_mapping.csv"
+    halt.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "guard_action": "halt",
+                "cancel_orders": 1,
+                "flatten_orders": 0,
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(halt / "halt_response_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "action_id": "CXL-000000",
+                "action": "cancel_order",
+                "broker_order_id": "ARW-1",
+                "instrument_id": "NIFTY_C_22000",
+                "open_qty": 50,
+            }
+        ]
+    ).to_csv(halt / "halt_cancel_orders.csv", index=False)
+    pd.DataFrame(columns=["action_id", "action", "instrument_id", "qty", "price"]).to_csv(
+        halt / "halt_flatten_orders.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {"target_column": "orderRef", "source_column": "missing_source", "required": True},
+        ]
+    ).to_csv(cancel_mapping, index=False)
+
+    write_halt_response_export(
+        halt_response_dir=halt,
+        cancel_mapping_path=cancel_mapping,
+        output_dir=export,
+        config=HaltResponseExportConfig(adapter="arrow_money"),
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"halt_response_export_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "halt_response_export"
+    assert queue.loc[0, "component"] == "cancel_mapping"
+    assert queue.loc[0, "check"] == "cancel:broker_cancel_orders.csv:orderRef"
+    assert queue.loc[0, "next_gate"] == "export-halt-response"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
