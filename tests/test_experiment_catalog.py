@@ -2320,6 +2320,70 @@ def test_experiment_catalog_promotes_broker_dispatch_action_queue(tmp_path):
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
+def test_experiment_catalog_promotes_broker_dispatch_send_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    send = root / "broker_dispatch_send"
+    send.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "request_state": "disabled",
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "failed_check_count": 1,
+                "primary_blocker_check": "request_count_within_limit",
+                "next_gate": "prepare-broker-dispatch-send",
+                "next_gate_help_command": "python -m hft_cli prepare-broker-dispatch-send --help",
+                "recommendation": "keep_broker_sender_disabled",
+            }
+        ]
+    ).to_csv(send / "broker_dispatch_send_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "source": "broker_dispatch_send_checks",
+                "component": "broker_dispatch_send",
+                "check": "request_count_within_limit",
+                "actual": 2,
+                "operator": "<=",
+                "expected": 1,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "next_gate": "prepare-broker-dispatch-send",
+                "next_gate_help_command": "python -m hft_cli prepare-broker-dispatch-send --help",
+                "reason": "sender packet request count exceeds limit",
+                "recommendation": "reduce_sender_request_batch_or_raise_limit",
+            }
+        ]
+    ).to_csv(send / "broker_dispatch_send_action_queue.csv", index=False)
+    write_experiment_manifest(
+        send,
+        run_type="broker_dispatch_send_packet",
+        parameters={"target_mode": "live_dryrun"},
+        inputs={},
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"broker_dispatch_send_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "broker_dispatch_send_packet"
+    assert queue.loc[0, "component"] == "broker_dispatch_send"
+    assert queue.loc[0, "check"] == "request_count_within_limit"
+    assert queue.loc[0, "next_gate"] == "prepare-broker-dispatch-send"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli prepare-broker-dispatch-send --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
 def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):
     root = tmp_path / "runs"
     halt = root / "halt_response"

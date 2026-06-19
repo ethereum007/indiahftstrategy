@@ -3417,7 +3417,8 @@ python -m hft_cli prepare-broker-dispatch-send `
   --out runs\dispatch_send\leadlag_shadow_live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3427,14 +3428,27 @@ broker_dispatch_send_requests.csv
 broker_dispatch_expected_acks.csv
 broker_dispatch_send_checks.csv
 broker_dispatch_send_summary.csv
+broker_dispatch_send_action_queue.csv
 broker_dispatch_send_config.json
+broker_dispatch_send_runbook.md
 manifest.json
 ```
 
 `broker_dispatch_send_config.json` keeps the legacy `failed_checks` name list
 and also adds `failed_check_count` plus `primary_blocker`, so a non-submitting
 sender loop can surface the first request-packet blocker without parsing the
-full check CSV.
+full check CSV. The summary/config also mirror `action_queue_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`,
+`primary_action_status`, `primary_action`, and `next_actions`, while
+`broker_dispatch_send_action_queue.csv` and
+`broker_dispatch_send_runbook.md` provide a manifest-tracked scheduler
+handoff. Dispatch-plan blockers point back to `plan-broker-dispatch`,
+sender-envelope blockers stay on `prepare-broker-dispatch-send`, route
+readiness and round-trip blockers point to their proof review gates,
+broker-readiness shadow-proof blockers point to `review-broker-readiness`, and
+vendor-data blockers route to their vendor pipelines. Use
+`--fail-on-blocked-actions` to fail only when blocked send-packet actions
+exist, or `--fail-on-actions` when any send action should stop automation.
 
 This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and

@@ -99,6 +99,15 @@
 - Broker dispatch send now carries dispatch-retained strategy portfolio
   allocation evidence into the non-submitting sender packet and blocks packet
   readiness when dispatch notional exceeds the selected allocation.
+- Broker dispatch send now emits manifest-tracked
+  `broker_dispatch_send_action_queue.csv` and
+  `broker_dispatch_send_runbook.md` scheduler handoffs, routing dispatch-plan,
+  sender-envelope, route-readiness, round-trip, broker-readiness, and
+  vendor-data blockers before acknowledgement reconciliation is trusted.
+- Broker dispatch send config JSON and summary rows now mirror send action
+  counts, primary action status, next gate/help command, and action arrays, and
+  `prepare-broker-dispatch-send` can fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`.
 - Broker dispatch acknowledgement reconciliation now carries dispatch-retained
   strategy portfolio allocation evidence and blocks acknowledgement pass status
   when dispatch notional exceeds the selected allocation.
@@ -804,7 +813,7 @@
   carried shadow proof quality, and route proof batch continuity, forcing live
   submission off, and fingerprinting exact dispatch input files plus the
   dispatch manifest when present while carrying the first failed sender check
-  in config.
+  in config plus scheduler action queue/runbook handoff.
 - Broker dispatch acknowledgement reconciliation that matches dry-run dispatch
   rows to broker ack logs, accepts only explicit success statuses, carries
   broker schema review status/mode, route-readiness proof, route round-trip
@@ -1086,7 +1095,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 964 tests.
+Current passing suite: 965 tests.
 
 ## Next Build Targets
 

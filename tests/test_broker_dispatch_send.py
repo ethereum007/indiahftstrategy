@@ -445,6 +445,13 @@ def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
     assert report.summary.iloc[0]["recommendation"] == "ready_for_non_submitting_broker_sender_review"
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert int(report.summary.iloc[0]["failed_check_count"]) == 0
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
     assert report.requests["endpoint"].tolist() == [
         "arrow_money.orders.dry_run_submit",
         "arrow_money.orders.dry_run_submit",
@@ -1226,9 +1233,25 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert (out_dir / "broker_dispatch_expected_acks.csv").exists()
     assert (out_dir / "broker_dispatch_send_checks.csv").exists()
     assert (out_dir / "broker_dispatch_send_summary.csv").exists()
+    assert (out_dir / "broker_dispatch_send_action_queue.csv").exists()
     assert (out_dir / "broker_dispatch_send_config.json").exists()
+    assert (out_dir / "broker_dispatch_send_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    summary = pd.read_csv(out_dir / "broker_dispatch_send_summary.csv")
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_send_action_queue.csv")
+    config = json.loads((out_dir / "broker_dispatch_send_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_dispatch_send_runbook.md").read_text(encoding="utf-8")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert action_queue.empty
+    assert int(summary.loc[0, "action_queue_count"]) == 0
+    assert int(summary.loc[0, "blocked_action_count"]) == 0
+    assert config["action_queue_count"] == 0
+    assert config["next_actions"] == []
+    assert runbook.startswith("# Broker Dispatch Send Runbook")
+    assert "No broker dispatch send actions." in runbook
+    assert "broker_dispatch_send_action_queue.csv" in artifact_paths
+    assert "broker_dispatch_send_runbook.md" in artifact_paths
     assert path_tail(manifest["inputs"]["dispatch_summary"]["path"]).endswith(
         "/broker_dispatch_summary.csv"
     )
@@ -1434,6 +1457,8 @@ def test_cli_broker_dispatch_send_blocks_failed_broker_vendor_data_readiness_sid
 def test_cli_broker_dispatch_send_fails_when_request_limit_breached(tmp_path):
     dispatch = write_dispatch(tmp_path)
     out_dir = tmp_path / "dispatch_send"
+    action_dir = tmp_path / "dispatch_send_action_gate"
+    blocked_dir = tmp_path / "dispatch_send_blocked_gate"
 
     code = main(
         [
@@ -1447,12 +1472,50 @@ def test_cli_broker_dispatch_send_fails_when_request_limit_breached(tmp_path):
             "--fail-on-breach",
         ]
     )
+    action_code = main(
+        [
+            "prepare-broker-dispatch-send",
+            "--dispatch",
+            str(dispatch),
+            "--out",
+            str(action_dir),
+            "--max-requests",
+            "1",
+            "--fail-on-actions",
+        ]
+    )
+    blocked_code = main(
+        [
+            "prepare-broker-dispatch-send",
+            "--dispatch",
+            str(dispatch),
+            "--out",
+            str(blocked_dir),
+            "--max-requests",
+            "1",
+            "--fail-on-blocked-actions",
+        ]
+    )
 
     summary = pd.read_csv(out_dir / "broker_dispatch_send_summary.csv")
     checks = pd.read_csv(out_dir / "broker_dispatch_send_checks.csv")
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_send_action_queue.csv")
+    config = json.loads((out_dir / "broker_dispatch_send_config.json").read_text(encoding="utf-8"))
     assert code == 2
+    assert action_code == 2
+    assert blocked_code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "request_count_within_limit" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert int(summary.loc[0, "action_queue_count"]) >= 1
+    assert int(summary.loc[0, "blocked_action_count"]) >= 1
+    assert summary.loc[0, "next_gate"] == "prepare-broker-dispatch-send"
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "component"] == "broker_dispatch_send"
+    assert action_queue.loc[0, "check"] == "request_count_within_limit"
+    assert action_queue.loc[0, "next_gate"] == "prepare-broker-dispatch-send"
+    assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli prepare-broker-dispatch-send --help"
+    assert config["primary_action"]["check"] == "request_count_within_limit"
+    assert config["next_actions"][0]["next_gate"] == "prepare-broker-dispatch-send"
 
 
 def test_cli_broker_dispatch_send_can_require_roundtrip_proof(tmp_path):
