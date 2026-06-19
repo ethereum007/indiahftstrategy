@@ -28,6 +28,27 @@ ACCEPTED_ACK_STATUSES = {
 REJECTED_ACK_STATUSES = {"reject", "rejected", "error", "failed", "denied", "blocked"}
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "target_mode",
+    "strategy",
+    "market",
+    "scenario_key",
+    "adapter",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
 @dataclass(frozen=True)
 class BrokerDispatchAckThresholds:
     require_dispatch_ready: bool = True
@@ -47,6 +68,7 @@ class BrokerDispatchAckReport:
     summary: pd.DataFrame
     config: dict[str, Any]
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def passed(self) -> bool:
@@ -72,13 +94,16 @@ def evaluate_broker_dispatch_acknowledgements(
     unmatched = _unmatched_acks(dispatch_orders, broker_acks)
     checks = _checks(summary_row, acknowledgements, unmatched, thresholds)
     summary = _summary(summary_row, acknowledgements, unmatched, checks, thresholds)
-    config = _config(summary.iloc[0], thresholds, checks)
+    action_queue = _action_queue(summary.iloc[0], checks)
+    summary = _summary_with_actions(summary, checks, action_queue)
+    config = _config(summary.iloc[0], thresholds, checks, action_queue)
     return BrokerDispatchAckReport(
         acknowledgements=acknowledgements,
         unmatched_acks=unmatched,
         checks=checks,
         summary=summary,
         config=config,
+        action_queue=action_queue,
     )
 
 
@@ -123,8 +148,16 @@ def write_broker_dispatch_acknowledgements(
     report.unmatched_acks.to_csv(out / "broker_dispatch_unmatched_acks.csv", index=False)
     report.checks.to_csv(out / "broker_dispatch_ack_checks.csv", index=False)
     report.summary.to_csv(out / "broker_dispatch_ack_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(
+        report.summary.iloc[0], report.checks
+    )
+    action_queue.to_csv(out / "broker_dispatch_ack_action_queue.csv", index=False)
     (out / "broker_dispatch_ack_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "broker_dispatch_ack_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -146,6 +179,7 @@ def write_broker_dispatch_acknowledgements(
         report.summary,
         report.config,
         out,
+        action_queue,
     )
 
 
@@ -1959,6 +1993,155 @@ def _summary(
     )
 
 
+def _summary_with_actions(
+    summary: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> pd.DataFrame:
+    out = summary.copy()
+    failed = _failed_check_rows(checks)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["failed_check_count"] = int(len(failed))
+    out["failed_check_names"] = ";".join(failed["check"].astype(str).tolist()) if not failed.empty else ""
+    out["first_failed_reason"] = _object_text(failed.iloc[0].get("reason")).strip() if not failed.empty else ""
+    out["primary_blocker_check"] = _object_text(failed.iloc[0].get("check")).strip() if not failed.empty else ""
+    out["primary_blocker_value"] = _object_text(failed.iloc[0].get("value")).strip() if not failed.empty else ""
+    out["primary_blocker_operator"] = _object_text(failed.iloc[0].get("operator")).strip() if not failed.empty else ""
+    out["primary_blocker_threshold"] = _object_text(failed.iloc[0].get("threshold")).strip() if not failed.empty else ""
+    out["primary_blocker_reason"] = _object_text(failed.iloc[0].get("reason")).strip() if not failed.empty else ""
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(summary: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for _, row in _failed_check_rows(checks).iterrows():
+        check = _object_text(row.get("check")).strip()
+        next_gate = _next_gate(check)
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "broker_dispatch_ack_checks",
+                "component": _component(check),
+                "check": check,
+                "actual": row.get("value"),
+                "operator": _object_text(row.get("operator")).strip(),
+                "expected": row.get("threshold"),
+                "target_mode": _object_text(summary.get("target_mode")).strip(),
+                "strategy": _object_text(summary.get("strategy")).strip(),
+                "market": _object_text(summary.get("market")).strip(),
+                "scenario_key": _object_text(summary.get("scenario_key")).strip(),
+                "adapter": _object_text(summary.get("adapter")).strip(),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
+                "reason": _object_text(row.get("reason")).strip(),
+                "recommendation": _action_recommendation(check),
+            }
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[0:0].copy()
+    return checks.loc[~checks["passed"].astype(bool)].copy()
+
+
+def _component(check: str) -> str:
+    if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
+        return "strategy_portfolio"
+    if "vendor_market_data_batch" in check:
+        return "vendor_market_data"
+    if "broker_vendor_data_readiness" in check or "vendor_data_readiness" in check:
+        return "broker_vendor_data_readiness"
+    if "route_readiness" in check:
+        return "route_readiness"
+    if (
+        "dispatch_roundtrip" in check
+        or "route_roundtrip" in check
+        or check == "route_enable_dispatch_roundtrip_failed_checks"
+    ):
+        return "broker_dispatch_roundtrip"
+    if (
+        check.startswith("send_shadow_broker")
+        or check.startswith("send_broker_shadow_broker")
+        or check.startswith("shadow_broker")
+        or check.startswith("route_broker_shadow_broker")
+    ):
+        return "broker_readiness"
+    if check in {"dispatch_ready", "dispatch_order_route_roundtrip_batch_matches"}:
+        return "broker_dispatch_plan"
+    if check in {
+        "all_dispatch_orders_acked",
+        "rejected_orders",
+        "duplicate_ack_orders",
+        "unmatched_acks",
+        "ack_route_roundtrip_batch_matches",
+    }:
+        return "broker_dispatch_ack"
+    return "broker_dispatch_ack"
+
+
+def _next_gate(check: str) -> str:
+    component = _component(check)
+    if component == "broker_dispatch_plan":
+        return "plan-broker-dispatch"
+    if component == "strategy_portfolio":
+        return "review-cutover-gate"
+    if component == "route_readiness":
+        return "review-route-readiness"
+    if component == "broker_dispatch_roundtrip":
+        return "review-broker-dispatch-roundtrip"
+    if component == "vendor_market_data":
+        return "pipeline-vendor-market-data-batch"
+    if component == "broker_vendor_data_readiness":
+        return "pipeline-broker-vendor-readiness"
+    if component == "broker_readiness":
+        return "review-broker-readiness"
+    return "reconcile-broker-dispatch"
+
+
+def _action_recommendation(check: str) -> str:
+    component = _component(check)
+    if component == "broker_dispatch_plan":
+        return "repair_or_rebuild_broker_dispatch_plan"
+    if component == "strategy_portfolio":
+        return "repair_strategy_portfolio_cutover_allocation"
+    if component == "route_readiness":
+        return "rerun_route_readiness_before_ack_reconciliation"
+    if component == "broker_dispatch_roundtrip":
+        return "rerun_broker_dispatch_roundtrip_before_ack_reconciliation"
+    if component == "vendor_market_data":
+        return "refresh_vendor_market_data_batch_proof"
+    if component == "broker_vendor_data_readiness":
+        return "refresh_broker_vendor_data_readiness_wrapper"
+    if component == "broker_readiness":
+        return "repair_broker_readiness_shadow_proof"
+    if check == "all_dispatch_orders_acked":
+        return "collect_missing_broker_acknowledgements_or_allow_missing_acks_for_diagnostics"
+    if check == "rejected_orders":
+        return "resolve_rejected_broker_acknowledgements"
+    if check == "duplicate_ack_orders":
+        return "deduplicate_broker_acknowledgement_log"
+    if check == "unmatched_acks":
+        return "remove_ack_rows_outside_dispatch_batch"
+    if check == "ack_route_roundtrip_batch_matches":
+        return "repair_ack_route_roundtrip_batch_tags"
+    return "repair_broker_dispatch_ack_inputs"
+
+
 def _prefixed_shadow_broker_config(summary: pd.Series, *, field_prefix: str) -> dict[str, object]:
     return {
         "provided": _to_bool(summary[f"{field_prefix}_readiness_provided"]),
@@ -2089,8 +2272,15 @@ def _broker_vendor_data_readiness_config(summary: pd.Series, *, field_prefix: st
     }
 
 
-def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks: pd.DataFrame) -> dict[str, Any]:
+def _config(
+    summary: pd.Series,
+    thresholds: BrokerDispatchAckThresholds,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> dict[str, Any]:
     failed_check_records = _failed_check_records(checks)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
     return {
         "schema_version": 1,
         "passed": _to_bool(summary["passed"]),
@@ -2214,6 +2404,18 @@ def _config(summary: pd.Series, thresholds: BrokerDispatchAckThresholds, checks:
         "thresholds": asdict(thresholds),
         "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
         "primary_blocker": failed_check_records[0] if failed_check_records else {},
+        "action_queue_count": int(len(action_queue)),
+        "ready_action_count": int((statuses == "ready").sum()) if not statuses.empty else 0,
+        "blocked_action_count": int((statuses == "blocked").sum()) if not statuses.empty else 0,
+        "review_action_count": int((statuses == "review").sum()) if not statuses.empty else 0,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "primary_action_status": _first_action_value(action_queue, "queue_status"),
+        "primary_action": _first_action_record(action_queue),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
     }
 
 
@@ -2225,7 +2427,121 @@ def _failed_check_records(checks: pd.DataFrame) -> list[dict[str, object]]:
 
 
 def _jsonable_check_record(row: dict[str, Any]) -> dict[str, object]:
-    return {str(key): _jsonable(value) for key, value in row.items()}
+    return {str(key): _jsonable_check_value(value) for key, value in row.items()}
+
+
+def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    passed_label = "yes" if _to_bool(summary_row.get("passed", False)) else "no"
+    lines = [
+        "# Broker Dispatch Acknowledgement Runbook",
+        "",
+        f"- Passed: {passed_label}",
+        f"- Target mode: {_object_text(summary_row.get('target_mode')).strip()}",
+        f"- Strategy: {_object_text(summary_row.get('strategy')).strip()}",
+        f"- Market: {_object_text(summary_row.get('market')).strip()}",
+        f"- Scenario: {_object_text(summary_row.get('scenario_key')).strip()}",
+        f"- Adapter: {_object_text(summary_row.get('adapter')).strip()}",
+        f"- Dispatch orders: {_int_value(summary_row.get('dispatch_orders'))}",
+        f"- Acked orders: {_int_value(summary_row.get('acked_orders'))}",
+        f"- Missing acknowledgements: {_int_value(summary_row.get('missing_acks'))}",
+        f"- Rejected orders: {_int_value(summary_row.get('rejected_orders'))}",
+        f"- Duplicate ack orders: {_int_value(summary_row.get('duplicate_ack_orders'))}",
+        f"- Unmatched acknowledgements: {_int_value(summary_row.get('unmatched_acks'))}",
+        f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
+        f"- Route dispatch round-trip ready: {_object_text(summary_row.get('route_dispatch_roundtrip_ready')).strip()}",
+        f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
+        f"- Blocked actions: {_int_value(summary_row.get('blocked_action_count'))}",
+        f"- Recommendation: {_object_text(summary_row.get('recommendation')).strip()}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No broker dispatch acknowledgement actions."
+    rows = [
+        "| priority | status | component | check | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _object_text(item.get("priority")).strip(),
+                    _object_text(item.get("queue_status")).strip(),
+                    _object_text(item.get("component")).strip(),
+                    _object_text(item.get("check")).strip(),
+                    _object_text(item.get("actual")).strip(),
+                    _object_text(item.get("expected")).strip(),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _object_text(item.get("reason")).strip(),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _object_text(action_queue.iloc[0].get(column)).strip()
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_check_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_check_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_check_value(value: object) -> object:
+    value = _jsonable(value)
+    if hasattr(value, "item"):
+        try:
+            return value.item()  # type: ignore[attr-defined]
+        except (AttributeError, TypeError, ValueError):
+            pass
+    return value
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _object_text(next_gate).strip()
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _object_text(value).strip()
+    return f"`{text}`" if text else ""
+
+
+def _int_value(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _matching_acks(order: pd.Series, acks: pd.DataFrame) -> tuple[pd.DataFrame, str]:

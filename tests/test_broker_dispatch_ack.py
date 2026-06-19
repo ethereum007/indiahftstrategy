@@ -489,6 +489,17 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert report.acknowledgements["match_key"].tolist() == ["source_order_id", "source_order_id"]
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert int(summary["action_queue_count"]) == 0
+    assert int(summary["blocked_action_count"]) == 0
+    assert summary["next_gate"] == ""
+    assert report.config["action_queue_count"] == 0
+    assert report.config["blocked_action_count"] == 0
+    assert report.config["next_gate"] == ""
+    assert report.config["next_gate_help_command"] == ""
+    assert report.config["primary_action"] == {}
+    assert report.config["next_actions"] == []
     assert report.acknowledgements["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.acknowledgements["ack_route_dispatch_roundtrip_batch_ids"].tolist() == ["BDP-0", "BDP-0"]
     assert summary["broker_schema_status"] == "placeholder_normalized_pending_vendor_schema"
@@ -1467,7 +1478,23 @@ def test_broker_dispatch_ack_blocks_missing_ack():
     assert not report.passed
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
     assert "all_dispatch_orders_acked" in failed
-    assert int(report.summary.iloc[0]["missing_acks"]) == 1
+    summary = report.summary.iloc[0]
+    queue = report.action_queue
+    assert int(summary["missing_acks"]) == 1
+    assert int(summary["action_queue_count"]) >= 1
+    assert summary["primary_blocker_check"] == "all_dispatch_orders_acked"
+    assert summary["next_gate"] == "reconcile-broker-dispatch"
+    assert summary["next_gate_help_command"] == "python -m hft_cli reconcile-broker-dispatch --help"
+    assert queue is not None
+    row = queue.set_index("check").loc["all_dispatch_orders_acked"]
+    assert row["component"] == "broker_dispatch_ack"
+    assert row["next_gate"] == "reconcile-broker-dispatch"
+    assert row["next_gate_help_command"] == "python -m hft_cli reconcile-broker-dispatch --help"
+    assert row["recommendation"] == (
+        "collect_missing_broker_acknowledgements_or_allow_missing_acks_for_diagnostics"
+    )
+    assert report.config["primary_action"]["check"] == "all_dispatch_orders_acked"
+    assert report.config["blocked_actions"][0]["next_gate"] == "reconcile-broker-dispatch"
 
 
 def test_broker_dispatch_ack_blocks_rejected_duplicate_and_unmatched_acks():
@@ -1506,8 +1533,21 @@ def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path)
     assert (out_dir / "broker_dispatch_unmatched_acks.csv").exists()
     assert (out_dir / "broker_dispatch_ack_checks.csv").exists()
     assert (out_dir / "broker_dispatch_ack_summary.csv").exists()
+    assert (out_dir / "broker_dispatch_ack_action_queue.csv").exists()
     assert (out_dir / "broker_dispatch_ack_config.json").exists()
+    assert (out_dir / "broker_dispatch_ack_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_ack_action_queue.csv")
+    summary = pd.read_csv(out_dir / "broker_dispatch_ack_summary.csv")
+    config = json.loads((out_dir / "broker_dispatch_ack_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_dispatch_ack_runbook.md").read_text(encoding="utf-8")
+    assert action_queue.empty
+    assert int(summary.loc[0, "action_queue_count"]) == 0
+    assert int(summary.loc[0, "blocked_action_count"]) == 0
+    assert config["action_queue_count"] == 0
+    assert config["next_actions"] == []
+    assert "# Broker Dispatch Acknowledgement Runbook" in runbook
+    assert "No broker dispatch acknowledgement actions." in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert path_tail(manifest["inputs"]["dispatch_summary"]["path"]).endswith(
         "/broker_dispatch_summary.csv"
@@ -1522,6 +1562,9 @@ def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path)
         "/manifest.json"
     )
     assert path_tail(manifest["inputs"]["broker_acks"]["path"]).endswith("/broker_dispatch_acks.csv")
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "broker_dispatch_ack_action_queue.csv" in artifact_paths
+    assert "broker_dispatch_ack_runbook.md" in artifact_paths
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_ack_reconciliation"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_ack_summary.csv"
@@ -1531,6 +1574,8 @@ def test_write_broker_dispatch_ack_outputs_artifacts_and_catalog_entry(tmp_path)
 def test_cli_broker_dispatch_ack_fails_on_rejected_ack(tmp_path):
     dispatch, acks = write_inputs(tmp_path, ack_statuses=("accepted", "rejected"))
     out_dir = tmp_path / "dispatch_acks"
+    blocked_dir = tmp_path / "dispatch_acks_blocked"
+    actions_dir = tmp_path / "dispatch_acks_actions"
 
     code = main(
         [
@@ -1547,9 +1592,45 @@ def test_cli_broker_dispatch_ack_fails_on_rejected_ack(tmp_path):
 
     summary = pd.read_csv(out_dir / "broker_dispatch_ack_summary.csv")
     checks = pd.read_csv(out_dir / "broker_dispatch_ack_checks.csv")
+    queue = pd.read_csv(out_dir / "broker_dispatch_ack_action_queue.csv")
+    config = json.loads((out_dir / "broker_dispatch_ack_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
     assert "rejected_orders" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert "rejected_orders" in set(queue["check"])
+    rejected_row = queue.set_index("check").loc["rejected_orders"]
+    assert rejected_row["component"] == "broker_dispatch_ack"
+    assert rejected_row["next_gate"] == "reconcile-broker-dispatch"
+    assert rejected_row["next_gate_help_command"] == "python -m hft_cli reconcile-broker-dispatch --help"
+    assert config["blocked_action_count"] >= 1
+    assert config["primary_action_status"] == "blocked"
+
+    blocked_code = main(
+        [
+            "reconcile-broker-dispatch",
+            "--dispatch",
+            str(dispatch),
+            "--acks",
+            str(acks),
+            "--out",
+            str(blocked_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "reconcile-broker-dispatch",
+            "--dispatch",
+            str(dispatch),
+            "--acks",
+            str(acks),
+            "--out",
+            str(actions_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 2
+    assert actions_code == 2
 
 
 def test_cli_broker_dispatch_ack_can_require_roundtrip_proof(tmp_path):

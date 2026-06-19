@@ -2384,6 +2384,69 @@ def test_experiment_catalog_promotes_broker_dispatch_send_action_queue(tmp_path)
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
+def test_experiment_catalog_promotes_broker_dispatch_ack_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    ack = root / "broker_dispatch_ack"
+    ack.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": False,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "failed_check_count": 1,
+                "primary_blocker_check": "all_dispatch_orders_acked",
+                "next_gate": "reconcile-broker-dispatch",
+                "next_gate_help_command": "python -m hft_cli reconcile-broker-dispatch --help",
+                "recommendation": "investigate_broker_dispatch_acks",
+            }
+        ]
+    ).to_csv(ack / "broker_dispatch_ack_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "source": "broker_dispatch_ack_checks",
+                "component": "broker_dispatch_ack",
+                "check": "all_dispatch_orders_acked",
+                "actual": 1,
+                "operator": "==",
+                "expected": 2,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "next_gate": "reconcile-broker-dispatch",
+                "next_gate_help_command": "python -m hft_cli reconcile-broker-dispatch --help",
+                "reason": "not every dispatch order has an accepted acknowledgement",
+                "recommendation": "collect_missing_broker_acknowledgements_or_allow_missing_acks_for_diagnostics",
+            }
+        ]
+    ).to_csv(ack / "broker_dispatch_ack_action_queue.csv", index=False)
+    write_experiment_manifest(
+        ack,
+        run_type="broker_dispatch_ack_reconciliation",
+        parameters={"target_mode": "live_dryrun"},
+        inputs={},
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"broker_dispatch_ack_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "broker_dispatch_ack_reconciliation"
+    assert queue.loc[0, "component"] == "broker_dispatch_ack"
+    assert queue.loc[0, "check"] == "all_dispatch_orders_acked"
+    assert queue.loc[0, "next_gate"] == "reconcile-broker-dispatch"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli reconcile-broker-dispatch --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
 def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):
     root = tmp_path / "runs"
     halt = root / "halt_response"

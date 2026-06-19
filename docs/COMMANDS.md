@@ -3514,6 +3514,7 @@ python -m hft_cli reconcile-broker-dispatch `
   --out runs\dispatch_acks\leadlag_shadow_live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -3524,14 +3525,28 @@ broker_dispatch_acknowledgements.csv
 broker_dispatch_unmatched_acks.csv
 broker_dispatch_ack_checks.csv
 broker_dispatch_ack_summary.csv
+broker_dispatch_ack_action_queue.csv
 broker_dispatch_ack_config.json
+broker_dispatch_ack_runbook.md
 manifest.json
 ```
 
 `broker_dispatch_ack_config.json` keeps the legacy `failed_checks` name list
 and also adds `failed_check_count` plus `primary_blocker`, giving
 ack-reconciliation automation the first failed broker acknowledgement gate as a
-compact JSON record.
+compact JSON record. The summary/config also mirror `action_queue_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`,
+`primary_action_status`, and `next_actions` arrays from the scheduler queue.
+`broker_dispatch_ack_action_queue.csv` and
+`broker_dispatch_ack_runbook.md` provide a manifest-tracked scheduler handoff:
+ack-evidence blockers route back to `reconcile-broker-dispatch`, stale dispatch
+proof routes to `plan-broker-dispatch`, route-readiness blockers route to
+`review-route-readiness`, round-trip blockers route to
+`review-broker-dispatch-roundtrip`, broker-readiness blockers route to
+`review-broker-readiness`, vendor-data blockers route to the vendor pipelines,
+and allocation blockers route to `review-cutover-gate`. Use
+`--fail-on-blocked-actions` when blocked acknowledgement actions should stop
+automation, or `--fail-on-actions` when any ack action should stop automation.
 
 The gate matches acknowledgements by `dispatch_order_id` with
 `source_order_id` fallback, accepts common broker success status names, and

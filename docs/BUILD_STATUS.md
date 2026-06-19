@@ -111,6 +111,15 @@
 - Broker dispatch acknowledgement reconciliation now carries dispatch-retained
   strategy portfolio allocation evidence and blocks acknowledgement pass status
   when dispatch notional exceeds the selected allocation.
+- Broker dispatch acknowledgement reconciliation now emits manifest-tracked
+  `broker_dispatch_ack_action_queue.csv` and
+  `broker_dispatch_ack_runbook.md` scheduler handoffs, routing missing,
+  rejected, duplicate, unmatched, stale-route, readiness, vendor-data, and
+  allocation blockers to their next CLI gate before round-trip proof is trusted.
+- Broker dispatch acknowledgement config JSON and summary rows now mirror ack
+  action counts, primary action status, next gate/help command, and action
+  arrays, and `reconcile-broker-dispatch` can fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`.
 - Broker dispatch round-trip review now reconciles strategy portfolio
   allocation evidence across dispatch/send/ack artifacts and blocks the final
   proof on identity, allocation, or dispatch-notional inconsistencies.
@@ -830,7 +839,8 @@
   needed, and
   fails closed on missing, rejected, duplicate, dirty-proof, stale-proof, or
   unmatched acknowledgement rows while fingerprinting exact dispatch, dispatch
-  manifest, and ack log inputs plus the first failed ack check in config.
+  manifest, and ack log inputs plus the first failed ack check in config and
+  a scheduler action queue/runbook handoff.
 - Broker dispatch round-trip review that joins dispatch rows, non-submitting
   sender requests, and broker acknowledgements into one dry-run proof gate with
   identity, route-readiness consistency, raw ack-log route proof consistency,
@@ -1095,7 +1105,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 965 tests.
+Current passing suite: 966 tests.
 
 ## Next Build Targets
 
