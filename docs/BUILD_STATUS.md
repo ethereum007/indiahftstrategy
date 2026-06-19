@@ -154,6 +154,9 @@
 - Broker dispatch round-trip review now reconciles strategy portfolio
   allocation evidence across dispatch/send/ack artifacts and blocks the final
   proof on identity, allocation, or dispatch-notional inconsistencies.
+- Broker dispatch round-trip review now also preserves the component-carried
+  strategy portfolio concentration context in final proof summary/config
+  artifacts.
 - Broker dispatch round-trip review now emits manifest-tracked
   `broker_dispatch_roundtrip_action_queue.csv` and
   `broker_dispatch_roundtrip_runbook.md` scheduler handoffs, routing failed

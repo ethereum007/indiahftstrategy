@@ -3710,9 +3710,10 @@ readiness across component configs, consistent strategy portfolio allocation
 evidence across dispatch/send/ack configs, one request per dispatch order, and
 an accepted acknowledgement for every request. If component configs retained
 strategy portfolio allocation evidence, the round-trip summary/config preserve
-`strategy_portfolio_*` and `dispatch_total_notional`, then fail closed on
-selected strategy/market/profile/allocation mismatches or dispatch notional
-above the selected paper/shadow allocation.
+`strategy_portfolio_*` and `dispatch_total_notional`, including concentration
+counts, top concentration names, and maximum allocation weights. It then fails
+closed on selected strategy/market/profile/allocation mismatches or dispatch
+notional above the selected paper/shadow allocation.
 `--require-route-readiness` is automatic for `live_dryrun`; the explicit flag
 keeps paper/shadow round-trip reviews equally strict. The manifest fingerprints the exact
 dispatch, send-packet, and acknowledgement summary/order/config CSV or JSON

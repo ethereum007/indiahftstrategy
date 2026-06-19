@@ -87,6 +87,38 @@ def dispatch_summary(
                 else 0.0,
                 "strategy_portfolio_selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
                 "strategy_portfolio_notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+                "strategy_portfolio_min_strategy_count": 2
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_min_market_count": 1
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_max_strategy_weight": 0.60
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_max_market_weight": 0.90
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_allocated_strategy_count": 2
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_allocated_market_count": 1
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_top_strategy_by_weight": (
+                    strategy_portfolio_selected_strategy
+                    if strategy_portfolio_selected_allocation_notional
+                    else ""
+                ),
+                "strategy_portfolio_top_market_by_weight": (
+                    strategy_portfolio_selected_market if strategy_portfolio_selected_allocation_notional else ""
+                ),
+                "strategy_portfolio_max_strategy_allocation_weight": 0.45
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_max_market_allocation_weight": 0.80
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
                 "pre_portfolio_max_notional_per_session": 25_000.0
                 if strategy_portfolio_selected_allocation_notional
                 else 0.0,
@@ -225,6 +257,38 @@ def send_summary(
                 else 0.0,
                 "strategy_portfolio_selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
                 "strategy_portfolio_notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+                "strategy_portfolio_min_strategy_count": 2
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_min_market_count": 1
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_max_strategy_weight": 0.60
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_max_market_weight": 0.90
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_allocated_strategy_count": 2
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_allocated_market_count": 1
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_top_strategy_by_weight": (
+                    strategy_portfolio_selected_strategy
+                    if strategy_portfolio_selected_allocation_notional
+                    else ""
+                ),
+                "strategy_portfolio_top_market_by_weight": (
+                    strategy_portfolio_selected_market if strategy_portfolio_selected_allocation_notional else ""
+                ),
+                "strategy_portfolio_max_strategy_allocation_weight": 0.45
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_max_market_allocation_weight": 0.80
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
                 "pre_portfolio_max_notional_per_session": 25_000.0
                 if strategy_portfolio_selected_allocation_notional
                 else 0.0,
@@ -375,6 +439,38 @@ def ack_summary(
                 else 0.0,
                 "strategy_portfolio_selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
                 "strategy_portfolio_notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+                "strategy_portfolio_min_strategy_count": 2
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_min_market_count": 1
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_max_strategy_weight": 0.60
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_max_market_weight": 0.90
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_allocated_strategy_count": 2
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_allocated_market_count": 1
+                if strategy_portfolio_selected_allocation_notional
+                else 0,
+                "strategy_portfolio_top_strategy_by_weight": (
+                    strategy_portfolio_selected_strategy
+                    if strategy_portfolio_selected_allocation_notional
+                    else ""
+                ),
+                "strategy_portfolio_top_market_by_weight": (
+                    strategy_portfolio_selected_market if strategy_portfolio_selected_allocation_notional else ""
+                ),
+                "strategy_portfolio_max_strategy_allocation_weight": 0.45
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
+                "strategy_portfolio_max_market_allocation_weight": 0.80
+                if strategy_portfolio_selected_allocation_notional
+                else 0.0,
                 "pre_portfolio_max_notional_per_session": 25_000.0
                 if strategy_portfolio_selected_allocation_notional
                 else 0.0,
@@ -531,6 +627,24 @@ def route_enable_config(
             else 0.0,
             "selected_allocation_notional": strategy_portfolio_selected_allocation_notional,
             "notional_cap_applied": bool(strategy_portfolio_selected_allocation_notional),
+            "min_strategy_count": 2 if strategy_portfolio_selected_allocation_notional else 0,
+            "min_market_count": 1 if strategy_portfolio_selected_allocation_notional else 0,
+            "max_strategy_weight": 0.60 if strategy_portfolio_selected_allocation_notional else 0.0,
+            "max_market_weight": 0.90 if strategy_portfolio_selected_allocation_notional else 0.0,
+            "allocated_strategy_count": 2 if strategy_portfolio_selected_allocation_notional else 0,
+            "allocated_market_count": 1 if strategy_portfolio_selected_allocation_notional else 0,
+            "top_strategy_by_weight": (
+                strategy_portfolio_selected_strategy if strategy_portfolio_selected_allocation_notional else ""
+            ),
+            "top_market_by_weight": (
+                strategy_portfolio_selected_market if strategy_portfolio_selected_allocation_notional else ""
+            ),
+            "max_strategy_allocation_weight": 0.45
+            if strategy_portfolio_selected_allocation_notional
+            else 0.0,
+            "max_market_allocation_weight": 0.80
+            if strategy_portfolio_selected_allocation_notional
+            else 0.0,
             "pre_portfolio_max_notional_per_session": 25_000.0
             if strategy_portfolio_selected_allocation_notional
             else 0.0,
@@ -865,12 +979,26 @@ def test_broker_dispatch_roundtrip_carries_strategy_portfolio_allocation():
     assert summary["strategy_portfolio_selected_allocation_weight"] == 0.0012
     assert summary["strategy_portfolio_selected_allocation_notional"] == 2_000.0
     assert bool(summary["strategy_portfolio_notional_cap_applied"])
+    assert summary["strategy_portfolio_min_strategy_count"] == 2
+    assert summary["strategy_portfolio_min_market_count"] == 1
+    assert summary["strategy_portfolio_max_strategy_weight"] == 0.60
+    assert summary["strategy_portfolio_max_market_weight"] == 0.90
+    assert summary["strategy_portfolio_allocated_strategy_count"] == 2
+    assert summary["strategy_portfolio_allocated_market_count"] == 1
+    assert summary["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert summary["strategy_portfolio_top_market_by_weight"] == "india_nse_index_derivatives"
+    assert summary["strategy_portfolio_max_strategy_allocation_weight"] == 0.45
+    assert summary["strategy_portfolio_max_market_allocation_weight"] == 0.80
     assert summary["pre_portfolio_max_notional_per_session"] == 25_000.0
     assert report.config["dispatch_total_notional"] == 1_575.0
     assert portfolio["required"]
     assert portfolio["provided"]
     assert portfolio["ready"]
     assert portfolio["selected_allocation_notional"] == 2_000.0
+    assert portfolio["min_strategy_count"] == 2
+    assert portfolio["allocated_strategy_count"] == 2
+    assert portfolio["top_strategy_by_weight"] == "lead_lag_taker"
+    assert portfolio["max_strategy_allocation_weight"] == 0.45
 
 
 def test_broker_dispatch_roundtrip_blocks_dispatch_above_strategy_portfolio_allocation():
