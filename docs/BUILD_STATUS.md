@@ -268,6 +268,10 @@
   either direct route-readiness summaries or broker-readiness-carried route
   proof, preserving allocation/concentration blocked/breach counts in the
   scale-up summary/config.
+- Cutover now revalidates those scale-up route-readiness ops broker controls,
+  blocking live-dryrun authorization on missing launch controls, blocked route
+  pairs, or broker round-trip allocation/concentration breaches, and preserving
+  direct plus broker-carried route proof in cutover summary/config handoffs.
 - Cutover gate now emits manifest-tracked `cutover_action_queue.csv` and
   `cutover_runbook.md` handoffs, routing failed scale-up, route-readiness,
   broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,
@@ -1200,7 +1204,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 969 tests.
+Current passing suite: 980 tests.
 
 ## Next Build Targets
 

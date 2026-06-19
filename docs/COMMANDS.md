@@ -3255,9 +3255,20 @@ round-trip failed-check counts, carries proof-refresh state, enforces any
 multi-session shadow broker-readiness aggregate retained in the scale-up config,
 revalidates any broker-readiness-carried shadow broker proof retained under
 `broker_shadow_broker_*`, and validates any supplied broker resume-gate proof
-identity before broker routing is allowed. If scale-up carried vendor
-wrapper proof inside the shadow broker-readiness aggregate, cutover carries it
-as `scaleup_shadow_broker_vendor_data_readiness_*` fields plus
+identity before broker routing is allowed.
+
+Cutover also revalidates scale-up route-readiness ops broker controls before
+live-dryrun authorization: direct route-readiness proof must retain launch
+control evidence with zero blocked pairs and zero broker round-trip
+allocation/concentration breach pairs, and broker-readiness-carried route proof
+must retain clean launch-control, allocation-safe, and concentration-OK run
+counts. These fields are preserved in `cutover_summary.csv` and
+`cutover_config.json` as `scaleup_route_readiness_*` and
+`scaleup_broker_route_readiness`.
+
+If scale-up carried vendor wrapper proof inside the shadow broker-readiness
+aggregate, cutover carries it as
+`scaleup_shadow_broker_vendor_data_readiness_*` fields plus
 `scaleup_shadow_broker_readiness.broker_vendor_data_readiness` config and fails
 closed when that comparison-level wrapper proof is partial, unready, or dirty.
 If scale-up carried the broker-readiness shadow broker wrapper, cutover carries

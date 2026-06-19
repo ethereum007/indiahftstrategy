@@ -432,8 +432,42 @@ def _checks(
                     bool(scaleup["route_readiness_market"] and scaleup["route_readiness_market"] == scaleup["market"]),
                     "scale-up route-readiness market does not match cutover market",
                 ),
+                _check(
+                    "scaleup_route_readiness_ops_launch_controls_present",
+                    scaleup["route_readiness_ops_launch_controls_present"],
+                    "is",
+                    True,
+                    bool(scaleup["route_readiness_ops_launch_controls_present"]),
+                    "scale-up route-readiness proof is missing launch-grade ops broker controls",
+                ),
+                _check(
+                    "scaleup_route_readiness_ops_launch_controls_blocked_pairs",
+                    scaleup["route_readiness_ops_launch_controls_blocked_pairs"],
+                    "<=",
+                    0,
+                    int(scaleup["route_readiness_ops_launch_controls_blocked_pairs"]) <= 0,
+                    "scale-up route-readiness ops launch controls have blocked route pairs",
+                ),
+                _check(
+                    "scaleup_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs",
+                    scaleup["route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"],
+                    "<=",
+                    0,
+                    int(scaleup["route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]) <= 0,
+                    "scale-up route-readiness broker round-trip allocation proof has breach pairs",
+                ),
+                _check(
+                    "scaleup_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs",
+                    scaleup["route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"],
+                    "<=",
+                    0,
+                    int(scaleup["route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"]) <= 0,
+                    "scale-up route-readiness broker round-trip concentration proof has breach pairs",
+                ),
             ]
         )
+    if _broker_route_readiness_active(scaleup):
+        checks.extend(_broker_route_readiness_checks(scaleup))
     dispatch_roundtrip_required = _dispatch_roundtrip_required(thresholds)
     scaleup_dispatch_active = bool(
         dispatch_roundtrip_required
@@ -1144,6 +1178,116 @@ def _shadow_broker_readiness_checks_for(
     return checks
 
 
+def _broker_route_readiness_active(scaleup: dict[str, Any]) -> bool:
+    return bool(
+        _to_bool(scaleup["broker_route_readiness_required"])
+        or _to_bool(scaleup["broker_route_readiness_provided"])
+        or _to_bool(scaleup["broker_route_readiness_ready"])
+        or int(scaleup["broker_route_readiness_route_ready_pairs"]) > 0
+        or int(scaleup["broker_route_readiness_gap_pairs"]) > 0
+        or bool(_object_text(scaleup["broker_route_readiness_strategy"]))
+        or bool(_object_text(scaleup["broker_route_readiness_market"]))
+        or bool(_object_text(scaleup["broker_route_readiness_recommendation"]))
+        or _to_bool(scaleup["broker_route_readiness_ops_launch_controls_ready"])
+        or bool(_object_text(scaleup["broker_route_readiness_ops_launch_control_failures"]))
+        or int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) > 0
+        or int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"]) > 0
+        or int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) > 0
+        or int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) > 0
+    )
+
+
+def _broker_route_readiness_checks(scaleup: dict[str, Any]) -> list[dict[str, object]]:
+    return [
+        _check(
+            "scaleup_broker_route_readiness_provided",
+            scaleup["broker_route_readiness_provided"],
+            "is",
+            True,
+            bool(scaleup["broker_route_readiness_provided"] or not scaleup["broker_route_readiness_required"]),
+            "scale-up broker-readiness route proof is required but not provided",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_ready",
+            scaleup["broker_route_readiness_ready"],
+            "is",
+            True,
+            bool(scaleup["broker_route_readiness_ready"]),
+            "scale-up broker-readiness route proof is not ready",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_strategy_matches",
+            scaleup["broker_route_readiness_strategy"],
+            "==",
+            scaleup["strategy"],
+            bool(
+                scaleup["broker_route_readiness_strategy"]
+                and scaleup["broker_route_readiness_strategy"] == scaleup["strategy"]
+            ),
+            "scale-up broker-readiness route strategy does not match cutover strategy",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_market_matches",
+            scaleup["broker_route_readiness_market"],
+            "==",
+            scaleup["market"],
+            bool(
+                scaleup["broker_route_readiness_market"]
+                and scaleup["broker_route_readiness_market"] == scaleup["market"]
+            ),
+            "scale-up broker-readiness route market does not match cutover market",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_gap_pairs",
+            scaleup["broker_route_readiness_gap_pairs"],
+            "<=",
+            0,
+            int(scaleup["broker_route_readiness_gap_pairs"]) <= 0,
+            "scale-up broker-readiness route proof has route gaps",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_ops_launch_controls_ready",
+            scaleup["broker_route_readiness_ops_launch_controls_ready"],
+            "is",
+            True,
+            bool(scaleup["broker_route_readiness_ops_launch_controls_ready"]),
+            "scale-up broker-readiness route proof is missing launch-grade ops broker controls",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+            scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"],
+            ">",
+            0,
+            int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) > 0,
+            "scale-up broker-readiness route proof has no allocation-safe broker round-trip runs",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+            scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"],
+            "<=",
+            0,
+            int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"]) <= 0,
+            "scale-up broker-readiness route proof has allocation breach broker round-trip runs",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"],
+            ">",
+            0,
+            int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) > 0,
+            "scale-up broker-readiness route proof has no concentration-OK broker round-trip runs",
+        ),
+        _check(
+            "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"],
+            "<=",
+            0,
+            int(scaleup["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) <= 0,
+            "scale-up broker-readiness route proof has concentration breach broker round-trip runs",
+        ),
+    ]
+
+
 def _shadow_broker_key(key_prefix: str, suffix: str) -> str:
     return f"{key_prefix}shadow_broker_{suffix}"
 
@@ -1358,6 +1502,19 @@ def _authorization(
                 "scaleup_route_readiness_route_ready_pairs": scaleup["route_readiness_route_ready_pairs"],
                 "scaleup_route_readiness_gap_pairs": scaleup["route_readiness_gap_pairs"],
                 "scaleup_route_readiness_recommendation": scaleup["route_readiness_recommendation"],
+                "scaleup_route_readiness_ops_launch_controls_present": scaleup[
+                    "route_readiness_ops_launch_controls_present"
+                ],
+                "scaleup_route_readiness_ops_launch_controls_blocked_pairs": scaleup[
+                    "route_readiness_ops_launch_controls_blocked_pairs"
+                ],
+                "scaleup_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": scaleup[
+                    "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"
+                ],
+                "scaleup_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": scaleup[
+                    "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"
+                ],
+                **_broker_route_readiness_authorization_fields(scaleup),
                 "scaleup_shadow_broker_readiness_sessions": scaleup["shadow_broker_readiness_sessions"],
                 "scaleup_shadow_broker_readiness_ready_sessions": scaleup[
                     "shadow_broker_readiness_ready_sessions"
@@ -1592,6 +1749,39 @@ def _authorization(
     )
 
 
+def _broker_route_readiness_authorization_fields(scaleup: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "scaleup_broker_route_readiness_required": scaleup["broker_route_readiness_required"],
+        "scaleup_broker_route_readiness_provided": scaleup["broker_route_readiness_provided"],
+        "scaleup_broker_route_readiness_ready": scaleup["broker_route_readiness_ready"],
+        "scaleup_broker_route_readiness_strategy": scaleup["broker_route_readiness_strategy"],
+        "scaleup_broker_route_readiness_market": scaleup["broker_route_readiness_market"],
+        "scaleup_broker_route_readiness_route_ready_pairs": scaleup[
+            "broker_route_readiness_route_ready_pairs"
+        ],
+        "scaleup_broker_route_readiness_gap_pairs": scaleup["broker_route_readiness_gap_pairs"],
+        "scaleup_broker_route_readiness_recommendation": scaleup["broker_route_readiness_recommendation"],
+        "scaleup_broker_route_readiness_ops_launch_controls_ready": scaleup[
+            "broker_route_readiness_ops_launch_controls_ready"
+        ],
+        "scaleup_broker_route_readiness_ops_launch_control_failures": scaleup[
+            "broker_route_readiness_ops_launch_control_failures"
+        ],
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": scaleup[
+            "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"
+        ],
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": scaleup[
+            "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"
+        ],
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": scaleup[
+            "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+        ],
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": scaleup[
+            "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+        ],
+    }
+
+
 def _broker_shadow_broker_authorization_fields(scaleup: dict[str, Any]) -> dict[str, Any]:
     return {
         "scaleup_broker_shadow_broker_readiness_provided": scaleup[
@@ -1765,6 +1955,21 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     authorization["scaleup_route_readiness_route_ready_pairs"]
                 ),
                 "scaleup_route_readiness_gap_pairs": int(authorization["scaleup_route_readiness_gap_pairs"]),
+                "scaleup_route_readiness_ops_launch_controls_present": _to_bool(
+                    authorization["scaleup_route_readiness_ops_launch_controls_present"]
+                ),
+                "scaleup_route_readiness_ops_launch_controls_blocked_pairs": int(
+                    authorization["scaleup_route_readiness_ops_launch_controls_blocked_pairs"]
+                ),
+                "scaleup_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": int(
+                    authorization["scaleup_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]
+                ),
+                "scaleup_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
+                    authorization[
+                        "scaleup_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"
+                    ]
+                ),
+                **_broker_route_readiness_summary_fields(authorization),
                 "scaleup_shadow_broker_readiness_sessions": int(
                     authorization["scaleup_shadow_broker_readiness_sessions"]
                 ),
@@ -2218,6 +2423,55 @@ def _action_recommendation(check: str) -> str:
     return "repair_cutover_gate_inputs"
 
 
+def _broker_route_readiness_summary_fields(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        "scaleup_broker_route_readiness_required": _to_bool(
+            authorization["scaleup_broker_route_readiness_required"]
+        ),
+        "scaleup_broker_route_readiness_provided": _to_bool(
+            authorization["scaleup_broker_route_readiness_provided"]
+        ),
+        "scaleup_broker_route_readiness_ready": _to_bool(
+            authorization["scaleup_broker_route_readiness_ready"]
+        ),
+        "scaleup_broker_route_readiness_strategy": str(
+            authorization["scaleup_broker_route_readiness_strategy"]
+        ),
+        "scaleup_broker_route_readiness_market": str(authorization["scaleup_broker_route_readiness_market"]),
+        "scaleup_broker_route_readiness_route_ready_pairs": int(
+            authorization["scaleup_broker_route_readiness_route_ready_pairs"]
+        ),
+        "scaleup_broker_route_readiness_gap_pairs": int(
+            authorization["scaleup_broker_route_readiness_gap_pairs"]
+        ),
+        "scaleup_broker_route_readiness_recommendation": str(
+            authorization["scaleup_broker_route_readiness_recommendation"]
+        ),
+        "scaleup_broker_route_readiness_ops_launch_controls_ready": _to_bool(
+            authorization["scaleup_broker_route_readiness_ops_launch_controls_ready"]
+        ),
+        "scaleup_broker_route_readiness_ops_launch_control_failures": str(
+            authorization["scaleup_broker_route_readiness_ops_launch_control_failures"]
+        ),
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+            authorization["scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]
+        ),
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+            authorization["scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"]
+        ),
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            authorization[
+                "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+            ]
+        ),
+        "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            authorization[
+                "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+            ]
+        ),
+    }
+
+
 def _broker_shadow_broker_summary_fields(authorization: pd.Series) -> dict[str, Any]:
     return {
         "scaleup_broker_shadow_broker_readiness_provided": _to_bool(
@@ -2387,8 +2641,23 @@ def _config(
             "market": str(authorization["scaleup_route_readiness_market"]),
             "route_ready_pairs": int(authorization["scaleup_route_readiness_route_ready_pairs"]),
             "gap_pairs": int(authorization["scaleup_route_readiness_gap_pairs"]),
+            "ops_launch_controls_present": _to_bool(
+                authorization["scaleup_route_readiness_ops_launch_controls_present"]
+            ),
+            "ops_launch_controls_blocked_pairs": int(
+                authorization["scaleup_route_readiness_ops_launch_controls_blocked_pairs"]
+            ),
+            "ops_broker_roundtrip_portfolio_breach_pairs": int(
+                authorization["scaleup_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]
+            ),
+            "ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
+                authorization[
+                    "scaleup_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"
+                ]
+            ),
             "recommendation": str(authorization["scaleup_route_readiness_recommendation"]),
         },
+        "scaleup_broker_route_readiness": _broker_route_readiness_config(authorization),
         "scaleup_shadow_broker_readiness": {
             "provided": int(authorization["scaleup_shadow_broker_readiness_sessions"]) > 0,
             "sessions": int(authorization["scaleup_shadow_broker_readiness_sessions"]),
@@ -2743,6 +3012,41 @@ def _int_value(value: object) -> int:
         return 0
 
 
+def _broker_route_readiness_config(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        "required": _to_bool(authorization["scaleup_broker_route_readiness_required"]),
+        "provided": _to_bool(authorization["scaleup_broker_route_readiness_provided"]),
+        "ready": _to_bool(authorization["scaleup_broker_route_readiness_ready"]),
+        "strategy": str(authorization["scaleup_broker_route_readiness_strategy"]),
+        "market": str(authorization["scaleup_broker_route_readiness_market"]),
+        "route_ready_pairs": int(authorization["scaleup_broker_route_readiness_route_ready_pairs"]),
+        "gap_pairs": int(authorization["scaleup_broker_route_readiness_gap_pairs"]),
+        "recommendation": str(authorization["scaleup_broker_route_readiness_recommendation"]),
+        "ops_launch_controls_ready": _to_bool(
+            authorization["scaleup_broker_route_readiness_ops_launch_controls_ready"]
+        ),
+        "ops_launch_control_failures": str(
+            authorization["scaleup_broker_route_readiness_ops_launch_control_failures"]
+        ),
+        "ops_broker_roundtrip_portfolio_safe_runs": int(
+            authorization["scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_breach_runs": int(
+            authorization["scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            authorization[
+                "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+            ]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            authorization[
+                "scaleup_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+            ]
+        ),
+    }
+
+
 def _broker_shadow_broker_config(authorization: pd.Series) -> dict[str, Any]:
     return {
         "provided": _to_bool(authorization["scaleup_broker_shadow_broker_readiness_provided"]),
@@ -3010,6 +3314,7 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
     shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
     shadow_broker_dispatch = shadow_broker.get("dispatch_roundtrip", {}) or {}
     shadow_broker_route_dispatch = shadow_broker.get("route_dispatch_roundtrip", {}) or {}
+    broker_route_readiness = broker_readiness.get("route_readiness", {}) or {}
     broker_shadow_broker = broker_readiness.get("shadow_broker_readiness", {}) or {}
     dispatch = broker_readiness.get("dispatch_roundtrip", {}) or {}
     broker_vendor_data_readiness = broker_readiness.get("broker_vendor_data_readiness", {}) or {}
@@ -3094,6 +3399,128 @@ def _scaleup_state(row: pd.Series, config: dict[str, Any], checks: pd.DataFrame)
         "route_readiness_recommendation": _first_text(
             route_readiness.get("recommendation", ""),
             row.get("route_readiness_recommendation", ""),
+        ),
+        "route_readiness_ops_launch_controls_present": _to_bool(
+            route_readiness.get(
+                "ops_launch_controls_present",
+                row.get("route_readiness_ops_launch_controls_present", False),
+            )
+        ),
+        "route_readiness_ops_launch_controls_blocked_pairs": int(
+            _number_from(
+                route_readiness,
+                "ops_launch_controls_blocked_pairs",
+                _number(row, "route_readiness_ops_launch_controls_blocked_pairs", 0.0),
+            )
+        ),
+        "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": int(
+            _number_from(
+                route_readiness,
+                "ops_broker_roundtrip_portfolio_breach_pairs",
+                _number(row, "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs", 0.0),
+            )
+        ),
+        "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
+            _number_from(
+                route_readiness,
+                "ops_broker_roundtrip_portfolio_concentration_breach_pairs",
+                _number(
+                    row,
+                    "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs",
+                    0.0,
+                ),
+            )
+        ),
+        "broker_route_readiness_required": _to_bool(
+            broker_route_readiness.get(
+                "required",
+                row.get("broker_route_readiness_required", False),
+            )
+        ),
+        "broker_route_readiness_provided": _to_bool(
+            broker_route_readiness.get(
+                "provided",
+                row.get("broker_route_readiness_provided", False),
+            )
+        ),
+        "broker_route_readiness_ready": _to_bool(
+            broker_route_readiness.get("ready", row.get("broker_route_readiness_ready", False))
+        ),
+        "broker_route_readiness_strategy": _strategy_key(
+            _first_text(
+                broker_route_readiness.get("strategy", ""),
+                row.get("broker_route_readiness_strategy", ""),
+            )
+        ),
+        "broker_route_readiness_market": _identity_key(
+            _first_text(
+                broker_route_readiness.get("market", ""),
+                row.get("broker_route_readiness_market", ""),
+            )
+        ),
+        "broker_route_readiness_route_ready_pairs": int(
+            _number_from(
+                broker_route_readiness,
+                "route_ready_pairs",
+                _number(row, "broker_route_readiness_route_ready_pairs", 0.0),
+            )
+        ),
+        "broker_route_readiness_gap_pairs": int(
+            _number_from(
+                broker_route_readiness,
+                "gap_pairs",
+                _number(row, "broker_route_readiness_gap_pairs", 0.0),
+            )
+        ),
+        "broker_route_readiness_recommendation": _first_text(
+            broker_route_readiness.get("recommendation", ""),
+            row.get("broker_route_readiness_recommendation", ""),
+        ),
+        "broker_route_readiness_ops_launch_controls_ready": _to_bool(
+            broker_route_readiness.get(
+                "ops_launch_controls_ready",
+                row.get("broker_route_readiness_ops_launch_controls_ready", False),
+            )
+        ),
+        "broker_route_readiness_ops_launch_control_failures": _first_text(
+            broker_route_readiness.get("ops_launch_control_failures", ""),
+            row.get("broker_route_readiness_ops_launch_control_failures", ""),
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+            _number_from(
+                broker_route_readiness,
+                "ops_broker_roundtrip_portfolio_safe_runs",
+                _number(row, "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs", 0.0),
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+            _number_from(
+                broker_route_readiness,
+                "ops_broker_roundtrip_portfolio_breach_runs",
+                _number(row, "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs", 0.0),
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _number_from(
+                broker_route_readiness,
+                "ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                _number(
+                    row,
+                    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                    0.0,
+                ),
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _number_from(
+                broker_route_readiness,
+                "ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                _number(
+                    row,
+                    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                    0.0,
+                ),
+            )
         ),
         "dispatch_roundtrip_required": _to_bool(
             dispatch.get("required", row.get("broker_dispatch_roundtrip_required", False))

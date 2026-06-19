@@ -125,6 +125,12 @@ def dispatch_roundtrip_config():
             "route_ready_pairs": 1,
             "gap_pairs": 0,
             "recommendation": "eligible_for_live_dryrun_route_review",
+            "ops_launch_controls_ready": True,
+            "ops_launch_control_failures": "",
+            "ops_broker_roundtrip_portfolio_safe_runs": 1,
+            "ops_broker_roundtrip_portfolio_breach_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
         },
         "route_enable_dispatch_roundtrip": {"failed_checks": 0},
     }
