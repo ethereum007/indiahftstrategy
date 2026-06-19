@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -36,6 +37,7 @@ class OrderUploadPackReport:
     summary: pd.DataFrame
     schema: pd.DataFrame
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -63,12 +65,15 @@ def build_order_upload_pack(
     )
     checks = _checks(broker_orders, mapped.summary, mapped.checks, config)
     summary = _summary(mapped.orders, checks, config)
+    action_queue = _action_queue(summary.iloc[0], checks)
+    summary = _summary_with_actions(summary, action_queue)
     return OrderUploadPackReport(
         orders=mapped.orders,
         mapping=mapping,
         checks=checks,
         summary=summary,
         schema=mapped.schema,
+        action_queue=action_queue,
     )
 
 
@@ -90,13 +95,40 @@ def write_order_upload_pack(
     report.checks.to_csv(out / "broker_upload_checks.csv", index=False)
     report.summary.to_csv(out / "broker_upload_summary.csv", index=False)
     report.schema.to_csv(out / "broker_upload_schema.csv", index=False)
+    action_queue = (
+        report.action_queue
+        if report.action_queue is not None
+        else _action_queue(report.summary.iloc[0], report.checks)
+    )
+    action_queue.to_csv(out / "broker_upload_action_queue.csv", index=False)
+    (out / "broker_upload_config.json").write_text(
+        json.dumps(
+            _config(report.summary.iloc[0], action_queue, config, orders_file),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (out / "broker_upload_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="order_upload_pack",
         parameters={"config": asdict(config)},
         inputs={"broker_orders": orders_file},
     )
-    return OrderUploadPackReport(report.orders, report.mapping, report.checks, report.summary, report.schema, out)
+    return OrderUploadPackReport(
+        report.orders,
+        report.mapping,
+        report.checks,
+        report.summary,
+        report.schema,
+        out,
+        action_queue,
+    )
 
 
 def broker_order_upload_mapping(config: OrderUploadPackConfig) -> pd.DataFrame:
@@ -263,6 +295,218 @@ def _summary(orders: pd.DataFrame, checks: pd.DataFrame, config: OrderUploadPack
     )
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "adapter",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    blocked = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    ready = int((statuses == "ready").sum()) if not statuses.empty else 0
+    review = int((statuses == "review").sum()) if not statuses.empty else 0
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = ready
+    out["blocked_action_count"] = blocked
+    out["review_action_count"] = review
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(summary_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    failed_rows = _failed_check_rows(checks)
+    for _, row in failed_rows.iterrows():
+        check = _check_name(row)
+        rows.append(
+            _action_row(
+                source="broker_upload_checks",
+                component=_component(check),
+                adapter=_text(summary_row.get("adapter")),
+                check=check,
+                actual=_check_value(row, "value"),
+                operator=_check_value(row, "operator"),
+                expected=_check_value(row, "threshold"),
+                reason=_check_reason(row),
+                recommendation=_recommendation(check),
+            )
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _action_row(
+    *,
+    source: str,
+    component: str,
+    adapter: str,
+    check: str,
+    actual: object,
+    operator: str,
+    expected: object,
+    reason: str,
+    recommendation: str,
+) -> dict[str, object]:
+    next_gate = "pack-broker-upload"
+    return {
+        "queue_status": "blocked",
+        "source": source,
+        "component": component,
+        "adapter": adapter,
+        "check": check,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "reason": reason,
+        "recommendation": recommendation,
+    }
+
+
+def _config(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    config: OrderUploadPackConfig,
+    orders_file: Path,
+) -> dict[str, Any]:
+    primary_action = _first_action_record(action_queue)
+    return {
+        "schema_version": 1,
+        "ready": _to_bool(summary_row.get("ready")),
+        "adapter": _text(summary_row.get("adapter")),
+        "adapter_schema_status": _text(summary_row.get("adapter_schema_status")),
+        "inputs": {"broker_orders": str(orders_file)},
+        "upload": {
+            "output_file": _text(summary_row.get("output_file")),
+            "mapping_file": _text(summary_row.get("mapping_file")),
+            "orders": _int(summary_row.get("orders")),
+            "target_columns": _int(summary_row.get("target_columns")),
+            "lifecycle_orders": _int(summary_row.get("lifecycle_orders")),
+            "replace_orders": _int(summary_row.get("replace_orders")),
+            "product": config.product,
+            "exchange": config.exchange,
+            "require_reviewed_schema": bool(config.require_reviewed_schema),
+        },
+        "failed_check_count": _int(summary_row.get("failed_check_count")),
+        "failed_check_names": _split_items(summary_row.get("failed_check_names")),
+        "first_failed_reason": _text(summary_row.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _text(summary_row.get("primary_blocker_check")),
+            "value": _text(summary_row.get("primary_blocker_value")),
+            "operator": _text(summary_row.get("primary_blocker_operator")),
+            "threshold": _text(summary_row.get("primary_blocker_threshold")),
+            "reason": _text(summary_row.get("primary_blocker_reason")),
+        },
+        "action_queue_count": _int(summary_row.get("action_queue_count")),
+        "ready_action_count": _int(summary_row.get("ready_action_count")),
+        "blocked_action_count": _int(summary_row.get("blocked_action_count")),
+        "review_action_count": _int(summary_row.get("review_action_count")),
+        "next_gate": _text(summary_row.get("next_gate")),
+        "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _text(summary_row.get("primary_action_status")),
+        "primary_action": primary_action,
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+        "recommendation": _text(summary_row.get("recommendation")),
+    }
+
+
+def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready")) else "no"
+    lines = [
+        "# Broker Upload Pack Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_text(summary_row.get('adapter'))}",
+        f"- Schema status: {_text(summary_row.get('adapter_schema_status'))}",
+        f"- Orders: {_int(summary_row.get('orders'))}",
+        f"- Target columns: {_int(summary_row.get('target_columns'))}",
+        f"- Lifecycle orders: {_int(summary_row.get('lifecycle_orders'))}",
+        f"- Replace orders: {_int(summary_row.get('replace_orders'))}",
+        f"- Failed checks: {_int(summary_row.get('failed_check_count'))}",
+        f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
+        f"- Recommendation: {_text(summary_row.get('recommendation'))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No broker-upload actions."
+    rows = [
+        "| priority | status | check | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _text(item.get("priority")),
+                    _text(item.get("queue_status")),
+                    _text(item.get("check")),
+                    _text(item.get("actual")),
+                    _text(item.get("expected")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _text(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def _component(check: str) -> str:
+    if check == "schema_reviewed":
+        return "schema_review"
+    if check == "mapping_ready":
+        return "mapping"
+    if check == "broker_orders_nonempty":
+        return "broker_orders"
+    return "upload_pack"
+
+
+def _recommendation(check: str) -> str:
+    if check == "schema_reviewed":
+        return "review_real_broker_upload_schema_or_allow_placeholder_for_dry_run"
+    if check == "mapping_ready":
+        return "fix_built_in_upload_mapping_or_broker_order_export"
+    if check == "broker_orders_nonempty":
+        return "rerun_broker_order_export_with_accepted_orders"
+    return "repair_broker_upload_pack"
+
+
 def _mapping_failure_reason(mapped_summary: pd.DataFrame) -> str:
     fallback = "built-in upload mapping has failures"
     if mapped_summary.empty:
@@ -348,6 +592,81 @@ def _to_bool(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _text(action_queue.iloc[0].get(column))
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_value(value) for key, value in row.items()}
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _text(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _text(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
+
+
+def _text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _int(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _clean(value: object) -> str:

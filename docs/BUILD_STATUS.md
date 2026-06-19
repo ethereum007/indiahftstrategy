@@ -540,6 +540,11 @@
   surfaces the first schema or built-in mapping blocker in the summary, and
   fails closed unless placeholder schemas are explicitly allowed for dry-run
   review.
+- Broker upload packs now also emit manifest-tracked
+  `broker_upload_action_queue.csv`, `broker_upload_config.json`, and
+  `broker_upload_runbook.md` handoffs, making placeholder schema, built-in
+  mapping, and empty broker-order blockers catalog-visible before broker
+  readiness trusts upload evidence.
 - Broker/drop-copy fill reconciliation for exported orders, including
   order-level fill status, unmatched fills, side/instrument mismatches,
   adverse slippage, latency, pass/fail checks, and manifests.
@@ -1003,7 +1008,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 935 tests.
+Current passing suite: 937 tests.
 
 ## Next Build Targets
 

@@ -1,3 +1,5 @@
+import json
+
 import pandas as pd
 
 from adapters.order_upload_pack import (
@@ -92,6 +94,12 @@ def test_build_order_upload_pack_maps_arrow_money_template_for_dry_run():
     assert report.summary.loc[0, "failed_check_names"] == ""
     assert report.summary.loc[0, "primary_blocker_check"] == ""
     assert report.summary.iloc[0]["recommendation"] == "dry_run_or_paper_review"
+    assert int(report.summary.loc[0, "action_queue_count"]) == 0
+    assert int(report.summary.loc[0, "blocked_action_count"]) == 0
+    assert report.summary.loc[0, "next_gate"] == ""
+    assert report.summary.loc[0, "next_gate_help_command"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
 
 
 def test_order_upload_pack_fails_closed_for_placeholder_schema_by_default():
@@ -114,6 +122,16 @@ def test_order_upload_pack_fails_closed_for_placeholder_schema_by_default():
     assert summary["primary_blocker_operator"] == "!="
     assert summary["primary_blocker_threshold"] == "placeholder"
     assert summary["primary_blocker_reason"] == "adapter schema is still a placeholder; review vendor sample before live upload"
+    assert int(summary["action_queue_count"]) == 1
+    assert int(summary["blocked_action_count"]) == 1
+    assert summary["next_gate"] == "pack-broker-upload"
+    assert summary["next_gate_help_command"] == "python -m hft_cli pack-broker-upload --help"
+    assert summary["primary_action_status"] == "blocked"
+    assert report.action_queue is not None
+    action = report.action_queue.iloc[0]
+    assert action["check"] == "schema_reviewed"
+    assert action["component"] == "schema_review"
+    assert action["recommendation"] == "review_real_broker_upload_schema_or_allow_placeholder_for_dry_run"
 
 
 def test_order_upload_pack_surfaces_first_failed_mapping_field():
@@ -134,6 +152,14 @@ def test_order_upload_pack_surfaces_first_failed_mapping_field():
     assert summary["primary_blocker_operator"] == "=="
     assert summary["primary_blocker_threshold"] == "0"
     assert summary["primary_blocker_reason"] == "price: required target has no available source column or default value"
+    assert int(summary["action_queue_count"]) == 1
+    assert int(summary["blocked_action_count"]) == 1
+    assert summary["next_gate"] == "pack-broker-upload"
+    assert report.action_queue is not None
+    action = report.action_queue.iloc[0]
+    assert action["check"] == "mapping_ready"
+    assert action["component"] == "mapping"
+    assert "price" in action["reason"]
 
 
 def test_write_order_upload_pack_outputs_files_and_manifest(tmp_path):
@@ -158,7 +184,23 @@ def test_write_order_upload_pack_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "broker_upload_checks.csv").exists()
     assert (out_dir / "broker_upload_summary.csv").exists()
     assert (out_dir / "broker_upload_schema.csv").exists()
+    assert (out_dir / "broker_upload_action_queue.csv").exists()
+    assert (out_dir / "broker_upload_config.json").exists()
+    assert (out_dir / "broker_upload_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    queue = pd.read_csv(out_dir / "broker_upload_action_queue.csv")
+    assert queue.empty
+    config = json.loads((out_dir / "broker_upload_config.json").read_text(encoding="utf-8"))
+    assert config["ready"] is True
+    assert config["action_queue_count"] == 0
+    assert config["primary_action"] == {}
+    runbook = (out_dir / "broker_upload_runbook.md").read_text(encoding="utf-8")
+    assert "# Broker Upload Pack Runbook" in runbook
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "broker_upload_action_queue.csv" in artifact_paths
+    assert "broker_upload_config.json" in artifact_paths
+    assert "broker_upload_runbook.md" in artifact_paths
 
 
 def test_cli_pack_broker_upload_returns_failure_until_schema_allowed(tmp_path):
@@ -176,14 +218,49 @@ def test_cli_pack_broker_upload_returns_failure_until_schema_allowed(tmp_path):
             "--adapter",
             "arrow_money",
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "broker_upload_summary.csv")
+    queue = pd.read_csv(out_dir / "broker_upload_action_queue.csv")
+    config = json.loads((out_dir / "broker_upload_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_upload_runbook.md").read_text(encoding="utf-8")
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "failed_check_count"]) == 1
     assert summary.loc[0, "failed_check_names"] == "schema_reviewed"
     assert summary.loc[0, "primary_blocker_check"] == "schema_reviewed"
     assert summary.loc[0, "primary_blocker_reason"] == "adapter schema is still a placeholder; review vendor sample before live upload"
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert summary.loc[0, "next_gate"] == "pack-broker-upload"
+    assert queue.loc[0, "check"] == "schema_reviewed"
+    assert queue.loc[0, "component"] == "schema_review"
+    assert config["primary_action"]["check"] == "schema_reviewed"
+    assert "adapter schema is still a placeholder" in runbook
     assert (out_dir / "broker_upload_orders.csv").exists()
+
+
+def test_cli_pack_broker_upload_can_fail_on_actions(tmp_path):
+    export_dir = tmp_path / "export"
+    out_dir = tmp_path / "upload"
+    write_export(export_dir)
+
+    code = main(
+        [
+            "pack-broker-upload",
+            "--export",
+            str(export_dir),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "arrow_money",
+            "--fail-on-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_upload_summary.csv")
+    assert code == 2
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert summary.loc[0, "primary_action_status"] == "blocked"

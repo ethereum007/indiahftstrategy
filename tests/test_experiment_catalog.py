@@ -5,6 +5,7 @@ import pandas as pd
 from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
 from adapters.mapped_order_export import MappedOrderExportConfig, write_mapped_order_export
 from adapters.order_mapping_draft import OrderMappingDraftConfig, write_order_mapping_draft
+from adapters.order_upload_pack import OrderUploadPackConfig, write_order_upload_pack
 from adapters.schema_audit import write_adapter_schema_audit
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from hft_cli import main
@@ -360,6 +361,49 @@ def test_experiment_catalog_promotes_mapped_order_action_queue(tmp_path):
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli map-broker-orders --help"
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["check"] == "unmapped_required:exchange_token"
+
+
+def test_experiment_catalog_promotes_broker_upload_action_queue(tmp_path):
+    export_dir = tmp_path / "export"
+    upload_dir = tmp_path / "broker_upload"
+    catalog_dir = tmp_path / "catalog"
+    export_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "instrument_id": "NIFTY24JUN22500CE",
+                "side": 1,
+                "side_text": "BUY",
+                "qty": 75,
+                "price": 10.0,
+                "order_type": "LIMIT",
+                "time_in_force": "DAY",
+                "route_tag": "shadow_nse",
+            }
+        ]
+    ).to_csv(export_dir / "broker_orders.csv", index=False)
+    write_order_upload_pack(
+        export_dir,
+        output_dir=upload_dir,
+        config=OrderUploadPackConfig(adapter="arrow_money"),
+    )
+
+    report = write_experiment_catalog([upload_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 1
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+    assert set(queue["action_source_file"]) == {"broker_upload_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "order_upload_pack"
+    assert queue.loc[0, "check"] == "schema_reviewed"
+    assert queue.loc[0, "component"] == "schema_review"
+    assert queue.loc[0, "next_gate"] == "pack-broker-upload"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli pack-broker-upload --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["action_source_file"] == "broker_upload_action_queue.csv"
+    assert action_plan["primary_action"]["check"] == "schema_reviewed"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):

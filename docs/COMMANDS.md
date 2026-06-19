@@ -2043,7 +2043,8 @@ python -m hft_cli pack-broker-upload `
   --product MIS `
   --exchange NFO `
   --allow-placeholder-schema `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -2054,6 +2055,9 @@ broker_upload_mapping.csv
 broker_upload_checks.csv
 broker_upload_summary.csv
 broker_upload_schema.csv
+broker_upload_action_queue.csv
+broker_upload_config.json
+broker_upload_runbook.md
 manifest.json
 ```
 
@@ -2061,9 +2065,15 @@ The mapping file is emitted beside the upload-shaped orders so the final
 Arrow.money/iRage column semantics can be reviewed before any live route is
 enabled.
 `broker_upload_summary.csv` also exposes `failed_check_count`,
-`failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields so
-schema-placeholder and built-in mapping blockers can be routed from the one-row
-upload handoff.
+`failed_check_names`, `first_failed_reason`, `primary_blocker_*`,
+`action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, and `primary_action_status` fields so
+schema-placeholder, built-in mapping, and empty-order blockers can be routed
+from the one-row upload handoff. `broker_upload_action_queue.csv`,
+`broker_upload_config.json`, and `broker_upload_runbook.md` mirror those
+actions back to `pack-broker-upload` for scheduler handoff. Use
+`--fail-on-blocked-actions` to fail only when blocked upload actions exist, or
+`--fail-on-actions` when any upload action should stop automation.
 
 ## Vendor CSV Intake
 
