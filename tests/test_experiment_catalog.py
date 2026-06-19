@@ -2447,6 +2447,69 @@ def test_experiment_catalog_promotes_broker_dispatch_ack_action_queue(tmp_path):
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
+def test_experiment_catalog_promotes_broker_dispatch_roundtrip_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    roundtrip = root / "broker_dispatch_roundtrip"
+    roundtrip.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": False,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "failed_check_count": 1,
+                "primary_blocker_check": "missing_request_acks",
+                "next_gate": "reconcile-broker-dispatch",
+                "next_gate_help_command": "python -m hft_cli reconcile-broker-dispatch --help",
+                "recommendation": "investigate_broker_dry_run_roundtrip",
+            }
+        ]
+    ).to_csv(roundtrip / "broker_dispatch_roundtrip_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "source": "broker_dispatch_roundtrip_checks",
+                "component": "broker_dispatch_ack",
+                "check": "missing_request_acks",
+                "actual": 1,
+                "operator": "<=",
+                "expected": 0,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "next_gate": "reconcile-broker-dispatch",
+                "next_gate_help_command": "python -m hft_cli reconcile-broker-dispatch --help",
+                "reason": "missing request acknowledgements exceeded threshold",
+                "recommendation": "repair_broker_acknowledgement_reconciliation",
+            }
+        ]
+    ).to_csv(roundtrip / "broker_dispatch_roundtrip_action_queue.csv", index=False)
+    write_experiment_manifest(
+        roundtrip,
+        run_type="broker_dispatch_roundtrip",
+        parameters={"target_mode": "live_dryrun"},
+        inputs={},
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"broker_dispatch_roundtrip_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "broker_dispatch_roundtrip"
+    assert queue.loc[0, "component"] == "broker_dispatch_ack"
+    assert queue.loc[0, "check"] == "missing_request_acks"
+    assert queue.loc[0, "next_gate"] == "reconcile-broker-dispatch"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli reconcile-broker-dispatch --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
 def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):
     root = tmp_path / "runs"
     halt = root / "halt_response"

@@ -123,6 +123,15 @@
 - Broker dispatch round-trip review now reconciles strategy portfolio
   allocation evidence across dispatch/send/ack artifacts and blocks the final
   proof on identity, allocation, or dispatch-notional inconsistencies.
+- Broker dispatch round-trip review now emits manifest-tracked
+  `broker_dispatch_roundtrip_action_queue.csv` and
+  `broker_dispatch_roundtrip_runbook.md` scheduler handoffs, routing failed
+  dispatch, send, ack, route-readiness, broker-readiness, vendor-data,
+  allocation, and cross-component proof checks to their next CLI gate.
+- Broker dispatch round-trip config JSON and summary rows now mirror final
+  proof action counts, primary action status, next gate/help command, and
+  action arrays, and `review-broker-dispatch-roundtrip` can fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`.
 - Experiment catalog now recognizes strategy portfolio allocation summaries,
   preserving paper/shadow allocation readiness, top-profile, and allocated
   weight signals for downstream research ledgers.
@@ -854,7 +863,8 @@
   component configs are thin,
   request-count, submission-disabled, and
   accepted-ack checks while fingerprinting exact component proof files and
-  manifests and exposing the first failed cross-component check in config.
+  manifests and exposing the first failed cross-component check in config plus
+  a scheduler action queue/runbook handoff.
 - Replay stress reports for extra fee multipliers, tick slippage, and adverse
   bps shocks, including stressed PnL, cost bps, drawdown, strategy/market
   identity consistency, and pass/fail gates.
@@ -1105,7 +1115,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 966 tests.
+Current passing suite: 967 tests.
 
 ## Next Build Targets
 

@@ -789,9 +789,21 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     )
 
     assert report.passed
-    assert report.summary.iloc[0]["recommendation"] == "broker_dry_run_roundtrip_proved"
+    summary = report.summary.iloc[0]
+    assert summary["recommendation"] == "broker_dry_run_roundtrip_proved"
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert int(summary["action_queue_count"]) == 0
+    assert int(summary["blocked_action_count"]) == 0
+    assert summary["next_gate"] == ""
+    assert report.config["action_queue_count"] == 0
+    assert report.config["blocked_action_count"] == 0
+    assert report.config["next_gate"] == ""
+    assert report.config["next_gate_help_command"] == ""
+    assert report.config["primary_action"] == {}
+    assert report.config["next_actions"] == []
     assert report.orders["request_id"].tolist() == ["BDR-1", "BDR-2"]
     assert report.orders["acked"].tolist() == [True, True]
     assert report.orders["dispatch_route_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
@@ -2028,8 +2040,21 @@ def test_write_broker_dispatch_roundtrip_outputs_artifacts_and_catalog_entry(tmp
     assert (out_dir / "broker_dispatch_roundtrip_orders.csv").exists()
     assert (out_dir / "broker_dispatch_roundtrip_checks.csv").exists()
     assert (out_dir / "broker_dispatch_roundtrip_summary.csv").exists()
+    assert (out_dir / "broker_dispatch_roundtrip_action_queue.csv").exists()
     assert (out_dir / "broker_dispatch_roundtrip_config.json").exists()
+    assert (out_dir / "broker_dispatch_roundtrip_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_roundtrip_action_queue.csv")
+    summary = pd.read_csv(out_dir / "broker_dispatch_roundtrip_summary.csv")
+    config = json.loads((out_dir / "broker_dispatch_roundtrip_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_dispatch_roundtrip_runbook.md").read_text(encoding="utf-8")
+    assert action_queue.empty
+    assert int(summary.loc[0, "action_queue_count"]) == 0
+    assert int(summary.loc[0, "blocked_action_count"]) == 0
+    assert config["action_queue_count"] == 0
+    assert config["next_actions"] == []
+    assert "# Broker Dispatch Round-Trip Runbook" in runbook
+    assert "No broker dispatch round-trip actions." in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     expected_inputs = {
         "dispatch_summary": "/broker_dispatch_summary.csv",
@@ -2047,6 +2072,9 @@ def test_write_broker_dispatch_roundtrip_outputs_artifacts_and_catalog_entry(tmp
     }
     for name, suffix in expected_inputs.items():
         assert path_tail(manifest["inputs"][name]["path"]).endswith(suffix)
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "broker_dispatch_roundtrip_action_queue.csv" in artifact_paths
+    assert "broker_dispatch_roundtrip_runbook.md" in artifact_paths
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_roundtrip"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_roundtrip_summary.csv"
@@ -2056,6 +2084,8 @@ def test_write_broker_dispatch_roundtrip_outputs_artifacts_and_catalog_entry(tmp
 def test_cli_broker_dispatch_roundtrip_fails_on_missing_ack(tmp_path):
     dispatch, send, ack = write_inputs(tmp_path, missing_ack=True)
     out_dir = tmp_path / "roundtrip"
+    blocked_dir = tmp_path / "roundtrip_blocked"
+    actions_dir = tmp_path / "roundtrip_actions"
 
     code = main(
         [
@@ -2074,9 +2104,49 @@ def test_cli_broker_dispatch_roundtrip_fails_on_missing_ack(tmp_path):
 
     summary = pd.read_csv(out_dir / "broker_dispatch_roundtrip_summary.csv")
     checks = pd.read_csv(out_dir / "broker_dispatch_roundtrip_checks.csv")
+    queue = pd.read_csv(out_dir / "broker_dispatch_roundtrip_action_queue.csv")
+    config = json.loads((out_dir / "broker_dispatch_roundtrip_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
     assert "missing_request_acks" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert "missing_request_acks" in set(queue["check"])
+    row = queue.set_index("check").loc["missing_request_acks"]
+    assert row["component"] == "broker_dispatch_ack"
+    assert row["next_gate"] == "reconcile-broker-dispatch"
+    assert row["next_gate_help_command"] == "python -m hft_cli reconcile-broker-dispatch --help"
+    assert config["blocked_action_count"] >= 1
+    assert config["primary_action_status"] == "blocked"
+
+    blocked_code = main(
+        [
+            "review-broker-dispatch-roundtrip",
+            "--dispatch",
+            str(dispatch),
+            "--send",
+            str(send),
+            "--ack",
+            str(ack),
+            "--out",
+            str(blocked_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "review-broker-dispatch-roundtrip",
+            "--dispatch",
+            str(dispatch),
+            "--send",
+            str(send),
+            "--ack",
+            str(ack),
+            "--out",
+            str(actions_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 2
+    assert actions_code == 2
 
 
 def test_cli_broker_dispatch_roundtrip_can_require_route_readiness(tmp_path):

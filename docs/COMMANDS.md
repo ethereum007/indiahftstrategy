@@ -3608,6 +3608,7 @@ python -m hft_cli review-broker-dispatch-roundtrip `
   --out runs\dispatch_roundtrip\leadlag_shadow_live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -3617,14 +3618,29 @@ Outputs:
 broker_dispatch_roundtrip_orders.csv
 broker_dispatch_roundtrip_checks.csv
 broker_dispatch_roundtrip_summary.csv
+broker_dispatch_roundtrip_action_queue.csv
 broker_dispatch_roundtrip_config.json
+broker_dispatch_roundtrip_runbook.md
 manifest.json
 ```
 
 `broker_dispatch_roundtrip_config.json` keeps the legacy `failed_checks` name
 list and also adds `failed_check_count` plus `primary_blocker`, so the final
 broker dry-run proof exposes the first failed cross-component check directly in
-the config.
+the config. The summary/config also mirror `action_queue_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`,
+`primary_action_status`, and `next_actions` arrays from the scheduler queue.
+`broker_dispatch_roundtrip_action_queue.csv` and
+`broker_dispatch_roundtrip_runbook.md` provide the manifest-tracked final
+broker proof handoff: dispatch-plan blockers route to `plan-broker-dispatch`,
+sender blockers to `prepare-broker-dispatch-send`, acknowledgement blockers to
+`reconcile-broker-dispatch`, route-readiness blockers to
+`review-route-readiness`, broker-readiness blockers to
+`review-broker-readiness`, vendor-data blockers to the vendor pipelines, and
+cross-component proof blockers back to `review-broker-dispatch-roundtrip`.
+Use `--fail-on-blocked-actions` when blocked round-trip actions should stop
+automation, or `--fail-on-actions` when any final proof action should stop
+automation.
 
 This gate proves the broker dry-run bridge as a whole. It joins dispatch rows
 to sender requests and acknowledgement rows, including the raw ack-log route
