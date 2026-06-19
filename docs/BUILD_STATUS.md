@@ -184,6 +184,11 @@
   `failed_checks`, and structured `primary_blocker` next to the guard trigger
   context, so emergency automation can route packet-construction blockers
   without confusing them with the original guard halt reason.
+- Halt response planning now emits manifest-tracked
+  `halt_response_action_queue.csv` and `halt_response_runbook.md` handoffs,
+  routing non-halt guard states and missing flatten-price blockers back to
+  `plan-halt-response` or runtime guard review before cancel/flatten packets
+  are trusted.
 - Halt incident review now emits manifest-tracked
   `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
   routing guard, response, export, and execution blockers to the next recovery
@@ -679,8 +684,9 @@
   and manifests, stamping guard failed check names and first halt reasons onto
   the summary and action CSVs for operator review while carrying strategy and
   market identity into the emergency action packet, exposing the first failed
-  response-plan check in config, and fingerprinting resolved guard
-  summary/check files plus open-order and position snapshots.
+  response-plan check in config, emitting scheduler action queue/runbook
+  handoffs, and fingerprinting resolved guard summary/check files plus
+  open-order and position snapshots.
 - Halt response export mapper that turns emergency cancel and flatten actions
   into reviewed broker/vendor CSV shapes, with normalized passthrough until
   Arrow.money/iRage emergency schemas are finalized, fingerprints the exact
@@ -1041,7 +1047,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 951 tests.
+Current passing suite: 953 tests.
 
 ## Next Build Targets
 

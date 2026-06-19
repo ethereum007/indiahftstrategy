@@ -2830,7 +2830,8 @@ python -m hft_cli plan-halt-response `
   --open-orders logs\open_orders.csv `
   --positions logs\positions.csv `
   --out runs\halt_response\leadlag_shadow_latest `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Open-order CSV inputs may include `client_order_id`, `broker_order_id`,
@@ -2846,6 +2847,8 @@ halt_cancel_orders.csv
 halt_flatten_orders.csv
 halt_response_checks.csv
 halt_response_summary.csv
+halt_response_action_queue.csv
+halt_response_runbook.md
 halt_response_config.json
 manifest.json
 ```
@@ -2853,7 +2856,10 @@ manifest.json
 `halt_response_config.json` keeps the guard-trigger context and also exposes
 the response-plan `failed_check_count`, `failed_checks`, and structured
 `primary_blocker`, so emergency automation can distinguish the guard halt from
-the first failed cancel/flatten packet check.
+the first failed cancel/flatten packet check. It also mirrors the scheduler
+handoff as `action_queue_count`, `next_gate`, `next_gate_help_command`,
+`primary_action`, `next_actions`, and status-sliced `ready_actions`,
+`blocked_actions`, and `review_actions`.
 
 `halt_response_summary.csv`, `halt_cancel_orders.csv`, and
 `halt_flatten_orders.csv` include the guard failed check names, first halt
@@ -2862,6 +2868,11 @@ cancel/flatten packet exists and which scaled strategy produced it. They also
 retain `proof_refresh_*` and `proof_source` fields from the runtime guard so a
 halt packet can be tied back to the fresh proof state that authorized the
 runtime session.
+`halt_response_action_queue.csv` and `halt_response_runbook.md` route non-halt
+guard states and missing executable flatten prices back to the next CLI gate
+before a scheduler trusts the cancel/flatten packet. Add `--fail-on-actions` to
+fail on any queued response-plan action, or `--fail-on-blocked-actions` to fail
+only when the queue contains blocked actions.
 The manifest fingerprints the resolved runtime guard summary/check files plus
 the open-order and position snapshots used to create the cancel/flatten packet.
 

@@ -15,6 +15,7 @@ from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
 from reports.halt_execution import write_halt_execution_report
 from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
+from reports.halt_response import write_halt_response_plan
 from reports.manifest import write_experiment_manifest
 from reports.proof_refresh import write_proof_refresh_report
 from reports.resume import write_resume_gate_report
@@ -1997,6 +1998,58 @@ def test_experiment_catalog_promotes_halt_incident_action_queue(tmp_path):
     assert queue.loc[0, "check"] == "halt_export_ready"
     assert queue.loc[0, "next_gate"] == "export-halt-response"
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
+def test_experiment_catalog_promotes_halt_response_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    guard = root / "guard"
+    response = root / "halt_response"
+    positions = root / "positions.csv"
+    guard.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "guard_action": "halt",
+                "halted": True,
+                "failed_checks": 1,
+                "failed_check_names": "orders_sent",
+                "first_failed_reason": "orders_sent: limit breached",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
+            }
+        ]
+    ).to_csv(guard / "runtime_guard_summary.csv", index=False)
+    pd.DataFrame([{"check": "orders_sent", "passed": False, "reason": "limit breached"}]).to_csv(
+        guard / "runtime_guard_checks.csv",
+        index=False,
+    )
+    pd.DataFrame([{"instrument_id": "NIFTY_C_22000", "net_qty": 75}]).to_csv(positions, index=False)
+
+    write_halt_response_plan(
+        guard_dir=guard,
+        positions_path=positions,
+        output_dir=response,
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"halt_response_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "halt_response_plan"
+    assert queue.loc[0, "component"] == "flatten_price_inputs"
+    assert queue.loc[0, "check"] == "flatten_prices_available"
+    assert queue.loc[0, "next_gate"] == "plan-halt-response"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-halt-response --help"
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 

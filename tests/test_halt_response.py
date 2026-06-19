@@ -123,10 +123,24 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.summary.iloc[0]["proof_source"] == "latest"
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
+    assert int(report.summary.iloc[0]["failed_check_count"]) == 0
+    assert report.summary.iloc[0]["failed_check_names"] == ""
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert int(report.summary.iloc[0]["blocked_action_count"]) == 0
+    assert report.summary.iloc[0]["next_gate"] == ""
+    assert report.summary.iloc[0]["primary_action_status"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
     assert report.config["guard_failed_checks"] == ["orders_sent"]
     assert report.config["failed_check_count"] == 0
     assert report.config["failed_checks"] == []
     assert report.config["primary_blocker"] == {}
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_gate"] == ""
+    assert report.config["primary_action"] == {}
+    assert report.config["next_actions"] == []
+    assert report.config["blocked_actions"] == []
     assert report.config["strategy"] == "lead_lag_taker"
     assert report.config["market"] == "india_nse_index_derivatives"
     assert report.config["proof_freshness"] == {
@@ -149,6 +163,12 @@ def test_halt_response_fails_when_guard_not_halted_by_default():
     assert report.config["failed_check_count"] == len(failed)
     assert report.config["primary_blocker"]["check"] == "guard_halted"
     assert not report.config["primary_blocker"]["passed"]
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "component"] == "runtime_guard"
+    assert report.action_queue.loc[0, "next_gate"] == "monitor-scaleup-guard"
+    assert report.config["primary_action"]["check"] == "guard_halted"
+    assert report.summary.iloc[0]["primary_blocker_check"] == "guard_halted"
+    assert report.summary.iloc[0]["next_gate"] == "monitor-scaleup-guard"
 
 
 def test_write_halt_response_plan_outputs_artifacts(tmp_path):
@@ -174,18 +194,26 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_flatten_orders.csv").exists()
     assert (out_dir / "halt_response_checks.csv").exists()
     assert (out_dir / "halt_response_summary.csv").exists()
+    assert (out_dir / "halt_response_action_queue.csv").exists()
+    assert (out_dir / "halt_response_runbook.md").exists()
     assert (out_dir / "halt_response_config.json").exists()
     assert (out_dir / "manifest.json").exists()
     saved_config = json.loads((out_dir / "halt_response_config.json").read_text(encoding="utf-8"))
     assert saved_config["guard_failed_checks"] == ["orders_sent"]
     assert saved_config["failed_check_count"] == 0
     assert saved_config["primary_blocker"] == {}
+    assert saved_config["action_queue_count"] == 0
+    assert saved_config["next_actions"] == []
     assert saved_config["proof_freshness"]["strategy"] == "lead_lag_taker"
     assert saved_config["proof_freshness"]["ready"]
     saved_summary = pd.read_csv(out_dir / "halt_response_summary.csv")
     assert saved_summary.loc[0, "guard_failed_check_names"] == "orders_sent"
     assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
     assert bool(saved_summary.loc[0, "proof_refresh_ready"])
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    assert (out_dir / "halt_response_runbook.md").read_text(encoding="utf-8").startswith(
+        "# Halt Response Runbook"
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {"guard_summary", "guard_checks", "open_orders", "positions"} <= set(manifest["inputs"])
     assert path_tail(manifest["inputs"]["guard_summary"]["path"]).endswith(
@@ -196,6 +224,9 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     )
     assert path_tail(manifest["inputs"]["open_orders"]["path"]).endswith("/open_orders.csv")
     assert path_tail(manifest["inputs"]["positions"]["path"]).endswith("/positions.csv")
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("halt_response_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("halt_response_runbook.md") for path in artifact_paths)
 
 
 def test_cli_halt_response_can_fail_on_missing_flatten_price(tmp_path):
@@ -216,9 +247,52 @@ def test_cli_halt_response_can_fail_on_missing_flatten_price(tmp_path):
             "--out",
             str(out_dir),
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "halt_response_summary.csv")
+    queue = pd.read_csv(out_dir / "halt_response_action_queue.csv")
+    saved_config = json.loads((out_dir / "halt_response_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert int(summary.loc[0, "failed_checks"]) == 1
+    assert int(summary.loc[0, "failed_check_count"]) == 1
+    assert summary.loc[0, "failed_check_names"] == "flatten_prices_available"
+    assert summary.loc[0, "primary_blocker_check"] == "flatten_prices_available"
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert summary.loc[0, "next_gate"] == "plan-halt-response"
+    assert queue.loc[0, "component"] == "flatten_price_inputs"
+    assert queue.loc[0, "check"] == "flatten_prices_available"
+    assert queue.loc[0, "next_gate"] == "plan-halt-response"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-halt-response --help"
+    assert saved_config["primary_action"]["check"] == "flatten_prices_available"
+    assert saved_config["blocked_actions"][0]["component"] == "flatten_price_inputs"
+    assert "flatten_prices_available" in (out_dir / "halt_response_runbook.md").read_text(encoding="utf-8")
+
+
+def test_cli_halt_response_can_fail_on_actions(tmp_path):
+    guard_dir = tmp_path / "guard"
+    out_dir = tmp_path / "response"
+    positions_path = tmp_path / "positions.csv"
+    guard_dir.mkdir()
+    guard_summary().to_csv(guard_dir / "runtime_guard_summary.csv", index=False)
+    pd.DataFrame([{"instrument_id": "NIFTY_C_22000", "net_qty": 75}]).to_csv(positions_path, index=False)
+
+    code = main(
+        [
+            "plan-halt-response",
+            "--guard",
+            str(guard_dir),
+            "--positions",
+            str(positions_path),
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+
+    queue = pd.read_csv(out_dir / "halt_response_action_queue.csv")
+    assert code == 2
+    assert len(queue) == 1
+    assert queue.loc[0, "check"] == "flatten_prices_available"

@@ -58,6 +58,21 @@ FLATTEN_COLUMNS = [
 
 TERMINAL_STATUSES = {"filled", "cancelled", "canceled", "rejected", "expired", "complete", "closed"}
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
 
 @dataclass(frozen=True)
 class HaltResponseConfig:
@@ -75,6 +90,7 @@ class HaltResponseReport:
     summary: pd.DataFrame
     config: dict[str, Any]
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -100,8 +116,14 @@ def evaluate_halt_response(
     cancel_orders = _cancel_actions(open_orders, guard_context)
     flatten_orders = _flatten_actions(positions, config, guard_context)
     checks = _checks(guard_row, cancel_orders, flatten_orders, config)
-    summary = _summary(guard_row, cancel_orders, flatten_orders, checks, guard_context)
+    action_queue = _action_queue(checks)
+    summary = _summary_with_actions(
+        _summary(guard_row, cancel_orders, flatten_orders, checks, guard_context),
+        checks,
+        action_queue,
+    )
     failed_check_records = _failed_check_records(checks)
+    action_statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
     response_config = {
         **asdict(config),
         "strategy": guard_context["strategy"],
@@ -109,6 +131,18 @@ def evaluate_halt_response(
         "failed_check_count": len(failed_check_records),
         "failed_checks": [str(record.get("check", "")) for record in failed_check_records],
         "primary_blocker": failed_check_records[0] if failed_check_records else {},
+        "action_queue_count": int(len(action_queue)),
+        "ready_action_count": int((action_statuses == "ready").sum()) if not action_statuses.empty else 0,
+        "blocked_action_count": int((action_statuses == "blocked").sum()) if not action_statuses.empty else 0,
+        "review_action_count": int((action_statuses == "review").sum()) if not action_statuses.empty else 0,
+        "next_gate": _first_action_value(action_queue, "next_gate"),
+        "next_gate_help_command": _first_action_value(action_queue, "next_gate_help_command"),
+        "primary_action_status": _first_action_value(action_queue, "queue_status"),
+        "primary_action": _first_action_record(action_queue),
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _actions_with_status(action_queue, "ready"),
+        "blocked_actions": _actions_with_status(action_queue, "blocked"),
+        "review_actions": _actions_with_status(action_queue, "review"),
         "guard_failed_checks": guard_context["failed_check_names"],
         "guard_failed_check_reasons": guard_context["failed_check_reasons"],
         "proof_freshness": _proof_freshness_config(guard_context),
@@ -119,6 +153,7 @@ def evaluate_halt_response(
         checks=checks,
         summary=summary,
         config=response_config,
+        action_queue=action_queue,
     )
 
 
@@ -152,6 +187,12 @@ def write_halt_response_plan(
     report.flatten_orders.to_csv(out / "halt_flatten_orders.csv", index=False)
     report.checks.to_csv(out / "halt_response_checks.csv", index=False)
     report.summary.to_csv(out / "halt_response_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks)
+    action_queue.to_csv(out / "halt_response_action_queue.csv", index=False)
+    (out / "halt_response_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     (out / "halt_response_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -174,6 +215,7 @@ def write_halt_response_plan(
         report.summary,
         report.config,
         out,
+        action_queue,
     )
 
 
@@ -328,7 +370,9 @@ def _summary(
     checks: pd.DataFrame,
     guard_context: dict[str, object],
 ) -> pd.DataFrame:
-    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
+    failed_rows = _failed_check_rows(checks)
+    primary_blocker = _first_failed_check(failed_rows)
+    failed = int(len(failed_rows)) if not checks.empty else 1
     ready = failed == 0
     action_count = int(len(cancel_orders) + len(flatten_orders))
     recommendation = "do_not_execute_response_until_inputs_fixed"
@@ -347,6 +391,14 @@ def _summary(
                 "flatten_orders": int(len(flatten_orders)),
                 "open_risk_items": action_count,
                 "failed_checks": failed,
+                "failed_check_count": failed,
+                "failed_check_names": _failed_check_names(failed_rows),
+                "first_failed_reason": _check_reason(primary_blocker),
+                "primary_blocker_check": _check_name(primary_blocker),
+                "primary_blocker_value": _check_value(primary_blocker, "value"),
+                "primary_blocker_operator": _check_value(primary_blocker, "operator"),
+                "primary_blocker_threshold": _check_value(primary_blocker, "threshold"),
+                "primary_blocker_reason": _check_reason(primary_blocker),
                 "guard_failed_check_names": guard_context["failed_check_names_text"],
                 "guard_first_failed_reason": guard_context["first_failed_reason"],
                 "guard_failed_check_reasons": guard_context["failed_check_reasons_text"],
@@ -357,6 +409,224 @@ def _summary(
             }
         ]
     )
+
+
+def _summary_with_actions(
+    summary: pd.DataFrame,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+) -> pd.DataFrame:
+    out = summary.copy()
+    failed = _failed_check_rows(checks)
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["failed_check_count"] = int(len(failed))
+    out["failed_check_names"] = _failed_check_names(failed)
+    out["first_failed_reason"] = _check_reason(_first_failed_check(failed))
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
+def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    for _, row in _failed_check_rows(checks).iterrows():
+        check = _check_name(row)
+        next_gate = _next_gate(check)
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "halt_response_checks",
+                "component": _component(check),
+                "check": check,
+                "actual": row.get("value"),
+                "operator": _check_value(row, "operator"),
+                "expected": row.get("threshold"),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
+                "reason": _check_reason(row),
+                "recommendation": _action_recommendation(check),
+            }
+        )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _component(check: str) -> str:
+    if check == "guard_halted":
+        return "runtime_guard"
+    if check == "flatten_prices_available":
+        return "flatten_price_inputs"
+    if check == "cancel_actions_available":
+        return "cancel_actions"
+    if check == "response_plan_coherent":
+        return "halt_response"
+    return "halt_response"
+
+
+def _next_gate(check: str) -> str:
+    if check == "guard_halted":
+        return "monitor-scaleup-guard"
+    if check in {"flatten_prices_available", "cancel_actions_available", "response_plan_coherent"}:
+        return "plan-halt-response"
+    return "plan-halt-response"
+
+
+def _action_recommendation(check: str) -> str:
+    if check == "guard_halted":
+        return "rerun_runtime_guard_or_allow_continue_guard"
+    if check == "flatten_prices_available":
+        return "supply_executable_flatten_prices_or_allow_missing_flatten_prices"
+    if check == "cancel_actions_available":
+        return "repair_cancel_action_inputs"
+    if check == "response_plan_coherent":
+        return "repair_or_rerun_halt_response_plan"
+    return "repair_halt_response_inputs"
+
+
+def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary.get("ready", False)) else "no"
+    lines = [
+        "# Halt Response Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Strategy: {_clean(summary.get('strategy'))}",
+        f"- Market: {_clean(summary.get('market'))}",
+        f"- Scenario: {_clean(summary.get('scenario_key'))}",
+        f"- Adapter: {_clean(summary.get('adapter'))}",
+        f"- Guard action: {_clean(summary.get('guard_action'))}",
+        f"- Guard failed checks: {_clean(summary.get('guard_failed_check_names'))}",
+        f"- Cancel orders: {_int_value(summary.get('cancel_orders'))}",
+        f"- Flatten orders: {_int_value(summary.get('flatten_orders'))}",
+        f"- Open risk items: {_int_value(summary.get('open_risk_items'))}",
+        f"- Failed checks: {_int_value(summary.get('failed_check_count'))}",
+        f"- Blocked actions: {_int_value(summary.get('blocked_action_count'))}",
+        f"- Recommendation: {_clean(summary.get('recommendation'))}",
+        f"- Primary next gate: {_code(summary.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No halt-response actions."
+    rows = [
+        "| priority | status | component | check | actual | expected | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _clean(item.get("priority")),
+                    _clean(item.get("queue_status")),
+                    _clean(item.get("component")),
+                    _clean(item.get("check")),
+                    _clean(item.get("actual")),
+                    _clean(item.get("expected")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _clean(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_check_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> list[dict[str, object]]:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return []
+    rows = action_queue.loc[action_queue["queue_status"].astype(str) == status]
+    return [_jsonable_check_record(row) for row in rows.to_dict(orient="records")]
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_check_record(dict(action_queue.iloc[0]))
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _clean(action_queue.iloc[0].get(column))
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _clean(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _clean(value)
+    return f"`{text}`" if text else ""
+
+
+def _int_value(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
+    if checks.empty or "passed" not in checks.columns:
+        return checks.iloc[:0].copy()
+    return checks.loc[~checks["passed"].map(_to_bool)].copy().reset_index(drop=True)
+
+
+def _first_failed_check(failed_rows: pd.DataFrame) -> pd.Series:
+    if failed_rows.empty:
+        return pd.Series(dtype=object)
+    return failed_rows.iloc[0]
+
+
+def _failed_check_names(failed_rows: pd.DataFrame) -> str:
+    names = [_check_name(row) for _, row in failed_rows.iterrows()]
+    return ";".join(name for name in names if name)
+
+
+def _check_name(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    return _clean(row.get("check"))
+
+
+def _check_value(row: pd.Series, column: str) -> str:
+    if row.empty:
+        return ""
+    return _clean(row.get(column))
+
+
+def _check_reason(row: pd.Series) -> str:
+    if row.empty:
+        return ""
+    return _clean(row.get("reason"))
 
 
 def _require_guard_summary(summary: pd.DataFrame) -> pd.DataFrame:

@@ -1681,6 +1681,8 @@ def main(argv: list[str] | None = None) -> int:
     halt_response.add_argument("--default-order-type", default="LIMIT")
     halt_response.add_argument("--default-time-in-force", default="DAY")
     halt_response.add_argument("--fail-on-breach", action="store_true")
+    halt_response.add_argument("--fail-on-blocked-actions", action="store_true")
+    halt_response.add_argument("--fail-on-actions", action="store_true")
 
     runtime_session = sub.add_parser(
         "monitor-runtime-session",
@@ -3933,7 +3935,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "monitor-runtime-session":
         result = write_runtime_session_monitor(
             scaleup_dir=args.scaleup,
