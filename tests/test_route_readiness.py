@@ -84,6 +84,9 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert review.config["next_actions"][0]["next_gate"] == "live_dryrun_route_review"
     assert review.config["ready_actions"][0]["strategy"] == "microprice_imbalance"
     assert review.config["blocked_actions"] == []
+    assert review.action_queue is not None
+    assert list(review.action_queue["queue_status"]) == ["ready"]
+    assert review.action_queue.loc[0, "next_gate"] == "live_dryrun_route_review"
 
 
 def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
@@ -127,6 +130,11 @@ def test_route_readiness_blocks_ops_evidence_without_file_input_gate():
     assert review.config["ready_actions"] == []
     assert review.config["blocked_actions"][0]["queue_status"] == "blocked"
     assert review.config["blocked_actions"][0]["next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
+    assert review.action_queue is not None
+    assert list(review.action_queue["queue_status"]) == ["blocked"]
+    assert review.action_queue.loc[0, "next_gate"] == (
         "review-strategy-evidence --profile ops_launch --require-file-inputs"
     )
 
@@ -235,6 +243,8 @@ def test_write_route_readiness_outputs_files_and_manifest(tmp_path):
     queue = pd.read_csv(out_dir / "route_readiness_action_queue.csv")
     config = json.loads((out_dir / "route_readiness_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "route_readiness_runbook.md").read_text(encoding="utf-8")
+    assert review.action_queue is not None
+    assert len(review.action_queue) == len(queue)
     assert config["ready"]
     assert config["route_ready_pairs"][0]["route_ready"]
     assert config["ready_action_count"] == 1
@@ -257,6 +267,39 @@ def test_write_route_readiness_outputs_files_and_manifest(tmp_path):
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "route_readiness_action_queue.csv" in artifact_paths
     assert "route_readiness_runbook.md" in artifact_paths
+
+    blocked_dir = tmp_path / "route_readiness_ready_blocked_gate"
+    actions_dir = tmp_path / "route_readiness_ready_action_gate"
+    blocked_code = main(
+        [
+            "review-route-readiness",
+            "--portability",
+            str(portability_dir),
+            "--strategy-evidence",
+            str(strategy_dir),
+            "--ops-evidence",
+            str(ops_dir),
+            "--out",
+            str(blocked_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "review-route-readiness",
+            "--portability",
+            str(portability_dir),
+            "--strategy-evidence",
+            str(strategy_dir),
+            "--ops-evidence",
+            str(ops_dir),
+            "--out",
+            str(actions_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 0
+    assert actions_code == 2
 
 
 def test_cli_route_readiness_fails_on_missing_ops_evidence_when_requested(tmp_path):
@@ -289,3 +332,32 @@ def test_cli_route_readiness_fails_on_missing_ops_evidence_when_requested(tmp_pa
     assert code == 2
     pairs = pd.read_csv(out_dir / "route_readiness_pairs.csv")
     assert pairs.loc[0, "status"] == "ops_evidence_missing"
+
+    blocked_dir = tmp_path / "route_readiness_blocked_gate"
+    actions_dir = tmp_path / "route_readiness_action_gate"
+    blocked_code = main(
+        [
+            "review-route-readiness",
+            "--portability",
+            str(portability_dir),
+            "--strategy-evidence",
+            str(strategy_dir),
+            "--out",
+            str(blocked_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "review-route-readiness",
+            "--portability",
+            str(portability_dir),
+            "--strategy-evidence",
+            str(strategy_dir),
+            "--out",
+            str(actions_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 2
+    assert actions_code == 2

@@ -19,6 +19,7 @@ class RouteReadinessReview:
     pairs: pd.DataFrame
     gaps: pd.DataFrame
     summary: pd.DataFrame
+    action_queue: pd.DataFrame | None = None
     output_dir: Path | None = None
     config: dict[str, Any] | None = None
 
@@ -52,7 +53,13 @@ def build_route_readiness_review(
     summary = _summary(pairs, gaps, require_ops_file_inputs=require_ops_file_inputs)
     action_queue = _action_queue(pairs)
     config = _config(pairs, gaps, summary, action_queue, market_portability_config, require_ops_file_inputs)
-    return RouteReadinessReview(pairs=pairs, gaps=gaps, summary=summary, config=config)
+    return RouteReadinessReview(
+        pairs=pairs,
+        gaps=gaps,
+        summary=summary,
+        action_queue=action_queue,
+        config=config,
+    )
 
 
 def write_route_readiness_review(
@@ -79,7 +86,7 @@ def write_route_readiness_review(
     review.pairs.to_csv(out / "route_readiness_pairs.csv", index=False)
     review.gaps.to_csv(out / "route_readiness_gaps.csv", index=False)
     review.summary.to_csv(out / "route_readiness_summary.csv", index=False)
-    action_queue = _action_queue(review.pairs)
+    action_queue = review.action_queue if review.action_queue is not None else _action_queue(review.pairs)
     action_queue.to_csv(out / "route_readiness_action_queue.csv", index=False)
     (out / "route_readiness_runbook.md").write_text(
         _runbook_markdown(review.summary.iloc[0], review.pairs, review.gaps, action_queue),
@@ -99,7 +106,14 @@ def write_route_readiness_review(
             "ops_evidence_summaries": ops_paths,
         },
     )
-    return RouteReadinessReview(review.pairs, review.gaps, review.summary, out, review.config)
+    return RouteReadinessReview(
+        pairs=review.pairs,
+        gaps=review.gaps,
+        summary=review.summary,
+        action_queue=action_queue,
+        output_dir=out,
+        config=review.config,
+    )
 
 
 def _portability_pairs(config: dict[str, Any]) -> list[dict[str, Any]]:

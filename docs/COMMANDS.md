@@ -545,7 +545,8 @@ python -m hft_cli review-route-readiness `
   --strategy-evidence runs\evidence\imbalance_strategy `
   --ops-evidence runs\evidence\imbalance_ops_launch `
   --out runs\evidence\imbalance_route_readiness `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -574,6 +575,9 @@ operator review before live dry-run routing.
 `route_readiness_summary.csv` also carries the primary `next_gate`,
 `next_gate_help_command`, and ready/blocked action counts so `catalog-runs`
 can preserve the route-level scheduler signal.
+Use `--fail-on-blocked-actions` to stop when blocked route actions remain, or
+`--fail-on-actions` when any ready or blocked route handoff should stop the
+scheduler for explicit review.
 
 ## Instrument Metadata Report
 

@@ -213,6 +213,9 @@
   `next_actions`, `ready_actions`, and `blocked_actions`, plus root-level
   `primary_action_status` and `primary_action`, giving schedulers the final
   live-dry-run route handoff without parsing CSV files.
+- `review-route-readiness` can now fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`, matching the scorecard,
+  portfolio, and broker scheduler gates.
 - Scale-up, cutover, and route-enable config JSONs now retain their legacy
   failed-check name lists while adding `failed_check_count` and a structured
   `primary_blocker` record, so launch schedulers can surface the first failed
