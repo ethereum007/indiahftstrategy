@@ -888,6 +888,92 @@ def test_catalog_experiment_runs_recognizes_strategy_portfolio_status(tmp_path):
     assert float(row["summary_allocated_weight"]) == 0.90
 
 
+def test_experiment_catalog_promotes_strategy_portfolio_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    portfolio = root / "strategy_portfolio"
+    portfolio.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "top_profile": "leadlag",
+                "top_strategy": "lead_lag_taker",
+                "top_market": "india_nse_index_derivatives",
+                "action_queue_count": 2,
+                "ready_action_count": 1,
+                "blocked_action_count": 1,
+                "next_gate": "plan-scaleup",
+                "next_gate_help_command": "python -m hft_cli plan-scaleup --help",
+            }
+        ]
+    ).to_csv(portfolio / "strategy_portfolio_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "ready",
+                "source": "strategy_portfolio_allocations",
+                "component": "strategy_portfolio",
+                "check": "profile_allocated:leadlag",
+                "actual": 0.45,
+                "operator": ">",
+                "expected": 0.0,
+                "profile": "leadlag",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "readiness_score": 1.0,
+                "allocation_weight": 0.45,
+                "allocation_notional": 450000.0,
+                "eligibility_reason": "eligible_for_paper_shadow_allocation",
+                "next_gate": "plan-scaleup",
+                "next_gate_help_command": "python -m hft_cli plan-scaleup --help",
+                "reason": "strategy profile has a positive paper/shadow allocation",
+                "recommendation": "review_scaleup_for_allocated_strategy_profile",
+            },
+            {
+                "priority": 2,
+                "queue_status": "blocked",
+                "source": "strategy_portfolio_allocations",
+                "component": "strategy_portfolio",
+                "check": "profile_eligible:imbalance",
+                "actual": False,
+                "operator": "is",
+                "expected": True,
+                "profile": "imbalance",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "readiness_score": 0.4,
+                "allocation_weight": 0.0,
+                "allocation_notional": 0.0,
+                "eligibility_reason": "profile_not_ready",
+                "next_gate": "walkforward-imbalance-replay",
+                "next_gate_help_command": "python -m hft_cli walkforward-imbalance-replay --help",
+                "reason": "profile_not_ready",
+                "recommendation": "complete_strategy_scorecard_evidence_before_allocating",
+            },
+        ]
+    ).to_csv(portfolio / "strategy_portfolio_action_queue.csv", index=False)
+    write_experiment_manifest(
+        portfolio,
+        run_type="strategy_portfolio_allocation",
+        parameters={"allocation": {"deployment_mode": "paper_shadow"}},
+        inputs={},
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"strategy_portfolio_action_queue.csv"}
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 2
+    assert int(report.summary.iloc[0]["action_queue_ready_count"]) == 1
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+    rows = queue.set_index("check")
+    assert rows.loc["profile_allocated:leadlag", "queue_status"] == "ready"
+    assert rows.loc["profile_allocated:leadlag", "next_gate"] == "plan-scaleup"
+    assert rows.loc["profile_eligible:imbalance", "queue_status"] == "blocked"
+    assert rows.loc["profile_eligible:imbalance", "next_gate"] == "walkforward-imbalance-replay"
+
+
 def test_write_experiment_catalog_summarizes_broker_roundtrip_portfolio_proofs(tmp_path):
     root = tmp_path / "runs"
     out_dir = tmp_path / "catalog"

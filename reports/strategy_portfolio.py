@@ -11,6 +11,29 @@ import pandas as pd
 from reports.manifest import write_experiment_manifest
 
 
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "profile",
+    "strategy",
+    "market",
+    "readiness_score",
+    "allocation_weight",
+    "allocation_notional",
+    "eligibility_reason",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
 @dataclass(frozen=True)
 class StrategyPortfolioConfig:
     total_capital: float = 1_000_000.0
@@ -32,6 +55,7 @@ class StrategyPortfolioReport:
     summary: pd.DataFrame
     config: dict[str, Any]
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -50,8 +74,16 @@ def evaluate_strategy_portfolio(
     allocations = _allocations(normalized, config)
     checks = _checks(allocations, config)
     summary = _summary(allocations, checks, config)
-    payload = _config(allocations, checks, summary, config)
-    return StrategyPortfolioReport(allocations=allocations, checks=checks, summary=summary, config=payload)
+    action_queue = _action_queue(allocations, checks)
+    summary = _summary_with_actions(summary, action_queue)
+    payload = _config(allocations, checks, summary, config, action_queue)
+    return StrategyPortfolioReport(
+        allocations=allocations,
+        checks=checks,
+        summary=summary,
+        config=payload,
+        action_queue=action_queue,
+    )
 
 
 def write_strategy_portfolio_allocations(
@@ -69,6 +101,8 @@ def write_strategy_portfolio_allocations(
     report.allocations.to_csv(out / "strategy_portfolio_allocations.csv", index=False)
     report.checks.to_csv(out / "strategy_portfolio_checks.csv", index=False)
     report.summary.to_csv(out / "strategy_portfolio_summary.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.allocations, report.checks)
+    action_queue.to_csv(out / "strategy_portfolio_action_queue.csv", index=False)
     (out / "strategy_portfolio_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -83,7 +117,7 @@ def write_strategy_portfolio_allocations(
         parameters={"allocation": asdict(config)},
         inputs={"strategy_scorecard": scorecard_file},
     )
-    return StrategyPortfolioReport(report.allocations, report.checks, report.summary, report.config, out)
+    return StrategyPortfolioReport(report.allocations, report.checks, report.summary, report.config, out, action_queue)
 
 
 def _normalize_scorecard(scorecard: pd.DataFrame) -> pd.DataFrame:
@@ -302,17 +336,33 @@ def _summary(allocations: pd.DataFrame, checks: pd.DataFrame, config: StrategyPo
     )
 
 
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["next_gate"] = _first_action_value(action_queue, "next_gate")
+    out["next_gate_help_command"] = _first_action_value(action_queue, "next_gate_help_command")
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+    return out
+
+
 def _config(
     allocations: pd.DataFrame,
     checks: pd.DataFrame,
     summary: pd.DataFrame,
     config: StrategyPortfolioConfig,
+    action_queue: pd.DataFrame,
 ) -> dict[str, Any]:
     summary_row = _jsonable_row(summary.iloc[0].to_dict()) if not summary.empty else {}
     failed_checks = [row for row in _records(checks) if not bool(row.get("passed", False))]
     allocation_records = _records(allocations)
     ready_allocations = [row for row in allocation_records if _numeric(row.get("allocation_weight", 0.0)) > 0.0]
     blocked_allocations = [row for row in allocation_records if not bool(row.get("eligible", False))]
+    ready_actions = _actions_with_status(action_queue, "ready")
+    blocked_actions = _actions_with_status(action_queue, "blocked")
+    primary_action = _first_action_record(action_queue)
     primary = failed_checks[0] if failed_checks else {}
     return {
         "schema_version": 1,
@@ -327,6 +377,16 @@ def _config(
         "failed_checks": [str(row.get("check", "")) for row in failed_checks],
         "first_failed_reason": _text(primary.get("reason", "")),
         "primary_blocker": _primary_blocker(primary),
+        "action_queue_count": int(len(action_queue)),
+        "ready_action_count": int(len(ready_actions)),
+        "blocked_action_count": int(len(blocked_actions)),
+        "next_gate": _first_action_value(action_queue, "next_gate"),
+        "next_gate_help_command": _first_action_value(action_queue, "next_gate_help_command"),
+        "primary_action_status": _first_action_value(action_queue, "queue_status"),
+        "primary_action": primary_action,
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(ready_actions),
+        "blocked_actions": _action_records(blocked_actions),
         "allocations": allocation_records,
         "ready_allocations": ready_allocations,
         "blocked_allocations": blocked_allocations,
@@ -420,6 +480,159 @@ def _check(check: str, passed: bool, value: Any, operator: str, threshold: Any, 
     }
 
 
+def _action_queue(allocations: pd.DataFrame, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for _, row in allocations.iterrows():
+        if _numeric(row.get("allocation_weight", 0.0)) > 0.0:
+            rows.append(_allocation_action(row, queue_status="ready"))
+        elif not _bool(row.get("eligible", False)):
+            rows.append(_allocation_action(row, queue_status="blocked"))
+    if not checks.empty and "passed" in checks.columns:
+        failed = checks.loc[~checks["passed"].astype(bool)]
+        for _, row in failed.iterrows():
+            rows.append(_check_action(row))
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _allocation_action(row: pd.Series, *, queue_status: str) -> dict[str, Any]:
+    next_gate = _allocation_next_gate(row, queue_status)
+    return {
+        "queue_status": queue_status,
+        "source": "strategy_portfolio_allocations",
+        "component": "strategy_portfolio",
+        "check": _allocation_check(row, queue_status),
+        "actual": bool(row.get("eligible", False)) if queue_status == "blocked" else row.get("allocation_weight", 0.0),
+        "operator": "is" if queue_status == "blocked" else ">",
+        "expected": True if queue_status == "blocked" else 0.0,
+        "profile": _text(row.get("profile")),
+        "strategy": _text(row.get("strategy")),
+        "market": _text(row.get("market")),
+        "readiness_score": float(_numeric(row.get("readiness_score", 0.0))),
+        "allocation_weight": float(_numeric(row.get("allocation_weight", 0.0))),
+        "allocation_notional": float(_numeric(row.get("allocation_notional", 0.0))),
+        "eligibility_reason": _text(row.get("eligibility_reason")),
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(row, next_gate),
+        "reason": _allocation_reason(row, queue_status),
+        "recommendation": _allocation_recommendation(row, queue_status),
+    }
+
+
+def _check_action(row: pd.Series) -> dict[str, Any]:
+    check = _text(row.get("check"))
+    next_gate = _check_next_gate(check)
+    return {
+        "queue_status": "blocked",
+        "source": "strategy_portfolio_checks",
+        "component": "strategy_portfolio",
+        "check": check,
+        "actual": row.get("value", ""),
+        "operator": _text(row.get("operator")),
+        "expected": row.get("threshold", ""),
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(row, next_gate),
+        "reason": _text(row.get("reason")),
+        "recommendation": _check_recommendation(check),
+    }
+
+
+def _allocation_check(row: pd.Series, queue_status: str) -> str:
+    profile = _text(row.get("profile"))
+    prefix = "profile_allocated" if queue_status == "ready" else "profile_eligible"
+    return f"{prefix}:{profile}" if profile else prefix
+
+
+def _allocation_next_gate(row: pd.Series, queue_status: str) -> str:
+    next_gate = _text(row.get("next_gate"))
+    if next_gate:
+        return next_gate
+    return "plan-scaleup" if queue_status == "ready" else "score-strategy-readiness"
+
+
+def _check_next_gate(check: str) -> str:
+    if check == "eligible_profile_count":
+        return "score-strategy-readiness"
+    if check == "allocated_weight_positive":
+        return "allocate-strategy-portfolio"
+    return "allocate-strategy-portfolio"
+
+
+def _help_command(row: pd.Series, next_gate: str) -> str:
+    explicit = _text(row.get("next_gate_help_command"))
+    if explicit:
+        return explicit
+    return f"python -m hft_cli {next_gate} --help" if next_gate else ""
+
+
+def _allocation_reason(row: pd.Series, queue_status: str) -> str:
+    if queue_status == "ready":
+        return "strategy profile has a positive paper/shadow allocation"
+    reason = _text(row.get("eligibility_reason"))
+    if reason:
+        return reason
+    return "strategy profile is not eligible for allocation"
+
+
+def _allocation_recommendation(row: pd.Series, queue_status: str) -> str:
+    if queue_status == "ready":
+        return "review_scaleup_for_allocated_strategy_profile"
+    reason = _text(row.get("eligibility_reason"))
+    if reason == "profile_not_ready":
+        return "complete_strategy_scorecard_evidence_before_allocating"
+    if reason == "readiness_score_below_threshold":
+        return "improve_strategy_readiness_score_before_allocating"
+    if reason == "profile_not_in_include_filter":
+        return "review_strategy_portfolio_include_filter"
+    if reason == "profile_excluded":
+        return "review_strategy_portfolio_exclusion_filter"
+    return "review_strategy_portfolio_profile_eligibility"
+
+
+def _check_recommendation(check: str) -> str:
+    if check == "eligible_profile_count":
+        return "complete_strategy_scorecard_evidence_before_allocating"
+    if check == "allocated_weight_positive":
+        return "increase_deployable_budget_or_profile_cap"
+    if check in {
+        "total_capital_positive",
+        "reserve_weight_between_0_and_1",
+        "max_profile_weight_between_0_and_1",
+        "min_readiness_score_between_0_and_1",
+        "allocation_mode_supported",
+    }:
+        return "fix_strategy_portfolio_allocation_inputs"
+    return "review_strategy_portfolio_allocation_checks"
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, Any]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_row(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, Any]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_row(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    return _text(action_queue.iloc[0].get(column))
+
+
 def _top_allocation(allocated: pd.DataFrame) -> dict[str, Any]:
     if allocated.empty:
         return {}
@@ -480,6 +693,10 @@ def _runbook_markdown(config: dict[str, Any]) -> str:
         "## Blocked Profiles",
         "",
         _blocked_table(config.get("blocked_allocations", [])),
+        "",
+        "## Scheduler Actions",
+        "",
+        _action_queue_table(config.get("next_actions", [])),
         "",
         "## Failed Checks",
         "",
@@ -543,6 +760,28 @@ def _checks_table(rows: Any) -> str:
                 _text(row.get("value")),
                 _text(row.get("operator")),
                 _text(row.get("threshold")),
+                _text(row.get("reason")),
+            ]
+            for row in records
+            if isinstance(row, dict)
+        ],
+    )
+
+
+def _action_queue_table(rows: Any) -> str:
+    records = rows if isinstance(rows, list) else []
+    if not records:
+        return "_None_"
+    return _markdown_table(
+        ["Priority", "Status", "Check", "Profile", "Next gate", "Help", "Reason"],
+        [
+            [
+                str(_integer(row.get("priority", 0))),
+                _text(row.get("queue_status")),
+                _text(row.get("check")),
+                _text(row.get("profile")),
+                _code(row.get("next_gate")),
+                _code(row.get("next_gate_help_command")),
                 _text(row.get("reason")),
             ]
             for row in records

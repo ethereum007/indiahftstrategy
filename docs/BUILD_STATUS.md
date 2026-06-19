@@ -68,6 +68,10 @@
   conservative paper/shadow capital plan with reserve, per-profile caps,
   checks, config JSON, runbook, manifest, and fail-closed primary blocker
   fields when no strategy lane is eligible.
+- Strategy portfolio allocation now emits
+  `strategy_portfolio_action_queue.csv`, mirrors scheduler action counts and
+  primary action fields in summary/config, and `allocate-strategy-portfolio`
+  can fail closed with `--fail-on-blocked-actions` or `--fail-on-actions`.
 - Controlled scale-up can now require that strategy portfolio allocation,
   select the matching strategy/market allocation row, cap per-session notional
   at the allocated notional, and retain the selected portfolio context in
@@ -1121,7 +1125,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 967 tests.
+Current passing suite: 969 tests.
 
 ## Next Build Targets
 
