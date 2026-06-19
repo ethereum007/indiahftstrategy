@@ -1742,6 +1742,8 @@ def test_write_broker_readiness_outputs_artifacts(tmp_path):
     assert (out_dir / "broker_readiness_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     action_queue = pd.read_csv(out_dir / "broker_readiness_action_queue.csv")
+    assert report.action_queue is not None
+    assert report.action_queue.empty
     assert action_queue.empty
     assert "next_gate_help_command" in action_queue.columns
     runbook = (out_dir / "broker_readiness_runbook.md").read_text(encoding="utf-8")
@@ -2211,6 +2213,8 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     export_dir = tmp_path / "export"
     upload_dir = tmp_path / "upload"
     out_dir = tmp_path / "readiness"
+    blocked_dir = tmp_path / "readiness_blocked"
+    actions_dir = tmp_path / "readiness_actions"
     schema_dir.mkdir()
     export_dir.mkdir()
     upload_dir.mkdir()
@@ -2260,6 +2264,41 @@ def test_cli_broker_readiness_can_fail_on_placeholder_schema(tmp_path):
     assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
     assert "- Ready: no" in runbook
     assert "audit-adapter-schema" in runbook
+
+    blocked_code = main(
+        [
+            "review-broker-readiness",
+            "--adapter",
+            "arrow_money",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--out",
+            str(blocked_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "review-broker-readiness",
+            "--adapter",
+            "arrow_money",
+            "--schema-audit",
+            str(schema_dir),
+            "--order-export",
+            str(export_dir),
+            "--upload-pack",
+            str(upload_dir),
+            "--out",
+            str(actions_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 2
+    assert actions_code == 2
 
 
 def test_cli_broker_readiness_accepts_reviewed_vendor_mapping_without_placeholder_override(tmp_path):

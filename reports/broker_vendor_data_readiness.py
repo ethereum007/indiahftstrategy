@@ -59,6 +59,8 @@ class BrokerVendorDataReadinessReport:
     summary: pd.DataFrame
     checks: pd.DataFrame
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
+    config: dict[str, object] | None = None
 
     @property
     def ready(self) -> bool:
@@ -169,9 +171,10 @@ def write_broker_vendor_data_readiness_pipeline(
     checks.to_csv(out / "broker_vendor_data_readiness_checks.csv", index=False)
     action_queue = _action_queue(checks)
     action_queue.to_csv(out / "broker_vendor_data_readiness_action_queue.csv", index=False)
+    config_payload = _config(summary.iloc[0], components, checks, action_queue, config, broker_thresholds)
     (out / "broker_vendor_data_readiness_config.json").write_text(
         json.dumps(
-            _config(summary.iloc[0], components, checks, action_queue, config, broker_thresholds),
+            config_payload,
             indent=2,
             sort_keys=True,
         )
@@ -210,7 +213,16 @@ def write_broker_vendor_data_readiness_pipeline(
             "broker_readiness": broker_readiness_dir,
         },
     )
-    return BrokerVendorDataReadinessReport(vendor_batch, broker_readiness, components, summary, checks, out)
+    return BrokerVendorDataReadinessReport(
+        vendor_batch,
+        broker_readiness,
+        components,
+        summary,
+        checks,
+        out,
+        action_queue,
+        config_payload,
+    )
 
 
 def _components(

@@ -1025,6 +1025,8 @@ def main(argv: list[str] | None = None) -> int:
     broker_vendor_data_readiness.add_argument("--require-route-readiness", action="store_true")
     broker_vendor_data_readiness.add_argument("--require-dispatch-roundtrip", action="store_true")
     broker_vendor_data_readiness.add_argument("--fail-on-breach", action="store_true")
+    broker_vendor_data_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
+    broker_vendor_data_readiness.add_argument("--fail-on-actions", action="store_true")
 
     diag_ticks = sub.add_parser("diagnose-ticks", help="Run data-quality diagnostics for top-of-book ticks.")
     diag_ticks.add_argument("--ticks", required=True)
@@ -1556,6 +1558,8 @@ def main(argv: list[str] | None = None) -> int:
     broker_readiness.add_argument("--require-route-readiness", action="store_true")
     broker_readiness.add_argument("--require-dispatch-roundtrip", action="store_true")
     broker_readiness.add_argument("--fail-on-breach", action="store_true")
+    broker_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
+    broker_readiness.add_argument("--fail-on-actions", action="store_true")
 
     shadow_session = sub.add_parser("shadow-session-report", help="Gate a full paper/shadow session after reconciliation.")
     shadow_session.add_argument("--launch", required=True)
@@ -3141,7 +3145,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "diagnose-ticks":
         ticks = load_tick_csv(args.ticks, filter_session=not args.no_filter_session, market=args.market).data
         result = write_diagnostics(tick_diagnostics(ticks, tick_size=args.tick_size, market=args.market), args.out)
@@ -3808,7 +3823,18 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "shadow-session-report":
         result = write_shadow_session_report(
             launch_dir=args.launch,

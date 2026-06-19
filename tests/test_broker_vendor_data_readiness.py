@@ -263,6 +263,8 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert (out_dir / "01_vendor_market_data_batch" / "vendor_market_data_batch_config.json").exists()
         assert (out_dir / "02_broker_readiness" / "broker_readiness_config.json").exists()
         action_queue = pd.read_csv(out_dir / "broker_vendor_data_readiness_action_queue.csv")
+        assert report.action_queue is not None
+        assert report.action_queue.empty
         assert action_queue.empty
         assert "next_gate_help_command" in action_queue.columns
         runbook = (out_dir / "broker_vendor_data_readiness_runbook.md").read_text(encoding="utf-8")
@@ -354,6 +356,8 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
             "--allow-placeholder-schema",
             "--require-dispatch-roundtrip",
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
+            "--fail-on-actions",
         ]
     )
 
@@ -382,6 +386,8 @@ def test_cli_broker_vendor_data_readiness_pipeline(tmp_path):
 def test_cli_broker_vendor_data_readiness_blocks_placeholder_schema_without_override(tmp_path):
     paths = write_inputs(tmp_path, "arrow_money")
     out_dir = tmp_path / "proof"
+    blocked_dir = tmp_path / "proof_blocked"
+    actions_dir = tmp_path / "proof_actions"
 
     code = main(
         [
@@ -445,6 +451,75 @@ def test_cli_broker_vendor_data_readiness_blocks_placeholder_schema_without_over
     assert not config["broker_readiness"]["placeholder_schema_allowed"]
     assert "- Placeholder schema allowed: no" in runbook
     assert "placeholder adapter schema requires reviewed vendor mapping before broker readiness" in runbook
+
+    blocked_code = main(
+        [
+            "pipeline-broker-vendor-readiness",
+            "--input",
+            *(str(path) for path in paths["input"]),
+            "--out",
+            str(blocked_dir),
+            "--label",
+            "day1",
+            "--label",
+            "day2",
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-rows",
+            "2",
+            "--schema-audit",
+            str(paths["schema"]),
+            "--order-export",
+            str(paths["export"]),
+            "--upload-pack",
+            str(paths["upload"]),
+            "--dispatch-roundtrip",
+            str(paths["roundtrip"]),
+            "--require-dispatch-roundtrip",
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "pipeline-broker-vendor-readiness",
+            "--input",
+            *(str(path) for path in paths["input"]),
+            "--out",
+            str(actions_dir),
+            "--label",
+            "day1",
+            "--label",
+            "day2",
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-rows",
+            "2",
+            "--schema-audit",
+            str(paths["schema"]),
+            "--order-export",
+            str(paths["export"]),
+            "--upload-pack",
+            str(paths["upload"]),
+            "--dispatch-roundtrip",
+            str(paths["roundtrip"]),
+            "--require-dispatch-roundtrip",
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 2
+    assert actions_code == 2
 
 
 def test_cli_broker_vendor_data_readiness_writes_root_checks_for_bad_vendor_batch(tmp_path):

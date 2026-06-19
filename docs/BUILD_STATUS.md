@@ -154,6 +154,9 @@
   counts, primary next gate/help, and `next_actions`/`ready_actions`/
   `blocked_actions`, plus root-level `primary_action_status` and
   `primary_action`, giving schedulers one JSON handoff for broker blockers.
+- `review-broker-readiness` can now fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`, matching the broker
+  dispatch gate family exit-code contract.
 - Broker-vendor data readiness now writes manifest-tracked action queue and
   runbook handoffs so Arrow.money/iRage vendor-batch, broker-readiness, and
   wrapper failures expose next CLI gates at the proof root.
@@ -162,6 +165,9 @@
   `blocked_actions`, plus root-level `primary_action_status` and
   `primary_action`, so schedulers can consume wrapper blockers without parsing
   CSV files.
+- `pipeline-broker-vendor-readiness` now exposes the same
+  `--fail-on-blocked-actions` and `--fail-on-actions` scheduler gates for
+  Arrow.money/iRage vendor-data proof runs.
 - Data readiness and comparison config JSONs now expose root-level
   `primary_action_status` and `primary_action` fields next to the existing
   next-gate aliases, giving Arrow.money/iRage data schedulers the selected

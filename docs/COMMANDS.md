@@ -2247,6 +2247,7 @@ python -m hft_cli review-broker-readiness `
   --require-resume-gate `
   --require-route-readiness `
   --require-dispatch-roundtrip `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -2351,7 +2352,9 @@ gate, and `next_gate_help_command` for runner or operator handoff.
 without parsing the CSV.
 `broker_readiness_runbook.md` is a human-readable handoff generated from the
 same summary, component, and action-queue data and is fingerprinted in the
-manifest.
+manifest. Use `--fail-on-blocked-actions` to stop automation only when blocked
+broker-readiness actions exist, or `--fail-on-actions` when any readiness
+handoff action should stop the run.
 
 ## Broker Fill Reconciliation
 
@@ -4067,6 +4070,7 @@ python -m hft_cli pipeline-broker-vendor-readiness `
   --dispatch-roundtrip runs\broker_dispatch_roundtrip `
   --allow-placeholder-schema `
   --require-dispatch-roundtrip `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -4098,7 +4102,9 @@ next-gate handoffs for vendor batch, broker-readiness, or wrapper reruns.
 `next_gate_help_command`, `next_actions`, `ready_actions`, `blocked_actions`,
 `primary_action_status`, and `primary_action`, plus `failed_check_count`,
 `failed_checks`, `first_failed_reason`, and structured `primary_blocker`, so
-schedulers can read the wrapper handoff from JSON.
+schedulers can read the wrapper handoff from JSON. Use
+`--fail-on-blocked-actions` to stop on blocked broker/vendor handoff work, or
+`--fail-on-actions` to stop whenever the wrapper queues any action.
 Launch and broker-readiness commands honor the wrapper root's own
 `broker_vendor_data_readiness_config.json`, so a failed wrapper root cannot be
 masked by a valid nested vendor batch. Scale-up also hydrates the same wrapper

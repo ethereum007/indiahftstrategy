@@ -79,6 +79,7 @@ class BrokerReadinessReport:
     summary: pd.DataFrame
     output_dir: Path | None = None
     config: dict[str, Any] | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -124,7 +125,13 @@ def evaluate_broker_readiness(
     summary = _summary(items, checks, thresholds)
     action_queue = _action_queue(checks)
     config = _config(items, checks, summary, action_queue, thresholds)
-    return BrokerReadinessReport(items=items, checks=checks, summary=summary, config=config)
+    return BrokerReadinessReport(
+        items=items,
+        checks=checks,
+        summary=summary,
+        config=config,
+        action_queue=action_queue,
+    )
 
 
 def write_broker_readiness_report(
@@ -230,7 +237,7 @@ def write_broker_readiness_report(
     report.items.to_csv(out / "broker_readiness_items.csv", index=False)
     report.checks.to_csv(out / "broker_readiness_checks.csv", index=False)
     report.summary.to_csv(out / "broker_readiness_summary.csv", index=False)
-    action_queue = _action_queue(report.checks)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.checks)
     action_queue.to_csv(out / "broker_readiness_action_queue.csv", index=False)
     (out / "broker_readiness_config.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
@@ -252,6 +259,7 @@ def write_broker_readiness_report(
         summary=report.summary,
         output_dir=out,
         config=report.config,
+        action_queue=action_queue,
     )
 
 
