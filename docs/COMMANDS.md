@@ -3686,7 +3686,14 @@ closed when dispatch notional exceeds the selected paper/shadow allocation.
 keeps paper/shadow acknowledgement reviews equally strict.
 It carries the dispatch config broker schema review status/mode,
 route-readiness proof, `shadow_broker_readiness`, and
-`route_broker_shadow_broker_readiness` into the ack summary/config. If the
+`route_broker_shadow_broker_readiness` into the ack summary/config. The ack
+gate revalidates the dispatch-retained route-readiness ops broker controls
+before accepted acknowledgement evidence can advance: direct route proof must
+retain launch controls and zero allocation or concentration breach pairs, and
+broker-carried route proof must retain clean launch-control, allocation-safe,
+and concentration-OK dry-run counts. The ack artifacts preserve these controls
+as `route_readiness_*` and `route_broker_route_readiness` fields in
+`broker_dispatch_ack_summary.csv` and `broker_dispatch_ack_config.json`. If the
 sender config retained the shadow-broker broker-vendor wrapper aggregate, the
 ack gate revalidates per-session wrapper coverage and carries it as
 `shadow_broker_vendor_data_readiness_*` plus nested

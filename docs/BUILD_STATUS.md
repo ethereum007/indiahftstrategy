@@ -151,6 +151,10 @@
 - Broker dispatch acknowledgement reconciliation now also preserves
   dispatch-retained strategy portfolio concentration context in ack
   summary/config artifacts before round-trip proof review.
+- Broker dispatch acknowledgement reconciliation now revalidates
+  dispatch-retained route-readiness ops broker controls before accepted ack
+  evidence advances, preserving direct breach counters and broker-carried
+  route proof in ack summary/config artifacts.
 - Broker dispatch acknowledgement reconciliation now emits manifest-tracked
   `broker_dispatch_ack_action_queue.csv` and
   `broker_dispatch_ack_runbook.md` scheduler handoffs, routing missing,
