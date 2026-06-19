@@ -2788,7 +2788,8 @@ python -m hft_cli monitor-runtime-session `
   --out runs\runtime_sessions\leadlag_shadow_latest `
   --as-of-ts-ns 1781248200000000000 `
   --max-telemetry-age-ns 5000000000 `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -2799,6 +2800,9 @@ Outputs:
 03_halt_response\halt_response_summary.csv
 runtime_session_steps.csv
 runtime_session_summary.csv
+runtime_session_action_queue.csv
+runtime_session_config.json
+runtime_session_runbook.md
 manifest.json
 ```
 
@@ -2815,6 +2819,17 @@ evaluation. When scale-up uses strategy portfolio allocation, the session
 steps and summary also retain `strategy_portfolio_*` fields, including selected
 strategy/market, eligibility, allocation weight/notional, pre-cap notional, and
 whether the portfolio cap constrained session notional.
+`runtime_session_summary.csv` and `runtime_session_config.json` also expose
+`failed_check_count`, `failed_check_names`, `first_failed_reason`,
+`primary_blocker_*`, `action_queue_count`, `ready_action_count`,
+`blocked_action_count`, `next_gate`, `next_gate_help_command`, and
+`primary_action_status`. `runtime_session_action_queue.csv` and
+`runtime_session_runbook.md` hand off blocked telemetry repairs back to
+`monitor-runtime-session`, skipped or failed halt-response packets back to
+`plan-halt-response`, and ready halt packets forward to
+`export-halt-response`. Use `--fail-on-actions` to fail on any queued runtime
+action, or `--fail-on-blocked-actions` to fail only when runtime-session
+actions are blocked.
 The top-level `manifest.json` fingerprints the resolved scale-up config,
 runtime source snapshots, telemetry artifacts, guard artifacts, child
 manifests, and halt-response artifacts when a halt packet is created, so the

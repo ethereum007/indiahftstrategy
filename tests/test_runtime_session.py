@@ -174,11 +174,21 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
     assert not (out_dir / "03_halt_response").exists()
     assert (out_dir / "runtime_session_steps.csv").exists()
     assert (out_dir / "runtime_session_summary.csv").exists()
+    assert (out_dir / "runtime_session_action_queue.csv").exists()
+    assert (out_dir / "runtime_session_config.json").exists()
+    assert (out_dir / "runtime_session_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     assert report.summary.loc[0, "guard_action"] == "continue"
     assert report.summary.loc[0, "target_mode"] == "shadow"
     assert report.summary.loc[0, "strategy"] == "surface_mm"
     assert report.summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert int(report.summary.loc[0, "action_queue_count"]) == 0
+    assert int(report.summary.loc[0, "blocked_action_count"]) == 0
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert report.config is not None
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
     assert report.steps["step"].tolist() == ["telemetry", "runtime_guard"]
     assert set(report.steps["strategy"]) == {"surface_mm"}
     assert set(report.steps["market"]) == {"india_nse_index_derivatives"}
@@ -203,6 +213,10 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
         "/session/02_guard/runtime_guard_summary.csv"
     )
     assert "halt_response_summary" not in manifest["inputs"]
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("runtime_session_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("runtime_session_config.json") for path in artifact_paths)
+    assert any(path.endswith("runtime_session_runbook.md") for path in artifact_paths)
 
 
 def test_runtime_session_monitor_carries_proof_refresh_state(tmp_path):
@@ -318,14 +332,26 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     summary = pd.read_csv(out_dir / "runtime_session_summary.csv")
     steps = pd.read_csv(out_dir / "runtime_session_steps.csv")
     response = pd.read_csv(out_dir / "03_halt_response" / "halt_response_summary.csv")
+    queue = pd.read_csv(out_dir / "runtime_session_action_queue.csv")
+    config = json.loads((out_dir / "runtime_session_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "halt_response_created"])
     assert bool(summary.loc[0, "halt_response_ready"])
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "ready_action_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 0
+    assert summary.loc[0, "next_gate"] == "export-halt-response"
     assert summary.loc[0, "target_mode"] == "shadow"
     assert summary.loc[0, "strategy"] == "surface_mm"
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert summary.loc[0, "guard_failed_check_names"] == "open_order_count"
+    assert queue.loc[0, "queue_status"] == "ready"
+    assert queue.loc[0, "component"] == "halt_response"
+    assert queue.loc[0, "check"] == "guard_halted"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
+    assert config["primary_action"]["check"] == "guard_halted"
+    assert config["ready_actions"][0]["next_gate"] == "export-halt-response"
     assert steps.loc[1, "failed_check_names"] == "open_order_count"
     assert set(steps["strategy"]) == {"surface_mm"}
     assert set(steps["market"]) == {"india_nse_index_derivatives"}
@@ -341,6 +367,8 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
         "halt_flatten_orders",
         "halt_response_checks",
         "halt_response_summary",
+        "halt_response_action_queue",
+        "halt_response_runbook",
         "halt_response_config",
         "halt_response_manifest",
     } <= set(manifest["inputs"])
@@ -349,6 +377,38 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     assert path_tail(manifest["inputs"]["halt_response_summary"]["path"]).endswith(
         "/session/03_halt_response/halt_response_summary.csv"
     )
+    assert "guard_halted" in (out_dir / "runtime_session_runbook.md").read_text(encoding="utf-8")
+
+
+def test_cli_runtime_session_monitor_can_fail_on_actions(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    out_dir = tmp_path / "session"
+    open_orders_path = tmp_path / "open_orders.csv"
+    positions_path = tmp_path / "positions.csv"
+    write_scaleup_dir(scaleup_dir, scaleup_config(max_open_order_count=0))
+    open_orders().to_csv(open_orders_path, index=False)
+    positions().to_csv(positions_path, index=False)
+
+    code = main(
+        [
+            "monitor-runtime-session",
+            "--scaleup",
+            str(scaleup_dir),
+            "--open-orders",
+            str(open_orders_path),
+            "--positions",
+            str(positions_path),
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+
+    queue = pd.read_csv(out_dir / "runtime_session_action_queue.csv")
+    assert code == 2
+    assert len(queue) == 1
+    assert queue.loc[0, "queue_status"] == "ready"
+    assert queue.loc[0, "next_gate"] == "export-halt-response"
 
 
 def test_cli_runtime_session_monitor_halts_on_open_order_notional_limit(tmp_path):

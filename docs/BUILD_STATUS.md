@@ -196,6 +196,11 @@
   packets, adapter mismatches, and cancel/flatten mapping blockers back to
   `plan-halt-response` or `export-halt-response` before broker emergency files
   are trusted.
+- Runtime session monitoring now emits manifest-tracked
+  `runtime_session_action_queue.csv`, `runtime_session_config.json`, and
+  `runtime_session_runbook.md` handoffs, routing blocked telemetry repairs,
+  skipped or failed halt-response packets, and ready halt packets to the next
+  runtime or halt-response CLI gate from the top-level session folder.
 - Halt incident review now emits manifest-tracked
   `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
   routing guard, response, export, and execution blockers to the next recovery
@@ -683,9 +688,9 @@
   evaluation, and automatic halt-response planning into one manifest-backed
   paper/shadow go/no-go artifact, preserving the guard halt trigger and
   strategy/market plus proof-refresh and broker resume-gate identity in the
-  top-level session summary while fingerprinting resolved source snapshots,
-  telemetry/guard child artifacts, child manifests, and optional halt-response
-  artifacts in the session manifest.
+  top-level session summary and scheduler action queue while fingerprinting
+  resolved source snapshots, telemetry/guard child artifacts, child manifests,
+  and optional halt-response artifacts in the session manifest.
 - Halt response planner that converts runtime guard halts into broker-neutral
   cancel-order and flatten-position action files with fail-closed price checks
   and manifests, stamping guard failed check names and first halt reasons onto
@@ -1055,7 +1060,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 955 tests.
+Current passing suite: 956 tests.
 
 ## Next Build Targets
 
