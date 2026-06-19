@@ -102,6 +102,10 @@
 - Adapter schema audits now emit `adapter_schema_review_checklist.csv` so
   Arrow.money/iRage onboarding separates missing-column blockers from
   placeholder-schema and extra-field review tasks.
+- Adapter schema audits now also emit manifest-tracked
+  `adapter_schema_action_queue.csv`, `adapter_schema_config.json`, and
+  `adapter_schema_runbook.md`, making missing vendor fields, placeholder schema
+  review debt, and extra-column classification visible to catalog schedulers.
 - Broker readiness now carries adapter schema review checklist evidence into
   its summary/config and manifest inputs, preserving Arrow.money/iRage schema
   blockers and review tasks through the broker gate.
@@ -985,7 +989,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 925 tests.
+Current passing suite: 927 tests.
 
 ## Next Build Targets
 

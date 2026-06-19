@@ -3606,7 +3606,8 @@ python -m hft_cli audit-adapter-schema `
   --adapter arrow_money `
   --kind ticks `
   --out runs\schema_audit\arrow_ticks_sample `
-  --fail-on-missing
+  --fail-on-missing `
+  --fail-on-blocked-actions
 ```
 
 Supported `--kind` values include `ticks`, `chain`, `orders`, and `fills`.
@@ -3617,6 +3618,9 @@ adapter_schema_summary.csv
 adapter_schema_columns.csv
 adapter_mapping_template.csv
 adapter_schema_review_checklist.csv
+adapter_schema_action_queue.csv
+adapter_schema_config.json
+adapter_schema_runbook.md
 manifest.json
 ```
 
@@ -3630,6 +3634,13 @@ without opening the column-level CSV.
 `adapter_schema_review_checklist.csv` separates hard blockers such as missing
 required columns from review tasks such as classifying extra vendor fields and
 approving replacement Arrow.money/iRage source mappings.
+`adapter_schema_action_queue.csv`, `adapter_schema_config.json`, and
+`adapter_schema_runbook.md` mirror missing-column blockers, placeholder-schema
+review debt, and extra-column review actions with `next_gate`,
+`next_gate_help_command`, `primary_action_status`, `primary_action`, and
+`blocked_actions`/`review_actions`. Use `--fail-on-blocked-actions` to fail
+only on hard schema blockers, or `--fail-on-actions` when any open review task
+should stop the scheduler.
 
 ## Mapped Vendor Data Normalization
 

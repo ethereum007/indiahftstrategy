@@ -2,6 +2,7 @@ import json
 
 import pandas as pd
 
+from adapters.schema_audit import write_adapter_schema_audit
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs, write_experiment_catalog
@@ -178,6 +179,37 @@ def test_experiment_catalog_promotes_vendor_intake_action_queue(tmp_path):
     assert action_plan["blocked_action_count"] == 5
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["check"] == "unmapped_required:ask"
+
+
+def test_experiment_catalog_promotes_adapter_schema_action_queue(tmp_path):
+    sample = tmp_path / "arrow_fills_sample.csv"
+    schema_dir = tmp_path / "schema_audit"
+    catalog_dir = tmp_path / "catalog"
+    pd.DataFrame(
+        columns=["client_order_id", "instrument_id", "ts_fill_ns", "side", "qty", "broker_ref"]
+    ).to_csv(sample, index=False)
+    write_adapter_schema_audit(
+        sample,
+        schema_dir,
+        adapter="arrow_money",
+        kind="fills",
+    )
+
+    report = write_experiment_catalog([schema_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 3
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 2
+    assert set(queue["action_source_file"]) == {"adapter_schema_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "adapter_schema_audit"
+    assert queue.loc[0, "check"] == "missing_required:price"
+    assert queue.loc[0, "component"] == "schema_audit"
+    assert queue.loc[0, "next_gate"] == "audit-adapter-schema"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli audit-adapter-schema --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["check"] == "missing_required:price"
+    assert action_plan["blocked_action_count"] == 2
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):

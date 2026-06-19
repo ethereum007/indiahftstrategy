@@ -883,6 +883,8 @@ def main(argv: list[str] | None = None) -> int:
     schema_audit.add_argument("--adapter", default="normalized")
     schema_audit.add_argument("--kind", default="ticks")
     schema_audit.add_argument("--fail-on-missing", action="store_true")
+    schema_audit.add_argument("--fail-on-blocked-actions", action="store_true")
+    schema_audit.add_argument("--fail-on-actions", action="store_true")
 
     mapped_data = sub.add_parser("normalize-mapped-data", help="Normalize vendor CSV data using a reviewed adapter mapping.")
     mapped_data.add_argument("--input", required=True)
@@ -2876,7 +2878,20 @@ def main(argv: list[str] | None = None) -> int:
             kind=args.kind,
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_missing and not result.passed else 0
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int(
+                (action_queue["queue_status"].astype(str) == "blocked").sum()
+            )
+        if args.fail_on_missing and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "normalize-mapped-data":
         result = write_mapped_data_normalization(
             args.input,
