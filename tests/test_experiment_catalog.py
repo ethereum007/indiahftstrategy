@@ -2192,6 +2192,70 @@ def test_experiment_catalog_promotes_cutover_action_queue(tmp_path):
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
+def test_experiment_catalog_promotes_route_enable_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    route = root / "route_enable"
+    route.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "route_state": "disabled",
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "failed_check_count": 1,
+                "primary_blocker_check": "cutover_ready",
+                "next_gate": "review-cutover-gate",
+                "next_gate_help_command": "python -m hft_cli review-cutover-gate --help",
+                "recommendation": "keep_broker_route_disabled",
+            }
+        ]
+    ).to_csv(route / "route_enable_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "source": "route_enable_checks",
+                "component": "cutover_gate",
+                "check": "cutover_ready",
+                "actual": False,
+                "operator": "is",
+                "expected": True,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "next_gate": "review-cutover-gate",
+                "next_gate_help_command": "python -m hft_cli review-cutover-gate --help",
+                "reason": "cutover gate is not ready",
+                "recommendation": "repair_cutover_gate_before_route_enable",
+            }
+        ]
+    ).to_csv(route / "route_enable_action_queue.csv", index=False)
+    write_experiment_manifest(
+        route,
+        run_type="route_enable_packet",
+        parameters={"target_mode": "live_dryrun"},
+        inputs={},
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"route_enable_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "route_enable_packet"
+    assert queue.loc[0, "component"] == "cutover_gate"
+    assert queue.loc[0, "check"] == "cutover_ready"
+    assert queue.loc[0, "next_gate"] == "review-cutover-gate"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-cutover-gate --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
 def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):
     root = tmp_path / "runs"
     halt = root / "halt_response"

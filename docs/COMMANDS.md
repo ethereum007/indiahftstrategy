@@ -3230,7 +3230,8 @@ python -m hft_cli review-route-enable `
   --require-order-export `
   --require-route-readiness `
   --require-dispatch-roundtrip `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3239,13 +3240,24 @@ Outputs:
 route_enable_packet.csv
 route_enable_checks.csv
 route_enable_summary.csv
+route_enable_action_queue.csv
 route_enable_config.json
+route_enable_runbook.md
 manifest.json
 ```
 
 `route_enable_config.json` keeps the legacy `failed_checks` name list and also
 adds `failed_check_count` plus `primary_blocker`, giving broker-route
-automation one compact blocker record before it reads the full check CSV.
+automation one compact blocker record before it reads the full check CSV. It
+also mirrors `action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, `primary_action_status`, `primary_action`, and the
+`next_actions` arrays from the scheduler queue. `route_enable_action_queue.csv`
+and `route_enable_runbook.md` route failed cutover, upload-pack, order-export,
+route-readiness, dispatch-roundtrip, vendor-data, resume-gate, and identity
+checks to their next CLI gate before broker dispatch planning can proceed. Use
+`--fail-on-blocked-actions` to fail only when blocked route-enable actions
+exist, or `--fail-on-actions` when any route-enable action should stop
+automation.
 
 The packet does not submit orders. It carries the approved target mode,
 strategy, market, scenario, adapter, order limit, notional limit, upload file,

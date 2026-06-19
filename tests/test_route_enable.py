@@ -606,9 +606,16 @@ def test_route_enable_accepts_ready_cutover_and_upload_pack():
     assert packet["adapter"] == "arrow_money"
     assert int(packet["upload_orders"]) == 2
     assert report.summary.iloc[0]["recommendation"] == "enable_broker_route"
+    assert int(report.summary.iloc[0]["failed_check_count"]) == 0
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert report.action_queue is not None
+    assert report.action_queue.empty
     assert report.config["route_enabled"]
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
     assert report.config["upload"]["output_file"] == "broker_upload_orders.csv"
     assert bool(report.summary.iloc[0]["broker_schema_reviewed"])
     assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
@@ -1554,9 +1561,22 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert (out_dir / "route_enable_packet.csv").exists()
     assert (out_dir / "route_enable_checks.csv").exists()
     assert (out_dir / "route_enable_summary.csv").exists()
+    assert (out_dir / "route_enable_action_queue.csv").exists()
     assert (out_dir / "route_enable_config.json").exists()
+    assert (out_dir / "route_enable_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    saved_summary = pd.read_csv(out_dir / "route_enable_summary.csv")
+    saved_config = json.loads((out_dir / "route_enable_config.json").read_text(encoding="utf-8"))
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    assert saved_config["action_queue_count"] == 0
+    assert saved_config["next_actions"] == []
+    assert (out_dir / "route_enable_runbook.md").read_text(encoding="utf-8").startswith(
+        "# Route Enable Runbook"
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {item["path"] for item in manifest["artifacts"]}
+    assert "route_enable_action_queue.csv" in artifact_paths
+    assert "route_enable_runbook.md" in artifact_paths
     assert {"cutover_summary", "cutover_config", "cutover_manifest", "upload_pack", "order_export"} <= set(
         manifest["inputs"]
     )
@@ -1794,9 +1814,45 @@ def test_cli_route_enable_fails_when_cutover_not_ready(tmp_path):
 
     summary = pd.read_csv(out_dir / "route_enable_summary.csv")
     checks = pd.read_csv(out_dir / "route_enable_checks.csv")
+    queue = pd.read_csv(out_dir / "route_enable_action_queue.csv")
+    config = json.loads((out_dir / "route_enable_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "cutover_ready" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert int(summary.loc[0, "action_queue_count"]) >= 1
+    assert int(summary.loc[0, "blocked_action_count"]) >= 1
+    assert summary.loc[0, "next_gate"] == "review-cutover-gate"
+    assert queue.loc[0, "check"] == "cutover_ready"
+    assert queue.loc[0, "component"] == "cutover_gate"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-cutover-gate --help"
+    assert config["primary_action"]["check"] == "cutover_ready"
+
+
+def test_cli_route_enable_can_fail_on_actions(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path, cutover_ready=False)
+    out_dir = tmp_path / "route_enable"
+
+    code = main(
+        [
+            "review-route-enable",
+            "--cutover",
+            str(cutover),
+            "--upload-pack",
+            str(upload),
+            "--order-export",
+            str(export),
+            "--out",
+            str(out_dir),
+            "--require-order-export",
+            "--fail-on-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "route_enable_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "action_queue_count"]) >= 1
+    assert summary.loc[0, "primary_action_status"] == "blocked"
 
 
 def test_cli_route_enable_can_require_dispatch_roundtrip(tmp_path):

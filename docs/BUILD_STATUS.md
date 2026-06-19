@@ -173,6 +173,10 @@
   broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,
   resume-gate, and operator-review checks to their next CLI gate before
   route-enable automation can proceed.
+- Route-enable now emits manifest-tracked `route_enable_action_queue.csv` and
+  `route_enable_runbook.md` handoffs, routing failed cutover, upload-pack,
+  order-export, route-readiness, dispatch-roundtrip, vendor-data, resume-gate,
+  and identity checks before broker dispatch planning can proceed.
 - Broker dispatch, send, acknowledgement, and round-trip config JSONs now
   expose the same `failed_check_count` plus structured `primary_blocker`
   contract, so broker-stage automation can route the first failed dry-run gate
@@ -757,7 +761,8 @@
   cutover-retained broker-readiness vendor market-data batch proof, resolves
   broker upload/export summaries from launch pipeline roots, fingerprints resolved
   cutover/upload/export inputs, and emits the final machine-readable broker
-  route-enable config with a primary blocker record without submitting orders.
+  route-enable config with a primary blocker record plus scheduler action
+  queue/runbook handoff without submitting orders.
 - Broker dispatch planner that binds a route-enable authorization to the exact
   broker upload rows, hashes the route/upload payloads, creates deterministic
   dry-run dispatch IDs, computes upload-row notional, carries broker schema review status/mode plus
@@ -1071,7 +1076,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 960 tests.
+Current passing suite: 962 tests.
 
 ## Next Build Targets
 
