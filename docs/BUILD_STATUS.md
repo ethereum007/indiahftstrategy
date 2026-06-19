@@ -345,6 +345,11 @@
   dispatch round-trip portfolio proof counts, including portfolio-provided,
   portfolio-ready, portfolio-safe, and portfolio-breach runs for Arrow.money or
   iRage dry-run launch review.
+- Experiment catalog summaries, action plans, and runbooks now aggregate final
+  broker round-trip portfolio concentration proof counts, including
+  concentration-present, concentration-ok, and concentration-breach runs when
+  dry-run summaries carry strategy/market allocation-count and max-weight
+  limits.
 - Experiment catalog summaries, action plans, and runbooks now aggregate
   placeholder broker schema state, counting active, allowed, reviewed,
   unreviewed, and blocked placeholder-schema runs so Arrow.money/iRage dry-run

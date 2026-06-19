@@ -317,6 +317,9 @@ def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:
         "broker_roundtrip_portfolio_ready_runs": 0,
         "broker_roundtrip_portfolio_safe_runs": 0,
         "broker_roundtrip_portfolio_breach_runs": 0,
+        "broker_roundtrip_portfolio_concentration_runs": 0,
+        "broker_roundtrip_portfolio_concentration_ok_runs": 0,
+        "broker_roundtrip_portfolio_concentration_breach_runs": 0,
     }
     if catalog.empty or "run_type" not in catalog.columns:
         return keys
@@ -331,6 +334,41 @@ def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:
     valid_allocation = selected_allocation > 0.0
     breach = provided & valid_allocation & (dispatch_notional > selected_allocation)
     safe = provided & ready & passed & valid_allocation & (dispatch_notional <= selected_allocation)
+    min_strategy_count = _numeric_column(frame, "summary_strategy_portfolio_min_strategy_count")
+    min_market_count = _numeric_column(frame, "summary_strategy_portfolio_min_market_count")
+    max_strategy_weight = _numeric_column(frame, "summary_strategy_portfolio_max_strategy_weight")
+    max_market_weight = _numeric_column(frame, "summary_strategy_portfolio_max_market_weight")
+    allocated_strategy_count = _numeric_column(frame, "summary_strategy_portfolio_allocated_strategy_count")
+    allocated_market_count = _numeric_column(frame, "summary_strategy_portfolio_allocated_market_count")
+    max_strategy_allocation_weight = _numeric_column(
+        frame, "summary_strategy_portfolio_max_strategy_allocation_weight"
+    )
+    max_market_allocation_weight = _numeric_column(frame, "summary_strategy_portfolio_max_market_allocation_weight")
+    concentration_provided = (
+        (min_strategy_count > 0.0)
+        | (min_market_count > 0.0)
+        | (max_strategy_weight > 0.0)
+        | (max_market_weight > 0.0)
+        | (allocated_strategy_count > 0.0)
+        | (allocated_market_count > 0.0)
+        | (max_strategy_allocation_weight > 0.0)
+        | (max_market_allocation_weight > 0.0)
+    )
+    concentration = provided & ready & valid_allocation & concentration_provided
+    strategy_count_ok = (min_strategy_count <= 0.0) | (allocated_strategy_count >= min_strategy_count)
+    market_count_ok = (min_market_count <= 0.0) | (allocated_market_count >= min_market_count)
+    strategy_weight_ok = (max_strategy_weight <= 0.0) | (
+        max_strategy_allocation_weight <= max_strategy_weight + 1e-9
+    )
+    market_weight_ok = (max_market_weight <= 0.0) | (max_market_allocation_weight <= max_market_weight + 1e-9)
+    concentration_ok = (
+        concentration
+        & strategy_count_ok
+        & market_count_ok
+        & strategy_weight_ok
+        & market_weight_ok
+    )
+    concentration_breach = concentration & ~concentration_ok
     keys.update(
         {
             "broker_roundtrip_runs": int(len(frame)),
@@ -339,6 +377,9 @@ def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:
             "broker_roundtrip_portfolio_ready_runs": int((provided & ready).sum()),
             "broker_roundtrip_portfolio_safe_runs": int(safe.sum()),
             "broker_roundtrip_portfolio_breach_runs": int(breach.sum()),
+            "broker_roundtrip_portfolio_concentration_runs": int(concentration.sum()),
+            "broker_roundtrip_portfolio_concentration_ok_runs": int(concentration_ok.sum()),
+            "broker_roundtrip_portfolio_concentration_breach_runs": int(concentration_breach.sum()),
         }
     )
     return keys
@@ -662,6 +703,15 @@ def _catalog_action_plan(
         ),
         "broker_roundtrip_portfolio_breach_runs": _int_metric(
             summary_row.get("broker_roundtrip_portfolio_breach_runs")
+        ),
+        "broker_roundtrip_portfolio_concentration_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_concentration_runs")
+        ),
+        "broker_roundtrip_portfolio_concentration_ok_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_concentration_ok_runs")
+        ),
+        "broker_roundtrip_portfolio_concentration_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_portfolio_concentration_breach_runs")
         ),
         "placeholder_schema_active_runs": _int_metric(summary_row.get("placeholder_schema_active_runs")),
         "placeholder_schema_allowed_runs": _int_metric(summary_row.get("placeholder_schema_allowed_runs")),
@@ -1100,6 +1150,18 @@ def _catalog_runbook_markdown(
         (
             "- Portfolio-breach broker round-trip runs: "
             f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_breach_runs'))}"
+        ),
+        (
+            "- Portfolio-concentration broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_concentration_runs'))}"
+        ),
+        (
+            "- Portfolio-concentration-ok broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_concentration_ok_runs'))}"
+        ),
+        (
+            "- Portfolio-concentration-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_concentration_breach_runs'))}"
         ),
         "",
         "## Broker Schema Review",

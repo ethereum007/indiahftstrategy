@@ -993,6 +993,14 @@ def test_write_experiment_catalog_summarizes_broker_roundtrip_portfolio_proofs(t
             "strategy_portfolio_selected_strategy": "lead_lag_taker",
             "strategy_portfolio_selected_market": "india_nse_index_derivatives",
             "strategy_portfolio_selected_allocation_notional": 2000.0,
+            "strategy_portfolio_min_strategy_count": 2,
+            "strategy_portfolio_min_market_count": 1,
+            "strategy_portfolio_max_strategy_weight": 0.60,
+            "strategy_portfolio_max_market_weight": 0.90,
+            "strategy_portfolio_allocated_strategy_count": 2,
+            "strategy_portfolio_allocated_market_count": 1,
+            "strategy_portfolio_max_strategy_allocation_weight": 0.45,
+            "strategy_portfolio_max_market_allocation_weight": 0.80,
         },
     )
     write_run(
@@ -1011,6 +1019,14 @@ def test_write_experiment_catalog_summarizes_broker_roundtrip_portfolio_proofs(t
             "strategy_portfolio_selected_strategy": "lead_lag_taker",
             "strategy_portfolio_selected_market": "india_nse_index_derivatives",
             "strategy_portfolio_selected_allocation_notional": 2000.0,
+            "strategy_portfolio_min_strategy_count": 2,
+            "strategy_portfolio_min_market_count": 1,
+            "strategy_portfolio_max_strategy_weight": 0.60,
+            "strategy_portfolio_max_market_weight": 0.90,
+            "strategy_portfolio_allocated_strategy_count": 1,
+            "strategy_portfolio_allocated_market_count": 1,
+            "strategy_portfolio_max_strategy_allocation_weight": 0.80,
+            "strategy_portfolio_max_market_allocation_weight": 0.80,
         },
     )
 
@@ -1023,19 +1039,29 @@ def test_write_experiment_catalog_summarizes_broker_roundtrip_portfolio_proofs(t
     assert int(summary["broker_roundtrip_portfolio_ready_runs"]) == 2
     assert int(summary["broker_roundtrip_portfolio_safe_runs"]) == 1
     assert int(summary["broker_roundtrip_portfolio_breach_runs"]) == 1
+    assert int(summary["broker_roundtrip_portfolio_concentration_runs"]) == 2
+    assert int(summary["broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
+    assert int(summary["broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
     persisted = pd.read_csv(out_dir / "experiment_catalog_summary.csv")
     assert int(persisted.loc[0, "broker_roundtrip_portfolio_breach_runs"]) == 1
+    assert int(persisted.loc[0, "broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
     action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
     assert action_plan["broker_roundtrip_portfolio_safe_runs"] == 1
     assert action_plan["broker_roundtrip_portfolio_breach_runs"] == 1
+    assert action_plan["broker_roundtrip_portfolio_concentration_ok_runs"] == 1
+    assert action_plan["broker_roundtrip_portfolio_concentration_breach_runs"] == 1
     runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
     assert "## Broker Round-Trip Portfolio Proofs" in runbook
     assert "- Portfolio-safe broker round-trip runs: 1" in runbook
     assert "- Portfolio-breach broker round-trip runs: 1" in runbook
+    assert "- Portfolio-concentration-ok broker round-trip runs: 1" in runbook
+    assert "- Portfolio-concentration-breach broker round-trip runs: 1" in runbook
     rows = report.catalog.set_index("run_dir")
     safe_row = rows.loc[str(root / "roundtrip_safe")]
     assert safe_row["summary_strategy_portfolio_selected_profile"] == "leadlag-live-dryrun"
     assert float(safe_row["summary_dispatch_total_notional"]) == 1575.0
+    assert int(safe_row["summary_strategy_portfolio_allocated_strategy_count"]) == 2
+    assert float(safe_row["summary_strategy_portfolio_max_strategy_allocation_weight"]) == 0.45
 
 
 def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path):

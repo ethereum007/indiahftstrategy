@@ -80,9 +80,14 @@ also carry `broker_roundtrip_runs`, `broker_roundtrip_passed_runs`,
 `broker_roundtrip_portfolio_provided_runs`,
 `broker_roundtrip_portfolio_ready_runs`,
 `broker_roundtrip_portfolio_safe_runs`, and
-`broker_roundtrip_portfolio_breach_runs` so final Arrow.money/iRage dry-run
-review can prove whether dispatch notional stayed inside the selected strategy
-portfolio allocation.
+`broker_roundtrip_portfolio_breach_runs`. When the broker round-trip summary
+also carries portfolio concentration fields, the catalog adds
+`broker_roundtrip_portfolio_concentration_runs`,
+`broker_roundtrip_portfolio_concentration_ok_runs`, and
+`broker_roundtrip_portfolio_concentration_breach_runs` so final
+Arrow.money/iRage dry-run review can prove whether dispatch notional stayed
+inside the selected strategy portfolio allocation and whether allocation
+concentration stayed inside the selected portfolio limits.
 For broker schema review, the catalog summary/action plan/runbook carry
 `placeholder_schema_active_runs`, `placeholder_schema_allowed_runs`,
 `placeholder_schema_reviewed_runs`, `placeholder_schema_unreviewed_runs`, and
