@@ -202,6 +202,10 @@
 - Broker readiness now fails closed on stale route-readiness proof that does
   not preserve launch-grade ops broker controls and allocation/concentration
   proof counts.
+- Broker readiness now revalidates final dispatch round-trip direct
+  route-readiness launch-control and breach-pair evidence, plus
+  broker-carried `route_broker_route_readiness` allocation-safe and
+  concentration-OK run counts, before Arrow.money/iRage handoff.
 - Broker readiness now writes a manifest-tracked `broker_readiness_runbook.md`
   with component status and blocked-action next gates for operator review.
 - Broker readiness config JSON now mirrors the readiness action queue as
