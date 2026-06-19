@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ class MappedDataReport:
     data: pd.DataFrame
     checks: pd.DataFrame
     summary: pd.DataFrame
+    action_queue: pd.DataFrame | None = None
     output_dir: Path | None = None
 
     @property
@@ -61,11 +63,15 @@ def normalize_mapped_data(
     if checks_frame.empty or not bool(checks_frame["passed"].astype(bool).all()):
         data = mapped.iloc[0:0].copy()
         summary = _summary(raw, data, checks_frame, config, canonical_kind)
-        return MappedDataReport(data=data, checks=checks_frame, summary=summary)
+        action_queue = _action_queue(summary.iloc[0], checks_frame)
+        summary = _summary_with_actions(summary, action_queue)
+        return MappedDataReport(data=data, checks=checks_frame, summary=summary, action_queue=action_queue)
 
     data = _normalize_kind(mapped, canonical_kind, config)
     summary = _summary(raw, data, checks_frame, config, canonical_kind)
-    return MappedDataReport(data=data, checks=checks_frame, summary=summary)
+    action_queue = _action_queue(summary.iloc[0], checks_frame)
+    summary = _summary_with_actions(summary, action_queue)
+    return MappedDataReport(data=data, checks=checks_frame, summary=summary, action_queue=action_queue)
 
 
 def write_mapped_data_normalization(
@@ -92,13 +98,32 @@ def write_mapped_data_normalization(
     report.data.to_csv(out / config.output_filename, index=False)
     report.checks.to_csv(out / "mapped_data_checks.csv", index=False)
     report.summary.to_csv(out / "mapped_data_summary.csv", index=False)
+    action_queue = (
+        report.action_queue
+        if report.action_queue is not None
+        else _action_queue(report.summary.iloc[0], report.checks)
+    )
+    action_queue.to_csv(out / "mapped_data_action_queue.csv", index=False)
+    (out / "mapped_data_config.json").write_text(
+        json.dumps(
+            _config(report.summary.iloc[0], action_queue, config, input_file, mapping_file),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (out / "mapped_data_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], action_queue),
+        encoding="utf-8",
+    )
     write_experiment_manifest(
         out,
         run_type="mapped_data_normalization",
         parameters={"config": asdict(config)},
         inputs={"input": input_file, "mapping": mapping_file},
     )
-    return MappedDataReport(report.data, report.checks, report.summary, out)
+    return MappedDataReport(report.data, report.checks, report.summary, action_queue, out)
 
 
 def _expected_columns(config: MappedDataConfig) -> tuple[str, list[str]]:
@@ -266,6 +291,7 @@ def _summary(
                 "ready": bool(failed == 0 and len(data) > 0),
                 "adapter": config.adapter,
                 "kind": canonical_kind,
+                "market": config.market,
                 "input_rows": int(len(raw)),
                 "output_rows": int(len(data)),
                 "required_columns": int(checks["required"].astype(bool).sum()) if not checks.empty else 0,
@@ -286,6 +312,272 @@ def _summary(
             }
         ]
     )
+
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "adapter",
+    "kind",
+    "market",
+    "check",
+    "normalized_column",
+    "source_column",
+    "actual",
+    "operator",
+    "expected",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    blocked = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    ready = int((statuses == "ready").sum()) if not statuses.empty else 0
+    review = int((statuses == "review").sum()) if not statuses.empty else 0
+    next_gate = _first_action_value(action_queue, "next_gate")
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = ready
+    out["blocked_action_count"] = blocked
+    out["review_action_count"] = review
+    out["next_gate"] = next_gate
+    out["next_gate_help_command"] = _help_command(next_gate)
+    out["primary_action_status"] = _first_action_value(action_queue, "queue_status")
+
+    if blocked and _int(out.iloc[0].get("failed_check_count")) == 0:
+        blocked_actions = _actions_with_status(action_queue, "blocked")
+        primary = blocked_actions.iloc[0] if not blocked_actions.empty else action_queue.iloc[0]
+        index = out.index[0]
+        out.at[index, "failed_check_count"] = blocked
+        out.at[index, "failed_check_names"] = ";".join(
+            _text(row.get("check"))
+            for row in blocked_actions.to_dict(orient="records")
+            if _text(row.get("check"))
+        )
+        out.at[index, "first_failed_reason"] = _text(primary.get("reason"))
+        out.at[index, "primary_blocker_check"] = _text(primary.get("check"))
+        out.at[index, "primary_blocker_value"] = _text(primary.get("actual"))
+        out.at[index, "primary_blocker_operator"] = _text(primary.get("operator"))
+        out.at[index, "primary_blocker_threshold"] = _text(primary.get("expected"))
+        out.at[index, "primary_blocker_reason"] = _text(primary.get("reason"))
+    return out
+
+
+def _action_queue(summary_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    failed_rows = _failed_check_rows(checks)
+    for _, row in failed_rows.iterrows():
+        rows.append(
+            _action_row(
+                source="mapped_data_checks",
+                component="mapping",
+                adapter=_text(summary_row.get("adapter")),
+                kind=_text(summary_row.get("kind")),
+                market=_text(summary_row.get("market")),
+                check=_check_name(row),
+                normalized_column=_check_value(row, "normalized_column"),
+                source_column=_check_value(row, "source_column"),
+                actual=_failed_mapping_actual(row),
+                operator=_check_value(row, "transform"),
+                expected="required_source_or_default_with_values",
+                reason=_check_reason(row),
+                recommendation="fix_reviewed_mapping_before_normalizing_vendor_data",
+            )
+        )
+
+    if not rows and not _to_bool(summary_row.get("ready", False), default=False):
+        input_rows = _int(summary_row.get("input_rows"))
+        output_rows = _int(summary_row.get("output_rows"))
+        if output_rows == 0:
+            rows.append(
+                _action_row(
+                    source="mapped_data_summary",
+                    component="normalization",
+                    adapter=_text(summary_row.get("adapter")),
+                    kind=_text(summary_row.get("kind")),
+                    market=_text(summary_row.get("market")),
+                    check="normalized_output_empty",
+                    normalized_column="",
+                    source_column="",
+                    actual=f"input_rows={input_rows};output_rows={output_rows}",
+                    operator=">",
+                    expected="output_rows=0",
+                    reason=(
+                        "mapped vendor data produced zero normalized rows; review timestamp, session, "
+                        "price, quantity, and transform assumptions"
+                    ),
+                    recommendation="review_mapped_vendor_data_quality_before_research",
+                )
+            )
+
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _action_row(
+    *,
+    source: str,
+    component: str,
+    adapter: str,
+    kind: str,
+    market: str,
+    check: str,
+    normalized_column: str,
+    source_column: str,
+    actual: object,
+    operator: str,
+    expected: object,
+    reason: str,
+    recommendation: str,
+) -> dict[str, object]:
+    next_gate = "normalize-mapped-data"
+    return {
+        "queue_status": "blocked",
+        "source": source,
+        "component": component,
+        "adapter": adapter,
+        "kind": kind,
+        "market": market,
+        "check": check,
+        "normalized_column": normalized_column,
+        "source_column": source_column,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "reason": reason,
+        "recommendation": recommendation,
+    }
+
+
+def _failed_mapping_actual(row: pd.Series) -> str:
+    source_present = _to_bool(row.get("source_present"), default=False)
+    default_present = _to_bool(row.get("default_present"), default=False)
+    values_present = _to_bool(row.get("values_present"), default=False)
+    if not source_present and not default_present:
+        return "source_missing_default_missing"
+    if not values_present:
+        return "blank_mapped_values"
+    return "failed"
+
+
+def _config(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    config: MappedDataConfig,
+    input_file: Path,
+    mapping_file: Path,
+) -> dict[str, Any]:
+    primary_action = _first_action_record(action_queue)
+    return {
+        "schema_version": 1,
+        "ready": _to_bool(summary_row.get("ready", False), default=False),
+        "adapter": _text(summary_row.get("adapter")),
+        "kind": _text(summary_row.get("kind")),
+        "market": config.market,
+        "inputs": {
+            "input": str(input_file),
+            "mapping": str(mapping_file),
+        },
+        "normalization": {
+            "input_rows": _int(summary_row.get("input_rows")),
+            "output_rows": _int(summary_row.get("output_rows")),
+            "output_file": _text(summary_row.get("output_file")),
+            "timestamp_unit": config.timestamp_unit,
+            "timestamp_tz": config.timestamp_tz or "",
+            "filter_session": bool(config.filter_session),
+            "require_all_mapped": bool(config.require_all_mapped),
+        },
+        "mapping": {
+            "required_columns": _int(summary_row.get("required_columns")),
+            "mapped_columns": _int(summary_row.get("mapped_columns")),
+            "defaulted_columns": _int(summary_row.get("defaulted_columns")),
+            "failed_mappings": _int(summary_row.get("failed_mappings")),
+        },
+        "failed_check_count": _int(summary_row.get("failed_check_count")),
+        "failed_check_names": _split_items(summary_row.get("failed_check_names")),
+        "first_failed_reason": _text(summary_row.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _text(summary_row.get("primary_blocker_check")),
+            "value": _text(summary_row.get("primary_blocker_value")),
+            "operator": _text(summary_row.get("primary_blocker_operator")),
+            "threshold": _text(summary_row.get("primary_blocker_threshold")),
+            "reason": _text(summary_row.get("primary_blocker_reason")),
+        },
+        "action_queue_count": _int(summary_row.get("action_queue_count")),
+        "ready_action_count": _int(summary_row.get("ready_action_count")),
+        "blocked_action_count": _int(summary_row.get("blocked_action_count")),
+        "review_action_count": _int(summary_row.get("review_action_count")),
+        "next_gate": _text(summary_row.get("next_gate")),
+        "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _text(summary_row.get("primary_action_status")),
+        "primary_action": primary_action,
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+    }
+
+
+def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready", False), default=False) else "no"
+    lines = [
+        "# Mapped Vendor Data Normalization Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_text(summary_row.get('adapter'))}",
+        f"- Kind: {_text(summary_row.get('kind'))}",
+        f"- Input rows: {_int(summary_row.get('input_rows'))}",
+        f"- Output rows: {_int(summary_row.get('output_rows'))}",
+        f"- Failed mappings: {_int(summary_row.get('failed_mappings'))}",
+        f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No mapped-data actions."
+    rows = [
+        "| priority | status | check | normalized column | source column | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _text(item.get("priority")),
+                    _text(item.get("queue_status")),
+                    _text(item.get("check")),
+                    _text(item.get("normalized_column")),
+                    _text(item.get("source_column")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _text(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
 
 
 def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
@@ -402,6 +694,82 @@ def _to_bool(value: object, *, default: bool) -> bool:
             return default
         return normalized in {"1", "true", "yes", "y"}
     return bool(value)
+
+
+def _first_action_value(action_queue: pd.DataFrame, column: str) -> str:
+    if action_queue.empty or column not in action_queue.columns:
+        return ""
+    value = action_queue.iloc[0].get(column)
+    return _text(value)
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    return {str(key): _jsonable_value(value) for key, value in row.items()}
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _text(value)
+    if not text:
+        return []
+    normalized = text.replace(",", ";")
+    return [item.strip() for item in normalized.split(";") if item.strip()]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _text(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
+
+
+def _text(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _int(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
 
 
 def _nonempty_mask(values: pd.Series) -> pd.Series:

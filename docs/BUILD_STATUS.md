@@ -790,6 +790,11 @@
   mappings to real tick, chain, order, or fill CSVs and emits normalized data,
   mapping checks, summary, and manifest artifacts with the first failed
   required normalized column surfaced in the summary.
+- Mapped vendor-data normalization now also emits manifest-tracked
+  `mapped_data_action_queue.csv`, `mapped_data_config.json`, and
+  `mapped_data_runbook.md` handoffs, routing unmapped required fields or
+  zero-row normalization output back to `normalize-mapped-data` before vendor
+  files are trusted as research inputs.
 - Configurable mapped broker-order export that converts broker-neutral launch
   orders into a vendor CSV shape from a reviewed mapping file, with required
   field checks, simple transforms, manifests, and summary-level primary blocker
@@ -989,7 +994,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 927 tests.
+Current passing suite: 931 tests.
 
 ## Next Build Targets
 

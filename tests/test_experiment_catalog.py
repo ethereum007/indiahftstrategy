@@ -2,6 +2,7 @@ import json
 
 import pandas as pd
 
+from adapters.mapped_data import MappedDataConfig, write_mapped_data_normalization
 from adapters.schema_audit import write_adapter_schema_audit
 from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from hft_cli import main
@@ -210,6 +211,59 @@ def test_experiment_catalog_promotes_adapter_schema_action_queue(tmp_path):
     assert action_plan["primary_action_status"] == "blocked"
     assert action_plan["primary_action"]["check"] == "missing_required:price"
     assert action_plan["blocked_action_count"] == 2
+
+
+def test_experiment_catalog_promotes_mapped_data_action_queue(tmp_path):
+    sample = tmp_path / "arrow_ticks.csv"
+    mapping = tmp_path / "arrow_ticks_mapping.csv"
+    mapped_dir = tmp_path / "mapped_data"
+    catalog_dir = tmp_path / "catalog"
+    pd.DataFrame(
+        [
+            {
+                "exchange_ts": pd.Timestamp("2026-06-10 09:15:00", tz="Asia/Kolkata").value,
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        ]
+    ).to_csv(sample, index=False)
+    pd.DataFrame(
+        [
+            {"normalized_column": "ts", "source_column": "exchange_ts"},
+            {"normalized_column": "bid", "source_column": "best_bid", "transform": "float"},
+            {"normalized_column": "ask", "source_column": "best_ask", "transform": "float"},
+            {"normalized_column": "bid_qty", "source_column": "bid_size", "transform": "int"},
+            {"normalized_column": "ask_qty", "source_column": "missing_ask_size", "transform": "int"},
+            {"normalized_column": "last", "source_column": "last_px", "transform": "float"},
+            {"normalized_column": "last_qty", "source_column": "last_size", "transform": "int"},
+        ]
+    ).to_csv(mapping, index=False)
+    write_mapped_data_normalization(
+        sample,
+        mapping,
+        output_dir=mapped_dir,
+        config=MappedDataConfig(adapter="arrow_money", kind="ticks"),
+    )
+
+    report = write_experiment_catalog([mapped_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 1
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+    assert set(queue["action_source_file"]) == {"mapped_data_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "mapped_data_normalization"
+    assert queue.loc[0, "check"] == "unmapped_required:ask_qty"
+    assert queue.loc[0, "component"] == "mapping"
+    assert queue.loc[0, "market"] == "india_nse_index_derivatives"
+    assert queue.loc[0, "next_gate"] == "normalize-mapped-data"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli normalize-mapped-data --help"
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["check"] == "unmapped_required:ask_qty"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):

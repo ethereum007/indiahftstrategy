@@ -3656,6 +3656,7 @@ python -m hft_cli normalize-mapped-data `
   --adapter arrow_money `
   --kind fills `
   --output-file normalized_fills.csv `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -3670,6 +3671,9 @@ Outputs:
 ```text
 normalized_data.csv
 mapped_data_checks.csv
+mapped_data_action_queue.csv
+mapped_data_config.json
+mapped_data_runbook.md
 mapped_data_summary.csv
 manifest.json
 ```
@@ -3677,11 +3681,18 @@ manifest.json
 `mapped_data_summary.csv` exposes `failed_check_count`,
 `failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
 the first required normalized column that could not be mapped from the vendor
-CSV.
+CSV. It also carries `action_queue_count`, `blocked_action_count`,
+`next_gate`, `next_gate_help_command`, and `primary_action_status`.
+`mapped_data_action_queue.csv`, `mapped_data_config.json`, and
+`mapped_data_runbook.md` mirror unmapped required columns and zero-row
+normalization blockers so `catalog-runs` can schedule the next
+`normalize-mapped-data` repair step.
 
 The command fails closed when required normalized columns are not mapped, and
 tick/chain outputs pass through the same session, timestamp, and data-quality
-normalizers used by the strategy backtests.
+normalizers used by the strategy backtests. Use `--fail-on-blocked-actions` to
+fail when mapped-data repair actions exist, or `--fail-on-actions` for any
+open mapped-data action.
 
 ## Vendor Market Data Onboarding Pipeline
 

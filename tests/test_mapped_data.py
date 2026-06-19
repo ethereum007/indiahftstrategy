@@ -2,7 +2,7 @@ import json
 
 import pandas as pd
 
-from adapters.mapped_data import MappedDataConfig, normalize_mapped_data
+from adapters.mapped_data import MappedDataConfig, normalize_mapped_data, write_mapped_data_normalization
 from hft_cli import main
 
 
@@ -53,6 +53,10 @@ def test_normalize_mapped_tick_data_uses_reviewed_vendor_mapping():
     assert int(report.summary.loc[0, "failed_check_count"]) == 0
     assert report.summary.loc[0, "failed_check_names"] == ""
     assert report.summary.loc[0, "primary_blocker_check"] == ""
+    assert int(report.summary.loc[0, "action_queue_count"]) == 0
+    assert report.summary.loc[0, "next_gate"] == ""
+    assert report.action_queue is not None
+    assert report.action_queue.empty
 
 
 def test_normalize_mapped_data_fails_closed_for_missing_required_source():
@@ -90,8 +94,50 @@ def test_normalize_mapped_data_fails_closed_for_missing_required_source():
     assert summary["primary_blocker_operator"] == "int"
     assert summary["primary_blocker_threshold"] == "required"
     assert summary["primary_blocker_reason"] == "required normalized column has no available source column or default value"
+    assert int(summary["action_queue_count"]) == 1
+    assert int(summary["blocked_action_count"]) == 1
+    assert summary["next_gate"] == "normalize-mapped-data"
+    assert summary["next_gate_help_command"] == "python -m hft_cli normalize-mapped-data --help"
+    assert summary["primary_action_status"] == "blocked"
     failed = report.checks.loc[~report.checks["passed"].astype(bool)].iloc[0]
     assert failed["normalized_column"] == "ask_qty"
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "check"] == "unmapped_required:ask_qty"
+    assert report.action_queue.loc[0, "component"] == "mapping"
+    assert report.action_queue.loc[0, "actual"] == "source_missing_default_missing"
+
+
+def test_normalize_mapped_data_blocks_empty_normalized_output():
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": ns_ist("2026-06-10 08:30:00"),
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        ]
+    )
+
+    report = normalize_mapped_data(
+        raw,
+        tick_mapping(),
+        config=MappedDataConfig(adapter="arrow_money", kind="ticks"),
+    )
+
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert report.data.empty
+    assert int(summary["failed_check_count"]) == 1
+    assert summary["failed_check_names"] == "normalized_output_empty"
+    assert summary["primary_blocker_check"] == "normalized_output_empty"
+    assert int(summary["action_queue_count"]) == 1
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "component"] == "normalization"
+    assert report.action_queue.loc[0, "check"] == "normalized_output_empty"
 
 
 def test_cli_normalize_mapped_data_writes_normalized_fill_artifacts(tmp_path):
@@ -153,8 +199,110 @@ def test_cli_normalize_mapped_data_writes_normalized_fill_artifacts(tmp_path):
     summary = pd.read_csv(out_dir / "mapped_data_summary.csv")
     normalized = pd.read_csv(out_dir / "normalized_fills.csv")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    action_queue = pd.read_csv(out_dir / "mapped_data_action_queue.csv")
+    config = json.loads((out_dir / "mapped_data_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "mapped_data_runbook.md").read_text(encoding="utf-8")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "output_rows"]) == 2
+    assert int(summary.loc[0, "action_queue_count"]) == 0
     assert normalized["side"].tolist() == [1, -1]
+    assert action_queue.empty
+    assert config["ready"] is True
+    assert config["action_queue_count"] == 0
+    assert config["primary_action"] == {}
+    assert "# Mapped Vendor Data Normalization Runbook" in runbook
     assert manifest["run_type"] == "mapped_data_normalization"
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
+    assert "mapped_data_action_queue.csv" in artifact_paths
+    assert "mapped_data_config.json" in artifact_paths
+    assert "mapped_data_runbook.md" in artifact_paths
+
+
+def test_cli_normalize_mapped_data_writes_scheduler_handoff_for_mapping_blocker(tmp_path):
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": ns_ist("2026-06-10 09:15:00"),
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        ]
+    )
+    mapping = tick_mapping()
+    mapping.loc[mapping["normalized_column"] == "ask_qty", "source_column"] = "missing_ask_size"
+    raw_path = tmp_path / "vendor_ticks.csv"
+    mapping_path = tmp_path / "tick_mapping.csv"
+    out_dir = tmp_path / "blocked_normalization"
+    raw.to_csv(raw_path, index=False)
+    mapping.to_csv(mapping_path, index=False)
+
+    code = main(
+        [
+            "normalize-mapped-data",
+            "--input",
+            str(raw_path),
+            "--mapping",
+            str(mapping_path),
+            "--out",
+            str(out_dir),
+            "--adapter",
+            "irage",
+            "--kind",
+            "ticks",
+            "--fail-on-blocked-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "mapped_data_summary.csv")
+    action_queue = pd.read_csv(out_dir / "mapped_data_action_queue.csv")
+    config = json.loads((out_dir / "mapped_data_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "mapped_data_runbook.md").read_text(encoding="utf-8")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "check"] == "unmapped_required:ask_qty"
+    assert action_queue.loc[0, "next_gate"] == "normalize-mapped-data"
+    assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli normalize-mapped-data --help"
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["check"] == "unmapped_required:ask_qty"
+    assert config["blocked_actions"][0]["normalized_column"] == "ask_qty"
+    assert "unmapped_required:ask_qty" in runbook
+
+
+def test_write_mapped_data_normalization_returns_action_queue(tmp_path):
+    raw = pd.DataFrame(
+        [
+            {
+                "exchange_ts": ns_ist("2026-06-10 09:15:00"),
+                "best_bid": 100.0,
+                "best_ask": 100.05,
+                "bid_size": 75,
+                "ask_size": 150,
+                "last_px": 100.05,
+                "last_size": 75,
+            }
+        ]
+    )
+    mapping = tick_mapping()
+    mapping.loc[mapping["normalized_column"] == "last_qty", "source_column"] = "missing_last_size"
+    raw_path = tmp_path / "vendor_ticks.csv"
+    mapping_path = tmp_path / "tick_mapping.csv"
+    out_dir = tmp_path / "mapped"
+    raw.to_csv(raw_path, index=False)
+    mapping.to_csv(mapping_path, index=False)
+
+    report = write_mapped_data_normalization(
+        raw_path,
+        mapping_path,
+        output_dir=out_dir,
+        config=MappedDataConfig(adapter="arrow_money", kind="ticks"),
+    )
+
+    assert report.action_queue is not None
+    assert report.action_queue.loc[0, "check"] == "unmapped_required:last_qty"
