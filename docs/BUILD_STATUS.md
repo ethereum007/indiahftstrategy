@@ -272,6 +272,10 @@
   blocking live-dryrun authorization on missing launch controls, blocked route
   pairs, or broker round-trip allocation/concentration breaches, and preserving
   direct plus broker-carried route proof in cutover summary/config handoffs.
+- Route-enable now revalidates cutover-retained route-readiness ops broker
+  controls before broker routing can be enabled, preserving direct
+  launch-control/breach counters and broker-carried allocation/concentration
+  run counts in route-enable summary/config handoffs.
 - Cutover gate now emits manifest-tracked `cutover_action_queue.csv` and
   `cutover_runbook.md` handoffs, routing failed scale-up, route-readiness,
   broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,

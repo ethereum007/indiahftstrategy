@@ -3372,9 +3372,17 @@ fields and a `strategy_portfolio` config block, including the carried
 concentration counts, top concentration names, and maximum allocation weights.
 It also fails closed when the optional order-export notional exceeds the
 selected paper/shadow allocation even if the broader cutover notional limit
-would allow it. `--require-route-readiness` is automatic for `--target-mode
-live_dryrun`; the explicit flag keeps paper/shadow route reviews equally
-strict. If `cutover_config.json` retained Arrow.money/iRage vendor market-data
+would allow it. Route-enable also revalidates cutover-retained route-readiness
+ops broker controls before enabling the broker route: direct route-readiness
+proof must retain launch-control evidence with zero blocked pairs and zero
+broker round-trip allocation/concentration breach pairs, while broker-carried
+route proof must retain clean launch-control, allocation-safe, and
+concentration-OK run counts. These counters are preserved in
+`route_enable_summary.csv` and `route_enable_config.json` as
+`route_readiness_*` and `cutover_broker_route_readiness`. `--require-route-readiness`
+is automatic for `--target-mode live_dryrun`; the explicit flag keeps
+paper/shadow route reviews equally strict. If `cutover_config.json` retained
+Arrow.money/iRage vendor market-data
 batch evidence, route-enable carries the dataset/header/mapping proof into
 `route_enable_summary.csv` and `route_enable_config.json` as
 `cutover_vendor_market_data_batch_*` audit fields. If cutover retained the
