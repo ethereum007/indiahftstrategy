@@ -143,6 +143,23 @@ def test_write_vendor_intake_outputs_manifest_and_fill_mapping(tmp_path):
     assert "vendor_intake_config.json" in artifact_paths
     assert "vendor_intake_runbook.md" in artifact_paths
 
+    ready_code = main(
+        [
+            "intake-vendor-csv",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(tmp_path / "intake_cli_ready"),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "fills",
+            "--fail-on-blocked-actions",
+            "--fail-on-actions",
+        ]
+    )
+    assert ready_code == 0
+
 
 def test_vendor_intake_fails_closed_when_auto_kind_is_ambiguous():
     sample = pd.DataFrame(
@@ -235,6 +252,7 @@ def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):
             "ticks",
             "--fail-on-breach",
             "--fail-on-blocked-actions",
+            "--fail-on-actions",
         ]
     )
 
@@ -258,3 +276,19 @@ def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):
     assert config["primary_action_status"] == "blocked"
     assert config["primary_action"]["check"] == "unmapped_required:ask"
     assert config["blocked_actions"][0]["next_gate"] == "intake-vendor-csv"
+
+    gated_code = main(
+        [
+            "intake-vendor-csv",
+            "--sample",
+            str(sample_path),
+            "--out",
+            str(tmp_path / "intake_any_action_gate"),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--fail-on-actions",
+        ]
+    )
+    assert gated_code == 2

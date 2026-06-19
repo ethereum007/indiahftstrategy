@@ -2108,7 +2108,8 @@ python -m hft_cli intake-vendor-csv `
   --adapter arrow_money `
   --kind auto `
   --fail-on-breach `
-  --fail-on-blocked-actions
+  --fail-on-blocked-actions `
+  --fail-on-actions
 ```
 
 Outputs:
@@ -2140,6 +2141,8 @@ mapping or kind-selection actions, `next_gate`, `next_gate_help_command`,
 `primary_action_status`, `primary_action`, and `next_actions`/
 `blocked_actions` so `catalog-runs` can route raw Arrow.money/iRage sample
 blockers directly back to `intake-vendor-csv --help`.
+Use `--fail-on-blocked-actions` to fail only when blocked intake actions exist,
+or `--fail-on-actions` when any raw-sample intake action should stop automation.
 
 ## Vendor Order Mapping Draft
 

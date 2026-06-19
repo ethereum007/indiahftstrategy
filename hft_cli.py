@@ -1519,6 +1519,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_intake.add_argument("--output-mapping-file", default="vendor_mapping_draft.csv")
     vendor_intake.add_argument("--fail-on-breach", action="store_true")
     vendor_intake.add_argument("--fail-on-blocked-actions", action="store_true")
+    vendor_intake.add_argument("--fail-on-actions", action="store_true")
 
     mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
     mapped_export.add_argument("--export", required=True)
@@ -3827,10 +3828,16 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        blocked_actions = 0 if result.action_queue is None else int(len(result.action_queue))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
         if args.fail_on_breach and not result.ready:
             return 2
         if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
             return 2
         return 0
     if args.command == "map-broker-orders":

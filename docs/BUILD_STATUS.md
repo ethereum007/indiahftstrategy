@@ -196,6 +196,9 @@
   `vendor_intake_config.json`, and `vendor_intake_runbook.md`, so ambiguous
   kind selection or unmapped Arrow.money/iRage sample columns become catalog
   schedulable actions before the broader market-data batch pipeline runs.
+- `intake-vendor-csv` can now fail closed with `--fail-on-blocked-actions` or
+  `--fail-on-actions`, matching the stricter scheduler gates used by downstream
+  mapped-data and vendor market-data onboarding commands.
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.
