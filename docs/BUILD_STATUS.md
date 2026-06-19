@@ -53,6 +53,9 @@
 - Strategy readiness scorecard now emits `strategy_scorecard_action_queue.csv`,
   a priority-ordered ready/blocked queue with next CLI gate/help fields for
   simple scheduler handoff.
+- `score-strategy-readiness` can now fail closed with
+  `--fail-on-blocked-actions` or `--fail-on-actions`, matching the strategy
+  portfolio and broker handoff gates.
 - Strategy readiness scorecard CSV/JSON outputs include `next_gate_help_command`
   hints so every blocked research or ops lane exposes the exact CLI entry point
   to inspect before scheduling the next run.

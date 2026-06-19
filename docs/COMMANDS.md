@@ -334,7 +334,8 @@ python -m hft_cli score-strategy-readiness `
   --catalog runs\catalog\latest `
   --out runs\scorecards\india_shadow `
   --market india_nse_index_derivatives `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 By default the scorecard reviews `leadlag`, `imbalance`, `parity`,
@@ -344,6 +345,9 @@ expected strategy identity before scoring, so shared run types such as
 `--profile` flags for a narrower review, `--require-file-inputs` to require
 file-fingerprinted inputs, and `--allow-dirty-git` only for exploratory
 catalogs.
+Use `--fail-on-blocked-actions` to return exit code 2 when the scorecard queue
+has blocked profile actions, or `--fail-on-actions` when any ready or blocked
+profile action should force a scheduler handoff instead of silently passing.
 
 To score the operational live-dry-run chain for one strategy after scale-up,
 cutover, route enable, and broker dispatch proof are present, include the
@@ -357,7 +361,8 @@ python -m hft_cli score-strategy-readiness `
   --ops-strategy lead_lag_taker `
   --market india_nse_index_derivatives `
   --require-file-inputs `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 If `ops_launch` is scored without `--ops-strategy`, all required artifacts must

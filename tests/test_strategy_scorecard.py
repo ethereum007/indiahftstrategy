@@ -124,6 +124,9 @@ def test_strategy_scorecard_ranks_ready_profile_and_keeps_mixed_promotions_separ
     assert report.config["primary_blocker"]["profile"] == "imbalance"
     assert report.config["primary_blocker"]["next_required_run_type"] == "imbalance_replay_walkforward"
     assert report.config["primary_blocker"]["next_gate"] == "walkforward-imbalance-replay"
+    assert report.action_queue is not None
+    assert list(report.action_queue["queue_status"]) == ["ready", "blocked"]
+    assert list(report.action_queue["profile"]) == ["leadlag", "imbalance"]
     assert report.config["next_actions"][0]["next_gate"] == "plan-scaleup"
     assert report.config["next_actions"][0]["next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert report.config["ready_actions"][0]["profile"] == "leadlag"
@@ -161,6 +164,8 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "strategy_scorecard_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     queue = pd.read_csv(out_dir / "strategy_scorecard_action_queue.csv")
+    assert report.action_queue is not None
+    assert len(report.action_queue) == len(queue)
     assert queue.loc[0, "priority"] == 1
     assert queue.loc[0, "queue_status"] == "ready"
     assert queue.loc[0, "profile"] == "leadlag"
@@ -191,6 +196,39 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert "strategy_scorecard_action_queue.csv" in artifact_paths
     assert "strategy_scorecard_runbook.md" in artifact_paths
+
+    ready_blocked_dir = tmp_path / "scorecard_ready_blocked_gate"
+    ready_actions_dir = tmp_path / "scorecard_ready_action_gate"
+    blocked_code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(ready_blocked_dir),
+            "--profile",
+            "leadlag",
+            "--market",
+            "india_nse_index_derivatives",
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(ready_actions_dir),
+            "--profile",
+            "leadlag",
+            "--market",
+            "india_nse_index_derivatives",
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 0
+    assert actions_code == 2
 
 
 def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path):
@@ -261,6 +299,39 @@ def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path
         "next_gate_help_command",
     ].iloc[0]
     assert help_command == "python -m hft_cli walkforward-imbalance-replay --help"
+
+    blocked_dir = tmp_path / "scorecard_blocked_action_gate"
+    actions_dir = tmp_path / "scorecard_any_action_gate"
+    blocked_code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(blocked_dir),
+            "--profile",
+            "imbalance",
+            "--market",
+            "india_nse_index_derivatives",
+            "--fail-on-blocked-actions",
+        ]
+    )
+    actions_code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(actions_dir),
+            "--profile",
+            "imbalance",
+            "--market",
+            "india_nse_index_derivatives",
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_code == 2
+    assert actions_code == 2
 
 
 def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():

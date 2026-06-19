@@ -98,6 +98,7 @@ class StrategyScorecardReport:
     gaps: pd.DataFrame
     summary: pd.DataFrame
     config: dict[str, Any]
+    action_queue: pd.DataFrame | None = None
     output_dir: Path | None = None
 
     @property
@@ -141,7 +142,14 @@ def evaluate_strategy_scorecard(
     gaps = pd.DataFrame(gap_rows)
     summary = _summary(scorecard)
     config = _config(scorecard, gaps, summary)
-    return StrategyScorecardReport(scorecard=scorecard, gaps=gaps, summary=summary, config=config)
+    action_queue = _action_queue(config)
+    return StrategyScorecardReport(
+        scorecard=scorecard,
+        gaps=gaps,
+        summary=summary,
+        config=config,
+        action_queue=action_queue,
+    )
 
 
 def write_strategy_scorecard(
@@ -159,7 +167,8 @@ def write_strategy_scorecard(
     report.scorecard.to_csv(out / "strategy_scorecard.csv", index=False)
     report.gaps.to_csv(out / "strategy_scorecard_gaps.csv", index=False)
     report.summary.to_csv(out / "strategy_scorecard_summary.csv", index=False)
-    _action_queue(report.config).to_csv(out / "strategy_scorecard_action_queue.csv", index=False)
+    action_queue = report.action_queue if report.action_queue is not None else _action_queue(report.config)
+    action_queue.to_csv(out / "strategy_scorecard_action_queue.csv", index=False)
     (out / "strategy_scorecard_next_actions.json").write_text(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -174,7 +183,14 @@ def write_strategy_scorecard(
         parameters={"thresholds": asdict(thresholds)},
         inputs={"catalog": catalog_file},
     )
-    return StrategyScorecardReport(report.scorecard, report.gaps, report.summary, report.config, out)
+    return StrategyScorecardReport(
+        scorecard=report.scorecard,
+        gaps=report.gaps,
+        summary=report.summary,
+        config=report.config,
+        action_queue=action_queue,
+        output_dir=out,
+    )
 
 
 def _scorecard_row(
