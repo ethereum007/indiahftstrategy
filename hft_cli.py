@@ -197,6 +197,7 @@ def _market_portability_exit_code(
     *,
     fail_on_breach: bool,
     fail_on_gaps: bool,
+    fail_on_actions: bool,
     fail_on_blocked_actions: bool,
 ) -> int:
     if fail_on_breach and not result.ready:
@@ -204,6 +205,9 @@ def _market_portability_exit_code(
     if fail_on_gaps and result.gaps is not None and len(result.gaps) > 0:
         return 2
     action_queue = result.action_queue
+    action_count = 0 if action_queue is None else int(len(action_queue))
+    if fail_on_actions and action_count > 0:
+        return 2
     if fail_on_blocked_actions and action_queue is not None and not action_queue.empty:
         statuses = action_queue["queue_status"].astype(str)
         if int(statuses.isin(["blocked", "unknown"]).sum()) > 0:
@@ -1127,6 +1131,7 @@ def main(argv: list[str] | None = None) -> int:
     portability.add_argument("--fail-on-breach", action="store_true")
     portability.add_argument("--fail-on-gaps", action="store_true")
     portability.add_argument("--fail-on-blocked-actions", action="store_true")
+    portability.add_argument("--fail-on-actions", action="store_true")
 
     proof = sub.add_parser("proof-report", help="Evaluate replay output folders against proof thresholds.")
     proof.add_argument("--runs", nargs="+", required=True)
@@ -3272,6 +3277,7 @@ def main(argv: list[str] | None = None) -> int:
             result,
             fail_on_breach=args.fail_on_breach,
             fail_on_gaps=args.fail_on_gaps,
+            fail_on_actions=args.fail_on_actions,
             fail_on_blocked_actions=args.fail_on_blocked_actions,
         )
     if args.command == "proof-report":

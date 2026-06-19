@@ -532,7 +532,8 @@ plan.
 Use `--fail-on-breach` to return exit code 2 when no requested pair is ready,
 `--fail-on-gaps` to fail when any requested strategy/market pair still has a
 portability gap, or `--fail-on-blocked-actions` to fail when the generated
-action queue contains blocked work.
+action queue contains blocked work. Use `--fail-on-actions` when any ready or
+blocked portability handoff should stop the scheduler for explicit review.
 
 ## Route Readiness Review
 

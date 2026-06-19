@@ -285,8 +285,9 @@
   `primary_action`, action counts, and action arrays, matching downstream
   route/broker scheduler handoffs.
 - `market-portability-report` can now fail closed with `--fail-on-breach`,
-  `--fail-on-gaps`, or `--fail-on-blocked-actions`, giving CI/schedulers a
-  direct gate before non-India research or route-readiness runs are scheduled.
+  `--fail-on-gaps`, `--fail-on-blocked-actions`, or `--fail-on-actions`,
+  giving CI/schedulers a direct gate before non-India research or
+  route-readiness runs are scheduled.
 - Experiment catalogs now write `experiment_catalog_action_queue.csv`, a
   consolidated scheduler queue of cataloged next-gate/help signals across
   scorecards, route reviews, and future summary-bearing handoffs.

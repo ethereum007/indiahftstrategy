@@ -174,6 +174,8 @@ def test_write_market_portability_report_outputs_files_and_manifest(tmp_path):
 
 def test_cli_market_portability_report_writes_selected_strategy(tmp_path):
     out_dir = tmp_path / "cli_portability"
+    blocked_gate_dir = tmp_path / "cli_portability_blocked_gate"
+    action_gate_dir = tmp_path / "cli_portability_action_gate"
 
     code = main(
         [
@@ -199,6 +201,35 @@ def test_cli_market_portability_report_writes_selected_strategy(tmp_path):
     assert (out_dir / "market_portability_config.json").exists()
     assert (out_dir / "market_portability_action_queue.csv").exists()
     assert (out_dir / "market_portability_runbook.md").exists()
+
+    blocked_gate_code = main(
+        [
+            "market-portability-report",
+            "--market",
+            "us_options_regular",
+            "--strategy",
+            "surface_market_making",
+            "--explicit-fee-model",
+            "--out",
+            str(blocked_gate_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+    action_gate_code = main(
+        [
+            "market-portability-report",
+            "--market",
+            "us_options_regular",
+            "--strategy",
+            "surface_market_making",
+            "--explicit-fee-model",
+            "--out",
+            str(action_gate_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert blocked_gate_code == 0
+    assert action_gate_code == 2
 
 
 def test_cli_market_portability_can_fail_on_partial_gap_pairs(tmp_path):
@@ -229,6 +260,7 @@ def test_cli_market_portability_can_fail_on_partial_gap_pairs(tmp_path):
 
 def test_cli_market_portability_can_fail_on_blocked_actions(tmp_path):
     out_dir = tmp_path / "cli_portability_blocked_actions"
+    actions_dir = tmp_path / "cli_portability_any_actions"
 
     code = main(
         [
@@ -252,6 +284,20 @@ def test_cli_market_portability_can_fail_on_blocked_actions(tmp_path):
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli market-portability-report --help"
     assert config["primary_action_status"] == "blocked"
     assert config["primary_action"]["next_gate"] == queue.loc[0, "next_gate"]
+
+    actions_code = main(
+        [
+            "market-portability-report",
+            "--market",
+            "us_equities_regular",
+            "--strategy",
+            "microprice_imbalance",
+            "--out",
+            str(actions_dir),
+            "--fail-on-actions",
+        ]
+    )
+    assert actions_code == 2
 
 
 def test_cli_market_portability_can_fail_on_breach_when_no_pairs_ready(tmp_path):
