@@ -29,9 +29,13 @@ def test_vendor_intake_detects_tick_file_and_drafts_mapping():
     summary = report.summary.iloc[0]
     mapping = report.mapping_draft.set_index("normalized_column")
     assert report.ready
+    assert report.action_queue is not None
+    assert report.action_queue.empty
     assert summary["best_kind"] == "ticks"
     assert summary["mapping_coverage"] == 1.0
     assert int(summary["failed_check_count"]) == 0
+    assert int(summary["blocked_action_count"]) == 0
+    assert summary["next_gate"] == ""
     assert summary["failed_check_names"] == ""
     assert summary["primary_blocker_check"] == ""
     assert mapping.loc["ts", "source_column"] == "exchange_ts"
@@ -56,10 +60,17 @@ def test_vendor_intake_fails_closed_for_incomplete_tick_sample():
     )
 
     summary = report.summary.iloc[0]
+    action_queue = report.action_queue
     assert not report.ready
+    assert action_queue is not None
+    assert int(len(action_queue)) == 4
     assert summary["best_kind"] == "ticks"
     assert int(summary["unmapped_required_columns"]) == 4
     assert int(summary["failed_check_count"]) == 4
+    assert int(summary["blocked_action_count"]) == 4
+    assert summary["next_gate"] == "intake-vendor-csv"
+    assert summary["next_gate_help_command"] == "python -m hft_cli intake-vendor-csv --help"
+    assert summary["primary_action_status"] == "blocked"
     assert summary["failed_check_names"].split(";")[0] == "unmapped_required:bid_qty"
     assert summary["first_failed_reason"] == "bid_qty normalized column is not mapped to a source column"
     assert summary["primary_blocker_check"] == "unmapped_required:bid_qty"
@@ -68,6 +79,9 @@ def test_vendor_intake_fails_closed_for_incomplete_tick_sample():
     assert summary["primary_blocker_threshold"] == "source_column"
     assert summary["primary_blocker_reason"] == "bid_qty normalized column is not mapped to a source column"
     assert "bid_qty" in summary["unmapped_normalized_columns"]
+    assert action_queue.loc[0, "check"] == "unmapped_required:bid_qty"
+    assert action_queue.loc[0, "next_gate"] == "intake-vendor-csv"
+    assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli intake-vendor-csv --help"
 
 
 def test_write_vendor_intake_outputs_manifest_and_fill_mapping(tmp_path):
@@ -94,11 +108,20 @@ def test_write_vendor_intake_outputs_manifest_and_fill_mapping(tmp_path):
     )
 
     summary = pd.read_csv(out_dir / "vendor_intake_summary.csv")
+    action_queue = pd.read_csv(out_dir / "vendor_intake_action_queue.csv")
     mapping = pd.read_csv(out_dir / "vendor_mapping_draft.csv")
     source_profile = json.loads((out_dir / "vendor_intake_source_profile.json").read_text(encoding="utf-8"))
+    config = json.loads((out_dir / "vendor_intake_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "vendor_intake_runbook.md").read_text(encoding="utf-8")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {artifact["path"] for artifact in manifest["artifacts"]}
     assert report.ready
+    assert report.action_queue is not None
+    assert report.action_queue.empty
+    assert action_queue.empty
+    assert "next_gate_help_command" in action_queue.columns
     assert summary.loc[0, "best_kind"] == "fills"
+    assert int(summary.loc[0, "blocked_action_count"]) == 0
     assert set(mapping["normalized_column"]) == {"client_order_id", "instrument_id", "ts_fill_ns", "side", "qty", "price"}
     assert manifest["run_type"] == "vendor_csv_intake"
     assert source_profile["file_sha256"] == manifest["inputs"]["sample"]["sha256"]
@@ -107,6 +130,18 @@ def test_write_vendor_intake_outputs_manifest_and_fill_mapping(tmp_path):
     assert summary.loc[0, "source_header_sha256"] == source_profile["header_sha256"]
     assert summary.loc[0, "mapping_draft_sha256"] == source_profile["mapping_draft_sha256"]
     assert manifest["extra"]["source_profile"]["header_sha256"] == source_profile["header_sha256"]
+    assert config["ready"]
+    assert config["blocked_action_count"] == 0
+    assert config["next_gate"] == ""
+    assert config["primary_action_status"] == ""
+    assert config["primary_action"] == {}
+    assert config["next_actions"] == []
+    assert config["mapping"]["draft_sha256"] == source_profile["mapping_draft_sha256"]
+    assert "# Vendor CSV Intake Runbook" in runbook
+    assert "- Ready: yes" in runbook
+    assert "vendor_intake_action_queue.csv" in artifact_paths
+    assert "vendor_intake_config.json" in artifact_paths
+    assert "vendor_intake_runbook.md" in artifact_paths
 
 
 def test_vendor_intake_fails_closed_when_auto_kind_is_ambiguous():
@@ -130,7 +165,10 @@ def test_vendor_intake_fails_closed_when_auto_kind_is_ambiguous():
     )
 
     summary = report.summary.iloc[0]
+    action_queue = report.action_queue
     assert not report.ready
+    assert action_queue is not None
+    assert len(action_queue) == 1
     assert bool(summary["selected_kind_ambiguous"])
     assert summary["kind_selection"] == "ambiguous"
     assert set(summary["ambiguous_kinds"].split(";")) == {"orders", "fills"}
@@ -144,6 +182,9 @@ def test_vendor_intake_fails_closed_when_auto_kind_is_ambiguous():
     assert summary["primary_blocker_threshold"] == "required"
     assert summary["primary_blocker_reason"] == f"auto kind selection is ambiguous: {ambiguous_kinds}"
     assert summary["recommendation"] == "set_vendor_kind_explicitly_before_normalizing"
+    assert summary["next_gate"] == "intake-vendor-csv"
+    assert action_queue.loc[0, "check"] == "ambiguous_kind_selection"
+    assert action_queue.loc[0, "reason"] == f"auto kind selection is ambiguous: {ambiguous_kinds}"
 
 
 def test_vendor_intake_allows_explicit_kind_for_ambiguous_order_fill_file():
@@ -193,14 +234,27 @@ def test_cli_vendor_intake_can_fail_on_incomplete_mapping(tmp_path):
             "--kind",
             "ticks",
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "vendor_intake_summary.csv")
+    action_queue = pd.read_csv(out_dir / "vendor_intake_action_queue.csv")
+    config = json.loads((out_dir / "vendor_intake_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert int(summary.loc[0, "unmapped_required_columns"]) == 5
     assert int(summary.loc[0, "failed_check_count"]) == 5
+    assert int(summary.loc[0, "blocked_action_count"]) == 5
+    assert summary.loc[0, "next_gate"] == "intake-vendor-csv"
     assert summary.loc[0, "failed_check_names"].split(";")[0] == "unmapped_required:ask"
     assert summary.loc[0, "primary_blocker_check"] == "unmapped_required:ask"
     assert summary.loc[0, "primary_blocker_reason"] == "ask normalized column is not mapped to a source column"
+    assert len(action_queue) == 5
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "check"] == "unmapped_required:ask"
+    assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli intake-vendor-csv --help"
+    assert config["blocked_action_count"] == 5
+    assert config["primary_action_status"] == "blocked"
+    assert config["primary_action"]["check"] == "unmapped_required:ask"
+    assert config["blocked_actions"][0]["next_gate"] == "intake-vendor-csv"

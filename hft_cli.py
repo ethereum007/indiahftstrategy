@@ -1483,6 +1483,7 @@ def main(argv: list[str] | None = None) -> int:
     vendor_intake.add_argument("--min-mapping-coverage", type=float, default=1.0)
     vendor_intake.add_argument("--output-mapping-file", default="vendor_mapping_draft.csv")
     vendor_intake.add_argument("--fail-on-breach", action="store_true")
+    vendor_intake.add_argument("--fail-on-blocked-actions", action="store_true")
 
     mapped_export = sub.add_parser("map-broker-orders", help="Map broker-neutral orders into a vendor CSV shape.")
     mapped_export.add_argument("--export", required=True)
@@ -3591,7 +3592,12 @@ def main(argv: list[str] | None = None) -> int:
             ),
         )
         print(result.summary.to_string(index=False))
-        return 2 if args.fail_on_breach and not result.ready else 0
+        blocked_actions = 0 if result.action_queue is None else int(len(result.action_queue))
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        return 0
     if args.command == "map-broker-orders":
         result = write_mapped_order_export(
             args.export,

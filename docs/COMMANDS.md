@@ -2077,7 +2077,8 @@ python -m hft_cli intake-vendor-csv `
   --out mappings\arrow_ticks_intake `
   --adapter arrow_money `
   --kind auto `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -2087,6 +2088,9 @@ vendor_intake_columns.csv
 vendor_intake_kind_scores.csv
 vendor_intake_mapping_candidates.csv
 vendor_intake_source_profile.json
+vendor_intake_action_queue.csv
+vendor_intake_config.json
+vendor_intake_runbook.md
 vendor_mapping_draft.csv
 vendor_intake_summary.csv
 manifest.json
@@ -2100,6 +2104,12 @@ Arrow.money/iRage sample can be matched exactly to the reviewed mapping.
 `vendor_intake_summary.csv` also exposes `failed_check_count`,
 `failed_check_names`, `first_failed_reason`, and `primary_blocker_*` fields for
 ambiguous auto-kind detection or the first unmapped normalized column.
+It also writes `vendor_intake_action_queue.csv`,
+`vendor_intake_config.json`, and `vendor_intake_runbook.md` with blocked
+mapping or kind-selection actions, `next_gate`, `next_gate_help_command`,
+`primary_action_status`, `primary_action`, and `next_actions`/
+`blocked_actions` so `catalog-runs` can route raw Arrow.money/iRage sample
+blockers directly back to `intake-vendor-csv --help`.
 
 ## Vendor Order Mapping Draft
 

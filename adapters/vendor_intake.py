@@ -35,6 +35,7 @@ class VendorCsvIntakeReport:
     summary: pd.DataFrame
     source_profile: dict[str, Any] | None = None
     output_dir: Path | None = None
+    action_queue: pd.DataFrame | None = None
 
     @property
     def ready(self) -> bool:
@@ -74,6 +75,7 @@ def profile_vendor_csv(
         source_profile=source_profile,
         config=config,
     )
+    action_queue = _action_queue(summary.iloc[0], mapping_draft)
     return VendorCsvIntakeReport(
         columns=columns,
         kind_scores=kind_scores,
@@ -81,6 +83,7 @@ def profile_vendor_csv(
         mapping_draft=mapping_draft,
         summary=summary,
         source_profile=source_profile,
+        action_queue=action_queue,
     )
 
 
@@ -109,9 +112,24 @@ def write_vendor_csv_intake_report(
     source_profile = _with_mapping_profile(report.source_profile or {}, mapping_path)
     summary = report.summary.copy()
     summary["mapping_draft_sha256"] = str(source_profile.get("mapping_draft_sha256", ""))
+    action_queue = _action_queue(summary.iloc[0], report.mapping_draft)
     summary.to_csv(out / "vendor_intake_summary.csv", index=False)
+    action_queue.to_csv(out / "vendor_intake_action_queue.csv", index=False)
     source_profile_path.write_text(
         json.dumps(source_profile, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "vendor_intake_config.json").write_text(
+        json.dumps(
+            _config(summary.iloc[0], action_queue, config),
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (out / "vendor_intake_runbook.md").write_text(
+        _runbook_markdown(summary.iloc[0], action_queue),
         encoding="utf-8",
     )
     write_experiment_manifest(
@@ -129,6 +147,7 @@ def write_vendor_csv_intake_report(
         summary=summary,
         source_profile=source_profile,
         output_dir=out,
+        action_queue=action_queue,
     )
 
 
@@ -255,6 +274,8 @@ def _summary(
         unmapped_columns=unmapped_columns,
     )
     primary_blocker = blockers[0] if blockers else {}
+    blocked_action_count = int(len(blockers))
+    next_gate = "intake-vendor-csv" if blocked_action_count else ""
     return pd.DataFrame(
         [
             {
@@ -282,6 +303,11 @@ def _summary(
                 "primary_blocker_operator": str(primary_blocker.get("operator", "")),
                 "primary_blocker_threshold": str(primary_blocker.get("threshold", "")),
                 "primary_blocker_reason": str(primary_blocker.get("reason", "")),
+                "ready_action_count": 0,
+                "blocked_action_count": blocked_action_count,
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command(next_gate),
+                "primary_action_status": "blocked" if blocked_action_count else "",
                 "mapping_coverage": float(best["mapping_coverage"]),
                 "min_mapping_coverage": float(config.min_mapping_coverage),
                 "kind_selection": _kind_selection(config, ambiguous),
@@ -335,6 +361,238 @@ def _summary_blockers(
                 }
             )
     return blockers
+
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "normalized_column",
+    "next_gate",
+    "next_gate_help_command",
+    "reason",
+    "recommendation",
+]
+
+
+def _action_queue(summary_row: pd.Series, mapping_draft: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    if _to_bool(summary_row.get("selected_kind_ambiguous", False)):
+        rows.append(
+            _action_row(
+                source="vendor_intake_summary",
+                component="kind_selection",
+                check="ambiguous_kind_selection",
+                normalized_column="",
+                reason=_text(summary_row.get("primary_blocker_reason"))
+                or "auto kind selection is ambiguous",
+                recommendation="set_vendor_kind_explicitly_before_normalizing",
+            )
+        )
+    if not mapping_draft.empty:
+        for item in mapping_draft.to_dict(orient="records"):
+            normalized = _text(item.get("normalized_column"))
+            status = _text(item.get("status"))
+            required = _to_bool(item.get("required", True), default=True)
+            source_column = _text(item.get("source_column"))
+            default_value = _text(item.get("default_value"))
+            if required and status == "unmapped_required" and not source_column and not default_value:
+                rows.append(
+                    _action_row(
+                        source="vendor_mapping_draft",
+                        component="mapping",
+                        check=f"unmapped_required:{normalized}",
+                        normalized_column=normalized,
+                        reason=f"{normalized} normalized column is not mapped to a source column",
+                        recommendation="complete_vendor_mapping_before_research",
+                    )
+                )
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _action_row(
+    *,
+    source: str,
+    component: str,
+    check: str,
+    normalized_column: str,
+    reason: str,
+    recommendation: str,
+) -> dict[str, str]:
+    next_gate = "intake-vendor-csv"
+    return {
+        "queue_status": "blocked",
+        "source": source,
+        "component": component,
+        "check": check,
+        "normalized_column": normalized_column,
+        "next_gate": next_gate,
+        "next_gate_help_command": _help_command(next_gate),
+        "reason": reason,
+        "recommendation": recommendation,
+    }
+
+
+def _config(
+    summary_row: pd.Series,
+    action_queue: pd.DataFrame,
+    config: VendorCsvIntakeConfig,
+) -> dict[str, Any]:
+    primary_action = _first_action_record(action_queue)
+    return {
+        "schema_version": 1,
+        "ready": _to_bool(summary_row.get("ready", False)),
+        "adapter": config.adapter,
+        "requested_kind": config.kind,
+        "best_kind": _text(summary_row.get("best_kind")),
+        "kind_selection": _text(summary_row.get("kind_selection")),
+        "selected_kind_ambiguous": _to_bool(summary_row.get("selected_kind_ambiguous", False)),
+        "ambiguous_kinds": _split_items(summary_row.get("ambiguous_kinds")),
+        "source": {
+            "path": _text(summary_row.get("source_path")),
+            "file_sha256": _text(summary_row.get("source_file_sha256")),
+            "file_size_bytes": _int(summary_row.get("source_file_size_bytes")),
+            "header_sha256": _text(summary_row.get("source_header_sha256")),
+            "columns": _int(summary_row.get("source_columns")),
+            "sampled_rows": _int(summary_row.get("sampled_rows")),
+        },
+        "mapping": {
+            "draft_file": _text(summary_row.get("output_mapping_file")),
+            "draft_sha256": _text(summary_row.get("mapping_draft_sha256")),
+            "required_columns": _int(summary_row.get("required_columns")),
+            "mapped_columns": _int(summary_row.get("mapped_columns")),
+            "unmapped_required_columns": _int(summary_row.get("unmapped_required_columns")),
+            "unmapped_normalized_columns": _split_items(summary_row.get("unmapped_normalized_columns")),
+            "coverage": _float(summary_row.get("mapping_coverage")),
+            "min_coverage": float(config.min_mapping_coverage),
+        },
+        "failed_check_count": _int(summary_row.get("failed_check_count")),
+        "failed_check_names": _split_items(summary_row.get("failed_check_names")),
+        "first_failed_reason": _text(summary_row.get("first_failed_reason")),
+        "primary_blocker": {
+            "check": _text(summary_row.get("primary_blocker_check")),
+            "value": _text(summary_row.get("primary_blocker_value")),
+            "operator": _text(summary_row.get("primary_blocker_operator")),
+            "threshold": _text(summary_row.get("primary_blocker_threshold")),
+            "reason": _text(summary_row.get("primary_blocker_reason")),
+        },
+        "ready_action_count": _int(summary_row.get("ready_action_count")),
+        "blocked_action_count": _int(summary_row.get("blocked_action_count")),
+        "next_gate": _text(summary_row.get("next_gate")),
+        "next_gate_help_command": _text(summary_row.get("next_gate_help_command")),
+        "primary_action_status": _text(summary_row.get("primary_action_status")),
+        "primary_action": primary_action,
+        "next_actions": _action_records(action_queue),
+        "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
+        "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
+        "recommendation": _text(summary_row.get("recommendation")),
+    }
+
+
+def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str:
+    ready_label = "yes" if _to_bool(summary_row.get("ready", False)) else "no"
+    lines = [
+        "# Vendor CSV Intake Runbook",
+        "",
+        f"- Ready: {ready_label}",
+        f"- Adapter: {_text(summary_row.get('adapter'))}",
+        f"- Requested kind: {_text(summary_row.get('requested_kind'))}",
+        f"- Best kind: {_text(summary_row.get('best_kind'))}",
+        f"- Mapping coverage: {_float(summary_row.get('mapping_coverage')):.4f}",
+        f"- Recommendation: {_text(summary_row.get('recommendation'))}",
+        f"- Blocked actions: {_int(summary_row.get('blocked_action_count'))}",
+        f"- Primary next gate: {_code(summary_row.get('next_gate'))}",
+        f"- Primary next gate help: {_code(summary_row.get('next_gate_help_command'))}",
+        "",
+        "## Blocked Actions",
+        "",
+        _action_queue_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _action_queue_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "No blocked actions."
+    rows = [
+        "| priority | check | normalized column | next gate | help | reason |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ]
+    for item in action_queue.to_dict(orient="records"):
+        rows.append(
+            "| "
+            + " | ".join(
+                [
+                    _text(item.get("priority")),
+                    _text(item.get("check")),
+                    _text(item.get("normalized_column")),
+                    _code(item.get("next_gate")),
+                    _code(item.get("next_gate_help_command")),
+                    _text(item.get("reason")),
+                ]
+            )
+            + " |"
+        )
+    return "\n".join(rows)
+
+
+def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFrame:
+    if action_queue.empty or "queue_status" not in action_queue.columns:
+        return action_queue.iloc[0:0].copy()
+    return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
+
+
+def _first_action_record(action_queue: pd.DataFrame) -> dict[str, object]:
+    if action_queue.empty:
+        return {}
+    return _jsonable_record(action_queue.iloc[0].to_dict())
+
+
+def _action_records(action_queue: pd.DataFrame) -> list[dict[str, object]]:
+    if action_queue.empty:
+        return []
+    return [_jsonable_record(row) for row in action_queue.to_dict(orient="records")]
+
+
+def _jsonable_record(row: dict[str, object]) -> dict[str, object]:
+    record: dict[str, object] = {}
+    for key, value in row.items():
+        record[str(key)] = _jsonable_value(value)
+    return record
+
+
+def _jsonable_value(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def _split_items(value: object) -> list[str]:
+    text = _text(value)
+    if not text:
+        return []
+    return [item for item in text.split(";") if item]
+
+
+def _help_command(next_gate: str) -> str:
+    gate = _text(next_gate)
+    return f"python -m hft_cli {gate} --help" if gate else ""
+
+
+def _code(value: object) -> str:
+    text = _text(value)
+    return f"`{text}`" if text else ""
 
 
 def _top_ambiguous_kinds(kind_scores: pd.DataFrame, config: VendorCsvIntakeConfig) -> list[str]:
@@ -552,6 +810,49 @@ def _parse_rate(values: pd.Series, *, kind: str) -> float:
 
 def _rate(numerator: int, denominator: int) -> float:
     return float(numerator / denominator) if denominator else 0.0
+
+
+def _text(value: object) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _int(value: object) -> int:
+    try:
+        if pd.isna(value):
+            return 0
+        return int(float(value))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _float(value: object) -> float:
+    try:
+        if pd.isna(value):
+            return 0.0
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _to_bool(value: object, *, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    try:
+        if pd.isna(value):
+            return default
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y", "pass", "passed", "ready"}:
+        return True
+    if text in {"false", "0", "no", "n", "fail", "failed", "not_ready", "blocked"}:
+        return False
+    return default
 
 
 def _validate_config(config: VendorCsvIntakeConfig) -> None:

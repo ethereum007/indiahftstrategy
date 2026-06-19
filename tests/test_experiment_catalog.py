@@ -2,6 +2,7 @@ import json
 
 import pandas as pd
 
+from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intake_report
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs, write_experiment_catalog
 from reports.manifest import write_experiment_manifest
@@ -147,6 +148,36 @@ def test_write_experiment_catalog_outputs_catalog_summary_and_manifest(tmp_path)
     assert "experiment_catalog_action_plan.json" in artifact_paths
     assert "experiment_catalog_hygiene_gaps.csv" in artifact_paths
     assert "experiment_catalog_runbook.md" in artifact_paths
+
+
+def test_experiment_catalog_promotes_vendor_intake_action_queue(tmp_path):
+    sample = tmp_path / "partial_arrow_ticks.csv"
+    intake_dir = tmp_path / "intake"
+    catalog_dir = tmp_path / "catalog"
+    pd.DataFrame([{"exchange_ts": "2026-06-10 09:15:00", "best_bid": 100.0}]).to_csv(
+        sample,
+        index=False,
+    )
+    write_vendor_csv_intake_report(
+        sample,
+        output_dir=intake_dir,
+        config=VendorCsvIntakeConfig(adapter="arrow_money", kind="ticks"),
+    )
+
+    report = write_experiment_catalog([intake_dir], output_dir=catalog_dir)
+
+    queue = pd.read_csv(catalog_dir / "experiment_catalog_action_queue.csv")
+    action_plan = json.loads((catalog_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 5
+    assert set(queue["action_source_file"]) == {"vendor_intake_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "vendor_csv_intake"
+    assert queue.loc[0, "check"] == "unmapped_required:ask"
+    assert queue.loc[0, "component"] == "mapping"
+    assert queue.loc[0, "next_gate"] == "intake-vendor-csv"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli intake-vendor-csv --help"
+    assert action_plan["blocked_action_count"] == 5
+    assert action_plan["primary_action_status"] == "blocked"
+    assert action_plan["primary_action"]["check"] == "unmapped_required:ask"
 
 
 def test_write_experiment_catalog_outputs_hygiene_gap_sidecar(tmp_path):

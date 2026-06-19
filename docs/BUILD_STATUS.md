@@ -139,6 +139,10 @@
   root-level `primary_action_status` and `primary_action`, carrying the
   selected failed check, dataset, and next-gate context for Arrow.money/iRage
   onboarding schedulers.
+- Vendor CSV intake now emits manifest-tracked `vendor_intake_action_queue.csv`,
+  `vendor_intake_config.json`, and `vendor_intake_runbook.md`, so ambiguous
+  kind selection or unmapped Arrow.money/iRage sample columns become catalog
+  schedulable actions before the broader market-data batch pipeline runs.
 - Experiment catalog now recognizes broker-vendor data readiness summaries,
   preserving wrapper proof readiness and Arrow.money/iRage data-proof signals
   for downstream evidence ledgers.
@@ -981,7 +985,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 924 tests.
+Current passing suite: 925 tests.
 
 ## Next Build Targets
 
