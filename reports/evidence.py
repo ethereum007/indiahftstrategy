@@ -112,6 +112,8 @@ class EvidenceThresholds:
     require_no_blocked_placeholder_schema: bool = False
     require_broker_roundtrip_portfolio_safe: bool = False
     fail_on_broker_roundtrip_portfolio_breach: bool = False
+    require_broker_roundtrip_portfolio_concentration_ok: bool = False
+    fail_on_broker_roundtrip_portfolio_concentration_breach: bool = False
 
 
 @dataclass(frozen=True)
@@ -359,6 +361,30 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "catalog contains broker dispatch round-trip notional above selected portfolio allocation",
             )
         )
+    if thresholds.require_broker_roundtrip_portfolio_concentration_ok:
+        concentration_ok_roundtrips = _broker_roundtrip_portfolio_concentration_ok_count(catalog)
+        rows.append(
+            _check(
+                "broker_roundtrip_portfolio_concentration_ok",
+                concentration_ok_roundtrips,
+                ">=",
+                1,
+                concentration_ok_roundtrips >= 1,
+                "catalog does not contain a concentration-ok broker dispatch round-trip proof",
+            )
+        )
+    if thresholds.fail_on_broker_roundtrip_portfolio_concentration_breach:
+        concentration_breach_roundtrips = _broker_roundtrip_portfolio_concentration_breach_count(catalog)
+        rows.append(
+            _check(
+                "broker_roundtrip_portfolio_concentration_breach",
+                concentration_breach_roundtrips,
+                "==",
+                0,
+                concentration_breach_roundtrips == 0,
+                "catalog contains broker dispatch round-trip concentration above selected portfolio limits",
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -384,6 +410,9 @@ def _summary(
     placeholder_blocked = _placeholder_schema_blocked_count(catalog)
     roundtrip_safe = _broker_roundtrip_portfolio_safe_count(catalog)
     roundtrip_breach = _broker_roundtrip_portfolio_breach_count(catalog)
+    concentration_runs, concentration_ok, concentration_breach = _broker_roundtrip_portfolio_concentration_counts(
+        catalog
+    )
     return pd.DataFrame(
         [
             {
@@ -419,10 +448,19 @@ def _summary(
                 "fail_on_broker_roundtrip_portfolio_breach": bool(
                     thresholds.fail_on_broker_roundtrip_portfolio_breach
                 ),
+                "require_broker_roundtrip_portfolio_concentration_ok": bool(
+                    thresholds.require_broker_roundtrip_portfolio_concentration_ok
+                ),
+                "fail_on_broker_roundtrip_portfolio_concentration_breach": bool(
+                    thresholds.fail_on_broker_roundtrip_portfolio_concentration_breach
+                ),
                 "placeholder_schema_active_runs": placeholder_active,
                 "placeholder_schema_blocked_runs": placeholder_blocked,
                 "broker_roundtrip_portfolio_safe_runs": roundtrip_safe,
                 "broker_roundtrip_portfolio_breach_runs": roundtrip_breach,
+                "broker_roundtrip_portfolio_concentration_runs": concentration_runs,
+                "broker_roundtrip_portfolio_concentration_ok_runs": concentration_ok,
+                "broker_roundtrip_portfolio_concentration_breach_runs": concentration_breach,
                 "input_file_count": input_file_count,
                 "input_directory_count": input_directory_count,
                 "input_other_count": input_other_count,
@@ -577,6 +615,65 @@ def _broker_roundtrip_portfolio_breach_count(catalog: pd.DataFrame) -> int:
         provided & (selected_allocation > 0.0) & (dispatch_notional > selected_allocation)
     )
     return int(breached_roundtrip.sum())
+
+
+def _broker_roundtrip_portfolio_concentration_ok_count(catalog: pd.DataFrame) -> int:
+    return _broker_roundtrip_portfolio_concentration_counts(catalog)[1]
+
+
+def _broker_roundtrip_portfolio_concentration_breach_count(catalog: pd.DataFrame) -> int:
+    return _broker_roundtrip_portfolio_concentration_counts(catalog)[2]
+
+
+def _broker_roundtrip_portfolio_concentration_counts(catalog: pd.DataFrame) -> tuple[int, int, int]:
+    frame = _broker_roundtrip_rows(catalog)
+    if frame.empty:
+        return (0, 0, 0)
+    provided = _bool_column(frame, "summary_strategy_portfolio_provided")
+    ready = _bool_column(frame, "summary_strategy_portfolio_ready")
+    selected_allocation = _numeric_column(
+        frame, "summary_strategy_portfolio_selected_allocation_notional"
+    )
+    min_strategy_count = _numeric_column(frame, "summary_strategy_portfolio_min_strategy_count")
+    min_market_count = _numeric_column(frame, "summary_strategy_portfolio_min_market_count")
+    max_strategy_weight = _numeric_column(frame, "summary_strategy_portfolio_max_strategy_weight")
+    max_market_weight = _numeric_column(frame, "summary_strategy_portfolio_max_market_weight")
+    allocated_strategy_count = _numeric_column(frame, "summary_strategy_portfolio_allocated_strategy_count")
+    allocated_market_count = _numeric_column(frame, "summary_strategy_portfolio_allocated_market_count")
+    max_strategy_allocation_weight = _numeric_column(
+        frame, "summary_strategy_portfolio_max_strategy_allocation_weight"
+    )
+    max_market_allocation_weight = _numeric_column(
+        frame, "summary_strategy_portfolio_max_market_allocation_weight"
+    )
+    concentration_provided = (
+        (min_strategy_count > 0.0)
+        | (min_market_count > 0.0)
+        | (max_strategy_weight > 0.0)
+        | (max_market_weight > 0.0)
+        | (allocated_strategy_count > 0.0)
+        | (allocated_market_count > 0.0)
+        | (max_strategy_allocation_weight > 0.0)
+        | (max_market_allocation_weight > 0.0)
+    )
+    concentration = provided & ready & (selected_allocation > 0.0) & concentration_provided
+    strategy_count_ok = (min_strategy_count <= 0.0) | (allocated_strategy_count >= min_strategy_count)
+    market_count_ok = (min_market_count <= 0.0) | (allocated_market_count >= min_market_count)
+    strategy_weight_ok = (max_strategy_weight <= 0.0) | (
+        max_strategy_allocation_weight <= max_strategy_weight + 1e-9
+    )
+    market_weight_ok = (max_market_weight <= 0.0) | (
+        max_market_allocation_weight <= max_market_weight + 1e-9
+    )
+    concentration_ok = (
+        concentration
+        & strategy_count_ok
+        & market_count_ok
+        & strategy_weight_ok
+        & market_weight_ok
+    )
+    concentration_breach = concentration & ~concentration_ok
+    return (int(concentration.sum()), int(concentration_ok.sum()), int(concentration_breach.sum()))
 
 
 def _broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:

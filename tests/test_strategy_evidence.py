@@ -436,6 +436,14 @@ def ops_launch_catalog_rows(*, commit="abc123", strategy="lead_lag_taker", marke
             row["summary_strategy_portfolio_provided"] = True
             row["summary_strategy_portfolio_ready"] = True
             row["summary_strategy_portfolio_selected_allocation_notional"] = 2000.0
+            row["summary_strategy_portfolio_min_strategy_count"] = 2
+            row["summary_strategy_portfolio_min_market_count"] = 1
+            row["summary_strategy_portfolio_max_strategy_weight"] = 0.60
+            row["summary_strategy_portfolio_max_market_weight"] = 0.90
+            row["summary_strategy_portfolio_allocated_strategy_count"] = 2
+            row["summary_strategy_portfolio_allocated_market_count"] = 1
+            row["summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.45
+            row["summary_strategy_portfolio_max_market_allocation_weight"] = 0.80
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -973,14 +981,21 @@ def test_strategy_evidence_can_require_ops_launch_portfolio_and_schema_gates():
             require_no_blocked_placeholder_schema=True,
             require_broker_roundtrip_portfolio_safe=True,
             fail_on_broker_roundtrip_portfolio_breach=True,
+            require_broker_roundtrip_portfolio_concentration_ok=True,
+            fail_on_broker_roundtrip_portfolio_concentration_breach=True,
         ),
     )
 
     assert review.ready
     assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_safe_runs"]) == 1
     assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_breach_runs"]) == 0
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_concentration_runs"]) == 1
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_concentration_breach_runs"]) == 0
     assert bool(review.summary.iloc[0]["require_broker_roundtrip_portfolio_safe"])
     assert bool(review.summary.iloc[0]["fail_on_broker_roundtrip_portfolio_breach"])
+    assert bool(review.summary.iloc[0]["require_broker_roundtrip_portfolio_concentration_ok"])
+    assert bool(review.summary.iloc[0]["fail_on_broker_roundtrip_portfolio_concentration_breach"])
 
     breach = ops_launch_catalog_rows()
     mask = breach["run_type"] == "broker_dispatch_roundtrip"
@@ -992,6 +1007,8 @@ def test_strategy_evidence_can_require_ops_launch_portfolio_and_schema_gates():
             required_run_types=evidence_profile_run_types("ops_launch"),
             require_broker_roundtrip_portfolio_safe=True,
             fail_on_broker_roundtrip_portfolio_breach=True,
+            require_broker_roundtrip_portfolio_concentration_ok=True,
+            fail_on_broker_roundtrip_portfolio_concentration_breach=True,
         ),
     )
 
@@ -1000,6 +1017,31 @@ def test_strategy_evidence_can_require_ops_launch_portfolio_and_schema_gates():
     assert {"required_run_type:broker_dispatch_roundtrip", "broker_roundtrip_portfolio_safe"} <= failed
     assert "broker_roundtrip_portfolio_breach" in failed
     assert int(blocked.summary.iloc[0]["broker_roundtrip_portfolio_breach_runs"]) == 1
+
+    concentrated = ops_launch_catalog_rows()
+    concentrated_mask = concentrated["run_type"] == "broker_dispatch_roundtrip"
+    concentrated.loc[concentrated_mask, "summary_strategy_portfolio_allocated_strategy_count"] = 1
+    concentrated.loc[concentrated_mask, "summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.80
+    concentrated_blocked = evaluate_strategy_evidence(
+        concentrated,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("ops_launch"),
+            require_broker_roundtrip_portfolio_safe=True,
+            fail_on_broker_roundtrip_portfolio_breach=True,
+            require_broker_roundtrip_portfolio_concentration_ok=True,
+            fail_on_broker_roundtrip_portfolio_concentration_breach=True,
+        ),
+    )
+
+    concentrated_failed = set(
+        concentrated_blocked.checks.loc[
+            ~concentrated_blocked.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not concentrated_blocked.ready
+    assert "broker_roundtrip_portfolio_concentration_ok" in concentrated_failed
+    assert "broker_roundtrip_portfolio_concentration_breach" in concentrated_failed
+    assert int(concentrated_blocked.summary.iloc[0]["broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
 
 
 def test_strategy_evidence_blocks_unreviewed_placeholder_schema_when_required():
@@ -1226,7 +1268,10 @@ def test_cli_strategy_evidence_ops_launch_profile(tmp_path):
     assert bool(summary.loc[0, "require_no_blocked_placeholder_schema"])
     assert bool(summary.loc[0, "require_broker_roundtrip_portfolio_safe"])
     assert bool(summary.loc[0, "fail_on_broker_roundtrip_portfolio_breach"])
+    assert bool(summary.loc[0, "require_broker_roundtrip_portfolio_concentration_ok"])
+    assert bool(summary.loc[0, "fail_on_broker_roundtrip_portfolio_concentration_breach"])
     assert int(summary.loc[0, "broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert int(summary.loc[0, "broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
 
 
 def test_cli_strategy_evidence_ops_launch_profile_requires_file_inputs(tmp_path):
@@ -1293,6 +1338,38 @@ def test_cli_strategy_evidence_ops_launch_profile_blocks_portfolio_breach(tmp_pa
     assert "broker_roundtrip_portfolio_breach" in failed
     assert "broker_roundtrip_portfolio_safe" in failed
     assert int(summary.loc[0, "broker_roundtrip_portfolio_breach_runs"]) == 1
+
+
+def test_cli_strategy_evidence_ops_launch_profile_blocks_portfolio_concentration_breach(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "ops_launch_evidence"
+    catalog = ops_launch_catalog_rows()
+    mask = catalog["run_type"] == "broker_dispatch_roundtrip"
+    catalog.loc[mask, "summary_strategy_portfolio_allocated_strategy_count"] = 1
+    catalog.loc[mask, "summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.80
+    catalog.to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "ops_launch",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "strategy_evidence_checks.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "broker_roundtrip_portfolio_concentration_ok" in failed
+    assert "broker_roundtrip_portfolio_concentration_breach" in failed
+    assert "broker_roundtrip_portfolio_breach" not in failed
+    assert int(summary.loc[0, "broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
 
 
 def test_cli_strategy_evidence_can_require_strategy_identity(tmp_path):

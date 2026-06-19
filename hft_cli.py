@@ -1198,6 +1198,8 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--fail-on-blocked-placeholder-schema", action="store_true")
     evidence.add_argument("--fail-on-broker-roundtrip-portfolio-breach", action="store_true")
     evidence.add_argument("--require-broker-roundtrip-portfolio-safe", action="store_true")
+    evidence.add_argument("--fail-on-broker-roundtrip-portfolio-concentration-breach", action="store_true")
+    evidence.add_argument("--require-broker-roundtrip-portfolio-concentration-ok", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     scorecard = sub.add_parser(
@@ -3414,6 +3416,12 @@ def main(argv: list[str] | None = None) -> int:
                 or is_ops_launch_profile,
                 fail_on_broker_roundtrip_portfolio_breach=args.fail_on_broker_roundtrip_portfolio_breach
                 or is_ops_launch_profile,
+                require_broker_roundtrip_portfolio_concentration_ok=(
+                    args.require_broker_roundtrip_portfolio_concentration_ok or is_ops_launch_profile
+                ),
+                fail_on_broker_roundtrip_portfolio_concentration_breach=(
+                    args.fail_on_broker_roundtrip_portfolio_concentration_breach or is_ops_launch_profile
+                ),
             ),
         )
         print(result.summary.to_string(index=False))

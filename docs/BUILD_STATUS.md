@@ -376,7 +376,8 @@
   strategy/market count and max-weight limits.
 - `review-strategy-evidence --profile ops_launch` now automatically applies
   the same launch-grade checks for blocked placeholder schemas, portfolio-safe
-  final broker dispatch round-trip proof, and broker round-trip allocation
+  final broker dispatch round-trip proof, portfolio concentration-OK proof,
+  broker round-trip allocation breaches, and broker round-trip concentration
   breaches, while custom evidence reviews can opt into those gates explicitly.
 - `catalog-runs --fail-on-catalog-gaps` now fails on failed summaries,
   missing summaries, dirty runs, or unfingerprinted inputs before a catalog is

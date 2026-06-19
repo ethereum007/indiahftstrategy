@@ -291,22 +291,27 @@ have file-resolved input provenance in the experiment catalog, blocking
 directory-tree or unfingerprinted raw inputs before live-dryrun route review.
 It also automatically blocks unreviewed placeholder broker schemas that were
 not explicitly allowed, requires at least one portfolio-safe final broker
-dispatch round-trip proof, and fails when any final round-trip dispatch
-notional exceeded the selected strategy portfolio allocation.
+dispatch round-trip proof, requires at least one concentration-OK final broker
+round-trip proof, fails when any final round-trip dispatch notional exceeded
+the selected strategy portfolio allocation, and fails when any final
+round-trip concentration breached selected strategy/market count or max-weight
+limits.
 Use `--allow-non-file-inputs` only for legacy exploratory catalogs, or
 `--require-file-inputs` to apply the same fail-closed provenance rule to a
 custom evidence set.
 Custom evidence sets can opt into the same launch controls with
 `--fail-on-blocked-placeholder-schema`, `--fail-on-placeholder-schema`,
 `--require-broker-roundtrip-portfolio-safe`, and
-`--fail-on-broker-roundtrip-portfolio-breach`.
+`--fail-on-broker-roundtrip-portfolio-breach`,
+`--require-broker-roundtrip-portfolio-concentration-ok`, and
+`--fail-on-broker-roundtrip-portfolio-concentration-breach`.
 
 `strategy_evidence_summary.csv` records the inferred `evidence_profile`. Ready
 strategy profiles recommend `eligible_for_shadow_scaleup_review`, while a ready
 `ops_launch` profile recommends `eligible_for_live_dryrun_route_review`.
 It also records passed-required input provenance totals, placeholder-schema
-counts, and broker round-trip portfolio-safe/breach counts when the catalog
-contains them.
+counts, broker round-trip portfolio-safe/breach counts, and broker round-trip
+portfolio concentration OK/breach counts when the catalog contains them.
 
 Outputs:
 
