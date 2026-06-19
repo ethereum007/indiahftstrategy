@@ -1155,6 +1155,10 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--expected-market", default=None)
     evidence.add_argument("--require-file-inputs", action="store_true")
     evidence.add_argument("--allow-non-file-inputs", action="store_true")
+    evidence.add_argument("--fail-on-placeholder-schema", action="store_true")
+    evidence.add_argument("--fail-on-blocked-placeholder-schema", action="store_true")
+    evidence.add_argument("--fail-on-broker-roundtrip-portfolio-breach", action="store_true")
+    evidence.add_argument("--require-broker-roundtrip-portfolio-safe", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     scorecard = sub.add_parser(
@@ -3197,6 +3201,13 @@ def main(argv: list[str] | None = None) -> int:
                 expected_market=args.expected_market,
                 require_file_inputs=args.require_file_inputs
                 or (is_ops_launch_profile and not args.allow_non_file_inputs),
+                require_no_placeholder_schema=args.fail_on_placeholder_schema,
+                require_no_blocked_placeholder_schema=args.fail_on_blocked_placeholder_schema
+                or is_ops_launch_profile,
+                require_broker_roundtrip_portfolio_safe=args.require_broker_roundtrip_portfolio_safe
+                or is_ops_launch_profile,
+                fail_on_broker_roundtrip_portfolio_breach=args.fail_on_broker_roundtrip_portfolio_breach
+                or is_ops_launch_profile,
             ),
         )
         print(result.summary.to_string(index=False))

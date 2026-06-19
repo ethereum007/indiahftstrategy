@@ -61,6 +61,7 @@ OPS_LAUNCH_REQUIRED_RUN_TYPES = (
     "broker_dispatch_ack_reconciliation",
     "broker_dispatch_roundtrip",
 )
+PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
@@ -107,6 +108,10 @@ class EvidenceThresholds:
     expected_strategy: str | None = None
     expected_market: str | None = None
     require_file_inputs: bool = False
+    require_no_placeholder_schema: bool = False
+    require_no_blocked_placeholder_schema: bool = False
+    require_broker_roundtrip_portfolio_safe: bool = False
+    fail_on_broker_roundtrip_portfolio_breach: bool = False
 
 
 @dataclass(frozen=True)
@@ -306,6 +311,54 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "passed required evidence has directory, other, or unfingerprinted inputs",
             )
         )
+    if thresholds.require_no_placeholder_schema:
+        active_placeholders = _placeholder_schema_active_count(catalog)
+        rows.append(
+            _check(
+                "placeholder_schema_active",
+                active_placeholders,
+                "==",
+                0,
+                active_placeholders == 0,
+                "catalog contains broker artifacts still using placeholder schemas",
+            )
+        )
+    if thresholds.require_no_blocked_placeholder_schema:
+        blocked_placeholders = _placeholder_schema_blocked_count(catalog)
+        rows.append(
+            _check(
+                "placeholder_schema_blocked",
+                blocked_placeholders,
+                "==",
+                0,
+                blocked_placeholders == 0,
+                "catalog contains unreviewed placeholder broker schemas that were not explicitly allowed",
+            )
+        )
+    if thresholds.require_broker_roundtrip_portfolio_safe:
+        safe_roundtrips = _broker_roundtrip_portfolio_safe_count(catalog)
+        rows.append(
+            _check(
+                "broker_roundtrip_portfolio_safe",
+                safe_roundtrips,
+                ">=",
+                1,
+                safe_roundtrips >= 1,
+                "catalog does not contain a portfolio-safe broker dispatch round-trip proof",
+            )
+        )
+    if thresholds.fail_on_broker_roundtrip_portfolio_breach:
+        breach_roundtrips = _broker_roundtrip_portfolio_breach_count(catalog)
+        rows.append(
+            _check(
+                "broker_roundtrip_portfolio_breach",
+                breach_roundtrips,
+                "==",
+                0,
+                breach_roundtrips == 0,
+                "catalog contains broker dispatch round-trip notional above selected portfolio allocation",
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -327,6 +380,10 @@ def _summary(
     input_other_count = _input_provenance_count(passed_required_rows, "input_other_count")
     input_unfingerprinted_count = _input_provenance_count(passed_required_rows, "input_unfingerprinted_count")
     input_hashed_count = _input_provenance_count(passed_required_rows, "input_hashed_count")
+    placeholder_active = _placeholder_schema_active_count(catalog)
+    placeholder_blocked = _placeholder_schema_blocked_count(catalog)
+    roundtrip_safe = _broker_roundtrip_portfolio_safe_count(catalog)
+    roundtrip_breach = _broker_roundtrip_portfolio_breach_count(catalog)
     return pd.DataFrame(
         [
             {
@@ -354,6 +411,18 @@ def _summary(
                 if thresholds.expected_market is not None
                 else "",
                 "require_file_inputs": bool(thresholds.require_file_inputs),
+                "require_no_placeholder_schema": bool(thresholds.require_no_placeholder_schema),
+                "require_no_blocked_placeholder_schema": bool(thresholds.require_no_blocked_placeholder_schema),
+                "require_broker_roundtrip_portfolio_safe": bool(
+                    thresholds.require_broker_roundtrip_portfolio_safe
+                ),
+                "fail_on_broker_roundtrip_portfolio_breach": bool(
+                    thresholds.fail_on_broker_roundtrip_portfolio_breach
+                ),
+                "placeholder_schema_active_runs": placeholder_active,
+                "placeholder_schema_blocked_runs": placeholder_blocked,
+                "broker_roundtrip_portfolio_safe_runs": roundtrip_safe,
+                "broker_roundtrip_portfolio_breach_runs": roundtrip_breach,
                 "input_file_count": input_file_count,
                 "input_directory_count": input_directory_count,
                 "input_other_count": input_other_count,
@@ -446,6 +515,90 @@ def _input_provenance_count(frame: pd.DataFrame, column: str) -> int:
     if frame.empty or column not in frame.columns:
         return 0
     return int(pd.to_numeric(frame[column], errors="coerce").fillna(0).sum())
+
+
+def _placeholder_schema_active_count(catalog: pd.DataFrame) -> int:
+    return int(_placeholder_schema_active(catalog).sum())
+
+
+def _placeholder_schema_blocked_count(catalog: pd.DataFrame) -> int:
+    active = _placeholder_schema_active(catalog)
+    reviewed = _bool_column(catalog, "summary_schema_reviewed")
+    allowed = _bool_column(catalog, "summary_placeholder_schema_allowed")
+    return int((active & ~reviewed & ~allowed).sum())
+
+
+def _placeholder_schema_active(catalog: pd.DataFrame) -> pd.Series:
+    if catalog.empty:
+        return pd.Series(dtype=bool)
+    explicit_active = _bool_column(catalog, "summary_placeholder_schema_active")
+    if "summary_adapter_schema_status" in catalog.columns:
+        status_active = catalog["summary_adapter_schema_status"].map(_is_placeholder_schema)
+    else:
+        status_active = pd.Series(False, index=catalog.index)
+    return explicit_active | status_active
+
+
+def _is_placeholder_schema(value: Any) -> bool:
+    return str(value).strip() == PLACEHOLDER_SCHEMA_STATUS
+
+
+def _broker_roundtrip_portfolio_safe_count(catalog: pd.DataFrame) -> int:
+    frame = _broker_roundtrip_rows(catalog)
+    if frame.empty:
+        return 0
+    provided = _bool_column(frame, "summary_strategy_portfolio_provided")
+    ready = _bool_column(frame, "summary_strategy_portfolio_ready")
+    passed = _bool_column(frame, "summary_status")
+    dispatch_notional = _numeric_column(frame, "summary_dispatch_total_notional")
+    selected_allocation = _numeric_column(
+        frame, "summary_strategy_portfolio_selected_allocation_notional"
+    )
+    safe_roundtrip = (
+        provided
+        & ready
+        & passed
+        & (selected_allocation > 0.0)
+        & (dispatch_notional <= selected_allocation)
+    )
+    return int(safe_roundtrip.sum())
+
+
+def _broker_roundtrip_portfolio_breach_count(catalog: pd.DataFrame) -> int:
+    frame = _broker_roundtrip_rows(catalog)
+    if frame.empty:
+        return 0
+    provided = _bool_column(frame, "summary_strategy_portfolio_provided")
+    dispatch_notional = _numeric_column(frame, "summary_dispatch_total_notional")
+    selected_allocation = _numeric_column(
+        frame, "summary_strategy_portfolio_selected_allocation_notional"
+    )
+    breached_roundtrip = (
+        provided & (selected_allocation > 0.0) & (dispatch_notional > selected_allocation)
+    )
+    return int(breached_roundtrip.sum())
+
+
+def _broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:
+    if catalog.empty or "run_type" not in catalog.columns:
+        return catalog.iloc[0:0].copy()
+    return catalog.loc[catalog["run_type"].astype(str) == "broker_dispatch_roundtrip"].copy()
+
+
+def _bool_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=bool)
+    if column not in frame.columns:
+        return pd.Series(False, index=frame.index)
+    return frame[column].map(_to_bool)
+
+
+def _numeric_column(frame: pd.DataFrame, column: str) -> pd.Series:
+    if frame.empty:
+        return pd.Series(dtype=float)
+    if column not in frame.columns:
+        return pd.Series(0.0, index=frame.index)
+    return pd.to_numeric(frame[column], errors="coerce").fillna(0.0)
 
 
 def _numeric(value: Any) -> float:
