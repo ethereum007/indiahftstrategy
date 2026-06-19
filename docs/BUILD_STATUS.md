@@ -88,6 +88,10 @@
 - Runtime telemetry and guard reports now carry the selected strategy portfolio
   allocation context from `scaleup_config.json` and explicitly halt if session
   notional breaches the selected paper/shadow allocation notional.
+- Runtime telemetry, guard, and session handoffs now also preserve strategy
+  portfolio concentration context from scale-up, including distinct
+  strategy/market counts and maximum aggregate strategy/market allocation
+  weights.
 - Runtime session summaries and step ledgers now retain strategy portfolio
   allocation context from telemetry/guard, including selected strategy/market,
   eligibility, allocation weight/notional, pre-cap notional, and cap-applied

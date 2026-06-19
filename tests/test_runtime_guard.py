@@ -81,6 +81,16 @@ def scaleup_config(
             "deployment_mode": "paper_shadow",
             "allocation_mode": "readiness_weighted",
             "capital_currency": "INR",
+            "min_strategy_count": 2,
+            "min_market_count": 1,
+            "max_strategy_weight": 0.60,
+            "max_market_weight": 0.90,
+            "allocated_strategy_count": 2,
+            "allocated_market_count": 1,
+            "top_strategy_by_weight": "lead_lag_taker",
+            "top_market_by_weight": "india_nse_index_derivatives",
+            "max_strategy_allocation_weight": 0.45,
+            "max_market_allocation_weight": 0.90,
             "selected_profile": "leadlag",
             "selected_strategy": "lead_lag_taker",
             "selected_market": "india_nse_index_derivatives",
@@ -474,7 +484,15 @@ def test_runtime_guard_continues_with_required_strategy_portfolio_allocation():
     summary = report.summary.iloc[0]
     assert row["scaleup_strategy_portfolio_selected_allocation_notional"] == 1200.0
     assert row["runtime_strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert row["scaleup_strategy_portfolio_allocated_strategy_count"] == 2
+    assert row["runtime_strategy_portfolio_allocated_strategy_count"] == 2
+    assert row["runtime_strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert row["runtime_strategy_portfolio_max_strategy_allocation_weight"] == 0.45
     assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert summary["strategy_portfolio_allocated_strategy_count"] == 2
+    assert summary["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert report.config["strategy_portfolio"]["allocated_strategy_count"] == 2
+    assert report.config["strategy_portfolio"]["max_strategy_allocation_weight"] == 0.45
     assert bool(summary["strategy_portfolio_notional_cap_applied"])
 
 

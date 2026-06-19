@@ -89,6 +89,16 @@ def scaleup_config(
             "deployment_mode": "paper_shadow",
             "allocation_mode": "readiness_weighted",
             "capital_currency": "INR",
+            "min_strategy_count": 2,
+            "min_market_count": 1,
+            "max_strategy_weight": 0.60,
+            "max_market_weight": 0.90,
+            "allocated_strategy_count": 2,
+            "allocated_market_count": 1,
+            "top_strategy_by_weight": strategy,
+            "top_market_by_weight": market,
+            "max_strategy_allocation_weight": 0.45,
+            "max_market_allocation_weight": 0.90,
             "selected_profile": "leadlag",
             "selected_strategy": strategy,
             "selected_market": market,
@@ -454,9 +464,17 @@ def test_runtime_telemetry_carries_strategy_portfolio_config():
     assert bool(row["strategy_portfolio_selected_eligible"])
     assert row["strategy_portfolio_selected_allocation_notional"] == 1200.0
     assert bool(row["strategy_portfolio_notional_cap_applied"])
+    assert row["strategy_portfolio_allocated_strategy_count"] == 2
+    assert row["strategy_portfolio_allocated_market_count"] == 1
+    assert row["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
+    assert row["strategy_portfolio_top_market_by_weight"] == "india_nse_index_derivatives"
+    assert row["strategy_portfolio_max_strategy_allocation_weight"] == 0.45
+    assert row["strategy_portfolio_max_market_allocation_weight"] == 0.90
     assert row["pre_portfolio_max_notional_per_session"] == 3000.0
     assert bool(summary["strategy_portfolio_ready"])
     assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
+    assert summary["strategy_portfolio_allocated_strategy_count"] == 2
+    assert summary["strategy_portfolio_top_strategy_by_weight"] == "lead_lag_taker"
 
 
 def test_runtime_telemetry_blocks_bad_strategy_portfolio_config():

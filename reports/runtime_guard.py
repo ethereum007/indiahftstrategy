@@ -192,6 +192,40 @@ def _metrics(
                     strategy_portfolio,
                     "notional_cap_applied",
                 ),
+                "scaleup_strategy_portfolio_min_strategy_count": int(
+                    _first_number(_number_from(strategy_portfolio, "min_strategy_count"), 0.0)
+                ),
+                "scaleup_strategy_portfolio_min_market_count": int(
+                    _first_number(_number_from(strategy_portfolio, "min_market_count"), 0.0)
+                ),
+                "scaleup_strategy_portfolio_max_strategy_weight": _first_number(
+                    _number_from(strategy_portfolio, "max_strategy_weight"),
+                    0.0,
+                ),
+                "scaleup_strategy_portfolio_max_market_weight": _first_number(
+                    _number_from(strategy_portfolio, "max_market_weight"),
+                    0.0,
+                ),
+                "scaleup_strategy_portfolio_allocated_strategy_count": int(
+                    _first_number(_number_from(strategy_portfolio, "allocated_strategy_count"), 0.0)
+                ),
+                "scaleup_strategy_portfolio_allocated_market_count": int(
+                    _first_number(_number_from(strategy_portfolio, "allocated_market_count"), 0.0)
+                ),
+                "scaleup_strategy_portfolio_top_strategy_by_weight": _strategy_key(
+                    strategy_portfolio.get("top_strategy_by_weight", "")
+                ),
+                "scaleup_strategy_portfolio_top_market_by_weight": _identity_key(
+                    strategy_portfolio.get("top_market_by_weight", "")
+                ),
+                "scaleup_strategy_portfolio_max_strategy_allocation_weight": _first_number(
+                    _number_from(strategy_portfolio, "max_strategy_allocation_weight"),
+                    0.0,
+                ),
+                "scaleup_strategy_portfolio_max_market_allocation_weight": _first_number(
+                    _number_from(strategy_portfolio, "max_market_allocation_weight"),
+                    0.0,
+                ),
                 "runtime_strategy_portfolio_provided": _bool_value(
                     latest,
                     "strategy_portfolio_provided",
@@ -230,6 +264,68 @@ def _metrics(
                     latest,
                     "strategy_portfolio_notional_cap_applied",
                     fallback=_bool_from(strategy_portfolio, "notional_cap_applied"),
+                ),
+                "runtime_strategy_portfolio_min_strategy_count": int(
+                    _first_number(
+                        _number(latest, "strategy_portfolio_min_strategy_count"),
+                        _number_from(strategy_portfolio, "min_strategy_count"),
+                        0.0,
+                    )
+                ),
+                "runtime_strategy_portfolio_min_market_count": int(
+                    _first_number(
+                        _number(latest, "strategy_portfolio_min_market_count"),
+                        _number_from(strategy_portfolio, "min_market_count"),
+                        0.0,
+                    )
+                ),
+                "runtime_strategy_portfolio_max_strategy_weight": _first_number(
+                    _number(latest, "strategy_portfolio_max_strategy_weight"),
+                    _number_from(strategy_portfolio, "max_strategy_weight"),
+                    0.0,
+                ),
+                "runtime_strategy_portfolio_max_market_weight": _first_number(
+                    _number(latest, "strategy_portfolio_max_market_weight"),
+                    _number_from(strategy_portfolio, "max_market_weight"),
+                    0.0,
+                ),
+                "runtime_strategy_portfolio_allocated_strategy_count": int(
+                    _first_number(
+                        _number(latest, "strategy_portfolio_allocated_strategy_count"),
+                        _number_from(strategy_portfolio, "allocated_strategy_count"),
+                        0.0,
+                    )
+                ),
+                "runtime_strategy_portfolio_allocated_market_count": int(
+                    _first_number(
+                        _number(latest, "strategy_portfolio_allocated_market_count"),
+                        _number_from(strategy_portfolio, "allocated_market_count"),
+                        0.0,
+                    )
+                ),
+                "runtime_strategy_portfolio_top_strategy_by_weight": _strategy_key(
+                    _value(
+                        latest,
+                        "strategy_portfolio_top_strategy_by_weight",
+                        strategy_portfolio.get("top_strategy_by_weight", ""),
+                    )
+                ),
+                "runtime_strategy_portfolio_top_market_by_weight": _identity_key(
+                    _value(
+                        latest,
+                        "strategy_portfolio_top_market_by_weight",
+                        strategy_portfolio.get("top_market_by_weight", ""),
+                    )
+                ),
+                "runtime_strategy_portfolio_max_strategy_allocation_weight": _first_number(
+                    _number(latest, "strategy_portfolio_max_strategy_allocation_weight"),
+                    _number_from(strategy_portfolio, "max_strategy_allocation_weight"),
+                    0.0,
+                ),
+                "runtime_strategy_portfolio_max_market_allocation_weight": _first_number(
+                    _number(latest, "strategy_portfolio_max_market_allocation_weight"),
+                    _number_from(strategy_portfolio, "max_market_allocation_weight"),
+                    0.0,
                 ),
                 "realized_pnl": _number(latest, "realized_pnl", fallback=_number(latest, "net_pnl")),
                 "open_order_count": _number(latest, "open_order_count"),
@@ -903,6 +999,30 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_notional_cap_applied": bool(
                     row["runtime_strategy_portfolio_notional_cap_applied"]
                 ),
+                "strategy_portfolio_min_strategy_count": int(
+                    row["runtime_strategy_portfolio_min_strategy_count"]
+                ),
+                "strategy_portfolio_min_market_count": int(row["runtime_strategy_portfolio_min_market_count"]),
+                "strategy_portfolio_max_strategy_weight": row["runtime_strategy_portfolio_max_strategy_weight"],
+                "strategy_portfolio_max_market_weight": row["runtime_strategy_portfolio_max_market_weight"],
+                "strategy_portfolio_allocated_strategy_count": int(
+                    row["runtime_strategy_portfolio_allocated_strategy_count"]
+                ),
+                "strategy_portfolio_allocated_market_count": int(
+                    row["runtime_strategy_portfolio_allocated_market_count"]
+                ),
+                "strategy_portfolio_top_strategy_by_weight": row[
+                    "runtime_strategy_portfolio_top_strategy_by_weight"
+                ],
+                "strategy_portfolio_top_market_by_weight": row[
+                    "runtime_strategy_portfolio_top_market_by_weight"
+                ],
+                "strategy_portfolio_max_strategy_allocation_weight": row[
+                    "runtime_strategy_portfolio_max_strategy_allocation_weight"
+                ],
+                "strategy_portfolio_max_market_allocation_weight": row[
+                    "runtime_strategy_portfolio_max_market_allocation_weight"
+                ],
                 "realized_pnl": row["realized_pnl"],
                 "recommendation": "stop_routing_and_investigate" if halted else "continue_with_controls",
             }
@@ -1060,6 +1180,37 @@ def _config(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any
         "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
         "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+        "strategy_portfolio": {
+            "required": _to_bool(summary_row.get("strategy_portfolio_required")),
+            "provided": _to_bool(summary_row.get("strategy_portfolio_provided")),
+            "ready": _to_bool(summary_row.get("strategy_portfolio_ready")),
+            "selected_strategy": _clean(summary_row.get("strategy_portfolio_selected_strategy")),
+            "selected_market": _clean(summary_row.get("strategy_portfolio_selected_market")),
+            "selected_eligible": _to_bool(summary_row.get("strategy_portfolio_selected_eligible")),
+            "selected_allocation_notional": _first_number(
+                summary_row.get("strategy_portfolio_selected_allocation_notional"),
+                0.0,
+            ),
+            "notional_cap_applied": _to_bool(summary_row.get("strategy_portfolio_notional_cap_applied")),
+            "min_strategy_count": _int_value(summary_row.get("strategy_portfolio_min_strategy_count")),
+            "min_market_count": _int_value(summary_row.get("strategy_portfolio_min_market_count")),
+            "max_strategy_weight": _first_number(summary_row.get("strategy_portfolio_max_strategy_weight"), 0.0),
+            "max_market_weight": _first_number(summary_row.get("strategy_portfolio_max_market_weight"), 0.0),
+            "allocated_strategy_count": _int_value(
+                summary_row.get("strategy_portfolio_allocated_strategy_count")
+            ),
+            "allocated_market_count": _int_value(summary_row.get("strategy_portfolio_allocated_market_count")),
+            "top_strategy_by_weight": _clean(summary_row.get("strategy_portfolio_top_strategy_by_weight")),
+            "top_market_by_weight": _clean(summary_row.get("strategy_portfolio_top_market_by_weight")),
+            "max_strategy_allocation_weight": _first_number(
+                summary_row.get("strategy_portfolio_max_strategy_allocation_weight"),
+                0.0,
+            ),
+            "max_market_allocation_weight": _first_number(
+                summary_row.get("strategy_portfolio_max_market_allocation_weight"),
+                0.0,
+            ),
+        },
     }
 
 
@@ -1367,16 +1518,18 @@ def _value(row: pd.Series, column: str, fallback: object = "") -> object:
 
 def _number(row: pd.Series, column: str, fallback: float = np.nan) -> float:
     value = row.get(column, fallback)
-    if pd.isna(value):
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
         return float(fallback)
-    return float(value)
+    return float(parsed)
 
 
 def _number_from(mapping: dict[str, Any], key: str) -> float:
     value = mapping.get(key, np.nan)
-    if value is None or pd.isna(value):
+    parsed = pd.to_numeric(value, errors="coerce")
+    if pd.isna(parsed):
         return np.nan
-    return float(value)
+    return float(parsed)
 
 
 def _first_number(*values: object) -> float:

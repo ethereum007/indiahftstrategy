@@ -923,6 +923,48 @@ def _portfolio_fields(primary: pd.Series, fallback: pd.Series | None = None) -> 
             fallback,
             "strategy_portfolio_notional_cap_applied",
         ),
+        "strategy_portfolio_min_strategy_count": int(
+            _identity_float(primary, fallback, "strategy_portfolio_min_strategy_count")
+        ),
+        "strategy_portfolio_min_market_count": int(
+            _identity_float(primary, fallback, "strategy_portfolio_min_market_count")
+        ),
+        "strategy_portfolio_max_strategy_weight": _identity_float(
+            primary,
+            fallback,
+            "strategy_portfolio_max_strategy_weight",
+        ),
+        "strategy_portfolio_max_market_weight": _identity_float(
+            primary,
+            fallback,
+            "strategy_portfolio_max_market_weight",
+        ),
+        "strategy_portfolio_allocated_strategy_count": int(
+            _identity_float(primary, fallback, "strategy_portfolio_allocated_strategy_count")
+        ),
+        "strategy_portfolio_allocated_market_count": int(
+            _identity_float(primary, fallback, "strategy_portfolio_allocated_market_count")
+        ),
+        "strategy_portfolio_top_strategy_by_weight": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_top_strategy_by_weight",
+        ),
+        "strategy_portfolio_top_market_by_weight": _identity_text(
+            primary,
+            fallback,
+            "strategy_portfolio_top_market_by_weight",
+        ),
+        "strategy_portfolio_max_strategy_allocation_weight": _identity_float(
+            primary,
+            fallback,
+            "strategy_portfolio_max_strategy_allocation_weight",
+        ),
+        "strategy_portfolio_max_market_allocation_weight": _identity_float(
+            primary,
+            fallback,
+            "strategy_portfolio_max_market_allocation_weight",
+        ),
         "pre_portfolio_max_notional_per_session": _identity_float(
             primary,
             fallback,

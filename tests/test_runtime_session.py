@@ -88,6 +88,16 @@ def scaleup_config(
             "deployment_mode": "paper_shadow",
             "allocation_mode": "readiness_weighted",
             "capital_currency": "INR",
+            "min_strategy_count": 2,
+            "min_market_count": 1,
+            "max_strategy_weight": 0.60,
+            "max_market_weight": 0.90,
+            "allocated_strategy_count": 2,
+            "allocated_market_count": 1,
+            "top_strategy_by_weight": "surface_mm",
+            "top_market_by_weight": "india_nse_index_derivatives",
+            "max_strategy_allocation_weight": 0.45,
+            "max_market_allocation_weight": 0.90,
             "selected_profile": "surface-mm-demo",
             "selected_strategy": "surface_mm",
             "selected_market": "india_nse_index_derivatives",
@@ -299,10 +309,16 @@ def test_runtime_session_monitor_carries_strategy_portfolio_allocation(tmp_path)
     assert summary["strategy_portfolio_selected_allocation_weight"] == 0.0012
     assert summary["strategy_portfolio_selected_allocation_notional"] == 1200.0
     assert bool(summary["strategy_portfolio_notional_cap_applied"])
+    assert summary["strategy_portfolio_allocated_strategy_count"] == 2
+    assert summary["strategy_portfolio_allocated_market_count"] == 1
+    assert summary["strategy_portfolio_top_strategy_by_weight"] == "surface_mm"
+    assert summary["strategy_portfolio_max_strategy_allocation_weight"] == 0.45
     assert summary["pre_portfolio_max_notional_per_session"] == 100_000.0
     assert set(report.steps["strategy_portfolio_selected_strategy"]) == {"surface_mm"}
     assert set(report.steps["strategy_portfolio_selected_market"]) == {"india_nse_index_derivatives"}
     assert set(report.steps["strategy_portfolio_selected_allocation_notional"]) == {1200.0}
+    assert set(report.steps["strategy_portfolio_allocated_strategy_count"]) == {2}
+    assert set(report.steps["strategy_portfolio_top_strategy_by_weight"]) == {"surface_mm"}
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):

@@ -2746,7 +2746,10 @@ identity is missing or stale.
 When scale-up required or supplied strategy portfolio allocation evidence,
 telemetry also carries `strategy_portfolio_*` fields from the scale-up config,
 including selected profile, strategy, market, allocation notional, and whether
-the portfolio cap was applied.
+the portfolio cap was applied. These telemetry fields now also include
+portfolio-level strategy/market diversity requirements, allocated
+strategy/market counts, top concentration names, and maximum aggregate
+strategy/market allocation weights.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
@@ -2796,7 +2799,10 @@ If strategy portfolio allocation evidence was required or supplied at scale-up,
 the guard also requires the selected allocation to be ready, eligible, identity
 matched, positive, and large enough for the observed `session_notional`; this
 appears as an explicit `strategy_portfolio_session_notional` check in
-`runtime_guard_checks.csv`.
+`runtime_guard_checks.csv`. The guard summary/config preserves the same
+portfolio concentration fields carried by telemetry, so a halt packet or
+runtime session can explain the paper/shadow allocation context without
+reopening the scale-up folder.
 
 Outputs:
 
@@ -2870,7 +2876,8 @@ resume authorization and proof identity remain visible after runtime guard
 evaluation. When scale-up uses strategy portfolio allocation, the session
 steps and summary also retain `strategy_portfolio_*` fields, including selected
 strategy/market, eligibility, allocation weight/notional, pre-cap notional, and
-whether the portfolio cap constrained session notional.
+whether the portfolio cap constrained session notional, plus the carried
+strategy/market concentration counts and maximum aggregate allocation weights.
 `runtime_session_summary.csv` and `runtime_session_config.json` also expose
 `failed_check_count`, `failed_check_names`, `first_failed_reason`,
 `primary_blocker_*`, `action_queue_count`, `ready_action_count`,
