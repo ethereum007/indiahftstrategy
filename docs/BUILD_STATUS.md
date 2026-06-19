@@ -276,6 +276,10 @@
   controls before broker routing can be enabled, preserving direct
   launch-control/breach counters and broker-carried allocation/concentration
   run counts in route-enable summary/config handoffs.
+- Broker dispatch now revalidates those route-enable-retained route-readiness
+  ops broker controls before dry-run dispatch planning, carrying direct
+  breach counters and broker-carried route proof into dispatch summary/config
+  handoffs.
 - Cutover gate now emits manifest-tracked `cutover_action_queue.csv` and
   `cutover_runbook.md` handoffs, routing failed scale-up, route-readiness,
   broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,

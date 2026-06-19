@@ -3472,9 +3472,15 @@ planning carries the `strategy_portfolio_*` fields into summary/config,
 including concentration counts, top concentration names, and maximum allocation
 weights. It computes `source_order_notional` for each upload row, records
 upload `total_notional`, and fails closed if the resolved upload-order file
-exceeds the selected paper/shadow allocation. `--require-route-readiness` is
-automatic for `--target-mode live_dryrun`; the explicit flag keeps paper/shadow
-dispatch plans equally strict. The resulting
+exceeds the selected paper/shadow allocation. Dispatch planning also revalidates
+the route-enable-retained route-readiness ops broker controls: direct route
+proof must retain launch controls and zero allocation/concentration breach
+pairs, while the broker-carried route proof must retain clean launch-control,
+allocation-safe, and concentration-OK run counts. These counters are carried in
+`broker_dispatch_summary.csv` and `broker_dispatch_config.json` as
+`route_readiness_*` plus `route_broker_route_readiness`. `--require-route-readiness`
+is automatic for `--target-mode live_dryrun`; the explicit flag keeps
+paper/shadow dispatch plans equally strict. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, while the summary/config carry the broker schema review
 status/mode, route-readiness proof, `shadow_broker_*`, and
