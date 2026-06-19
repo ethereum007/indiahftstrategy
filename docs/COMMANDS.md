@@ -2962,7 +2962,8 @@ python -m hft_cli review-halt-incident `
   --halt-execution runs\halt_execution\leadlag_shadow_latest `
   --out runs\halt_incidents\leadlag_shadow_latest `
   --require-export `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -2971,6 +2972,8 @@ Outputs:
 halt_incident_timeline.csv
 halt_incident_checks.csv
 halt_incident_summary.csv
+halt_incident_action_queue.csv
+halt_incident_runbook.md
 manifest.json
 ```
 
@@ -2982,6 +2985,13 @@ The incident summary also exposes `failed_check_count`, `failed_check_names`,
 `first_failed_reason`, and `primary_blocker_*` fields for the first failed
 closure gate, such as missing export evidence or incomplete execution
 reconciliation.
+It also carries `action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, and `primary_action_status`.
+`halt_incident_action_queue.csv` and `halt_incident_runbook.md` mirror failed
+guard, response, export, and execution checks back to the next recovery CLI
+gate. Use `--fail-on-blocked-actions` to fail only when blocked incident
+actions exist, or `--fail-on-actions` when any incident action should stop
+automation.
 The manifest fingerprints each component summary/check file from the guard,
 halt response, optional halt export, and halt execution folders.
 

@@ -179,6 +179,9 @@ def test_halt_incident_accepts_completed_halt_with_export():
         "halt_export",
         "halt_execution",
     ]
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
+    assert report.action_queue is not None
+    assert report.action_queue.empty
 
 
 def test_halt_incident_fails_when_execution_is_incomplete():
@@ -218,6 +221,8 @@ def test_write_halt_incident_report_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_incident_timeline.csv").exists()
     assert (out_dir / "halt_incident_checks.csv").exists()
     assert (out_dir / "halt_incident_summary.csv").exists()
+    assert (out_dir / "halt_incident_action_queue.csv").exists()
+    assert (out_dir / "halt_incident_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {
@@ -245,6 +250,14 @@ def test_write_halt_incident_report_outputs_artifacts(tmp_path):
     assert path_tail(manifest["inputs"]["halt_execution_summary"]["path"]).endswith(
         "/execution/halt_execution_summary.csv"
     )
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert any(path.endswith("halt_incident_action_queue.csv") for path in artifact_paths)
+    assert any(path.endswith("halt_incident_runbook.md") for path in artifact_paths)
+    saved_summary = pd.read_csv(out_dir / "halt_incident_summary.csv")
+    assert int(saved_summary.loc[0, "action_queue_count"]) == 0
+    assert (out_dir / "halt_incident_runbook.md").read_text(encoding="utf-8").startswith(
+        "# Halt Incident Runbook"
+    )
 
 
 def test_cli_halt_incident_can_require_export(tmp_path):
@@ -264,13 +277,48 @@ def test_cli_halt_incident_can_require_export(tmp_path):
             str(out_dir),
             "--require-export",
             "--fail-on-breach",
+            "--fail-on-blocked-actions",
         ]
     )
 
     summary = pd.read_csv(out_dir / "halt_incident_summary.csv")
+    queue = pd.read_csv(out_dir / "halt_incident_action_queue.csv")
     assert code == 2
     assert not bool(summary.loc[0, "passed"])
     assert summary.loc[0, "failed_check_count"] == 1
     assert summary.loc[0, "failed_check_names"] == "halt_export_ready"
     assert summary.loc[0, "primary_blocker_check"] == "halt_export_ready"
     assert summary.loc[0, "primary_blocker_reason"] == "halt response export is missing or not ready"
+    assert int(summary.loc[0, "action_queue_count"]) == 1
+    assert int(summary.loc[0, "blocked_action_count"]) == 1
+    assert summary.loc[0, "next_gate"] == "export-halt-response"
+    assert queue.loc[0, "component"] == "halt_export"
+    assert queue.loc[0, "check"] == "halt_export_ready"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
+    assert "halt_export_ready" in (out_dir / "halt_incident_runbook.md").read_text(encoding="utf-8")
+
+
+def test_cli_halt_incident_can_fail_on_actions(tmp_path):
+    guard, response, _, execution = write_inputs(tmp_path, include_export=False)
+    out_dir = tmp_path / "incident"
+
+    code = main(
+        [
+            "review-halt-incident",
+            "--guard",
+            str(guard),
+            "--halt-response",
+            str(response),
+            "--halt-execution",
+            str(execution),
+            "--out",
+            str(out_dir),
+            "--require-export",
+            "--fail-on-actions",
+        ]
+    )
+
+    queue = pd.read_csv(out_dir / "halt_incident_action_queue.csv")
+    assert code == 2
+    assert len(queue) == 1
+    assert queue.loc[0, "check"] == "halt_export_ready"

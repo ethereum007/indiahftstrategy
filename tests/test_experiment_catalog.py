@@ -13,6 +13,7 @@ from hft_cli import main
 from reports.catalog import catalog_experiment_runs, write_experiment_catalog
 from reports.fill_model import FillModelCalibrationThresholds, write_fill_model_calibration
 from reports.fill_model_drift import FillModelDriftThresholds, write_fill_model_drift_report
+from reports.halt_incident import HaltIncidentThresholds, write_halt_incident_report
 from reports.manifest import write_experiment_manifest
 from reports.proof_refresh import write_proof_refresh_report
 from reports.resume import write_resume_gate_report
@@ -1902,6 +1903,100 @@ def test_experiment_catalog_promotes_resume_action_queue(tmp_path):
     assert queue.loc[0, "next_gate"] == "plan-scaleup"
     assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli plan-scaleup --help"
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 2
+
+
+def test_experiment_catalog_promotes_halt_incident_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    guard = root / "guard"
+    response = root / "response"
+    execution = root / "execution"
+    incident = root / "halt_incident"
+    for path in (guard, response, execution):
+        path.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "guard_action": "halt",
+                "halted": True,
+                "failed_checks": 1,
+                "failed_check_names": "orders_sent",
+                "first_failed_reason": "orders_sent: limit breached",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "proof_refresh_required": True,
+                "proof_refresh_provided": True,
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "proof_refresh_mixed_identity": False,
+                "proof_source": "latest",
+            }
+        ]
+    ).to_csv(guard / "runtime_guard_summary.csv", index=False)
+    pd.DataFrame([{"check": "orders_sent", "passed": False, "reason": "limit breached"}]).to_csv(
+        guard / "runtime_guard_checks.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "guard_action": "halt",
+                "cancel_orders": 1,
+                "flatten_orders": 1,
+                "failed_checks": 0,
+                "guard_failed_check_names": "orders_sent",
+                "guard_first_failed_reason": "orders_sent: limit breached",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(response / "halt_response_summary.csv", index=False)
+    pd.DataFrame([{"check": "component_ready", "passed": True, "reason": ""}]).to_csv(
+        response / "halt_response_checks.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "passed": True,
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "cancel_actions": 1,
+                "flatten_actions": 1,
+                "failed_checks": 0,
+            }
+        ]
+    ).to_csv(execution / "halt_execution_summary.csv", index=False)
+    pd.DataFrame([{"check": "component_ready", "passed": True, "reason": ""}]).to_csv(
+        execution / "halt_execution_checks.csv",
+        index=False,
+    )
+
+    write_halt_incident_report(
+        guard_dir=guard,
+        halt_response_dir=response,
+        halt_execution_dir=execution,
+        output_dir=incident,
+        thresholds=HaltIncidentThresholds(require_export_ready=True),
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"halt_incident_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "halt_incident_review"
+    assert queue.loc[0, "component"] == "halt_export"
+    assert queue.loc[0, "check"] == "halt_export_ready"
+    assert queue.loc[0, "next_gate"] == "export-halt-response"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli export-halt-response --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
 def test_catalog_experiment_runs_recognizes_scaleup_calibration_and_data_ops_status(tmp_path):

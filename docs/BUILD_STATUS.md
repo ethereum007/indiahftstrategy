@@ -184,6 +184,10 @@
   `failed_checks`, and structured `primary_blocker` next to the guard trigger
   context, so emergency automation can route packet-construction blockers
   without confusing them with the original guard halt reason.
+- Halt incident review now emits manifest-tracked
+  `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
+  routing guard, response, export, and execution blockers to the next recovery
+  CLI before resume-gate automation trusts a closed incident.
 - Market portability now emits manifest-tracked `market_portability_action_queue.csv`
   and `market_portability_runbook.md` handoffs, carrying ready/blocked
   India-to-US strategy/market actions, evidence gates, fee-model blockers, and
@@ -1032,7 +1036,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 947 tests.
+Current passing suite: 949 tests.
 
 ## Next Build Targets
 
