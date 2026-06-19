@@ -108,6 +108,10 @@
   allocation evidence, computes notional from the resolved upload-order file,
   and blocks dry-run dispatch when that actual upload notional exceeds the
   selected allocation.
+- Broker dispatch planning now also carries route-enable strategy portfolio
+  concentration context into dispatch summary/config artifacts, keeping
+  distinct count, top concentration, and maximum allocation-weight evidence
+  available before dry-run send packets.
 - Broker dispatch planning now emits manifest-tracked
   `broker_dispatch_action_queue.csv` and `broker_dispatch_runbook.md`
   scheduler handoffs, routing route-enable, allocation, route-readiness,

@@ -3413,11 +3413,12 @@ broker-readiness aggregate and broker-readiness-carried shadow broker proof to
 remain clean and identity-consistent, and order counts within the approved route
 limits. When route-enable retained strategy portfolio allocation, dispatch
 planning carries the `strategy_portfolio_*` fields into summary/config,
-computes `source_order_notional` for each upload row, records upload
-`total_notional`, and fails closed if the resolved upload-order file exceeds
-the selected paper/shadow allocation. `--require-route-readiness` is automatic for `--target-mode
-live_dryrun`; the explicit flag keeps paper/shadow dispatch plans equally
-strict. The resulting
+including concentration counts, top concentration names, and maximum allocation
+weights. It computes `source_order_notional` for each upload row, records
+upload `total_notional`, and fails closed if the resolved upload-order file
+exceeds the selected paper/shadow allocation. `--require-route-readiness` is
+automatic for `--target-mode live_dryrun`; the explicit flag keeps paper/shadow
+dispatch plans equally strict. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, while the summary/config carry the broker schema review
 status/mode, route-readiness proof, `shadow_broker_*`, and
