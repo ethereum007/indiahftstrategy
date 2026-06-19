@@ -46,6 +46,10 @@ class StrategyPortfolioConfig:
     exclude_profiles: tuple[str, ...] = ()
     allocation_mode: str = "readiness_weighted"
     deployment_mode: str = "paper_shadow"
+    min_strategy_count: int = 1
+    min_market_count: int = 1
+    max_strategy_weight: float | None = None
+    max_market_weight: float | None = None
 
 
 @dataclass(frozen=True)
@@ -218,6 +222,8 @@ def _allocations(scorecard: pd.DataFrame, config: StrategyPortfolioConfig) -> pd
 def _checks(allocations: pd.DataFrame, config: StrategyPortfolioConfig) -> pd.DataFrame:
     eligible_count = int(allocations["eligible"].astype(bool).sum()) if not allocations.empty else 0
     allocated_weight = float(allocations["allocation_weight"].sum()) if not allocations.empty else 0.0
+    allocated_profile_count = int((allocations["allocation_weight"] > 0.0).sum()) if not allocations.empty else 0
+    concentration = _concentration(allocations)
     deployable_weight = _deployable_weight(config)
     rows = [
         _check(
@@ -253,6 +259,40 @@ def _checks(allocations: pd.DataFrame, config: StrategyPortfolioConfig) -> pd.Da
             "minimum readiness score must be between 0 and 1",
         ),
         _check(
+            "min_strategy_count_positive",
+            _integer(config.min_strategy_count) >= 1,
+            _integer(config.min_strategy_count),
+            ">=",
+            1,
+            "minimum strategy count must be at least 1",
+        ),
+        _check(
+            "min_market_count_positive",
+            _integer(config.min_market_count) >= 1,
+            _integer(config.min_market_count),
+            ">=",
+            1,
+            "minimum market count must be at least 1",
+        ),
+        _check(
+            "max_strategy_weight_between_0_and_1",
+            _optional_weight(config.max_strategy_weight) is None
+            or 0.0 < float(_optional_weight(config.max_strategy_weight)) <= 1.0,
+            "" if _optional_weight(config.max_strategy_weight) is None else float(_optional_weight(config.max_strategy_weight)),
+            "between",
+            "(0..1]",
+            "maximum aggregate strategy weight must be greater than 0 and no more than 1",
+        ),
+        _check(
+            "max_market_weight_between_0_and_1",
+            _optional_weight(config.max_market_weight) is None
+            or 0.0 < float(_optional_weight(config.max_market_weight)) <= 1.0,
+            "" if _optional_weight(config.max_market_weight) is None else float(_optional_weight(config.max_market_weight)),
+            "between",
+            "(0..1]",
+            "maximum aggregate market weight must be greater than 0 and no more than 1",
+        ),
+        _check(
             "allocation_mode_supported",
             config.allocation_mode == "readiness_weighted",
             _text(config.allocation_mode),
@@ -284,6 +324,44 @@ def _checks(allocations: pd.DataFrame, config: StrategyPortfolioConfig) -> pd.Da
             deployable_weight,
             "allocated weight must not exceed the deployable budget",
         ),
+        _check(
+            "allocated_strategy_count",
+            allocated_profile_count == 0
+            or int(concentration["allocated_strategy_count"]) >= _integer(config.min_strategy_count),
+            int(concentration["allocated_strategy_count"]),
+            ">=",
+            _integer(config.min_strategy_count),
+            "allocated portfolio must include enough distinct strategies",
+        ),
+        _check(
+            "allocated_market_count",
+            allocated_profile_count == 0
+            or int(concentration["allocated_market_count"]) >= _integer(config.min_market_count),
+            int(concentration["allocated_market_count"]),
+            ">=",
+            _integer(config.min_market_count),
+            "allocated portfolio must include enough distinct markets",
+        ),
+        _check(
+            "max_strategy_allocation_weight",
+            _optional_weight(config.max_strategy_weight) is None
+            or allocated_profile_count == 0
+            or float(concentration["max_strategy_allocation_weight"]) <= float(_optional_weight(config.max_strategy_weight)) + 1e-9,
+            float(concentration["max_strategy_allocation_weight"]),
+            "<=",
+            "" if _optional_weight(config.max_strategy_weight) is None else float(_optional_weight(config.max_strategy_weight)),
+            "aggregate allocation to one strategy exceeds the configured cap",
+        ),
+        _check(
+            "max_market_allocation_weight",
+            _optional_weight(config.max_market_weight) is None
+            or allocated_profile_count == 0
+            or float(concentration["max_market_allocation_weight"]) <= float(_optional_weight(config.max_market_weight)) + 1e-9,
+            float(concentration["max_market_allocation_weight"]),
+            "<=",
+            "" if _optional_weight(config.max_market_weight) is None else float(_optional_weight(config.max_market_weight)),
+            "aggregate allocation to one market exceeds the configured cap",
+        ),
     ]
     return pd.DataFrame(rows)
 
@@ -297,6 +375,7 @@ def _summary(allocations: pd.DataFrame, checks: pd.DataFrame, config: StrategyPo
     allocated_weight = float(allocations["allocation_weight"].sum()) if not allocations.empty else 0.0
     reserve_weight = _bounded_reserve_weight(config)
     unallocated_weight = max(0.0, 1.0 - reserve_weight - allocated_weight)
+    concentration = _concentration(allocations)
     ready = failed.empty
     return pd.DataFrame(
         [
@@ -317,6 +396,20 @@ def _summary(allocations: pd.DataFrame, checks: pd.DataFrame, config: StrategyPo
                 "unallocated_weight": float(unallocated_weight),
                 "unallocated_notional": float(total_capital * unallocated_weight),
                 "max_profile_weight": float(_bounded_max_weight(config)),
+                "min_strategy_count": int(_integer(config.min_strategy_count)),
+                "min_market_count": int(_integer(config.min_market_count)),
+                "max_strategy_weight": ""
+                if _optional_weight(config.max_strategy_weight) is None
+                else float(_optional_weight(config.max_strategy_weight)),
+                "max_market_weight": ""
+                if _optional_weight(config.max_market_weight) is None
+                else float(_optional_weight(config.max_market_weight)),
+                "allocated_strategy_count": int(concentration["allocated_strategy_count"]),
+                "allocated_market_count": int(concentration["allocated_market_count"]),
+                "top_strategy_by_weight": _text(concentration["top_strategy_by_weight"]),
+                "top_market_by_weight": _text(concentration["top_market_by_weight"]),
+                "max_strategy_allocation_weight": float(concentration["max_strategy_allocation_weight"]),
+                "max_market_allocation_weight": float(concentration["max_market_allocation_weight"]),
                 "top_profile": _text(top.get("profile", "")),
                 "top_strategy": _text(top.get("strategy", "")),
                 "top_market": _text(top.get("market", "")),
@@ -469,6 +562,54 @@ def _capped_weights(scores: pd.Series, *, deployable_weight: float, max_profile_
     return weights
 
 
+def _concentration(allocations: pd.DataFrame) -> dict[str, Any]:
+    if allocations.empty or "allocation_weight" not in allocations.columns:
+        return {
+            "allocated_strategy_count": 0,
+            "allocated_market_count": 0,
+            "top_strategy_by_weight": "",
+            "top_market_by_weight": "",
+            "max_strategy_allocation_weight": 0.0,
+            "max_market_allocation_weight": 0.0,
+        }
+    allocated = allocations.loc[allocations["allocation_weight"].map(_numeric) > 0.0].copy()
+    if allocated.empty:
+        return {
+            "allocated_strategy_count": 0,
+            "allocated_market_count": 0,
+            "top_strategy_by_weight": "",
+            "top_market_by_weight": "",
+            "max_strategy_allocation_weight": 0.0,
+            "max_market_allocation_weight": 0.0,
+        }
+    allocated["strategy"] = allocated["strategy"].map(_text).replace("", "unknown_strategy")
+    allocated["market"] = allocated["market"].map(_text).replace("", "unknown_market")
+    strategy_weights = allocated.groupby("strategy", sort=True)["allocation_weight"].sum().sort_values(
+        ascending=False,
+        kind="mergesort",
+    )
+    market_weights = allocated.groupby("market", sort=True)["allocation_weight"].sum().sort_values(
+        ascending=False,
+        kind="mergesort",
+    )
+    return {
+        "allocated_strategy_count": int(len(strategy_weights)),
+        "allocated_market_count": int(len(market_weights)),
+        "top_strategy_by_weight": _text(strategy_weights.index[0]) if len(strategy_weights) else "",
+        "top_market_by_weight": _text(market_weights.index[0]) if len(market_weights) else "",
+        "max_strategy_allocation_weight": float(strategy_weights.iloc[0]) if len(strategy_weights) else 0.0,
+        "max_market_allocation_weight": float(market_weights.iloc[0]) if len(market_weights) else 0.0,
+    }
+
+
+def _optional_weight(value: Any) -> float | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return _numeric(value)
+
+
 def _check(check: str, passed: bool, value: Any, operator: str, threshold: Any, reason: str) -> dict[str, Any]:
     return {
         "check": check,
@@ -557,6 +698,8 @@ def _allocation_next_gate(row: pd.Series, queue_status: str) -> str:
 def _check_next_gate(check: str) -> str:
     if check == "eligible_profile_count":
         return "score-strategy-readiness"
+    if check in {"allocated_strategy_count", "allocated_market_count"}:
+        return "score-strategy-readiness"
     if check == "allocated_weight_positive":
         return "allocate-strategy-portfolio"
     return "allocate-strategy-portfolio"
@@ -596,6 +739,14 @@ def _allocation_recommendation(row: pd.Series, queue_status: str) -> str:
 def _check_recommendation(check: str) -> str:
     if check == "eligible_profile_count":
         return "complete_strategy_scorecard_evidence_before_allocating"
+    if check == "allocated_strategy_count":
+        return "add_distinct_strategy_profiles_before_allocating"
+    if check == "allocated_market_count":
+        return "add_distinct_market_profiles_before_allocating"
+    if check == "max_strategy_allocation_weight":
+        return "lower_strategy_concentration_or_add_diversifying_profiles"
+    if check == "max_market_allocation_weight":
+        return "lower_market_concentration_or_add_cross_market_profiles"
     if check == "allocated_weight_positive":
         return "increase_deployable_budget_or_profile_cap"
     if check in {
@@ -603,6 +754,10 @@ def _check_recommendation(check: str) -> str:
         "reserve_weight_between_0_and_1",
         "max_profile_weight_between_0_and_1",
         "min_readiness_score_between_0_and_1",
+        "min_strategy_count_positive",
+        "min_market_count_positive",
+        "max_strategy_weight_between_0_and_1",
+        "max_market_weight_between_0_and_1",
         "allocation_mode_supported",
     }:
         return "fix_strategy_portfolio_allocation_inputs"
@@ -649,11 +804,19 @@ def _recommendation(primary: dict[str, Any]) -> str:
         "reserve_weight_between_0_and_1",
         "max_profile_weight_between_0_and_1",
         "min_readiness_score_between_0_and_1",
+        "min_strategy_count_positive",
+        "min_market_count_positive",
+        "max_strategy_weight_between_0_and_1",
+        "max_market_weight_between_0_and_1",
         "allocation_mode_supported",
     }:
         return "fix_strategy_portfolio_allocation_inputs"
     if check == "eligible_profile_count":
         return "complete_strategy_scorecard_evidence_before_allocating"
+    if check in {"allocated_strategy_count", "allocated_market_count"}:
+        return "add_diversifying_strategy_profiles_before_allocating"
+    if check in {"max_strategy_allocation_weight", "max_market_allocation_weight"}:
+        return "reduce_portfolio_concentration_before_scaleup"
     if check == "allocated_weight_positive":
         return "increase_deployable_budget_or_profile_cap"
     return "review_strategy_portfolio_allocation_checks"
@@ -684,6 +847,8 @@ def _runbook_markdown(config: dict[str, Any]) -> str:
         f"- Total capital: {_format_money(summary.get('total_capital'), summary.get('capital_currency'))}",
         f"- Allocated: {_format_weight(summary.get('allocated_weight'))} / {_format_money(summary.get('allocated_notional'), summary.get('capital_currency'))}",
         f"- Reserve: {_format_weight(summary.get('reserve_weight'))} / {_format_money(summary.get('reserve_notional'), summary.get('capital_currency'))}",
+        f"- Allocated strategies: {_integer(summary.get('allocated_strategy_count'))} (top {_code(summary.get('top_strategy_by_weight'))}: {_format_weight(summary.get('max_strategy_allocation_weight'))})",
+        f"- Allocated markets: {_integer(summary.get('allocated_market_count'))} (top {_code(summary.get('top_market_by_weight'))}: {_format_weight(summary.get('max_market_allocation_weight'))})",
         f"- Recommendation: {_text(summary.get('recommendation'))}",
         "",
         "## Allocations",

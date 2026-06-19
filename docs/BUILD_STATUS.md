@@ -75,6 +75,9 @@
   `strategy_portfolio_action_queue.csv`, mirrors scheduler action counts and
   primary action fields in summary/config, and `allocate-strategy-portfolio`
   can fail closed with `--fail-on-blocked-actions` or `--fail-on-actions`.
+- Strategy portfolio allocation can now require minimum distinct strategies or
+  markets and cap aggregate allocation to a single strategy or market before a
+  paper/shadow portfolio is treated as ready for scale-up.
 - Controlled scale-up can now require that strategy portfolio allocation,
   select the matching strategy/market allocation row, cap per-session notional
   at the allocated notional, and retain the selected portfolio context in

@@ -1212,6 +1212,10 @@ def main(argv: list[str] | None = None) -> int:
     strategy_portfolio.add_argument("--reserve-weight", type=float, default=0.10)
     strategy_portfolio.add_argument("--max-profile-weight", type=float, default=0.40)
     strategy_portfolio.add_argument("--min-readiness-score", type=float, default=1.0)
+    strategy_portfolio.add_argument("--min-strategy-count", type=int, default=1)
+    strategy_portfolio.add_argument("--min-market-count", type=int, default=1)
+    strategy_portfolio.add_argument("--max-strategy-weight", type=float, default=None)
+    strategy_portfolio.add_argument("--max-market-weight", type=float, default=None)
     strategy_portfolio.add_argument("--allow-unready", action="store_true")
     strategy_portfolio.add_argument("--include-profile", action="append", dest="include_profiles")
     strategy_portfolio.add_argument("--exclude-profile", action="append", dest="exclude_profiles")
@@ -3432,6 +3436,10 @@ def main(argv: list[str] | None = None) -> int:
                 require_ready=not args.allow_unready,
                 include_profiles=tuple(args.include_profiles or ()),
                 exclude_profiles=tuple(args.exclude_profiles or ()),
+                min_strategy_count=args.min_strategy_count,
+                min_market_count=args.min_market_count,
+                max_strategy_weight=args.max_strategy_weight,
+                max_market_weight=args.max_market_weight,
             ),
         )
         print(result.summary.to_string(index=False))

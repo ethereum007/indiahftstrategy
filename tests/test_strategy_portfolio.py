@@ -59,6 +59,15 @@ def mixed_scorecard():
     )
 
 
+def same_strategy_scorecard():
+    return pd.DataFrame(
+        [
+            scorecard_row(1, "leadlag_fast", "lead_lag_taker"),
+            scorecard_row(2, "leadlag_slow", "lead_lag_taker"),
+        ]
+    )
+
+
 def test_strategy_portfolio_allocates_ready_profiles_with_reserve():
     report = evaluate_strategy_portfolio(
         mixed_scorecard(),
@@ -76,6 +85,10 @@ def test_strategy_portfolio_allocates_ready_profiles_with_reserve():
     assert allocations.loc["leadlag", "allocation_notional"] == 450_000
     assert report.summary.loc[0, "allocated_weight"] == 0.90
     assert report.summary.loc[0, "reserve_notional"] == 100_000
+    assert report.summary.loc[0, "allocated_strategy_count"] == 2
+    assert report.summary.loc[0, "allocated_market_count"] == 1
+    assert report.summary.loc[0, "max_strategy_allocation_weight"] == 0.45
+    assert report.summary.loc[0, "max_market_allocation_weight"] == 0.90
     assert int(report.summary.loc[0, "failed_check_count"]) == 0
     assert report.config["schema_version"] == 1
     assert report.config["allocation_count"] == 2
@@ -107,6 +120,56 @@ def test_strategy_portfolio_caps_profiles_and_leaves_unallocated_budget():
     assert allocations.loc["parity", "allocation_weight"] == 0.40
     assert report.summary.loc[0, "allocated_weight"] == 0.80
     assert round(report.summary.loc[0, "unallocated_weight"], 6) == 0.20
+
+
+def test_strategy_portfolio_blocks_strategy_concentration_when_requested():
+    report = evaluate_strategy_portfolio(
+        same_strategy_scorecard(),
+        config=StrategyPortfolioConfig(
+            total_capital=1_000_000,
+            reserve_weight=0.10,
+            max_profile_weight=0.60,
+            min_strategy_count=2,
+            max_strategy_weight=0.50,
+        ),
+    )
+
+    checks = report.checks.set_index("check")
+    assert not report.ready
+    assert report.summary.loc[0, "allocated_strategy_count"] == 1
+    assert report.summary.loc[0, "top_strategy_by_weight"] == "lead_lag_taker"
+    assert report.summary.loc[0, "max_strategy_allocation_weight"] == 0.90
+    assert not bool(checks.loc["allocated_strategy_count", "passed"])
+    assert not bool(checks.loc["max_strategy_allocation_weight", "passed"])
+    assert report.config["allocation_config"]["min_strategy_count"] == 2
+    assert report.config["allocation_config"]["max_strategy_weight"] == 0.50
+    assert "allocated_strategy_count" in set(report.action_queue["check"])
+    assert "max_strategy_allocation_weight" in set(report.action_queue["check"])
+
+
+def test_strategy_portfolio_blocks_market_concentration_when_requested():
+    report = evaluate_strategy_portfolio(
+        mixed_scorecard().iloc[:2],
+        config=StrategyPortfolioConfig(
+            total_capital=1_000_000,
+            reserve_weight=0.10,
+            max_profile_weight=0.60,
+            min_market_count=2,
+            max_market_weight=0.50,
+        ),
+    )
+
+    checks = report.checks.set_index("check")
+    assert not report.ready
+    assert report.summary.loc[0, "allocated_market_count"] == 1
+    assert report.summary.loc[0, "top_market_by_weight"] == "india_nse_index_derivatives"
+    assert report.summary.loc[0, "max_market_allocation_weight"] == 0.90
+    assert not bool(checks.loc["allocated_market_count", "passed"])
+    assert not bool(checks.loc["max_market_allocation_weight", "passed"])
+    assert report.config["allocation_config"]["min_market_count"] == 2
+    assert report.config["allocation_config"]["max_market_weight"] == 0.50
+    assert "allocated_market_count" in set(report.action_queue["check"])
+    assert "max_market_allocation_weight" in set(report.action_queue["check"])
 
 
 def test_strategy_portfolio_fails_closed_when_no_profile_is_ready():
@@ -294,3 +357,38 @@ def test_cli_strategy_portfolio_action_gates_on_ready_allocation(tmp_path):
 
     assert blocked_code == 0
     assert actions_code == 2
+
+
+def test_cli_strategy_portfolio_fails_on_diversity_gate(tmp_path):
+    scorecard_path = tmp_path / "strategy_scorecard.csv"
+    out_dir = tmp_path / "portfolio"
+    same_strategy_scorecard().to_csv(scorecard_path, index=False)
+
+    code = main(
+        [
+            "allocate-strategy-portfolio",
+            "--scorecard",
+            str(scorecard_path),
+            "--out",
+            str(out_dir),
+            "--reserve-weight",
+            "0.1",
+            "--max-profile-weight",
+            "0.6",
+            "--min-strategy-count",
+            "2",
+            "--max-strategy-weight",
+            "0.5",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "strategy_portfolio_summary.csv")
+    checks = pd.read_csv(out_dir / "strategy_portfolio_checks.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "allocated_strategy_count"] == 1
+    assert summary.loc[0, "top_strategy_by_weight"] == "lead_lag_taker"
+    assert {"allocated_strategy_count", "max_strategy_allocation_weight"}.issubset(
+        set(checks.loc[~checks["passed"].astype(bool), "check"])
+    )

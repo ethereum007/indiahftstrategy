@@ -424,6 +424,8 @@ python -m hft_cli allocate-strategy-portfolio `
   --capital-currency INR `
   --reserve-weight 0.10 `
   --max-profile-weight 0.40 `
+  --min-strategy-count 2 `
+  --max-strategy-weight 0.60 `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -443,6 +445,10 @@ manifest.json
 The allocator is deliberately paper/shadow-only. By default it only allocates
 to scorecard profiles where `ready=true` and `readiness_score >= 1.0`, keeps
 10% unallocated as reserve, and caps any one profile at 40% of capital.
+Use `--min-strategy-count`, `--min-market-count`, `--max-strategy-weight`,
+and `--max-market-weight` to require strategy/market diversity or cap aggregate
+strategy/market concentration before a paper/shadow portfolio is treated as
+ready.
 `strategy_portfolio_allocations.csv` keeps one row per scorecard profile with
 eligibility reason, allocation weight, notional, and next-gate context.
 `strategy_portfolio_checks.csv`, `strategy_portfolio_summary.csv`, and
