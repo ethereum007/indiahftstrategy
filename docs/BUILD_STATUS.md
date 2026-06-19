@@ -369,6 +369,11 @@
   `--require-broker-roundtrip-portfolio-safe`, so Arrow.money/iRage dry-run
   catalogs can enforce final dispatch notional stayed inside the selected
   strategy portfolio allocation.
+- `catalog-runs` can now fail closed with
+  `--fail-on-broker-roundtrip-portfolio-concentration-breach` or
+  `--require-broker-roundtrip-portfolio-concentration-ok`, so dry-run catalogs
+  can enforce final broker portfolio concentration stayed inside selected
+  strategy/market count and max-weight limits.
 - `review-strategy-evidence --profile ops_launch` now automatically applies
   the same launch-grade checks for blocked placeholder schemas, portfolio-safe
   final broker dispatch round-trip proof, and broker round-trip allocation

@@ -3048,6 +3048,14 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
             "strategy_portfolio_provided": True,
             "strategy_portfolio_ready": True,
             "strategy_portfolio_selected_allocation_notional": 2000.0,
+            "strategy_portfolio_min_strategy_count": 2,
+            "strategy_portfolio_min_market_count": 1,
+            "strategy_portfolio_max_strategy_weight": 0.60,
+            "strategy_portfolio_max_market_weight": 0.90,
+            "strategy_portfolio_allocated_strategy_count": 2,
+            "strategy_portfolio_allocated_market_count": 1,
+            "strategy_portfolio_max_strategy_allocation_weight": 0.45,
+            "strategy_portfolio_max_market_allocation_weight": 0.80,
             "failed_checks": 0,
         },
     )
@@ -3064,6 +3072,14 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
             "strategy_portfolio_provided": True,
             "strategy_portfolio_ready": True,
             "strategy_portfolio_selected_allocation_notional": 2000.0,
+            "strategy_portfolio_min_strategy_count": 2,
+            "strategy_portfolio_min_market_count": 1,
+            "strategy_portfolio_max_strategy_weight": 0.60,
+            "strategy_portfolio_max_market_weight": 0.90,
+            "strategy_portfolio_allocated_strategy_count": 1,
+            "strategy_portfolio_allocated_market_count": 1,
+            "strategy_portfolio_max_strategy_allocation_weight": 0.80,
+            "strategy_portfolio_max_market_allocation_weight": 0.80,
             "failed_checks": 1,
         },
     )
@@ -3084,6 +3100,8 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
             str(tmp_path / "catalog_safe"),
             "--require-broker-roundtrip-portfolio-safe",
             "--fail-on-broker-roundtrip-portfolio-breach",
+            "--require-broker-roundtrip-portfolio-concentration-ok",
+            "--fail-on-broker-roundtrip-portfolio-concentration-breach",
         ]
     )
     breach_code = main(
@@ -3094,6 +3112,7 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
             "--out",
             str(tmp_path / "catalog_breach"),
             "--fail-on-broker-roundtrip-portfolio-breach",
+            "--fail-on-broker-roundtrip-portfolio-concentration-breach",
         ]
     )
     missing_code = main(
@@ -3104,6 +3123,7 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
             "--out",
             str(tmp_path / "catalog_missing"),
             "--require-broker-roundtrip-portfolio-safe",
+            "--require-broker-roundtrip-portfolio-concentration-ok",
         ]
     )
 
@@ -3112,6 +3132,7 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
     assert breach_code == 2
     assert missing_code == 2
     assert int(breach_summary.loc[0, "broker_roundtrip_portfolio_breach_runs"]) == 1
+    assert int(breach_summary.loc[0, "broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
 
 
 def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):

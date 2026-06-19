@@ -133,6 +133,11 @@ Use `--fail-on-broker-roundtrip-portfolio-breach` to fail when any final
 broker dispatch round-trip exceeded the selected strategy portfolio allocation,
 and `--require-broker-roundtrip-portfolio-safe` when the catalog must contain
 at least one portfolio-safe broker dispatch round-trip proof.
+Use `--fail-on-broker-roundtrip-portfolio-concentration-breach` to fail when
+any final broker round-trip concentration proof breaches its strategy/market
+count or max-weight limits, and
+`--require-broker-roundtrip-portfolio-concentration-ok` when the catalog must
+contain at least one concentration-OK broker dispatch round-trip proof.
 Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
 summary status, missing summaries, dirty git state, or unfingerprinted inputs.
 When that gate fails, inspect `experiment_catalog_hygiene_gaps.csv` first.
