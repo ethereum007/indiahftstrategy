@@ -596,6 +596,9 @@
   source, header, mapping, component-manifest, and comparison fingerprints for
   repeatable vendor data proof, plus JSON handoff configs for strategy research
   and future vendor adapters.
+- `pipeline-vendor-market-data` and `pipeline-vendor-market-data-batch` can now
+  fail closed with `--fail-on-blocked-actions` or `--fail-on-actions`, giving
+  schedulers a direct exit-code gate on promoted Arrow.money/iRage repair work.
 - Multi-dataset data-readiness comparison gate that requires repeated clean
   market-data days before walk-forward research or strategy evidence review,
   and can fail closed when vendor-data folds do not come from distinct raw

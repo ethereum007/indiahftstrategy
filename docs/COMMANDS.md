@@ -3993,6 +3993,7 @@ python -m hft_cli pipeline-vendor-market-data `
   --min-rows 100000 `
   --max-p99-gap-ns 1000000000 `
   --max-median-spread-ticks 2 `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -4027,6 +4028,8 @@ catalog-visible next gates, so operators do not have to inspect
 `vendor_market_data_pipeline_config.json` also mirrors the queue as
 `next_actions`, `ready_actions`, and `blocked_actions`, plus root-level
 `primary_action_status` and `primary_action` fields for scheduler handoff.
+Use `--fail-on-blocked-actions` to fail closed only on blocked repair gates,
+or `--fail-on-actions` to fail whenever the promoted action queue is non-empty.
 
 For multi-day onboarding, run each raw file through the same pipeline and
 compare data-readiness evidence before walk-forward research:
@@ -4043,6 +4046,7 @@ python -m hft_cli pipeline-vendor-market-data-batch `
   --tick-size 0.05 `
   --min-datasets 2 `
   --min-ready-rate 1 `
+  --fail-on-blocked-actions `
   --fail-on-breach
 ```
 
@@ -4070,6 +4074,8 @@ and comparison blockers to the batch root, including the exact
 `vendor_market_data_batch_config.json` also mirrors the promoted queue as
 `next_actions`, `ready_actions`, and `blocked_actions`, plus root-level
 `primary_action_status` and `primary_action` fields.
+Use `--fail-on-blocked-actions` to stop only when batch repair work is blocked,
+or `--fail-on-actions` to require an empty promoted batch action queue.
 
 To run the vendor batch proof and broker-readiness review as one auditable
 handoff recipe:

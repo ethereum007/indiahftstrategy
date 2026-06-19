@@ -110,6 +110,29 @@ def test_vendor_market_data_pipeline_onboards_tick_file(tmp_path):
     assert "vendor_market_data_pipeline_runbook.md" in artifact_paths
     assert manifest["run_type"] == "vendor_market_data_pipeline"
 
+    ready_code = main(
+        [
+            "pipeline-vendor-market-data",
+            "--input",
+            str(raw_path),
+            "--out",
+            str(tmp_path / "pipeline_cli_ready"),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-rows",
+            "2",
+            "--fail-on-blocked-actions",
+            "--fail-on-actions",
+        ]
+    )
+    assert ready_code == 0
+
 
 def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     day1 = tmp_path / "arrow_ticks_day1.csv"
@@ -189,6 +212,34 @@ def test_vendor_market_data_batch_pipeline_compares_clean_tick_days(tmp_path):
     assert "vendor_market_data_batch_action_queue.csv" in artifact_paths
     assert "vendor_market_data_batch_runbook.md" in artifact_paths
     assert manifest["run_type"] == "vendor_market_data_batch_pipeline"
+
+    ready_code = main(
+        [
+            "pipeline-vendor-market-data-batch",
+            "--input",
+            str(day1),
+            str(day2),
+            "--label",
+            "cli_day1",
+            "--label",
+            "cli_day2",
+            "--out",
+            str(tmp_path / "batch_cli_ready"),
+            "--adapter",
+            "arrow_money",
+            "--kind",
+            "ticks",
+            "--timestamp-unit",
+            "datetime",
+            "--tick-size",
+            "0.05",
+            "--min-datasets",
+            "2",
+            "--fail-on-blocked-actions",
+            "--fail-on-actions",
+        ]
+    )
+    assert ready_code == 0
 
 
 def test_vendor_market_data_batch_fails_when_inputs_reuse_same_source_file(tmp_path):
@@ -339,6 +390,28 @@ def test_cli_vendor_market_data_pipeline_fails_closed_on_incomplete_mapping(tmp_
     assert "- Market: india_nse_index_derivatives" in runbook
     assert (out_dir / "04_data_readiness" / "data_readiness_summary.csv").exists()
 
+    for flag, folder_name in [
+        ("--fail-on-blocked-actions", "pipeline_blocked_action_gate"),
+        ("--fail-on-actions", "pipeline_any_action_gate"),
+    ]:
+        gated_code = main(
+            [
+                "pipeline-vendor-market-data",
+                "--input",
+                str(raw_path),
+                "--out",
+                str(tmp_path / folder_name),
+                "--adapter",
+                "arrow_money",
+                "--kind",
+                "ticks",
+                "--timestamp-unit",
+                "datetime",
+                flag,
+            ]
+        )
+        assert gated_code == 2
+
 
 def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_misses(tmp_path):
     day1 = tmp_path / "arrow_ticks_day1.csv"
@@ -391,3 +464,29 @@ def test_cli_vendor_market_data_batch_fails_closed_when_comparison_threshold_mis
     assert "# Vendor Market Data Batch Runbook" in runbook
     assert "- Ready: no" in runbook
     assert "- Market: india_nse_index_derivatives" in runbook
+
+    for flag, folder_name in [
+        ("--fail-on-blocked-actions", "batch_blocked_action_gate"),
+        ("--fail-on-actions", "batch_any_action_gate"),
+    ]:
+        gated_code = main(
+            [
+                "pipeline-vendor-market-data-batch",
+                "--input",
+                str(day1),
+                "--out",
+                str(tmp_path / folder_name),
+                "--adapter",
+                "arrow_money",
+                "--kind",
+                "ticks",
+                "--timestamp-unit",
+                "datetime",
+                "--tick-size",
+                "0.05",
+                "--min-datasets",
+                "2",
+                flag,
+            ]
+        )
+        assert gated_code == 2
