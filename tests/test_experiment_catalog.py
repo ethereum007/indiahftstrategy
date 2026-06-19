@@ -2256,6 +2256,70 @@ def test_experiment_catalog_promotes_route_enable_action_queue(tmp_path):
     assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
 
 
+def test_experiment_catalog_promotes_broker_dispatch_action_queue(tmp_path):
+    root = tmp_path / "runs"
+    dispatch = root / "broker_dispatch"
+    dispatch.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "dispatch_state": "disabled",
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "failed_check_count": 1,
+                "primary_blocker_check": "route_enabled",
+                "next_gate": "review-route-enable",
+                "next_gate_help_command": "python -m hft_cli review-route-enable --help",
+                "recommendation": "keep_dispatch_disabled",
+            }
+        ]
+    ).to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "blocked",
+                "source": "broker_dispatch_checks",
+                "component": "route_enable",
+                "check": "route_enabled",
+                "actual": False,
+                "operator": "is",
+                "expected": True,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "scenario_key": "trigger_ticks=2",
+                "adapter": "arrow_money",
+                "next_gate": "review-route-enable",
+                "next_gate_help_command": "python -m hft_cli review-route-enable --help",
+                "reason": "route-enable packet is not enabled",
+                "recommendation": "repair_or_rebuild_route_enable_packet",
+            }
+        ]
+    ).to_csv(dispatch / "broker_dispatch_action_queue.csv", index=False)
+    write_experiment_manifest(
+        dispatch,
+        run_type="broker_dispatch_plan",
+        parameters={"target_mode": "live_dryrun"},
+        inputs={},
+    )
+
+    report = catalog_experiment_runs([root])
+    queue = report.action_queue
+    assert queue is not None
+    assert set(queue["action_source_file"]) == {"broker_dispatch_action_queue.csv"}
+    assert queue.loc[0, "run_type"] == "broker_dispatch_plan"
+    assert queue.loc[0, "component"] == "route_enable"
+    assert queue.loc[0, "check"] == "route_enabled"
+    assert queue.loc[0, "next_gate"] == "review-route-enable"
+    assert queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-route-enable --help"
+    assert int(report.summary.iloc[0]["action_queue_blocked_count"]) == 1
+
+
 def test_experiment_catalog_promotes_halt_response_export_action_queue(tmp_path):
     root = tmp_path / "runs"
     halt = root / "halt_response"

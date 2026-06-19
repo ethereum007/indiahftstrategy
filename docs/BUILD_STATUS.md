@@ -87,6 +87,15 @@
   allocation evidence, computes notional from the resolved upload-order file,
   and blocks dry-run dispatch when that actual upload notional exceeds the
   selected allocation.
+- Broker dispatch planning now emits manifest-tracked
+  `broker_dispatch_action_queue.csv` and `broker_dispatch_runbook.md`
+  scheduler handoffs, routing route-enable, allocation, route-readiness,
+  dispatch round-trip, vendor-data, resume, and malformed dispatch-order
+  blockers to their next CLI gate before send packets are prepared.
+- Broker dispatch config JSON and summary rows now mirror dispatch action
+  counts, primary action status, next gate/help command, and action arrays, and
+  `plan-broker-dispatch` can fail closed with `--fail-on-blocked-actions` or
+  `--fail-on-actions`.
 - Broker dispatch send now carries dispatch-retained strategy portfolio
   allocation evidence into the non-submitting sender packet and blocks packet
   readiness when dispatch notional exceeds the selected allocation.
@@ -779,7 +788,8 @@
   upload-order files while resolving launch pipeline upload roots and
   fingerprinting the route-enable summary/config, route-enable manifest, and
   upload CSV without sending orders while exposing the first failed dispatch
-  check as a structured config blocker.
+  check as a structured config blocker plus scheduler action queue/runbook
+  handoff.
 - Broker dispatch send packet builder that turns an armed dry-run dispatch
   plan into non-submitting adapter request envelopes, idempotency keys, payload
   hashes, route-readiness proof, route round-trip proof tags, and
@@ -1076,7 +1086,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 962 tests.
+Current passing suite: 964 tests.
 
 ## Next Build Targets
 

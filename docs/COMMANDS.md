@@ -3322,7 +3322,8 @@ python -m hft_cli plan-broker-dispatch `
   --target-mode live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
-  --fail-on-breach
+  --fail-on-breach `
+  --fail-on-blocked-actions
 ```
 
 Outputs:
@@ -3331,14 +3332,28 @@ Outputs:
 broker_dispatch_orders.csv
 broker_dispatch_checks.csv
 broker_dispatch_summary.csv
+broker_dispatch_action_queue.csv
 broker_dispatch_config.json
+broker_dispatch_runbook.md
 manifest.json
 ```
 
 `broker_dispatch_config.json` keeps the legacy `failed_checks` name list and
 also adds `failed_check_count` plus `primary_blocker`, giving sender
 automation the first failed dispatch gate as a structured record before it
-opens `broker_dispatch_checks.csv`.
+opens `broker_dispatch_checks.csv`. The summary/config now also mirror
+`action_queue_count`, `blocked_action_count`, `next_gate`,
+`next_gate_help_command`, `primary_action_status`, `primary_action`, and
+`next_actions`, while `broker_dispatch_action_queue.csv` and
+`broker_dispatch_runbook.md` give schedulers a manifest-tracked handoff. Route
+disabled and identity blockers point back to `review-route-enable`, allocation
+blockers to `review-cutover-gate`, route-readiness blockers to
+`review-route-readiness`, round-trip blockers to
+`review-broker-dispatch-roundtrip`, vendor-data blockers to their vendor
+pipelines, and malformed dispatch-order inputs back to `plan-broker-dispatch`.
+Use `--fail-on-blocked-actions` to fail only when blocked dispatch actions
+exist, or `--fail-on-actions` when any broker dispatch action should stop
+automation.
 
 This command still does not submit orders. It hashes the route-enable
 authorization and upload file, creates one dry-run dispatch row per upload

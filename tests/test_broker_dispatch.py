@@ -560,8 +560,15 @@ def test_broker_dispatch_plan_creates_dry_run_idempotent_batch():
     assert report.config["dry_run_only"]
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
+    assert report.config["action_queue_count"] == 0
+    assert report.config["next_actions"] == []
+    assert report.action_queue is not None
+    assert report.action_queue.empty
     assert report.dispatch_orders["route_dispatch_roundtrip_batch_id"].tolist() == ["BDP-0", "BDP-0"]
     assert report.summary.iloc[0]["route_dispatch_roundtrip_ready"]
+    assert int(report.summary.iloc[0]["failed_check_count"]) == 0
+    assert report.summary.iloc[0]["primary_blocker_check"] == ""
+    assert int(report.summary.iloc[0]["action_queue_count"]) == 0
     assert report.summary.iloc[0]["broker_schema_status"] == "placeholder_normalized_pending_vendor_schema"
     assert bool(report.summary.iloc[0]["broker_schema_reviewed"])
     assert report.summary.iloc[0]["broker_schema_review_mode"] == "reviewed_vendor_mapping"
@@ -1416,9 +1423,25 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     assert (out_dir / "broker_dispatch_orders.csv").exists()
     assert (out_dir / "broker_dispatch_checks.csv").exists()
     assert (out_dir / "broker_dispatch_summary.csv").exists()
+    assert (out_dir / "broker_dispatch_action_queue.csv").exists()
     assert (out_dir / "broker_dispatch_config.json").exists()
+    assert (out_dir / "broker_dispatch_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
+    summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_action_queue.csv")
+    config = json.loads((out_dir / "broker_dispatch_config.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "broker_dispatch_runbook.md").read_text(encoding="utf-8")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
+    assert action_queue.empty
+    assert int(summary.loc[0, "action_queue_count"]) == 0
+    assert int(summary.loc[0, "blocked_action_count"]) == 0
+    assert config["action_queue_count"] == 0
+    assert config["next_actions"] == []
+    assert runbook.startswith("# Broker Dispatch Runbook")
+    assert "No broker dispatch actions." in runbook
+    assert "broker_dispatch_action_queue.csv" in artifact_paths
+    assert "broker_dispatch_runbook.md" in artifact_paths
     assert {"route_enable_summary", "route_enable_config", "route_enable_manifest", "upload_orders"} <= set(
         manifest["inputs"]
     )
@@ -1658,9 +1681,63 @@ def test_cli_broker_dispatch_fails_on_disabled_route(tmp_path):
 
     summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
     checks = pd.read_csv(out_dir / "broker_dispatch_checks.csv")
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_action_queue.csv")
+    config = json.loads((out_dir / "broker_dispatch_config.json").read_text(encoding="utf-8"))
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert "route_enabled" in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert int(summary.loc[0, "action_queue_count"]) >= 1
+    assert int(summary.loc[0, "blocked_action_count"]) >= 1
+    assert summary.loc[0, "next_gate"] == "review-route-enable"
+    assert summary.loc[0, "next_gate_help_command"] == "python -m hft_cli review-route-enable --help"
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "component"] == "route_enable"
+    assert action_queue.loc[0, "check"] == "route_enabled"
+    assert action_queue.loc[0, "next_gate"] == "review-route-enable"
+    assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-route-enable --help"
+    assert config["action_queue_count"] >= 1
+    assert config["blocked_action_count"] >= 1
+    assert config["primary_action"]["check"] == "route_enabled"
+    assert config["next_actions"][0]["next_gate"] == "review-route-enable"
+
+
+def test_cli_broker_dispatch_can_fail_on_actions(tmp_path):
+    route, upload = write_inputs(tmp_path, route_ready=False)
+    out_dir = tmp_path / "dispatch"
+    blocked_dir = tmp_path / "dispatch_blocked"
+
+    code = main(
+        [
+            "plan-broker-dispatch",
+            "--route-enable",
+            str(route),
+            "--upload-pack",
+            str(upload),
+            "--out",
+            str(out_dir),
+            "--fail-on-actions",
+        ]
+    )
+    blocked_code = main(
+        [
+            "plan-broker-dispatch",
+            "--route-enable",
+            str(route),
+            "--upload-pack",
+            str(upload),
+            "--out",
+            str(blocked_dir),
+            "--fail-on-blocked-actions",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "broker_dispatch_summary.csv")
+    action_queue = pd.read_csv(out_dir / "broker_dispatch_action_queue.csv")
+    assert code == 2
+    assert blocked_code == 2
+    assert int(summary.loc[0, "action_queue_count"]) == len(action_queue)
+    assert int(summary.loc[0, "blocked_action_count"]) >= 1
+    assert action_queue.loc[0, "next_gate"] == "review-route-enable"
 
 
 def test_cli_broker_dispatch_can_require_dispatch_roundtrip(tmp_path):
