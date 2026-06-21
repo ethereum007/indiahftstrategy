@@ -14,6 +14,7 @@ def scaleup_config(
     require_instrument_metadata=False,
     require_proof_refresh=False,
     require_broker_resume_gate=False,
+    require_broker_route_readiness=False,
     require_strategy_portfolio=False,
 ):
     config = {
@@ -64,22 +65,44 @@ def scaleup_config(
             "fresh_proof_required": True,
         }
     if require_broker_resume_gate:
-        config["broker_readiness"] = {
+        broker_readiness = config.setdefault(
+            "broker_readiness",
+            {"required": True, "provided": True, "ready": True},
+        )
+        broker_readiness.update({"required": True, "provided": True, "ready": True})
+        broker_readiness["resume_gate"] = {
             "required": True,
             "provided": True,
             "ready": True,
-            "resume_gate": {
-                "required": True,
-                "provided": True,
-                "ready": True,
-                "strategy": strategy,
-                "market": market,
-                "incident_strategy": strategy,
-                "incident_market": market,
-                "proof_refresh_ready": True,
-                "proof_refresh_strategy": strategy,
-                "proof_refresh_market": market,
-            },
+            "strategy": strategy,
+            "market": market,
+            "incident_strategy": strategy,
+            "incident_market": market,
+            "proof_refresh_ready": True,
+            "proof_refresh_strategy": strategy,
+            "proof_refresh_market": market,
+        }
+    if require_broker_route_readiness:
+        broker_readiness = config.setdefault(
+            "broker_readiness",
+            {"required": True, "provided": True, "ready": True},
+        )
+        broker_readiness.update({"required": True, "provided": True, "ready": True})
+        broker_readiness["route_readiness"] = {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": strategy,
+            "market": market,
+            "route_ready_pairs": 1,
+            "gap_pairs": 0,
+            "recommendation": "scale_up_with_controls",
+            "ops_launch_controls_ready": True,
+            "ops_launch_control_failures": "",
+            "ops_broker_roundtrip_portfolio_safe_runs": 1,
+            "ops_broker_roundtrip_portfolio_breach_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
         }
     if require_strategy_portfolio:
         config["strategy_portfolio"] = {
@@ -449,6 +472,26 @@ def test_runtime_telemetry_carries_broker_resume_gate_config():
     assert summary["broker_resume_proof_refresh_strategy"] == "lead_lag_taker"
 
 
+def test_runtime_telemetry_carries_broker_route_readiness_config():
+    report = evaluate_runtime_telemetry(scaleup_config(require_broker_route_readiness=True))
+
+    row = report.telemetry.iloc[0]
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert bool(row["broker_route_readiness_required"])
+    assert bool(row["broker_route_readiness_provided"])
+    assert bool(row["broker_route_readiness_ready"])
+    assert row["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert row["broker_route_readiness_market"] == "india_nse_index_derivatives"
+    assert row["broker_route_readiness_route_ready_pairs"] == 1
+    assert row["broker_route_readiness_gap_pairs"] == 0
+    assert bool(row["broker_route_readiness_ops_launch_controls_ready"])
+    assert row["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"] == 1
+    assert row["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
+    assert bool(summary["broker_route_readiness_ready"])
+    assert summary["broker_route_readiness_recommendation"] == "scale_up_with_controls"
+
+
 def test_runtime_telemetry_carries_strategy_portfolio_config():
     report = evaluate_runtime_telemetry(scaleup_config(require_strategy_portfolio=True))
 
@@ -522,6 +565,42 @@ def test_runtime_telemetry_blocks_bad_broker_resume_gate_config():
         "broker_resume_proof_refresh_ready",
         "broker_resume_proof_refresh_strategy_matches",
         "broker_resume_proof_refresh_market_matches",
+    } <= failed
+
+
+def test_runtime_telemetry_blocks_bad_broker_route_readiness_config():
+    config = scaleup_config(require_broker_route_readiness=True)
+    config["broker_readiness"]["route_readiness"].update(
+        {
+            "ready": False,
+            "strategy": "surface_mm",
+            "market": "us_options_regular",
+            "route_ready_pairs": 0,
+            "gap_pairs": 2,
+            "ops_launch_controls_ready": False,
+            "ops_launch_control_failures": "broker_roundtrip_portfolio_concentration_breach_runs",
+            "ops_broker_roundtrip_portfolio_safe_runs": 0,
+            "ops_broker_roundtrip_portfolio_breach_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 1,
+        }
+    )
+
+    report = evaluate_runtime_telemetry(config)
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_route_readiness_ready",
+        "broker_route_readiness_strategy_matches",
+        "broker_route_readiness_market_matches",
+        "broker_route_readiness_route_ready_pairs",
+        "broker_route_readiness_gap_pairs",
+        "broker_route_readiness_ops_launch_controls_ready",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
     } <= failed
 
 

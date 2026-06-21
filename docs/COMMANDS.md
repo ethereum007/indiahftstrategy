@@ -2793,6 +2793,11 @@ When scale-up required broker resume-gate evidence, telemetry also carries
 `broker_resume_*` fields from the scale-up config and fails closed if the
 resume authorization, its strategy/market identity, or its proof-refresh
 identity is missing or stale.
+When scale-up required or supplied broker route-readiness evidence, telemetry
+also carries `broker_route_readiness_*` fields from the scale-up config and
+fails closed if the route proof, route-ready/gap pairs, launch-control proof,
+portfolio-safe runs, or concentration-safe runs are missing, mismatched, or
+stale.
 When scale-up required or supplied strategy portfolio allocation evidence,
 telemetry also carries `strategy_portfolio_*` fields from the scale-up config,
 including selected profile, strategy, market, allocation notional, and whether
@@ -2845,6 +2850,11 @@ scale-up proof target.
 If broker resume-gate evidence was required or supplied at scale-up, the guard
 also requires runtime telemetry to carry a ready resume authorization and ready
 resume proof-refresh identity matching the scale-up strategy and market.
+If broker route-readiness evidence was required or supplied at scale-up, the
+guard also requires runtime telemetry to carry ready route proof with matching
+strategy/market identity, zero route gaps, ready launch controls, at least one
+portfolio-safe and concentration-safe broker round-trip run, and zero breach
+runs. Route-proof blockers are queued to `review-route-readiness`.
 If strategy portfolio allocation evidence was required or supplied at scale-up,
 the guard also requires the selected allocation to be ready, eligible, identity
 matched, positive, and large enough for the observed `session_notional`; this
@@ -2873,10 +2883,10 @@ manifest.json
 `primary_action_status`. `runtime_guard_action_queue.csv` and
 `runtime_guard_runbook.md` turn guard halts into scheduler-ready actions,
 usually routing runtime limit and risk breaches to `plan-halt-response`, while
-scale-up readiness, proof-refresh, and resume-gate identity blockers point back
-to their repair gates. Use `--fail-on-actions` to fail whenever a guard action
-is queued, or `--fail-on-blocked-actions` to fail only when blocked guard
-actions appear.
+scale-up readiness, proof-refresh, resume-gate identity, and broker
+route-readiness blockers point back to their repair gates. Use
+`--fail-on-actions` to fail whenever a guard action is queued, or
+`--fail-on-blocked-actions` to fail only when blocked guard actions appear.
 
 ## Runtime Session Monitor
 
