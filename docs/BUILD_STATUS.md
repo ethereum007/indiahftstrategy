@@ -223,6 +223,10 @@
   `blocked_actions`, plus root-level `primary_action_status` and
   `primary_action`, so schedulers can consume wrapper blockers without parsing
   CSV files.
+- Broker-vendor data readiness now preserves accepted broker-readiness
+  route-control proof in wrapper summary/config artifacts, including direct
+  route launch-control/breach-pair evidence and broker-carried allocation-safe
+  plus concentration-OK route-run counts.
 - `pipeline-broker-vendor-readiness` now exposes the same
   `--fail-on-blocked-actions` and `--fail-on-actions` scheduler gates for
   Arrow.money/iRage vendor-data proof runs.

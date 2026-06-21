@@ -4238,6 +4238,14 @@ ready. The wrapper summary/config/runbook also surfaces `adapter_schema_status`,
 `placeholder_schema_active`, `placeholder_schema_allowed`, and
 `placeholder_schema_warning`, so dry-run placeholder schema overrides remain
 visible in catalogs until real Arrow.money/iRage mappings are reviewed.
+The wrapper summary/config also carries broker-readiness route-control proof as
+`broker_readiness_route_readiness_*` and
+`broker_readiness_route_broker_route_readiness_*` summary fields plus nested
+`broker_readiness.dispatch_roundtrip.route_readiness` and
+`broker_readiness.dispatch_roundtrip.route_broker_route_readiness` JSON blocks,
+so launch schedulers can prove direct launch-control evidence and
+allocation/concentration-safe broker route runs without opening nested broker
+readiness artifacts.
 `broker_vendor_data_readiness_summary.csv` also exposes
 `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
 `primary_blocker_*` fields for the first failed wrapper check.

@@ -125,6 +125,26 @@ def dispatch_roundtrip_config():
             "route_ready_pairs": 1,
             "gap_pairs": 0,
             "recommendation": "eligible_for_live_dryrun_route_review",
+            "ops_launch_controls_present": True,
+            "ops_launch_controls_blocked_pairs": 0,
+            "ops_broker_roundtrip_portfolio_breach_pairs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
+            "ops_launch_controls_ready": True,
+            "ops_launch_control_failures": "",
+            "ops_broker_roundtrip_portfolio_safe_runs": 1,
+            "ops_broker_roundtrip_portfolio_breach_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+        },
+        "route_broker_route_readiness": {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "route_ready_pairs": 1,
+            "gap_pairs": 0,
+            "recommendation": "eligible_for_live_dryrun_route_review",
             "ops_launch_controls_ready": True,
             "ops_launch_control_failures": "",
             "ops_broker_roundtrip_portfolio_safe_runs": 1,
@@ -242,6 +262,19 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert bool(summary["vendor_batch_ready"])
         assert bool(summary["broker_readiness_ready"])
         assert bool(summary["broker_vendor_data_ready"])
+        assert bool(summary["broker_readiness_route_readiness_ops_launch_controls_present"])
+        assert int(summary["broker_readiness_route_readiness_ops_launch_controls_blocked_pairs"]) == 0
+        assert int(summary["broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]) == 0
+        assert bool(summary["broker_readiness_route_broker_route_readiness_ops_launch_controls_ready"])
+        assert int(summary["broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+        assert (
+            int(
+                summary[
+                    "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+                ]
+            )
+            == 1
+        )
         assert summary["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
         assert not bool(summary["schema_review_required"])
         assert not bool(summary["schema_reviewed"])
@@ -297,6 +330,17 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert config["broker_readiness"]["broker_vendor_data_ready"]
         assert config["broker_readiness"]["adapter_schema_status"] == "placeholder_normalized_pending_vendor_schema"
         assert config["broker_readiness"]["placeholder_schema_allowed"]
+        broker_dispatch = config["broker_readiness"]["dispatch_roundtrip"]
+        assert broker_dispatch["route_readiness"]["ops_launch_controls_present"]
+        assert broker_dispatch["route_readiness"]["ops_broker_roundtrip_portfolio_breach_pairs"] == 0
+        assert broker_dispatch["route_broker_route_readiness"]["ops_launch_controls_ready"]
+        assert broker_dispatch["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_safe_runs"] == 1
+        assert (
+            broker_dispatch["route_broker_route_readiness"][
+                "ops_broker_roundtrip_portfolio_concentration_ok_runs"
+            ]
+            == 1
+        )
         assert config["failed_check_count"] == 0
         assert config["failed_checks"] == []
         assert config["first_failed_reason"] == ""
