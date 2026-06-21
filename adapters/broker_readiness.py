@@ -913,6 +913,9 @@ def _item(
         row.get("vendor_market_data_batch_only", False)
     )
     provided = bool(not summary.empty and not vendor_market_data_batch_only)
+    dispatch_roundtrip_context = component == "dispatch_roundtrip" and (
+        provided or vendor_market_data_batch_only
+    )
     ready = _component_ready(component, row) if provided else False
     adapter = str(row.get("adapter", "")).strip()
     schema_status = str(row.get("adapter_schema_status", "")).strip()
@@ -996,10 +999,10 @@ def _item(
         "route_readiness_strategy": _dispatch_text(component, row, "route_readiness_strategy"),
         "route_readiness_market": _dispatch_text(component, row, "route_readiness_market"),
         "route_readiness_route_ready_pairs": int(_number(row, "route_readiness_route_ready_pairs", 0.0))
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_gap_pairs": int(_number(row, "route_readiness_gap_pairs", 0.0))
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_recommendation": _dispatch_text(component, row, "route_readiness_recommendation"),
         "route_readiness_ops_legacy_counts_present": _dispatch_route_readiness_legacy_ops_present(component, row),
@@ -1011,17 +1014,17 @@ def _item(
         "route_readiness_ops_launch_controls_blocked_pairs": int(
             _number(row, "route_readiness_ops_launch_controls_blocked_pairs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": int(
             _number(row, "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
             _number(row, "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_ops_launch_controls_ready": _dispatch_bool(
             component,
@@ -1036,22 +1039,22 @@ def _item(
         "route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
             _number(row, "route_readiness_ops_broker_roundtrip_portfolio_safe_runs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
             _number(row, "route_readiness_ops_broker_roundtrip_portfolio_breach_runs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
             _number(row, "route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
             _number(row, "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_broker_route_readiness_required": _dispatch_bool(
             component,
@@ -1081,12 +1084,12 @@ def _item(
         "route_broker_route_readiness_route_ready_pairs": int(
             _number(row, "route_broker_route_readiness_route_ready_pairs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_broker_route_readiness_gap_pairs": int(
             _number(row, "route_broker_route_readiness_gap_pairs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_broker_route_readiness_recommendation": _dispatch_text(
             component,
@@ -1106,12 +1109,12 @@ def _item(
         "route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
             _number(row, "route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
             _number(row, "route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs", 0.0)
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
             _number(
@@ -1120,7 +1123,7 @@ def _item(
                 0.0,
             )
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
             _number(
@@ -1129,7 +1132,7 @@ def _item(
                 0.0,
             )
         )
-        if component == "dispatch_roundtrip" and provided
+        if dispatch_roundtrip_context
         else 0,
         "route_dispatch_roundtrip_required": _dispatch_bool(component, row, "route_dispatch_roundtrip_required"),
         "route_dispatch_roundtrip_provided": _dispatch_bool(component, row, "route_dispatch_roundtrip_provided"),
@@ -3890,12 +3893,37 @@ def _dispatch_roundtrip_config_with_vendor_market_data_batch(
     merged = dict(dispatch_roundtrip_config)
     if broker_vendor_data_readiness_config:
         merged["broker_vendor_data_readiness"] = dict(broker_vendor_data_readiness_config)
+        for key, value in _broker_vendor_data_dispatch_roundtrip_config(
+            broker_vendor_data_readiness_config
+        ).items():
+            merged.setdefault(key, value)
     if not vendor_market_data_batch_config:
         return merged
     vendor = dict(vendor_market_data_batch_config)
     merged["roundtrip_vendor_market_data_batch"] = vendor
     merged["broker_dispatch_roundtrip_vendor_market_data_batch"] = vendor
     return merged
+
+
+def _broker_vendor_data_dispatch_roundtrip_config(config: dict[str, Any]) -> dict[str, Any]:
+    broker_readiness = config.get("broker_readiness", {}) or {}
+    candidates = [
+        config.get("dispatch_roundtrip", {}),
+        broker_readiness.get("dispatch_roundtrip", {}) if isinstance(broker_readiness, dict) else {},
+    ]
+    promoted: dict[str, Any] = {}
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        for key in (
+            "route_readiness",
+            "route_broker_route_readiness",
+            "route_enable_dispatch_roundtrip",
+        ):
+            value = candidate.get(key, {})
+            if isinstance(value, dict) and value and key not in promoted:
+                promoted[key] = dict(value)
+    return promoted
 
 
 def _resolve_vendor_market_data_batch_dir(path: str | Path | None) -> str | Path | None:

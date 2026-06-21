@@ -223,7 +223,7 @@ def write_imbalance_launch_pipeline(
         )
 
     component_frame = pd.DataFrame(components)
-    summary = _summary(component_frame, config, order_plan=order_plan)
+    summary = _summary(component_frame, config, order_plan=order_plan, broker_readiness=broker_readiness)
     component_frame.to_csv(out / "imbalance_launch_pipeline_components.csv", index=False)
     summary.to_csv(out / "imbalance_launch_pipeline_summary.csv", index=False)
     write_experiment_manifest(
@@ -293,6 +293,7 @@ def _summary(
     config: ImbalanceLaunchPipelineConfig,
     *,
     order_plan: ImbalanceOrderPlanReport,
+    broker_readiness: BrokerReadinessReport | None = None,
 ) -> pd.DataFrame:
     ready = bool(components["ready"].astype(bool).all()) if not components.empty else False
     failed = int((~components["ready"].astype(bool)).sum()) if not components.empty else 0
@@ -310,10 +311,69 @@ def _summary(
                 "ready_components": int(components["ready"].astype(bool).sum()) if not components.empty else 0,
                 "failed_components": failed,
                 "skipped_components": skipped,
+                **_broker_readiness_summary_fields(broker_readiness),
                 "recommendation": "paper_or_shadow_handoff" if ready else "keep_in_research",
             }
         ]
     )
+
+
+def _broker_readiness_summary_fields(broker_readiness: BrokerReadinessReport | None) -> dict[str, object]:
+    row = (
+        broker_readiness.summary.iloc[0]
+        if broker_readiness is not None and not broker_readiness.summary.empty
+        else pd.Series(dtype=object)
+    )
+    return {
+        "broker_readiness_provided": broker_readiness is not None and not row.empty,
+        "broker_readiness_ready": bool(broker_readiness.ready) if broker_readiness is not None else False,
+        "broker_readiness_route_readiness_ready": bool(row.get("route_readiness_ready", False)),
+        "broker_readiness_route_readiness_strategy": str(row.get("route_readiness_strategy", "")),
+        "broker_readiness_route_readiness_market": str(row.get("route_readiness_market", "")),
+        "broker_readiness_route_readiness_gap_pairs": _int(row.get("route_readiness_gap_pairs", 0)),
+        "broker_readiness_route_readiness_ops_launch_controls_present": bool(
+            row.get("route_readiness_ops_launch_controls_present", False)
+        ),
+        "broker_readiness_route_readiness_ops_launch_controls_blocked_pairs": _int(
+            row.get("route_readiness_ops_launch_controls_blocked_pairs", 0)
+        ),
+        "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": _int(
+            row.get("route_readiness_ops_broker_roundtrip_portfolio_breach_pairs", 0)
+        ),
+        "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": _int(
+            row.get("route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs", 0)
+        ),
+        "broker_readiness_route_broker_route_readiness_provided": bool(
+            row.get("route_broker_route_readiness_provided", False)
+        ),
+        "broker_readiness_route_broker_route_readiness_ready": bool(
+            row.get("route_broker_route_readiness_ready", False)
+        ),
+        "broker_readiness_route_broker_route_readiness_strategy": str(
+            row.get("route_broker_route_readiness_strategy", "")
+        ),
+        "broker_readiness_route_broker_route_readiness_market": str(
+            row.get("route_broker_route_readiness_market", "")
+        ),
+        "broker_readiness_route_broker_route_readiness_gap_pairs": _int(
+            row.get("route_broker_route_readiness_gap_pairs", 0)
+        ),
+        "broker_readiness_route_broker_route_readiness_ops_launch_controls_ready": bool(
+            row.get("route_broker_route_readiness_ops_launch_controls_ready", False)
+        ),
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": _int(
+            row.get("route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs", 0)
+        ),
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": _int(
+            row.get("route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs", 0)
+        ),
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": _int(
+            row.get("route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs", 0)
+        ),
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": _int(
+            row.get("route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs", 0)
+        ),
+    }
 
 
 def _validate_config(config: ImbalanceLaunchPipelineConfig) -> None:

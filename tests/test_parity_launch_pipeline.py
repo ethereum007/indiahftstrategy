@@ -200,7 +200,7 @@ def test_cli_pipeline_parity_launch_forwards_broker_vendor_data_proof_root(tmp_p
     summary = pd.read_csv(out_dir / "parity_launch_pipeline_summary.csv")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
-    assert_broker_vendor_data_proof_forwarded(out_dir)
+    assert_broker_vendor_data_proof_forwarded(out_dir, summary_file="parity_launch_pipeline_summary.csv")
 
 
 def test_cli_pipeline_parity_launch_blocks_mismatched_broker_vendor_data_proof_root(tmp_path):

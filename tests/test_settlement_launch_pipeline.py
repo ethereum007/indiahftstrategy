@@ -201,7 +201,7 @@ def test_cli_pipeline_settlement_launch_forwards_broker_vendor_data_proof_root(t
     summary = pd.read_csv(out_dir / "settlement_launch_pipeline_summary.csv")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
-    assert_broker_vendor_data_proof_forwarded(out_dir)
+    assert_broker_vendor_data_proof_forwarded(out_dir, summary_file="settlement_launch_pipeline_summary.csv")
 
 
 def test_cli_pipeline_settlement_launch_blocks_mismatched_broker_vendor_data_proof_root(tmp_path):

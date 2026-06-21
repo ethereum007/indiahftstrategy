@@ -1046,6 +1046,10 @@ parity, settlement, and surface-MM launch pipelines. It may point at either the
 top-level `pipeline-broker-vendor-readiness` output or the nested
 `01_vendor_market_data_batch` directory, and the launch pipeline forwards the
 proof into broker readiness before broker dispatch planning.
+When the proof root carries broker-readiness route-control evidence, the launch
+root summary also exposes `broker_readiness_route_readiness_*` and
+`broker_readiness_route_broker_route_readiness_*` fields, including launch
+control, allocation-safe, and concentration-safe broker round-trip counts.
 
 ## Microprice Imbalance Edge Audit
 

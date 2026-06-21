@@ -3,7 +3,12 @@ import json
 import pandas as pd
 
 
-def assert_broker_vendor_data_proof_forwarded(output_dir, *, readiness_subdir="06_broker_readiness"):
+def assert_broker_vendor_data_proof_forwarded(
+    output_dir,
+    *,
+    readiness_subdir="06_broker_readiness",
+    summary_file=None,
+):
     broker_manifest = json.loads((output_dir / readiness_subdir / "manifest.json").read_text(encoding="utf-8"))
     assert path_tail(broker_manifest["inputs"]["vendor_market_data_batch_config"]["path"]).endswith(
         "/broker_vendor_data/01_vendor_market_data_batch/vendor_market_data_batch_config.json"
@@ -18,6 +23,21 @@ def assert_broker_vendor_data_proof_forwarded(output_dir, *, readiness_subdir="0
     assert path_tail(pipeline_manifest["parameters"]["config"]["broker_vendor_data_readiness_dir"]).endswith(
         "/broker_vendor_data"
     )
+    if summary_file is not None:
+        broker_summary = pd.read_csv(output_dir / readiness_subdir / "broker_readiness_summary.csv").iloc[0]
+        launch_summary = pd.read_csv(output_dir / summary_file).iloc[0]
+        assert bool(broker_summary["route_readiness_ops_launch_controls_present"])
+        assert int(broker_summary["route_readiness_ops_launch_controls_blocked_pairs"]) == 0
+        assert int(broker_summary["route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]) == 0
+        assert bool(broker_summary["route_broker_route_readiness_ops_launch_controls_ready"])
+        assert int(broker_summary["route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+        assert bool(launch_summary["broker_readiness_route_readiness_ops_launch_controls_present"])
+        assert int(launch_summary["broker_readiness_route_readiness_ops_launch_controls_blocked_pairs"]) == 0
+        assert int(launch_summary["broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs"]) == 0
+        assert bool(launch_summary["broker_readiness_route_broker_route_readiness_ops_launch_controls_ready"])
+        assert int(
+            launch_summary["broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]
+        ) == 1
 
 
 def assert_broker_vendor_data_adapter_mismatch_blocked(
@@ -126,6 +146,47 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
+def route_control_proof(market):
+    return {
+        "route_readiness": {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": "lead_lag_taker",
+            "market": market,
+            "route_ready_pairs": 1,
+            "gap_pairs": 0,
+            "recommendation": "eligible_for_live_dryrun_route_review",
+            "ops_launch_controls_present": True,
+            "ops_launch_controls_blocked_pairs": 0,
+            "ops_broker_roundtrip_portfolio_breach_pairs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
+            "ops_launch_controls_ready": True,
+            "ops_launch_control_failures": "",
+            "ops_broker_roundtrip_portfolio_safe_runs": 1,
+            "ops_broker_roundtrip_portfolio_breach_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+        },
+        "route_broker_route_readiness": {
+            "required": True,
+            "provided": True,
+            "ready": True,
+            "strategy": "lead_lag_taker",
+            "market": market,
+            "route_ready_pairs": 1,
+            "gap_pairs": 0,
+            "recommendation": "eligible_for_live_dryrun_route_review",
+            "ops_launch_controls_ready": True,
+            "ops_launch_control_failures": "",
+            "ops_broker_roundtrip_portfolio_safe_runs": 1,
+            "ops_broker_roundtrip_portfolio_breach_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+        },
+    }
+
+
 def write_broker_vendor_data_proof(
     path,
     *,
@@ -196,6 +257,9 @@ def write_broker_vendor_data_proof(
                     "source_file_fingerprint_coverage": 1.0,
                     "min_mapping_coverage": 1.0,
                     "unique_mapping_drafts": 1,
+                },
+                "broker_readiness": {
+                    "dispatch_roundtrip": route_control_proof(market),
                 },
             },
             indent=2,

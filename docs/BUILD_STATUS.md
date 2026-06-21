@@ -25,6 +25,10 @@
 - Parity/box launch pipeline runs promoted candidates through order planning,
   staging, launch bundle creation, broker export, upload pack, and broker
   readiness review for Arrow.money/iRage-style paper or shadow handoff.
+- Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
+  root summaries now retain broker-readiness route-control proof from
+  broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
+  and `broker_readiness_route_broker_route_readiness_*` fields.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts
