@@ -183,9 +183,14 @@ def write_scaleup_plan(
     evidence = _read_summary(evidence_path, "strategy_evidence_summary.csv")
     shadow = _read_summary(shadow_path, "shadow_session_comparison_summary.csv")
     launch = _read_summary(launch_path, "launch_summary.csv")
+    launch_pipeline = (
+        _read_launch_pipeline_summary(launch_pipeline_path)
+        if launch_pipeline_path is not None
+        else None
+    )
     launch = _with_launch_pipeline_identity(
         launch,
-        _read_launch_pipeline_summary(launch_pipeline_path) if launch_pipeline_path is not None else None,
+        launch_pipeline,
     )
     exposure = _read_optional_summary(exposure_path, "order_exposure_summary.csv") if exposure_path else None
     proof_refresh = (
@@ -210,6 +215,8 @@ def write_scaleup_plan(
         if broker_readiness_path
         else None
     )
+    if broker_readiness is None or broker_readiness.empty:
+        broker_readiness = _broker_readiness_from_launch_pipeline_summary(launch_pipeline)
     if broker_readiness_config_path is not None:
         broker_readiness = _with_broker_vendor_market_data_batch_config(
             broker_readiness,
@@ -4277,6 +4284,145 @@ def _with_launch_pipeline_identity(
         int(_number(row, "skipped_components", fallback=0.0)) if family == "surface_mm" else 0
     )
     return out
+
+
+def _broker_readiness_from_launch_pipeline_summary(
+    launch_pipeline: tuple[str, str, pd.DataFrame] | None,
+) -> pd.DataFrame | None:
+    if launch_pipeline is None:
+        return None
+    _, _, summary = launch_pipeline
+    if summary.empty:
+        return None
+    row = summary.iloc[0]
+    if not _launch_pipeline_broker_readiness_active(row):
+        return None
+    route_ready = _to_bool(row.get("broker_readiness_route_readiness_ready", False))
+    route_broker_ready = _to_bool(row.get("broker_readiness_route_broker_route_readiness_ready", False))
+    launch_controls_ready = _to_bool(
+        row.get(
+            "broker_readiness_route_broker_route_readiness_ops_launch_controls_ready",
+            row.get("broker_readiness_route_readiness_ops_launch_controls_present", False),
+        )
+    )
+    return pd.DataFrame(
+        [
+            {
+                "ready": _to_bool(row.get("broker_readiness_ready", route_ready or route_broker_ready)),
+                "adapter_schema_status": "",
+                "schema_reviewed": False,
+                "schema_review_mode": "",
+                "recommendation": "launch_pipeline_broker_route_proof",
+                "route_readiness_required": route_ready or route_broker_ready,
+                "route_readiness_provided": route_ready or route_broker_ready,
+                "route_readiness_ready": route_ready,
+                "route_readiness_strategy": _strategy_key(
+                    row.get(
+                        "broker_readiness_route_readiness_strategy",
+                        row.get("broker_readiness_route_broker_route_readiness_strategy", ""),
+                    )
+                ),
+                "route_readiness_market": _identity_key(
+                    row.get(
+                        "broker_readiness_route_readiness_market",
+                        row.get("broker_readiness_route_broker_route_readiness_market", ""),
+                    )
+                ),
+                "route_readiness_route_ready_pairs": 0,
+                "route_readiness_gap_pairs": int(
+                    _number(row, "broker_readiness_route_readiness_gap_pairs", fallback=0.0)
+                ),
+                "route_readiness_recommendation": "",
+                "route_readiness_ops_launch_controls_present": _to_bool(
+                    row.get("broker_readiness_route_readiness_ops_launch_controls_present", False)
+                ),
+                "route_readiness_ops_launch_controls_blocked_pairs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_readiness_ops_launch_controls_blocked_pairs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_"
+                            "concentration_breach_pairs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_launch_controls_ready": launch_controls_ready,
+                "route_readiness_ops_launch_control_failures": "",
+                "route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_"
+                            "concentration_ok_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_"
+                            "concentration_breach_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "broker_vendor_data_readiness_provided": False,
+                "broker_vendor_data_readiness_ready": False,
+                "broker_vendor_data_readiness_failed_checks": 0,
+            }
+        ]
+    )
+
+
+def _launch_pipeline_broker_readiness_active(row: pd.Series) -> bool:
+    return bool(
+        _to_bool(row.get("broker_readiness_provided", False))
+        or _to_bool(row.get("broker_readiness_ready", False))
+        or _to_bool(row.get("broker_readiness_route_readiness_ready", False))
+        or _to_bool(row.get("broker_readiness_route_broker_route_readiness_ready", False))
+        or _to_bool(row.get("broker_readiness_route_readiness_ops_launch_controls_present", False))
+        or _to_bool(
+            row.get("broker_readiness_route_broker_route_readiness_ops_launch_controls_ready", False)
+        )
+        or int(
+            _number(
+                row,
+                "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+                fallback=0.0,
+            )
+        )
+        > 0
+    )
 
 
 def _summary_path(path: str | Path, filename: str, *, fallback_dirs: tuple[str, ...] = ()) -> Path:

@@ -2648,8 +2648,10 @@ can gate the pipeline folder directly. Scale-up also reads the root
 `*_launch_pipeline_summary.csv`, preserves it in the generic
 `launch_pipeline` config block, and fails closed if its ready status or
 strategy/market identity disagrees with the evidence or explicit expected
-identity. Surface-MM keeps the legacy `surface_launch_pipeline` block as a
-compatibility alias.
+identity. If the nested broker-readiness folder is unavailable but the launch
+root summary carries `broker_readiness_route_*` proof, scale-up hydrates that
+broker route proof for `--require-broker-readiness`. Surface-MM keeps the
+legacy `surface_launch_pipeline` block as a compatibility alias.
 If broker readiness included runtime-session evidence, `scaleup_summary.csv`
 and `scaleup_config.json` retain the runtime guard action/halt status plus the
 runtime target mode, strategy, and market for the session that fed the broker

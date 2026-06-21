@@ -823,6 +823,8 @@
   proof for live-dry-run targets, consumes lead-lag, imbalance, parity-box,
   settlement, and surface-MM launch pipeline root summaries for strategy/market
   readiness continuity when a launch-pipeline folder is supplied directly,
+  hydrates broker route-readiness ops proof from launch pipeline root summaries
+  when the nested broker-readiness folder is not available,
   fingerprints the resolved input summary CSVs plus route-readiness and nested
   broker-readiness proof in the manifest, consumes multi-day shadow-comparison
   broker-readiness route/dispatch proof and broker-readiness-carried shadow

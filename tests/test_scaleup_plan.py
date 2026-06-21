@@ -902,12 +902,15 @@ def write_strategy_launch_pipeline(
     market="india_nse_index_derivatives",
     launch_ready=True,
     broker_ready=True,
+    include_broker_dir=True,
+    launch_root_broker_route_proof=False,
 ):
     pipeline = root / f"{family}_launch_pipeline"
     launch = pipeline / "03_launch"
     broker = pipeline / "06_broker_readiness"
     launch.mkdir(parents=True, exist_ok=True)
-    broker.mkdir(parents=True, exist_ok=True)
+    if include_broker_dir:
+        broker.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
             {
@@ -921,24 +924,55 @@ def write_strategy_launch_pipeline(
                 "failed_components": 0 if launch_ready and broker_ready else 1,
                 "skipped_components": 0,
                 "recommendation": "paper_or_shadow_handoff" if launch_ready and broker_ready else "keep_in_research",
+                **(
+                    launch_root_broker_route_fields(strategy=strategy, market=market, ready=broker_ready)
+                    if launch_root_broker_route_proof
+                    else {}
+                ),
             }
         ]
     ).to_csv(pipeline / summary_file, index=False)
     launch_summary(launch_ready).to_csv(launch / "launch_summary.csv", index=False)
-    broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
-    (broker / "broker_readiness_config.json").write_text(
-        json.dumps(
-            {
-                "ready": broker_ready,
-                "adapter": "arrow_money",
-                "dispatch_roundtrip": {"ready": broker_ready},
-            },
-            indent=2,
+    if include_broker_dir:
+        broker_readiness_summary(broker_ready).to_csv(broker / "broker_readiness_summary.csv", index=False)
+        (broker / "broker_readiness_config.json").write_text(
+            json.dumps(
+                {
+                    "ready": broker_ready,
+                    "adapter": "arrow_money",
+                    "dispatch_roundtrip": {"ready": broker_ready},
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
         )
-        + "\n",
-        encoding="utf-8",
-    )
     return pipeline
+
+
+def launch_root_broker_route_fields(*, strategy, market, ready=True):
+    return {
+        "broker_readiness_provided": True,
+        "broker_readiness_ready": ready,
+        "broker_readiness_route_readiness_ready": ready,
+        "broker_readiness_route_readiness_strategy": strategy,
+        "broker_readiness_route_readiness_market": market,
+        "broker_readiness_route_readiness_gap_pairs": 0,
+        "broker_readiness_route_readiness_ops_launch_controls_present": ready,
+        "broker_readiness_route_readiness_ops_launch_controls_blocked_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
+        "broker_readiness_route_broker_route_readiness_provided": True,
+        "broker_readiness_route_broker_route_readiness_ready": ready,
+        "broker_readiness_route_broker_route_readiness_strategy": strategy,
+        "broker_readiness_route_broker_route_readiness_market": market,
+        "broker_readiness_route_broker_route_readiness_gap_pairs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_launch_controls_ready": ready,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": 1,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+    }
 
 
 def test_scaleup_plan_accepts_clean_shadow_scaleup():
@@ -3031,6 +3065,51 @@ def test_cli_scaleup_plan_reads_strategy_launch_pipeline_roots(tmp_path):
         assert path_tail(manifest["inputs"]["broker_readiness_config"]["path"]).endswith(
             f"/{family}_launch_pipeline/06_broker_readiness/broker_readiness_config.json"
         )
+
+
+def test_cli_scaleup_plan_hydrates_launch_root_broker_route_ops_without_broker_dir(tmp_path):
+    evidence, shadow, _, _ = write_inputs(tmp_path)
+    pipeline = write_strategy_launch_pipeline(
+        tmp_path,
+        include_broker_dir=False,
+        launch_root_broker_route_proof=True,
+    )
+    out_dir = tmp_path / "scaleup"
+
+    code = main(
+        [
+            "plan-scaleup",
+            "--evidence",
+            str(evidence),
+            "--shadow-comparison",
+            str(shadow),
+            "--launch",
+            str(pipeline),
+            "--out",
+            str(out_dir),
+            "--require-broker-readiness",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "scaleup_summary.csv")
+    checks = pd.read_csv(out_dir / "scaleup_checks.csv")
+    config = json.loads((out_dir / "scaleup_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "broker_readiness_ready"])
+    assert bool(summary.loc[0, "broker_route_readiness_ready"])
+    assert bool(summary.loc[0, "broker_route_readiness_ops_launch_controls_ready"])
+    assert int(summary.loc[0, "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert int(summary.loc[0, "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
+    assert "broker_readiness_available" not in set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert config["broker_readiness"]["provided"]
+    assert config["broker_readiness"]["route_readiness"]["ops_broker_roundtrip_portfolio_safe_runs"] == 1
+    assert "broker_readiness" not in manifest["inputs"]
+    assert path_tail(manifest["inputs"]["launch_pipeline"]["path"]).endswith(
+        "/leadlag_launch_pipeline/leadlag_launch_pipeline_summary.csv"
+    )
 
 
 def test_cli_scaleup_plan_hydrates_launch_pipeline_broker_vendor_data_config(tmp_path):
