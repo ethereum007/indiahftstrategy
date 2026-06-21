@@ -24,6 +24,37 @@ PROOF_REFRESH_BOOL_COLUMNS = {
     "proof_refresh_mixed_identity",
 }
 
+BROKER_ROUTE_READINESS_COLUMNS = [
+    "broker_route_readiness_required",
+    "broker_route_readiness_provided",
+    "broker_route_readiness_ready",
+    "broker_route_readiness_strategy",
+    "broker_route_readiness_market",
+    "broker_route_readiness_route_ready_pairs",
+    "broker_route_readiness_gap_pairs",
+    "broker_route_readiness_recommendation",
+    "broker_route_readiness_ops_launch_controls_ready",
+    "broker_route_readiness_ops_launch_control_failures",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+]
+BROKER_ROUTE_READINESS_BOOL_COLUMNS = {
+    "broker_route_readiness_required",
+    "broker_route_readiness_provided",
+    "broker_route_readiness_ready",
+    "broker_route_readiness_ops_launch_controls_ready",
+}
+BROKER_ROUTE_READINESS_INT_COLUMNS = {
+    "broker_route_readiness_route_ready_pairs",
+    "broker_route_readiness_gap_pairs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+}
+
 
 @dataclass(frozen=True)
 class HaltIncidentThresholds:
@@ -264,6 +295,7 @@ def _timeline_row(
         "strategy": str(summary.get("strategy", "")),
         "market": str(summary.get("market", "")),
         **_proof_refresh_context(summary),
+        **_broker_route_readiness_context(summary),
         "scenario_key": str(summary.get("scenario_key", "")),
         "adapter": str(summary.get("adapter", "")),
         "recommendation": str(summary.get("recommendation", "")),
@@ -345,6 +377,7 @@ def _summary(
         "guard_first_failed_reason",
     )
     proof_refresh = _proof_refresh_context(guard, fallback=response)
+    broker_route_readiness = _broker_route_readiness_context(guard, fallback=response)
     return pd.DataFrame(
         [
             {
@@ -353,6 +386,7 @@ def _summary(
                 "strategy": str(guard.get("strategy", response.get("strategy", ""))),
                 "market": str(guard.get("market", response.get("market", ""))),
                 **proof_refresh,
+                **broker_route_readiness,
                 "scenario_key": str(guard.get("scenario_key", response.get("scenario_key", ""))),
                 "adapter": str(guard.get("adapter", response.get("adapter", ""))),
                 "guard_action": str(guard.get("guard_action", "")),
@@ -676,11 +710,34 @@ def _proof_refresh_context(summary: pd.Series, fallback: pd.Series | None = None
     return fields
 
 
+def _broker_route_readiness_context(summary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
+    fallback = pd.Series(dtype=object) if fallback is None else fallback
+    fields = {}
+    for column in BROKER_ROUTE_READINESS_COLUMNS:
+        if column in BROKER_ROUTE_READINESS_BOOL_COLUMNS:
+            fields[column] = _summary_bool(summary, fallback, column)
+        elif column in BROKER_ROUTE_READINESS_INT_COLUMNS:
+            fields[column] = _summary_int(summary, fallback, column)
+        else:
+            fields[column] = _summary_value(summary, fallback, column)
+    return fields
+
+
 def _summary_bool(row: pd.Series, fallback: pd.Series, column: str) -> bool:
     value = _raw_summary_value(row, column)
     if value is None:
         value = _raw_summary_value(fallback, column)
     return _to_bool(value) if value is not None else False
+
+
+def _summary_int(row: pd.Series, fallback: pd.Series, column: str) -> int:
+    value = _raw_summary_value(row, column)
+    if value is None:
+        value = _raw_summary_value(fallback, column)
+    if value is None:
+        return 0
+    parsed = pd.to_numeric(value, errors="coerce")
+    return int(parsed) if not pd.isna(parsed) else 0
 
 
 def _summary_value(row: pd.Series, fallback: pd.Series, column: str) -> str:

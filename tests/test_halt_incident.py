@@ -33,6 +33,20 @@ def guard_summary(action="halt"):
                 "proof_refresh_market": "india_nse_index_derivatives",
                 "proof_refresh_mixed_identity": False,
                 "proof_source": "latest",
+                "broker_route_readiness_required": True,
+                "broker_route_readiness_provided": True,
+                "broker_route_readiness_ready": True,
+                "broker_route_readiness_strategy": "lead_lag_taker",
+                "broker_route_readiness_market": "india_nse_index_derivatives",
+                "broker_route_readiness_route_ready_pairs": 1,
+                "broker_route_readiness_gap_pairs": 0,
+                "broker_route_readiness_recommendation": "scale_up_with_controls",
+                "broker_route_readiness_ops_launch_controls_ready": True,
+                "broker_route_readiness_ops_launch_control_failures": "",
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "orders_sent": 12,
@@ -68,6 +82,20 @@ def response_summary(ready=True):
                 "proof_refresh_market": "india_nse_index_derivatives",
                 "proof_refresh_mixed_identity": False,
                 "proof_source": "latest",
+                "broker_route_readiness_required": True,
+                "broker_route_readiness_provided": True,
+                "broker_route_readiness_ready": True,
+                "broker_route_readiness_strategy": "lead_lag_taker",
+                "broker_route_readiness_market": "india_nse_index_derivatives",
+                "broker_route_readiness_route_ready_pairs": 1,
+                "broker_route_readiness_gap_pairs": 0,
+                "broker_route_readiness_recommendation": "scale_up_with_controls",
+                "broker_route_readiness_ops_launch_controls_ready": True,
+                "broker_route_readiness_ops_launch_control_failures": "",
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "recommendation": "submit_cancel_and_flatten" if ready else "do_not_execute_response_until_inputs_fixed",
@@ -164,14 +192,31 @@ def test_halt_incident_accepts_completed_halt_with_export():
     assert report.summary.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
     assert not bool(report.summary.iloc[0]["proof_refresh_mixed_identity"])
     assert report.summary.iloc[0]["proof_source"] == "latest"
+    assert bool(report.summary.iloc[0]["broker_route_readiness_required"])
+    assert bool(report.summary.iloc[0]["broker_route_readiness_provided"])
+    assert bool(report.summary.iloc[0]["broker_route_readiness_ready"])
+    assert report.summary.iloc[0]["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_route_readiness_market"] == "india_nse_index_derivatives"
+    assert int(report.summary.iloc[0]["broker_route_readiness_route_ready_pairs"]) == 1
+    assert int(report.summary.iloc[0]["broker_route_readiness_gap_pairs"]) == 0
+    assert bool(report.summary.iloc[0]["broker_route_readiness_ops_launch_controls_ready"])
+    assert int(report.summary.iloc[0]["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert (
+        int(report.summary.iloc[0]["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"])
+        == 1
+    )
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"] == "orders_sent: limit breached"
     assert report.timeline.loc[0, "failed_check_names"] == "orders_sent"
     assert report.timeline.loc[0, "strategy"] == "lead_lag_taker"
     assert report.timeline.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
+    assert report.timeline.loc[0, "broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert bool(report.timeline.loc[0, "broker_route_readiness_ready"])
     assert bool(report.timeline.loc[1, "proof_refresh_ready"])
     assert report.timeline.loc[1, "market"] == "india_nse_index_derivatives"
     assert report.timeline.loc[1, "proof_refresh_market"] == "india_nse_index_derivatives"
+    assert report.timeline.loc[1, "broker_route_readiness_market"] == "india_nse_index_derivatives"
+    assert int(report.timeline.loc[1, "broker_route_readiness_gap_pairs"]) == 0
     assert report.timeline.loc[1, "guard_failed_check_names"] == "orders_sent"
     assert report.timeline["component"].tolist() == [
         "runtime_guard",

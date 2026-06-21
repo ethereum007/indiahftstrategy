@@ -3155,7 +3155,9 @@ manifest.json
 The timeline and summary retain guard-trigger, strategy, market, and
 `proof_refresh_*` fields so the incident closure record shows both the failed
 guard checks that caused the halt and the proof-freshness context that fed the
-scaled runtime.
+scaled runtime. They also retain `broker_route_readiness_*` fields from the
+guard or halt-response record, preserving the broker route-ready/gap-pair and
+ops-control proof that was active when the halt was closed.
 The incident summary also exposes `failed_check_count`, `failed_check_names`,
 `first_failed_reason`, and `primary_blocker_*` fields for the first failed
 closure gate, such as missing export evidence or incomplete execution

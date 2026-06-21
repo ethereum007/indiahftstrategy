@@ -365,6 +365,10 @@
   `halt_incident_action_queue.csv` and `halt_incident_runbook.md` handoffs,
   routing guard, response, export, and execution blockers to the next recovery
   CLI before resume-gate automation trusts a closed incident.
+- Halt incident timeline and summary rows now retain carried
+  `broker_route_readiness_*` route-ready/gap-pair and ops-control proof from
+  the guard or halt-response record, preserving the route-control trail through
+  incident closure.
 - Halt execution reconciliation now emits manifest-tracked
   `halt_execution_action_queue.csv` and `halt_execution_runbook.md` handoffs,
   routing missing cancel acknowledgements, incomplete flatten fills, and
