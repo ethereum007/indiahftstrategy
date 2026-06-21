@@ -78,6 +78,56 @@ def upload_summary(adapter):
     )
 
 
+def resume_summary(adapter):
+    return pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "adapter": adapter,
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "incident_strategy": "lead_lag_taker",
+                "incident_market": "india_nse_index_derivatives",
+                "proof_refresh_ready": True,
+                "proof_refresh_strategy": "lead_lag_taker",
+                "proof_refresh_market": "india_nse_index_derivatives",
+                "incident_proof_refresh_strategy": "lead_lag_taker",
+                "incident_proof_refresh_market": "india_nse_index_derivatives",
+                "broker_route_readiness_required": True,
+                "broker_route_readiness_provided": True,
+                "broker_route_readiness_ready": True,
+                "broker_route_readiness_strategy": "lead_lag_taker",
+                "broker_route_readiness_market": "india_nse_index_derivatives",
+                "broker_route_readiness_route_ready_pairs": 1,
+                "broker_route_readiness_gap_pairs": 0,
+                "broker_route_readiness_recommendation": "route_ready",
+                "broker_route_readiness_ops_launch_controls_ready": True,
+                "broker_route_readiness_ops_launch_control_failures": "",
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+                "incident_broker_route_readiness_required": True,
+                "incident_broker_route_readiness_provided": True,
+                "incident_broker_route_readiness_ready": True,
+                "incident_broker_route_readiness_strategy": "lead_lag_taker",
+                "incident_broker_route_readiness_market": "india_nse_index_derivatives",
+                "incident_broker_route_readiness_route_ready_pairs": 1,
+                "incident_broker_route_readiness_gap_pairs": 0,
+                "incident_broker_route_readiness_recommendation": "route_ready",
+                "incident_broker_route_readiness_ops_launch_controls_ready": True,
+                "incident_broker_route_readiness_ops_launch_control_failures": "",
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": 1,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+                "failed_checks": 0,
+                "recommendation": "resume_with_scaleup_controls",
+            }
+        ]
+    )
+
+
 def dispatch_roundtrip_summary(adapter):
     return pd.DataFrame(
         [
@@ -211,14 +261,16 @@ def write_inputs(root, adapter):
     schema_dir = root / "schema"
     export_dir = root / "export"
     upload_dir = root / "upload"
+    resume_dir = root / "resume"
     roundtrip_dir = root / "roundtrip"
-    for path in (schema_dir, export_dir, upload_dir, roundtrip_dir):
+    for path in (schema_dir, export_dir, upload_dir, resume_dir, roundtrip_dir):
         path.mkdir(parents=True)
     vendor_ticks("2026-06-10", base=100.0).to_csv(day1, index=False)
     vendor_ticks("2026-06-11", base=100.5).to_csv(day2, index=False)
     schema_summary(adapter).to_csv(schema_dir / "adapter_schema_summary.csv", index=False)
     order_export_summary(adapter).to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary(adapter).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    resume_summary(adapter).to_csv(resume_dir / "resume_summary.csv", index=False)
     dispatch_roundtrip_summary(adapter).to_csv(roundtrip_dir / "broker_dispatch_roundtrip_summary.csv", index=False)
     (roundtrip_dir / "broker_dispatch_roundtrip_config.json").write_text(
         json.dumps(dispatch_roundtrip_config(), indent=2) + "\n",
@@ -229,6 +281,7 @@ def write_inputs(root, adapter):
         "schema": schema_dir,
         "export": export_dir,
         "upload": upload_dir,
+        "resume": resume_dir,
         "roundtrip": roundtrip_dir,
     }
 
@@ -246,6 +299,7 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
             schema_audit_dir=paths["schema"],
             order_export_dir=paths["export"],
             upload_pack_dir=paths["upload"],
+            resume_dir=paths["resume"],
             dispatch_roundtrip_dir=paths["roundtrip"],
             config=BrokerVendorDataReadinessConfig(
                 adapter=adapter,
@@ -271,6 +325,23 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
             int(
                 summary[
                     "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+                ]
+            )
+            == 1
+        )
+        assert bool(summary["broker_readiness_resume_broker_route_readiness_ready"])
+        assert summary["broker_readiness_resume_broker_route_readiness_strategy"] == "lead_lag_taker"
+        assert int(summary["broker_readiness_resume_broker_route_readiness_gap_pairs"]) == 0
+        assert bool(summary["broker_readiness_resume_broker_route_readiness_ops_launch_controls_ready"])
+        assert int(summary["broker_readiness_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+        assert bool(summary["broker_readiness_resume_incident_broker_route_readiness_ready"])
+        assert summary["broker_readiness_resume_incident_broker_route_readiness_market"] == (
+            "india_nse_index_derivatives"
+        )
+        assert (
+            int(
+                summary[
+                    "broker_readiness_resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
                 ]
             )
             == 1
@@ -337,6 +408,18 @@ def test_broker_vendor_data_readiness_pipeline_runs_arrow_and_irage(tmp_path):
         assert broker_dispatch["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_safe_runs"] == 1
         assert (
             broker_dispatch["route_broker_route_readiness"][
+                "ops_broker_roundtrip_portfolio_concentration_ok_runs"
+            ]
+            == 1
+        )
+        broker_resume = config["broker_readiness"]["resume_gate"]
+        assert broker_resume["broker_route_readiness"]["ready"]
+        assert broker_resume["broker_route_readiness"]["strategy"] == "lead_lag_taker"
+        assert broker_resume["broker_route_readiness"]["ops_broker_roundtrip_portfolio_safe_runs"] == 1
+        assert broker_resume["incident_broker_route_readiness"]["ready"]
+        assert broker_resume["incident_broker_route_readiness"]["market"] == "india_nse_index_derivatives"
+        assert (
+            broker_resume["incident_broker_route_readiness"][
                 "ops_broker_roundtrip_portfolio_concentration_ok_runs"
             ]
             == 1

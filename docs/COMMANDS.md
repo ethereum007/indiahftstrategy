@@ -4289,6 +4289,13 @@ The wrapper summary/config also carries broker-readiness route-control proof as
 so launch schedulers can prove direct launch-control evidence and
 allocation/concentration-safe broker route runs without opening nested broker
 readiness artifacts.
+When broker readiness consumed post-halt resume evidence, the wrapper also
+preserves `broker_readiness_resume_broker_route_readiness_*` and
+`broker_readiness_resume_incident_broker_route_readiness_*` summary fields plus
+nested `broker_readiness.resume_gate.broker_route_readiness` and
+`broker_readiness.resume_gate.incident_broker_route_readiness` JSON blocks, so
+the data-proof root retains the route controls that authorized resume after a
+halt.
 `broker_vendor_data_readiness_summary.csv` also exposes
 `failed_check_count`, `failed_check_names`, `first_failed_reason`, and
 `primary_blocker_*` fields for the first failed wrapper check.

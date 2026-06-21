@@ -240,6 +240,10 @@
   route-control proof in wrapper summary/config artifacts, including direct
   route launch-control/breach-pair evidence and broker-carried allocation-safe
   plus concentration-OK route-run counts.
+- Broker-vendor data readiness now also preserves broker-readiness
+  resume-gate route proof from both the new scale-up route readiness and the
+  incident-carried route readiness, keeping post-halt route authorization
+  visible at the wrapper proof root.
 - `pipeline-broker-vendor-readiness` now exposes the same
   `--fail-on-blocked-actions` and `--fail-on-actions` scheduler gates for
   Arrow.money/iRage vendor-data proof runs.
