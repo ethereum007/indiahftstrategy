@@ -2351,9 +2351,19 @@ and market identity are retained in the broker readiness summary for later
 scale-up continuity checks.
 When `--resume-gate` is supplied, broker readiness retains the resume
 authorization's strategy/market identity, incident identity, and
-`proof_refresh_*` context. `--require-resume-gate` fails closed unless
-`resume_summary.csv` is present and ready, which is useful for post-halt restart
-reviews.
+`proof_refresh_*` context. If the resume summary carries
+`broker_route_readiness_*` or `incident_broker_route_readiness_*` evidence,
+broker readiness revalidates that proof for ready state, strategy/market
+identity, zero route gaps, launch-control readiness, and clean broker
+portfolio/concentration round-trip counters. Resume-carried route proof is
+retained in `broker_readiness_summary.csv` as
+`resume_broker_route_readiness_*` and
+`resume_incident_broker_route_readiness_*`, and in
+`broker_readiness_config.json` under `resume_gate.broker_route_readiness` and
+`resume_gate.incident_broker_route_readiness`. Stale resume route blockers
+route to `review-route-readiness`. `--require-resume-gate` fails closed unless
+`resume_summary.csv` is present and ready, which is useful for post-halt
+restart reviews.
 When `--dispatch-roundtrip` is supplied, broker readiness retains the proved
 dry-run target mode, strategy, market, scenario, dispatch batch, request count,
 accepted acknowledgements, and missing/rejected/unmatched acknowledgement

@@ -215,6 +215,10 @@
   route-readiness launch-control and breach-pair evidence, plus
   broker-carried `route_broker_route_readiness` allocation-safe and
   concentration-OK run counts, before Arrow.money/iRage handoff.
+- Broker readiness now also revalidates post-halt resume-gate carried broker
+  route-readiness proof from both the new scale-up plan and the closed halt
+  incident, preserving `resume_broker_route_readiness_*` summary/config fields
+  and routing dirty resume-route evidence back to `review-route-readiness`.
 - Broker readiness now writes a manifest-tracked `broker_readiness_runbook.md`
   with component status and blocked-action next gates for operator review.
 - Broker readiness config JSON now mirrors the readiness action queue as

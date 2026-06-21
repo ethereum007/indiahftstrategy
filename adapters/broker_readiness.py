@@ -950,6 +950,134 @@ def _item(
         "resume_proof_refresh_market": _resume_text(component, row, "proof_refresh_market"),
         "resume_incident_proof_refresh_strategy": _resume_text(component, row, "incident_proof_refresh_strategy"),
         "resume_incident_proof_refresh_market": _resume_text(component, row, "incident_proof_refresh_market"),
+        "resume_broker_route_readiness_required": _resume_bool(
+            component,
+            row,
+            "broker_route_readiness_required",
+        ),
+        "resume_broker_route_readiness_provided": _resume_bool(
+            component,
+            row,
+            "broker_route_readiness_provided",
+        ),
+        "resume_broker_route_readiness_ready": _resume_bool(component, row, "broker_route_readiness_ready"),
+        "resume_broker_route_readiness_strategy": _resume_text(component, row, "broker_route_readiness_strategy"),
+        "resume_broker_route_readiness_market": _resume_text(component, row, "broker_route_readiness_market"),
+        "resume_broker_route_readiness_route_ready_pairs": int(
+            _resume_number(component, row, "broker_route_readiness_route_ready_pairs")
+        ),
+        "resume_broker_route_readiness_gap_pairs": int(
+            _resume_number(component, row, "broker_route_readiness_gap_pairs")
+        ),
+        "resume_broker_route_readiness_recommendation": _resume_text(
+            component,
+            row,
+            "broker_route_readiness_recommendation",
+        ),
+        "resume_broker_route_readiness_ops_launch_controls_ready": _resume_bool(
+            component,
+            row,
+            "broker_route_readiness_ops_launch_controls_ready",
+        ),
+        "resume_broker_route_readiness_ops_launch_control_failures": _resume_text(
+            component,
+            row,
+            "broker_route_readiness_ops_launch_control_failures",
+        ),
+        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+            _resume_number(component, row, "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs")
+        ),
+        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+            _resume_number(component, row, "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs")
+        ),
+        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _resume_number(
+                component,
+                row,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            )
+        ),
+        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _resume_number(
+                component,
+                row,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            )
+        ),
+        "resume_incident_broker_route_readiness_required": _resume_bool(
+            component,
+            row,
+            "incident_broker_route_readiness_required",
+        ),
+        "resume_incident_broker_route_readiness_provided": _resume_bool(
+            component,
+            row,
+            "incident_broker_route_readiness_provided",
+        ),
+        "resume_incident_broker_route_readiness_ready": _resume_bool(
+            component,
+            row,
+            "incident_broker_route_readiness_ready",
+        ),
+        "resume_incident_broker_route_readiness_strategy": _resume_text(
+            component,
+            row,
+            "incident_broker_route_readiness_strategy",
+        ),
+        "resume_incident_broker_route_readiness_market": _resume_text(
+            component,
+            row,
+            "incident_broker_route_readiness_market",
+        ),
+        "resume_incident_broker_route_readiness_route_ready_pairs": int(
+            _resume_number(component, row, "incident_broker_route_readiness_route_ready_pairs")
+        ),
+        "resume_incident_broker_route_readiness_gap_pairs": int(
+            _resume_number(component, row, "incident_broker_route_readiness_gap_pairs")
+        ),
+        "resume_incident_broker_route_readiness_recommendation": _resume_text(
+            component,
+            row,
+            "incident_broker_route_readiness_recommendation",
+        ),
+        "resume_incident_broker_route_readiness_ops_launch_controls_ready": _resume_bool(
+            component,
+            row,
+            "incident_broker_route_readiness_ops_launch_controls_ready",
+        ),
+        "resume_incident_broker_route_readiness_ops_launch_control_failures": _resume_text(
+            component,
+            row,
+            "incident_broker_route_readiness_ops_launch_control_failures",
+        ),
+        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+            _resume_number(
+                component,
+                row,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+            )
+        ),
+        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+            _resume_number(
+                component,
+                row,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+            )
+        ),
+        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _resume_number(
+                component,
+                row,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            )
+        ),
+        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _resume_number(
+                component,
+                row,
+                "incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            )
+        ),
         "dispatch_roundtrip_target_mode": _dispatch_text(component, row, "target_mode"),
         "dispatch_roundtrip_strategy": _dispatch_text(component, row, "strategy"),
         "dispatch_roundtrip_market": _dispatch_text(component, row, "market"),
@@ -1676,6 +1804,11 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
                     f"{row.component} adapter does not match expected broker adapter",
                 )
             )
+        if row.component == "resume_gate" and bool(row.provided):
+            if _resume_broker_route_readiness_active(row):
+                checks.extend(_resume_broker_route_readiness_checks(row))
+            if _resume_incident_broker_route_readiness_active(row):
+                checks.extend(_resume_incident_broker_route_readiness_checks(row))
         if row.component == "dispatch_roundtrip" and bool(row.provided):
             checks.append(
                 _check(
@@ -1729,6 +1862,213 @@ def _checks(items: pd.DataFrame, thresholds: BrokerReadinessThresholds) -> pd.Da
             if _broker_dispatch_roundtrip_vendor_market_data_batch_active(row):
                 checks.extend(_broker_dispatch_roundtrip_vendor_market_data_batch_checks(row))
     return pd.DataFrame(checks)
+
+
+def _resume_broker_route_readiness_active(row: Any) -> bool:
+    return bool(
+        row.resume_broker_route_readiness_required
+        or row.resume_broker_route_readiness_provided
+        or row.resume_broker_route_readiness_ready
+        or int(row.resume_broker_route_readiness_route_ready_pairs) > 0
+        or int(row.resume_broker_route_readiness_gap_pairs) > 0
+        or _identity_key(row.resume_broker_route_readiness_strategy)
+        or _identity_key(row.resume_broker_route_readiness_market)
+        or _identity_key(row.resume_broker_route_readiness_recommendation)
+        or row.resume_broker_route_readiness_ops_launch_controls_ready
+        or bool(str(row.resume_broker_route_readiness_ops_launch_control_failures).strip())
+        or int(row.resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs) > 0
+        or int(row.resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs) > 0
+        or int(row.resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs) > 0
+        or int(row.resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs) > 0
+    )
+
+
+def _resume_incident_broker_route_readiness_active(row: Any) -> bool:
+    return bool(
+        row.resume_incident_broker_route_readiness_required
+        or row.resume_incident_broker_route_readiness_provided
+        or row.resume_incident_broker_route_readiness_ready
+        or int(row.resume_incident_broker_route_readiness_route_ready_pairs) > 0
+        or int(row.resume_incident_broker_route_readiness_gap_pairs) > 0
+        or _identity_key(row.resume_incident_broker_route_readiness_strategy)
+        or _identity_key(row.resume_incident_broker_route_readiness_market)
+        or _identity_key(row.resume_incident_broker_route_readiness_recommendation)
+        or row.resume_incident_broker_route_readiness_ops_launch_controls_ready
+        or bool(str(row.resume_incident_broker_route_readiness_ops_launch_control_failures).strip())
+        or int(row.resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs) > 0
+        or int(row.resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs) > 0
+        or int(row.resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs) > 0
+        or int(row.resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs)
+        > 0
+    )
+
+
+def _resume_broker_route_readiness_checks(row: pd.Series) -> list[dict[str, Any]]:
+    return [
+        _check(
+            "resume_broker_route_readiness_provided",
+            bool(row.resume_broker_route_readiness_provided),
+            "is",
+            True,
+            bool(row.resume_broker_route_readiness_provided),
+            "resume gate broker route proof is required but missing",
+        ),
+        _check(
+            "resume_broker_route_readiness_ready",
+            bool(row.resume_broker_route_readiness_ready),
+            "is",
+            True,
+            bool(row.resume_broker_route_readiness_ready),
+            "resume gate broker route proof is not ready",
+        ),
+        _check(
+            "resume_broker_route_readiness_strategy_matches",
+            _identity_key(row.resume_broker_route_readiness_strategy),
+            "==",
+            _identity_key(row.resume_strategy),
+            bool(
+                _identity_key(row.resume_broker_route_readiness_strategy)
+                and _identity_key(row.resume_strategy)
+                and _identity_key(row.resume_broker_route_readiness_strategy) == _identity_key(row.resume_strategy)
+            ),
+            "resume gate broker route proof strategy does not match resume strategy",
+        ),
+        _check(
+            "resume_broker_route_readiness_market_matches",
+            _identity_key(row.resume_broker_route_readiness_market),
+            "==",
+            _identity_key(row.resume_market),
+            bool(
+                _identity_key(row.resume_broker_route_readiness_market)
+                and _identity_key(row.resume_market)
+                and _identity_key(row.resume_broker_route_readiness_market) == _identity_key(row.resume_market)
+            ),
+            "resume gate broker route proof market does not match resume market",
+        ),
+        _check(
+            "resume_broker_route_readiness_gap_pairs",
+            int(row.resume_broker_route_readiness_gap_pairs),
+            "<=",
+            0,
+            int(row.resume_broker_route_readiness_gap_pairs) <= 0,
+            "resume gate broker route proof still reports route gaps",
+        ),
+        *_resume_broker_route_readiness_ops_checks(
+            row,
+            prefix="resume_broker_route_readiness",
+            label="resume gate broker route proof",
+        ),
+    ]
+
+
+def _resume_incident_broker_route_readiness_checks(row: pd.Series) -> list[dict[str, Any]]:
+    return [
+        _check(
+            "resume_incident_broker_route_readiness_provided",
+            bool(row.resume_incident_broker_route_readiness_provided),
+            "is",
+            True,
+            bool(row.resume_incident_broker_route_readiness_provided),
+            "resume incident broker route proof is required but missing",
+        ),
+        _check(
+            "resume_incident_broker_route_readiness_ready",
+            bool(row.resume_incident_broker_route_readiness_ready),
+            "is",
+            True,
+            bool(row.resume_incident_broker_route_readiness_ready),
+            "resume incident broker route proof is not ready",
+        ),
+        _check(
+            "resume_incident_broker_route_readiness_strategy_matches",
+            _identity_key(row.resume_incident_broker_route_readiness_strategy),
+            "==",
+            _identity_key(row.resume_incident_strategy),
+            bool(
+                _identity_key(row.resume_incident_broker_route_readiness_strategy)
+                and _identity_key(row.resume_incident_strategy)
+                and _identity_key(row.resume_incident_broker_route_readiness_strategy)
+                == _identity_key(row.resume_incident_strategy)
+            ),
+            "resume incident broker route proof strategy does not match incident strategy",
+        ),
+        _check(
+            "resume_incident_broker_route_readiness_market_matches",
+            _identity_key(row.resume_incident_broker_route_readiness_market),
+            "==",
+            _identity_key(row.resume_incident_market),
+            bool(
+                _identity_key(row.resume_incident_broker_route_readiness_market)
+                and _identity_key(row.resume_incident_market)
+                and _identity_key(row.resume_incident_broker_route_readiness_market)
+                == _identity_key(row.resume_incident_market)
+            ),
+            "resume incident broker route proof market does not match incident market",
+        ),
+        _check(
+            "resume_incident_broker_route_readiness_gap_pairs",
+            int(row.resume_incident_broker_route_readiness_gap_pairs),
+            "<=",
+            0,
+            int(row.resume_incident_broker_route_readiness_gap_pairs) <= 0,
+            "resume incident broker route proof still reports route gaps",
+        ),
+        *_resume_broker_route_readiness_ops_checks(
+            row,
+            prefix="resume_incident_broker_route_readiness",
+            label="resume incident broker route proof",
+        ),
+    ]
+
+
+def _resume_broker_route_readiness_ops_checks(
+    row: pd.Series,
+    *,
+    prefix: str,
+    label: str,
+) -> list[dict[str, Any]]:
+    return [
+        _check(
+            f"{prefix}_ops_launch_controls_ready",
+            bool(getattr(row, f"{prefix}_ops_launch_controls_ready")),
+            "is",
+            True,
+            bool(getattr(row, f"{prefix}_ops_launch_controls_ready")),
+            f"{label} did not preserve launch-grade broker controls",
+        ),
+        _check(
+            f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs",
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs")),
+            ">",
+            0,
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs")) > 0,
+            f"{label} has no allocation-safe broker round-trip run",
+        ),
+        _check(
+            f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs",
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs")),
+            "<=",
+            0,
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs")) <= 0,
+            f"{label} reports allocation breach broker round-trip runs",
+        ),
+        _check(
+            f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs")),
+            ">",
+            0,
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs")) > 0,
+            f"{label} has no concentration-OK broker round-trip run",
+        ),
+        _check(
+            f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs")),
+            "<=",
+            0,
+            int(getattr(row, f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs")) <= 0,
+            f"{label} reports concentration breach broker round-trip runs",
+        ),
+    ]
 
 
 def _broker_vendor_data_readiness_checks(row: pd.Series) -> list[dict[str, Any]]:
@@ -2650,6 +2990,138 @@ def _summary(
                     resume_item,
                     "resume_incident_proof_refresh_market",
                 ),
+                "resume_broker_route_readiness_required": _item_bool(
+                    resume_item,
+                    "resume_broker_route_readiness_required",
+                ),
+                "resume_broker_route_readiness_provided": _item_bool(
+                    resume_item,
+                    "resume_broker_route_readiness_provided",
+                ),
+                "resume_broker_route_readiness_ready": _item_bool(
+                    resume_item,
+                    "resume_broker_route_readiness_ready",
+                ),
+                "resume_broker_route_readiness_strategy": _item_text(
+                    resume_item,
+                    "resume_broker_route_readiness_strategy",
+                ),
+                "resume_broker_route_readiness_market": _item_text(
+                    resume_item,
+                    "resume_broker_route_readiness_market",
+                ),
+                "resume_broker_route_readiness_route_ready_pairs": int(
+                    _number(resume_item, "resume_broker_route_readiness_route_ready_pairs", 0.0)
+                ),
+                "resume_broker_route_readiness_gap_pairs": int(
+                    _number(resume_item, "resume_broker_route_readiness_gap_pairs", 0.0)
+                ),
+                "resume_broker_route_readiness_recommendation": _item_text(
+                    resume_item,
+                    "resume_broker_route_readiness_recommendation",
+                ),
+                "resume_broker_route_readiness_ops_launch_controls_ready": _item_bool(
+                    resume_item,
+                    "resume_broker_route_readiness_ops_launch_controls_ready",
+                ),
+                "resume_broker_route_readiness_ops_launch_control_failures": _item_text(
+                    resume_item,
+                    "resume_broker_route_readiness_ops_launch_control_failures",
+                ),
+                "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+                        0.0,
+                    )
+                ),
+                "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+                        0.0,
+                    )
+                ),
+                "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                        0.0,
+                    )
+                ),
+                "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                        0.0,
+                    )
+                ),
+                "resume_incident_broker_route_readiness_required": _item_bool(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_required",
+                ),
+                "resume_incident_broker_route_readiness_provided": _item_bool(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_provided",
+                ),
+                "resume_incident_broker_route_readiness_ready": _item_bool(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_ready",
+                ),
+                "resume_incident_broker_route_readiness_strategy": _item_text(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_strategy",
+                ),
+                "resume_incident_broker_route_readiness_market": _item_text(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_market",
+                ),
+                "resume_incident_broker_route_readiness_route_ready_pairs": int(
+                    _number(resume_item, "resume_incident_broker_route_readiness_route_ready_pairs", 0.0)
+                ),
+                "resume_incident_broker_route_readiness_gap_pairs": int(
+                    _number(resume_item, "resume_incident_broker_route_readiness_gap_pairs", 0.0)
+                ),
+                "resume_incident_broker_route_readiness_recommendation": _item_text(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_recommendation",
+                ),
+                "resume_incident_broker_route_readiness_ops_launch_controls_ready": _item_bool(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_ops_launch_controls_ready",
+                ),
+                "resume_incident_broker_route_readiness_ops_launch_control_failures": _item_text(
+                    resume_item,
+                    "resume_incident_broker_route_readiness_ops_launch_control_failures",
+                ),
+                "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+                        0.0,
+                    )
+                ),
+                "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+                        0.0,
+                    )
+                ),
+                "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                        0.0,
+                    )
+                ),
+                "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+                    _number(
+                        resume_item,
+                        "resume_incident_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                        0.0,
+                    )
+                ),
                 "dispatch_roundtrip_provided": _item_bool(dispatch_item, "provided"),
                 "dispatch_roundtrip_ready": _item_bool(dispatch_item, "ready"),
                 "dispatch_roundtrip_target_mode": _item_text(dispatch_item, "dispatch_roundtrip_target_mode"),
@@ -3211,6 +3683,8 @@ def _action_component(check_name: str) -> str:
         ("route_dispatch_roundtrip_", "dispatch_roundtrip"),
         ("route_broker_route_readiness_", "route_readiness"),
         ("route_readiness_", "route_readiness"),
+        ("resume_incident_broker_route_readiness_", "route_readiness"),
+        ("resume_broker_route_readiness_", "route_readiness"),
         ("broker_vendor_data_readiness_", "vendor_market_data"),
         ("dispatch_roundtrip_vendor_market_data_batch_", "vendor_market_data"),
         ("broker_dispatch_roundtrip_vendor_market_data_batch_", "vendor_market_data"),
@@ -3358,6 +3832,41 @@ def _resume_gate_config(row: pd.Series) -> dict[str, Any]:
             "incident_strategy": _item_text(row, "resume_incident_proof_refresh_strategy"),
             "incident_market": _item_text(row, "resume_incident_proof_refresh_market"),
         },
+        "broker_route_readiness": _resume_broker_route_readiness_config(
+            row,
+            prefix="resume_broker_route_readiness",
+        ),
+        "incident_broker_route_readiness": _resume_broker_route_readiness_config(
+            row,
+            prefix="resume_incident_broker_route_readiness",
+        ),
+    }
+
+
+def _resume_broker_route_readiness_config(row: pd.Series, *, prefix: str) -> dict[str, Any]:
+    return {
+        "required": _item_bool(row, f"{prefix}_required"),
+        "provided": _item_bool(row, f"{prefix}_provided"),
+        "ready": _item_bool(row, f"{prefix}_ready"),
+        "strategy": _item_text(row, f"{prefix}_strategy"),
+        "market": _item_text(row, f"{prefix}_market"),
+        "route_ready_pairs": int(_number(row, f"{prefix}_route_ready_pairs", 0.0)),
+        "gap_pairs": int(_number(row, f"{prefix}_gap_pairs", 0.0)),
+        "recommendation": _item_text(row, f"{prefix}_recommendation"),
+        "ops_launch_controls_ready": _item_bool(row, f"{prefix}_ops_launch_controls_ready"),
+        "ops_launch_control_failures": _item_text(row, f"{prefix}_ops_launch_control_failures"),
+        "ops_broker_roundtrip_portfolio_safe_runs": int(
+            _number(row, f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs", 0.0)
+        ),
+        "ops_broker_roundtrip_portfolio_breach_runs": int(
+            _number(row, f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs", 0.0)
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _number(row, f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs", 0.0)
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _number(row, f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs", 0.0)
+        ),
     }
 
 
@@ -3706,6 +4215,12 @@ def _resume_bool(component: str, row: pd.Series, column: str) -> bool:
     if component != "resume_gate" or row.empty:
         return False
     return _to_bool(row.get(column, False))
+
+
+def _resume_number(component: str, row: pd.Series, column: str, fallback: float = 0.0) -> float:
+    if component != "resume_gate" or row.empty:
+        return float(fallback)
+    return _number(row, column, fallback)
 
 
 def _dispatch_text(component: str, row: pd.Series, column: str) -> str:
