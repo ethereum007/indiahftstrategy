@@ -1193,6 +1193,11 @@
   summaries, launch-pipeline fallbacks, or the same sidecar as
   `broker_resume_broker_route_readiness_*` and
   `broker_resume_incident_broker_route_readiness_*` fields before promotion.
+  Cutover now preserves and revalidates those same scale-up-carried
+  resume-route branches as `scaleup_broker_resume_broker_route_readiness_*`,
+  `scaleup_broker_resume_incident_broker_route_readiness_*`, and nested
+  `scaleup_broker_resume_gate` config blocks before route-enable can inherit
+  post-halt authorization.
   Broker readiness now evaluates standalone vendor-batch proof
   roots even when no dispatch round-trip proof is supplied, compares them
   against the launch/broker expected market when available, and fails closed

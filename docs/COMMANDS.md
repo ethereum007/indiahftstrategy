@@ -3322,6 +3322,13 @@ must retain clean launch-control, allocation-safe, and concentration-OK run
 counts. These fields are preserved in `cutover_summary.csv` and
 `cutover_config.json` as `scaleup_route_readiness_*` and
 `scaleup_broker_route_readiness`.
+If scale-up also carried broker resume-gate route proof, cutover revalidates
+the primary and incident resume-route branches and preserves them as
+`scaleup_broker_resume_broker_route_readiness_*`,
+`scaleup_broker_resume_incident_broker_route_readiness_*`, and nested
+`scaleup_broker_resume_gate` config blocks. Stale post-halt route identity,
+route gaps, missing launch controls, or broker round-trip portfolio breaches
+block cutover before route-enable can inherit the authorization.
 
 If scale-up carried vendor wrapper proof inside the shadow broker-readiness
 aggregate, cutover carries it as

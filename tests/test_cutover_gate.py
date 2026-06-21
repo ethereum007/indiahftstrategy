@@ -1930,6 +1930,98 @@ def test_cutover_gate_validates_supplied_resume_gate_identity():
     } <= failed
 
 
+def test_cutover_gate_carries_scaleup_resume_route_readiness():
+    config = scaleup_config()
+    route_proof = {
+        "required": True,
+        "provided": True,
+        "ready": True,
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "route_ready_pairs": 1,
+        "gap_pairs": 0,
+        "recommendation": "route_ready",
+        "ops_launch_controls_ready": True,
+        "ops_launch_control_failures": "",
+        "ops_broker_roundtrip_portfolio_safe_runs": 1,
+        "ops_broker_roundtrip_portfolio_breach_runs": 0,
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+    }
+    config["broker_readiness"]["resume_gate"] = {
+        "broker_route_readiness": route_proof,
+        "incident_broker_route_readiness": route_proof,
+    }
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    summary = report.summary.iloc[0]
+    assert report.ready
+    assert summary["scaleup_broker_resume_broker_route_readiness_ready"]
+    assert summary["scaleup_broker_resume_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert summary["scaleup_broker_resume_incident_broker_route_readiness_route_ready_pairs"] == 1
+    assert report.config["scaleup_broker_resume_gate"]["broker_route_readiness"]["ready"]
+    assert (
+        report.config["scaleup_broker_resume_gate"]["incident_broker_route_readiness"][
+            "ops_broker_roundtrip_portfolio_safe_runs"
+        ]
+        == 1
+    )
+
+
+def test_cutover_gate_blocks_bad_scaleup_resume_route_readiness():
+    config = scaleup_config()
+    config["broker_readiness"]["resume_gate"] = {
+        "broker_route_readiness": {
+            "required": True,
+            "provided": True,
+            "ready": False,
+            "strategy": "surface_mm",
+            "market": "us_options_regular",
+            "route_ready_pairs": 0,
+            "gap_pairs": 2,
+            "recommendation": "complete_route_readiness_gaps",
+            "ops_launch_controls_ready": False,
+            "ops_launch_control_failures": "stale post-halt route proof",
+            "ops_broker_roundtrip_portfolio_safe_runs": 0,
+            "ops_broker_roundtrip_portfolio_breach_runs": 1,
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": 0,
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": 1,
+        },
+    }
+
+    report = evaluate_cutover_gate(
+        scaleup_summary=scaleup_summary(),
+        scaleup_config=config,
+        broker_readiness_summary=broker_readiness_summary(),
+        runtime_session_summary=runtime_session_summary(),
+        operator_review=operator_review(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "scaleup_broker_resume_broker_route_readiness_ready",
+        "scaleup_broker_resume_broker_route_readiness_strategy_matches",
+        "scaleup_broker_resume_broker_route_readiness_market_matches",
+        "scaleup_broker_resume_broker_route_readiness_route_ready_pairs",
+        "scaleup_broker_resume_broker_route_readiness_gap_pairs",
+        "scaleup_broker_resume_broker_route_readiness_ops_launch_controls_ready",
+        "scaleup_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+        "scaleup_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+        "scaleup_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "scaleup_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    } <= failed
+    assert report.summary.iloc[0]["scaleup_broker_resume_broker_route_readiness_market"] == "us_options_regular"
+    assert report.config["scaleup_broker_resume_gate"]["broker_route_readiness"]["gap_pairs"] == 2
+
+
 def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     scaleup, broker, runtime, review_path = write_inputs(tmp_path)
     out_dir = tmp_path / "cutover"
