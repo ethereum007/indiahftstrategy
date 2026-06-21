@@ -313,6 +313,9 @@
   controls before broker routing can be enabled, preserving direct
   launch-control/breach counters and broker-carried allocation/concentration
   run counts in route-enable summary/config handoffs.
+- Route-enable now also carries cutover-retained scale-up broker resume-route
+  proof, revalidating both the primary and incident branches before broker
+  dispatch planning can inherit post-halt route authorization.
 - Broker dispatch now revalidates those route-enable-retained route-readiness
   ops broker controls before dry-run dispatch planning, carrying direct
   breach counters and broker-carried route proof into dispatch summary/config

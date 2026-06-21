@@ -247,6 +247,24 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
         )
     if route_readiness_active:
         checks.extend(_route_readiness_checks(cutover))
+    if _resume_route_readiness_active(cutover, "broker_resume_broker_route_readiness"):
+        checks.extend(
+            _resume_route_readiness_checks(
+                cutover,
+                source_prefix="broker_resume_broker_route_readiness",
+                check_prefix="cutover_broker_resume_broker_route_readiness",
+                label="cutover broker resume-gate broker route-readiness",
+            )
+        )
+    if _resume_route_readiness_active(cutover, "broker_resume_incident_broker_route_readiness"):
+        checks.extend(
+            _resume_route_readiness_checks(
+                cutover,
+                source_prefix="broker_resume_incident_broker_route_readiness",
+                check_prefix="cutover_broker_resume_incident_broker_route_readiness",
+                label="cutover broker resume-gate incident broker route-readiness",
+            )
+        )
     checks.extend(
         [
             _check(
@@ -588,6 +606,132 @@ def _broker_route_readiness_checks(cutover: dict[str, Any]) -> list[dict[str, ob
             0,
             int(cutover["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) <= 0,
             "cutover broker-readiness route proof has concentration breach broker round-trip runs",
+        ),
+    ]
+
+
+def _resume_route_readiness_active(cutover: dict[str, Any], prefix: str) -> bool:
+    return bool(
+        _to_bool(cutover[f"{prefix}_required"])
+        or _to_bool(cutover[f"{prefix}_provided"])
+        or _to_bool(cutover[f"{prefix}_ready"])
+        or int(cutover[f"{prefix}_route_ready_pairs"]) > 0
+        or int(cutover[f"{prefix}_gap_pairs"]) > 0
+        or bool(_object_text(cutover[f"{prefix}_strategy"]))
+        or bool(_object_text(cutover[f"{prefix}_market"]))
+        or bool(_object_text(cutover[f"{prefix}_recommendation"]))
+        or _to_bool(cutover[f"{prefix}_ops_launch_controls_ready"])
+        or bool(_object_text(cutover[f"{prefix}_ops_launch_control_failures"]))
+        or int(cutover[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]) > 0
+        or int(cutover[f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs"]) > 0
+        or int(cutover[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) > 0
+        or int(cutover[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) > 0
+    )
+
+
+def _resume_route_readiness_checks(
+    cutover: dict[str, Any],
+    *,
+    source_prefix: str,
+    check_prefix: str,
+    label: str,
+) -> list[dict[str, object]]:
+    return [
+        _check(
+            f"{check_prefix}_provided",
+            cutover[f"{source_prefix}_provided"],
+            "is",
+            True,
+            bool(cutover[f"{source_prefix}_provided"] or not cutover[f"{source_prefix}_required"]),
+            f"{label} proof is required but not provided",
+        ),
+        _check(
+            f"{check_prefix}_ready",
+            cutover[f"{source_prefix}_ready"],
+            "is",
+            True,
+            bool(cutover[f"{source_prefix}_ready"]),
+            f"{label} proof is not ready",
+        ),
+        _check(
+            f"{check_prefix}_strategy_matches",
+            cutover[f"{source_prefix}_strategy"],
+            "==",
+            cutover["strategy"],
+            bool(
+                cutover[f"{source_prefix}_strategy"]
+                and cutover["strategy"]
+                and cutover[f"{source_prefix}_strategy"] == cutover["strategy"]
+            ),
+            f"{label} strategy does not match route strategy",
+        ),
+        _check(
+            f"{check_prefix}_market_matches",
+            cutover[f"{source_prefix}_market"],
+            "==",
+            cutover["market"],
+            bool(
+                cutover[f"{source_prefix}_market"]
+                and cutover["market"]
+                and cutover[f"{source_prefix}_market"] == cutover["market"]
+            ),
+            f"{label} market does not match route market",
+        ),
+        _check(
+            f"{check_prefix}_route_ready_pairs",
+            cutover[f"{source_prefix}_route_ready_pairs"],
+            ">",
+            0,
+            int(cutover[f"{source_prefix}_route_ready_pairs"]) > 0,
+            f"{label} has no route-ready pairs",
+        ),
+        _check(
+            f"{check_prefix}_gap_pairs",
+            cutover[f"{source_prefix}_gap_pairs"],
+            "<=",
+            0,
+            int(cutover[f"{source_prefix}_gap_pairs"]) <= 0,
+            f"{label} has route gaps",
+        ),
+        _check(
+            f"{check_prefix}_ops_launch_controls_ready",
+            cutover[f"{source_prefix}_ops_launch_controls_ready"],
+            "is",
+            True,
+            bool(cutover[f"{source_prefix}_ops_launch_controls_ready"]),
+            f"{label} is missing launch-grade ops broker controls",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_safe_runs",
+            cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs"],
+            ">",
+            0,
+            int(cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs"]) > 0,
+            f"{label} has no allocation-safe broker round-trip runs",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_breach_runs",
+            cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs"],
+            "<=",
+            0,
+            int(cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs"]) <= 0,
+            f"{label} has allocation breach broker round-trip runs",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"],
+            ">",
+            0,
+            int(cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) > 0,
+            f"{label} has no concentration-OK broker round-trip runs",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"],
+            "<=",
+            0,
+            int(cutover[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) <= 0,
+            f"{label} has concentration breach broker round-trip runs",
         ),
     ]
 
@@ -1364,6 +1508,16 @@ def _packet(
                     "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"
                 ],
                 **_broker_route_readiness_packet_fields(cutover),
+                **_resume_route_readiness_packet_fields(
+                    cutover,
+                    source_prefix="broker_resume_broker_route_readiness",
+                    output_prefix="cutover_broker_resume_broker_route_readiness",
+                ),
+                **_resume_route_readiness_packet_fields(
+                    cutover,
+                    source_prefix="broker_resume_incident_broker_route_readiness",
+                    output_prefix="cutover_broker_resume_incident_broker_route_readiness",
+                ),
                 "shadow_broker_readiness_sessions": cutover["shadow_broker_readiness_sessions"],
                 "shadow_broker_readiness_ready_sessions": cutover["shadow_broker_readiness_ready_sessions"],
                 "shadow_broker_vendor_data_readiness_sessions": cutover[
@@ -1492,6 +1646,42 @@ def _broker_route_readiness_packet_fields(cutover: dict[str, Any]) -> dict[str, 
         ],
         "cutover_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": cutover[
             "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+        ],
+    }
+
+
+def _resume_route_readiness_packet_fields(
+    cutover: dict[str, Any],
+    *,
+    source_prefix: str,
+    output_prefix: str,
+) -> dict[str, Any]:
+    return {
+        f"{output_prefix}_required": cutover[f"{source_prefix}_required"],
+        f"{output_prefix}_provided": cutover[f"{source_prefix}_provided"],
+        f"{output_prefix}_ready": cutover[f"{source_prefix}_ready"],
+        f"{output_prefix}_strategy": cutover[f"{source_prefix}_strategy"],
+        f"{output_prefix}_market": cutover[f"{source_prefix}_market"],
+        f"{output_prefix}_route_ready_pairs": cutover[f"{source_prefix}_route_ready_pairs"],
+        f"{output_prefix}_gap_pairs": cutover[f"{source_prefix}_gap_pairs"],
+        f"{output_prefix}_recommendation": cutover[f"{source_prefix}_recommendation"],
+        f"{output_prefix}_ops_launch_controls_ready": cutover[
+            f"{source_prefix}_ops_launch_controls_ready"
+        ],
+        f"{output_prefix}_ops_launch_control_failures": cutover[
+            f"{source_prefix}_ops_launch_control_failures"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_safe_runs": cutover[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_breach_runs": cutover[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": cutover[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": cutover[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"
         ],
     }
 
@@ -1722,6 +1912,14 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     packet["route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"]
                 ),
                 **_broker_route_readiness_summary_fields(packet),
+                **_resume_route_readiness_summary_fields(
+                    packet,
+                    "cutover_broker_resume_broker_route_readiness",
+                ),
+                **_resume_route_readiness_summary_fields(
+                    packet,
+                    "cutover_broker_resume_incident_broker_route_readiness",
+                ),
                 "shadow_broker_readiness_sessions": int(packet["shadow_broker_readiness_sessions"]),
                 "shadow_broker_readiness_ready_sessions": int(packet["shadow_broker_readiness_ready_sessions"]),
                 "shadow_broker_vendor_data_readiness_sessions": int(
@@ -1890,6 +2088,8 @@ def _component(check: str) -> str:
         return "upload_pack"
     if check.startswith("order_export_"):
         return "order_export"
+    if check.startswith("cutover_broker_resume_") or check.startswith("broker_resume_"):
+        return "resume_gate"
     if "route_readiness" in check:
         return "route_readiness"
     if "dispatch_roundtrip" in check:
@@ -1898,8 +2098,6 @@ def _component(check: str) -> str:
         return "vendor_market_data"
     if "broker_vendor_data_readiness" in check or "vendor_data_readiness" in check:
         return "broker_vendor_data_readiness"
-    if check.startswith("broker_resume_"):
-        return "resume_gate"
     if check.startswith("cutover_broker_shadow_broker") or check.startswith("cutover_"):
         return "cutover_gate"
     if check in {"target_mode_matches", "adapter_matches", "strategy_matches", "market_matches"}:
@@ -2305,6 +2503,16 @@ def _config(
             },
         },
         "cutover_broker_route_readiness": _broker_route_readiness_config(packet),
+        "cutover_broker_resume_gate": {
+            "broker_route_readiness": _resume_route_readiness_config(
+                packet,
+                "cutover_broker_resume_broker_route_readiness",
+            ),
+            "incident_broker_route_readiness": _resume_route_readiness_config(
+                packet,
+                "cutover_broker_resume_incident_broker_route_readiness",
+            ),
+        },
         "cutover_broker_shadow_broker_readiness": _broker_shadow_broker_config(packet),
         "cutover_broker_vendor_data_readiness": _broker_vendor_data_readiness_config(packet),
         "cutover_broker_dispatch_roundtrip_vendor_market_data_batch": (
@@ -2518,6 +2726,60 @@ def _broker_route_readiness_config(packet: pd.Series) -> dict[str, Any]:
         ),
         "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
             packet["cutover_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"]
+        ),
+    }
+
+
+def _resume_route_readiness_summary_fields(packet: pd.Series, prefix: str) -> dict[str, Any]:
+    return {
+        f"{prefix}_required": _to_bool(packet[f"{prefix}_required"]),
+        f"{prefix}_provided": _to_bool(packet[f"{prefix}_provided"]),
+        f"{prefix}_ready": _to_bool(packet[f"{prefix}_ready"]),
+        f"{prefix}_strategy": str(packet[f"{prefix}_strategy"]),
+        f"{prefix}_market": str(packet[f"{prefix}_market"]),
+        f"{prefix}_route_ready_pairs": int(packet[f"{prefix}_route_ready_pairs"]),
+        f"{prefix}_gap_pairs": int(packet[f"{prefix}_gap_pairs"]),
+        f"{prefix}_recommendation": str(packet[f"{prefix}_recommendation"]),
+        f"{prefix}_ops_launch_controls_ready": _to_bool(packet[f"{prefix}_ops_launch_controls_ready"]),
+        f"{prefix}_ops_launch_control_failures": str(packet[f"{prefix}_ops_launch_control_failures"]),
+        f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]
+        ),
+        f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs"]
+        ),
+        f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]
+        ),
+        f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]
+        ),
+    }
+
+
+def _resume_route_readiness_config(packet: pd.Series, prefix: str) -> dict[str, Any]:
+    return {
+        "required": _to_bool(packet[f"{prefix}_required"]),
+        "provided": _to_bool(packet[f"{prefix}_provided"]),
+        "ready": _to_bool(packet[f"{prefix}_ready"]),
+        "strategy": str(packet[f"{prefix}_strategy"]),
+        "market": str(packet[f"{prefix}_market"]),
+        "route_ready_pairs": int(packet[f"{prefix}_route_ready_pairs"]),
+        "gap_pairs": int(packet[f"{prefix}_gap_pairs"]),
+        "recommendation": str(packet[f"{prefix}_recommendation"]),
+        "ops_launch_controls_ready": _to_bool(packet[f"{prefix}_ops_launch_controls_ready"]),
+        "ops_launch_control_failures": str(packet[f"{prefix}_ops_launch_control_failures"]),
+        "ops_broker_roundtrip_portfolio_safe_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_breach_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            packet[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]
         ),
     }
 
@@ -2760,6 +3022,76 @@ def _broker_vendor_data_readiness_failed_checks(
     return int(_number_from(readiness, "failed_check_count", fallback))
 
 
+def _resume_route_readiness_state_fields(
+    row: pd.Series,
+    route_readiness: object,
+    *,
+    source_prefix: str,
+    row_prefix: str,
+) -> dict[str, Any]:
+    readiness = route_readiness if isinstance(route_readiness, dict) else {}
+    return {
+        f"{source_prefix}_required": _to_bool(
+            readiness.get("required", row.get(f"{row_prefix}_required", False))
+        ),
+        f"{source_prefix}_provided": _to_bool(
+            readiness.get("provided", row.get(f"{row_prefix}_provided", False))
+        ),
+        f"{source_prefix}_ready": _to_bool(readiness.get("ready", row.get(f"{row_prefix}_ready", False))),
+        f"{source_prefix}_strategy": _strategy_key(
+            _first_text(readiness.get("strategy", ""), row.get(f"{row_prefix}_strategy", ""))
+        ),
+        f"{source_prefix}_market": _identity_key(
+            _first_text(readiness.get("market", ""), row.get(f"{row_prefix}_market", ""))
+        ),
+        f"{source_prefix}_route_ready_pairs": int(
+            _number_from(readiness, "route_ready_pairs", _number(row, f"{row_prefix}_route_ready_pairs", 0.0))
+        ),
+        f"{source_prefix}_gap_pairs": int(
+            _number_from(readiness, "gap_pairs", _number(row, f"{row_prefix}_gap_pairs", 0.0))
+        ),
+        f"{source_prefix}_recommendation": _first_text(
+            readiness.get("recommendation", ""),
+            row.get(f"{row_prefix}_recommendation", ""),
+        ),
+        f"{source_prefix}_ops_launch_controls_ready": _to_bool(
+            readiness.get("ops_launch_controls_ready", row.get(f"{row_prefix}_ops_launch_controls_ready", False))
+        ),
+        f"{source_prefix}_ops_launch_control_failures": _first_text(
+            readiness.get("ops_launch_control_failures", ""),
+            row.get(f"{row_prefix}_ops_launch_control_failures", ""),
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_safe_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_safe_runs", 0.0),
+            )
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_breach_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_breach_runs", 0.0),
+            )
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs", 0.0),
+            )
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs", 0.0),
+            )
+        ),
+    }
+
+
 def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
@@ -2771,6 +3103,17 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     broker_route_enable = dispatch.get("route_enable_dispatch_roundtrip", {}) or {}
     route_readiness = config.get("scaleup_route_readiness", {}) or {}
     broker_route_readiness = config.get("scaleup_broker_route_readiness", {}) or {}
+    scaleup_broker_resume_gate = (
+        config.get("scaleup_broker_resume_gate", {})
+        or config.get("cutover_broker_resume_gate", {})
+        or {}
+    )
+    if not isinstance(scaleup_broker_resume_gate, dict):
+        scaleup_broker_resume_gate = {}
+    resume_broker_route_readiness = scaleup_broker_resume_gate.get("broker_route_readiness", {}) or {}
+    resume_incident_broker_route_readiness = (
+        scaleup_broker_resume_gate.get("incident_broker_route_readiness", {}) or {}
+    )
     shadow_broker = config.get("scaleup_shadow_broker_readiness", {}) or {}
     shadow_broker_vendor_readiness = shadow_broker.get("broker_vendor_data_readiness", {}) or {}
     shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
@@ -3157,6 +3500,18 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
                     0.0,
                 ),
             )
+        ),
+        **_resume_route_readiness_state_fields(
+            row,
+            resume_broker_route_readiness,
+            source_prefix="broker_resume_broker_route_readiness",
+            row_prefix="scaleup_broker_resume_broker_route_readiness",
+        ),
+        **_resume_route_readiness_state_fields(
+            row,
+            resume_incident_broker_route_readiness,
+            source_prefix="broker_resume_incident_broker_route_readiness",
+            row_prefix="scaleup_broker_resume_incident_broker_route_readiness",
         ),
         "shadow_broker_readiness_sessions": int(
             _number_from(

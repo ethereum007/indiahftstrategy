@@ -664,6 +664,45 @@ def broker_vendor_data_readiness_config(provided=True, ready=True, failed_checks
     }
 
 
+def resume_route_proof(
+    *,
+    required=True,
+    provided=True,
+    ready=True,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    route_ready_pairs=1,
+    gap_pairs=0,
+    recommendation="eligible_for_live_dryrun_route_review",
+    ops_launch_controls_ready=True,
+    ops_launch_control_failures="",
+    ops_broker_roundtrip_portfolio_safe_runs=1,
+    ops_broker_roundtrip_portfolio_breach_runs=0,
+    ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
+):
+    return {
+        "required": required,
+        "provided": provided,
+        "ready": ready,
+        "strategy": strategy,
+        "market": market,
+        "route_ready_pairs": route_ready_pairs,
+        "gap_pairs": gap_pairs,
+        "recommendation": recommendation,
+        "ops_launch_controls_ready": ops_launch_controls_ready,
+        "ops_launch_control_failures": ops_launch_control_failures,
+        "ops_broker_roundtrip_portfolio_safe_runs": ops_broker_roundtrip_portfolio_safe_runs,
+        "ops_broker_roundtrip_portfolio_breach_runs": ops_broker_roundtrip_portfolio_breach_runs,
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+            ops_broker_roundtrip_portfolio_concentration_ok_runs
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+            ops_broker_roundtrip_portfolio_concentration_breach_runs
+        ),
+    }
+
+
 def upload_summary(ready=True, orders=2, adapter="arrow_money"):
     return pd.DataFrame(
         [
@@ -1640,6 +1679,78 @@ def test_route_enable_blocks_stale_cutover_broker_route_readiness_ops_controls()
     route_proof = report.config["cutover_broker_route_readiness"]
     assert route_proof["ops_launch_control_failures"] == "concentration breach on BANKNIFTY weekly"
     assert route_proof["ops_broker_roundtrip_portfolio_concentration_breach_runs"] == 1
+
+
+def test_route_enable_carries_cutover_resume_route_readiness():
+    config = cutover_config()
+    config["scaleup_broker_resume_gate"] = {
+        "broker_route_readiness": resume_route_proof(),
+        "incident_broker_route_readiness": resume_route_proof(route_ready_pairs=2),
+    }
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+    )
+
+    assert report.ready
+    summary = report.summary.iloc[0]
+    assert bool(summary["cutover_broker_resume_broker_route_readiness_ready"])
+    assert summary["cutover_broker_resume_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(summary["cutover_broker_resume_incident_broker_route_readiness_route_ready_pairs"]) == 2
+    assert report.config["cutover_broker_resume_gate"]["broker_route_readiness"]["ready"]
+    assert (
+        report.config["cutover_broker_resume_gate"]["incident_broker_route_readiness"][
+            "route_ready_pairs"
+        ]
+        == 2
+    )
+
+
+def test_route_enable_blocks_bad_cutover_resume_route_readiness():
+    config = cutover_config()
+    config["scaleup_broker_resume_gate"] = {
+        "broker_route_readiness": resume_route_proof(
+            ready=False,
+            strategy="surface_mm",
+            market="us_options_regular",
+            route_ready_pairs=0,
+            gap_pairs=2,
+            recommendation="complete_route_gaps",
+            ops_launch_controls_ready=False,
+            ops_launch_control_failures="missing post-halt launch controls",
+            ops_broker_roundtrip_portfolio_safe_runs=0,
+            ops_broker_roundtrip_portfolio_breach_runs=1,
+            ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
+            ops_broker_roundtrip_portfolio_concentration_breach_runs=1,
+        ),
+    }
+
+    report = evaluate_route_enable_packet(
+        cutover_summary=cutover_summary(),
+        cutover_config=config,
+        upload_summary=upload_summary(),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "cutover_broker_resume_broker_route_readiness_ready",
+        "cutover_broker_resume_broker_route_readiness_strategy_matches",
+        "cutover_broker_resume_broker_route_readiness_market_matches",
+        "cutover_broker_resume_broker_route_readiness_route_ready_pairs",
+        "cutover_broker_resume_broker_route_readiness_gap_pairs",
+        "cutover_broker_resume_broker_route_readiness_ops_launch_controls_ready",
+        "cutover_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+        "cutover_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+        "cutover_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "cutover_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary["cutover_broker_resume_broker_route_readiness_market"] == "us_options_regular"
+    assert report.config["cutover_broker_resume_gate"]["broker_route_readiness"]["gap_pairs"] == 2
+    assert report.config["next_gate"] == "review-resume-gate"
 
 
 def test_route_enable_requires_cutover_dispatch_roundtrip():

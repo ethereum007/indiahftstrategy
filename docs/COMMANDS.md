@@ -3445,7 +3445,15 @@ concentration-OK run counts. These counters are preserved in
 `route_enable_summary.csv` and `route_enable_config.json` as
 `route_readiness_*` and `cutover_broker_route_readiness`. `--require-route-readiness`
 is automatic for `--target-mode live_dryrun`; the explicit flag keeps
-paper/shadow route reviews equally strict. If `cutover_config.json` retained
+paper/shadow route reviews equally strict. When cutover carries scale-up
+post-halt resume route proof, route-enable also revalidates both the primary
+broker resume route branch and the closed-incident route branch, preserving
+them as `cutover_broker_resume_broker_route_readiness_*`,
+`cutover_broker_resume_incident_broker_route_readiness_*`, and nested
+`cutover_broker_resume_gate` config blocks. Stale strategy/market identity,
+route gaps, missing launch controls, allocation breaches, or concentration
+breaches route back to `review-resume-gate` before broker dispatch planning can
+inherit the route-enable packet. If `cutover_config.json` retained
 Arrow.money/iRage vendor market-data
 batch evidence, route-enable carries the dataset/header/mapping proof into
 `route_enable_summary.csv` and `route_enable_config.json` as
