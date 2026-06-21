@@ -15,9 +15,22 @@ def incident_summary(
     proof_strategy=None,
     proof_market=None,
     proof_ready=True,
+    route_strategy=None,
+    route_market=None,
+    route_ready=True,
+    route_ready_pairs=1,
+    route_gap_pairs=0,
+    route_ops_launch_controls_ready=True,
+    route_ops_broker_roundtrip_portfolio_safe_runs=1,
+    route_ops_broker_roundtrip_portfolio_breach_runs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
 ):
     proof_strategy = strategy if proof_strategy is None else proof_strategy
     proof_market = market if proof_market is None else proof_market
+    route_strategy = strategy if route_strategy is None else route_strategy
+    route_market = market if route_market is None else route_market
+    route_recommendation = "route_ready" if route_ready and route_gap_pairs == 0 else "complete_route_readiness_gaps"
     return pd.DataFrame(
         [
             {
@@ -32,6 +45,30 @@ def incident_summary(
                 "proof_refresh_market": proof_market,
                 "proof_refresh_mixed_identity": False,
                 "proof_source": "latest",
+                "broker_route_readiness_required": True,
+                "broker_route_readiness_provided": True,
+                "broker_route_readiness_ready": route_ready,
+                "broker_route_readiness_strategy": route_strategy,
+                "broker_route_readiness_market": route_market,
+                "broker_route_readiness_route_ready_pairs": route_ready_pairs,
+                "broker_route_readiness_gap_pairs": route_gap_pairs,
+                "broker_route_readiness_recommendation": route_recommendation,
+                "broker_route_readiness_ops_launch_controls_ready": route_ops_launch_controls_ready,
+                "broker_route_readiness_ops_launch_control_failures": (
+                    "" if route_ops_launch_controls_ready else "ops_launch_control_failed"
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": (
+                    route_ops_broker_roundtrip_portfolio_safe_runs
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": (
+                    route_ops_broker_roundtrip_portfolio_breach_runs
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_ok_runs
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "guard_failed_check_names": "open_order_count" if passed else "halt_execution_passed",
@@ -54,9 +91,22 @@ def scaleup_summary(
     proof_market=None,
     proof_ready=True,
     proof_mixed_identity=False,
+    route_strategy=None,
+    route_market=None,
+    route_ready=True,
+    route_ready_pairs=1,
+    route_gap_pairs=0,
+    route_ops_launch_controls_ready=True,
+    route_ops_broker_roundtrip_portfolio_safe_runs=1,
+    route_ops_broker_roundtrip_portfolio_breach_runs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
 ):
     proof_strategy = strategy if proof_strategy is None else proof_strategy
     proof_market = market if proof_market is None else proof_market
+    route_strategy = strategy if route_strategy is None else route_strategy
+    route_market = market if route_market is None else route_market
+    route_recommendation = "route_ready" if route_ready and route_gap_pairs == 0 else "complete_route_readiness_gaps"
     return pd.DataFrame(
         [
             {
@@ -70,6 +120,29 @@ def scaleup_summary(
                 "proof_refresh_market": proof_market,
                 "proof_refresh_mixed_identity": proof_mixed_identity,
                 "proof_source": "latest",
+                "broker_route_readiness_provided": True,
+                "broker_route_readiness_ready": route_ready,
+                "broker_route_readiness_strategy": route_strategy,
+                "broker_route_readiness_market": route_market,
+                "broker_route_readiness_route_ready_pairs": route_ready_pairs,
+                "broker_route_readiness_gap_pairs": route_gap_pairs,
+                "broker_route_readiness_recommendation": route_recommendation,
+                "broker_route_readiness_ops_launch_controls_ready": route_ops_launch_controls_ready,
+                "broker_route_readiness_ops_launch_control_failures": (
+                    "" if route_ops_launch_controls_ready else "ops_launch_control_failed"
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": (
+                    route_ops_broker_roundtrip_portfolio_safe_runs
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": (
+                    route_ops_broker_roundtrip_portfolio_breach_runs
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_ok_runs
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
                 "scenario_key": scenario_key,
                 "adapter": adapter,
                 "max_orders_per_session": 10,
@@ -91,9 +164,22 @@ def scaleup_config(
     proof_market=None,
     proof_ready=True,
     proof_mixed_identity=False,
+    route_strategy=None,
+    route_market=None,
+    route_ready=True,
+    route_ready_pairs=1,
+    route_gap_pairs=0,
+    route_ops_launch_controls_ready=True,
+    route_ops_broker_roundtrip_portfolio_safe_runs=1,
+    route_ops_broker_roundtrip_portfolio_breach_runs=0,
+    route_ops_broker_roundtrip_portfolio_concentration_ok_runs=1,
+    route_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
 ):
     proof_strategy = strategy if proof_strategy is None else proof_strategy
     proof_market = market if proof_market is None else proof_market
+    route_strategy = strategy if route_strategy is None else route_strategy
+    route_market = market if route_market is None else route_market
+    route_recommendation = "route_ready" if route_ready and route_gap_pairs == 0 else "complete_route_readiness_gaps"
     return {
         "schema_version": 1,
         "ready": True,
@@ -118,6 +204,37 @@ def scaleup_config(
             "proof_source": "latest",
             "fresh_proof_required": False,
             "recommendation": "reuse_latest_calibrated_proof",
+        },
+        "broker_readiness": {
+            "required": True,
+            "provided": True,
+            "ready": route_ready,
+            "route_readiness": {
+                "required": True,
+                "provided": True,
+                "ready": route_ready,
+                "strategy": route_strategy,
+                "market": route_market,
+                "route_ready_pairs": route_ready_pairs,
+                "gap_pairs": route_gap_pairs,
+                "recommendation": route_recommendation,
+                "ops_launch_controls_ready": route_ops_launch_controls_ready,
+                "ops_launch_control_failures": (
+                    "" if route_ops_launch_controls_ready else "ops_launch_control_failed"
+                ),
+                "ops_broker_roundtrip_portfolio_safe_runs": (
+                    route_ops_broker_roundtrip_portfolio_safe_runs
+                ),
+                "ops_broker_roundtrip_portfolio_breach_runs": (
+                    route_ops_broker_roundtrip_portfolio_breach_runs
+                ),
+                "ops_broker_roundtrip_portfolio_concentration_ok_runs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_ok_runs
+                ),
+                "ops_broker_roundtrip_portfolio_concentration_breach_runs": (
+                    route_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
+            },
         },
         "limits": {
             "max_orders_per_session": 10,
@@ -195,11 +312,21 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.authorization.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
     assert report.authorization.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
     assert report.authorization.iloc[0]["incident_proof_refresh_strategy"] == "lead_lag_taker"
+    assert bool(report.authorization.iloc[0]["broker_route_readiness_ready"])
+    assert report.authorization.iloc[0]["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert report.authorization.iloc[0]["broker_route_readiness_market"] == "india_nse_index_derivatives"
+    assert bool(report.authorization.iloc[0]["incident_broker_route_readiness_ready"])
+    assert report.authorization.iloc[0]["incident_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(report.authorization.iloc[0]["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
     assert report.summary.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["market"] == "india_nse_index_derivatives"
     assert bool(report.summary.iloc[0]["proof_refresh_ready"])
     assert report.summary.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
     assert report.summary.iloc[0]["incident_proof_refresh_market"] == "india_nse_index_derivatives"
+    assert bool(report.summary.iloc[0]["broker_route_readiness_ready"])
+    assert report.summary.iloc[0]["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["incident_broker_route_readiness_market"] == "india_nse_index_derivatives"
+    assert int(report.summary.iloc[0]["broker_route_readiness_gap_pairs"]) == 0
     assert report.summary.iloc[0]["incident_guard_failed_check_names"] == "open_order_count"
     assert report.summary.iloc[0]["incident_guard_first_failed_reason"] == "open_order_count: limit breached"
     assert report.summary.iloc[0]["recommendation"] == "resume_with_scaleup_controls"
@@ -208,6 +335,13 @@ def test_resume_gate_authorizes_clean_incident_and_scaleup():
     assert report.config["identity"]["incident_market"] == "india_nse_index_derivatives"
     assert report.config["proof_freshness"]["strategy"] == "lead_lag_taker"
     assert report.config["proof_freshness"]["incident"]["market"] == "india_nse_index_derivatives"
+    assert report.config["broker_route_readiness"]["ready"]
+    assert report.config["broker_route_readiness"]["strategy"] == "lead_lag_taker"
+    assert report.config["broker_route_readiness"]["incident"]["market"] == "india_nse_index_derivatives"
+    assert report.config["broker_route_readiness"]["ops_broker_roundtrip_portfolio_safe_runs"] == 1
+    assert report.config["broker_route_readiness"][
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs"
+    ] == 1
     assert report.config["ready"]
     assert report.config["failed_check_count"] == 0
     assert report.config["primary_blocker"] == {}
@@ -262,6 +396,72 @@ def test_resume_gate_blocks_proof_refresh_identity_mismatch():
     assert {"proof_refresh_strategy_match", "proof_refresh_market_match"} <= failed
     assert report.authorization.iloc[0]["strategy"] == "lead_lag_taker"
     assert report.authorization.iloc[0]["proof_refresh_strategy"] == "surface_mm"
+
+
+def test_resume_gate_blocks_broker_route_readiness_identity_mismatch():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+        ),
+        scaleup_config=scaleup_config(
+            route_strategy="surface_mm",
+            route_market="us_options_regular",
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"broker_route_readiness_strategy_match", "broker_route_readiness_market_match"} <= failed
+    route_rows = report.action_queue.loc[
+        report.action_queue["check"].isin(
+            ["broker_route_readiness_strategy_match", "broker_route_readiness_market_match"]
+        )
+    ]
+    assert set(route_rows["component"]) == {"broker_route_readiness"}
+    assert set(route_rows["next_gate"]) == {"review-route-readiness"}
+
+
+def test_resume_gate_blocks_stale_broker_route_readiness_ops():
+    report = evaluate_resume_gate(
+        incident_summary=incident_summary(),
+        scaleup_summary=scaleup_summary(
+            route_ready=False,
+            route_gap_pairs=2,
+            route_ops_launch_controls_ready=False,
+            route_ops_broker_roundtrip_portfolio_safe_runs=0,
+            route_ops_broker_roundtrip_portfolio_breach_runs=1,
+            route_ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
+            route_ops_broker_roundtrip_portfolio_concentration_breach_runs=1,
+        ),
+        scaleup_config=scaleup_config(
+            route_ready=False,
+            route_gap_pairs=2,
+            route_ops_launch_controls_ready=False,
+            route_ops_broker_roundtrip_portfolio_safe_runs=0,
+            route_ops_broker_roundtrip_portfolio_breach_runs=1,
+            route_ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
+            route_ops_broker_roundtrip_portfolio_concentration_breach_runs=1,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "broker_route_readiness_ready",
+        "broker_route_readiness_gap_pairs",
+        "broker_route_readiness_ops_launch_controls_ready",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    } <= failed
+    route_queue = report.action_queue.loc[
+        report.action_queue["check"].str.startswith("broker_route_readiness")
+    ]
+    assert not route_queue.empty
+    assert set(route_queue["next_gate"]) == {"review-route-readiness"}
 
 
 def test_resume_gate_can_require_operator_trigger_acknowledgment():
@@ -377,6 +577,9 @@ def test_write_resume_gate_outputs_artifacts(tmp_path):
     assert saved_summary.loc[0, "incident_guard_failed_check_names"] == "open_order_count"
     assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
     assert bool(saved_summary.loc[0, "proof_refresh_ready"])
+    assert saved_summary.loc[0, "broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert bool(saved_summary.loc[0, "broker_route_readiness_ready"])
+    assert int(saved_summary.loc[0, "broker_route_readiness_gap_pairs"]) == 0
     assert int(saved_summary.loc[0, "action_queue_count"]) == 0
     assert (out_dir / "resume_runbook.md").read_text(encoding="utf-8").startswith("# Resume Gate Runbook")
 

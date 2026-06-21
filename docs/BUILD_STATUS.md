@@ -330,6 +330,10 @@
   `resume_runbook.md` handoffs, routing open incidents, stale scale-up plans,
   identity mismatches, proof-refresh blockers, and operator-review gaps to the
   next CLI gate before broker/runtime resume automation can continue.
+- Resume gate now carries broker route-readiness proof from the closed halt
+  incident and the new scale-up config, failing closed on missing readiness,
+  strategy/market drift, route gaps, launch-control failures, or broker
+  portfolio/concentration round-trip breaches before post-halt runtime resume.
 - Halt response config JSON now exposes response-plan `failed_check_count`,
   `failed_checks`, and structured `primary_blocker` next to the guard trigger
   context, so emergency automation can route packet-construction blockers
