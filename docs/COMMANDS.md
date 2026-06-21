@@ -2707,6 +2707,13 @@ resume authorization identity, prior incident identity, and resume
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless broker
 readiness supplied a ready resume gate with strategy/market and proof-refresh
 identity matching the scale-up identity.
+When the broker-readiness summary or `broker_readiness_config.json` sidecar
+also carries resume-gate broker route-readiness proof, scale-up exports
+`broker_resume_broker_route_readiness_*` and
+`broker_resume_incident_broker_route_readiness_*` fields, mirrors them under
+`broker_readiness.resume_gate`, and fails closed on stale route identity, route
+gaps, missing launch controls, or portfolio allocation/concentration breaches
+before controlled capital increases.
 If broker readiness included dispatch round-trip evidence, scale-up also
 retains the proved dry-run target mode, strategy, market, scenario, dispatch
 batch, request count, accepted acknowledgements, failed-check count, and

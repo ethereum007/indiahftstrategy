@@ -1188,7 +1188,12 @@
   nested vendor batch is internally valid. Scale-up now also hydrates the
   broker-vendor wrapper readiness state from `broker_readiness_config.json`, so
   a failed Arrow.money/iRage wrapper sidecar cannot be masked by a valid nested
-  vendor batch during controlled capital increases. Broker readiness now evaluates standalone vendor-batch proof
+  vendor batch during controlled capital increases. Scale-up now also carries
+  and revalidates resume-gate broker route-readiness proof from broker
+  summaries, launch-pipeline fallbacks, or the same sidecar as
+  `broker_resume_broker_route_readiness_*` and
+  `broker_resume_incident_broker_route_readiness_*` fields before promotion.
+  Broker readiness now evaluates standalone vendor-batch proof
   roots even when no dispatch round-trip proof is supplied, compares them
   against the launch/broker expected market when available, and fails closed
   across all five launch CLIs when an iRage proof root is supplied to an
