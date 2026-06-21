@@ -287,6 +287,7 @@ def _steps(
             ),
             "broker_resume_proof_refresh_strategy": _text(telemetry_row, "broker_resume_proof_refresh_strategy"),
             "broker_resume_proof_refresh_market": _text(telemetry_row, "broker_resume_proof_refresh_market"),
+            **_broker_route_readiness_fields(telemetry_row),
             **_portfolio_fields(telemetry_row),
             "recommendation": str(telemetry_row.get("recommendation", "")),
         },
@@ -339,6 +340,7 @@ def _steps(
                 telemetry_row,
                 "broker_resume_proof_refresh_market",
             ),
+            **_broker_route_readiness_fields(guard_row, telemetry_row),
             **_portfolio_fields(guard_row, telemetry_row),
             "recommendation": str(guard_row.get("recommendation", "")),
         },
@@ -395,6 +397,7 @@ def _steps(
                     telemetry_row,
                     "broker_resume_proof_refresh_market",
                 ),
+                **_broker_route_readiness_fields(guard_row, telemetry_row),
                 **_portfolio_fields(guard_row, telemetry_row),
                 "recommendation": str(response_row.get("recommendation", "")),
             }
@@ -450,6 +453,7 @@ def _steps(
                     telemetry_row,
                     "broker_resume_proof_refresh_market",
                 ),
+                **_broker_route_readiness_fields(guard_row, telemetry_row),
                 **_portfolio_fields(guard_row, telemetry_row),
                 "recommendation": "manual_halt_response_required" if not plan_halt_response else "not_created",
             }
@@ -534,6 +538,7 @@ def _summary(
                     telemetry_row,
                     "broker_resume_proof_refresh_market",
                 ),
+                **_broker_route_readiness_fields(guard_row, telemetry_row),
                 **_portfolio_fields(guard_row, telemetry_row),
                 "telemetry_ready": bool(telemetry.ready),
                 "halt_response_created": halt_response is not None,
@@ -688,6 +693,38 @@ def _config(
         "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
         "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+        "broker_route_readiness": {
+            "required": _to_bool(summary_row.get("broker_route_readiness_required")),
+            "provided": _to_bool(summary_row.get("broker_route_readiness_provided")),
+            "ready": _to_bool(summary_row.get("broker_route_readiness_ready")),
+            "strategy": _clean(summary_row.get("broker_route_readiness_strategy")),
+            "market": _clean(summary_row.get("broker_route_readiness_market")),
+            "route_ready_pairs": _int_value(summary_row.get("broker_route_readiness_route_ready_pairs")),
+            "gap_pairs": _int_value(summary_row.get("broker_route_readiness_gap_pairs")),
+            "recommendation": _clean(summary_row.get("broker_route_readiness_recommendation")),
+            "ops_launch_controls_ready": _to_bool(
+                summary_row.get("broker_route_readiness_ops_launch_controls_ready")
+            ),
+            "ops_launch_control_failures": _clean(
+                summary_row.get("broker_route_readiness_ops_launch_control_failures")
+            ),
+            "ops_broker_roundtrip_portfolio_safe_runs": _int_value(
+                summary_row.get("broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs")
+            ),
+            "ops_broker_roundtrip_portfolio_breach_runs": _int_value(
+                summary_row.get("broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs")
+            ),
+            "ops_broker_roundtrip_portfolio_concentration_ok_runs": _int_value(
+                summary_row.get(
+                    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+                )
+            ),
+            "ops_broker_roundtrip_portfolio_concentration_breach_runs": _int_value(
+                summary_row.get(
+                    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+                )
+            ),
+        },
     }
 
 
@@ -969,6 +1006,74 @@ def _portfolio_fields(primary: pd.Series, fallback: pd.Series | None = None) -> 
             primary,
             fallback,
             "pre_portfolio_max_notional_per_session",
+        ),
+    }
+
+
+def _broker_route_readiness_fields(primary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
+    fallback = primary if fallback is None else fallback
+    return {
+        "broker_route_readiness_required": _identity_bool(
+            primary,
+            fallback,
+            "broker_route_readiness_required",
+        ),
+        "broker_route_readiness_provided": _identity_bool(
+            primary,
+            fallback,
+            "broker_route_readiness_provided",
+        ),
+        "broker_route_readiness_ready": _identity_bool(primary, fallback, "broker_route_readiness_ready"),
+        "broker_route_readiness_strategy": _identity_text(primary, fallback, "broker_route_readiness_strategy"),
+        "broker_route_readiness_market": _identity_text(primary, fallback, "broker_route_readiness_market"),
+        "broker_route_readiness_route_ready_pairs": int(
+            _identity_float(primary, fallback, "broker_route_readiness_route_ready_pairs")
+        ),
+        "broker_route_readiness_gap_pairs": int(
+            _identity_float(primary, fallback, "broker_route_readiness_gap_pairs")
+        ),
+        "broker_route_readiness_recommendation": _identity_text(
+            primary,
+            fallback,
+            "broker_route_readiness_recommendation",
+        ),
+        "broker_route_readiness_ops_launch_controls_ready": _identity_bool(
+            primary,
+            fallback,
+            "broker_route_readiness_ops_launch_controls_ready",
+        ),
+        "broker_route_readiness_ops_launch_control_failures": _identity_text(
+            primary,
+            fallback,
+            "broker_route_readiness_ops_launch_control_failures",
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
+            _identity_float(
+                primary,
+                fallback,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": int(
+            _identity_float(
+                primary,
+                fallback,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _identity_float(
+                primary,
+                fallback,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _identity_float(
+                primary,
+                fallback,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            )
         ),
     }
 

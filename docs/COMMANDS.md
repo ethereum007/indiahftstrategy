@@ -2933,11 +2933,15 @@ guard blocks routing, plus `proof_refresh_*` fields from telemetry/guard so
 shadow-session and broker-readiness reviews can trace the proof freshness state
 that fed the monitor. It also retains `broker_resume_*` fields so post-halt
 resume authorization and proof identity remain visible after runtime guard
-evaluation. When scale-up uses strategy portfolio allocation, the session
-steps and summary also retain `strategy_portfolio_*` fields, including selected
-strategy/market, eligibility, allocation weight/notional, pre-cap notional, and
-whether the portfolio cap constrained session notional, plus the carried
-strategy/market concentration counts and maximum aggregate allocation weights.
+evaluation. When scale-up uses broker route-readiness evidence, the session
+steps, summary, and config also retain `broker_route_readiness_*` route-ready,
+gap-pair, launch-control, portfolio-safe, and concentration-safe proof from the
+telemetry/guard chain. When scale-up uses strategy portfolio allocation, the
+session steps and summary also retain `strategy_portfolio_*` fields, including
+selected strategy/market, eligibility, allocation weight/notional, pre-cap
+notional, and whether the portfolio cap constrained session notional, plus the
+carried strategy/market concentration counts and maximum aggregate allocation
+weights.
 `runtime_session_summary.csv` and `runtime_session_config.json` also expose
 `failed_check_count`, `failed_check_names`, `first_failed_reason`,
 `primary_blocker_*`, `action_queue_count`, `ready_action_count`,
