@@ -26,6 +26,20 @@ def guard_summary(action="halt"):
                 "proof_refresh_market": "india_nse_index_derivatives",
                 "proof_refresh_mixed_identity": False,
                 "proof_source": "latest",
+                "broker_route_readiness_required": True,
+                "broker_route_readiness_provided": True,
+                "broker_route_readiness_ready": True,
+                "broker_route_readiness_strategy": "lead_lag_taker",
+                "broker_route_readiness_market": "india_nse_index_derivatives",
+                "broker_route_readiness_route_ready_pairs": 1,
+                "broker_route_readiness_gap_pairs": 0,
+                "broker_route_readiness_recommendation": "scale_up_with_controls",
+                "broker_route_readiness_ops_launch_controls_ready": True,
+                "broker_route_readiness_ops_launch_control_failures": "",
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "recommendation": "stop_routing_and_investigate" if action == "halt" else "continue_with_controls",
@@ -100,6 +114,10 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.cancel_orders.iloc[0]["proof_refresh_strategy"] == "lead_lag_taker"
     assert bool(report.cancel_orders.iloc[0]["proof_refresh_ready"])
     assert report.cancel_orders.iloc[0]["proof_source"] == "latest"
+    assert report.cancel_orders.iloc[0]["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert bool(report.cancel_orders.iloc[0]["broker_route_readiness_ready"])
+    assert int(report.cancel_orders.iloc[0]["broker_route_readiness_gap_pairs"]) == 0
+    assert bool(report.cancel_orders.iloc[0]["broker_route_readiness_ops_launch_controls_ready"])
     assert report.cancel_orders.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.cancel_orders.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
     assert report.flatten_orders["side_text"].tolist() == ["SELL", "BUY"]
@@ -108,6 +126,14 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.flatten_orders["proof_refresh_market"].tolist() == [
         "india_nse_index_derivatives",
         "india_nse_index_derivatives",
+    ]
+    assert report.flatten_orders["broker_route_readiness_market"].tolist() == [
+        "india_nse_index_derivatives",
+        "india_nse_index_derivatives",
+    ]
+    assert report.flatten_orders["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"].tolist() == [
+        1,
+        1,
     ]
     assert report.flatten_orders["price"].tolist() == [11.2, 9.1]
     assert report.flatten_orders["guard_failed_check_names"].tolist() == ["orders_sent", "orders_sent"]
@@ -121,6 +147,19 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.summary.iloc[0]["proof_refresh_market"] == "india_nse_index_derivatives"
     assert not bool(report.summary.iloc[0]["proof_refresh_mixed_identity"])
     assert report.summary.iloc[0]["proof_source"] == "latest"
+    assert bool(report.summary.iloc[0]["broker_route_readiness_required"])
+    assert bool(report.summary.iloc[0]["broker_route_readiness_provided"])
+    assert bool(report.summary.iloc[0]["broker_route_readiness_ready"])
+    assert report.summary.iloc[0]["broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert report.summary.iloc[0]["broker_route_readiness_market"] == "india_nse_index_derivatives"
+    assert int(report.summary.iloc[0]["broker_route_readiness_route_ready_pairs"]) == 1
+    assert int(report.summary.iloc[0]["broker_route_readiness_gap_pairs"]) == 0
+    assert bool(report.summary.iloc[0]["broker_route_readiness_ops_launch_controls_ready"])
+    assert int(report.summary.iloc[0]["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert (
+        int(report.summary.iloc[0]["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"])
+        == 1
+    )
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
     assert int(report.summary.iloc[0]["failed_check_count"]) == 0
@@ -151,6 +190,22 @@ def test_halt_response_builds_cancel_and_flatten_actions():
         "market": "india_nse_index_derivatives",
         "mixed_identity": False,
         "proof_source": "latest",
+    }
+    assert report.config["broker_route_readiness"] == {
+        "required": True,
+        "provided": True,
+        "ready": True,
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "route_ready_pairs": 1,
+        "gap_pairs": 0,
+        "recommendation": "scale_up_with_controls",
+        "ops_launch_controls_ready": True,
+        "ops_launch_control_failures": "",
+        "ops_broker_roundtrip_portfolio_safe_runs": 1,
+        "ops_broker_roundtrip_portfolio_breach_runs": 0,
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
     }
 
 

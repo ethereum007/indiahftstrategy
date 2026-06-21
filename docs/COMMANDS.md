@@ -3005,7 +3005,11 @@ reason, strategy, and market so emergency action files show why the
 cancel/flatten packet exists and which scaled strategy produced it. They also
 retain `proof_refresh_*` and `proof_source` fields from the runtime guard so a
 halt packet can be tied back to the fresh proof state that authorized the
-runtime session.
+runtime session. When the guard carried broker route-readiness evidence, these
+same halt artifacts also retain `broker_route_readiness_*` route-ready,
+gap-pair, launch-control, portfolio-safe, and concentration-safe fields so
+emergency cancel/flatten packets remain auditable to the route controls that
+were active when routing stopped.
 `halt_response_action_queue.csv` and `halt_response_runbook.md` route non-halt
 guard states and missing executable flatten prices back to the next CLI gate
 before a scheduler trusts the cancel/flatten packet. Add `--fail-on-actions` to

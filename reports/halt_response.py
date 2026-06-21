@@ -21,12 +21,30 @@ PROOF_REFRESH_COLUMNS = [
     "proof_source",
 ]
 
+BROKER_ROUTE_READINESS_COLUMNS = [
+    "broker_route_readiness_required",
+    "broker_route_readiness_provided",
+    "broker_route_readiness_ready",
+    "broker_route_readiness_strategy",
+    "broker_route_readiness_market",
+    "broker_route_readiness_route_ready_pairs",
+    "broker_route_readiness_gap_pairs",
+    "broker_route_readiness_recommendation",
+    "broker_route_readiness_ops_launch_controls_ready",
+    "broker_route_readiness_ops_launch_control_failures",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+    "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+]
+
 CANCEL_COLUMNS = [
     "action_id",
     "action",
     "strategy",
     "market",
     *PROOF_REFRESH_COLUMNS,
+    *BROKER_ROUTE_READINESS_COLUMNS,
     "client_order_id",
     "broker_order_id",
     "instrument_id",
@@ -44,6 +62,7 @@ FLATTEN_COLUMNS = [
     "strategy",
     "market",
     *PROOF_REFRESH_COLUMNS,
+    *BROKER_ROUTE_READINESS_COLUMNS,
     "instrument_id",
     "side",
     "side_text",
@@ -146,6 +165,7 @@ def evaluate_halt_response(
         "guard_failed_checks": guard_context["failed_check_names"],
         "guard_failed_check_reasons": guard_context["failed_check_reasons"],
         "proof_freshness": _proof_freshness_config(guard_context),
+        "broker_route_readiness": _broker_route_readiness_config(guard_context),
     }
     return HaltResponseReport(
         cancel_orders=cancel_orders,
@@ -253,6 +273,7 @@ def _cancel_actions(open_orders: pd.DataFrame, guard_context: dict[str, object])
     active["strategy"] = guard_context["strategy"]
     active["market"] = guard_context["market"]
     _assign_proof_refresh_columns(active, guard_context)
+    _assign_broker_route_readiness_columns(active, guard_context)
     active["reason"] = "guard_halt_open_order"
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
@@ -282,6 +303,7 @@ def _flatten_actions(
     active["strategy"] = guard_context["strategy"]
     active["market"] = guard_context["market"]
     _assign_proof_refresh_columns(active, guard_context)
+    _assign_broker_route_readiness_columns(active, guard_context)
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
     active["action"] = "flatten_position"
@@ -403,6 +425,7 @@ def _summary(
                 "guard_first_failed_reason": guard_context["first_failed_reason"],
                 "guard_failed_check_reasons": guard_context["failed_check_reasons_text"],
                 **_proof_refresh_summary_fields(guard_context),
+                **_broker_route_readiness_summary_fields(guard_context),
                 "scenario_key": str(guard_row.get("scenario_key", "")),
                 "adapter": str(guard_row.get("adapter", "")),
                 "recommendation": recommendation,
@@ -732,6 +755,7 @@ def _guard_halt_context(guard_row: pd.Series, guard_checks: pd.DataFrame) -> dic
         "failed_check_reasons": reasons,
         "failed_check_reasons_text": ";".join(reasons),
         **_proof_refresh_context(guard_row),
+        **_broker_route_readiness_context(guard_row),
     }
 
 
@@ -788,8 +812,64 @@ def _assign_proof_refresh_columns(frame: pd.DataFrame, guard_context: dict[str, 
         frame[column] = guard_context[column]
 
 
+def _broker_route_readiness_context(guard_row: pd.Series) -> dict[str, object]:
+    return {
+        "broker_route_readiness_required": _to_bool(
+            guard_row.get("broker_route_readiness_required", False)
+        ),
+        "broker_route_readiness_provided": _to_bool(
+            guard_row.get("broker_route_readiness_provided", False)
+        ),
+        "broker_route_readiness_ready": _to_bool(guard_row.get("broker_route_readiness_ready", False)),
+        "broker_route_readiness_strategy": _clean(guard_row.get("broker_route_readiness_strategy", "")),
+        "broker_route_readiness_market": _clean(guard_row.get("broker_route_readiness_market", "")),
+        "broker_route_readiness_route_ready_pairs": _int_value(
+            guard_row.get("broker_route_readiness_route_ready_pairs", 0)
+        ),
+        "broker_route_readiness_gap_pairs": _int_value(
+            guard_row.get("broker_route_readiness_gap_pairs", 0)
+        ),
+        "broker_route_readiness_recommendation": _clean(
+            guard_row.get("broker_route_readiness_recommendation", "")
+        ),
+        "broker_route_readiness_ops_launch_controls_ready": _to_bool(
+            guard_row.get("broker_route_readiness_ops_launch_controls_ready", False)
+        ),
+        "broker_route_readiness_ops_launch_control_failures": _clean(
+            guard_row.get("broker_route_readiness_ops_launch_control_failures", "")
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": _int_value(
+            guard_row.get("broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs", 0)
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": _int_value(
+            guard_row.get("broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs", 0)
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": _int_value(
+            guard_row.get(
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                0,
+            )
+        ),
+        "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": _int_value(
+            guard_row.get(
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                0,
+            )
+        ),
+    }
+
+
+def _assign_broker_route_readiness_columns(frame: pd.DataFrame, guard_context: dict[str, object]) -> None:
+    for column in BROKER_ROUTE_READINESS_COLUMNS:
+        frame[column] = guard_context[column]
+
+
 def _proof_refresh_summary_fields(guard_context: dict[str, object]) -> dict[str, object]:
     return {column: guard_context[column] for column in PROOF_REFRESH_COLUMNS}
+
+
+def _broker_route_readiness_summary_fields(guard_context: dict[str, object]) -> dict[str, object]:
+    return {column: guard_context[column] for column in BROKER_ROUTE_READINESS_COLUMNS}
 
 
 def _proof_freshness_config(guard_context: dict[str, object]) -> dict[str, object]:
@@ -801,6 +881,41 @@ def _proof_freshness_config(guard_context: dict[str, object]) -> dict[str, objec
         "market": str(guard_context["proof_refresh_market"]),
         "mixed_identity": bool(guard_context["proof_refresh_mixed_identity"]),
         "proof_source": str(guard_context["proof_source"]),
+    }
+
+
+def _broker_route_readiness_config(guard_context: dict[str, object]) -> dict[str, object]:
+    return {
+        "required": bool(guard_context["broker_route_readiness_required"]),
+        "provided": bool(guard_context["broker_route_readiness_provided"]),
+        "ready": bool(guard_context["broker_route_readiness_ready"]),
+        "strategy": str(guard_context["broker_route_readiness_strategy"]),
+        "market": str(guard_context["broker_route_readiness_market"]),
+        "route_ready_pairs": int(guard_context["broker_route_readiness_route_ready_pairs"]),
+        "gap_pairs": int(guard_context["broker_route_readiness_gap_pairs"]),
+        "recommendation": str(guard_context["broker_route_readiness_recommendation"]),
+        "ops_launch_controls_ready": bool(
+            guard_context["broker_route_readiness_ops_launch_controls_ready"]
+        ),
+        "ops_launch_control_failures": str(
+            guard_context["broker_route_readiness_ops_launch_control_failures"]
+        ),
+        "ops_broker_roundtrip_portfolio_safe_runs": int(
+            guard_context["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_breach_runs": int(
+            guard_context["broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            guard_context[
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+            ]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            guard_context[
+                "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+            ]
+        ),
     }
 
 

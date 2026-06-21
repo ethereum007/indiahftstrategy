@@ -346,6 +346,11 @@
   packets, adapter mismatches, and cancel/flatten mapping blockers back to
   `plan-halt-response` or `export-halt-response` before broker emergency files
   are trusted.
+- Halt response plans now carry runtime guard `broker_route_readiness_*`
+  proof into `halt_cancel_orders.csv`, `halt_flatten_orders.csv`,
+  `halt_response_summary.csv`, and `halt_response_config.json`, keeping
+  emergency cancel/flatten packets tied to the broker route controls that were
+  active at halt time.
 - Runtime session monitoring now emits manifest-tracked
   `runtime_session_action_queue.csv`, `runtime_session_config.json`, and
   `runtime_session_runbook.md` handoffs, routing blocked telemetry repairs,
