@@ -72,6 +72,11 @@
   validates the session packet, runtime credential env-var presence, writable
   capture and batch paths, capture/batch collision risk, and local clock timing
   without persisting credential values.
+- Provider market-data live capture bundling now turns a ready preflight into
+  a backend adapter handoff: `bundle-provider-market-data-live-capture` writes
+  per-window capture commands, a credential-safe JSON bundle, and the exact
+  post-capture ingest command while blocking missing preflight evidence and
+  capture overwrite risk.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured

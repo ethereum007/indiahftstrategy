@@ -4371,6 +4371,27 @@ window. It writes `provider_market_data_live_preflight_summary.csv`,
 `provider_market_data_live_preflight_action_queue.csv`, config/runbook
 artifacts, and a manifest without storing credential values.
 
+Bundle the preflighted session into a per-window provider adapter handoff:
+
+```powershell
+python -m hft_cli bundle-provider-market-data-live-capture `
+  --live-session-packet runs\provider_market_data_live_sessions\arrow_ws_nse_2026_06_23\provider_market_data_live_session_packet.json `
+  --preflight-config runs\provider_market_data_live_preflight\arrow_ws_nse_2026_06_23\provider_market_data_live_preflight_config.json `
+  --out runs\provider_market_data_live_capture_bundles\arrow_ws_nse_2026_06_23 `
+  --ingest-output-dir runs\provider_market_data_live_ingest\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_live_capture_commands.csv`,
+`provider_market_data_live_capture_bundle.json`, summary/check/action artifacts,
+a runbook, and a manifest. The command queue is adapter-neutral by default
+(`provider-adapter capture ...`) and can be replaced with
+`--adapter-command-template` once the Arrow.money or iRage client command is
+approved. It carries only credential env-var names and runtime presence
+booleans, plus the exact post-capture
+`ingest-provider-market-data-live-session` command.
+
 After those live capture files land, ingest the whole planned session from the
 session packet:
 

@@ -110,6 +110,10 @@ from reports.provider_market_data_live_preflight import (
     ProviderMarketDataLivePreflightConfig,
     write_provider_market_data_live_session_preflight,
 )
+from reports.provider_market_data_live_bundle import (
+    ProviderMarketDataLiveCaptureBundleConfig,
+    write_provider_market_data_live_capture_bundle,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1069,6 +1073,22 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_preflight.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_preflight.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_preflight.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_live_bundle = sub.add_parser(
+        "bundle-provider-market-data-live-capture",
+        help="Build a credential-safe per-window provider adapter capture bundle from a live session packet.",
+    )
+    provider_market_data_live_bundle.add_argument("--live-session-packet", required=True)
+    provider_market_data_live_bundle.add_argument("--out", required=True)
+    provider_market_data_live_bundle.add_argument("--preflight-config", default="")
+    provider_market_data_live_bundle.add_argument("--adapter-command-template", default="")
+    provider_market_data_live_bundle.add_argument("--ingest-output-dir", default="")
+    provider_market_data_live_bundle.add_argument("--no-require-preflight-ready", action="store_true")
+    provider_market_data_live_bundle.add_argument("--require-env-present", action="store_true")
+    provider_market_data_live_bundle.add_argument("--allow-existing-captures", action="store_true")
+    provider_market_data_live_bundle.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_live_bundle.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_live_bundle.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_live_ingest = sub.add_parser(
         "ingest-provider-market-data-live-session",
@@ -3438,6 +3458,32 @@ def main(argv: list[str] | None = None) -> int:
                 allow_existing_captures=args.allow_existing_captures,
                 allow_existing_batch=args.allow_existing_batch,
                 require_before_last_window=not args.no_require_before_last_window,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "bundle-provider-market-data-live-capture":
+        result = write_provider_market_data_live_capture_bundle(
+            args.live_session_packet,
+            args.out,
+            config=ProviderMarketDataLiveCaptureBundleConfig(
+                preflight_config_path=args.preflight_config,
+                adapter_command_template=args.adapter_command_template,
+                ingest_output_dir=args.ingest_output_dir,
+                require_preflight_ready=not args.no_require_preflight_ready,
+                require_env_present=args.require_env_present,
+                allow_existing_captures=args.allow_existing_captures,
             ),
         )
         print(result.summary.to_string(index=False))
