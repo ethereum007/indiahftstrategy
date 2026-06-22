@@ -191,6 +191,10 @@
   controls across dispatch, send, and ack artifacts before final dry-run bridge
   proof can pass, preserving direct breach counters and broker-carried route
   proof in round-trip summary/config artifacts.
+- Broker dispatch round-trip review now also reconciles broker resume-route
+  proof across dispatch/send/ack artifacts, revalidating primary and
+  closed-incident branches before final dry-run bridge proof can inherit
+  post-halt authorization.
 - Broker dispatch round-trip review now emits manifest-tracked
   `broker_dispatch_roundtrip_action_queue.csv` and
   `broker_dispatch_roundtrip_runbook.md` scheduler handoffs, routing failed

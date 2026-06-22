@@ -3900,7 +3900,15 @@ allocation-safe, and concentration-OK in every component. The round-trip
 artifacts preserve these controls as `route_readiness_*` and
 `route_broker_route_readiness` fields in
 `broker_dispatch_roundtrip_summary.csv` and
-`broker_dispatch_roundtrip_config.json`.
+`broker_dispatch_roundtrip_config.json`. If component configs retained
+post-halt resume route proof, the final round-trip review revalidates the
+broker resume route branch and the closed-incident branch across dispatch,
+send, and ack artifacts. It preserves the reconciled branches as
+`route_broker_resume_broker_route_readiness_*`,
+`route_broker_resume_incident_broker_route_readiness_*`, and nested
+`route_broker_resume_gate` config blocks, and routes stale identity, route
+gaps, missing launch controls, allocation breaches, or concentration breaches
+back to `review-resume-gate`.
 If the component configs retained the shadow-broker broker-vendor wrapper
 aggregate, the round-trip review revalidates component-wide wrapper coverage
 and carries it as `shadow_broker_vendor_data_readiness_*` plus nested
