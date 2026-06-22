@@ -91,6 +91,11 @@
   live ingest, batch readiness, capture row counts, manifest proof, and
   credential-safe session packets while blocking `*.csv.rehearsal.json`
   synthetic captures from being marked research-ready.
+- Provider market-data research handoff now turns research-ready live evidence
+  into executable strategy-research command plans:
+  `handoff-provider-market-data-research` maps provider top-of-book tick folds
+  to imbalance edge/replay walk-forward runs and keeps synthetic smoke evidence
+  or unsupported strategy lanes blocked until the needed real inputs exist.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

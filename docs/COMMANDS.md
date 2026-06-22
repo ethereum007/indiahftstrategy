@@ -4452,6 +4452,30 @@ classify a smoke test; the recommendation remains to replace synthetic captures
 with real Arrow.money/iRage provider captures before feeding walk-forward
 research.
 
+Turn research-ready live evidence into concrete strategy research commands:
+
+```powershell
+python -m hft_cli handoff-provider-market-data-research `
+  --live-evidence-dir runs\provider_market_data_live_evidence\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_research_handoff\arrow_ws_nse_2026_06_23 `
+  --strategy imbalance `
+  --output-root runs\provider_market_data_research\arrow_ws_nse_2026_06_23 `
+  --min-tick-folds 2 `
+  --tick-size 0.05 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_research_handoff_datasets.csv`,
+`provider_market_data_research_handoff_commands.csv`, action/config/runbook
+artifacts, and a manifest. The first supported handoff maps top-of-book provider
+tick folds to `walkforward-imbalance-edge` and the follow-on
+`walkforward-imbalance-replay` command that consumes the edge
+`candidate_config.json`. Synthetic smoke evidence and unsupported strategy
+lanes stay blocked: lead-lag needs explicit leader/laggard groups, while
+settlement, parity, and surface market-making need option-chain or surface
+inputs in addition to top-of-book ticks.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

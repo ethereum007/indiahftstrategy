@@ -122,6 +122,10 @@ from reports.provider_market_data_live_evidence import (
     ProviderMarketDataLiveEvidenceConfig,
     write_provider_market_data_live_evidence_review,
 )
+from reports.provider_market_data_research_handoff import (
+    ProviderMarketDataResearchHandoffConfig,
+    write_provider_market_data_research_handoff,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1146,6 +1150,24 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_evidence.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_evidence.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_evidence.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_research_handoff = sub.add_parser(
+        "handoff-provider-market-data-research",
+        help="Turn research-ready provider live evidence into concrete strategy walk-forward command plans.",
+    )
+    provider_market_data_research_handoff.add_argument("--live-evidence-dir", required=True)
+    provider_market_data_research_handoff.add_argument("--out", required=True)
+    provider_market_data_research_handoff.add_argument("--strategy", action="append", dest="strategies")
+    provider_market_data_research_handoff.add_argument("--no-require-research-ready", action="store_true")
+    provider_market_data_research_handoff.add_argument("--allow-synthetic-smoke", action="store_true")
+    provider_market_data_research_handoff.add_argument("--min-tick-folds", type=int, default=2)
+    provider_market_data_research_handoff.add_argument("--tick-size", type=float, default=0.05)
+    provider_market_data_research_handoff.add_argument("--market", default="")
+    provider_market_data_research_handoff.add_argument("--instrument-id", default="PROVIDER_BOOK")
+    provider_market_data_research_handoff.add_argument("--output-root", default="runs/provider_market_data_research")
+    provider_market_data_research_handoff.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_research_handoff.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_research_handoff.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3604,6 +3626,38 @@ def main(argv: list[str] | None = None) -> int:
                 require_batch_ready=not args.no_require_batch_ready,
                 require_manifest=not args.no_require_manifest,
                 min_capture_rows=args.min_capture_rows,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "handoff-provider-market-data-research":
+        result = write_provider_market_data_research_handoff(
+            args.live_evidence_dir,
+            args.out,
+            config=ProviderMarketDataResearchHandoffConfig(
+                strategies=(
+                    tuple(args.strategies)
+                    if args.strategies
+                    else ProviderMarketDataResearchHandoffConfig().strategies
+                ),
+                require_research_ready=not args.no_require_research_ready,
+                allow_synthetic_smoke=args.allow_synthetic_smoke,
+                min_tick_folds=args.min_tick_folds,
+                tick_size=args.tick_size,
+                market=args.market,
+                instrument_id=args.instrument_id,
+                output_root=args.output_root,
             ),
         )
         print(result.summary.to_string(index=False))
