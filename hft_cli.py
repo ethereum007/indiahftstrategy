@@ -118,6 +118,10 @@ from reports.provider_market_data_live_rehearsal import (
     ProviderMarketDataLiveRehearsalConfig,
     write_provider_market_data_live_rehearsal,
 )
+from reports.provider_market_data_live_evidence import (
+    ProviderMarketDataLiveEvidenceConfig,
+    write_provider_market_data_live_evidence_review,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1127,6 +1131,21 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_ingest.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_ingest.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_ingest.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_live_evidence = sub.add_parser(
+        "review-provider-market-data-live-evidence",
+        help="Review live provider ingest artifacts and block synthetic rehearsal captures from research evidence.",
+    )
+    provider_market_data_live_evidence.add_argument("--live-ingest-dir", required=True)
+    provider_market_data_live_evidence.add_argument("--out", required=True)
+    provider_market_data_live_evidence.add_argument("--allow-synthetic-rehearsal", action="store_true")
+    provider_market_data_live_evidence.add_argument("--no-require-ingest-ready", action="store_true")
+    provider_market_data_live_evidence.add_argument("--no-require-batch-ready", action="store_true")
+    provider_market_data_live_evidence.add_argument("--no-require-manifest", action="store_true")
+    provider_market_data_live_evidence.add_argument("--min-capture-rows", type=int, default=1)
+    provider_market_data_live_evidence.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_live_evidence.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_live_evidence.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3560,6 +3579,31 @@ def main(argv: list[str] | None = None) -> int:
                 tick_size=args.tick_size,
                 max_p99_gap_ns=args.max_p99_gap_ns,
                 max_median_spread_ticks=args.max_median_spread_ticks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-live-evidence":
+        result = write_provider_market_data_live_evidence_review(
+            args.live_ingest_dir,
+            args.out,
+            config=ProviderMarketDataLiveEvidenceConfig(
+                allow_synthetic_rehearsal=args.allow_synthetic_rehearsal,
+                require_ingest_ready=not args.no_require_ingest_ready,
+                require_batch_ready=not args.no_require_batch_ready,
+                require_manifest=not args.no_require_manifest,
+                min_capture_rows=args.min_capture_rows,
             ),
         )
         print(result.summary.to_string(index=False))

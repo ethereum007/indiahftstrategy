@@ -4432,6 +4432,26 @@ session packet. It writes `provider_market_data_live_ingest_summary.csv`,
 and a manifest that fingerprints the session packet, client packet, captures,
 and batch output manifest.
 
+Review the live ingest output before treating it as research evidence:
+
+```powershell
+python -m hft_cli review-provider-market-data-live-evidence `
+  --live-ingest-dir runs\provider_market_data_live_ingest\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_live_evidence\arrow_ws_nse_2026_06_23 `
+  --min-capture-rows 100000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_live_evidence_summary.csv`,
+`provider_market_data_live_evidence_captures.csv`, check/action/config
+artifacts, and a manifest. It blocks captures that still have rehearsal
+sidecars (`*.csv.rehearsal.json`) from being marked research-ready, even if the
+ingest and batch pipelines passed. Use `--allow-synthetic-rehearsal` only to
+classify a smoke test; the recommendation remains to replace synthetic captures
+with real Arrow.money/iRage provider captures before feeding walk-forward
+research.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

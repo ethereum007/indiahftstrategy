@@ -86,6 +86,11 @@
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured
   provider batch ingestion and manifests the resulting proof chain.
+- Provider market-data live evidence review now protects research handoff from
+  rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
+  live ingest, batch readiness, capture row counts, manifest proof, and
+  credential-safe session packets while blocking `*.csv.rehearsal.json`
+  synthetic captures from being marked research-ready.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

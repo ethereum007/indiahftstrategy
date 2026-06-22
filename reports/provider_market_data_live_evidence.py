@@ -1,0 +1,636 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from reports.manifest import write_experiment_manifest
+
+
+BATCH_SUMMARY_NAME = "provider_market_data_batch_summary.csv"
+
+
+@dataclass(frozen=True)
+class ProviderMarketDataLiveEvidenceConfig:
+    allow_synthetic_rehearsal: bool = False
+    require_ingest_ready: bool = True
+    require_batch_ready: bool = True
+    require_manifest: bool = True
+    min_capture_rows: int = 1
+
+
+@dataclass(frozen=True)
+class ProviderMarketDataLiveEvidenceReport:
+    captures: pd.DataFrame
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    action_queue: pd.DataFrame
+    config: dict[str, Any]
+    output_dir: Path | None = None
+
+    @property
+    def ready(self) -> bool:
+        if self.summary.empty:
+            return False
+        return bool(self.summary.iloc[0]["ready"])
+
+
+def write_provider_market_data_live_evidence_review(
+    live_ingest_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    config: ProviderMarketDataLiveEvidenceConfig | None = None,
+) -> ProviderMarketDataLiveEvidenceReport:
+    report = evaluate_provider_market_data_live_evidence(live_ingest_dir, config=config)
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    report.captures.to_csv(out / "provider_market_data_live_evidence_captures.csv", index=False)
+    report.checks.to_csv(out / "provider_market_data_live_evidence_checks.csv", index=False)
+    report.summary.to_csv(out / "provider_market_data_live_evidence_summary.csv", index=False)
+    report.action_queue.to_csv(out / "provider_market_data_live_evidence_action_queue.csv", index=False)
+    (out / "provider_market_data_live_evidence_config.json").write_text(
+        json.dumps(report.config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "provider_market_data_live_evidence_runbook.md").write_text(
+        _runbook_markdown(report.summary.iloc[0], report.captures, report.action_queue),
+        encoding="utf-8",
+    )
+    ingest_dir = Path(live_ingest_dir)
+    inputs: dict[str, Any] = {"live_ingest_dir": ingest_dir} if ingest_dir.exists() else {}
+    live_packet = Path(str(report.summary.iloc[0]["live_session_packet_path"]))
+    if live_packet.exists():
+        inputs["live_session_packet"] = live_packet
+    capture_paths = [Path(str(path)) for path in report.captures["capture_path"].astype(str).tolist()] if not report.captures.empty else []
+    if capture_paths:
+        inputs["captures"] = [path for path in capture_paths if path.exists()]
+    batch_manifest = Path(str(report.summary.iloc[0]["batch_output_dir"])) / "manifest.json"
+    if batch_manifest.exists():
+        inputs["batch_manifest"] = batch_manifest
+    write_experiment_manifest(
+        out,
+        run_type="provider_market_data_live_evidence_review",
+        parameters={"config": asdict(config or ProviderMarketDataLiveEvidenceConfig())},
+        inputs=inputs,
+        extra={
+            "ready": bool(report.summary.iloc[0]["ready"]),
+            "research_ready": bool(report.summary.iloc[0]["research_ready"]),
+            "synthetic_capture_count": int(report.summary.iloc[0]["synthetic_capture_count"]),
+            "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
+        },
+    )
+    return ProviderMarketDataLiveEvidenceReport(
+        report.captures,
+        report.checks,
+        report.summary,
+        report.action_queue,
+        report.config,
+        out,
+    )
+
+
+def evaluate_provider_market_data_live_evidence(
+    live_ingest_dir: str | Path,
+    *,
+    config: ProviderMarketDataLiveEvidenceConfig | None = None,
+) -> ProviderMarketDataLiveEvidenceReport:
+    config = _normalize_config(config or ProviderMarketDataLiveEvidenceConfig())
+    ingest_dir = Path(live_ingest_dir)
+    ingest_summary, summary_error = _read_csv(ingest_dir / "provider_market_data_live_ingest_summary.csv")
+    ingest_windows, windows_error = _read_csv(ingest_dir / "provider_market_data_live_ingest_windows.csv")
+    ingest_config, config_error = _read_json(ingest_dir / "provider_market_data_live_ingest_config.json")
+    manifest, manifest_error = _read_json(ingest_dir / "manifest.json")
+    live_packet_path = Path(_first_text(ingest_summary, "live_session_packet_path"))
+    live_packet, packet_error = _read_json(live_packet_path)
+    captures = _captures(ingest_windows, config)
+    batch = _batch_status(ingest_summary, ingest_config)
+    checks = pd.DataFrame(
+        _checks(
+            ingest_dir,
+            ingest_summary,
+            summary_error,
+            ingest_windows,
+            windows_error,
+            ingest_config,
+            config_error,
+            manifest,
+            manifest_error,
+            live_packet_path,
+            live_packet,
+            packet_error,
+            captures,
+            batch,
+            config,
+        )
+    )
+    ready = bool(not checks.empty and checks["passed"].astype(bool).all())
+    research_ready = bool(ready and int(captures["synthetic_rehearsal"].astype(bool).sum()) == 0)
+    action_queue = _action_queue(checks, ready, research_ready, captures)
+    summary = _summary(ingest_dir, ingest_summary, live_packet_path, live_packet, captures, batch, checks, action_queue, config, ready, research_ready)
+    evidence_config = _config(summary.iloc[0], ingest_dir, ingest_summary, ingest_config, manifest, live_packet, captures, batch, checks, action_queue, config)
+    return ProviderMarketDataLiveEvidenceReport(captures, checks, summary, action_queue, evidence_config)
+
+
+def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
+    if not path.exists():
+        return pd.DataFrame(), f"{path.name} does not exist"
+    try:
+        return pd.read_csv(path), ""
+    except (OSError, pd.errors.ParserError) as exc:
+        return pd.DataFrame(), f"{path.name} is not readable: {exc}"
+
+
+def _read_json(path: Path) -> tuple[dict[str, Any], str]:
+    if not str(path) or str(path) == ".":
+        return {}, "JSON path is missing"
+    if not path.exists():
+        return {}, f"{path.name} does not exist"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {}, f"{path.name} is not readable: {exc}"
+    except json.JSONDecodeError as exc:
+        return {}, f"{path.name} JSON is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return {}, f"{path.name} JSON must be an object"
+    return payload, ""
+
+
+def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfig) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for index, row in enumerate(windows.to_dict(orient="records") if not windows.empty else [], start=1):
+        capture_path = Path(_text(row.get("capture_path")))
+        sidecar_path = capture_path.with_suffix(capture_path.suffix + ".rehearsal.json") if str(capture_path) else Path("")
+        sidecar, sidecar_error = _read_json(sidecar_path) if str(sidecar_path) and sidecar_path.exists() else ({}, "")
+        capture_exists = bool(str(capture_path) and capture_path.exists() and capture_path.is_file())
+        capture_rows = _capture_rows(capture_path) if capture_exists else 0
+        synthetic = bool(sidecar_path.exists() and _truthy(sidecar.get("synthetic_only", True)))
+        rows.append(
+            {
+                "priority": index,
+                "label": _text(row.get("label"), f"window_{index}"),
+                "pipeline_label": _text(row.get("pipeline_label"), _text(row.get("label"), f"window_{index}")),
+                "capture_path": str(capture_path),
+                "capture_exists": capture_exists,
+                "capture_size_bytes": int(capture_path.stat().st_size) if capture_exists else 0,
+                "capture_rows": int(capture_rows),
+                "min_capture_rows": int(config.min_capture_rows),
+                "row_count_ok": bool(capture_rows >= config.min_capture_rows),
+                "rehearsal_sidecar_path": str(sidecar_path),
+                "rehearsal_sidecar_exists": bool(sidecar_path.exists()),
+                "synthetic_rehearsal": synthetic,
+                "sidecar_source": _text(sidecar.get("source")),
+                "sidecar_error": sidecar_error,
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=[
+            "priority",
+            "label",
+            "pipeline_label",
+            "capture_path",
+            "capture_exists",
+            "capture_size_bytes",
+            "capture_rows",
+            "min_capture_rows",
+            "row_count_ok",
+            "rehearsal_sidecar_path",
+            "rehearsal_sidecar_exists",
+            "synthetic_rehearsal",
+            "sidecar_source",
+            "sidecar_error",
+        ],
+    )
+
+
+def _capture_rows(path: Path) -> int:
+    try:
+        return int(len(pd.read_csv(path)))
+    except (OSError, pd.errors.ParserError, UnicodeDecodeError):
+        return 0
+
+
+def _batch_status(summary: pd.DataFrame, ingest_config: dict[str, Any]) -> dict[str, Any]:
+    batch_output = _first_text(summary, "batch_output_dir") or _text(_mapping(ingest_config.get("effective_batch_config")).get("batch_output_dir"))
+    batch_dir = Path(batch_output)
+    batch_summary_path = batch_dir / BATCH_SUMMARY_NAME
+    batch_summary, batch_summary_error = _read_csv(batch_summary_path)
+    batch_ready = _first_bool(batch_summary, "ready") if not batch_summary.empty else False
+    return {
+        "batch_output_dir": str(batch_dir),
+        "batch_summary_path": str(batch_summary_path),
+        "batch_summary_exists": bool(batch_summary_path.exists()),
+        "batch_summary_error": batch_summary_error,
+        "batch_ready": bool(batch_ready),
+        "batch_dataset_count": int(_first_number(batch_summary, "dataset_count")) if not batch_summary.empty else 0,
+    }
+
+
+def _checks(
+    ingest_dir: Path,
+    ingest_summary: pd.DataFrame,
+    summary_error: str,
+    ingest_windows: pd.DataFrame,
+    windows_error: str,
+    ingest_config: dict[str, Any],
+    config_error: str,
+    manifest: dict[str, Any],
+    manifest_error: str,
+    live_packet_path: Path,
+    live_packet: dict[str, Any],
+    packet_error: str,
+    captures: pd.DataFrame,
+    batch: dict[str, Any],
+    config: ProviderMarketDataLiveEvidenceConfig,
+) -> list[dict[str, Any]]:
+    capture_count = int(len(captures))
+    synthetic_count = int(captures["synthetic_rehearsal"].astype(bool).sum()) if not captures.empty else 0
+    captures_exist = bool(captures["capture_exists"].astype(bool).all()) if not captures.empty else False
+    row_counts_ok = bool(captures["row_count_ok"].astype(bool).all()) if not captures.empty else False
+    ingest_ready = _first_bool(ingest_summary, "ready")
+    summary_packet = _first_text(ingest_summary, "live_session_packet_path")
+    return [
+        _check("live_ingest_dir_exists", str(ingest_dir), "exists", True, ingest_dir.exists(), "live ingest directory is required"),
+        _check("live_ingest_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live ingest summary could not be read"),
+        _check("live_ingest_windows_readable", windows_error or "ok", "is", "ok", not windows_error, windows_error or "live ingest windows could not be read"),
+        _check("live_ingest_config_readable", config_error or "ok", "is", "ok", not config_error, config_error or "live ingest config could not be read"),
+        _check("live_ingest_manifest_exists", manifest_error or "ok", "is", "ok", not manifest_error or not config.require_manifest, manifest_error or "live ingest manifest is required"),
+        _check("live_ingest_manifest_type", _text(manifest.get("run_type")), "is", "provider_market_data_live_session_ingest", _text(manifest.get("run_type")) == "provider_market_data_live_session_ingest" or not config.require_manifest, "live ingest manifest run_type is not the expected provider live ingest"),
+        _check("live_ingest_ready", ingest_ready, "is", True, ingest_ready or not config.require_ingest_ready, "live ingest summary is not ready"),
+        _check("live_session_packet_path_present", summary_packet, "is_not", "", bool(summary_packet), "live ingest summary must point to the live session packet"),
+        _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
+        _check("credential_values_not_stored", bool(_mapping(live_packet.get("authentication")).get("values_stored", True)), "is", False, bool(_mapping(live_packet.get("authentication")).get("values_stored", True)) is False, "live session packet must not store credential values"),
+        _check("capture_windows_present", capture_count, ">=", 1, capture_count >= 1, "live evidence requires at least one capture window"),
+        _check("capture_files_exist", int(captures["capture_exists"].astype(bool).sum()) if not captures.empty else 0, "==", capture_count, captures_exist, "all expected capture files must exist"),
+        _check("capture_rows_meet_minimum", int(captures["row_count_ok"].astype(bool).sum()) if not captures.empty else 0, "==", capture_count, row_counts_ok, "all captures must meet minimum row count"),
+        _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_rehearsal else "allowed", synthetic_count == 0 or config.allow_synthetic_rehearsal, "synthetic rehearsal captures cannot be treated as live provider evidence"),
+        _check("batch_summary_exists", bool(batch["batch_summary_exists"]), "is", True, bool(batch["batch_summary_exists"]), "provider batch summary is required"),
+        _check("batch_ready", bool(batch["batch_ready"]), "is", True, bool(batch["batch_ready"]) or not config.require_batch_ready, "provider batch summary is not ready"),
+    ]
+
+
+def _summary(
+    ingest_dir: Path,
+    ingest_summary: pd.DataFrame,
+    live_packet_path: Path,
+    live_packet: dict[str, Any],
+    captures: pd.DataFrame,
+    batch: dict[str, Any],
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+    config: ProviderMarketDataLiveEvidenceConfig,
+    ready: bool,
+    research_ready: bool,
+) -> pd.DataFrame:
+    synthetic_count = int(captures["synthetic_rehearsal"].astype(bool).sum()) if not captures.empty else 0
+    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    blocked = int((action_queue["queue_status"].astype(str) == "blocked").sum()) if not action_queue.empty else 0
+    next_action = action_queue.iloc[0] if not action_queue.empty else None
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "research_ready": research_ready,
+                "synthetic_only": bool(synthetic_count > 0),
+                "live_ingest_dir": str(ingest_dir),
+                "live_session_packet_path": str(live_packet_path),
+                "provider": _text(live_packet.get("provider"), _first_text(ingest_summary, "provider")),
+                "transport": _text(live_packet.get("transport"), _first_text(ingest_summary, "transport")),
+                "market": _text(live_packet.get("market"), _first_text(ingest_summary, "market")),
+                "kind": _text(live_packet.get("kind"), _first_text(ingest_summary, "kind")),
+                "capture_count": int(len(captures)),
+                "synthetic_capture_count": synthetic_count,
+                "min_capture_rows": int(config.min_capture_rows),
+                "batch_output_dir": str(batch["batch_output_dir"]),
+                "batch_ready": bool(batch["batch_ready"]),
+                "allow_synthetic_rehearsal": bool(config.allow_synthetic_rehearsal),
+                "failed_checks": failed,
+                "failed_check_names": ";".join(checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()) if not checks.empty else "",
+                "ready_action_count": int((action_queue["queue_status"].astype(str) == "ready").sum()) if not action_queue.empty else 0,
+                "blocked_action_count": blocked,
+                "next_gate": "" if next_action is None else str(next_action["next_gate"]),
+                "next_gate_help_command": "" if next_action is None else str(next_action["next_gate_help_command"]),
+                "primary_action_status": "" if next_action is None else str(next_action["queue_status"]),
+                "recommendation": _recommendation(ready, research_ready, synthetic_count),
+            }
+        ]
+    )
+
+
+def _action_queue(checks: pd.DataFrame, ready: bool, research_ready: bool, captures: pd.DataFrame) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else pd.DataFrame()
+    for _, row in failed.iterrows():
+        check = str(row["check"])
+        next_gate = _next_gate_for_check(check)
+        rows.append(
+            {
+                "priority": len(rows) + 1,
+                "queue_status": "blocked",
+                "action": _repair_action(check),
+                "reason": str(row["reason"]),
+                "next_gate": next_gate,
+                "next_gate_help_command": _next_gate_help_command(next_gate),
+            }
+        )
+    synthetic_count = int(captures["synthetic_rehearsal"].astype(bool).sum()) if not captures.empty else 0
+    if not rows and ready and research_ready:
+        rows.append(
+            {
+                "priority": 1,
+                "queue_status": "ready",
+                "action": "feed_live_provider_market_data_to_research",
+                "reason": "live ingest passed and no synthetic rehearsal captures were detected",
+                "next_gate": "review-data-readiness",
+                "next_gate_help_command": "batch output contains provider live data-readiness evidence for research",
+            }
+        )
+    elif not rows and ready and synthetic_count > 0:
+        rows.append(
+            {
+                "priority": 1,
+                "queue_status": "ready",
+                "action": "replace_synthetic_captures_with_provider_live_captures",
+                "reason": "synthetic rehearsal evidence passed only as backend smoke test",
+                "next_gate": "provider_fetcher_live_run",
+                "next_gate_help_command": "run the approved provider adapter against Arrow.money/iRage, then rerun ingest and live evidence review",
+            }
+        )
+    return pd.DataFrame(
+        rows,
+        columns=["priority", "queue_status", "action", "reason", "next_gate", "next_gate_help_command"],
+    )
+
+
+def _config(
+    summary: pd.Series,
+    ingest_dir: Path,
+    ingest_summary: pd.DataFrame,
+    ingest_config: dict[str, Any],
+    manifest: dict[str, Any],
+    live_packet: dict[str, Any],
+    captures: pd.DataFrame,
+    batch: dict[str, Any],
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+    config: ProviderMarketDataLiveEvidenceConfig,
+) -> dict[str, Any]:
+    actions = _records(action_queue)
+    return {
+        "schema_version": 1,
+        "ready": bool(summary["ready"]),
+        "research_ready": bool(summary["research_ready"]),
+        "synthetic_only": bool(summary["synthetic_only"]),
+        "parameters": asdict(config),
+        "live_ingest_dir": str(ingest_dir),
+        "ingest_summary": _first_record(ingest_summary),
+        "ingest_config": ingest_config,
+        "ingest_manifest_run_type": _text(manifest.get("run_type")),
+        "live_session_packet": _safe_packet(live_packet),
+        "captures": _records(captures),
+        "batch": batch,
+        "checks": _records(checks),
+        "next_gate": str(summary["next_gate"]),
+        "next_gate_help_command": str(summary["next_gate_help_command"]),
+        "next_actions": actions,
+        "ready_actions": [row for row in actions if row.get("queue_status") == "ready"],
+        "blocked_actions": [row for row in actions if row.get("queue_status") == "blocked"],
+        "primary_action_status": str(summary["primary_action_status"]),
+        "primary_action": actions[0] if actions else {},
+    }
+
+
+def _safe_packet(packet: dict[str, Any]) -> dict[str, Any]:
+    auth = _mapping(packet.get("authentication"))
+    return {
+        "schema_version": packet.get("schema_version"),
+        "ready": bool(packet.get("ready")),
+        "provider": _text(packet.get("provider")),
+        "transport": _text(packet.get("transport")),
+        "market": _text(packet.get("market")),
+        "kind": _text(packet.get("kind")),
+        "client_packet_path": _text(packet.get("client_packet_path")),
+        "authentication": {
+            "env_vars": _string_list(auth.get("env_vars")),
+            "values_stored": bool(auth.get("values_stored", True)),
+            "injection": _text(auth.get("injection")),
+        },
+        "capture_window_count": len(_list(packet.get("capture_windows"))),
+    }
+
+
+def _recommendation(ready: bool, research_ready: bool, synthetic_count: int) -> str:
+    if research_ready:
+        return "feed_walkforward_research"
+    if ready and synthetic_count > 0:
+        return "rehearsal_backend_smoke_only"
+    return "fix_provider_market_data_live_evidence"
+
+
+def _next_gate_for_check(check: str) -> str:
+    if check.startswith("live_ingest"):
+        return "ingest-provider-market-data-live-session"
+    if check.startswith("live_session_packet") or check.startswith("credential"):
+        return "plan-provider-market-data-live-session"
+    if check.startswith("capture"):
+        return "provider_fetcher_live_run"
+    if check.startswith("synthetic"):
+        return "provider_fetcher_live_run"
+    if check.startswith("batch"):
+        return "pipeline-provider-market-data-batch"
+    return "review-provider-market-data-live-evidence"
+
+
+def _next_gate_help_command(next_gate: str) -> str:
+    if next_gate in {
+        "ingest-provider-market-data-live-session",
+        "plan-provider-market-data-live-session",
+        "pipeline-provider-market-data-batch",
+        "review-provider-market-data-live-evidence",
+    }:
+        return f"python -m hft_cli {next_gate} --help"
+    if next_gate == "provider_fetcher_live_run":
+        return "run the approved provider adapter against Arrow.money/iRage and replace rehearsal captures"
+    if next_gate == "review-data-readiness":
+        return "batch output contains provider live data-readiness evidence for research"
+    return ""
+
+
+def _repair_action(check: str) -> str:
+    if check.startswith("live_ingest"):
+        return "repair_provider_live_ingest_artifacts"
+    if check.startswith("live_session_packet") or check.startswith("credential"):
+        return "repair_provider_live_session_packet"
+    if check.startswith("capture"):
+        return "produce_real_provider_live_captures"
+    if check.startswith("synthetic"):
+        return "replace_synthetic_rehearsal_captures"
+    if check.startswith("batch"):
+        return "repair_provider_market_data_batch"
+    return "repair_provider_market_data_live_evidence"
+
+
+def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    lines = [
+        "# Provider Market Data Live Evidence Review",
+        "",
+        f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
+        f"- Research ready: {'yes' if bool(summary['research_ready']) else 'no'}",
+        f"- Synthetic captures: {summary['synthetic_capture_count']}",
+        f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
+        f"- Recommendation: {summary['recommendation']}",
+        "",
+        "## Captures",
+        "",
+        _captures_table(captures),
+        "",
+        "## Actions",
+        "",
+        _actions_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _captures_table(captures: pd.DataFrame) -> str:
+    if captures.empty:
+        return "_None_"
+    rows = []
+    for row in captures.to_dict(orient="records"):
+        rows.append(
+            [
+                str(row.get("priority", "")),
+                _text(row.get("label")),
+                _text(row.get("capture_path")),
+                str(row.get("capture_rows", "")),
+                "yes" if _truthy(row.get("synthetic_rehearsal")) else "no",
+            ]
+        )
+    return _markdown_table(["#", "Label", "Capture", "Rows", "Synthetic"], rows)
+
+
+def _actions_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    rows = []
+    for row in action_queue.to_dict(orient="records"):
+        rows.append(
+            [
+                str(row.get("priority", "")),
+                _text(row.get("queue_status")),
+                _text(row.get("action")),
+                _text(row.get("next_gate")),
+                _text(row.get("reason")),
+            ]
+        )
+    return _markdown_table(["#", "Status", "Action", "Next gate", "Reason"], rows)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(value.replace("|", "\\|").replace("\n", " ") for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _check(check: str, value: object, operator: str, threshold: object, passed: bool, reason: str) -> dict[str, Any]:
+    return {
+        "check": check,
+        "value": value,
+        "operator": operator,
+        "threshold": threshold,
+        "passed": bool(passed),
+        "reason": "" if passed else reason,
+    }
+
+
+def _normalize_config(config: ProviderMarketDataLiveEvidenceConfig) -> ProviderMarketDataLiveEvidenceConfig:
+    return ProviderMarketDataLiveEvidenceConfig(
+        allow_synthetic_rehearsal=bool(config.allow_synthetic_rehearsal),
+        require_ingest_ready=bool(config.require_ingest_ready),
+        require_batch_ready=bool(config.require_batch_ready),
+        require_manifest=bool(config.require_manifest),
+        min_capture_rows=int(config.min_capture_rows),
+    )
+
+
+def _first_record(frame: pd.DataFrame | None) -> dict[str, Any]:
+    if frame is None or frame.empty:
+        return {}
+    return {str(key): _jsonable(value) for key, value in frame.iloc[0].to_dict().items()}
+
+
+def _first_text(frame: pd.DataFrame, column: str) -> str:
+    if frame.empty or column not in frame.columns:
+        return ""
+    return _text(frame.iloc[0][column])
+
+
+def _first_bool(frame: pd.DataFrame, column: str) -> bool:
+    if frame.empty or column not in frame.columns:
+        return False
+    return _truthy(frame.iloc[0][column])
+
+
+def _first_number(frame: pd.DataFrame, column: str) -> float:
+    if frame.empty or column not in frame.columns:
+        return 0.0
+    try:
+        return float(frame.iloc[0][column])
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(";") if item.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
+    if frame is None or frame.empty:
+        return []
+    return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
+
+
+def _text(value: object, fallback: str = "") -> str:
+    try:
+        if pd.isna(value):
+            return fallback
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return text if text else fallback
+
+
+def _truthy(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and not pd.isna(value):
+        return bool(value)
+    return _text(value).lower() in {"1", "true", "yes", "ready"}
+
+
+def _jsonable(value: object) -> object:
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
