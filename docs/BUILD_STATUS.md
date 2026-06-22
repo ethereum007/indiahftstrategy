@@ -62,6 +62,11 @@
   validates ready request templates, env-var contracts, normalized CSV output
   schema, runtime budgets, and emits a manifest-backed execution packet for the
   eventual Arrow.money/iRage client without making external API calls.
+- Provider market-data live session planning now creates credential-safe capture
+  packets before the market opens: `plan-provider-market-data-live-session`
+  validates the dry-run client packet, NSE session windows, weekday, optional
+  runtime env-var presence, per-window capture paths, and emits the exact
+  post-capture `pipeline-provider-market-data-batch` command.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

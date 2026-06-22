@@ -1,0 +1,168 @@
+import json
+
+import pandas as pd
+
+from hft_cli import main
+from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
+from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
+from reports.provider_market_data_client import write_provider_market_data_client_plan
+from reports.provider_market_data_fetcher import write_provider_market_data_fetcher_plan
+from reports.provider_market_data_live_session import (
+    ProviderMarketDataLiveSessionConfig,
+    write_provider_market_data_live_session_plan,
+)
+
+
+def _write_client_packet(tmp_path, *, transport="websocket"):
+    source_uri = (
+        "https://api.arrow.money/market-data/nse/ticks"
+        if transport == "rest"
+        else "wss://feed.arrow.money/market-data/nse"
+    )
+    source_report = write_market_data_source_plan(
+        tmp_path / f"source_{transport}",
+        config=MarketDataSourceConfig(
+            provider="arrow_money",
+            kind="ticks",
+            transport=transport,
+            source_uri=source_uri,
+            auth_env_vars=("ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"),
+        ),
+    )
+    fetch_report = write_market_data_fetch_plan(
+        source_report.output_dir / "market_data_source_config.json",
+        tmp_path / f"fetch_{transport}",
+        config=MarketDataFetchConfig(
+            symbols=("NIFTY-I", "BANKNIFTY-I"),
+            window_start="2026-06-23 09:15:00" if transport == "rest" else "",
+            window_end="2026-06-23 15:30:00" if transport == "rest" else "",
+        ),
+    )
+    fetcher_report = write_provider_market_data_fetcher_plan(
+        fetch_report.output_dir / "market_data_fetch_config.json",
+        tmp_path / f"fetcher_{transport}",
+    )
+    client_report = write_provider_market_data_client_plan(
+        fetcher_report.output_dir / "provider_market_data_fetcher_config.json",
+        tmp_path / f"client_{transport}",
+    )
+    return client_report.output_dir / "provider_market_data_client_packet.json"
+
+
+def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_command(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    out_dir = tmp_path / "live_session"
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        out_dir,
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-10:00", "close=14:45-15:30"),
+            capture_dir=str(tmp_path / "captures"),
+            batch_output_dir=str(tmp_path / "batch"),
+            min_capture_rows=2,
+            pipeline_min_rows=2,
+            tick_size=0.05,
+            max_median_spread_ticks=2,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    windows = pd.read_csv(out_dir / "provider_market_data_live_session_windows.csv")
+    packet = json.loads((out_dir / "provider_market_data_live_session_packet.json").read_text(encoding="utf-8"))
+    config = json.loads((out_dir / "provider_market_data_live_session_config.json").read_text(encoding="utf-8"))
+    action_queue = pd.read_csv(out_dir / "provider_market_data_live_session_action_queue.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert summary["trade_date"] == "2026-06-23"
+    assert summary["window_count"] == 2
+    assert summary["session_open_local"] == "09:15"
+    assert summary["session_close_local"] == "15:30"
+    assert "--capture" in summary["post_capture_batch_command"]
+    assert "pipeline-provider-market-data-batch" in summary["post_capture_batch_command"]
+    assert "--min-unique-source-files 2" in summary["post_capture_batch_command"]
+    assert windows["label"].tolist() == ["open", "close"]
+    assert windows["within_market_session"].astype(bool).all()
+    assert packet["authentication"]["values_stored"] is False
+    assert packet["capture_windows"][0]["label"] == "open"
+    assert config["ready"]
+    assert config["primary_action"]["action"] == "run_provider_live_capture_windows"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert manifest["run_type"] == "provider_market_data_live_session_plan"
+
+
+def test_provider_market_data_live_session_plan_blocks_missing_runtime_env_when_required(tmp_path, monkeypatch):
+    client_packet = _write_client_packet(tmp_path)
+    monkeypatch.delenv("ARROW_MONEY_API_KEY", raising=False)
+    monkeypatch.delenv("ARROW_MONEY_API_SECRET", raising=False)
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:30",),
+            require_env_present=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "credential_env_vars_present_in_runtime" in failed
+    assert report.action_queue.loc[0, "next_gate"] == "provider_credentials_runtime"
+
+
+def test_provider_market_data_live_session_plan_blocks_out_of_session_window(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("preopen=09:00-09:10",),
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "windows_within_session" in failed
+    assert not bool(report.windows.loc[0, "within_market_session"])
+
+
+def test_cli_provider_market_data_live_session_accepts_rest_packet(tmp_path):
+    client_packet = _write_client_packet(tmp_path, transport="rest")
+    out_dir = tmp_path / "cli_live_session"
+
+    code = main(
+        [
+            "plan-provider-market-data-live-session",
+            "--client-packet",
+            str(client_packet),
+            "--out",
+            str(out_dir),
+            "--trade-date",
+            "2026-06-23",
+            "--window",
+            "open=09:15-09:45",
+            "--capture-dir",
+            str(tmp_path / "captures"),
+            "--batch-output-dir",
+            str(tmp_path / "batch"),
+            "--min-capture-rows",
+            "2",
+            "--pipeline-min-rows",
+            "2",
+            "--tick-size",
+            "0.05",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_live_session_summary.csv")
+    packet = json.loads((out_dir / "provider_market_data_live_session_packet.json").read_text(encoding="utf-8"))
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "transport"] == "rest"
+    assert packet["template_kind"] == "rest_backfill_request"

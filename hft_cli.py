@@ -102,6 +102,10 @@ from reports.provider_market_data_batch import (
     ProviderMarketDataBatchConfig,
     write_provider_market_data_batch_pipeline,
 )
+from reports.provider_market_data_live_session import (
+    ProviderMarketDataLiveSessionConfig,
+    write_provider_market_data_live_session_plan,
+)
 from reports.provider_market_data_pipeline import (
     ProviderMarketDataPipelineConfig,
     write_provider_market_data_pipeline,
@@ -1021,6 +1025,27 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_client.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_client.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_client.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_live_session = sub.add_parser(
+        "plan-provider-market-data-live-session",
+        help="Create a credential-safe live capture session plan from a provider client packet.",
+    )
+    provider_market_data_live_session.add_argument("--client-packet", required=True)
+    provider_market_data_live_session.add_argument("--out", required=True)
+    provider_market_data_live_session.add_argument("--trade-date", required=True)
+    provider_market_data_live_session.add_argument("--window", action="append", dest="windows")
+    provider_market_data_live_session.add_argument("--capture-dir", default="captures/provider_market_data")
+    provider_market_data_live_session.add_argument("--batch-output-dir", default="")
+    provider_market_data_live_session.add_argument("--min-capture-rows", type=int, default=1)
+    provider_market_data_live_session.add_argument("--pipeline-min-rows", type=int, default=1)
+    provider_market_data_live_session.add_argument("--tick-size", type=float, default=None)
+    provider_market_data_live_session.add_argument("--max-p99-gap-ns", type=float, default=None)
+    provider_market_data_live_session.add_argument("--max-median-spread-ticks", type=float, default=None)
+    provider_market_data_live_session.add_argument("--require-env-present", action="store_true")
+    provider_market_data_live_session.add_argument("--allow-weekend", action="store_true")
+    provider_market_data_live_session.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_live_session.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_live_session.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3316,6 +3341,39 @@ def main(argv: list[str] | None = None) -> int:
                 max_clock_skew_ms=args.max_clock_skew_ms,
                 max_local_buffer_rows=args.max_local_buffer_rows,
                 dry_run=True,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "plan-provider-market-data-live-session":
+        result = write_provider_market_data_live_session_plan(
+            args.client_packet,
+            args.out,
+            config=ProviderMarketDataLiveSessionConfig(
+                trade_date=args.trade_date,
+                windows=tuple(args.windows) if args.windows else ProviderMarketDataLiveSessionConfig(
+                    trade_date=args.trade_date
+                ).windows,
+                capture_dir=args.capture_dir,
+                batch_output_dir=args.batch_output_dir,
+                min_capture_rows=args.min_capture_rows,
+                pipeline_min_rows=args.pipeline_min_rows,
+                tick_size=args.tick_size,
+                max_p99_gap_ns=args.max_p99_gap_ns,
+                max_median_spread_ticks=args.max_median_spread_ticks,
+                require_env_present=args.require_env_present,
+                allow_weekend=args.allow_weekend,
             ),
         )
         print(result.summary.to_string(index=False))

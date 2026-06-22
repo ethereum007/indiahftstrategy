@@ -4321,6 +4321,34 @@ normalized output schema, runtime budgets, and credential env-var names/presence
 booleans, but never credential values. Its ready action is the explicit live-run
 approval gate for the provider client.
 
+Plan the live capture windows before running a credentialed provider client:
+
+```powershell
+python -m hft_cli plan-provider-market-data-live-session `
+  --client-packet runs\provider_market_data_clients\arrow_ws_nse\provider_market_data_client_packet.json `
+  --out runs\provider_market_data_live_sessions\arrow_ws_nse_2026_06_23 `
+  --trade-date 2026-06-23 `
+  --window open=09:15-10:00 `
+  --window close=14:45-15:30 `
+  --capture-dir captures\provider_market_data `
+  --batch-output-dir runs\provider_market_data_batches\arrow_ws_nse_2026_06_23 `
+  --min-capture-rows 100000 `
+  --pipeline-min-rows 100000 `
+  --tick-size 0.05 `
+  --max-p99-gap-ns 1000000000 `
+  --max-median-spread-ticks 2 `
+  --require-env-present `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_live_session_windows.csv`,
+`provider_market_data_live_session_packet.json`, summary/check/action/config
+artifacts, and a runbook. It records only credential environment-variable
+names and runtime presence booleans. The session packet includes per-window
+capture paths and the exact post-capture
+`pipeline-provider-market-data-batch` command.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 
