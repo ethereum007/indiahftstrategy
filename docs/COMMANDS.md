@@ -4342,6 +4342,32 @@ monotonic timestamps, row threshold, market/kind identity, capture fingerprint,
 and null counts. A ready review emits the exact `pipeline-vendor-market-data`
 handoff using `--adapter normalized`.
 
+To run that capture review and the normalized market-data pipeline as one root
+artifact, use:
+
+```powershell
+python -m hft_cli pipeline-provider-market-data `
+  --client-packet runs\provider_market_data_clients\arrow_ws_nse\provider_market_data_client_packet.json `
+  --capture captures\arrow_ws_nse_day1.csv `
+  --out runs\provider_market_data_roots\arrow_ws_nse_day1 `
+  --min-capture-rows 100000 `
+  --pipeline-min-rows 100000 `
+  --tick-size 0.05 `
+  --max-p99-gap-ns 1000000000 `
+  --max-median-spread-ticks 2 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_pipeline_summary.csv`,
+`provider_market_data_pipeline_components.csv`,
+`provider_market_data_pipeline_action_queue.csv`,
+`provider_market_data_pipeline_config.json`, a runbook, and a root manifest.
+The root folder nests `01_capture_review` and
+`02_vendor_market_data_pipeline`; when both are ready, the next gate is
+`review-data-readiness` using the nested
+`04_data_readiness\data_readiness_summary.csv`.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

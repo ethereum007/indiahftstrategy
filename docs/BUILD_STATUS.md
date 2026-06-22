@@ -67,6 +67,11 @@
   `review-provider-market-data-capture` checks normalized schema, row counts,
   timestamp parsing/monotonicity, capture fingerprints, and emits the exact
   `pipeline-vendor-market-data --adapter normalized` handoff.
+- Provider market-data root ingestion now combines capture review and the
+  normalized vendor/data-readiness pipeline:
+  `pipeline-provider-market-data` creates one manifest-backed folder with
+  component proof for the provider capture, nested normalized pipeline, action
+  queue, and research-ready `review-data-readiness` handoff.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts

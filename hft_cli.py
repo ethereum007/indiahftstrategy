@@ -98,6 +98,10 @@ from reports.provider_market_data_capture import (
     ProviderMarketDataCaptureConfig,
     write_provider_market_data_capture_review,
 )
+from reports.provider_market_data_pipeline import (
+    ProviderMarketDataPipelineConfig,
+    write_provider_market_data_pipeline,
+)
 from reports.quote_lifecycle import QuoteLifecycleThresholds, write_quote_lifecycle_plan
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
@@ -1031,6 +1035,34 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_capture.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_capture.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_capture.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_pipeline = sub.add_parser(
+        "pipeline-provider-market-data",
+        help="Run provider capture review and normalized vendor market-data pipeline in one root.",
+    )
+    provider_market_data_pipeline.add_argument("--client-packet", required=True)
+    provider_market_data_pipeline.add_argument("--capture", required=True)
+    provider_market_data_pipeline.add_argument("--out", required=True)
+    provider_market_data_pipeline.add_argument("--min-capture-rows", type=int, default=1)
+    provider_market_data_pipeline.add_argument("--max-missing-required-columns", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-null-required-cells", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--no-require-monotonic-ts", action="store_true")
+    provider_market_data_pipeline.add_argument("--expected-market", default="india_nse_index_derivatives")
+    provider_market_data_pipeline.add_argument("--expected-kind", default="ticks")
+    provider_market_data_pipeline.add_argument("--sample-rows", type=int, default=1000)
+    provider_market_data_pipeline.add_argument("--tick-size", type=float, default=None)
+    provider_market_data_pipeline.add_argument("--timestamp-unit", default="datetime")
+    provider_market_data_pipeline.add_argument("--timestamp-tz", default=None)
+    provider_market_data_pipeline.add_argument("--pipeline-min-rows", type=int, default=1)
+    provider_market_data_pipeline.add_argument("--max-crossed-quote-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-nonpositive-quote-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-nonpositive-depth-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-out-of-session-rows", type=int, default=0)
+    provider_market_data_pipeline.add_argument("--max-p99-gap-ns", type=float, default=None)
+    provider_market_data_pipeline.add_argument("--max-median-spread-ticks", type=float, default=None)
+    provider_market_data_pipeline.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_pipeline.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_pipeline.add_argument("--fail-on-actions", action="store_true")
 
     vendor_market_data = sub.add_parser(
         "pipeline-vendor-market-data",
@@ -3272,6 +3304,44 @@ def main(argv: list[str] | None = None) -> int:
                 expected_market=args.expected_market,
                 expected_kind=args.expected_kind,
                 pipeline_output_dir=args.pipeline_output_dir,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "pipeline-provider-market-data":
+        result = write_provider_market_data_pipeline(
+            args.client_packet,
+            args.capture,
+            output_dir=args.out,
+            config=ProviderMarketDataPipelineConfig(
+                min_capture_rows=args.min_capture_rows,
+                max_missing_required_columns=args.max_missing_required_columns,
+                max_null_required_cells=args.max_null_required_cells,
+                require_monotonic_ts=not args.no_require_monotonic_ts,
+                expected_market=args.expected_market,
+                expected_kind=args.expected_kind,
+                sample_rows=args.sample_rows,
+                tick_size=args.tick_size,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                pipeline_min_rows=args.pipeline_min_rows,
+                max_crossed_quote_rows=args.max_crossed_quote_rows,
+                max_nonpositive_quote_rows=args.max_nonpositive_quote_rows,
+                max_nonpositive_depth_rows=args.max_nonpositive_depth_rows,
+                max_out_of_session_rows=args.max_out_of_session_rows,
+                max_p99_gap_ns=args.max_p99_gap_ns,
+                max_median_spread_ticks=args.max_median_spread_ticks,
             ),
         )
         print(result.summary.to_string(index=False))
