@@ -4547,6 +4547,23 @@ launch, export, upload-pack, and broker-readiness pipeline. When ready, the next
 gate is `review-strategy-evidence --profile imbalance`, which verifies the full
 launch-ready profile rather than only the provider-data research profile.
 
+Review the full launch-ready imbalance profile from the provider launch packet:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-launch-evidence `
+  --provider-launch-dir runs\provider_market_data_imbalance_launch\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_launch_evidence\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This catalogs both the original provider imbalance research root and the
+provider launch packet root before running the full `imbalance` evidence profile.
+A ready review proves that edge walk-forward, replay walk-forward, promotion,
+research pipeline, order plan, and launch pipeline evidence all share the same
+imbalance/market identity. Its next gate is `score-strategy-readiness --profile
+imbalance`.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

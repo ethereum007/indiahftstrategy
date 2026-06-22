@@ -138,6 +138,10 @@ from reports.provider_market_data_imbalance_launch import (
     ProviderMarketDataImbalanceLaunchConfig,
     write_provider_market_data_imbalance_launch_packet,
 )
+from reports.provider_market_data_imbalance_launch_evidence import (
+    ProviderMarketDataImbalanceLaunchEvidenceConfig,
+    write_provider_market_data_imbalance_launch_evidence_review,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1327,6 +1331,27 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_launch.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_launch.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_launch.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_launch_evidence = sub.add_parser(
+        "review-provider-market-data-imbalance-launch-evidence",
+        help="Review provider imbalance launch packets against the full launch-ready imbalance evidence profile.",
+    )
+    provider_market_data_imbalance_launch_evidence.add_argument("--provider-launch-dir", required=True)
+    provider_market_data_imbalance_launch_evidence.add_argument("--out", required=True)
+    provider_market_data_imbalance_launch_evidence.add_argument("--no-require-provider-launch-ready", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--no-require-strategy-evidence-ready", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--allow-dirty-git", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--require-same-git-commit", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--no-require-same-strategy", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--no-require-same-market", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--expected-market", default="")
+    provider_market_data_imbalance_launch_evidence.add_argument("--min-passed-per-type", type=int, default=1)
+    provider_market_data_imbalance_launch_evidence.add_argument("--require-file-inputs", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--require-no-placeholder-schema", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--require-no-blocked-placeholder-schema", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_launch_evidence.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3971,6 +3996,37 @@ def main(argv: list[str] | None = None) -> int:
                 require_broker_halt_export=args.require_broker_halt_export,
                 require_broker_reconciliation=args.require_broker_reconciliation,
                 require_broker_runtime_session=args.require_broker_runtime_session,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-launch-evidence":
+        result = write_provider_market_data_imbalance_launch_evidence_review(
+            args.provider_launch_dir,
+            args.out,
+            config=ProviderMarketDataImbalanceLaunchEvidenceConfig(
+                require_provider_launch_ready=not args.no_require_provider_launch_ready,
+                require_strategy_evidence_ready=not args.no_require_strategy_evidence_ready,
+                allow_dirty_git=args.allow_dirty_git,
+                require_same_git_commit=args.require_same_git_commit,
+                require_same_strategy=not args.no_require_same_strategy,
+                require_same_market=not args.no_require_same_market,
+                expected_market=args.expected_market,
+                min_passed_per_type=args.min_passed_per_type,
+                require_file_inputs=args.require_file_inputs,
+                require_no_placeholder_schema=args.require_no_placeholder_schema,
+                require_no_blocked_placeholder_schema=args.require_no_blocked_placeholder_schema,
             ),
         )
         print(result.summary.to_string(index=False))

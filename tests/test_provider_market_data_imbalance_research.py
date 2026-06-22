@@ -20,6 +20,10 @@ from reports.provider_market_data_imbalance_launch import (
     ProviderMarketDataImbalanceLaunchConfig,
     write_provider_market_data_imbalance_launch_packet,
 )
+from reports.provider_market_data_imbalance_launch_evidence import (
+    ProviderMarketDataImbalanceLaunchEvidenceConfig,
+    write_provider_market_data_imbalance_launch_evidence_review,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -520,3 +524,140 @@ def test_cli_provider_market_data_imbalance_launch_accepts_ready_evidence(tmp_pa
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "next_gate"] == "review-strategy-evidence"
+
+
+def test_provider_market_data_imbalance_launch_evidence_reviews_full_imbalance_profile(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    launch = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        tmp_path / "provider_imbalance_launch",
+        config=ProviderMarketDataImbalanceLaunchConfig(
+            require_reviewed_schema=False,
+            adapter="arrow_money",
+            route_tag="imbalance_shadow",
+            instrument_id="NIFTY-I",
+            reference_price=100.0,
+            max_order_qty=75,
+            max_notional=10_000.0,
+            max_orders=2,
+        ),
+    )
+    out_dir = tmp_path / "provider_imbalance_launch_evidence"
+
+    report = write_provider_market_data_imbalance_launch_evidence_review(
+        launch.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceLaunchEvidenceConfig(allow_dirty_git=True),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_launch_evidence_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_launch_evidence_action_queue.csv")
+    strategy_summary = pd.read_csv(out_dir / "strategy_evidence" / "strategy_evidence_summary.csv")
+    items = pd.read_csv(out_dir / "strategy_evidence" / "strategy_evidence_items.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary.loc[0, "provider_launch_ready"])
+    assert bool(summary.loc[0, "strategy_evidence_ready"])
+    assert summary.loc[0, "evidence_profile"] == "imbalance"
+    assert summary.loc[0, "next_gate"] == "score-strategy-readiness"
+    assert strategy_summary.loc[0, "evidence_profile"] == "imbalance"
+    assert set(items["required_run_type"]) == {
+        "imbalance_edge_walkforward",
+        "imbalance_replay_walkforward",
+        "promotion_report",
+        "imbalance_research_pipeline",
+        "imbalance_order_plan",
+        "imbalance_launch_pipeline",
+    }
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "score-strategy-readiness"
+    assert manifest["run_type"] == "provider_market_data_imbalance_launch_evidence_review"
+
+
+def test_provider_market_data_imbalance_launch_evidence_blocks_unready_launch(tmp_path):
+    smoke = _write_synthetic_smoke_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        smoke.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    launch = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        tmp_path / "provider_imbalance_launch",
+        config=ProviderMarketDataImbalanceLaunchConfig(require_reviewed_schema=False, reference_price=100.0),
+    )
+
+    report = write_provider_market_data_imbalance_launch_evidence_review(
+        launch.output_dir,
+        tmp_path / "provider_imbalance_launch_evidence",
+        config=ProviderMarketDataImbalanceLaunchEvidenceConfig(allow_dirty_git=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not launch.ready
+    assert not report.ready
+    assert "provider_imbalance_launch_ready" in failed
+    assert "strategy_evidence_review_ready" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "pipeline-provider-market-data-imbalance-launch"
+
+
+def test_cli_provider_market_data_imbalance_launch_evidence_accepts_ready_launch(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    launch = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        tmp_path / "provider_imbalance_launch",
+        config=ProviderMarketDataImbalanceLaunchConfig(
+            require_reviewed_schema=False,
+            adapter="arrow_money",
+            route_tag="imbalance_shadow",
+            instrument_id="NIFTY-I",
+            reference_price=100.0,
+            max_order_qty=75,
+            max_notional=10_000.0,
+            max_orders=2,
+        ),
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_launch_evidence"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-launch-evidence",
+            "--provider-launch-dir",
+            str(launch.output_dir),
+            "--out",
+            str(out_dir),
+            "--allow-dirty-git",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_launch_evidence_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "score-strategy-readiness"

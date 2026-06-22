@@ -112,6 +112,10 @@
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
   runs the standard imbalance launch pipeline, and points ready packets to the
   full `review-strategy-evidence --profile imbalance` gate.
+- Provider market-data imbalance launch evidence review now closes that proof
+  loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
+  provider research and provider launch roots, verifies the full launch-ready
+  `imbalance` profile, and hands ready packets to `score-strategy-readiness`.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
