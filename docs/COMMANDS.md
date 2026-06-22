@@ -3781,7 +3781,15 @@ retain launch controls and zero allocation or concentration breach pairs, and
 broker-carried route proof must retain clean launch-control, allocation-safe,
 and concentration-OK dry-run counts. The ack artifacts preserve these controls
 as `route_readiness_*` and `route_broker_route_readiness` fields in
-`broker_dispatch_ack_summary.csv` and `broker_dispatch_ack_config.json`. If the
+`broker_dispatch_ack_summary.csv` and `broker_dispatch_ack_config.json`. If
+dispatch planning retained post-halt resume route proof, the ack gate
+revalidates the broker resume route branch and the closed-incident branch
+before accepted acknowledgement evidence can advance. It preserves the branches
+as `route_broker_resume_broker_route_readiness_*`,
+`route_broker_resume_incident_broker_route_readiness_*`, and nested
+`route_broker_resume_gate` config blocks, and routes stale identity, route
+gaps, missing launch controls, allocation breaches, or concentration breaches
+back to `review-resume-gate`. If the
 sender config retained the shadow-broker broker-vendor wrapper aggregate, the
 ack gate revalidates per-session wrapper coverage and carries it as
 `shadow_broker_vendor_data_readiness_*` plus nested

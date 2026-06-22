@@ -14,6 +14,40 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
+def resume_route_proof(
+    *,
+    ready=True,
+    strategy="lead_lag_taker",
+    market="india_nse_index_derivatives",
+    route_ready_pairs=1,
+    gap_pairs=0,
+    ops_launch_controls_ready=True,
+    ops_launch_control_failures="",
+    safe_runs=1,
+    breach_runs=0,
+    concentration_ok_runs=1,
+    concentration_breach_runs=0,
+):
+    return {
+        "required": True,
+        "provided": True,
+        "ready": ready,
+        "strategy": strategy,
+        "market": market,
+        "route_ready_pairs": route_ready_pairs,
+        "gap_pairs": gap_pairs,
+        "recommendation": (
+            "eligible_for_live_dryrun_route_review" if ready else "complete_route_readiness_gaps"
+        ),
+        "ops_launch_controls_ready": ops_launch_controls_ready,
+        "ops_launch_control_failures": ops_launch_control_failures,
+        "ops_broker_roundtrip_portfolio_safe_runs": safe_runs,
+        "ops_broker_roundtrip_portfolio_breach_runs": breach_runs,
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": concentration_ok_runs,
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": concentration_breach_runs,
+    }
+
+
 def dispatch_summary(
     ready=True,
     route_roundtrip_provided=True,
@@ -687,6 +721,78 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert int(summary["route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
     assert report.config["route_broker_route_readiness"]["ops_launch_controls_ready"]
     assert report.config["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
+
+
+def test_broker_dispatch_ack_carries_route_broker_resume_gate():
+    config = dispatch_config()
+    config["route_broker_resume_gate"] = {
+        "broker_route_readiness": resume_route_proof(),
+        "incident_broker_route_readiness": resume_route_proof(route_ready_pairs=2),
+    }
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(by_source=True),
+        dispatch_config=config,
+    )
+
+    assert report.passed
+    summary = report.summary.iloc[0]
+    resume_gate = report.config["route_broker_resume_gate"]
+    assert bool(summary["route_broker_resume_broker_route_readiness_ready"])
+    assert summary["route_broker_resume_broker_route_readiness_strategy"] == "lead_lag_taker"
+    assert int(summary["route_broker_resume_incident_broker_route_readiness_route_ready_pairs"]) == 2
+    assert resume_gate["broker_route_readiness"]["ready"]
+    assert resume_gate["broker_route_readiness"]["ops_launch_controls_ready"]
+    assert resume_gate["incident_broker_route_readiness"]["route_ready_pairs"] == 2
+
+
+def test_broker_dispatch_ack_blocks_bad_route_broker_resume_gate():
+    config = dispatch_config()
+    config["route_broker_resume_gate"] = {
+        "broker_route_readiness": resume_route_proof(
+            ready=False,
+            strategy="surface_mm",
+            market="us_options_regular",
+            route_ready_pairs=0,
+            gap_pairs=2,
+            ops_launch_controls_ready=False,
+            ops_launch_control_failures="resume route proof stale after halt",
+            safe_runs=0,
+            breach_runs=1,
+            concentration_ok_runs=0,
+            concentration_breach_runs=1,
+        ),
+    }
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(by_source=True),
+        dispatch_config=config,
+    )
+
+    assert not report.passed
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {
+        "route_broker_resume_broker_route_readiness_ready",
+        "route_broker_resume_broker_route_readiness_strategy_matches",
+        "route_broker_resume_broker_route_readiness_market_matches",
+        "route_broker_resume_broker_route_readiness_route_ready_pairs",
+        "route_broker_resume_broker_route_readiness_gap_pairs",
+        "route_broker_resume_broker_route_readiness_ops_launch_controls_ready",
+        "route_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+        "route_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+        "route_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+        "route_broker_resume_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    } <= failed
+    summary = report.summary.iloc[0]
+    assert summary["route_broker_resume_broker_route_readiness_market"] == "us_options_regular"
+    assert report.config["route_broker_resume_gate"]["broker_route_readiness"]["gap_pairs"] == 2
+    assert report.config["next_gate"] == "review-resume-gate"
+    assert report.action_queue is not None
+    assert report.action_queue.iloc[0]["component"] == "resume_gate"
 
 
 def test_broker_dispatch_ack_carries_strategy_portfolio_allocation():

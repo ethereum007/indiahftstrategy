@@ -168,6 +168,10 @@
   dispatch-retained route-readiness ops broker controls before accepted ack
   evidence advances, preserving direct breach counters and broker-carried
   route proof in ack summary/config artifacts.
+- Broker dispatch acknowledgement reconciliation now also carries
+  dispatch-retained broker resume-route proof, revalidating primary and
+  closed-incident branches before accepted ack evidence can inherit post-halt
+  authorization.
 - Broker dispatch acknowledgement reconciliation now emits manifest-tracked
   `broker_dispatch_ack_action_queue.csv` and
   `broker_dispatch_ack_runbook.md` scheduler handoffs, routing missing,
