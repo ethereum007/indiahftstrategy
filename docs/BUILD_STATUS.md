@@ -145,6 +145,10 @@
   broker controls before non-submitting sender packets advance, preserving
   direct route breach counters and broker-carried route proof in send
   summary/config artifacts.
+- Broker dispatch send now also carries dispatch-retained broker resume-route
+  proof into the non-submitting sender packet, revalidating primary and
+  closed-incident branches before dry-run request envelopes can inherit
+  post-halt authorization.
 - Broker dispatch send now emits manifest-tracked
   `broker_dispatch_send_action_queue.csv` and
   `broker_dispatch_send_runbook.md` scheduler handoffs, routing dispatch-plan,
