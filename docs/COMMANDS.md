@@ -4277,6 +4277,29 @@ and next gate. File sources route to the existing `pipeline-vendor-market-data`
 command, while REST/websocket sources route to the provider fetcher with
 `market_data_fetch_config.json`.
 
+Prepare the provider fetcher handoff from a ready REST/websocket fetch plan:
+
+```powershell
+python -m hft_cli plan-provider-market-data-fetcher `
+  --fetch-plan runs\market_data_fetch\arrow_ws_nse\market_data_fetch_config.json `
+  --out runs\provider_market_data_fetchers\arrow_ws_nse `
+  --connect-timeout-ms 5000 `
+  --read-timeout-ms 1000 `
+  --heartbeat-timeout-ms 30000 `
+  --max-reconnects 3 `
+  --batch-size 5000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_request_template.json` plus checks,
+summary, action queue, runbook, config, and manifest artifacts. It does not
+call the provider; it validates the ready fetch plan, live transport,
+credential env-var names, optional runtime env-var presence, symbol coverage,
+and runtime budgets. Use `--require-env-present` only in the deployment shell
+where Arrow.money/iRage credentials are already configured, since the artifacts
+store presence booleans but never credential values.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

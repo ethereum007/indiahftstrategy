@@ -607,7 +607,7 @@ def _next_gate_help_command(next_gate: str, source_config: dict[str, Any]) -> st
         command = _text(_mapping(source_config.get("normalized_pipeline")).get("command"))
         return command or "python -m hft_cli pipeline-vendor-market-data --help"
     if next_gate == "provider_fetcher":
-        return "wire provider fetcher with market_data_fetch_config.json"
+        return "python -m hft_cli plan-provider-market-data-fetcher --help"
     if next_gate == "plan-market-data-source":
         return "python -m hft_cli plan-market-data-source --help"
     if next_gate == "plan-market-data-fetch":

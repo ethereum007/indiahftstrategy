@@ -86,6 +86,10 @@ from reports.parity_order_plan import ParityOrderPlanConfig, write_parity_order_
 from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
+from reports.provider_market_data_fetcher import (
+    ProviderMarketDataFetcherConfig,
+    write_provider_market_data_fetcher_plan,
+)
 from reports.quote_lifecycle import QuoteLifecycleThresholds, write_quote_lifecycle_plan
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
@@ -971,6 +975,22 @@ def main(argv: list[str] | None = None) -> int:
     market_data_fetch.add_argument("--fail-on-breach", action="store_true")
     market_data_fetch.add_argument("--fail-on-blocked-actions", action="store_true")
     market_data_fetch.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_fetcher = sub.add_parser(
+        "plan-provider-market-data-fetcher",
+        help="Prepare a dry-run provider fetcher request template from a market-data fetch plan.",
+    )
+    provider_market_data_fetcher.add_argument("--fetch-plan", required=True)
+    provider_market_data_fetcher.add_argument("--out", required=True)
+    provider_market_data_fetcher.add_argument("--require-env-present", action="store_true")
+    provider_market_data_fetcher.add_argument("--connect-timeout-ms", type=int, default=5000)
+    provider_market_data_fetcher.add_argument("--read-timeout-ms", type=int, default=1000)
+    provider_market_data_fetcher.add_argument("--heartbeat-timeout-ms", type=int, default=30000)
+    provider_market_data_fetcher.add_argument("--max-reconnects", type=int, default=3)
+    provider_market_data_fetcher.add_argument("--batch-size", type=int, default=5000)
+    provider_market_data_fetcher.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_fetcher.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_fetcher.add_argument("--fail-on-actions", action="store_true")
 
     vendor_market_data = sub.add_parser(
         "pipeline-vendor-market-data",
@@ -3131,6 +3151,33 @@ def main(argv: list[str] | None = None) -> int:
                 max_latency_ms=args.max_latency_ms,
                 expected_market=args.expected_market,
                 output_filename=args.output_file,
+                dry_run=True,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "plan-provider-market-data-fetcher":
+        result = write_provider_market_data_fetcher_plan(
+            args.fetch_plan,
+            args.out,
+            config=ProviderMarketDataFetcherConfig(
+                require_env_present=args.require_env_present,
+                connect_timeout_ms=args.connect_timeout_ms,
+                read_timeout_ms=args.read_timeout_ms,
+                heartbeat_timeout_ms=args.heartbeat_timeout_ms,
+                max_reconnects=args.max_reconnects,
+                batch_size=args.batch_size,
                 dry_run=True,
             ),
         )

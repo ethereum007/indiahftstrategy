@@ -52,6 +52,11 @@
   filenames without calling external APIs or storing secrets; file plans route
   to `pipeline-vendor-market-data` and REST/websocket plans route to the
   provider fetcher with a manifest-backed config.
+- Provider market-data fetcher preparation now turns ready REST/websocket fetch
+  plans into credential-safe request/subscription templates:
+  `plan-provider-market-data-fetcher` validates live transport, symbols,
+  runtime budgets, and optional env-var presence while writing only env-var
+  names and presence booleans, not secret values.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts
