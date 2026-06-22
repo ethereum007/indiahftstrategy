@@ -303,6 +303,10 @@
   portfolio concentration OK/breach proof, while surfacing
   `ops_launch_control_failures` in route pairs, JSON config, action queue, and
   runbook outputs.
+- Route readiness now also verifies `ops_launch` final broker round-trip
+  resume-route proof, blocking live-dryrun route review when primary/incident
+  resume branches are missing, gapped, launch-control-failed, portfolio-unsafe,
+  or concentration-unsafe.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.

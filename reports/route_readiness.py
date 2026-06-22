@@ -20,6 +20,8 @@ _EVIDENCE_BOOL_COLUMNS = {
     "fail_on_broker_roundtrip_portfolio_breach",
     "require_broker_roundtrip_portfolio_concentration_ok",
     "fail_on_broker_roundtrip_portfolio_concentration_breach",
+    "require_broker_roundtrip_resume_route_ready",
+    "fail_on_broker_roundtrip_resume_route_breach",
 }
 _EVIDENCE_COUNT_COLUMNS = {
     "placeholder_schema_blocked_runs",
@@ -27,6 +29,12 @@ _EVIDENCE_COUNT_COLUMNS = {
     "broker_roundtrip_portfolio_breach_runs",
     "broker_roundtrip_portfolio_concentration_ok_runs",
     "broker_roundtrip_portfolio_concentration_breach_runs",
+    "broker_roundtrip_resume_route_ready_runs",
+    "broker_roundtrip_resume_route_breach_runs",
+    "broker_roundtrip_resume_route_gap_breach_runs",
+    "broker_roundtrip_resume_route_launch_control_breach_runs",
+    "broker_roundtrip_resume_route_portfolio_breach_runs",
+    "broker_roundtrip_resume_route_concentration_breach_runs",
     "input_directory_count",
     "input_other_count",
     "input_unfingerprinted_count",
@@ -236,6 +244,36 @@ def _pair_row(
         )
         if ops_match.row
         else 0,
+        "ops_broker_roundtrip_resume_route_ready_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_resume_route_ready_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_resume_route_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_resume_route_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_resume_route_gap_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_resume_route_gap_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_resume_route_launch_control_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_resume_route_launch_control_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_resume_route_portfolio_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_resume_route_portfolio_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_broker_roundtrip_resume_route_concentration_breach_runs": int(
+            _number(ops_match.row.get("broker_roundtrip_resume_route_concentration_breach_runs", 0))
+        )
+        if ops_match.row
+        else 0,
         "route_ready": bool(route_ready),
         "status": status,
         "blocker": "" if route_ready else _blocker(pair, status),
@@ -371,6 +409,38 @@ def _ops_launch_control_failures(row: dict[str, Any]) -> list[str]:
             "broker_roundtrip_portfolio_concentration_breach_runs",
             int(_number(row.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))) == 0,
         ),
+        (
+            "require_broker_roundtrip_resume_route_ready",
+            _to_bool(row.get("require_broker_roundtrip_resume_route_ready", False)),
+        ),
+        (
+            "fail_on_broker_roundtrip_resume_route_breach",
+            _to_bool(row.get("fail_on_broker_roundtrip_resume_route_breach", False)),
+        ),
+        (
+            "broker_roundtrip_resume_route_ready_runs",
+            int(_number(row.get("broker_roundtrip_resume_route_ready_runs", 0))) >= 1,
+        ),
+        (
+            "broker_roundtrip_resume_route_breach_runs",
+            int(_number(row.get("broker_roundtrip_resume_route_breach_runs", 0))) == 0,
+        ),
+        (
+            "broker_roundtrip_resume_route_gap_breach_runs",
+            int(_number(row.get("broker_roundtrip_resume_route_gap_breach_runs", 0))) == 0,
+        ),
+        (
+            "broker_roundtrip_resume_route_launch_control_breach_runs",
+            int(_number(row.get("broker_roundtrip_resume_route_launch_control_breach_runs", 0))) == 0,
+        ),
+        (
+            "broker_roundtrip_resume_route_portfolio_breach_runs",
+            int(_number(row.get("broker_roundtrip_resume_route_portfolio_breach_runs", 0))) == 0,
+        ),
+        (
+            "broker_roundtrip_resume_route_concentration_breach_runs",
+            int(_number(row.get("broker_roundtrip_resume_route_concentration_breach_runs", 0))) == 0,
+        ),
     ]
     return [name for name, passed in checks if not passed]
 
@@ -433,6 +503,11 @@ def _summary(
                     "ops_launch_controls_blocked_pairs": 0,
                     "ops_broker_roundtrip_portfolio_breach_pairs": 0,
                     "ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
+                    "ops_broker_roundtrip_resume_route_breach_pairs": 0,
+                    "ops_broker_roundtrip_resume_route_gap_breach_pairs": 0,
+                    "ops_broker_roundtrip_resume_route_launch_control_breach_pairs": 0,
+                    "ops_broker_roundtrip_resume_route_portfolio_breach_pairs": 0,
+                    "ops_broker_roundtrip_resume_route_concentration_breach_pairs": 0,
                     "require_ops_file_inputs": bool(require_ops_file_inputs),
                     "ready_action_count": 0,
                     "blocked_action_count": 0,
@@ -479,6 +554,31 @@ def _summary(
                     (pairs["ops_broker_roundtrip_portfolio_concentration_breach_runs"].astype(int) > 0).sum()
                 )
                 if "ops_broker_roundtrip_portfolio_concentration_breach_runs" in pairs
+                else 0,
+                "ops_broker_roundtrip_resume_route_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_resume_route_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_resume_route_breach_runs" in pairs
+                else 0,
+                "ops_broker_roundtrip_resume_route_gap_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_resume_route_gap_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_resume_route_gap_breach_runs" in pairs
+                else 0,
+                "ops_broker_roundtrip_resume_route_launch_control_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_resume_route_launch_control_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_resume_route_launch_control_breach_runs" in pairs
+                else 0,
+                "ops_broker_roundtrip_resume_route_portfolio_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_resume_route_portfolio_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_resume_route_portfolio_breach_runs" in pairs
+                else 0,
+                "ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
+                    (pairs["ops_broker_roundtrip_resume_route_concentration_breach_runs"].astype(int) > 0).sum()
+                )
+                if "ops_broker_roundtrip_resume_route_concentration_breach_runs" in pairs
                 else 0,
                 "require_ops_file_inputs": bool(require_ops_file_inputs),
                 "ready_action_count": route_ready,
@@ -582,6 +682,12 @@ def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         "ops_broker_roundtrip_portfolio_breach_runs",
         "ops_broker_roundtrip_portfolio_concentration_ok_runs",
         "ops_broker_roundtrip_portfolio_concentration_breach_runs",
+        "ops_broker_roundtrip_resume_route_ready_runs",
+        "ops_broker_roundtrip_resume_route_breach_runs",
+        "ops_broker_roundtrip_resume_route_gap_breach_runs",
+        "ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+        "ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+        "ops_broker_roundtrip_resume_route_concentration_breach_runs",
         "route_ready",
         "status",
         "blocker",
@@ -627,6 +733,24 @@ def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
                     "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
                         _number(row.get("ops_broker_roundtrip_portfolio_concentration_breach_runs", 0))
                     ),
+                    "ops_broker_roundtrip_resume_route_ready_runs": int(
+                        _number(row.get("ops_broker_roundtrip_resume_route_ready_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_resume_route_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_resume_route_breach_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_resume_route_gap_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_resume_route_gap_breach_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_resume_route_launch_control_breach_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_resume_route_portfolio_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_resume_route_portfolio_breach_runs", 0))
+                    ),
+                    "ops_broker_roundtrip_resume_route_concentration_breach_runs": int(
+                        _number(row.get("ops_broker_roundtrip_resume_route_concentration_breach_runs", 0))
+                    ),
                     "recommendation": _route_action_recommendation(row),
                 }
             )
@@ -653,6 +777,12 @@ def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
             "ops_broker_roundtrip_portfolio_breach_runs",
             "ops_broker_roundtrip_portfolio_concentration_ok_runs",
             "ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            "ops_broker_roundtrip_resume_route_ready_runs",
+            "ops_broker_roundtrip_resume_route_breach_runs",
+            "ops_broker_roundtrip_resume_route_gap_breach_runs",
+            "ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+            "ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+            "ops_broker_roundtrip_resume_route_concentration_breach_runs",
             "recommendation",
         ],
     )
@@ -811,6 +941,14 @@ def _normalize_evidence_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
         "fail_on_broker_roundtrip_portfolio_concentration_breach",
         "broker_roundtrip_portfolio_concentration_ok_runs",
         "broker_roundtrip_portfolio_concentration_breach_runs",
+        "require_broker_roundtrip_resume_route_ready",
+        "fail_on_broker_roundtrip_resume_route_breach",
+        "broker_roundtrip_resume_route_ready_runs",
+        "broker_roundtrip_resume_route_breach_runs",
+        "broker_roundtrip_resume_route_gap_breach_runs",
+        "broker_roundtrip_resume_route_launch_control_breach_runs",
+        "broker_roundtrip_resume_route_portfolio_breach_runs",
+        "broker_roundtrip_resume_route_concentration_breach_runs",
         "input_directory_count",
         "input_other_count",
         "input_unfingerprinted_count",

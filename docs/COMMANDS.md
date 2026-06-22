@@ -618,14 +618,17 @@ summary carries launch-grade broker controls: blocked placeholder schemas must
 be gated, final broker round-trip allocation must have at least one
 portfolio-safe proof with no allocation breaches, and final broker round-trip
 concentration must have at least one concentration-OK proof with no
-concentration breaches. Older ops evidence summaries that do not carry those
-control flags/counts fail closed at route review instead of being treated as
-live-dry-run ready. Use `--allow-non-file-ops-inputs` only for explicit dry-run
-investigations that are not route-review candidates.
+concentration breaches. It also requires final broker round-trip resume-route
+proof with ready primary/incident branches and no route-gap, launch-control,
+portfolio, or concentration breaches. Older ops evidence summaries that do not
+carry those control flags/counts fail closed at route review instead of being
+treated as live-dry-run ready. Use `--allow-non-file-ops-inputs` only for
+explicit dry-run investigations that are not route-review candidates.
 `route_readiness_action_queue.csv` flattens ready and blocked route pairs into
 priority order with `next_gate`, `next_gate_help_command`, evidence statuses,
-`ops_launch_control_failures`, broker proof counts, and the route-level
-recommendation. `route_readiness_config.json` mirrors the queue as
+`ops_launch_control_failures`, broker proof counts including resume-route
+breach counters, and the route-level recommendation.
+`route_readiness_config.json` mirrors the queue as
 `next_actions`, `ready_actions`, and `blocked_actions`, plus the primary next
 gate/help, `primary_action_status`, and `primary_action` for scheduler
 handoff. `route_readiness_runbook.md` mirrors the same handoff for
