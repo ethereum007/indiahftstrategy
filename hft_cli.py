@@ -106,6 +106,10 @@ from reports.provider_market_data_live_session import (
     ProviderMarketDataLiveSessionConfig,
     write_provider_market_data_live_session_plan,
 )
+from reports.provider_market_data_live_ingest import (
+    ProviderMarketDataLiveIngestConfig,
+    write_provider_market_data_live_session_ingest,
+)
 from reports.provider_market_data_pipeline import (
     ProviderMarketDataPipelineConfig,
     write_provider_market_data_pipeline,
@@ -1046,6 +1050,22 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_session.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_session.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_session.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_live_ingest = sub.add_parser(
+        "ingest-provider-market-data-live-session",
+        help="Verify live-session capture files and run provider batch ingestion from the session packet.",
+    )
+    provider_market_data_live_ingest.add_argument("--live-session-packet", required=True)
+    provider_market_data_live_ingest.add_argument("--out", required=True)
+    provider_market_data_live_ingest.add_argument("--batch-output-dir", default="")
+    provider_market_data_live_ingest.add_argument("--min-capture-rows", type=int, default=None)
+    provider_market_data_live_ingest.add_argument("--pipeline-min-rows", type=int, default=None)
+    provider_market_data_live_ingest.add_argument("--tick-size", type=float, default=None)
+    provider_market_data_live_ingest.add_argument("--max-p99-gap-ns", type=float, default=None)
+    provider_market_data_live_ingest.add_argument("--max-median-spread-ticks", type=float, default=None)
+    provider_market_data_live_ingest.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_live_ingest.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_live_ingest.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3374,6 +3394,32 @@ def main(argv: list[str] | None = None) -> int:
                 max_median_spread_ticks=args.max_median_spread_ticks,
                 require_env_present=args.require_env_present,
                 allow_weekend=args.allow_weekend,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "ingest-provider-market-data-live-session":
+        result = write_provider_market_data_live_session_ingest(
+            args.live_session_packet,
+            args.out,
+            config=ProviderMarketDataLiveIngestConfig(
+                batch_output_dir=args.batch_output_dir,
+                min_capture_rows=args.min_capture_rows,
+                pipeline_min_rows=args.pipeline_min_rows,
+                tick_size=args.tick_size,
+                max_p99_gap_ns=args.max_p99_gap_ns,
+                max_median_spread_ticks=args.max_median_spread_ticks,
             ),
         )
         print(result.summary.to_string(index=False))

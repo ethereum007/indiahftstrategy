@@ -323,6 +323,7 @@ def _session_packet(
     config: ProviderMarketDataLiveSessionConfig,
 ) -> dict[str, Any]:
     auth = _mapping(packet.get("authentication"))
+    batch_output_dir = config.batch_output_dir.strip() or _default_batch_output(packet, config.trade_date)
     return {
         "schema_version": 1,
         "ready": bool(summary["ready"]),
@@ -343,6 +344,14 @@ def _session_packet(
         "runtime": _mapping(packet.get("runtime")),
         "output": _mapping(packet.get("output")),
         "capture_windows": _records(windows),
+        "post_capture_batch": {
+            "output_dir": batch_output_dir,
+            "min_capture_rows": int(config.min_capture_rows),
+            "pipeline_min_rows": int(config.pipeline_min_rows),
+            "tick_size": config.tick_size,
+            "max_p99_gap_ns": config.max_p99_gap_ns,
+            "max_median_spread_ticks": config.max_median_spread_ticks,
+        },
         "post_capture_batch_command": str(summary["post_capture_batch_command"]),
         "live_execution_gate": {
             "requires_provider_api_contract": True,

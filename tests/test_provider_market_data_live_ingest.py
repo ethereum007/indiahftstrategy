@@ -1,0 +1,146 @@
+import json
+from pathlib import Path
+
+import pandas as pd
+
+from hft_cli import main
+from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
+from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
+from reports.provider_market_data_client import write_provider_market_data_client_plan
+from reports.provider_market_data_fetcher import write_provider_market_data_fetcher_plan
+from reports.provider_market_data_live_ingest import (
+    ProviderMarketDataLiveIngestConfig,
+    write_provider_market_data_live_session_ingest,
+)
+from reports.provider_market_data_live_session import (
+    ProviderMarketDataLiveSessionConfig,
+    write_provider_market_data_live_session_plan,
+)
+
+
+def _write_client_packet(tmp_path):
+    source_report = write_market_data_source_plan(
+        tmp_path / "source",
+        config=MarketDataSourceConfig(
+            provider="arrow_money",
+            kind="ticks",
+            transport="websocket",
+            source_uri="wss://feed.arrow.money/market-data/nse",
+            auth_env_vars=("ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"),
+        ),
+    )
+    fetch_report = write_market_data_fetch_plan(
+        source_report.output_dir / "market_data_source_config.json",
+        tmp_path / "fetch",
+        config=MarketDataFetchConfig(symbols=("NIFTY-I", "BANKNIFTY-I")),
+    )
+    fetcher_report = write_provider_market_data_fetcher_plan(
+        fetch_report.output_dir / "market_data_fetch_config.json",
+        tmp_path / "fetcher",
+    )
+    client_report = write_provider_market_data_client_plan(
+        fetcher_report.output_dir / "provider_market_data_fetcher_config.json",
+        tmp_path / "client",
+    )
+    return client_report.output_dir / "provider_market_data_client_packet.json"
+
+
+def _write_live_plan(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    return write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_plan",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:45", "close=14:45-15:15"),
+            capture_dir=str(tmp_path / "captures"),
+            batch_output_dir=str(tmp_path / "batch"),
+            min_capture_rows=2,
+            pipeline_min_rows=2,
+            tick_size=0.05,
+            max_median_spread_ticks=2,
+        ),
+    )
+
+
+def _write_capture(path: str | Path, day: str, *, base: float):
+    capture = Path(path)
+    capture.parent.mkdir(parents=True, exist_ok=True)
+    capture.write_text(
+        "ts,bid,ask,bid_qty,ask_qty,last,last_qty\n"
+        f"{day} 09:15:00,{base:.2f},{base + 0.05:.2f},75,150,{base + 0.05:.2f},75\n"
+        f"{day} 09:15:01,{base + 0.05:.2f},{base + 0.10:.2f},100,125,{base + 0.05:.2f},50\n",
+        encoding="utf-8",
+    )
+
+
+def _write_expected_captures(live_packet_path):
+    packet = json.loads(Path(live_packet_path).read_text(encoding="utf-8"))
+    for idx, window in enumerate(packet["capture_windows"]):
+        _write_capture(window["capture_path"], "2026-06-23", base=100.0 + idx)
+
+
+def test_provider_market_data_live_ingest_runs_batch_from_session_packet(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    _write_expected_captures(live_packet)
+    out_dir = tmp_path / "live_ingest"
+
+    report = write_provider_market_data_live_session_ingest(live_packet, out_dir)
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_live_ingest_config.json").read_text(encoding="utf-8"))
+    action_queue = pd.read_csv(out_dir / "provider_market_data_live_ingest_action_queue.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert summary["expected_capture_count"] == 2
+    assert summary["present_capture_count"] == 2
+    assert summary["nonempty_capture_count"] == 2
+    assert summary["batch_ready"]
+    assert summary["batch_output_dir"] == str(tmp_path / "batch")
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "action"] == "feed_provider_market_data_batch_to_research"
+    assert config["ready"]
+    assert config["batch"]["ready"]
+    assert manifest["run_type"] == "provider_market_data_live_session_ingest"
+    assert "captures" in manifest["inputs"]
+    assert "batch_manifest" in manifest["inputs"]
+    assert (tmp_path / "batch" / "provider_market_data_batch_summary.csv").exists()
+    assert (out_dir / "provider_market_data_live_ingest_windows.csv").exists()
+
+
+def test_provider_market_data_live_ingest_blocks_missing_capture_files(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+
+    report = write_provider_market_data_live_session_ingest(live_packet, tmp_path / "live_ingest")
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.batch is None
+    assert "expected_capture_files_exist" in failed
+    assert report.action_queue.loc[0, "next_gate"] == "provider_fetcher_live_run"
+    assert not (tmp_path / "batch" / "provider_market_data_batch_summary.csv").exists()
+
+
+def test_cli_provider_market_data_live_ingest_accepts_session_packet(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    _write_expected_captures(live_packet)
+    out_dir = tmp_path / "cli_live_ingest"
+
+    code = main(
+        [
+            "ingest-provider-market-data-live-session",
+            "--live-session-packet",
+            str(live_packet),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_live_ingest_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "batch_ready"])

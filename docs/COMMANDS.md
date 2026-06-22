@@ -4349,6 +4349,25 @@ names and runtime presence booleans. The session packet includes per-window
 capture paths and the exact post-capture
 `pipeline-provider-market-data-batch` command.
 
+After those live capture files land, ingest the whole planned session from the
+session packet:
+
+```powershell
+python -m hft_cli ingest-provider-market-data-live-session `
+  --live-session-packet runs\provider_market_data_live_sessions\arrow_ws_nse_2026_06_23\provider_market_data_live_session_packet.json `
+  --out runs\provider_market_data_live_ingest\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This verifies every expected capture file exists and is non-empty, then runs
+the structured `pipeline-provider-market-data-batch` configuration from the
+session packet. It writes `provider_market_data_live_ingest_summary.csv`,
+`provider_market_data_live_ingest_windows.csv`,
+`provider_market_data_live_ingest_action_queue.csv`, config/runbook artifacts,
+and a manifest that fingerprints the session packet, client packet, captures,
+and batch output manifest.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

@@ -67,6 +67,10 @@
   validates the dry-run client packet, NSE session windows, weekday, optional
   runtime env-var presence, per-window capture paths, and emits the exact
   post-capture `pipeline-provider-market-data-batch` command.
+- Provider market-data live session ingest now closes the post-market loop:
+  `ingest-provider-market-data-live-session` reads the session packet, verifies
+  all expected capture files exist and are non-empty, then runs the structured
+  provider batch ingestion and manifests the resulting proof chain.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
