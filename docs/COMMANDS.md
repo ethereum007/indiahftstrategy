@@ -4368,6 +4368,35 @@ The root folder nests `01_capture_review` and
 `review-data-readiness` using the nested
 `04_data_readiness\data_readiness_summary.csv`.
 
+For multiple live capture sessions, run the provider batch root:
+
+```powershell
+python -m hft_cli pipeline-provider-market-data-batch `
+  --client-packet runs\provider_market_data_clients\arrow_ws_nse\provider_market_data_client_packet.json `
+  --capture captures\arrow_ws_nse_open_2026_06_23.csv captures\arrow_ws_nse_close_2026_06_23.csv `
+  --label open_window `
+  --label close_window `
+  --out runs\provider_market_data_batches\arrow_ws_nse_2026_06_23 `
+  --min-capture-rows 100000 `
+  --pipeline-min-rows 100000 `
+  --tick-size 0.05 `
+  --max-p99-gap-ns 1000000000 `
+  --max-median-spread-ticks 2 `
+  --min-datasets 2 `
+  --min-ready-datasets 2 `
+  --min-unique-source-files 2 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This runs one `pipeline-provider-market-data` root per capture under
+`captures\<label>`, compares the nested `04_data_readiness` outputs, rejects
+reused capture files by source fingerprint, and writes
+`provider_market_data_batch_summary.csv`,
+`provider_market_data_batch_datasets.csv`,
+`provider_market_data_batch_action_queue.csv`,
+`provider_market_data_batch_config.json`, a runbook, and a root manifest.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

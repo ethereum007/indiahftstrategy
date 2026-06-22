@@ -72,6 +72,11 @@
   `pipeline-provider-market-data` creates one manifest-backed folder with
   component proof for the provider capture, nested normalized pipeline, action
   queue, and research-ready `review-data-readiness` handoff.
+- Provider market-data batch ingestion now validates multiple live capture
+  sessions from one dry-run client packet: `pipeline-provider-market-data-batch`
+  runs per-capture roots, compares nested data-readiness evidence, rejects
+  duplicate capture fingerprints, and writes a batch-level manifest for
+  walk-forward research handoff.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts
