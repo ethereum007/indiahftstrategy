@@ -12,6 +12,10 @@ from reports.provider_market_data_imbalance_research import (
     ProviderMarketDataImbalanceResearchConfig,
     write_provider_market_data_imbalance_research,
 )
+from reports.provider_market_data_imbalance_evidence import (
+    ProviderMarketDataImbalanceEvidenceConfig,
+    write_provider_market_data_imbalance_evidence_review,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -304,3 +308,92 @@ def test_cli_provider_market_data_imbalance_research_accepts_live_evidence(tmp_p
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "candidate_ready"])
+
+
+def test_provider_market_data_imbalance_evidence_reviews_ready_research_profile(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    out_dir = tmp_path / "provider_imbalance_evidence"
+
+    report = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+
+    summary = report.summary.iloc[0]
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_evidence_action_queue.csv")
+    strategy_summary = pd.read_csv(out_dir / "strategy_evidence" / "strategy_evidence_summary.csv")
+    items = pd.read_csv(out_dir / "strategy_evidence" / "strategy_evidence_items.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary["provider_research_ready"])
+    assert bool(summary["strategy_evidence_ready"])
+    assert summary["evidence_profile"] == "provider_imbalance_research"
+    assert summary["next_gate"] == "pipeline-imbalance-launch"
+    assert strategy_summary.loc[0, "evidence_profile"] == "provider_imbalance_research"
+    assert set(items["required_run_type"]) == {
+        "provider_market_data_research_handoff",
+        "imbalance_edge_walkforward",
+        "imbalance_replay_walkforward",
+        "promotion_report",
+        "imbalance_research_pipeline",
+        "provider_market_data_imbalance_research",
+    }
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "pipeline-imbalance-launch"
+    assert manifest["run_type"] == "provider_market_data_imbalance_evidence_review"
+
+
+def test_provider_market_data_imbalance_evidence_blocks_unready_research(tmp_path):
+    smoke = _write_synthetic_smoke_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        smoke.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+
+    report = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not research.ready
+    assert not report.ready
+    assert "provider_imbalance_research_ready" in failed
+    assert "strategy_evidence_review_ready" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "run-provider-market-data-imbalance-research"
+
+
+def test_cli_provider_market_data_imbalance_evidence_accepts_ready_research(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_evidence"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-evidence",
+            "--provider-research-dir",
+            str(research.output_dir),
+            "--out",
+            str(out_dir),
+            "--allow-dirty-git",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_evidence_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "pipeline-imbalance-launch"

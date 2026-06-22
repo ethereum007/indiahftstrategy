@@ -412,6 +412,7 @@ def _summary(
                 "transport": _first_text(evidence_summary, "transport"),
                 "market": _effective_market(evidence_summary, config),
                 "kind": _first_text(evidence_summary, "kind"),
+                "strategy": ";".join(config.strategies),
                 "strategy_profiles": ";".join(config.strategies),
                 "dataset_count": int(len(datasets)),
                 "ready_command_count": int((commands["queue_status"].astype(str) == "ready").sum()) if not commands.empty else 0,

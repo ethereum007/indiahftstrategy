@@ -373,6 +373,7 @@ def _summary(
                 "handoff_dir": str(handoff_dir),
                 "imbalance_research_dir": str(pipeline_dir if pipeline is not None else ""),
                 "market": _first_text(handoff.summary, "market") or config.market,
+                "strategy": "imbalance",
                 "provider": _first_text(handoff.summary, "provider"),
                 "transport": _first_text(handoff.summary, "transport"),
                 "dataset_count": int(handoff_row.get("dataset_count", 0) or 0),

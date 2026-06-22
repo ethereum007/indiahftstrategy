@@ -4504,6 +4504,25 @@ artifacts, and a manifest. If the live evidence is synthetic smoke evidence,
 not research-ready, or too thin, the strategy pipeline is not run and the action
 queue points back to the provider evidence or imbalance research gate.
 
+Review the provider imbalance research evidence before building broker launch
+artifacts:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-evidence `
+  --provider-research-dir runs\provider_market_data_imbalance_research\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_evidence\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes a nested experiment `catalog` and `strategy_evidence` review using
+the `provider_imbalance_research` profile. That profile requires the provider
+research handoff, imbalance edge walk-forward, replay walk-forward, promotion,
+the root imbalance research pipeline, and the provider imbalance research
+manifest. A ready review points to `pipeline-imbalance-launch`; it does not
+weaken the full `imbalance` profile, which still requires order-plan and launch
+pipeline proof before shadow scale-up.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

@@ -28,6 +28,14 @@ IMBALANCE_REQUIRED_RUN_TYPES = (
     "imbalance_order_plan",
     "imbalance_launch_pipeline",
 )
+PROVIDER_IMBALANCE_RESEARCH_REQUIRED_RUN_TYPES = (
+    "provider_market_data_research_handoff",
+    "imbalance_edge_walkforward",
+    "imbalance_replay_walkforward",
+    "promotion_report",
+    "imbalance_research_pipeline",
+    "provider_market_data_imbalance_research",
+)
 SETTLEMENT_REQUIRED_RUN_TYPES = (
     "settlement_convergence_walkforward",
     "promotion_report",
@@ -66,6 +74,7 @@ EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
     "imbalance": IMBALANCE_REQUIRED_RUN_TYPES,
+    "provider_imbalance_research": PROVIDER_IMBALANCE_RESEARCH_REQUIRED_RUN_TYPES,
     "settlement": SETTLEMENT_REQUIRED_RUN_TYPES,
     "parity": PARITY_REQUIRED_RUN_TYPES,
     "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
@@ -76,6 +85,10 @@ EVIDENCE_PROFILE_ALIASES = {
     "lead_lag_taker": "leadlag",
     "leadlag_taker": "leadlag",
     "microprice_imbalance": "imbalance",
+    "imbalance_research": "provider_imbalance_research",
+    "microprice_imbalance_research": "provider_imbalance_research",
+    "provider_market_data_imbalance": "provider_imbalance_research",
+    "provider_market_data_imbalance_research": "provider_imbalance_research",
     "settlement_convergence": "settlement",
     "parity_box": "parity",
     "surface_market_making": "surface_mm",

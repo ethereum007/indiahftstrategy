@@ -101,6 +101,12 @@
   nests the research handoff, executes imbalance edge/replay/promotion on real
   provider tick folds, and blocks before strategy math when evidence is
   synthetic smoke or not research-ready.
+- Provider market-data imbalance evidence review now packages live-data research
+  into a research-only evidence profile:
+  `review-provider-market-data-imbalance-evidence` catalogs the provider
+  research run, reviews the `provider_imbalance_research` profile, and points
+  ready candidates to `pipeline-imbalance-launch` without weakening the full
+  launch-ready `imbalance` profile.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

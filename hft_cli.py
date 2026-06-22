@@ -130,6 +130,10 @@ from reports.provider_market_data_imbalance_research import (
     ProviderMarketDataImbalanceResearchConfig,
     write_provider_market_data_imbalance_research,
 )
+from reports.provider_market_data_imbalance_evidence import (
+    ProviderMarketDataImbalanceEvidenceConfig,
+    write_provider_market_data_imbalance_evidence_review,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1257,6 +1261,25 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_research.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_research.add_argument("--fail-on-actions", action="store_true")
     _add_generic_cost_args(provider_market_data_imbalance_research)
+
+    provider_market_data_imbalance_evidence = sub.add_parser(
+        "review-provider-market-data-imbalance-evidence",
+        help="Catalog and gate provider live-data imbalance research evidence before broker launch packaging.",
+    )
+    provider_market_data_imbalance_evidence.add_argument("--provider-research-dir", required=True)
+    provider_market_data_imbalance_evidence.add_argument("--out", required=True)
+    provider_market_data_imbalance_evidence.add_argument("--no-require-provider-research-ready", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--no-require-strategy-evidence-ready", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--allow-dirty-git", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--require-same-git-commit", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--no-require-same-strategy", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--no-require-same-market", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--expected-market", default="")
+    provider_market_data_imbalance_evidence.add_argument("--min-passed-per-type", type=int, default=1)
+    provider_market_data_imbalance_evidence.add_argument("--require-file-inputs", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_evidence.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3819,6 +3842,35 @@ def main(argv: list[str] | None = None) -> int:
                 max_worst_drawdown=args.max_worst_drawdown,
                 min_median_markout_mean=args.min_median_markout_mean,
                 **_generic_cost_override_kwargs(args),
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-evidence":
+        result = write_provider_market_data_imbalance_evidence_review(
+            args.provider_research_dir,
+            args.out,
+            config=ProviderMarketDataImbalanceEvidenceConfig(
+                require_provider_research_ready=not args.no_require_provider_research_ready,
+                require_strategy_evidence_ready=not args.no_require_strategy_evidence_ready,
+                allow_dirty_git=args.allow_dirty_git,
+                require_same_git_commit=args.require_same_git_commit,
+                require_same_strategy=not args.no_require_same_strategy,
+                require_same_market=not args.no_require_same_market,
+                expected_market=args.expected_market,
+                min_passed_per_type=args.min_passed_per_type,
+                require_file_inputs=args.require_file_inputs,
             ),
         )
         print(result.summary.to_string(index=False))

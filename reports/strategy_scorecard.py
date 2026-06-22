@@ -25,20 +25,25 @@ DEFAULT_SCORECARD_PROFILES = ("leadlag", "imbalance", "parity", "settlement", "s
 PROFILE_STRATEGY_HINTS = {
     "leadlag": "lead_lag_taker",
     "imbalance": "imbalance",
+    "provider_imbalance_research": "imbalance",
     "parity": "parity_box",
     "settlement": "settlement_convergence",
     "surface_mm": "surface_mm",
 }
 READY_NEXT_GATES = {
     "ops_launch": "review-route-readiness",
+    "provider_imbalance_research": "pipeline-imbalance-launch",
 }
 PROMOTION_NEXT_GATES = {
     "leadlag": "promote-leadlag-candidate",
     "imbalance": "promote-imbalance-candidate",
+    "provider_imbalance_research": "promote-imbalance-candidate",
     "parity": "promote-parity-candidate",
     "settlement": "promote-settlement-candidate",
 }
 RUN_TYPE_NEXT_GATES = {
+    "provider_market_data_research_handoff": "handoff-provider-market-data-research",
+    "provider_market_data_imbalance_research": "run-provider-market-data-imbalance-research",
     "proof_report": "proof-report",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",
