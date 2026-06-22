@@ -1064,6 +1064,82 @@ def test_write_experiment_catalog_summarizes_broker_roundtrip_portfolio_proofs(t
     assert float(safe_row["summary_strategy_portfolio_max_strategy_allocation_weight"]) == 0.45
 
 
+def test_write_experiment_catalog_summarizes_broker_roundtrip_resume_route_proofs(tmp_path):
+    def resume_route_columns(prefix, *, ready=True, route_ready_pairs=1, gap_pairs=0, controls_ready=True):
+        return {
+            f"{prefix}_required": True,
+            f"{prefix}_provided": True,
+            f"{prefix}_ready": ready,
+            f"{prefix}_strategy": "lead_lag_taker",
+            f"{prefix}_market": "india_nse_index_derivatives",
+            f"{prefix}_route_ready_pairs": route_ready_pairs,
+            f"{prefix}_gap_pairs": gap_pairs,
+            f"{prefix}_ops_launch_controls_ready": controls_ready,
+            f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs": 1 if ready else 0,
+            f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs": 0 if ready else 1,
+            f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1 if ready else 0,
+            f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0 if ready else 1,
+        }
+
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    write_run(
+        root / "roundtrip_resume_ready",
+        run_type="broker_dispatch_roundtrip",
+        summary_name="broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": True,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 0,
+            **resume_route_columns("route_broker_resume_broker_route_readiness"),
+            **resume_route_columns("route_broker_resume_incident_broker_route_readiness", route_ready_pairs=2),
+        },
+    )
+    write_run(
+        root / "roundtrip_resume_breach",
+        run_type="broker_dispatch_roundtrip",
+        summary_name="broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": False,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 1,
+            **resume_route_columns(
+                "route_broker_resume_broker_route_readiness",
+                ready=False,
+                route_ready_pairs=0,
+                gap_pairs=2,
+                controls_ready=False,
+            ),
+            **resume_route_columns("route_broker_resume_incident_broker_route_readiness"),
+        },
+    )
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    summary = report.summary.iloc[0]
+    assert int(summary["broker_roundtrip_resume_route_provided_runs"]) == 2
+    assert int(summary["broker_roundtrip_resume_route_ready_runs"]) == 1
+    assert int(summary["broker_roundtrip_resume_route_primary_ready_runs"]) == 1
+    assert int(summary["broker_roundtrip_resume_route_incident_ready_runs"]) == 2
+    assert int(summary["broker_roundtrip_resume_route_breach_runs"]) == 1
+    assert int(summary["broker_roundtrip_resume_route_gap_breach_runs"]) == 1
+    assert int(summary["broker_roundtrip_resume_route_launch_control_breach_runs"]) == 1
+    assert int(summary["broker_roundtrip_resume_route_portfolio_breach_runs"]) == 1
+    assert int(summary["broker_roundtrip_resume_route_concentration_breach_runs"]) == 1
+    persisted = pd.read_csv(out_dir / "experiment_catalog_summary.csv")
+    assert int(persisted.loc[0, "broker_roundtrip_resume_route_breach_runs"]) == 1
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["broker_roundtrip_resume_route_ready_runs"] == 1
+    assert action_plan["broker_roundtrip_resume_route_breach_runs"] == 1
+    assert action_plan["broker_roundtrip_resume_route_gap_breach_runs"] == 1
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "- Resume-route-ready broker round-trip runs: 1" in runbook
+    assert "- Resume-route-breach broker round-trip runs: 1" in runbook
+    assert "- Resume-route launch-control-breach broker round-trip runs: 1" in runbook
+
+
 def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path):
     root = tmp_path / "runs"
     write_run(
@@ -3133,6 +3209,104 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_portfolio_proofs(tmp_path):
     assert missing_code == 2
     assert int(breach_summary.loc[0, "broker_roundtrip_portfolio_breach_runs"]) == 1
     assert int(breach_summary.loc[0, "broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
+
+
+def test_cli_catalog_runs_can_gate_broker_roundtrip_resume_route_proofs(tmp_path):
+    def resume_route_columns(prefix, *, ready=True, route_ready_pairs=1, gap_pairs=0, controls_ready=True):
+        return {
+            f"{prefix}_required": True,
+            f"{prefix}_provided": True,
+            f"{prefix}_ready": ready,
+            f"{prefix}_strategy": "lead_lag_taker",
+            f"{prefix}_market": "india_nse_index_derivatives",
+            f"{prefix}_route_ready_pairs": route_ready_pairs,
+            f"{prefix}_gap_pairs": gap_pairs,
+            f"{prefix}_ops_launch_controls_ready": controls_ready,
+            f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs": 1 if ready else 0,
+            f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs": 0 if ready else 1,
+            f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1 if ready else 0,
+            f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0 if ready else 1,
+        }
+
+    safe_root = tmp_path / "safe_runs"
+    write_run(
+        safe_root / "broker_roundtrip_resume_ready",
+        run_type="broker_dispatch_roundtrip",
+        summary_name="broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": True,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 0,
+            **resume_route_columns("route_broker_resume_broker_route_readiness"),
+            **resume_route_columns("route_broker_resume_incident_broker_route_readiness"),
+        },
+    )
+    breach_root = tmp_path / "breach_runs"
+    write_run(
+        breach_root / "broker_roundtrip_resume_breach",
+        run_type="broker_dispatch_roundtrip",
+        summary_name="broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": False,
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 1,
+            **resume_route_columns(
+                "route_broker_resume_broker_route_readiness",
+                ready=False,
+                route_ready_pairs=0,
+                gap_pairs=2,
+                controls_ready=False,
+            ),
+            **resume_route_columns("route_broker_resume_incident_broker_route_readiness"),
+        },
+    )
+    missing_root = tmp_path / "missing_runs"
+    write_run(
+        missing_root / "proof",
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={"all_passed": True, "failed_runs": 0},
+    )
+
+    safe_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(safe_root),
+            "--out",
+            str(tmp_path / "catalog_safe"),
+            "--require-broker-roundtrip-resume-route-ready",
+            "--fail-on-broker-roundtrip-resume-route-breach",
+        ]
+    )
+    breach_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(breach_root),
+            "--out",
+            str(tmp_path / "catalog_breach"),
+            "--fail-on-broker-roundtrip-resume-route-breach",
+        ]
+    )
+    missing_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(missing_root),
+            "--out",
+            str(tmp_path / "catalog_missing"),
+            "--require-broker-roundtrip-resume-route-ready",
+        ]
+    )
+
+    breach_summary = pd.read_csv(tmp_path / "catalog_breach" / "experiment_catalog_summary.csv")
+    assert safe_code == 0
+    assert breach_code == 2
+    assert missing_code == 2
+    assert int(breach_summary.loc[0, "broker_roundtrip_resume_route_breach_runs"]) == 1
 
 
 def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):

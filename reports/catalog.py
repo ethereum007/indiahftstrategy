@@ -256,6 +256,7 @@ def _catalog_summary(
     action_counts = _action_queue_counts(action_queue)
     hygiene_counts = _hygiene_gap_counts(hygiene_gaps)
     broker_roundtrip_counts = _broker_roundtrip_portfolio_counts(catalog)
+    broker_roundtrip_resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
     placeholder_schema_counts = _placeholder_schema_counts(catalog)
     if catalog.empty:
         return pd.DataFrame(
@@ -276,6 +277,7 @@ def _catalog_summary(
                     "runs_with_directory_inputs": 0,
                     "runs_with_unfingerprinted_inputs": 0,
                     **broker_roundtrip_counts,
+                    **broker_roundtrip_resume_route_counts,
                     **placeholder_schema_counts,
                     **action_counts,
                     **hygiene_counts,
@@ -301,6 +303,7 @@ def _catalog_summary(
                 "runs_with_directory_inputs": int((catalog["input_directory_count"] > 0).sum()),
                 "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
                 **broker_roundtrip_counts,
+                **broker_roundtrip_resume_route_counts,
                 **placeholder_schema_counts,
                 **action_counts,
                 **hygiene_counts,
@@ -383,6 +386,113 @@ def _broker_roundtrip_portfolio_counts(catalog: pd.DataFrame) -> dict[str, int]:
         }
     )
     return keys
+
+
+def _broker_roundtrip_resume_route_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "broker_roundtrip_resume_route_provided_runs": 0,
+        "broker_roundtrip_resume_route_ready_runs": 0,
+        "broker_roundtrip_resume_route_primary_ready_runs": 0,
+        "broker_roundtrip_resume_route_incident_ready_runs": 0,
+        "broker_roundtrip_resume_route_breach_runs": 0,
+        "broker_roundtrip_resume_route_gap_breach_runs": 0,
+        "broker_roundtrip_resume_route_launch_control_breach_runs": 0,
+        "broker_roundtrip_resume_route_portfolio_breach_runs": 0,
+        "broker_roundtrip_resume_route_concentration_breach_runs": 0,
+    }
+    if catalog.empty or "run_type" not in catalog.columns:
+        return keys
+    frame = catalog.loc[catalog["run_type"].astype(str) == "broker_dispatch_roundtrip"].copy()
+    if frame.empty:
+        return keys
+
+    primary = _resume_route_branch_state(frame, "summary_route_broker_resume_broker_route_readiness")
+    incident = _resume_route_branch_state(frame, "summary_route_broker_resume_incident_broker_route_readiness")
+    any_active = primary["active"] | incident["active"]
+    provided = primary["provided"] & incident["provided"]
+    ready = primary["ready"] & incident["ready"]
+    gap_breach = primary["gap_breach"] | incident["gap_breach"]
+    launch_control_breach = primary["launch_control_breach"] | incident["launch_control_breach"]
+    portfolio_breach = primary["portfolio_breach"] | incident["portfolio_breach"]
+    concentration_breach = primary["concentration_breach"] | incident["concentration_breach"]
+    any_breach = any_active & (
+        ~provided
+        | ~ready
+        | gap_breach
+        | launch_control_breach
+        | portfolio_breach
+        | concentration_breach
+    )
+    keys.update(
+        {
+            "broker_roundtrip_resume_route_provided_runs": int(provided.sum()),
+            "broker_roundtrip_resume_route_ready_runs": int(ready.sum()),
+            "broker_roundtrip_resume_route_primary_ready_runs": int(primary["ready"].sum()),
+            "broker_roundtrip_resume_route_incident_ready_runs": int(incident["ready"].sum()),
+            "broker_roundtrip_resume_route_breach_runs": int(any_breach.sum()),
+            "broker_roundtrip_resume_route_gap_breach_runs": int((any_active & gap_breach).sum()),
+            "broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                (any_active & launch_control_breach).sum()
+            ),
+            "broker_roundtrip_resume_route_portfolio_breach_runs": int((any_active & portfolio_breach).sum()),
+            "broker_roundtrip_resume_route_concentration_breach_runs": int(
+                (any_active & concentration_breach).sum()
+            ),
+        }
+    )
+    return keys
+
+
+def _resume_route_branch_state(frame: pd.DataFrame, prefix: str) -> dict[str, pd.Series]:
+    required = _bool_column(frame, f"{prefix}_required")
+    provided = _bool_column(frame, f"{prefix}_provided")
+    ready_flag = _bool_column(frame, f"{prefix}_ready")
+    route_ready_pairs = _numeric_column(frame, f"{prefix}_route_ready_pairs")
+    gap_pairs = _numeric_column(frame, f"{prefix}_gap_pairs")
+    launch_ready = _bool_column(frame, f"{prefix}_ops_launch_controls_ready")
+    safe_runs = _numeric_column(frame, f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs")
+    breach_runs = _numeric_column(frame, f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs")
+    concentration_ok_runs = _numeric_column(
+        frame,
+        f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+    )
+    concentration_breach_runs = _numeric_column(
+        frame,
+        f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    )
+    active = (
+        required
+        | provided
+        | ready_flag
+        | (route_ready_pairs > 0.0)
+        | (gap_pairs > 0.0)
+        | launch_ready
+        | (safe_runs > 0.0)
+        | (breach_runs > 0.0)
+        | (concentration_ok_runs > 0.0)
+        | (concentration_breach_runs > 0.0)
+    )
+    gap_breach = (route_ready_pairs <= 0.0) | (gap_pairs > 0.0)
+    launch_control_breach = ~launch_ready
+    portfolio_breach = (safe_runs <= 0.0) | (breach_runs > 0.0)
+    concentration_breach = (concentration_ok_runs <= 0.0) | (concentration_breach_runs > 0.0)
+    ready = (
+        provided
+        & ready_flag
+        & ~gap_breach
+        & ~launch_control_breach
+        & ~portfolio_breach
+        & ~concentration_breach
+    )
+    return {
+        "active": active,
+        "provided": provided,
+        "ready": ready,
+        "gap_breach": gap_breach,
+        "launch_control_breach": launch_control_breach,
+        "portfolio_breach": portfolio_breach,
+        "concentration_breach": concentration_breach,
+    }
 
 
 def _placeholder_schema_counts(catalog: pd.DataFrame) -> dict[str, int]:
@@ -712,6 +822,33 @@ def _catalog_action_plan(
         ),
         "broker_roundtrip_portfolio_concentration_breach_runs": _int_metric(
             summary_row.get("broker_roundtrip_portfolio_concentration_breach_runs")
+        ),
+        "broker_roundtrip_resume_route_provided_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_provided_runs")
+        ),
+        "broker_roundtrip_resume_route_ready_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_ready_runs")
+        ),
+        "broker_roundtrip_resume_route_primary_ready_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_primary_ready_runs")
+        ),
+        "broker_roundtrip_resume_route_incident_ready_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_incident_ready_runs")
+        ),
+        "broker_roundtrip_resume_route_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_breach_runs")
+        ),
+        "broker_roundtrip_resume_route_gap_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_gap_breach_runs")
+        ),
+        "broker_roundtrip_resume_route_launch_control_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_launch_control_breach_runs")
+        ),
+        "broker_roundtrip_resume_route_portfolio_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_portfolio_breach_runs")
+        ),
+        "broker_roundtrip_resume_route_concentration_breach_runs": _int_metric(
+            summary_row.get("broker_roundtrip_resume_route_concentration_breach_runs")
         ),
         "placeholder_schema_active_runs": _int_metric(summary_row.get("placeholder_schema_active_runs")),
         "placeholder_schema_allowed_runs": _int_metric(summary_row.get("placeholder_schema_allowed_runs")),
@@ -1162,6 +1299,42 @@ def _catalog_runbook_markdown(
         (
             "- Portfolio-concentration-breach broker round-trip runs: "
             f"{_int_metric(summary_row.get('broker_roundtrip_portfolio_concentration_breach_runs'))}"
+        ),
+        (
+            "- Resume-route-provided broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_provided_runs'))}"
+        ),
+        (
+            "- Resume-route-ready broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_ready_runs'))}"
+        ),
+        (
+            "- Resume-route primary-ready broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_primary_ready_runs'))}"
+        ),
+        (
+            "- Resume-route incident-ready broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_incident_ready_runs'))}"
+        ),
+        (
+            "- Resume-route-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_breach_runs'))}"
+        ),
+        (
+            "- Resume-route gap-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_gap_breach_runs'))}"
+        ),
+        (
+            "- Resume-route launch-control-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_launch_control_breach_runs'))}"
+        ),
+        (
+            "- Resume-route portfolio-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_portfolio_breach_runs'))}"
+        ),
+        (
+            "- Resume-route concentration-breach broker round-trip runs: "
+            f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_concentration_breach_runs'))}"
         ),
         "",
         "## Broker Schema Review",

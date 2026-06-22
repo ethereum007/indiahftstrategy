@@ -195,6 +195,10 @@
   proof across dispatch/send/ack artifacts, revalidating primary and
   closed-incident branches before final dry-run bridge proof can inherit
   post-halt authorization.
+- Experiment catalog summaries, action plans, runbooks, and CLI exit gates now
+  track final broker round-trip resume-route proof, including primary/incident
+  branch readiness plus route-gap, launch-control, portfolio, and concentration
+  breach counters.
 - Broker dispatch round-trip review now emits manifest-tracked
   `broker_dispatch_roundtrip_action_queue.csv` and
   `broker_dispatch_roundtrip_runbook.md` scheduler handoffs, routing failed

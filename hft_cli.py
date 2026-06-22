@@ -162,6 +162,8 @@ def _catalog_exit_code(
     require_broker_roundtrip_portfolio_safe: bool,
     fail_on_broker_roundtrip_portfolio_concentration_breach: bool,
     require_broker_roundtrip_portfolio_concentration_ok: bool,
+    fail_on_broker_roundtrip_resume_route_breach: bool,
+    require_broker_roundtrip_resume_route_ready: bool,
 ) -> int:
     if fail_on_catalog_gaps and _catalog_gap_count(result) > 0:
         return 2
@@ -183,6 +185,16 @@ def _catalog_exit_code(
     if (
         require_broker_roundtrip_portfolio_concentration_ok
         and _catalog_summary_metric(result, "broker_roundtrip_portfolio_concentration_ok_runs") <= 0
+    ):
+        return 2
+    if (
+        fail_on_broker_roundtrip_resume_route_breach
+        and _catalog_summary_metric(result, "broker_roundtrip_resume_route_breach_runs") > 0
+    ):
+        return 2
+    if (
+        require_broker_roundtrip_resume_route_ready
+        and _catalog_summary_metric(result, "broker_roundtrip_resume_route_ready_runs") <= 0
     ):
         return 2
     if fail_on_placeholder_schema and _catalog_summary_metric(result, "placeholder_schema_active_runs") > 0:
@@ -1179,6 +1191,8 @@ def main(argv: list[str] | None = None) -> int:
     catalog.add_argument("--require-broker-roundtrip-portfolio-safe", action="store_true")
     catalog.add_argument("--fail-on-broker-roundtrip-portfolio-concentration-breach", action="store_true")
     catalog.add_argument("--require-broker-roundtrip-portfolio-concentration-ok", action="store_true")
+    catalog.add_argument("--fail-on-broker-roundtrip-resume-route-breach", action="store_true")
+    catalog.add_argument("--require-broker-roundtrip-resume-route-ready", action="store_true")
 
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
@@ -3389,6 +3403,8 @@ def main(argv: list[str] | None = None) -> int:
             require_broker_roundtrip_portfolio_concentration_ok=(
                 args.require_broker_roundtrip_portfolio_concentration_ok
             ),
+            fail_on_broker_roundtrip_resume_route_breach=args.fail_on_broker_roundtrip_resume_route_breach,
+            require_broker_roundtrip_resume_route_ready=args.require_broker_roundtrip_resume_route_ready,
         )
     if args.command == "review-strategy-evidence":
         required_run_types = (

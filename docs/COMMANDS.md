@@ -88,6 +88,15 @@ also carries portfolio concentration fields, the catalog adds
 Arrow.money/iRage dry-run review can prove whether dispatch notional stayed
 inside the selected strategy portfolio allocation and whether allocation
 concentration stayed inside the selected portfolio limits.
+When round-trip summaries carry post-halt resume-route proof, the catalog also
+adds `broker_roundtrip_resume_route_provided_runs`,
+`broker_roundtrip_resume_route_ready_runs`,
+`broker_roundtrip_resume_route_primary_ready_runs`,
+`broker_roundtrip_resume_route_incident_ready_runs`,
+`broker_roundtrip_resume_route_breach_runs`, and breach subtype counters for
+route gaps, launch controls, portfolio proof, and concentration proof. These
+metrics let scheduler gates reject partial or stale resume authorization
+before Arrow.money/iRage dry-run evidence is treated as reusable.
 For broker schema review, the catalog summary/action plan/runbook carry
 `placeholder_schema_active_runs`, `placeholder_schema_allowed_runs`,
 `placeholder_schema_reviewed_runs`, `placeholder_schema_unreviewed_runs`, and
@@ -138,6 +147,12 @@ any final broker round-trip concentration proof breaches its strategy/market
 count or max-weight limits, and
 `--require-broker-roundtrip-portfolio-concentration-ok` when the catalog must
 contain at least one concentration-OK broker dispatch round-trip proof.
+Use `--fail-on-broker-roundtrip-resume-route-breach` to fail when any final
+round-trip contains incomplete, gapped, launch-control-failed, portfolio-unsafe,
+or concentration-unsafe resume-route proof, and
+`--require-broker-roundtrip-resume-route-ready` when the catalog must contain
+at least one final round-trip with both primary and incident resume-route
+branches ready.
 Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
 summary status, missing summaries, dirty git state, or unfingerprinted inputs.
 When that gate fails, inspect `experiment_catalog_hygiene_gaps.csv` first.
