@@ -244,6 +244,24 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
         )
     if route_readiness_active:
         checks.extend(_route_readiness_checks(route))
+    if _resume_route_readiness_active(route, "broker_resume_broker_route_readiness"):
+        checks.extend(
+            _resume_route_readiness_checks(
+                route,
+                source_prefix="broker_resume_broker_route_readiness",
+                check_prefix="route_broker_resume_broker_route_readiness",
+                label="route-enable broker resume-gate broker route-readiness",
+            )
+        )
+    if _resume_route_readiness_active(route, "broker_resume_incident_broker_route_readiness"):
+        checks.extend(
+            _resume_route_readiness_checks(
+                route,
+                source_prefix="broker_resume_incident_broker_route_readiness",
+                check_prefix="route_broker_resume_incident_broker_route_readiness",
+                label="route-enable broker resume-gate incident broker route-readiness",
+            )
+        )
     checks.extend(
         [
             _check(
@@ -548,6 +566,132 @@ def _broker_route_readiness_checks(route: dict[str, Any]) -> list[dict[str, obje
             0,
             int(route["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) <= 0,
             "route-enable broker-carried route proof has concentration breach broker round-trip runs",
+        ),
+    ]
+
+
+def _resume_route_readiness_active(route: dict[str, Any], prefix: str) -> bool:
+    return bool(
+        _to_bool(route[f"{prefix}_required"])
+        or _to_bool(route[f"{prefix}_provided"])
+        or _to_bool(route[f"{prefix}_ready"])
+        or int(route[f"{prefix}_route_ready_pairs"]) > 0
+        or int(route[f"{prefix}_gap_pairs"]) > 0
+        or bool(_object_text(route[f"{prefix}_strategy"]))
+        or bool(_object_text(route[f"{prefix}_market"]))
+        or bool(_object_text(route[f"{prefix}_recommendation"]))
+        or _to_bool(route[f"{prefix}_ops_launch_controls_ready"])
+        or bool(_object_text(route[f"{prefix}_ops_launch_control_failures"]))
+        or int(route[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]) > 0
+        or int(route[f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs"]) > 0
+        or int(route[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) > 0
+        or int(route[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) > 0
+    )
+
+
+def _resume_route_readiness_checks(
+    route: dict[str, Any],
+    *,
+    source_prefix: str,
+    check_prefix: str,
+    label: str,
+) -> list[dict[str, object]]:
+    return [
+        _check(
+            f"{check_prefix}_provided",
+            route[f"{source_prefix}_provided"],
+            "is",
+            True,
+            bool(route[f"{source_prefix}_provided"] or not route[f"{source_prefix}_required"]),
+            f"{label} proof is required but not provided",
+        ),
+        _check(
+            f"{check_prefix}_ready",
+            route[f"{source_prefix}_ready"],
+            "is",
+            True,
+            bool(route[f"{source_prefix}_ready"]),
+            f"{label} proof is not ready",
+        ),
+        _check(
+            f"{check_prefix}_strategy_matches",
+            route[f"{source_prefix}_strategy"],
+            "==",
+            route["strategy"],
+            bool(
+                route[f"{source_prefix}_strategy"]
+                and route["strategy"]
+                and route[f"{source_prefix}_strategy"] == route["strategy"]
+            ),
+            f"{label} strategy does not match dispatch strategy",
+        ),
+        _check(
+            f"{check_prefix}_market_matches",
+            route[f"{source_prefix}_market"],
+            "==",
+            route["market"],
+            bool(
+                route[f"{source_prefix}_market"]
+                and route["market"]
+                and route[f"{source_prefix}_market"] == route["market"]
+            ),
+            f"{label} market does not match dispatch market",
+        ),
+        _check(
+            f"{check_prefix}_route_ready_pairs",
+            route[f"{source_prefix}_route_ready_pairs"],
+            ">",
+            0,
+            int(route[f"{source_prefix}_route_ready_pairs"]) > 0,
+            f"{label} has no route-ready pairs",
+        ),
+        _check(
+            f"{check_prefix}_gap_pairs",
+            route[f"{source_prefix}_gap_pairs"],
+            "<=",
+            0,
+            int(route[f"{source_prefix}_gap_pairs"]) <= 0,
+            f"{label} has route gaps",
+        ),
+        _check(
+            f"{check_prefix}_ops_launch_controls_ready",
+            route[f"{source_prefix}_ops_launch_controls_ready"],
+            "is",
+            True,
+            bool(route[f"{source_prefix}_ops_launch_controls_ready"]),
+            f"{label} is missing launch-grade ops broker controls",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_safe_runs",
+            route[f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs"],
+            ">",
+            0,
+            int(route[f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs"]) > 0,
+            f"{label} has no allocation-safe broker round-trip runs",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_breach_runs",
+            route[f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs"],
+            "<=",
+            0,
+            int(route[f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs"]) <= 0,
+            f"{label} has allocation breach broker round-trip runs",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            route[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"],
+            ">",
+            0,
+            int(route[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) > 0,
+            f"{label} has no concentration-OK broker round-trip runs",
+        ),
+        _check(
+            f"{check_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+            route[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"],
+            "<=",
+            0,
+            int(route[f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) <= 0,
+            f"{label} has concentration breach broker round-trip runs",
         ),
     ]
 
@@ -1197,6 +1341,16 @@ def _summary(
                     "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"
                 ],
                 **_broker_route_readiness_summary_fields(route),
+                **_resume_route_readiness_summary_fields(
+                    route,
+                    source_prefix="broker_resume_broker_route_readiness",
+                    output_prefix="route_broker_resume_broker_route_readiness",
+                ),
+                **_resume_route_readiness_summary_fields(
+                    route,
+                    source_prefix="broker_resume_incident_broker_route_readiness",
+                    output_prefix="route_broker_resume_incident_broker_route_readiness",
+                ),
                 "shadow_broker_readiness_sessions": route["shadow_broker_readiness_sessions"],
                 "shadow_broker_readiness_ready_sessions": route["shadow_broker_readiness_ready_sessions"],
                 "shadow_broker_vendor_data_readiness_sessions": route[
@@ -1352,6 +1506,8 @@ def _component(check: str) -> str:
         return "route_enable"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
         return "strategy_portfolio"
+    if check.startswith("route_broker_resume_") or check.startswith("broker_resume_"):
+        return "resume_gate"
     if "route_readiness" in check:
         return "route_readiness"
     if "vendor_market_data_batch" in check:
@@ -1360,8 +1516,6 @@ def _component(check: str) -> str:
         return "broker_vendor_data_readiness"
     if "dispatch_roundtrip" in check:
         return "broker_dispatch_roundtrip"
-    if check.startswith("broker_resume_"):
-        return "resume_gate"
     if check.startswith("dispatch_orders_") or check in {
         "unique_dispatch_order_id",
         "unique_source_order_id",
@@ -1446,6 +1600,38 @@ def _broker_route_readiness_summary_fields(route: dict[str, Any]) -> dict[str, A
         ],
         "route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": route[
             "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+        ],
+    }
+
+
+def _resume_route_readiness_summary_fields(
+    route: dict[str, Any],
+    *,
+    source_prefix: str,
+    output_prefix: str,
+) -> dict[str, Any]:
+    return {
+        f"{output_prefix}_required": route[f"{source_prefix}_required"],
+        f"{output_prefix}_provided": route[f"{source_prefix}_provided"],
+        f"{output_prefix}_ready": route[f"{source_prefix}_ready"],
+        f"{output_prefix}_strategy": route[f"{source_prefix}_strategy"],
+        f"{output_prefix}_market": route[f"{source_prefix}_market"],
+        f"{output_prefix}_route_ready_pairs": route[f"{source_prefix}_route_ready_pairs"],
+        f"{output_prefix}_gap_pairs": route[f"{source_prefix}_gap_pairs"],
+        f"{output_prefix}_recommendation": route[f"{source_prefix}_recommendation"],
+        f"{output_prefix}_ops_launch_controls_ready": route[f"{source_prefix}_ops_launch_controls_ready"],
+        f"{output_prefix}_ops_launch_control_failures": route[f"{source_prefix}_ops_launch_control_failures"],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_safe_runs": route[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_breach_runs": route[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": route[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"
+        ],
+        f"{output_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": route[
+            f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"
         ],
     }
 
@@ -1726,6 +1912,33 @@ def _broker_route_readiness_config(summary: pd.Series) -> dict[str, Any]:
     }
 
 
+def _resume_route_readiness_config(summary: pd.Series, prefix: str) -> dict[str, Any]:
+    return {
+        "required": _to_bool(summary[f"{prefix}_required"]),
+        "provided": _to_bool(summary[f"{prefix}_provided"]),
+        "ready": _to_bool(summary[f"{prefix}_ready"]),
+        "strategy": str(summary[f"{prefix}_strategy"]),
+        "market": str(summary[f"{prefix}_market"]),
+        "route_ready_pairs": int(summary[f"{prefix}_route_ready_pairs"]),
+        "gap_pairs": int(summary[f"{prefix}_gap_pairs"]),
+        "recommendation": str(summary[f"{prefix}_recommendation"]),
+        "ops_launch_controls_ready": _to_bool(summary[f"{prefix}_ops_launch_controls_ready"]),
+        "ops_launch_control_failures": str(summary[f"{prefix}_ops_launch_control_failures"]),
+        "ops_broker_roundtrip_portfolio_safe_runs": int(
+            summary[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_breach_runs": int(
+            summary[f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            summary[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs"]
+        ),
+        "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            summary[f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs"]
+        ),
+    }
+
+
 def _config(
     route: dict[str, Any],
     dispatch_orders: pd.DataFrame,
@@ -1852,6 +2065,16 @@ def _config(
             },
         },
         "route_broker_route_readiness": _broker_route_readiness_config(summary),
+        "route_broker_resume_gate": {
+            "broker_route_readiness": _resume_route_readiness_config(
+                summary,
+                "route_broker_resume_broker_route_readiness",
+            ),
+            "incident_broker_route_readiness": _resume_route_readiness_config(
+                summary,
+                "route_broker_resume_incident_broker_route_readiness",
+            ),
+        },
         "route_broker_shadow_broker_readiness": _broker_shadow_broker_config(summary),
         "route_broker_vendor_data_readiness": _broker_vendor_data_readiness_config(summary),
         "route_broker_dispatch_roundtrip_vendor_market_data_batch": (
@@ -2025,6 +2248,76 @@ def _int_value(value: object) -> int:
         return 0
 
 
+def _resume_route_readiness_state_fields(
+    row: pd.Series,
+    route_readiness: object,
+    *,
+    source_prefix: str,
+    row_prefix: str,
+) -> dict[str, Any]:
+    readiness = route_readiness if isinstance(route_readiness, dict) else {}
+    return {
+        f"{source_prefix}_required": _to_bool(
+            readiness.get("required", row.get(f"{row_prefix}_required", False))
+        ),
+        f"{source_prefix}_provided": _to_bool(
+            readiness.get("provided", row.get(f"{row_prefix}_provided", False))
+        ),
+        f"{source_prefix}_ready": _to_bool(readiness.get("ready", row.get(f"{row_prefix}_ready", False))),
+        f"{source_prefix}_strategy": _strategy_key(
+            _first_text(readiness.get("strategy", ""), row.get(f"{row_prefix}_strategy", ""))
+        ),
+        f"{source_prefix}_market": _identity_key(
+            _first_text(readiness.get("market", ""), row.get(f"{row_prefix}_market", ""))
+        ),
+        f"{source_prefix}_route_ready_pairs": int(
+            _number_from(readiness, "route_ready_pairs", _number(row, f"{row_prefix}_route_ready_pairs", 0.0))
+        ),
+        f"{source_prefix}_gap_pairs": int(
+            _number_from(readiness, "gap_pairs", _number(row, f"{row_prefix}_gap_pairs", 0.0))
+        ),
+        f"{source_prefix}_recommendation": _first_text(
+            readiness.get("recommendation", ""),
+            row.get(f"{row_prefix}_recommendation", ""),
+        ),
+        f"{source_prefix}_ops_launch_controls_ready": _to_bool(
+            readiness.get("ops_launch_controls_ready", row.get(f"{row_prefix}_ops_launch_controls_ready", False))
+        ),
+        f"{source_prefix}_ops_launch_control_failures": _first_text(
+            readiness.get("ops_launch_control_failures", ""),
+            row.get(f"{row_prefix}_ops_launch_control_failures", ""),
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_safe_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_safe_runs", 0.0),
+            )
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_breach_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_breach_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_breach_runs", 0.0),
+            )
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_concentration_ok_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs", 0.0),
+            )
+        ),
+        f"{source_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
+            _number_from(
+                readiness,
+                "ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                _number(row, f"{row_prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs", 0.0),
+            )
+        ),
+    }
+
+
 def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     strategy_portfolio = config.get("strategy_portfolio", {}) or {}
@@ -2032,6 +2325,17 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     broker_readiness = config.get("broker_readiness", {}) or {}
     route_readiness = config.get("route_readiness", {}) or {}
     broker_route_readiness = config.get("cutover_broker_route_readiness", {}) or {}
+    cutover_broker_resume_gate = (
+        config.get("cutover_broker_resume_gate", {})
+        or config.get("route_broker_resume_gate", {})
+        or {}
+    )
+    if not isinstance(cutover_broker_resume_gate, dict):
+        cutover_broker_resume_gate = {}
+    resume_broker_route_readiness = cutover_broker_resume_gate.get("broker_route_readiness", {}) or {}
+    resume_incident_broker_route_readiness = (
+        cutover_broker_resume_gate.get("incident_broker_route_readiness", {}) or {}
+    )
     shadow_broker = config.get("shadow_broker_readiness", {}) or {}
     shadow_broker_vendor_readiness = shadow_broker.get("broker_vendor_data_readiness", {}) or {}
     shadow_broker_route = shadow_broker.get("route_readiness", {}) or {}
@@ -2357,6 +2661,18 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
                     0.0,
                 ),
             )
+        ),
+        **_resume_route_readiness_state_fields(
+            row,
+            resume_broker_route_readiness,
+            source_prefix="broker_resume_broker_route_readiness",
+            row_prefix="cutover_broker_resume_broker_route_readiness",
+        ),
+        **_resume_route_readiness_state_fields(
+            row,
+            resume_incident_broker_route_readiness,
+            source_prefix="broker_resume_incident_broker_route_readiness",
+            row_prefix="cutover_broker_resume_incident_broker_route_readiness",
         ),
         "shadow_broker_readiness_sessions": int(
             _number_from(

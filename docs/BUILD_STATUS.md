@@ -320,6 +320,9 @@
   ops broker controls before dry-run dispatch planning, carrying direct
   breach counters and broker-carried route proof into dispatch summary/config
   handoffs.
+- Broker dispatch now also carries route-enable-retained broker resume-route
+  proof, revalidating primary and incident branches before dry-run send packet
+  preparation can inherit post-halt dispatch authorization.
 - Cutover gate now emits manifest-tracked `cutover_action_queue.csv` and
   `cutover_runbook.md` handoffs, routing failed scale-up, route-readiness,
   broker-readiness, runtime-session, dispatch-roundtrip, vendor-data,

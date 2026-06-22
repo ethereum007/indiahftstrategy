@@ -3552,7 +3552,15 @@ allocation-safe, and concentration-OK run counts. These counters are carried in
 `broker_dispatch_summary.csv` and `broker_dispatch_config.json` as
 `route_readiness_*` plus `route_broker_route_readiness`. `--require-route-readiness`
 is automatic for `--target-mode live_dryrun`; the explicit flag keeps
-paper/shadow dispatch plans equally strict. The resulting
+paper/shadow dispatch plans equally strict. When route-enable carried
+post-halt resume route proof from cutover, dispatch planning revalidates both
+the broker resume route branch and the closed-incident branch, preserving them
+as `route_broker_resume_broker_route_readiness_*`,
+`route_broker_resume_incident_broker_route_readiness_*`, and nested
+`route_broker_resume_gate` config blocks. Strategy/market drift, route gaps,
+missing launch controls, allocation breaches, or concentration breaches route
+back to `review-resume-gate` before dry-run send packets can inherit the
+dispatch plan. The resulting
 `broker_dispatch_orders.csv` carries the route proof batch id into each dry-run
 dispatch row, while the summary/config carry the broker schema review
 status/mode, route-readiness proof, `shadow_broker_*`, and
