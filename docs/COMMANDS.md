@@ -2727,7 +2727,14 @@ the market-portability, strategy-evidence, and file-provenance-gated
 `ops_launch` evidence chain has accepted the exact strategy/market route. The
 scale-up gate now also verifies that supplied route-readiness summaries carry
 launch-grade ops broker controls, and it preserves blocked/breach counts in
-`scaleup_summary.csv` and `scaleup_config.json`.
+`scaleup_summary.csv` and `scaleup_config.json`. Route-readiness resume-route
+proof is preserved too: direct route-readiness inputs add
+`route_readiness_ops_broker_roundtrip_resume_route_*_pairs`, while
+broker-carried route proof adds
+`broker_route_readiness_ops_broker_roundtrip_resume_route_*_runs`; scale-up
+requires at least one broker-carried resume-route ready run and zero breach,
+gap, launch-control, portfolio, or concentration resume-route breach runs
+before controlled capital increases.
 If broker readiness included resume-gate evidence, scale-up also retains the
 resume authorization identity, prior incident identity, and resume
 `proof_refresh_*` context. `--require-resume-gate` fails closed unless broker

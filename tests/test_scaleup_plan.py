@@ -310,6 +310,12 @@ def broker_readiness_summary(
     route_readiness_ops_broker_roundtrip_portfolio_breach_runs=0,
     route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
     route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=0,
+    route_readiness_ops_broker_roundtrip_resume_route_ready_runs=0,
+    route_readiness_ops_broker_roundtrip_resume_route_breach_runs=0,
+    route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs=0,
+    route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs=0,
+    route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs=0,
+    route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs=0,
     shadow_broker_readiness_provided=False,
     shadow_broker_readiness_sessions=0,
     shadow_broker_readiness_ready_sessions=None,
@@ -544,6 +550,24 @@ def broker_readiness_summary(
                 ),
                 "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": (
                     route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_ready_runs": (
+                    route_readiness_ops_broker_roundtrip_resume_route_ready_runs
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_breach_runs": (
+                    route_readiness_ops_broker_roundtrip_resume_route_breach_runs
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs": (
+                    route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs": (
+                    route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs": (
+                    route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs": (
+                    route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs
                 ),
                 "shadow_broker_readiness_provided": shadow_broker_readiness_provided,
                 "shadow_broker_readiness_sessions": shadow_broker_readiness_sessions,
@@ -870,6 +894,11 @@ def route_readiness_summary(
     ops_launch_controls_blocked_pairs=0,
     ops_broker_roundtrip_portfolio_breach_pairs=0,
     ops_broker_roundtrip_portfolio_concentration_breach_pairs=0,
+    ops_broker_roundtrip_resume_route_breach_pairs=0,
+    ops_broker_roundtrip_resume_route_gap_breach_pairs=0,
+    ops_broker_roundtrip_resume_route_launch_control_breach_pairs=0,
+    ops_broker_roundtrip_resume_route_portfolio_breach_pairs=0,
+    ops_broker_roundtrip_resume_route_concentration_breach_pairs=0,
 ):
     return pd.DataFrame(
         [
@@ -892,6 +921,21 @@ def route_readiness_summary(
                 ),
                 "ops_broker_roundtrip_portfolio_concentration_breach_pairs": (
                     ops_broker_roundtrip_portfolio_concentration_breach_pairs
+                ),
+                "ops_broker_roundtrip_resume_route_breach_pairs": (
+                    ops_broker_roundtrip_resume_route_breach_pairs
+                ),
+                "ops_broker_roundtrip_resume_route_gap_breach_pairs": (
+                    ops_broker_roundtrip_resume_route_gap_breach_pairs
+                ),
+                "ops_broker_roundtrip_resume_route_launch_control_breach_pairs": (
+                    ops_broker_roundtrip_resume_route_launch_control_breach_pairs
+                ),
+                "ops_broker_roundtrip_resume_route_portfolio_breach_pairs": (
+                    ops_broker_roundtrip_resume_route_portfolio_breach_pairs
+                ),
+                "ops_broker_roundtrip_resume_route_concentration_breach_pairs": (
+                    ops_broker_roundtrip_resume_route_concentration_breach_pairs
                 ),
                 "require_ops_file_inputs": True,
                 "recommendation": "eligible_for_live_dryrun_route_review"
@@ -1058,6 +1102,11 @@ def launch_root_broker_route_fields(*, strategy, market, ready=True):
         "broker_readiness_route_readiness_ops_launch_controls_blocked_pairs": 0,
         "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_breach_pairs": 0,
         "broker_readiness_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_breach_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs": 0,
+        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs": 0,
         "broker_readiness_route_broker_route_readiness_provided": True,
         "broker_readiness_route_broker_route_readiness_ready": ready,
         "broker_readiness_route_broker_route_readiness_strategy": strategy,
@@ -1068,6 +1117,12 @@ def launch_root_broker_route_fields(*, strategy, market, ready=True):
         "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
         "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
         "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs": 1,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs": 0,
+        "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs": 0,
     }
 
 
@@ -2238,6 +2293,12 @@ def test_scaleup_plan_blocks_stale_broker_route_readiness_ops_controls():
             route_readiness_ops_broker_roundtrip_portfolio_safe_runs=1,
             route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs=0,
             route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs=1,
+            route_readiness_ops_broker_roundtrip_resume_route_ready_runs=1,
+            route_readiness_ops_broker_roundtrip_resume_route_breach_runs=1,
+            route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs=1,
+            route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs=1,
+            route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs=1,
+            route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs=1,
         ),
         thresholds=ScaleUpThresholds(require_broker_readiness=True),
     )
@@ -2248,15 +2309,24 @@ def test_scaleup_plan_blocks_stale_broker_route_readiness_ops_controls():
         "broker_route_readiness_ops_launch_controls_ready",
         "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
         "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+        "broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs",
     } <= failed
     summary = report.summary.iloc[0]
     assert not bool(summary["broker_route_readiness_ops_launch_controls_ready"])
     assert int(summary["broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"]) == 1
+    assert int(summary["broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs"]) == 1
+    assert int(summary["broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs"]) == 1
     route_proof = report.config["broker_readiness"]["route_readiness"]
     assert not route_proof["ops_launch_controls_ready"]
     assert "broker_roundtrip_portfolio_concentration_breach_runs" in route_proof[
         "ops_launch_control_failures"
     ]
+    assert route_proof["ops_broker_roundtrip_resume_route_ready_runs"] == 1
+    assert route_proof["ops_broker_roundtrip_resume_route_breach_runs"] == 1
 
 
 def test_scaleup_plan_blocks_bad_broker_dispatch_roundtrip_quality():
@@ -2559,6 +2629,11 @@ def test_scaleup_plan_blocks_stale_route_readiness_ops_controls():
             ops_launch_controls_blocked_pairs=1,
             ops_broker_roundtrip_portfolio_breach_pairs=1,
             ops_broker_roundtrip_portfolio_concentration_breach_pairs=1,
+            ops_broker_roundtrip_resume_route_breach_pairs=1,
+            ops_broker_roundtrip_resume_route_gap_breach_pairs=1,
+            ops_broker_roundtrip_resume_route_launch_control_breach_pairs=1,
+            ops_broker_roundtrip_resume_route_portfolio_breach_pairs=1,
+            ops_broker_roundtrip_resume_route_concentration_breach_pairs=1,
         ),
         thresholds=ScaleUpThresholds(require_route_readiness=True),
     )
@@ -2569,10 +2644,17 @@ def test_scaleup_plan_blocks_stale_route_readiness_ops_controls():
         "route_readiness_ops_launch_controls_blocked_pairs",
         "route_readiness_ops_broker_roundtrip_portfolio_breach_pairs",
         "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs",
+        "route_readiness_ops_broker_roundtrip_resume_route_breach_pairs",
+        "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs",
+        "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs",
+        "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs",
+        "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs",
     } <= failed
     summary = report.summary.iloc[0]
     assert int(summary["route_readiness_ops_launch_controls_blocked_pairs"]) == 1
+    assert int(summary["route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs"]) == 1
     assert report.config["route_readiness"]["ops_broker_roundtrip_portfolio_concentration_breach_pairs"] == 1
+    assert report.config["route_readiness"]["ops_broker_roundtrip_resume_route_concentration_breach_pairs"] == 1
 
 
 def test_scaleup_plan_accepts_required_data_readiness():
@@ -3343,9 +3425,13 @@ def test_cli_scaleup_plan_hydrates_launch_root_broker_route_ops_without_broker_d
     assert bool(summary.loc[0, "broker_route_readiness_ops_launch_controls_ready"])
     assert int(summary.loc[0, "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
     assert int(summary.loc[0, "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
+    assert int(summary.loc[0, "broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs"]) == 1
+    assert int(summary.loc[0, "broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs"]) == 0
     assert "broker_readiness_available" not in set(checks.loc[~checks["passed"].astype(bool), "check"])
     assert config["broker_readiness"]["provided"]
     assert config["broker_readiness"]["route_readiness"]["ops_broker_roundtrip_portfolio_safe_runs"] == 1
+    assert config["broker_readiness"]["route_readiness"]["ops_broker_roundtrip_resume_route_ready_runs"] == 1
+    assert config["route_readiness"]["ops_broker_roundtrip_resume_route_breach_pairs"] == 0
     assert "broker_readiness" not in manifest["inputs"]
     assert path_tail(manifest["inputs"]["launch_pipeline"]["path"]).endswith(
         "/leadlag_launch_pipeline/leadlag_launch_pipeline_summary.csv"

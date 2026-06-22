@@ -34,6 +34,12 @@
   monitoring, including route-ready/gap pairs plus launch-control,
   portfolio-safe, and concentration-safe broker route runs; the guard fails
   closed when required route proof is missing, mismatched, or stale.
+- Controlled scale-up now also carries route-readiness resume-route proof:
+  direct route-readiness summaries preserve
+  `ops_broker_roundtrip_resume_route_*_pairs`, broker-carried route proof
+  preserves `ops_broker_roundtrip_resume_route_*_runs`, and scale-up blocks
+  stale broker route proof when the resume-route ready run is missing or any
+  resume-route breach subtype is non-zero.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts

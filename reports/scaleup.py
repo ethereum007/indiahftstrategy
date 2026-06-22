@@ -19,6 +19,23 @@ LAUNCH_PIPELINE_SUMMARIES: tuple[tuple[str, str], ...] = (
     ("surface_mm", "surface_mm_launch_pipeline_summary.csv"),
 )
 
+ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS: tuple[str, ...] = (
+    "ops_broker_roundtrip_resume_route_breach_pairs",
+    "ops_broker_roundtrip_resume_route_gap_breach_pairs",
+    "ops_broker_roundtrip_resume_route_launch_control_breach_pairs",
+    "ops_broker_roundtrip_resume_route_portfolio_breach_pairs",
+    "ops_broker_roundtrip_resume_route_concentration_breach_pairs",
+)
+
+BROKER_ROUTE_READINESS_RESUME_ROUTE_RUN_FIELDS: tuple[str, ...] = (
+    "ops_broker_roundtrip_resume_route_ready_runs",
+    "ops_broker_roundtrip_resume_route_breach_runs",
+    "ops_broker_roundtrip_resume_route_gap_breach_runs",
+    "ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+    "ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+    "ops_broker_roundtrip_resume_route_concentration_breach_runs",
+)
+
 
 @dataclass(frozen=True)
 class ScaleUpThresholds:
@@ -995,6 +1012,10 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
         route_ops_concentration_breach_pairs = int(
             _number(route_readiness, "ops_broker_roundtrip_portfolio_concentration_breach_pairs", 0.0)
         )
+        route_ops_resume_route_breach_pairs = {
+            field: int(_number(route_readiness, field, 0.0))
+            for field in ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS
+        }
         if route_readiness_required or route_ops_present:
             checks.extend(
                 [
@@ -1023,6 +1044,10 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                         route_ops_concentration_breach_pairs,
                         "<=",
                         0,
+                    ),
+                    *(
+                        _threshold_check(f"route_readiness_{field}", value, "<=", 0)
+                        for field, value in route_ops_resume_route_breach_pairs.items()
                     ),
                 ]
             )
@@ -1142,6 +1167,66 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                     _number(
                         broker_readiness,
                         "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                        0.0,
+                    ),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs",
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_ready_runs",
+                        0.0,
+                    ),
+                    ">=",
+                    1,
+                ),
+                _threshold_check(
+                    "broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs",
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_breach_runs",
+                        0.0,
+                    ),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs",
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs",
+                        0.0,
+                    ),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+                        0.0,
+                    ),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+                        0.0,
+                    ),
+                    "<=",
+                    0,
+                ),
+                _threshold_check(
+                    "broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs",
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs",
                         0.0,
                     ),
                     "<=",
@@ -1929,6 +2014,39 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not route_readiness.empty
                 else 0,
+                "route_readiness_ops_broker_roundtrip_resume_route_breach_pairs": int(
+                    _number(route_readiness, "ops_broker_roundtrip_resume_route_breach_pairs", 0.0)
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs": int(
+                    _number(route_readiness, "ops_broker_roundtrip_resume_route_gap_breach_pairs", 0.0)
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs": int(
+                    _number(
+                        route_readiness,
+                        "ops_broker_roundtrip_resume_route_launch_control_breach_pairs",
+                        0.0,
+                    )
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs": int(
+                    _number(route_readiness, "ops_broker_roundtrip_resume_route_portfolio_breach_pairs", 0.0)
+                )
+                if not route_readiness.empty
+                else 0,
+                "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
+                    _number(
+                        route_readiness,
+                        "ops_broker_roundtrip_resume_route_concentration_breach_pairs",
+                        0.0,
+                    )
+                )
+                if not route_readiness.empty
+                else 0,
                 "broker_readiness_provided": not broker_readiness.empty,
                 "broker_readiness_ready": _to_bool(broker_readiness.get("ready", False))
                 if not broker_readiness.empty
@@ -2018,6 +2136,56 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                     _number(
                         broker_readiness,
                         "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+                        0.0,
+                    )
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs": int(
+                    _number(broker_readiness, "route_readiness_ops_broker_roundtrip_resume_route_ready_runs", 0.0)
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs": int(
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_breach_runs",
+                        0.0,
+                    )
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs": int(
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs",
+                        0.0,
+                    )
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+                        0.0,
+                    )
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs": int(
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+                        0.0,
+                    )
+                )
+                if not broker_readiness.empty
+                else 0,
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs": int(
+                    _number(
+                        broker_readiness,
+                        "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs",
                         0.0,
                     )
                 )
@@ -2443,6 +2611,25 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
                     plan_row["route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"]
                 ),
+                "route_readiness_ops_broker_roundtrip_resume_route_breach_pairs": int(
+                    plan_row["route_readiness_ops_broker_roundtrip_resume_route_breach_pairs"]
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs": int(
+                    plan_row["route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs"]
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs": int(
+                    plan_row[
+                        "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs"
+                    ]
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs": int(
+                    plan_row["route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs"]
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
+                    plan_row[
+                        "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs"
+                    ]
+                ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
@@ -2477,6 +2664,28 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
                     plan_row[
                         "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+                    ]
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs"]
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs"]
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs"]
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                    plan_row[
+                        "broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs"
+                    ]
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs"]
+                ),
+                "broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs": int(
+                    plan_row[
+                        "broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs"
                     ]
                 ),
                 "broker_vendor_data_readiness_provided": _to_bool(
@@ -2855,6 +3064,21 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "ops_broker_roundtrip_portfolio_concentration_breach_pairs": int(
                 plan_row["route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_pairs"]
             ),
+            "ops_broker_roundtrip_resume_route_breach_pairs": int(
+                plan_row["route_readiness_ops_broker_roundtrip_resume_route_breach_pairs"]
+            ),
+            "ops_broker_roundtrip_resume_route_gap_breach_pairs": int(
+                plan_row["route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs"]
+            ),
+            "ops_broker_roundtrip_resume_route_launch_control_breach_pairs": int(
+                plan_row["route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs"]
+            ),
+            "ops_broker_roundtrip_resume_route_portfolio_breach_pairs": int(
+                plan_row["route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs"]
+            ),
+            "ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
+                plan_row["route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs"]
+            ),
             "recommendation": str(plan_row["route_readiness_recommendation"]),
         },
         "broker_readiness": {
@@ -2894,6 +3118,28 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                 "ops_broker_roundtrip_portfolio_concentration_breach_runs": int(
                     plan_row[
                         "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs"
+                    ]
+                ),
+                "ops_broker_roundtrip_resume_route_ready_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_ready_runs"]
+                ),
+                "ops_broker_roundtrip_resume_route_breach_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_breach_runs"]
+                ),
+                "ops_broker_roundtrip_resume_route_gap_breach_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs"]
+                ),
+                "ops_broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                    plan_row[
+                        "broker_route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs"
+                    ]
+                ),
+                "ops_broker_roundtrip_resume_route_portfolio_breach_runs": int(
+                    plan_row["broker_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs"]
+                ),
+                "ops_broker_roundtrip_resume_route_concentration_breach_runs": int(
+                    plan_row[
+                        "broker_route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs"
                     ]
                 ),
             },
@@ -3030,6 +3276,7 @@ def _route_readiness_ops_controls_present(route_readiness: pd.Series) -> bool:
             "ops_launch_controls_blocked_pairs",
             "ops_broker_roundtrip_portfolio_breach_pairs",
             "ops_broker_roundtrip_portfolio_concentration_breach_pairs",
+            *ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS,
         )
     )
 
@@ -3241,6 +3488,40 @@ def _broker_route_readiness_active(broker_readiness: pd.Series) -> bool:
             0.0,
         )
     )
+    resume_route_ready_runs = int(
+        _number(broker_readiness, "route_readiness_ops_broker_roundtrip_resume_route_ready_runs", 0.0)
+    )
+    resume_route_breach_runs = int(
+        _number(broker_readiness, "route_readiness_ops_broker_roundtrip_resume_route_breach_runs", 0.0)
+    )
+    resume_route_gap_breach_runs = int(
+        _number(
+            broker_readiness,
+            "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs",
+            0.0,
+        )
+    )
+    resume_route_launch_control_breach_runs = int(
+        _number(
+            broker_readiness,
+            "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs",
+            0.0,
+        )
+    )
+    resume_route_portfolio_breach_runs = int(
+        _number(
+            broker_readiness,
+            "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs",
+            0.0,
+        )
+    )
+    resume_route_concentration_breach_runs = int(
+        _number(
+            broker_readiness,
+            "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs",
+            0.0,
+        )
+    )
     return bool(
         _to_bool(broker_readiness.get("route_readiness_required", False))
         or _to_bool(broker_readiness.get("route_readiness_provided", False))
@@ -3255,6 +3536,12 @@ def _broker_route_readiness_active(broker_readiness: pd.Series) -> bool:
         or int(_number(broker_readiness, "route_readiness_ops_broker_roundtrip_portfolio_breach_runs", 0.0)) > 0
         or concentration_ok_runs > 0
         or concentration_breach_runs > 0
+        or resume_route_ready_runs > 0
+        or resume_route_breach_runs > 0
+        or resume_route_gap_breach_runs > 0
+        or resume_route_launch_control_breach_runs > 0
+        or resume_route_portfolio_breach_runs > 0
+        or resume_route_concentration_breach_runs > 0
     )
 
 
@@ -4750,6 +5037,47 @@ def _broker_readiness_from_launch_pipeline_summary(
                         fallback=0.0,
                     )
                 ),
+                "route_readiness_ops_broker_roundtrip_resume_route_breach_pairs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_breach_pairs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_gap_breach_pairs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_pairs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_"
+                            "launch_control_breach_pairs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs": int(
+                    _number(
+                        row,
+                        "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_pairs",
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_readiness_ops_broker_roundtrip_resume_route_"
+                            "concentration_breach_pairs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
                 "route_readiness_ops_launch_controls_ready": launch_controls_ready,
                 "route_readiness_ops_launch_control_failures": "",
                 "route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
@@ -4782,6 +5110,66 @@ def _broker_readiness_from_launch_pipeline_summary(
                         (
                             "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_portfolio_"
                             "concentration_breach_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_ready_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_"
+                            "resume_route_ready_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_breach_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_"
+                            "resume_route_breach_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_gap_breach_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_"
+                            "resume_route_gap_breach_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_"
+                            "resume_route_launch_control_breach_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_portfolio_breach_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_"
+                            "resume_route_portfolio_breach_runs"
+                        ),
+                        fallback=0.0,
+                    )
+                ),
+                "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_runs": int(
+                    _number(
+                        row,
+                        (
+                            "broker_readiness_route_broker_route_readiness_ops_broker_roundtrip_"
+                            "resume_route_concentration_breach_runs"
                         ),
                         fallback=0.0,
                     )
@@ -4876,6 +5264,21 @@ def _launch_pipeline_broker_readiness_active(row: pd.Series) -> bool:
             )
         )
         > 0
+        or any(
+            int(_number(row, f"broker_readiness_route_readiness_{field}", fallback=0.0)) > 0
+            for field in ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS
+        )
+        or any(
+            int(
+                _number(
+                    row,
+                    f"broker_readiness_route_broker_route_readiness_{field}",
+                    fallback=0.0,
+                )
+            )
+            > 0
+            for field in BROKER_ROUTE_READINESS_RESUME_ROUTE_RUN_FIELDS
+        )
         or int(
             _number(
                 row,
