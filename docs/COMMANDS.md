@@ -4523,6 +4523,30 @@ manifest. A ready review points to `pipeline-imbalance-launch`; it does not
 weaken the full `imbalance` profile, which still requires order-plan and launch
 pipeline proof before shadow scale-up.
 
+Build the provider imbalance launch packet directly from the ready evidence
+review:
+
+```powershell
+python -m hft_cli pipeline-provider-market-data-imbalance-launch `
+  --provider-evidence-dir runs\provider_market_data_imbalance_evidence\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_launch\arrow_ws_nse_2026_06_23 `
+  --adapter arrow_money `
+  --route-tag imbalance_shadow `
+  --instrument-id NIFTY-I `
+  --reference-price 24500 `
+  --max-order-qty 75 `
+  --max-notional 2000000 `
+  --max-orders 2 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider launch packet infers the promoted imbalance candidate from the
+provider research root and runs the standard imbalance order-plan, staging,
+launch, export, upload-pack, and broker-readiness pipeline. When ready, the next
+gate is `review-strategy-evidence --profile imbalance`, which verifies the full
+launch-ready profile rather than only the provider-data research profile.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

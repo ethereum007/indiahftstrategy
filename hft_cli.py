@@ -134,6 +134,10 @@ from reports.provider_market_data_imbalance_evidence import (
     ProviderMarketDataImbalanceEvidenceConfig,
     write_provider_market_data_imbalance_evidence_review,
 )
+from reports.provider_market_data_imbalance_launch import (
+    ProviderMarketDataImbalanceLaunchConfig,
+    write_provider_market_data_imbalance_launch_packet,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1280,6 +1284,49 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_evidence.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_evidence.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_evidence.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_launch = sub.add_parser(
+        "pipeline-provider-market-data-imbalance-launch",
+        help="Build broker launch artifacts from a ready provider live-data imbalance evidence review.",
+    )
+    provider_market_data_imbalance_launch.add_argument("--provider-evidence-dir", required=True)
+    provider_market_data_imbalance_launch.add_argument("--out", required=True)
+    provider_market_data_imbalance_launch.add_argument("--no-require-provider-evidence-ready", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--no-require-launch-ready", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--adapter", default="arrow_money")
+    provider_market_data_imbalance_launch.add_argument("--mode", default="shadow", choices=["paper", "shadow"])
+    provider_market_data_imbalance_launch.add_argument("--route-tag", default=None)
+    provider_market_data_imbalance_launch.add_argument("--instrument-id", default="BOOK")
+    provider_market_data_imbalance_launch.add_argument("--qty", type=int, default=None)
+    provider_market_data_imbalance_launch.add_argument("--reference-price", type=float, default=None)
+    provider_market_data_imbalance_launch.add_argument("--buy-limit-price", type=float, default=None)
+    provider_market_data_imbalance_launch.add_argument("--sell-limit-price", type=float, default=None)
+    provider_market_data_imbalance_launch.add_argument("--entry-offset-ticks", type=float, default=0.0)
+    provider_market_data_imbalance_launch.add_argument("--tick-size", type=float, default=None)
+    provider_market_data_imbalance_launch.add_argument("--max-order-qty", type=int, default=None)
+    provider_market_data_imbalance_launch.add_argument("--max-notional", type=float, default=None)
+    provider_market_data_imbalance_launch.add_argument("--price-band-pct", type=float, default=None)
+    provider_market_data_imbalance_launch.add_argument("--max-orders", type=int, default=None)
+    provider_market_data_imbalance_launch.add_argument("--contract-multiplier", type=float, default=1.0)
+    provider_market_data_imbalance_launch.add_argument("--product", default="MIS")
+    provider_market_data_imbalance_launch.add_argument("--exchange", default="NFO")
+    provider_market_data_imbalance_launch.add_argument("--broker-schema-audit", default=None)
+    provider_market_data_imbalance_launch.add_argument("--broker-mapping-draft", default=None)
+    provider_market_data_imbalance_launch.add_argument("--broker-mapped-orders", default=None)
+    provider_market_data_imbalance_launch.add_argument("--broker-halt-export", default=None)
+    provider_market_data_imbalance_launch.add_argument("--broker-reconciliation", default=None)
+    provider_market_data_imbalance_launch.add_argument("--broker-runtime-session", default=None)
+    provider_market_data_imbalance_launch.add_argument("--broker-vendor-data-readiness", default=None)
+    provider_market_data_imbalance_launch.add_argument("--require-broker-schema-audit", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--require-broker-mapping-draft", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--require-broker-mapped-orders", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--require-broker-halt-export", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--require-broker-reconciliation", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--require-broker-runtime-session", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--allow-placeholder-schema", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_launch.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3871,6 +3918,59 @@ def main(argv: list[str] | None = None) -> int:
                 expected_market=args.expected_market,
                 min_passed_per_type=args.min_passed_per_type,
                 require_file_inputs=args.require_file_inputs,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "pipeline-provider-market-data-imbalance-launch":
+        result = write_provider_market_data_imbalance_launch_packet(
+            args.provider_evidence_dir,
+            args.out,
+            config=ProviderMarketDataImbalanceLaunchConfig(
+                require_provider_evidence_ready=not args.no_require_provider_evidence_ready,
+                require_launch_ready=not args.no_require_launch_ready,
+                adapter=args.adapter,
+                mode=args.mode,
+                route_tag=args.route_tag,
+                instrument_id=args.instrument_id,
+                qty=args.qty,
+                reference_price=args.reference_price,
+                buy_limit_price=args.buy_limit_price,
+                sell_limit_price=args.sell_limit_price,
+                entry_offset_ticks=args.entry_offset_ticks,
+                tick_size=args.tick_size,
+                max_order_qty=args.max_order_qty,
+                max_notional=args.max_notional,
+                price_band_pct=args.price_band_pct,
+                max_orders=args.max_orders,
+                contract_multiplier=args.contract_multiplier,
+                product=args.product,
+                exchange=args.exchange,
+                require_reviewed_schema=not args.allow_placeholder_schema,
+                broker_schema_audit_dir=args.broker_schema_audit,
+                broker_mapping_draft_dir=args.broker_mapping_draft,
+                broker_mapped_orders_dir=args.broker_mapped_orders,
+                broker_halt_export_dir=args.broker_halt_export,
+                broker_reconciliation_dir=args.broker_reconciliation,
+                broker_runtime_session_dir=args.broker_runtime_session,
+                broker_vendor_data_readiness_dir=args.broker_vendor_data_readiness,
+                require_broker_schema_audit=args.require_broker_schema_audit,
+                require_broker_mapping_draft=args.require_broker_mapping_draft,
+                require_broker_mapped_orders=args.require_broker_mapped_orders,
+                require_broker_halt_export=args.require_broker_halt_export,
+                require_broker_reconciliation=args.require_broker_reconciliation,
+                require_broker_runtime_session=args.require_broker_runtime_session,
             ),
         )
         print(result.summary.to_string(index=False))

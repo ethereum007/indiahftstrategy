@@ -107,6 +107,11 @@
   research run, reviews the `provider_imbalance_research` profile, and points
   ready candidates to `pipeline-imbalance-launch` without weakening the full
   launch-ready `imbalance` profile.
+- Provider market-data imbalance launch packaging now bridges ready provider
+  research evidence into broker handoff artifacts:
+  `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
+  runs the standard imbalance launch pipeline, and points ready packets to the
+  full `review-strategy-evidence --profile imbalance` gate.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
