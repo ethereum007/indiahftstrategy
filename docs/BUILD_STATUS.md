@@ -96,6 +96,11 @@
   `handoff-provider-market-data-research` maps provider top-of-book tick folds
   to imbalance edge/replay walk-forward runs and keeps synthetic smoke evidence
   or unsupported strategy lanes blocked until the needed real inputs exist.
+- Provider market-data imbalance research now runs the first strategy pipeline
+  directly from provider live evidence: `run-provider-market-data-imbalance-research`
+  nests the research handoff, executes imbalance edge/replay/promotion on real
+  provider tick folds, and blocks before strategy math when evidence is
+  synthetic smoke or not research-ready.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

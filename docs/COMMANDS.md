@@ -4476,6 +4476,34 @@ lanes stay blocked: lead-lag needs explicit leader/laggard groups, while
 settlement, parity, and surface market-making need option-chain or surface
 inputs in addition to top-of-book ticks.
 
+Run the first full provider-data imbalance research pilot directly from
+research-ready live evidence:
+
+```powershell
+python -m hft_cli run-provider-market-data-imbalance-research `
+  --live-evidence-dir runs\provider_market_data_live_evidence\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_research\arrow_ws_nse_2026_06_23 `
+  --entry-imbalance 0.55 0.65 0.75 `
+  --min-microprice-edge-ticks 0.25 0.50 1.00 `
+  --forward-horizon-ns 100000000 500000000 1000000000 `
+  --min-tick-folds 2 `
+  --tick-size 0.05 `
+  --instrument-kind FUT `
+  --instrument-id NIFTY-I `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes a nested `research_handoff` plus `imbalance_research` folder under
+the output root. If the evidence gate passes, it runs the existing imbalance
+edge walk-forward, replay-proof, and promotion pipeline against the provider
+tick folds, then writes
+`provider_market_data_imbalance_research_summary.csv`,
+`provider_market_data_imbalance_research_action_queue.csv`, config/runbook
+artifacts, and a manifest. If the live evidence is synthetic smoke evidence,
+not research-ready, or too thin, the strategy pipeline is not run and the action
+queue points back to the provider evidence or imbalance research gate.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

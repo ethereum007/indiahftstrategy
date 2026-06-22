@@ -126,6 +126,10 @@ from reports.provider_market_data_research_handoff import (
     ProviderMarketDataResearchHandoffConfig,
     write_provider_market_data_research_handoff,
 )
+from reports.provider_market_data_imbalance_research import (
+    ProviderMarketDataImbalanceResearchConfig,
+    write_provider_market_data_imbalance_research,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1168,6 +1172,91 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_research_handoff.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_research_handoff.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_research_handoff.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_research = sub.add_parser(
+        "run-provider-market-data-imbalance-research",
+        help="Run the full imbalance research pipeline from research-ready provider live evidence.",
+    )
+    provider_market_data_imbalance_research.add_argument("--live-evidence-dir", required=True)
+    provider_market_data_imbalance_research.add_argument("--out", required=True)
+    provider_market_data_imbalance_research.add_argument("--no-require-research-ready", action="store_true")
+    provider_market_data_imbalance_research.add_argument("--allow-synthetic-smoke", action="store_true")
+    provider_market_data_imbalance_research.add_argument("--min-tick-folds", type=int, default=2)
+    provider_market_data_imbalance_research.add_argument("--tick-size", type=float, default=0.05)
+    provider_market_data_imbalance_research.add_argument("--market", default="")
+    provider_market_data_imbalance_research.add_argument("--instrument-id", default="PROVIDER_BOOK")
+    provider_market_data_imbalance_research.add_argument(
+        "--instrument-kind",
+        default="FUT",
+        choices=["FUT", "OPT", "EQ"],
+    )
+    provider_market_data_imbalance_research.add_argument("--lot-size", type=int, default=75)
+    provider_market_data_imbalance_research.add_argument("--qty", type=int, default=75)
+    provider_market_data_imbalance_research.add_argument(
+        "--entry-imbalance",
+        nargs="+",
+        type=float,
+        default=list(ProviderMarketDataImbalanceResearchConfig().entry_imbalance_values),
+    )
+    provider_market_data_imbalance_research.add_argument(
+        "--min-microprice-edge-ticks",
+        nargs="+",
+        type=float,
+        default=list(ProviderMarketDataImbalanceResearchConfig().min_microprice_edge_ticks_values),
+    )
+    provider_market_data_imbalance_research.add_argument(
+        "--forward-horizon-ns",
+        nargs="+",
+        type=int,
+        default=list(ProviderMarketDataImbalanceResearchConfig().forward_horizon_ns_values),
+    )
+    provider_market_data_imbalance_research.add_argument("--max-spread-ticks", type=float, default=2.0)
+    provider_market_data_imbalance_research.add_argument("--min-depth", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--min-signals", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--min-direction-count", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--min-mean-forward-edge-ticks", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--min-win-rate", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--min-median-forward-edge-ticks", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--no-filter-session", action="store_true")
+    provider_market_data_imbalance_research.add_argument("--timestamp-unit", default="ns")
+    provider_market_data_imbalance_research.add_argument("--timestamp-tz", default=None)
+    provider_market_data_imbalance_research.add_argument("--min-passed-configs", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--min-best-usable-signals", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--min-best-mean-forward-edge-ticks", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--min-best-win-rate", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--min-selection-sweeps", type=int, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-selection-pass-rate", type=float, default=1.0)
+    provider_market_data_imbalance_research.add_argument("--min-selection-median-usable-signals", type=float, default=1.0)
+    provider_market_data_imbalance_research.add_argument(
+        "--min-selection-median-mean-forward-edge-ticks",
+        type=float,
+        default=0.0,
+    )
+    provider_market_data_imbalance_research.add_argument("--min-selection-min-win-rate", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--min-selection-median-robust-score", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-edge-folds", type=int, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-passed-edge-sweeps", type=int, default=None)
+    provider_market_data_imbalance_research.add_argument("--allow-unselected", action="store_true")
+    provider_market_data_imbalance_research.add_argument("--exit-imbalance", type=float, default=0.15)
+    provider_market_data_imbalance_research.add_argument("--cooloff-ns", type=int, default=0)
+    provider_market_data_imbalance_research.add_argument("--feed-latency-us", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--order-latency-us", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--max-position-lots", type=int, default=20)
+    provider_market_data_imbalance_research.add_argument("--min-net-pnl", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--min-fills", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--max-drawdown", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--max-otr", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-markout-mean", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-replay-folds", type=int, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    provider_market_data_imbalance_research.add_argument("--min-total-fills", type=int, default=1)
+    provider_market_data_imbalance_research.add_argument("--min-total-net-pnl", type=float, default=0.0)
+    provider_market_data_imbalance_research.add_argument("--max-worst-drawdown", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--min-median-markout-mean", type=float, default=None)
+    provider_market_data_imbalance_research.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_research.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_research.add_argument("--fail-on-actions", action="store_true")
+    _add_generic_cost_args(provider_market_data_imbalance_research)
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -3658,6 +3747,78 @@ def main(argv: list[str] | None = None) -> int:
                 market=args.market,
                 instrument_id=args.instrument_id,
                 output_root=args.output_root,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "run-provider-market-data-imbalance-research":
+        result = write_provider_market_data_imbalance_research(
+            args.live_evidence_dir,
+            args.out,
+            config=ProviderMarketDataImbalanceResearchConfig(
+                require_research_ready=not args.no_require_research_ready,
+                allow_synthetic_smoke=args.allow_synthetic_smoke,
+                min_tick_folds=args.min_tick_folds,
+                tick_size=args.tick_size,
+                market=args.market,
+                instrument_id=args.instrument_id,
+                instrument_kind=args.instrument_kind,
+                lot_size=args.lot_size,
+                qty=args.qty,
+                entry_imbalance_values=tuple(args.entry_imbalance),
+                min_microprice_edge_ticks_values=tuple(args.min_microprice_edge_ticks),
+                forward_horizon_ns_values=tuple(args.forward_horizon_ns),
+                max_spread_ticks=args.max_spread_ticks,
+                min_depth=args.min_depth,
+                min_signals=args.min_signals,
+                min_direction_count=args.min_direction_count,
+                min_mean_forward_edge_ticks=args.min_mean_forward_edge_ticks,
+                min_win_rate=args.min_win_rate,
+                min_median_forward_edge_ticks=args.min_median_forward_edge_ticks,
+                filter_session=not args.no_filter_session,
+                timestamp_unit=args.timestamp_unit,
+                timestamp_tz=args.timestamp_tz,
+                min_passed_configs=args.min_passed_configs,
+                min_best_usable_signals=args.min_best_usable_signals,
+                min_best_mean_forward_edge_ticks=args.min_best_mean_forward_edge_ticks,
+                min_best_win_rate=args.min_best_win_rate,
+                min_selection_sweeps=args.min_selection_sweeps,
+                min_selection_pass_rate=args.min_selection_pass_rate,
+                min_selection_median_usable_signals=args.min_selection_median_usable_signals,
+                min_selection_median_mean_forward_edge_ticks=args.min_selection_median_mean_forward_edge_ticks,
+                min_selection_min_win_rate=args.min_selection_min_win_rate,
+                min_selection_median_robust_score=args.min_selection_median_robust_score,
+                min_edge_folds=args.min_edge_folds,
+                min_passed_edge_sweeps=args.min_passed_edge_sweeps,
+                allow_unselected=args.allow_unselected,
+                exit_imbalance=args.exit_imbalance,
+                cooloff_ns=args.cooloff_ns,
+                feed_latency_us=args.feed_latency_us,
+                order_latency_us=args.order_latency_us,
+                max_position_lots=args.max_position_lots,
+                min_net_pnl=args.min_net_pnl,
+                min_fills=args.min_fills,
+                max_drawdown=args.max_drawdown,
+                max_otr=args.max_otr,
+                min_markout_mean=args.min_markout_mean,
+                min_replay_folds=args.min_replay_folds,
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_total_fills=args.min_total_fills,
+                min_total_net_pnl=args.min_total_net_pnl,
+                max_worst_drawdown=args.max_worst_drawdown,
+                min_median_markout_mean=args.min_median_markout_mean,
+                **_generic_cost_override_kwargs(args),
             ),
         )
         print(result.summary.to_string(index=False))
