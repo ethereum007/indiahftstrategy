@@ -4392,6 +4392,27 @@ approved. It carries only credential env-var names and runtime presence
 booleans, plus the exact post-capture
 `ingest-provider-market-data-live-session` command.
 
+Before using real provider credentials, rehearse the backend handoff with
+synthetic normalized captures:
+
+```powershell
+python -m hft_cli rehearse-provider-market-data-live-capture `
+  --capture-bundle runs\provider_market_data_live_capture_bundles\arrow_ws_nse_2026_06_23\provider_market_data_live_capture_bundle.json `
+  --out runs\provider_market_data_live_rehearsal\arrow_ws_nse_2026_06_23 `
+  --rows-per-window 100 `
+  --ingest-output-dir runs\provider_market_data_live_rehearsal_ingest\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes small synthetic `ts,bid,ask,bid_qty,ask_qty,last,last_qty`
+captures to the planned capture paths, sidecar files marking them as rehearsal
+data, `provider_market_data_live_rehearsal_*` artifacts, and optionally runs
+`ingest-provider-market-data-live-session` against those synthetic captures.
+Treat the result only as a backend smoke test; real research evidence still
+requires replacing the synthetic captures with Arrow.money/iRage provider
+captures from the approved bundle.
+
 After those live capture files land, ingest the whole planned session from the
 session packet:
 

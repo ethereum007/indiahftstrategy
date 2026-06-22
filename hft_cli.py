@@ -114,6 +114,10 @@ from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
 )
+from reports.provider_market_data_live_rehearsal import (
+    ProviderMarketDataLiveRehearsalConfig,
+    write_provider_market_data_live_rehearsal,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1089,6 +1093,24 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_bundle.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_bundle.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_bundle.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_live_rehearsal = sub.add_parser(
+        "rehearse-provider-market-data-live-capture",
+        help="Write synthetic normalized captures from a live capture bundle and optionally run live ingest as a rehearsal.",
+    )
+    provider_market_data_live_rehearsal.add_argument("--capture-bundle", required=True)
+    provider_market_data_live_rehearsal.add_argument("--out", required=True)
+    provider_market_data_live_rehearsal.add_argument("--rows-per-window", type=int, default=5)
+    provider_market_data_live_rehearsal.add_argument("--base-price", type=float, default=100.0)
+    provider_market_data_live_rehearsal.add_argument("--tick-size", type=float, default=0.05)
+    provider_market_data_live_rehearsal.add_argument("--overwrite-captures", action="store_true")
+    provider_market_data_live_rehearsal.add_argument("--no-run-ingest", action="store_true")
+    provider_market_data_live_rehearsal.add_argument("--ingest-output-dir", default="")
+    provider_market_data_live_rehearsal.add_argument("--ingest-min-capture-rows", type=int, default=1)
+    provider_market_data_live_rehearsal.add_argument("--ingest-pipeline-min-rows", type=int, default=1)
+    provider_market_data_live_rehearsal.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_live_rehearsal.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_live_rehearsal.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_live_ingest = sub.add_parser(
         "ingest-provider-market-data-live-session",
@@ -3484,6 +3506,34 @@ def main(argv: list[str] | None = None) -> int:
                 require_preflight_ready=not args.no_require_preflight_ready,
                 require_env_present=args.require_env_present,
                 allow_existing_captures=args.allow_existing_captures,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "rehearse-provider-market-data-live-capture":
+        result = write_provider_market_data_live_rehearsal(
+            args.capture_bundle,
+            args.out,
+            config=ProviderMarketDataLiveRehearsalConfig(
+                rows_per_window=args.rows_per_window,
+                base_price=args.base_price,
+                tick_size=args.tick_size,
+                overwrite_captures=args.overwrite_captures,
+                run_ingest=not args.no_run_ingest,
+                ingest_output_dir=args.ingest_output_dir,
+                ingest_min_capture_rows=args.ingest_min_capture_rows,
+                ingest_pipeline_min_rows=args.ingest_pipeline_min_rows,
             ),
         )
         print(result.summary.to_string(index=False))

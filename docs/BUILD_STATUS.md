@@ -77,6 +77,11 @@
   per-window capture commands, a credential-safe JSON bundle, and the exact
   post-capture ingest command while blocking missing preflight evidence and
   capture overwrite risk.
+- Provider market-data live rehearsal now proves the backend handoff without
+  provider credentials: `rehearse-provider-market-data-live-capture` writes
+  explicitly marked synthetic normalized captures from the bundle, optionally
+  runs live-session ingest, and reports that the result is smoke-test evidence
+  only until replaced by real Arrow.money/iRage captures.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured
