@@ -106,6 +106,10 @@ from reports.provider_market_data_live_session import (
     ProviderMarketDataLiveSessionConfig,
     write_provider_market_data_live_session_plan,
 )
+from reports.provider_market_data_live_preflight import (
+    ProviderMarketDataLivePreflightConfig,
+    write_provider_market_data_live_session_preflight,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1050,6 +1054,21 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_live_session.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_live_session.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_live_session.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_live_preflight = sub.add_parser(
+        "preflight-provider-market-data-live-session",
+        help="Verify a live session packet, runtime credentials, output paths, and timing before provider capture.",
+    )
+    provider_market_data_live_preflight.add_argument("--live-session-packet", required=True)
+    provider_market_data_live_preflight.add_argument("--out", required=True)
+    provider_market_data_live_preflight.add_argument("--require-env-present", action="store_true")
+    provider_market_data_live_preflight.add_argument("--now-iso", default="")
+    provider_market_data_live_preflight.add_argument("--allow-existing-captures", action="store_true")
+    provider_market_data_live_preflight.add_argument("--allow-existing-batch", action="store_true")
+    provider_market_data_live_preflight.add_argument("--no-require-before-last-window", action="store_true")
+    provider_market_data_live_preflight.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_live_preflight.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_live_preflight.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_live_ingest = sub.add_parser(
         "ingest-provider-market-data-live-session",
@@ -3394,6 +3413,31 @@ def main(argv: list[str] | None = None) -> int:
                 max_median_spread_ticks=args.max_median_spread_ticks,
                 require_env_present=args.require_env_present,
                 allow_weekend=args.allow_weekend,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "preflight-provider-market-data-live-session":
+        result = write_provider_market_data_live_session_preflight(
+            args.live_session_packet,
+            args.out,
+            config=ProviderMarketDataLivePreflightConfig(
+                require_env_present=args.require_env_present,
+                now_iso=args.now_iso,
+                allow_existing_captures=args.allow_existing_captures,
+                allow_existing_batch=args.allow_existing_batch,
+                require_before_last_window=not args.no_require_before_last_window,
             ),
         )
         print(result.summary.to_string(index=False))

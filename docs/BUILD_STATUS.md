@@ -67,6 +67,11 @@
   validates the dry-run client packet, NSE session windows, weekday, optional
   runtime env-var presence, per-window capture paths, and emits the exact
   post-capture `pipeline-provider-market-data-batch` command.
+- Provider market-data live preflight now checks the planned provider capture
+  just before the market run: `preflight-provider-market-data-live-session`
+  validates the session packet, runtime credential env-var presence, writable
+  capture and batch paths, capture/batch collision risk, and local clock timing
+  without persisting credential values.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured

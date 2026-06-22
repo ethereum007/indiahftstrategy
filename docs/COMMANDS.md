@@ -4349,6 +4349,28 @@ names and runtime presence booleans. The session packet includes per-window
 capture paths and the exact post-capture
 `pipeline-provider-market-data-batch` command.
 
+Run a pre-market preflight against that session packet before starting the
+credentialed provider client:
+
+```powershell
+python -m hft_cli preflight-provider-market-data-live-session `
+  --live-session-packet runs\provider_market_data_live_sessions\arrow_ws_nse_2026_06_23\provider_market_data_live_session_packet.json `
+  --out runs\provider_market_data_live_preflight\arrow_ws_nse_2026_06_23 `
+  --require-env-present `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This verifies the session packet is ready, credential env-var names are present
+and available in the runtime when required, capture output directories are
+writable, planned capture files do not already exist, the batch output has not
+already been ingested, and the local clock has not passed the final capture
+window. It writes `provider_market_data_live_preflight_summary.csv`,
+`provider_market_data_live_preflight_windows.csv`,
+`provider_market_data_live_preflight_checks.csv`,
+`provider_market_data_live_preflight_action_queue.csv`, config/runbook
+artifacts, and a manifest without storing credential values.
+
 After those live capture files land, ingest the whole planned session from the
 session packet:
 
