@@ -116,6 +116,10 @@
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, verifies the full launch-ready
   `imbalance` profile, and hands ready packets to `score-strategy-readiness`.
+- Provider market-data imbalance scorecard now makes the final readiness gate
+  provider-specific: `score-provider-market-data-imbalance-readiness` consumes
+  the launch-evidence review, scores only the full `imbalance` profile, and hands
+  ready evidence to `plan-scaleup`.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

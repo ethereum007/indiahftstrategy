@@ -142,6 +142,10 @@ from reports.provider_market_data_imbalance_launch_evidence import (
     ProviderMarketDataImbalanceLaunchEvidenceConfig,
     write_provider_market_data_imbalance_launch_evidence_review,
 )
+from reports.provider_market_data_imbalance_scorecard import (
+    ProviderMarketDataImbalanceScorecardConfig,
+    write_provider_market_data_imbalance_scorecard,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1352,6 +1356,21 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_launch_evidence.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_launch_evidence.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_launch_evidence.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_scorecard = sub.add_parser(
+        "score-provider-market-data-imbalance-readiness",
+        help="Score a provider live-data imbalance launch-evidence review for shadow scale-up readiness.",
+    )
+    provider_market_data_imbalance_scorecard.add_argument("--provider-launch-evidence-dir", required=True)
+    provider_market_data_imbalance_scorecard.add_argument("--out", required=True)
+    provider_market_data_imbalance_scorecard.add_argument("--no-require-launch-evidence-ready", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--no-require-scorecard-ready", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--allow-dirty-git", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--market", default="")
+    provider_market_data_imbalance_scorecard.add_argument("--require-file-inputs", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4027,6 +4046,31 @@ def main(argv: list[str] | None = None) -> int:
                 require_file_inputs=args.require_file_inputs,
                 require_no_placeholder_schema=args.require_no_placeholder_schema,
                 require_no_blocked_placeholder_schema=args.require_no_blocked_placeholder_schema,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "score-provider-market-data-imbalance-readiness":
+        result = write_provider_market_data_imbalance_scorecard(
+            args.provider_launch_evidence_dir,
+            args.out,
+            config=ProviderMarketDataImbalanceScorecardConfig(
+                require_launch_evidence_ready=not args.no_require_launch_evidence_ready,
+                require_scorecard_ready=not args.no_require_scorecard_ready,
+                allow_dirty_git=args.allow_dirty_git,
+                expected_market=args.market,
+                require_file_inputs=args.require_file_inputs,
             ),
         )
         print(result.summary.to_string(index=False))

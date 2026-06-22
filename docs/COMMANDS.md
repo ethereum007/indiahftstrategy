@@ -4564,6 +4564,20 @@ research pipeline, order plan, and launch pipeline evidence all share the same
 imbalance/market identity. Its next gate is `score-strategy-readiness --profile
 imbalance`.
 
+Score the provider-data imbalance launch evidence for shadow scale-up planning:
+
+```powershell
+python -m hft_cli score-provider-market-data-imbalance-readiness `
+  --provider-launch-evidence-dir runs\provider_market_data_imbalance_launch_evidence\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_scorecards\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This runs the standard strategy readiness scorecard on only the full `imbalance`
+profile from the launch-evidence catalog. A ready scorecard has readiness score
+`1.0` and points to `plan-scaleup` for paper/shadow capital and runtime sizing.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

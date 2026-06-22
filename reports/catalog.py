@@ -76,6 +76,7 @@ SUMMARY_FILES = [
     "provider_market_data_imbalance_evidence_summary.csv",
     "provider_market_data_imbalance_launch_summary.csv",
     "provider_market_data_imbalance_launch_evidence_summary.csv",
+    "provider_market_data_imbalance_scorecard_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",

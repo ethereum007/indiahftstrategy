@@ -24,6 +24,10 @@ from reports.provider_market_data_imbalance_launch_evidence import (
     ProviderMarketDataImbalanceLaunchEvidenceConfig,
     write_provider_market_data_imbalance_launch_evidence_review,
 )
+from reports.provider_market_data_imbalance_scorecard import (
+    ProviderMarketDataImbalanceScorecardConfig,
+    write_provider_market_data_imbalance_scorecard,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -215,6 +219,39 @@ def _passing_config():
         cooloff_ns=100_000,
         min_selection_median_usable_signals=2,
         min_total_fills=2,
+    )
+
+
+def _write_ready_provider_imbalance_launch_evidence(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    launch = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        tmp_path / "provider_imbalance_launch",
+        config=ProviderMarketDataImbalanceLaunchConfig(
+            require_reviewed_schema=False,
+            adapter="arrow_money",
+            route_tag="imbalance_shadow",
+            instrument_id="NIFTY-I",
+            reference_price=100.0,
+            max_order_qty=75,
+            max_notional=10_000.0,
+            max_orders=2,
+        ),
+    )
+    return write_provider_market_data_imbalance_launch_evidence_review(
+        launch.output_dir,
+        tmp_path / "provider_imbalance_launch_evidence",
+        config=ProviderMarketDataImbalanceLaunchEvidenceConfig(allow_dirty_git=True),
     )
 
 
@@ -661,3 +698,91 @@ def test_cli_provider_market_data_imbalance_launch_evidence_accepts_ready_launch
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "next_gate"] == "score-strategy-readiness"
+
+
+def test_provider_market_data_imbalance_scorecard_accepts_ready_launch_evidence(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_scorecard"
+
+    report = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_scorecard_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_scorecard_action_queue.csv")
+    scorecard = pd.read_csv(out_dir / "scorecard" / "strategy_scorecard.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary.loc[0, "launch_evidence_ready"])
+    assert bool(summary.loc[0, "scorecard_ready"])
+    assert summary.loc[0, "profile"] == "imbalance"
+    assert summary.loc[0, "strategy"] == "imbalance"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert summary.loc[0, "readiness_score"] == 1.0
+    assert summary.loc[0, "next_gate"] == "plan-scaleup"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "plan-scaleup"
+    assert scorecard.loc[0, "profile"] == "imbalance"
+    assert bool(scorecard.loc[0, "ready"])
+    assert manifest["run_type"] == "provider_market_data_imbalance_scorecard"
+
+
+def test_provider_market_data_imbalance_scorecard_blocks_unready_launch_evidence(tmp_path):
+    smoke = _write_synthetic_smoke_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        smoke.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    launch = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        tmp_path / "provider_imbalance_launch",
+        config=ProviderMarketDataImbalanceLaunchConfig(require_reviewed_schema=False, reference_price=100.0),
+    )
+    launch_evidence = write_provider_market_data_imbalance_launch_evidence_review(
+        launch.output_dir,
+        tmp_path / "provider_imbalance_launch_evidence",
+        config=ProviderMarketDataImbalanceLaunchEvidenceConfig(allow_dirty_git=True),
+    )
+
+    report = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not launch_evidence.ready
+    assert not report.ready
+    assert "provider_imbalance_launch_evidence_ready" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-launch-evidence"
+
+
+def test_cli_provider_market_data_imbalance_scorecard_accepts_ready_launch_evidence(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    out_dir = tmp_path / "cli_provider_imbalance_scorecard"
+
+    code = main(
+        [
+            "score-provider-market-data-imbalance-readiness",
+            "--provider-launch-evidence-dir",
+            str(launch_evidence.output_dir),
+            "--out",
+            str(out_dir),
+            "--allow-dirty-git",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_scorecard_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "plan-scaleup"
