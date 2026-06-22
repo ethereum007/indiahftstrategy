@@ -114,6 +114,8 @@ class EvidenceThresholds:
     fail_on_broker_roundtrip_portfolio_breach: bool = False
     require_broker_roundtrip_portfolio_concentration_ok: bool = False
     fail_on_broker_roundtrip_portfolio_concentration_breach: bool = False
+    require_broker_roundtrip_resume_route_ready: bool = False
+    fail_on_broker_roundtrip_resume_route_breach: bool = False
 
 
 @dataclass(frozen=True)
@@ -385,6 +387,30 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "catalog contains broker dispatch round-trip concentration above selected portfolio limits",
             )
         )
+    if thresholds.require_broker_roundtrip_resume_route_ready:
+        resume_ready_roundtrips = _broker_roundtrip_resume_route_ready_count(catalog)
+        rows.append(
+            _check(
+                "broker_roundtrip_resume_route_ready",
+                resume_ready_roundtrips,
+                ">=",
+                1,
+                resume_ready_roundtrips >= 1,
+                "catalog does not contain a broker dispatch round-trip with ready primary and incident resume-route proof",
+            )
+        )
+    if thresholds.fail_on_broker_roundtrip_resume_route_breach:
+        resume_breach_roundtrips = _broker_roundtrip_resume_route_breach_count(catalog)
+        rows.append(
+            _check(
+                "broker_roundtrip_resume_route_breach",
+                resume_breach_roundtrips,
+                "==",
+                0,
+                resume_breach_roundtrips == 0,
+                "catalog contains broker dispatch round-trip resume-route proof with gaps, failed controls, or unsafe portfolio evidence",
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -413,6 +439,7 @@ def _summary(
     concentration_runs, concentration_ok, concentration_breach = _broker_roundtrip_portfolio_concentration_counts(
         catalog
     )
+    resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
     return pd.DataFrame(
         [
             {
@@ -454,6 +481,12 @@ def _summary(
                 "fail_on_broker_roundtrip_portfolio_concentration_breach": bool(
                     thresholds.fail_on_broker_roundtrip_portfolio_concentration_breach
                 ),
+                "require_broker_roundtrip_resume_route_ready": bool(
+                    thresholds.require_broker_roundtrip_resume_route_ready
+                ),
+                "fail_on_broker_roundtrip_resume_route_breach": bool(
+                    thresholds.fail_on_broker_roundtrip_resume_route_breach
+                ),
                 "placeholder_schema_active_runs": placeholder_active,
                 "placeholder_schema_blocked_runs": placeholder_blocked,
                 "broker_roundtrip_portfolio_safe_runs": roundtrip_safe,
@@ -461,6 +494,7 @@ def _summary(
                 "broker_roundtrip_portfolio_concentration_runs": concentration_runs,
                 "broker_roundtrip_portfolio_concentration_ok_runs": concentration_ok,
                 "broker_roundtrip_portfolio_concentration_breach_runs": concentration_breach,
+                **resume_route_counts,
                 "input_file_count": input_file_count,
                 "input_directory_count": input_directory_count,
                 "input_other_count": input_other_count,
@@ -674,6 +708,118 @@ def _broker_roundtrip_portfolio_concentration_counts(catalog: pd.DataFrame) -> t
     )
     concentration_breach = concentration & ~concentration_ok
     return (int(concentration.sum()), int(concentration_ok.sum()), int(concentration_breach.sum()))
+
+
+def _broker_roundtrip_resume_route_ready_count(catalog: pd.DataFrame) -> int:
+    return _broker_roundtrip_resume_route_counts(catalog)["broker_roundtrip_resume_route_ready_runs"]
+
+
+def _broker_roundtrip_resume_route_breach_count(catalog: pd.DataFrame) -> int:
+    return _broker_roundtrip_resume_route_counts(catalog)["broker_roundtrip_resume_route_breach_runs"]
+
+
+def _broker_roundtrip_resume_route_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "broker_roundtrip_resume_route_provided_runs": 0,
+        "broker_roundtrip_resume_route_ready_runs": 0,
+        "broker_roundtrip_resume_route_primary_ready_runs": 0,
+        "broker_roundtrip_resume_route_incident_ready_runs": 0,
+        "broker_roundtrip_resume_route_breach_runs": 0,
+        "broker_roundtrip_resume_route_gap_breach_runs": 0,
+        "broker_roundtrip_resume_route_launch_control_breach_runs": 0,
+        "broker_roundtrip_resume_route_portfolio_breach_runs": 0,
+        "broker_roundtrip_resume_route_concentration_breach_runs": 0,
+    }
+    frame = _broker_roundtrip_rows(catalog)
+    if frame.empty:
+        return keys
+    primary = _resume_route_branch_state(frame, "summary_route_broker_resume_broker_route_readiness")
+    incident = _resume_route_branch_state(frame, "summary_route_broker_resume_incident_broker_route_readiness")
+    any_active = primary["active"] | incident["active"]
+    provided = primary["provided"] & incident["provided"]
+    ready = primary["ready"] & incident["ready"]
+    gap_breach = primary["gap_breach"] | incident["gap_breach"]
+    launch_control_breach = primary["launch_control_breach"] | incident["launch_control_breach"]
+    portfolio_breach = primary["portfolio_breach"] | incident["portfolio_breach"]
+    concentration_breach = primary["concentration_breach"] | incident["concentration_breach"]
+    any_breach = any_active & (
+        ~provided
+        | ~ready
+        | gap_breach
+        | launch_control_breach
+        | portfolio_breach
+        | concentration_breach
+    )
+    keys.update(
+        {
+            "broker_roundtrip_resume_route_provided_runs": int(provided.sum()),
+            "broker_roundtrip_resume_route_ready_runs": int(ready.sum()),
+            "broker_roundtrip_resume_route_primary_ready_runs": int(primary["ready"].sum()),
+            "broker_roundtrip_resume_route_incident_ready_runs": int(incident["ready"].sum()),
+            "broker_roundtrip_resume_route_breach_runs": int(any_breach.sum()),
+            "broker_roundtrip_resume_route_gap_breach_runs": int((any_active & gap_breach).sum()),
+            "broker_roundtrip_resume_route_launch_control_breach_runs": int(
+                (any_active & launch_control_breach).sum()
+            ),
+            "broker_roundtrip_resume_route_portfolio_breach_runs": int((any_active & portfolio_breach).sum()),
+            "broker_roundtrip_resume_route_concentration_breach_runs": int(
+                (any_active & concentration_breach).sum()
+            ),
+        }
+    )
+    return keys
+
+
+def _resume_route_branch_state(frame: pd.DataFrame, prefix: str) -> dict[str, pd.Series]:
+    required = _bool_column(frame, f"{prefix}_required")
+    provided = _bool_column(frame, f"{prefix}_provided")
+    ready_flag = _bool_column(frame, f"{prefix}_ready")
+    route_ready_pairs = _numeric_column(frame, f"{prefix}_route_ready_pairs")
+    gap_pairs = _numeric_column(frame, f"{prefix}_gap_pairs")
+    launch_ready = _bool_column(frame, f"{prefix}_ops_launch_controls_ready")
+    safe_runs = _numeric_column(frame, f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs")
+    breach_runs = _numeric_column(frame, f"{prefix}_ops_broker_roundtrip_portfolio_breach_runs")
+    concentration_ok_runs = _numeric_column(
+        frame,
+        f"{prefix}_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+    )
+    concentration_breach_runs = _numeric_column(
+        frame,
+        f"{prefix}_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+    )
+    active = (
+        required
+        | provided
+        | ready_flag
+        | (route_ready_pairs > 0.0)
+        | (gap_pairs > 0.0)
+        | launch_ready
+        | (safe_runs > 0.0)
+        | (breach_runs > 0.0)
+        | (concentration_ok_runs > 0.0)
+        | (concentration_breach_runs > 0.0)
+    )
+    gap_breach = (route_ready_pairs <= 0.0) | (gap_pairs > 0.0)
+    launch_control_breach = ~launch_ready
+    portfolio_breach = (safe_runs <= 0.0) | (breach_runs > 0.0)
+    concentration_breach = (concentration_ok_runs <= 0.0) | (concentration_breach_runs > 0.0)
+    ready = (
+        provided
+        & ready_flag
+        & ~gap_breach
+        & ~launch_control_breach
+        & ~portfolio_breach
+        & ~concentration_breach
+    )
+    return {
+        "active": active,
+        "provided": provided,
+        "ready": ready,
+        "gap_breach": gap_breach,
+        "launch_control_breach": launch_control_breach,
+        "portfolio_breach": portfolio_breach,
+        "concentration_breach": concentration_breach,
+    }
 
 
 def _broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:

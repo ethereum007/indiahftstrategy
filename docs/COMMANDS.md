@@ -310,7 +310,10 @@ dispatch round-trip proof, requires at least one concentration-OK final broker
 round-trip proof, fails when any final round-trip dispatch notional exceeded
 the selected strategy portfolio allocation, and fails when any final
 round-trip concentration breached selected strategy/market count or max-weight
-limits.
+limits. It also requires at least one final broker round-trip with ready
+primary and incident resume-route proof and fails when any final round-trip
+contains resume-route gaps, launch-control failures, portfolio breaches, or
+concentration breaches.
 Use `--allow-non-file-inputs` only for legacy exploratory catalogs, or
 `--require-file-inputs` to apply the same fail-closed provenance rule to a
 custom evidence set.
@@ -319,14 +322,17 @@ Custom evidence sets can opt into the same launch controls with
 `--require-broker-roundtrip-portfolio-safe`, and
 `--fail-on-broker-roundtrip-portfolio-breach`,
 `--require-broker-roundtrip-portfolio-concentration-ok`, and
-`--fail-on-broker-roundtrip-portfolio-concentration-breach`.
+`--fail-on-broker-roundtrip-portfolio-concentration-breach`,
+`--require-broker-roundtrip-resume-route-ready`, and
+`--fail-on-broker-roundtrip-resume-route-breach`.
 
 `strategy_evidence_summary.csv` records the inferred `evidence_profile`. Ready
 strategy profiles recommend `eligible_for_shadow_scaleup_review`, while a ready
 `ops_launch` profile recommends `eligible_for_live_dryrun_route_review`.
 It also records passed-required input provenance totals, placeholder-schema
 counts, broker round-trip portfolio-safe/breach counts, and broker round-trip
-portfolio concentration OK/breach counts when the catalog contains them.
+portfolio concentration OK/breach counts, plus broker resume-route ready and
+breach counts when the catalog contains them.
 
 Outputs:
 
@@ -402,7 +408,9 @@ readiness signal. The scorecard applies the same `ops_launch` broker controls
 as strategy evidence review: blocked placeholder schemas fail, final broker
 round-trip allocation breaches fail, and final broker round-trip concentration
 must include at least one concentration-OK proof with no concentration
-breaches. Blocked scorecard actions include the failed evidence-check names in
+breaches. It also requires clean final broker round-trip resume-route proof for
+both primary and incident branches. Blocked scorecard actions include the
+failed evidence-check names in
 `strategy_scorecard_action_queue.csv` and `strategy_scorecard_next_actions.json`.
 
 Outputs:

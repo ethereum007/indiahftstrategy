@@ -481,6 +481,9 @@
   final broker dispatch round-trip proof, portfolio concentration-OK proof,
   broker round-trip allocation breaches, and broker round-trip concentration
   breaches, while custom evidence reviews can opt into those gates explicitly.
+- `review-strategy-evidence --profile ops_launch` and the ops-launch strategy
+  scorecard now also require clean final broker round-trip resume-route proof,
+  blocking stale post-halt route authorization before live-dryrun route review.
 - `catalog-runs --fail-on-catalog-gaps` now fails on failed summaries,
   missing summaries, dirty runs, or unfingerprinted inputs before a catalog is
   reused as proof for strategy, broker, or route gates.

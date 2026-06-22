@@ -138,6 +138,8 @@ def evaluate_strategy_scorecard(
                 fail_on_broker_roundtrip_portfolio_breach=profile_key == "ops_launch",
                 require_broker_roundtrip_portfolio_concentration_ok=profile_key == "ops_launch",
                 fail_on_broker_roundtrip_portfolio_concentration_breach=profile_key == "ops_launch",
+                require_broker_roundtrip_resume_route_ready=profile_key == "ops_launch",
+                fail_on_broker_roundtrip_resume_route_breach=profile_key == "ops_launch",
             ),
         )
         rows.append(_scorecard_row(profile_key, expected_strategy, expected_market, evidence))
@@ -248,6 +250,24 @@ def _scorecard_row(
         ),
         "broker_roundtrip_portfolio_concentration_breach_runs": int(
             _numeric(summary.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_ready_runs": int(
+            _numeric(summary.get("broker_roundtrip_resume_route_ready_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_resume_route_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_gap_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_resume_route_gap_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_launch_control_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_resume_route_launch_control_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_portfolio_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_resume_route_portfolio_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_concentration_breach_runs": int(
+            _numeric(summary.get("broker_roundtrip_resume_route_concentration_breach_runs", 0))
         ),
         "dirty_runs": int(_numeric(summary.get("dirty_runs", 0))),
         "git_commit_count": int(_numeric(summary.get("git_commit_count", 0))),
@@ -546,6 +566,24 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         ),
         "broker_roundtrip_portfolio_concentration_breach_runs": int(
             _numeric(row.get("broker_roundtrip_portfolio_concentration_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_ready_runs": int(
+            _numeric(row.get("broker_roundtrip_resume_route_ready_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_resume_route_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_gap_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_resume_route_gap_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_launch_control_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_resume_route_launch_control_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_portfolio_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_resume_route_portfolio_breach_runs", 0))
+        ),
+        "broker_roundtrip_resume_route_concentration_breach_runs": int(
+            _numeric(row.get("broker_roundtrip_resume_route_concentration_breach_runs", 0))
         ),
         "recommendation": str(row.get("recommendation", "")),
     }

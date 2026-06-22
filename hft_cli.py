@@ -1214,6 +1214,8 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--require-broker-roundtrip-portfolio-safe", action="store_true")
     evidence.add_argument("--fail-on-broker-roundtrip-portfolio-concentration-breach", action="store_true")
     evidence.add_argument("--require-broker-roundtrip-portfolio-concentration-ok", action="store_true")
+    evidence.add_argument("--fail-on-broker-roundtrip-resume-route-breach", action="store_true")
+    evidence.add_argument("--require-broker-roundtrip-resume-route-ready", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     scorecard = sub.add_parser(
@@ -3437,6 +3439,12 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 fail_on_broker_roundtrip_portfolio_concentration_breach=(
                     args.fail_on_broker_roundtrip_portfolio_concentration_breach or is_ops_launch_profile
+                ),
+                require_broker_roundtrip_resume_route_ready=(
+                    args.require_broker_roundtrip_resume_route_ready or is_ops_launch_profile
+                ),
+                fail_on_broker_roundtrip_resume_route_breach=(
+                    args.fail_on_broker_roundtrip_resume_route_breach or is_ops_launch_profile
                 ),
             ),
         )
