@@ -46,6 +46,12 @@
   credential environment variable names, and hands ready file sources to
   `pipeline-vendor-market-data` while live sources point to the provider
   fetcher implementation.
+- Market-data fetch planning now consumes those source contracts:
+  `plan-market-data-fetch` validates provider/file handoff, symbols, REST
+  backfill windows, latency budgets, credential env-var references, and output
+  filenames without calling external APIs or storing secrets; file plans route
+  to `pipeline-vendor-market-data` and REST/websocket plans route to the
+  provider fetcher with a manifest-backed config.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts

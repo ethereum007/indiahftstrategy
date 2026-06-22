@@ -4255,6 +4255,28 @@ in query parameters or `--auth-env` values. File sources emit a ready action for
 `pipeline-vendor-market-data`; REST/websocket sources emit a ready action for
 the provider fetcher implementation that will consume the same config.
 
+Turn a ready source plan into a credential-safe fetch contract before writing
+any provider-specific Arrow.money/iRage client code:
+
+```powershell
+python -m hft_cli plan-market-data-fetch `
+  --source-plan runs\market_data_sources\arrow_ws_nse\market_data_source_config.json `
+  --out runs\market_data_fetch\arrow_ws_nse `
+  --symbol NIFTY-I `
+  --symbol BANKNIFTY-I `
+  --max-latency-ms 150 `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+For REST backfills, include `--window-start` and `--window-end`. The command
+does not call external APIs; it validates the source plan, market identity,
+credential env-var references, symbols, timing budget, output file contract,
+and next gate. File sources route to the existing `pipeline-vendor-market-data`
+command, while REST/websocket sources route to the provider fetcher with
+`market_data_fetch_config.json`.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

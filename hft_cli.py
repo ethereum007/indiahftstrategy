@@ -73,6 +73,7 @@ from reports.leadlag_replay_walkforward import (
 )
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
+from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.parity_candidate_promotion import (
@@ -953,6 +954,23 @@ def main(argv: list[str] | None = None) -> int:
     market_data_source.add_argument("--fail-on-breach", action="store_true")
     market_data_source.add_argument("--fail-on-blocked-actions", action="store_true")
     market_data_source.add_argument("--fail-on-actions", action="store_true")
+
+    market_data_fetch = sub.add_parser(
+        "plan-market-data-fetch",
+        help="Plan a dry-run provider fetch from a market-data source plan without calling APIs or storing credentials.",
+    )
+    market_data_fetch.add_argument("--source-plan", required=True)
+    market_data_fetch.add_argument("--out", required=True)
+    market_data_fetch.add_argument("--symbol", action="append", dest="symbols")
+    market_data_fetch.add_argument("--window-start", default="")
+    market_data_fetch.add_argument("--window-end", default="")
+    market_data_fetch.add_argument("--poll-interval-ms", type=int, default=1000)
+    market_data_fetch.add_argument("--max-latency-ms", type=int, default=250)
+    market_data_fetch.add_argument("--expected-market", default="india_nse_index_derivatives")
+    market_data_fetch.add_argument("--output-file", default="provider_market_data.csv")
+    market_data_fetch.add_argument("--fail-on-breach", action="store_true")
+    market_data_fetch.add_argument("--fail-on-blocked-actions", action="store_true")
+    market_data_fetch.add_argument("--fail-on-actions", action="store_true")
 
     vendor_market_data = sub.add_parser(
         "pipeline-vendor-market-data",
@@ -3086,6 +3104,34 @@ def main(argv: list[str] | None = None) -> int:
                 market=args.market,
                 auth_env_vars=tuple(args.auth_envs or ()),
                 label=args.label,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "plan-market-data-fetch":
+        result = write_market_data_fetch_plan(
+            args.source_plan,
+            args.out,
+            config=MarketDataFetchConfig(
+                symbols=tuple(args.symbols or ()),
+                window_start=args.window_start,
+                window_end=args.window_end,
+                poll_interval_ms=args.poll_interval_ms,
+                max_latency_ms=args.max_latency_ms,
+                expected_market=args.expected_market,
+                output_filename=args.output_file,
+                dry_run=True,
             ),
         )
         print(result.summary.to_string(index=False))
