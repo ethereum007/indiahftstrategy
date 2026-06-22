@@ -4321,6 +4321,27 @@ normalized output schema, runtime budgets, and credential env-var names/presence
 booleans, but never credential values. Its ready action is the explicit live-run
 approval gate for the provider client.
 
+After a credentialed provider client writes a normalized CSV, review that capture
+against the packet before feeding it into the market-data pipeline:
+
+```powershell
+python -m hft_cli review-provider-market-data-capture `
+  --client-packet runs\provider_market_data_clients\arrow_ws_nse\provider_market_data_client_packet.json `
+  --capture captures\arrow_ws_nse_day1.csv `
+  --out runs\provider_market_data_capture\arrow_ws_nse_day1 `
+  --min-rows 100000 `
+  --expected-market india_nse_index_derivatives `
+  --expected-kind ticks `
+  --pipeline-output-dir runs\provider_market_data_pipeline\arrow_ws_nse_day1 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The review validates the packet, normalized required columns, parseable and
+monotonic timestamps, row threshold, market/kind identity, capture fingerprint,
+and null counts. A ready review emits the exact `pipeline-vendor-market-data`
+handoff using `--adapter normalized`.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

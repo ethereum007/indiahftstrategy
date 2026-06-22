@@ -62,6 +62,11 @@
   validates ready request templates, env-var contracts, normalized CSV output
   schema, runtime budgets, and emits a manifest-backed execution packet for the
   eventual Arrow.money/iRage client without making external API calls.
+- Provider market-data capture review now validates a credentialed provider
+  client CSV against the dry-run packet before research ingestion:
+  `review-provider-market-data-capture` checks normalized schema, row counts,
+  timestamp parsing/monotonicity, capture fingerprints, and emits the exact
+  `pipeline-vendor-market-data --adapter normalized` handoff.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts
