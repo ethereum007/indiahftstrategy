@@ -4300,6 +4300,27 @@ and runtime budgets. Use `--require-env-present` only in the deployment shell
 where Arrow.money/iRage credentials are already configured, since the artifacts
 store presence booleans but never credential values.
 
+Generate the final dry-run client packet that an Arrow.money/iRage adapter
+implementation must satisfy before any live provider call is allowed:
+
+```powershell
+python -m hft_cli prepare-provider-market-data-client `
+  --fetcher-plan runs\provider_market_data_fetchers\arrow_ws_nse\provider_market_data_fetcher_config.json `
+  --out runs\provider_market_data_clients\arrow_ws_nse `
+  --session-label arrow_ws_nse_day1 `
+  --max-clock-skew-ms 250 `
+  --max-local-buffer-rows 100000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+This writes `provider_market_data_client_packet.json`,
+`provider_market_data_output_schema.csv`, summary/check/action artifacts, and a
+manifest. The packet is still dry-run only: it stores request details,
+normalized output schema, runtime budgets, and credential env-var names/presence
+booleans, but never credential values. Its ready action is the explicit live-run
+approval gate for the provider client.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

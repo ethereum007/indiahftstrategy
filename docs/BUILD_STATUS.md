@@ -57,6 +57,11 @@
   `plan-provider-market-data-fetcher` validates live transport, symbols,
   runtime budgets, and optional env-var presence while writing only env-var
   names and presence booleans, not secret values.
+- Provider market-data client dry-run packets now close the backend data-source
+  handoff before live credentials: `prepare-provider-market-data-client`
+  validates ready request templates, env-var contracts, normalized CSV output
+  schema, runtime budgets, and emits a manifest-backed execution packet for the
+  eventual Arrow.money/iRage client without making external API calls.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts

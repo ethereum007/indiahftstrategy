@@ -90,6 +90,10 @@ from reports.provider_market_data_fetcher import (
     ProviderMarketDataFetcherConfig,
     write_provider_market_data_fetcher_plan,
 )
+from reports.provider_market_data_client import (
+    ProviderMarketDataClientConfig,
+    write_provider_market_data_client_plan,
+)
 from reports.quote_lifecycle import QuoteLifecycleThresholds, write_quote_lifecycle_plan
 from reports.quote_risk import QuoteRiskThresholds, write_quote_risk_report
 from reports.resume import ResumeGateThresholds, write_resume_gate_report
@@ -991,6 +995,20 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_fetcher.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_fetcher.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_fetcher.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_client = sub.add_parser(
+        "prepare-provider-market-data-client",
+        help="Prepare a dry-run provider market-data client packet from a fetcher request template.",
+    )
+    provider_market_data_client.add_argument("--fetcher-plan", required=True)
+    provider_market_data_client.add_argument("--out", required=True)
+    provider_market_data_client.add_argument("--require-env-present", action="store_true")
+    provider_market_data_client.add_argument("--session-label", default="")
+    provider_market_data_client.add_argument("--max-clock-skew-ms", type=int, default=250)
+    provider_market_data_client.add_argument("--max-local-buffer-rows", type=int, default=100000)
+    provider_market_data_client.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_client.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_client.add_argument("--fail-on-actions", action="store_true")
 
     vendor_market_data = sub.add_parser(
         "pipeline-vendor-market-data",
@@ -3178,6 +3196,31 @@ def main(argv: list[str] | None = None) -> int:
                 heartbeat_timeout_ms=args.heartbeat_timeout_ms,
                 max_reconnects=args.max_reconnects,
                 batch_size=args.batch_size,
+                dry_run=True,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "prepare-provider-market-data-client":
+        result = write_provider_market_data_client_plan(
+            args.fetcher_plan,
+            args.out,
+            config=ProviderMarketDataClientConfig(
+                require_env_present=args.require_env_present,
+                session_label=args.session_label,
+                max_clock_skew_ms=args.max_clock_skew_ms,
+                max_local_buffer_rows=args.max_local_buffer_rows,
                 dry_run=True,
             ),
         )

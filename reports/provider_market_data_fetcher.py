@@ -411,7 +411,7 @@ def _action_queue(summary: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "transport": str(summary["transport"]),
                 "mode": str(summary["mode"]),
                 "next_gate": "provider_fetcher_client",
-                "next_gate_help_command": "implement provider adapter client using provider_market_data_request_template.json",
+                "next_gate_help_command": "python -m hft_cli prepare-provider-market-data-client --help",
             }
         )
     return pd.DataFrame(
