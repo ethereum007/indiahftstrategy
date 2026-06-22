@@ -40,6 +40,12 @@
   preserves `ops_broker_roundtrip_resume_route_*_runs`, and scale-up blocks
   stale broker route proof when the resume-route ready run is missing or any
   resume-route breach subtype is non-zero.
+- Market-data source planning is now a first-class backend integration gate:
+  `plan-market-data-source` validates file replay, Arrow.money, and iRage
+  source contracts, records sanitized REST/websocket/file URIs, stores only
+  credential environment variable names, and hands ready file sources to
+  `pipeline-vendor-market-data` while live sources point to the provider
+  fetcher implementation.
 - CLI/report runners for parity/box scans and lead-lag measurement.
 - Strategy evidence review supports a `parity` profile that requires parity
   edge audit, replay sweep, promotion, order-plan, and launch-pipeline artifacts

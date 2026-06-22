@@ -4227,6 +4227,34 @@ normalizers used by the strategy backtests. Use `--fail-on-blocked-actions` to
 fail when mapped-data repair actions exist, or `--fail-on-actions` for any
 open mapped-data action.
 
+## Market Data Source Planning
+
+Before wiring Arrow.money/iRage live feeds or replaying a vendor file, create a
+credential-safe source plan:
+
+```powershell
+python -m hft_cli plan-market-data-source `
+  --out runs\market_data_sources\arrow_ws_nse `
+  --provider arrow_money `
+  --kind ticks `
+  --transport websocket `
+  --source-uri wss://feed.arrow.money/market-data/nse `
+  --auth-env ARROW_MONEY_API_KEY `
+  --auth-env ARROW_MONEY_API_SECRET `
+  --market india_nse_index_derivatives `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+For historical replay or vendor onboarding from a file, use `--transport file`
+and point `--source-uri` at the raw CSV. The generated
+`market_data_source_config.json` stores provider, adapter, kind, transport,
+market, sanitized source URI, credential environment variable names, and the
+next gate. It never stores credential values and fails closed if secrets appear
+in query parameters or `--auth-env` values. File sources emit a ready action for
+`pipeline-vendor-market-data`; REST/websocket sources emit a ready action for
+the provider fetcher implementation that will consume the same config.
+
 ## Vendor Market Data Onboarding Pipeline
 
 Run the full first-mile market-data path for a raw Arrow.money/iRage tick or

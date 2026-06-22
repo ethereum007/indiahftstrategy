@@ -73,6 +73,7 @@ from reports.leadlag_replay_walkforward import (
 )
 from reports.market_profile import MarketProfileReportConfig, write_market_profile_report
 from reports.market_portability import MarketPortabilityReportConfig, write_market_portability_report
+from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
 from reports.order_exposure import OrderExposureConfig, write_order_exposure_report
 from reports.parity_candidate_promotion import (
     ParityCandidatePromotionThresholds,
@@ -935,6 +936,23 @@ def main(argv: list[str] | None = None) -> int:
     mapped_data.add_argument("--fail-on-breach", action="store_true")
     mapped_data.add_argument("--fail-on-blocked-actions", action="store_true")
     mapped_data.add_argument("--fail-on-actions", action="store_true")
+
+    market_data_source = sub.add_parser(
+        "plan-market-data-source",
+        help="Validate a file, Arrow.money, or iRage market-data source plan without storing credentials.",
+    )
+    market_data_source.add_argument("--out", required=True)
+    market_data_source.add_argument("--provider", default="file_replay")
+    market_data_source.add_argument("--adapter", default="")
+    market_data_source.add_argument("--kind", default="ticks", choices=["ticks", "chain"])
+    market_data_source.add_argument("--transport", default="file", choices=["file", "rest", "websocket"])
+    market_data_source.add_argument("--source-uri", required=True)
+    market_data_source.add_argument("--market", default="india_nse_index_derivatives")
+    market_data_source.add_argument("--auth-env", action="append", dest="auth_envs")
+    market_data_source.add_argument("--label", default="")
+    market_data_source.add_argument("--fail-on-breach", action="store_true")
+    market_data_source.add_argument("--fail-on-blocked-actions", action="store_true")
+    market_data_source.add_argument("--fail-on-actions", action="store_true")
 
     vendor_market_data = sub.add_parser(
         "pipeline-vendor-market-data",
@@ -3041,6 +3059,33 @@ def main(argv: list[str] | None = None) -> int:
                 filter_session=not args.no_filter_session,
                 market=args.market,
                 require_all_mapped=not args.allow_missing_required,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "plan-market-data-source":
+        result = write_market_data_source_plan(
+            args.out,
+            config=MarketDataSourceConfig(
+                provider=args.provider,
+                adapter=args.adapter,
+                kind=args.kind,
+                transport=args.transport,
+                source_uri=args.source_uri,
+                market=args.market,
+                auth_env_vars=tuple(args.auth_envs or ()),
+                label=args.label,
             ),
         )
         print(result.summary.to_string(index=False))

@@ -1,0 +1,132 @@
+import json
+
+import pandas as pd
+
+from hft_cli import main
+from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
+
+
+def test_market_data_source_plan_accepts_arrow_file_source(tmp_path):
+    source = tmp_path / "arrow ticks.csv"
+    source.write_text(
+        "ts,bid,ask,bid_qty,ask_qty,last,last_qty\n"
+        "2026-06-10 09:15:00,100.0,100.05,75,150,100.05,75\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "source_plan"
+
+    report = write_market_data_source_plan(
+        out_dir,
+        config=MarketDataSourceConfig(
+            provider="arrow_money",
+            adapter="arrow_money",
+            kind="ticks",
+            transport="file",
+            source_uri=str(source),
+            market="india_nse_index_derivatives",
+            label="arrow_day1",
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
+    action_queue = pd.read_csv(out_dir / "market_data_source_action_queue.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary["source_file_exists"])
+    assert len(summary["source_file_sha256"]) == 64
+    assert summary["next_gate"] == "pipeline-vendor-market-data"
+    assert config["ready"]
+    assert config["source"]["file_exists"]
+    assert config["credentials"]["values_stored"] is False
+    assert config["normalized_pipeline"]["available"]
+    assert "pipeline-vendor-market-data" in config["normalized_pipeline"]["command"]
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "action"] == "run_vendor_market_data_pipeline"
+    assert manifest["run_type"] == "market_data_source_plan"
+    assert manifest["inputs"]["source_file"]["sha256"] == summary["source_file_sha256"]
+
+
+def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
+    out_dir = tmp_path / "source_plan"
+
+    report = write_market_data_source_plan(
+        out_dir,
+        config=MarketDataSourceConfig(
+            provider="arrow_money",
+            kind="ticks",
+            transport="websocket",
+            source_uri="wss://feed.arrow.money/market-data/nse",
+            auth_env_vars=("ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"),
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert summary["adapter"] == "arrow_money"
+    assert summary["source_uri_kind"] == "wss"
+    assert summary["auth_env_var_count"] == 2
+    assert config["normalized_pipeline"]["available"] is False
+    assert config["next_gate"] == "provider_fetcher"
+    assert config["primary_action"]["action"] == "wire_provider_market_data_fetcher"
+    assert config["credentials"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
+
+
+def test_market_data_source_plan_blocks_missing_live_credentials_and_embedded_secret(tmp_path):
+    out_dir = tmp_path / "source_plan"
+
+    report = write_market_data_source_plan(
+        out_dir,
+        config=MarketDataSourceConfig(
+            provider="irage",
+            kind="ticks",
+            transport="rest",
+            source_uri="https://api.irage.example/ticks?token=secret-value",
+            auth_env_vars=("IRAGE_API_KEY=secret-value",),
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert {"auth_env_vars_are_names", "source_uri_has_no_secret_query"} <= failed
+    summary = report.summary.iloc[0]
+    assert "secret-value" not in summary["source_uri"]
+    assert "token=%2A%2A%2A" in summary["source_uri"]
+    config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
+    assert config["blocked_action_count"] >= 2
+    assert "secret-value" not in config["source"]["uri"]
+
+
+def test_cli_market_data_source_plan(tmp_path):
+    source = tmp_path / "irage_ticks.csv"
+    source.write_text(
+        "ts,bid,ask,bid_qty,ask_qty,last,last_qty\n"
+        "2026-06-10 09:15:00,100.0,100.05,75,150,100.05,75\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cli_plan"
+
+    code = main(
+        [
+            "plan-market-data-source",
+            "--out",
+            str(out_dir),
+            "--provider",
+            "irage",
+            "--adapter",
+            "irage",
+            "--kind",
+            "ticks",
+            "--transport",
+            "file",
+            "--source-uri",
+            str(source),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "market_data_source_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "provider"] == "irage"
