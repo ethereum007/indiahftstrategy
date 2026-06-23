@@ -18,6 +18,7 @@ DEFAULT_ADAPTER_TEMPLATE = (
     "--market {market} --kind {kind} --start {start_local} --end {end_local} "
     "--output {capture_path}"
 )
+ENV_TEMPLATE_NAME = "provider_market_data_live_capture_env_template.env"
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,10 @@ def write_provider_market_data_live_capture_bundle(
     report.action_queue.to_csv(out / "provider_market_data_live_capture_action_queue.csv", index=False)
     (out / "provider_market_data_live_capture_bundle.json").write_text(
         json.dumps(report.bundle, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / ENV_TEMPLATE_NAME).write_text(
+        _env_template(_string_list(report.bundle.get("authentication", {}).get("env_vars"))),
         encoding="utf-8",
     )
     (out / "provider_market_data_live_capture_runbook.md").write_text(
@@ -352,6 +357,7 @@ def _bundle(
         "authentication": {
             "env_vars": list(env_presence.keys()),
             "env_presence": env_presence,
+            "env_template": ENV_TEMPLATE_NAME,
             "values_stored": False,
         },
         "preflight": {
@@ -481,6 +487,7 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
         f"- Commands: {summary['command_count']}",
+        f"- Credential env template: `{ENV_TEMPLATE_NAME}`",
         f"- Post-capture ingest: `{summary['post_capture_ingest_command']}`",
         "",
         "## Capture Commands",
@@ -493,6 +500,19 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         "",
     ]
     return "\n".join(lines)
+
+
+def _env_template(env_vars: list[str]) -> str:
+    lines = [
+        "# Provider market-data live capture credentials",
+        "# Fill values only in the runtime shell. Do not commit populated copies.",
+        "",
+    ]
+    for name in env_vars:
+        lines.append(f"{name}=")
+    if not env_vars:
+        lines.append("# No credential environment variables were declared in the bundle.")
+    return "\n".join(lines) + "\n"
 
 
 def _commands_table(commands: pd.DataFrame) -> str:
