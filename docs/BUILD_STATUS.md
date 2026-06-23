@@ -1488,8 +1488,9 @@
   broker-dispatch summary/config/manifest artifacts before the non-submitting
   send packet is prepared.
 - Provider-data imbalance broker-dispatch-send now preserves the same
-  provider/nested broker-dispatch round-trip paths in send summary/config/runbook
-  artifacts and manifests while still keeping `submission_enabled=false`.
+  provider/nested broker-dispatch round-trip paths plus upstream proof lineage
+  in send summary/config/runbook artifacts and manifests while still keeping
+  `submission_enabled=false`.
 - Provider-data imbalance broker-dispatch acknowledgement now preserves those
   provider/nested broker-dispatch round-trip paths in acknowledgement
   summary/config/runbook artifacts and manifests before the final provider
