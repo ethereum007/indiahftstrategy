@@ -1071,6 +1071,52 @@ def test_provider_market_data_imbalance_scaleup_plans_from_ready_scorecard(tmp_p
     assert "scaleup" in manifest["inputs"]
 
 
+def test_provider_market_data_imbalance_scaleup_accepts_provider_route_readiness_root(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    out_dir = tmp_path / "provider_imbalance_scaleup"
+
+    report = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        out_dir,
+        route_readiness_dir=route_readiness.output_dir,
+        config=ProviderMarketDataImbalanceScaleupConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_scaleup_summary.csv")
+    scaleup_summary = pd.read_csv(out_dir / "scaleup" / "scaleup_summary.csv")
+    config = json.loads((out_dir / "provider_market_data_imbalance_scaleup_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    nested_route_dir = route_readiness.output_dir / "route_readiness"
+    assert report.ready
+    assert Path(summary.loc[0, "route_readiness_dir"]) == nested_route_dir
+    assert Path(summary.loc[0, "provider_route_readiness_wrapper_dir"]) == route_readiness.output_dir
+    assert bool(summary.loc[0, "route_readiness_provided"])
+    assert bool(summary.loc[0, "route_readiness_ready"])
+    assert int(summary.loc[0, "route_readiness_route_ready_pairs"]) == 1
+    assert int(summary.loc[0, "route_readiness_gap_pairs"]) == 0
+    assert bool(summary.loc[0, "route_readiness_ops_launch_controls_present"])
+    assert bool(scaleup_summary.loc[0, "route_readiness_provided"])
+    assert bool(scaleup_summary.loc[0, "route_readiness_ready"])
+    assert int(scaleup_summary.loc[0, "route_readiness_gap_pairs"]) == 0
+    assert config["route_readiness_inputs"]["route_readiness_dir"] == str(nested_route_dir)
+    assert config["route_readiness_inputs"]["provider_route_readiness_wrapper_dir"] == str(route_readiness.output_dir)
+    assert "provider_route_readiness_wrapper" in manifest["inputs"]
+
+
 def test_provider_market_data_imbalance_scaleup_blocks_unready_scorecard(tmp_path):
     smoke = _write_synthetic_smoke_evidence(tmp_path)
     research = write_provider_market_data_imbalance_research(

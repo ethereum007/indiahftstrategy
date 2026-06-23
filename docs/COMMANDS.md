@@ -4605,7 +4605,7 @@ an accepted shadow-session comparison:
 python -m hft_cli plan-provider-market-data-imbalance-scaleup `
   --scorecard runs\provider_market_data_imbalance_scorecards\arrow_ws_nse_2026_06_23 `
   --shadow-comparison runs\shadow_comparisons\provider_imbalance_arrow_ws_nse_2026_06_23 `
-  --route-readiness runs\provider_market_data_imbalance_route_readiness\arrow_ws_nse_2026_06_23\route_readiness `
+  --route-readiness runs\provider_market_data_imbalance_route_readiness\arrow_ws_nse_2026_06_23 `
   --out runs\provider_market_data_imbalance_scaleup\arrow_ws_nse_2026_06_23 `
   --allowed-adapter arrow_money `
   --max-scale-multiplier 1.0 `
@@ -4618,13 +4618,14 @@ python -m hft_cli plan-provider-market-data-imbalance-scaleup `
 The provider wrapper infers the full imbalance `strategy_evidence` and nested
 `imbalance_launch_pipeline` paths from the scorecard and launch-evidence
 artifacts, but it still requires a real `shadow_session_comparison_summary.csv`.
-Supplying the provider route-readiness nested folder lets the generic scale-up
-gate revalidate ops-launch route controls before runtime sizing. It writes
-provider wrapper checks/summary/action/config/runbook artifacts plus a nested
-generic `scaleup` folder with `scaleup_plan.csv`, `scaleup_checks.csv`,
-`scaleup_summary.csv`, and `scaleup_config.json`. A ready wrapper points to
-`build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
-shadow evidence stays blocked at `compare-shadow-sessions`.
+Supplying the provider route-readiness wrapper root lets the provider scale-up
+wrapper resolve its nested generic `route_readiness` proof automatically, then
+the generic scale-up gate revalidates ops-launch route controls before runtime
+sizing. It writes provider wrapper checks/summary/action/config/runbook
+artifacts plus a nested generic `scaleup` folder with `scaleup_plan.csv`,
+`scaleup_checks.csv`, `scaleup_summary.csv`, and `scaleup_config.json`. A ready
+wrapper points to `build-provider-market-data-imbalance-runtime-telemetry`;
+missing or rejected shadow evidence stays blocked at `compare-shadow-sessions`.
 
 Build guard-ready runtime telemetry from that provider scale-up wrapper:
 

@@ -1437,6 +1437,11 @@
   controls at their exact repair gate, and writes a ready route artifact that
   can be supplied to `plan-provider-market-data-imbalance-scaleup
   --route-readiness`.
+- Provider-data imbalance scale-up now accepts that provider route-readiness
+  wrapper root directly. The wrapper resolves the nested generic
+  `route_readiness` proof, passes it into `plan-scaleup`, exposes
+  `route_readiness_*` status fields in the provider scale-up summary/config,
+  and preserves the provider wrapper root in the manifest for audit.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so
@@ -1456,11 +1461,11 @@ pytest
 
 Current passing suite: 1110 tests.
 
-Latest focused gate: provider route-readiness targeted tests pass (`3 passed`),
-and the generic route-readiness suite passes (`8 passed`). A single-file run of
-`tests/test_provider_market_data_imbalance_research.py` exceeded the local
-timeout after this slice, so the full-suite count above is left at the last
-completed full run.
+Latest focused gate: provider route-readiness plus scale-up targeted tests pass
+(`10 passed`), and the generic route-readiness suite passes (`8 passed`). A
+single-file run of `tests/test_provider_market_data_imbalance_research.py`
+exceeded the local timeout after this provider path work, so the full-suite
+count above is left at the last completed full run.
 
 ## Next Build Targets
 

@@ -85,6 +85,15 @@ def write_provider_market_data_imbalance_scaleup_plan(
         else None,
     )
     shadow_summary, shadow_summary_error = _read_csv(shadow_dir / "shadow_session_comparison_summary.csv")
+    resolved_route_readiness_dir = _resolved_nested_summary_dir(
+        route_readiness_dir,
+        nested_dir="route_readiness",
+        summary_file="route_readiness_summary.csv",
+    )
+    provider_route_readiness_wrapper_dir = _provider_wrapper_dir(
+        route_readiness_dir,
+        resolved_route_readiness_dir,
+    )
 
     resolved_thresholds = _resolve_thresholds(thresholds, scorecard_summary, launch_evidence_summary)
     scaleup: ScaleUpPlanReport | None = None
@@ -120,7 +129,7 @@ def write_provider_market_data_imbalance_scaleup_plan(
                 data_readiness_dir=data_readiness_dir,
                 data_readiness_comparison_dir=data_readiness_comparison_dir,
                 strategy_portfolio_dir=strategy_portfolio_dir,
-                route_readiness_dir=route_readiness_dir,
+                route_readiness_dir=resolved_route_readiness_dir,
                 broker_readiness_dir=broker_readiness_dir,
                 thresholds=resolved_thresholds,
             )
@@ -137,6 +146,8 @@ def write_provider_market_data_imbalance_scaleup_plan(
         strategy_evidence_dir,
         launch_pipeline_dir,
         shadow_dir,
+        resolved_route_readiness_dir,
+        provider_route_readiness_wrapper_dir,
         scaleup,
         checks,
         out,
@@ -156,6 +167,8 @@ def write_provider_market_data_imbalance_scaleup_plan(
         action_queue,
         config,
         resolved_thresholds,
+        resolved_route_readiness_dir,
+        provider_route_readiness_wrapper_dir,
     )
 
     checks.to_csv(out / "provider_market_data_imbalance_scaleup_checks.csv", index=False)
@@ -191,7 +204,8 @@ def write_provider_market_data_imbalance_scaleup_plan(
         "data_readiness": data_readiness_dir,
         "data_readiness_comparison": data_readiness_comparison_dir,
         "strategy_portfolio": strategy_portfolio_dir,
-        "route_readiness": route_readiness_dir,
+        "route_readiness": resolved_route_readiness_dir,
+        "provider_route_readiness_wrapper": provider_route_readiness_wrapper_dir,
         "broker_readiness": broker_readiness_dir,
     }.items():
         if value is not None:
@@ -387,6 +401,8 @@ def _summary(
     strategy_evidence_dir: Path | None,
     launch_pipeline_dir: Path | None,
     shadow_dir: Path,
+    route_readiness_dir: Path | None,
+    provider_route_readiness_wrapper_dir: Path | None,
     scaleup: ScaleUpPlanReport | None,
     checks: pd.DataFrame,
     output_dir: Path,
@@ -410,6 +426,8 @@ def _summary(
                 "strategy_evidence_dir": _path_text(strategy_evidence_dir),
                 "launch_pipeline_dir": _path_text(launch_pipeline_dir),
                 "shadow_comparison_dir": str(shadow_dir),
+                "route_readiness_dir": _path_text(route_readiness_dir),
+                "provider_route_readiness_wrapper_dir": _path_text(provider_route_readiness_wrapper_dir),
                 "scaleup_dir": "" if scaleup is None else str(scaleup.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -430,6 +448,16 @@ def _summary(
                 "max_notional_per_session": _first_number(scaleup_summary, "max_notional_per_session"),
                 "observed_shadow_sessions": _first_number(scaleup_summary, "observed_shadow_sessions"),
                 "observed_acceptance_rate": _first_number(scaleup_summary, "observed_acceptance_rate"),
+                "route_readiness_provided": _first_bool(scaleup_summary, "route_readiness_provided"),
+                "route_readiness_ready": _first_bool(scaleup_summary, "route_readiness_ready"),
+                "route_readiness_route_ready_pairs": int(
+                    _first_number(scaleup_summary, "route_readiness_route_ready_pairs")
+                ),
+                "route_readiness_gap_pairs": int(_first_number(scaleup_summary, "route_readiness_gap_pairs")),
+                "route_readiness_ops_launch_controls_present": _first_bool(
+                    scaleup_summary,
+                    "route_readiness_ops_launch_controls_present",
+                ),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
@@ -507,6 +535,8 @@ def _config(
     action_queue: pd.DataFrame,
     config: ProviderMarketDataImbalanceScaleupConfig,
     thresholds: ScaleUpThresholds,
+    route_readiness_dir: Path | None,
+    provider_route_readiness_wrapper_dir: Path | None,
 ) -> dict[str, Any]:
     actions = _records(action_queue)
     return {
@@ -518,6 +548,10 @@ def _config(
         "scorecard": _first_record(scorecard_summary),
         "provider_launch_evidence": _first_record(launch_evidence_summary),
         "provider_launch": _first_record(provider_launch_summary),
+        "route_readiness_inputs": {
+            "route_readiness_dir": _path_text(route_readiness_dir),
+            "provider_route_readiness_wrapper_dir": _path_text(provider_route_readiness_wrapper_dir),
+        },
         "scaleup": {
             "ready": False if scaleup is None else bool(scaleup.ready),
             "output_dir": "" if scaleup is None else str(scaleup.output_dir or ""),
@@ -712,6 +746,32 @@ def _first_existing_path(*paths: Path | None) -> Path | None:
 
 def _path_from_text(value: str) -> Path | None:
     return Path(value) if value else None
+
+
+def _resolved_nested_summary_dir(
+    value: str | Path | None,
+    *,
+    nested_dir: str,
+    summary_file: str,
+) -> Path | None:
+    if value is None:
+        return None
+    candidate = Path(value)
+    if candidate.is_dir():
+        direct_summary = candidate / summary_file
+        nested_summary = candidate / nested_dir / summary_file
+        if not direct_summary.exists() and nested_summary.exists():
+            return candidate / nested_dir
+    return candidate
+
+
+def _provider_wrapper_dir(original: str | Path | None, resolved: Path | None) -> Path | None:
+    if original is None or resolved is None:
+        return None
+    original_path = Path(original)
+    if original_path == resolved:
+        return None
+    return original_path
 
 
 def _path_or_none(path: Path) -> Path | None:
