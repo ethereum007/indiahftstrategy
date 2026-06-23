@@ -1709,6 +1709,67 @@ def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispat
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
 
 
+def test_provider_market_data_imbalance_broker_readiness_preserves_upstream_roundtrip(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    upstream_provider_dir = tmp_path / "upstream_provider_imbalance_broker_dispatch_roundtrip"
+    upstream_nested_dir = upstream_provider_dir / "broker_dispatch_roundtrip"
+    upstream_nested_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame([{"passed": True, "ready": True}]).to_csv(
+        upstream_nested_dir / "broker_dispatch_roundtrip_summary.csv",
+        index=False,
+    )
+
+    roundtrip_summary_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    roundtrip_summary = pd.read_csv(roundtrip_summary_path)
+    roundtrip_summary["upstream_provider_dispatch_roundtrip_dir"] = str(upstream_provider_dir)
+    roundtrip_summary["upstream_dispatch_roundtrip_dir"] = str(upstream_nested_dir)
+    roundtrip_summary["upstream_dispatch_roundtrip_provided"] = True
+    roundtrip_summary["upstream_dispatch_roundtrip_ready"] = True
+    roundtrip_summary["upstream_dispatch_roundtrip_failed_checks"] = 0
+    roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
+
+    roundtrip_config_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+    )
+    roundtrip_config = json.loads(roundtrip_config_path.read_text(encoding="utf-8"))
+    roundtrip_inputs = roundtrip_config.setdefault("broker_dispatch_roundtrip_inputs", {})
+    roundtrip_inputs["upstream_provider_dispatch_roundtrip_dir"] = str(upstream_provider_dir)
+    roundtrip_inputs["upstream_dispatch_roundtrip_dir"] = str(upstream_nested_dir)
+    roundtrip_config_path.write_text(
+        json.dumps(roundtrip_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_with_upstream_roundtrip"
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert not report.ready
+    assert bool(report.checks.set_index("check").loc["broker_readiness_runnable", "passed"])
+    assert Path(summary.loc[0, "upstream_provider_dispatch_roundtrip_dir"]) == upstream_provider_dir
+    assert Path(summary.loc[0, "upstream_dispatch_roundtrip_dir"]) == upstream_nested_dir
+    assert bool(summary.loc[0, "upstream_dispatch_roundtrip_provided"])
+    assert bool(summary.loc[0, "upstream_dispatch_roundtrip_ready"])
+    assert int(summary.loc[0, "upstream_dispatch_roundtrip_failed_checks"]) == 0
+    assert config["broker_inputs"]["upstream_provider_dispatch_roundtrip_dir"] == str(upstream_provider_dir)
+    assert config["broker_inputs"]["upstream_dispatch_roundtrip_dir"] == str(upstream_nested_dir)
+    assert Path(manifest["inputs"]["upstream_provider_dispatch_roundtrip"]["path"]) == upstream_provider_dir.resolve()
+    assert Path(manifest["inputs"]["upstream_dispatch_roundtrip"]["path"]) == upstream_nested_dir.resolve()
+
+
 def test_provider_market_data_imbalance_broker_readiness_blocks_unready_session(tmp_path):
     session_dir = tmp_path / "provider_imbalance_runtime_session"
     session_dir.mkdir(parents=True, exist_ok=True)

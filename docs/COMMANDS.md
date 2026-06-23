@@ -4709,7 +4709,8 @@ The provider broker-readiness wrapper reads the provider runtime-session
 summary/config, infers the nested generic `runtime_session` plus provider launch
 order export/upload-pack artifacts, accepts either the provider broker-dispatch
 round-trip wrapper root or its nested generic `broker_dispatch_roundtrip`
-folder, runs the generic `broker_readiness` gate under a nested folder, and
+folder, preserves any upstream round-trip lineage carried by the provider
+wrapper, runs the generic `broker_readiness` gate under a nested folder, and
 writes provider checks/summary/action/config/runbook artifacts. By default it
 is suitable for initial Arrow.money/iRage dry-run testing: it requires the
 provider runtime session, order export, upload pack, and broker-readiness pass,
