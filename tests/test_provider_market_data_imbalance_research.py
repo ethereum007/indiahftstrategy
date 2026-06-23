@@ -1801,6 +1801,82 @@ def test_provider_market_data_imbalance_cutover_blocks_missing_route_proof(tmp_p
     assert "runtime_session" in manifest["inputs"]
 
 
+def test_provider_market_data_imbalance_cutover_carries_provider_dispatch_roundtrip_paths(tmp_path):
+    provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+    nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
+    nested_roundtrip_dir.mkdir(parents=True)
+    (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
+        "true,true,true,0\n",
+        encoding="utf-8",
+    )
+    broker_readiness_dir = tmp_path / "provider_imbalance_broker_readiness_with_roundtrip"
+    broker_readiness_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_readiness_dir": "",
+                "runtime_session_dir": "",
+                "scaleup_dir": "",
+                "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
+                "dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                "dispatch_roundtrip_provided": True,
+                "dispatch_roundtrip_ready": True,
+                "dispatch_roundtrip_failed_checks": 0,
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_summary.csv",
+        index=False,
+    )
+    (
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_config.json"
+    ).write_text(
+        json.dumps(
+            {
+                "broker_inputs": {
+                    "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
+                    "dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                },
+                "provider_runtime_session": {"scaleup_dir": ""},
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_cutover_with_roundtrip"
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_cutover_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_cutover_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert Path(summary.loc[0, "provider_dispatch_roundtrip_dir"]) == provider_roundtrip_dir
+    assert Path(summary.loc[0, "dispatch_roundtrip_dir"]) == nested_roundtrip_dir
+    assert bool(summary.loc[0, "dispatch_roundtrip_provided"])
+    assert bool(summary.loc[0, "dispatch_roundtrip_ready"])
+    assert int(summary.loc[0, "dispatch_roundtrip_failed_checks"]) == 0
+    assert config["cutover_inputs"]["provider_dispatch_roundtrip_dir"] == str(provider_roundtrip_dir)
+    assert config["cutover_inputs"]["dispatch_roundtrip_dir"] == str(nested_roundtrip_dir)
+    assert manifest["inputs"]["provider_dispatch_roundtrip"]["path"] == str(provider_roundtrip_dir)
+    assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
+
+
 def test_provider_market_data_imbalance_cutover_blocks_unready_broker_readiness(tmp_path):
     broker_dir = tmp_path / "provider_imbalance_broker_readiness"
     broker_dir.mkdir(parents=True, exist_ok=True)

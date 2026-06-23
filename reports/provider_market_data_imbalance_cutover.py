@@ -95,6 +95,10 @@ def write_provider_market_data_imbalance_cutover(
         _path_from_text(_first_text(provider_summary, "runtime_session_dir")),
         _path_from_text((provider_config.get("broker_inputs", {}) or {}).get("runtime_session_dir")),
     )
+    inferred_provider_dispatch_roundtrip_dir, inferred_dispatch_roundtrip_dir = _inferred_dispatch_roundtrip_dirs(
+        provider_summary,
+        provider_config,
+    )
     resolved_scaleup_dir = _explicit_or_inferred(scaleup_dir, inferred_scaleup_dir, config)
     resolved_broker_readiness_dir = _explicit_or_inferred(
         broker_readiness_dir,
@@ -143,6 +147,8 @@ def write_provider_market_data_imbalance_cutover(
         resolved_broker_readiness_dir,
         resolved_runtime_session_dir,
         resolved_operator_review_path,
+        inferred_provider_dispatch_roundtrip_dir,
+        inferred_dispatch_roundtrip_dir,
         cutover,
         checks,
         out,
@@ -163,6 +169,8 @@ def write_provider_market_data_imbalance_cutover(
             "broker_readiness_dir": resolved_broker_readiness_dir,
             "runtime_session_dir": resolved_runtime_session_dir,
             "operator_review_path": resolved_operator_review_path,
+            "provider_dispatch_roundtrip_dir": inferred_provider_dispatch_roundtrip_dir,
+            "dispatch_roundtrip_dir": inferred_dispatch_roundtrip_dir,
         },
     )
 
@@ -184,6 +192,8 @@ def write_provider_market_data_imbalance_cutover(
         "broker_readiness": resolved_broker_readiness_dir,
         "runtime_session": resolved_runtime_session_dir,
         "operator_review": resolved_operator_review_path,
+        "provider_dispatch_roundtrip": inferred_provider_dispatch_roundtrip_dir,
+        "dispatch_roundtrip": inferred_dispatch_roundtrip_dir,
     }.items():
         if value is not None:
             inputs[name] = Path(value)
@@ -360,6 +370,8 @@ def _summary(
     broker_readiness_dir: Path | None,
     runtime_session_dir: Path | None,
     operator_review_path: Path | None,
+    provider_dispatch_roundtrip_dir: Path | None,
+    dispatch_roundtrip_dir: Path | None,
     cutover: CutoverGateReport | None,
     checks: pd.DataFrame,
     output_dir: Path,
@@ -379,6 +391,13 @@ def _summary(
                 "broker_readiness_dir": _path_text(broker_readiness_dir),
                 "runtime_session_dir": _path_text(runtime_session_dir),
                 "operator_review_path": _path_text(operator_review_path),
+                "provider_dispatch_roundtrip_dir": _path_text(provider_dispatch_roundtrip_dir),
+                "dispatch_roundtrip_dir": _path_text(dispatch_roundtrip_dir),
+                "dispatch_roundtrip_provided": _first_bool(provider_summary, "dispatch_roundtrip_provided"),
+                "dispatch_roundtrip_ready": _first_bool(provider_summary, "dispatch_roundtrip_ready"),
+                "dispatch_roundtrip_failed_checks": int(
+                    _first_number(provider_summary, "dispatch_roundtrip_failed_checks")
+                ),
                 "cutover_dir": "" if cutover is None else str(cutover.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -677,6 +696,22 @@ def _inferred_scaleup_dir(provider_summary: pd.DataFrame, provider_config: dict[
     )
 
 
+def _inferred_dispatch_roundtrip_dirs(
+    provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+) -> tuple[Path | None, Path | None]:
+    broker_inputs = provider_config.get("broker_inputs", {}) or {}
+    provider_dispatch_roundtrip_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "provider_dispatch_roundtrip_dir")),
+        _path_from_text(broker_inputs.get("provider_dispatch_roundtrip_dir")),
+    )
+    dispatch_roundtrip_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "dispatch_roundtrip_dir")),
+        _path_from_text(broker_inputs.get("dispatch_roundtrip_dir")),
+    )
+    return provider_dispatch_roundtrip_dir, dispatch_roundtrip_dir
+
+
 def _explicit_or_inferred(
     explicit: str | Path | None,
     inferred: Path | None,
@@ -797,6 +832,21 @@ def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
     if frame is None or frame.empty or column not in frame.columns:
         return False
     return _truthy(frame.iloc[0][column])
+
+
+def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:
+    if frame is None or frame.empty or column not in frame.columns:
+        return fallback
+    value = frame.iloc[0][column]
+    try:
+        if pd.isna(value):
+            return fallback
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _identity_key(value: object) -> str:
