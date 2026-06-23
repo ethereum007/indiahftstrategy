@@ -1475,6 +1475,11 @@
   summary/config/manifest preserve both the provider wrapper root and nested
   generic `broker_dispatch_roundtrip` path so route-enable and later broker
   dispatch stages can trace the same proof chain before live-data dry-runs.
+- Provider-data imbalance route-enable now preserves the cutover-carried
+  provider broker-dispatch round-trip wrapper and nested generic
+  `broker_dispatch_roundtrip` paths in route-enable summary/config/manifest
+  artifacts, keeping dry-run broker proof visible through the handoff to
+  provider broker-dispatch planning.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

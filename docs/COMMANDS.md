@@ -4751,9 +4751,11 @@ python -m hft_cli review-provider-market-data-imbalance-route-enable `
 
 The provider route-enable wrapper reads the provider cutover summary/config,
 infers the nested generic `cutover` plus broker upload-pack/order-export inputs
-from the provider broker-readiness config, runs `review-route-enable` under a
-nested `route_enable` folder, and writes provider checks/summary/action/config
-runbook artifacts. Fully clean wrappers emit a ready
+from the provider broker-readiness config, carries any cutover-retained provider
+broker-dispatch round-trip wrapper and nested generic `broker_dispatch_roundtrip`
+paths, runs `review-route-enable` under a nested `route_enable` folder, and
+writes provider checks/summary/action/config runbook artifacts. Fully clean
+wrappers emit a ready
 `plan_provider_imbalance_broker_dispatch` action and point to
 `plan-broker-dispatch`; blocked wrappers route back to the exact repair gate,
 such as `review-route-readiness`, `pack-broker-upload`, or the provider cutover

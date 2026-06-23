@@ -106,6 +106,12 @@ def write_provider_market_data_imbalance_route_enable(
         _inferred_order_export_dir(provider_broker_summary, provider_broker_config),
         config,
     )
+    inferred_provider_dispatch_roundtrip_dir, inferred_dispatch_roundtrip_dir = _inferred_dispatch_roundtrip_dirs(
+        provider_summary,
+        provider_config,
+        provider_broker_summary,
+        provider_broker_config,
+    )
 
     prechecks = _prechecks(
         provider_root,
@@ -145,10 +151,13 @@ def write_provider_market_data_imbalance_route_enable(
         resolved_cutover_dir,
         resolved_upload_pack_dir,
         resolved_order_export_dir,
+        inferred_provider_dispatch_roundtrip_dir,
+        inferred_dispatch_roundtrip_dir,
         route_enable,
         checks,
         out,
         provider_summary,
+        provider_broker_summary,
     )
     action_queue = _action_queue(summary.iloc[0], checks, route_enable)
     summary = _summary_with_actions(summary, action_queue)
@@ -166,6 +175,8 @@ def write_provider_market_data_imbalance_route_enable(
             "cutover_dir": resolved_cutover_dir,
             "upload_pack_dir": resolved_upload_pack_dir,
             "order_export_dir": resolved_order_export_dir,
+            "provider_dispatch_roundtrip_dir": inferred_provider_dispatch_roundtrip_dir,
+            "dispatch_roundtrip_dir": inferred_dispatch_roundtrip_dir,
         },
     )
 
@@ -187,6 +198,8 @@ def write_provider_market_data_imbalance_route_enable(
         "cutover": resolved_cutover_dir,
         "upload_pack": resolved_upload_pack_dir,
         "order_export": resolved_order_export_dir,
+        "provider_dispatch_roundtrip": inferred_provider_dispatch_roundtrip_dir,
+        "dispatch_roundtrip": inferred_dispatch_roundtrip_dir,
     }.items():
         if value is not None:
             inputs[name] = Path(value)
@@ -474,10 +487,13 @@ def _summary(
     cutover_dir: Path | None,
     upload_pack_dir: Path | None,
     order_export_dir: Path | None,
+    provider_dispatch_roundtrip_dir: Path | None,
+    dispatch_roundtrip_dir: Path | None,
     route_enable: RouteEnableReport | None,
     checks: pd.DataFrame,
     output_dir: Path,
     provider_summary: pd.DataFrame,
+    provider_broker_summary: pd.DataFrame,
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     ready = failed == 0
@@ -495,6 +511,25 @@ def _summary(
                 "cutover_dir": _path_text(cutover_dir),
                 "upload_pack_dir": _path_text(upload_pack_dir),
                 "order_export_dir": _path_text(order_export_dir),
+                "provider_dispatch_roundtrip_dir": _path_text(provider_dispatch_roundtrip_dir),
+                "dispatch_roundtrip_dir": _path_text(dispatch_roundtrip_dir),
+                "dispatch_roundtrip_provided": _first_bool_from_frames(
+                    "dispatch_roundtrip_provided",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_ready": _first_bool_from_frames(
+                    "dispatch_roundtrip_ready",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_failed_checks": int(
+                    _first_number_from_frames(
+                        "dispatch_roundtrip_failed_checks",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
                 "route_enable_dir": route_dir,
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -677,6 +712,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Target mode: {summary['target_mode']}",
         f"- Route state: {summary['route_state']}",
         f"- Route enable dir: {summary['route_enable_dir']}",
+        f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
+        f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
         f"- Primary next gate: `{summary['next_gate']}`",
         f"- Primary next gate help: `{summary['next_gate_help_command']}`",
         "",
@@ -858,6 +895,29 @@ def _inferred_order_export_dir(
     )
 
 
+def _inferred_dispatch_roundtrip_dirs(
+    provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+    provider_broker_summary: pd.DataFrame,
+    provider_broker_config: dict[str, Any],
+) -> tuple[Path | None, Path | None]:
+    cutover_inputs = provider_config.get("cutover_inputs", {}) or {}
+    broker_inputs = provider_broker_config.get("broker_inputs", {}) or {}
+    provider_dispatch_roundtrip_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "provider_dispatch_roundtrip_dir")),
+        _path_from_text(cutover_inputs.get("provider_dispatch_roundtrip_dir")),
+        _path_from_text(_first_text(provider_broker_summary, "provider_dispatch_roundtrip_dir")),
+        _path_from_text(broker_inputs.get("provider_dispatch_roundtrip_dir")),
+    )
+    dispatch_roundtrip_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "dispatch_roundtrip_dir")),
+        _path_from_text(cutover_inputs.get("dispatch_roundtrip_dir")),
+        _path_from_text(_first_text(provider_broker_summary, "dispatch_roundtrip_dir")),
+        _path_from_text(broker_inputs.get("dispatch_roundtrip_dir")),
+    )
+    return provider_dispatch_roundtrip_dir, dispatch_roundtrip_dir
+
+
 def _explicit_or_inferred(
     explicit: str | Path | None,
     inferred: Path | None,
@@ -996,6 +1056,16 @@ def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
     return _truthy(frame.iloc[0][column])
 
 
+def _first_bool_from_frames(column: str, *frames: pd.DataFrame | None) -> bool:
+    for frame in frames:
+        if frame is None or frame.empty or column not in frame.columns:
+            continue
+        value = frame.iloc[0][column]
+        if _clean(value):
+            return _truthy(value)
+    return False
+
+
 def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:
     if frame is None or frame.empty or column not in frame.columns:
         return float(fallback)
@@ -1003,6 +1073,16 @@ def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _first_number_from_frames(column: str, *frames: pd.DataFrame | None, fallback: float = 0.0) -> float:
+    for frame in frames:
+        if frame is None or frame.empty or column not in frame.columns:
+            continue
+        value = frame.iloc[0][column]
+        if _clean(value):
+            return _first_number(frame, column, fallback)
+    return float(fallback)
 
 
 def _identity_key(value: object) -> str:
