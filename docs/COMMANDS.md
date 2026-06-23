@@ -4717,11 +4717,16 @@ order export/upload-pack artifacts, accepts either the provider broker-dispatch
 round-trip wrapper root or its nested generic `broker_dispatch_roundtrip`
 folder, preserves any upstream round-trip lineage carried by the provider
 wrapper, runs the generic `broker_readiness` gate under a nested folder, and
-writes provider checks/summary/action/config/runbook artifacts. By default it
-is suitable for initial Arrow.money/iRage dry-run testing: it requires the
-provider runtime session, order export, upload pack, and broker-readiness pass,
-while leaving reviewed schema, reconciliation, route readiness, and dispatch
-roundtrip as explicit promotion flags. A ready wrapper points to
+writes provider checks/summary/action/config/runbook artifacts. When the
+round-trip proof carries Arrow.money/iRage vendor-market-data batch evidence,
+the wrapper promotes both generic dispatch and broker-dispatch vendor batch
+readiness fields into the provider summary/config/runbook plus manifest
+metadata, so cutover reviewers do not need to inspect nested generic folders.
+By default it is suitable for initial Arrow.money/iRage dry-run testing: it
+requires the provider runtime session, order export, upload pack, and
+broker-readiness pass, while leaving reviewed schema, reconciliation, route
+readiness, and dispatch roundtrip as explicit promotion flags. A ready wrapper
+points to
 `review-provider-market-data-imbalance-cutover`.
 
 Run the provider-specific cutover wrapper:

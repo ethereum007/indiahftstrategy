@@ -1472,9 +1472,11 @@
   broker-dispatch round-trip wrapper root directly. The wrapper resolves the
   nested generic `broker_dispatch_roundtrip` proof, passes it into
   `review-broker-readiness`, exposes provider and nested round-trip paths plus
-  ready/failed-check fields in the provider summary/config/runbook, preserves
-  any upstream proof lineage from the provider wrapper, and keeps all proof
-  roots in the manifest for audit.
+  ready/failed-check fields in the provider summary/config/runbook, promotes
+  any nested dispatch and broker-dispatch vendor-market-data batch proof into
+  provider summary/config/runbook/manifest metadata, preserves any upstream
+  proof lineage from the provider wrapper, and keeps all proof roots in the
+  manifest for audit.
 - Provider-data imbalance cutover now carries that broker-dispatch round-trip
   audit trail forward from provider broker-readiness. The provider cutover
   summary/config/manifest preserve both the provider wrapper root and nested

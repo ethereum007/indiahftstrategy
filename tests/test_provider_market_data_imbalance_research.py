@@ -576,6 +576,35 @@ def _vendor_market_data_batch_config():
     }
 
 
+def _inject_nested_roundtrip_vendor_market_data_batch(provider_ack):
+    ack_summary = pd.read_csv(
+        provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    ).iloc[0]
+    nested_vendor_configs = [
+        (
+            Path(ack_summary["broker_dispatch_dir"]) / "broker_dispatch_config.json",
+            "route_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        (
+            Path(ack_summary["provider_broker_dispatch_send_dir"])
+            / "broker_dispatch_send"
+            / "broker_dispatch_send_config.json",
+            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        (
+            Path(ack_summary["broker_dispatch_ack_dir"]) / "broker_dispatch_ack_config.json",
+            "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+    ]
+    for config_path, key in nested_vendor_configs:
+        nested_config = json.loads(config_path.read_text(encoding="utf-8"))
+        nested_config[key] = _vendor_market_data_batch_config()
+        config_path.write_text(
+            json.dumps(nested_config, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+
 def _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path):
     provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
     acks_path = _write_provider_imbalance_accepted_ack_file(provider_send, tmp_path / "provider_imbalance_acks.csv")
@@ -592,6 +621,16 @@ def _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path):
     return write_provider_market_data_imbalance_broker_dispatch_roundtrip(
         provider_ack.output_dir,
         tmp_path / "provider_imbalance_broker_dispatch_roundtrip",
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+
+
+def _write_ready_provider_imbalance_broker_dispatch_roundtrip_with_vendor_batch(tmp_path):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+    _inject_nested_roundtrip_vendor_market_data_batch(provider_ack)
+    return write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_roundtrip_with_vendor_batch",
         config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
     )
 
@@ -1750,6 +1789,49 @@ def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispat
     assert config["broker_inputs"]["dispatch_roundtrip_dir"] == str(nested_roundtrip_dir)
     assert manifest["inputs"]["provider_dispatch_roundtrip"]["path"] == str(provider_roundtrip.output_dir)
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
+
+
+def test_provider_market_data_imbalance_broker_readiness_surfaces_roundtrip_vendor_batch(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip_with_vendor_batch(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_with_vendor_batch"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    broker_summary = pd.read_csv(out_dir / "broker_readiness" / "broker_readiness_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    runbook = (out_dir / "provider_market_data_imbalance_broker_readiness_runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert not report.ready
+    assert "dispatch_roundtrip_vendor_market_data_batch_ready" in summary.columns
+    assert not bool(summary.loc[0, "dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_kind"] == "ticks"
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert int(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"]) == 2
+    assert summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert bool(broker_summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert not config["dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["broker_dispatch_roundtrip_vendor_market_data_batch"]["provided"]
+    assert config["broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["broker_dispatch_roundtrip_vendor_market_data_batch"]["adapter"] == "arrow_money"
+    assert config["broker_dispatch_roundtrip_vendor_market_data_batch"]["comparison"]["accepted"]
+    assert "- Broker dispatch round-trip vendor batch ready: yes" in runbook
 
 
 def test_provider_market_data_imbalance_broker_readiness_preserves_upstream_roundtrip(tmp_path):
@@ -3135,32 +3217,7 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_ready_
 
 def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_vendor_batch(tmp_path):
     provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
-    ack_summary = pd.read_csv(
-        provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
-    ).iloc[0]
-    nested_vendor_configs = [
-        (
-            Path(ack_summary["broker_dispatch_dir"]) / "broker_dispatch_config.json",
-            "route_broker_dispatch_roundtrip_vendor_market_data_batch",
-        ),
-        (
-            Path(ack_summary["provider_broker_dispatch_send_dir"])
-            / "broker_dispatch_send"
-            / "broker_dispatch_send_config.json",
-            "dispatch_broker_dispatch_roundtrip_vendor_market_data_batch",
-        ),
-        (
-            Path(ack_summary["broker_dispatch_ack_dir"]) / "broker_dispatch_ack_config.json",
-            "ack_broker_dispatch_roundtrip_vendor_market_data_batch",
-        ),
-    ]
-    for config_path, key in nested_vendor_configs:
-        nested_config = json.loads(config_path.read_text(encoding="utf-8"))
-        nested_config[key] = _vendor_market_data_batch_config()
-        config_path.write_text(
-            json.dumps(nested_config, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+    _inject_nested_roundtrip_vendor_market_data_batch(provider_ack)
     out_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip_with_vendor_batch"
 
     report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
