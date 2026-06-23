@@ -1429,6 +1429,14 @@
   reruns `review-cutover-gate` under a nested folder, preserves cutover safety
   blockers such as missing route-readiness proof, and routes fully clean runs to
   `review-route-enable`.
+- Provider-data imbalance now has a provider route-readiness wrapper before
+  scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
+  provider launch-evidence strategy review, auto-builds the India
+  `microprice_imbalance` market-portability packet when one is not supplied,
+  runs the generic `review-route-readiness` join, blocks missing ops-launch
+  controls at their exact repair gate, and writes a ready route artifact that
+  can be supplied to `plan-provider-market-data-imbalance-scaleup
+  --route-readiness`.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so
@@ -1447,6 +1455,12 @@ pytest
 ```
 
 Current passing suite: 1110 tests.
+
+Latest focused gate: provider route-readiness targeted tests pass (`3 passed`),
+and the generic route-readiness suite passes (`8 passed`). A single-file run of
+`tests/test_provider_market_data_imbalance_research.py` exceeded the local
+timeout after this slice, so the full-suite count above is left at the last
+completed full run.
 
 ## Next Build Targets
 

@@ -28,6 +28,10 @@ from reports.provider_market_data_imbalance_scorecard import (
     ProviderMarketDataImbalanceScorecardConfig,
     write_provider_market_data_imbalance_scorecard,
 )
+from reports.provider_market_data_imbalance_route_readiness import (
+    ProviderMarketDataImbalanceRouteReadinessConfig,
+    write_provider_market_data_imbalance_route_readiness,
+)
 from reports.provider_market_data_imbalance_scaleup import (
     ProviderMarketDataImbalanceScaleupConfig,
     write_provider_market_data_imbalance_scaleup_plan,
@@ -306,6 +310,48 @@ def _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence, *, ac
             }
         ]
     ).to_csv(out_dir / "shadow_session_comparison_summary.csv", index=False)
+    return out_dir
+
+
+def _write_ready_ops_launch_evidence(tmp_path):
+    out_dir = tmp_path / "ops_launch_evidence"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "failed_checks": 0,
+                "recommendation": "eligible_for_live_dryrun_route_review",
+                "evidence_profile": "ops_launch",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "require_file_inputs": True,
+                "input_file_count": 3,
+                "input_directory_count": 0,
+                "input_other_count": 0,
+                "input_unfingerprinted_count": 0,
+                "source_path": str(out_dir / "strategy_evidence_summary.csv"),
+                "require_no_blocked_placeholder_schema": True,
+                "placeholder_schema_blocked_runs": 0,
+                "require_broker_roundtrip_portfolio_safe": True,
+                "fail_on_broker_roundtrip_portfolio_breach": True,
+                "broker_roundtrip_portfolio_safe_runs": 1,
+                "broker_roundtrip_portfolio_breach_runs": 0,
+                "require_broker_roundtrip_portfolio_concentration_ok": True,
+                "fail_on_broker_roundtrip_portfolio_concentration_breach": True,
+                "broker_roundtrip_portfolio_concentration_ok_runs": 1,
+                "broker_roundtrip_portfolio_concentration_breach_runs": 0,
+                "require_broker_roundtrip_resume_route_ready": True,
+                "fail_on_broker_roundtrip_resume_route_breach": True,
+                "broker_roundtrip_resume_route_ready_runs": 1,
+                "broker_roundtrip_resume_route_breach_runs": 0,
+                "broker_roundtrip_resume_route_gap_breach_runs": 0,
+                "broker_roundtrip_resume_route_launch_control_breach_runs": 0,
+                "broker_roundtrip_resume_route_portfolio_breach_runs": 0,
+                "broker_roundtrip_resume_route_concentration_breach_runs": 0,
+            }
+        ]
+    ).to_csv(out_dir / "strategy_evidence_summary.csv", index=False)
     return out_dir
 
 
@@ -899,6 +945,92 @@ def test_cli_provider_market_data_imbalance_scorecard_accepts_ready_launch_evide
     )
 
     summary = pd.read_csv(out_dir / "provider_market_data_imbalance_scorecard_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+
+
+def test_provider_market_data_imbalance_route_readiness_blocks_missing_ops_evidence(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_route_readiness"
+
+    report = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_action_queue.csv")
+    route_summary = pd.read_csv(out_dir / "route_readiness" / "route_readiness_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "route_readiness_ready" in failed
+    assert bool(summary.loc[0, "provider_launch_evidence_ready"])
+    assert not bool(summary.loc[0, "route_readiness_ready"])
+    assert summary.loc[0, "next_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "next_gate"] == (
+        "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    )
+    assert not bool(route_summary.loc[0, "ready"])
+    assert manifest["run_type"] == "provider_market_data_imbalance_route_readiness"
+    assert "market_portability" in manifest["inputs"]
+    assert "route_readiness" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_route_readiness_accepts_ready_ops_evidence(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_route_readiness"
+
+    report = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        out_dir,
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_action_queue.csv")
+    route_summary = pd.read_csv(out_dir / "route_readiness" / "route_readiness_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary.loc[0, "provider_launch_evidence_ready"])
+    assert bool(summary.loc[0, "route_readiness_ready"])
+    assert summary.loc[0, "strategy"] == "microprice_imbalance"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert int(summary.loc[0, "route_ready_pairs"]) == 1
+    assert int(summary.loc[0, "gap_pairs"]) == 0
+    assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+    assert bool(route_summary.loc[0, "ready"])
+    assert manifest["run_type"] == "provider_market_data_imbalance_route_readiness"
+    assert "strategy_evidence" in manifest["inputs"]
+    assert "ops_evidence_1" in manifest["inputs"]
+
+
+def test_cli_provider_market_data_imbalance_route_readiness_accepts_ready_ops_evidence(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    out_dir = tmp_path / "cli_provider_imbalance_route_readiness"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-route-readiness",
+            "--provider-launch-evidence-dir",
+            str(launch_evidence.output_dir),
+            "--ops-evidence",
+            str(ops_evidence),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"

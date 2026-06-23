@@ -146,6 +146,10 @@ from reports.provider_market_data_imbalance_scorecard import (
     ProviderMarketDataImbalanceScorecardConfig,
     write_provider_market_data_imbalance_scorecard,
 )
+from reports.provider_market_data_imbalance_route_readiness import (
+    ProviderMarketDataImbalanceRouteReadinessConfig,
+    write_provider_market_data_imbalance_route_readiness,
+)
 from reports.provider_market_data_imbalance_scaleup import (
     ProviderMarketDataImbalanceScaleupConfig,
     write_provider_market_data_imbalance_scaleup_plan,
@@ -1481,6 +1485,32 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_route_readiness = sub.add_parser(
+        "review-provider-market-data-imbalance-route-readiness",
+        help="Build provider imbalance route-readiness evidence before shadow scale-up planning.",
+    )
+    provider_market_data_imbalance_route_readiness.add_argument("--provider-launch-evidence-dir", required=True)
+    provider_market_data_imbalance_route_readiness.add_argument("--out", required=True)
+    provider_market_data_imbalance_route_readiness.add_argument("--market-portability", default=None)
+    provider_market_data_imbalance_route_readiness.add_argument("--strategy-evidence", default=None)
+    provider_market_data_imbalance_route_readiness.add_argument("--ops-evidence", action="append", dest="ops_evidence")
+    provider_market_data_imbalance_route_readiness.add_argument(
+        "--no-require-provider-launch-evidence-ready",
+        action="store_true",
+    )
+    provider_market_data_imbalance_route_readiness.add_argument(
+        "--no-require-route-readiness-ready",
+        action="store_true",
+    )
+    provider_market_data_imbalance_route_readiness.add_argument("--no-provider-launch-evidence-inputs", action="store_true")
+    provider_market_data_imbalance_route_readiness.add_argument("--market", default="")
+    provider_market_data_imbalance_route_readiness.add_argument("--strategy", default="microprice_imbalance")
+    provider_market_data_imbalance_route_readiness.add_argument("--allow-non-file-ops-inputs", action="store_true")
+    provider_market_data_imbalance_route_readiness.add_argument("--no-build-market-portability", action="store_true")
+    provider_market_data_imbalance_route_readiness.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_route_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_route_readiness.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_imbalance_scaleup = sub.add_parser(
         "plan-provider-market-data-imbalance-scaleup",
@@ -4356,6 +4386,36 @@ def main(argv: list[str] | None = None) -> int:
                 allow_dirty_git=args.allow_dirty_git,
                 expected_market=args.market,
                 require_file_inputs=args.require_file_inputs,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-route-readiness":
+        result = write_provider_market_data_imbalance_route_readiness(
+            args.provider_launch_evidence_dir,
+            args.out,
+            market_portability_dir=args.market_portability,
+            strategy_evidence_dir=args.strategy_evidence,
+            ops_evidence_dirs=tuple(args.ops_evidence or ()),
+            config=ProviderMarketDataImbalanceRouteReadinessConfig(
+                require_provider_launch_evidence_ready=not args.no_require_provider_launch_evidence_ready,
+                require_route_readiness_ready=not args.no_require_route_readiness_ready,
+                use_provider_launch_evidence_inputs=not args.no_provider_launch_evidence_inputs,
+                market=args.market,
+                strategy=args.strategy,
+                require_ops_file_inputs=not args.allow_non_file_ops_inputs,
+                build_market_portability=not args.no_build_market_portability,
             ),
         )
         print(result.summary.to_string(index=False))

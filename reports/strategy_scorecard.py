@@ -47,6 +47,7 @@ RUN_TYPE_NEXT_GATES = {
     "provider_market_data_imbalance_launch_packet": "pipeline-provider-market-data-imbalance-launch",
     "provider_market_data_imbalance_launch_evidence_review": "review-provider-market-data-imbalance-launch-evidence",
     "provider_market_data_imbalance_scorecard": "score-provider-market-data-imbalance-readiness",
+    "provider_market_data_imbalance_route_readiness": "review-provider-market-data-imbalance-route-readiness",
     "provider_market_data_imbalance_scaleup_plan": "plan-provider-market-data-imbalance-scaleup",
     "provider_market_data_imbalance_runtime_telemetry_snapshot": "build-provider-market-data-imbalance-runtime-telemetry",
     "provider_market_data_imbalance_runtime_guard": "monitor-provider-market-data-imbalance-runtime-guard",

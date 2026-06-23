@@ -4579,6 +4579,25 @@ profile from the launch-evidence catalog. A ready scorecard has readiness score
 `1.0` and points to `plan-provider-market-data-imbalance-scaleup` for
 paper/shadow capital and runtime sizing.
 
+Build provider route-readiness proof from the same launch evidence:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-route-readiness `
+  --provider-launch-evidence-dir runs\provider_market_data_imbalance_launch_evidence\arrow_ws_nse_2026_06_23 `
+  --ops-evidence runs\strategy_evidence\provider_imbalance_ops_launch_arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_route_readiness\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+When no market-portability packet is supplied, the provider wrapper builds an
+India `microprice_imbalance` portability packet and joins it with the full
+imbalance strategy evidence plus ops-launch evidence. Missing ops-launch
+controls stay blocked at `review-strategy-evidence --profile ops_launch
+--require-file-inputs`; a ready wrapper writes nested `route_readiness` outputs
+and can be passed to `plan-provider-market-data-imbalance-scaleup
+--route-readiness`.
+
 Create the provider-data imbalance scale-up plan from that ready scorecard and
 an accepted shadow-session comparison:
 
@@ -4586,6 +4605,7 @@ an accepted shadow-session comparison:
 python -m hft_cli plan-provider-market-data-imbalance-scaleup `
   --scorecard runs\provider_market_data_imbalance_scorecards\arrow_ws_nse_2026_06_23 `
   --shadow-comparison runs\shadow_comparisons\provider_imbalance_arrow_ws_nse_2026_06_23 `
+  --route-readiness runs\provider_market_data_imbalance_route_readiness\arrow_ws_nse_2026_06_23\route_readiness `
   --out runs\provider_market_data_imbalance_scaleup\arrow_ws_nse_2026_06_23 `
   --allowed-adapter arrow_money `
   --max-scale-multiplier 1.0 `
@@ -4598,8 +4618,10 @@ python -m hft_cli plan-provider-market-data-imbalance-scaleup `
 The provider wrapper infers the full imbalance `strategy_evidence` and nested
 `imbalance_launch_pipeline` paths from the scorecard and launch-evidence
 artifacts, but it still requires a real `shadow_session_comparison_summary.csv`.
-It writes provider wrapper checks/summary/action/config/runbook artifacts plus a
-nested generic `scaleup` folder with `scaleup_plan.csv`, `scaleup_checks.csv`,
+Supplying the provider route-readiness nested folder lets the generic scale-up
+gate revalidate ops-launch route controls before runtime sizing. It writes
+provider wrapper checks/summary/action/config/runbook artifacts plus a nested
+generic `scaleup` folder with `scaleup_plan.csv`, `scaleup_checks.csv`,
 `scaleup_summary.csv`, and `scaleup_config.json`. A ready wrapper points to
 `build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
 shadow evidence stays blocked at `compare-shadow-sessions`.
