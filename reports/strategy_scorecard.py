@@ -62,6 +62,9 @@ RUN_TYPE_NEXT_GATES = {
     "provider_market_data_imbalance_broker_dispatch_ack": (
         "reconcile-provider-market-data-imbalance-broker-dispatch"
     ),
+    "provider_market_data_imbalance_broker_dispatch_roundtrip": (
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    ),
     "proof_report": "proof-report",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",

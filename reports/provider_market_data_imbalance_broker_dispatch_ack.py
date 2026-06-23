@@ -455,11 +455,13 @@ def _summary(
                 "recommendation": "review_provider_imbalance_broker_dispatch_roundtrip"
                 if passed
                 else "repair_provider_imbalance_broker_dispatch_ack",
-                "next_gate": "review-broker-dispatch-roundtrip"
+                "next_gate": "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
                 if passed
                 else _blocked_next_gate(checks, broker_dispatch_ack),
                 "next_gate_help_command": _help_command_for_gate(
-                    "review-broker-dispatch-roundtrip" if passed else _blocked_next_gate(checks, broker_dispatch_ack)
+                    "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+                    if passed
+                    else _blocked_next_gate(checks, broker_dispatch_ack)
                 ),
                 "primary_action_status": "ready" if passed else "blocked",
             }
@@ -503,8 +505,10 @@ def _action_queue(
                     "action": "review_provider_imbalance_broker_dispatch_roundtrip",
                     "reason": "provider imbalance broker dispatch acknowledgements passed reconciliation",
                     "recommendation": "review_dispatch_send_ack_roundtrip_before_broker_promotion",
-                    "next_gate": "review-broker-dispatch-roundtrip",
-                    "next_gate_help_command": _help_command_for_gate("review-broker-dispatch-roundtrip"),
+                    "next_gate": "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+                    "next_gate_help_command": _help_command_for_gate(
+                        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+                    ),
                 }
             ]
         )
@@ -648,6 +652,8 @@ def _next_gate_for_check(check: str, broker_dispatch_ack: BrokerDispatchAckRepor
 
 
 def _help_command_for_gate(next_gate: str) -> str:
+    if next_gate == "review-provider-market-data-imbalance-broker-dispatch-roundtrip":
+        return "python -m hft_cli review-provider-market-data-imbalance-broker-dispatch-roundtrip --help"
     if next_gate == "prepare-provider-market-data-imbalance-broker-dispatch-send":
         return "python -m hft_cli prepare-provider-market-data-imbalance-broker-dispatch-send --help"
     if next_gate == "plan-provider-market-data-imbalance-broker-dispatch":

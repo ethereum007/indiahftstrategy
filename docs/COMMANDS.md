@@ -4808,9 +4808,30 @@ generic `broker_dispatch` plan, runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks/summary/action/config
 runbook artifacts. Clean acknowledgement proof emits a ready
 `review_provider_imbalance_broker_dispatch_roundtrip` action and points to
-`review-broker-dispatch-roundtrip`; missing ack files, unready send packets,
-and rejected/duplicate/unmatched acknowledgements fail closed before round-trip
-proof is trusted.
+`review-provider-market-data-imbalance-broker-dispatch-roundtrip`; missing ack
+files, unready send packets, and rejected/duplicate/unmatched acknowledgements
+fail closed before round-trip proof is trusted.
+
+Review the provider-specific dispatch/send/ack round-trip proof:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-broker-dispatch-roundtrip `
+  --provider-broker-dispatch-ack runs\provider_market_data_imbalance_broker_dispatch_ack\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_broker_dispatch_roundtrip\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider round-trip wrapper reads the provider acknowledgement
+summary/config, infers the nested generic `broker_dispatch`,
+`broker_dispatch_send`, and `broker_dispatch_ack` folders, runs
+`review-broker-dispatch-roundtrip` under a nested `broker_dispatch_roundtrip`
+folder, and writes provider checks/summary/action/config/runbook artifacts.
+Clean proof emits a ready
+`feed_provider_imbalance_broker_dispatch_roundtrip_into_broker_readiness`
+action and points to `review-provider-market-data-imbalance-broker-readiness`
+so the nested `broker_dispatch_roundtrip` folder can be supplied through
+`--dispatch-roundtrip` before any provider cutover promotion.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

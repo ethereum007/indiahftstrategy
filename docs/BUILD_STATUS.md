@@ -1455,7 +1455,15 @@
   `broker_dispatch` plan, reruns `reconcile-broker-dispatch` under a nested
   folder, writes provider checks/summary/action/config/runbook artifacts,
   indexes the run for catalog/scorecard discovery, and routes clean ack proof to
-  `review-broker-dispatch-roundtrip`.
+  `review-provider-market-data-imbalance-broker-dispatch-roundtrip`.
+- Provider-data imbalance now has a provider broker-dispatch round-trip wrapper
+  after provider acknowledgement proof. `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
+  infers the nested generic dispatch, send, and ack folders, reruns
+  `review-broker-dispatch-roundtrip` under a nested folder, writes provider
+  checks/summary/action/config/runbook artifacts, indexes the run for
+  catalog/scorecard discovery, and routes clean dry-run round-trip evidence to
+  `review-provider-market-data-imbalance-broker-readiness --dispatch-roundtrip`
+  before cutover promotion.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

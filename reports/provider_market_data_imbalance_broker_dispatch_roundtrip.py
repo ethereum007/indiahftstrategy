@@ -1,0 +1,1097 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from reports.broker_dispatch_roundtrip import (
+    BrokerDispatchRoundTripReport,
+    BrokerDispatchRoundTripThresholds,
+    write_broker_dispatch_roundtrip,
+)
+from reports.manifest import write_experiment_manifest
+
+
+PROFILE = "imbalance"
+RUN_TYPE = "provider_market_data_imbalance_broker_dispatch_roundtrip"
+READY_NEXT_GATE = "review-provider-market-data-imbalance-broker-readiness"
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "action",
+    "reason",
+    "recommendation",
+    "next_gate",
+    "next_gate_help_command",
+]
+
+
+@dataclass(frozen=True)
+class ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig:
+    require_provider_broker_dispatch_ack_passed: bool = True
+    require_broker_dispatch_roundtrip_passed: bool = True
+    use_provider_broker_dispatch_ack_inputs: bool = True
+    target_mode: str = ""
+    require_dispatch_ready: bool = True
+    require_send_ready: bool = True
+    require_ack_passed: bool = True
+    require_identity_match: bool = True
+    require_submission_disabled: bool = True
+    require_all_requests_acked: bool = True
+    require_route_readiness: bool = False
+    require_dispatch_roundtrip: bool = False
+    allow_rejections: bool = False
+    max_duplicate_ack_orders: int = 0
+    max_unmatched_acks: int = 0
+    max_missing_request_acks: int = 0
+    max_total_failed_component_checks: int = 0
+
+
+@dataclass(frozen=True)
+class ProviderMarketDataImbalanceBrokerDispatchRoundTripReport:
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    action_queue: pd.DataFrame
+    config: dict[str, Any]
+    output_dir: Path | None = None
+
+    @property
+    def passed(self) -> bool:
+        if self.summary.empty:
+            return False
+        return bool(self.summary.iloc[0]["passed"])
+
+    @property
+    def ready(self) -> bool:
+        return self.passed
+
+
+def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+    provider_broker_dispatch_ack_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    broker_dispatch_dir: str | Path | None = None,
+    broker_dispatch_send_dir: str | Path | None = None,
+    broker_dispatch_ack_dir: str | Path | None = None,
+    config: ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig | None = None,
+) -> ProviderMarketDataImbalanceBrokerDispatchRoundTripReport:
+    config = config or ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig()
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+
+    provider_root = Path(provider_broker_dispatch_ack_dir)
+    provider_summary, provider_summary_error = _read_csv(
+        provider_root / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    )
+    provider_config, provider_config_error = _read_json(
+        provider_root / "provider_market_data_imbalance_broker_dispatch_ack_config.json"
+    )
+
+    inferred = _inferred_generic_inputs(provider_root, provider_summary, provider_config)
+    resolved_broker_dispatch_dir = _explicit_or_inferred(
+        broker_dispatch_dir,
+        inferred["broker_dispatch_dir"],
+        config.use_provider_broker_dispatch_ack_inputs,
+    )
+    resolved_broker_dispatch_send_dir = _explicit_or_inferred(
+        broker_dispatch_send_dir,
+        inferred["broker_dispatch_send_dir"],
+        config.use_provider_broker_dispatch_ack_inputs,
+    )
+    resolved_broker_dispatch_ack_dir = _explicit_or_inferred(
+        broker_dispatch_ack_dir,
+        inferred["broker_dispatch_ack_dir"],
+        config.use_provider_broker_dispatch_ack_inputs,
+    )
+
+    prechecks = _prechecks(
+        provider_root,
+        provider_summary,
+        provider_summary_error,
+        provider_config_error,
+        resolved_broker_dispatch_dir,
+        resolved_broker_dispatch_send_dir,
+        resolved_broker_dispatch_ack_dir,
+        config,
+    )
+
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None = None
+    broker_dispatch_roundtrip_error = ""
+    broker_dispatch_roundtrip_dir = out / "broker_dispatch_roundtrip"
+    if bool(prechecks["passed"].all()):
+        try:
+            broker_dispatch_roundtrip = write_broker_dispatch_roundtrip(
+                dispatch_dir=_path_or_empty(resolved_broker_dispatch_dir),
+                send_dir=_path_or_empty(resolved_broker_dispatch_send_dir),
+                ack_dir=_path_or_empty(resolved_broker_dispatch_ack_dir),
+                output_dir=broker_dispatch_roundtrip_dir,
+                thresholds=_thresholds(config, provider_summary),
+            )
+        except (OSError, ValueError, FileNotFoundError, pd.errors.ParserError, json.JSONDecodeError) as exc:
+            broker_dispatch_roundtrip_error = str(exc)
+    else:
+        broker_dispatch_roundtrip_error = "provider imbalance broker-dispatch-roundtrip prerequisites are not ready"
+
+    checks = _checks(
+        prechecks,
+        broker_dispatch_roundtrip,
+        broker_dispatch_roundtrip_error,
+        provider_summary,
+        config,
+    )
+    summary = _summary(
+        provider_root,
+        resolved_broker_dispatch_dir,
+        resolved_broker_dispatch_send_dir,
+        resolved_broker_dispatch_ack_dir,
+        broker_dispatch_roundtrip,
+        checks,
+        out,
+        broker_dispatch_roundtrip_dir,
+        provider_summary,
+    )
+    action_queue = _action_queue(summary.iloc[0], checks, broker_dispatch_roundtrip)
+    summary = _summary_with_actions(summary, action_queue)
+    payload = _config(
+        summary.iloc[0],
+        provider_summary,
+        provider_config,
+        broker_dispatch_roundtrip,
+        checks,
+        action_queue,
+        config,
+        {
+            "provider_broker_dispatch_ack_dir": provider_root,
+            "broker_dispatch_dir": resolved_broker_dispatch_dir,
+            "broker_dispatch_send_dir": resolved_broker_dispatch_send_dir,
+            "broker_dispatch_ack_dir": resolved_broker_dispatch_ack_dir,
+        },
+    )
+
+    checks.to_csv(out / "provider_market_data_imbalance_broker_dispatch_roundtrip_checks.csv", index=False)
+    summary.to_csv(out / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv", index=False)
+    action_queue.to_csv(
+        out / "provider_market_data_imbalance_broker_dispatch_roundtrip_action_queue.csv",
+        index=False,
+    )
+    (out / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json").write_text(
+        json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "provider_market_data_imbalance_broker_dispatch_roundtrip_runbook.md").write_text(
+        _runbook_markdown(summary.iloc[0], checks, action_queue),
+        encoding="utf-8",
+    )
+
+    inputs: dict[str, Any] = {"provider_broker_dispatch_ack_dir": provider_root}
+    if resolved_broker_dispatch_dir is not None:
+        inputs["broker_dispatch"] = Path(resolved_broker_dispatch_dir)
+    if resolved_broker_dispatch_send_dir is not None:
+        inputs["broker_dispatch_send"] = Path(resolved_broker_dispatch_send_dir)
+    if resolved_broker_dispatch_ack_dir is not None:
+        inputs["broker_dispatch_ack"] = Path(resolved_broker_dispatch_ack_dir)
+    if broker_dispatch_roundtrip is not None and broker_dispatch_roundtrip.output_dir is not None:
+        inputs["broker_dispatch_roundtrip"] = broker_dispatch_roundtrip.output_dir
+
+    write_experiment_manifest(
+        out,
+        run_type=RUN_TYPE,
+        parameters={
+            "config": asdict(config),
+            "broker_dispatch_roundtrip_inputs": _jsonable(payload["broker_dispatch_roundtrip_inputs"]),
+        },
+        inputs=inputs,
+        extra={
+            "passed": bool(summary.iloc[0]["passed"]),
+            "broker_dispatch_roundtrip_passed": bool(summary.iloc[0]["broker_dispatch_roundtrip_passed"]),
+            "profile": PROFILE,
+            "strategy": str(summary.iloc[0]["strategy"]),
+            "market": str(summary.iloc[0]["market"]),
+        },
+    )
+    return ProviderMarketDataImbalanceBrokerDispatchRoundTripReport(
+        broker_dispatch_roundtrip,
+        checks,
+        summary,
+        action_queue,
+        payload,
+        out,
+    )
+
+
+def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
+    if not path.exists():
+        return pd.DataFrame(), f"{path.name} does not exist"
+    try:
+        return pd.read_csv(path), ""
+    except (OSError, pd.errors.ParserError) as exc:
+        return pd.DataFrame(), f"{path.name} is not readable: {exc}"
+
+
+def _read_json(path: Path) -> tuple[dict[str, Any], str]:
+    if not path.exists():
+        return {}, f"{path.name} does not exist"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {}, f"{path.name} is not readable: {exc}"
+    return value if isinstance(value, dict) else {}, ""
+
+
+def _prechecks(
+    provider_root: Path,
+    provider_summary: pd.DataFrame,
+    provider_summary_error: str,
+    provider_config_error: str,
+    broker_dispatch_dir: Path | None,
+    broker_dispatch_send_dir: Path | None,
+    broker_dispatch_ack_dir: Path | None,
+    config: ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            _check(
+                "provider_broker_dispatch_ack_dir_exists",
+                str(provider_root),
+                "exists",
+                True,
+                provider_root.exists(),
+                "provider imbalance broker-dispatch-ack directory is required",
+            ),
+            _check(
+                "provider_broker_dispatch_ack_summary_readable",
+                provider_summary_error or "ok",
+                "is",
+                "ok",
+                not provider_summary_error,
+                provider_summary_error or "provider broker-dispatch-ack summary could not be read",
+            ),
+            _check(
+                "provider_broker_dispatch_ack_config_readable",
+                provider_config_error or "ok",
+                "is",
+                "ok",
+                not provider_config_error,
+                provider_config_error or "provider broker-dispatch-ack config could not be read",
+            ),
+            _check(
+                "provider_broker_dispatch_ack_passed",
+                _first_bool(provider_summary, "passed"),
+                "is",
+                True,
+                _first_bool(provider_summary, "passed")
+                or not config.require_provider_broker_dispatch_ack_passed,
+                "provider broker-dispatch acknowledgement wrapper has not passed",
+            ),
+            _check(
+                "provider_nested_broker_dispatch_ack_passed",
+                _first_bool(provider_summary, "broker_dispatch_ack_passed"),
+                "is",
+                True,
+                _first_bool(provider_summary, "broker_dispatch_ack_passed")
+                or not config.require_provider_broker_dispatch_ack_passed,
+                "nested broker dispatch acknowledgement proof has not passed",
+            ),
+            _check(
+                "generic_broker_dispatch_input_resolved",
+                _path_text(broker_dispatch_dir),
+                "present",
+                True,
+                bool(broker_dispatch_dir),
+                "nested generic broker dispatch input is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_summary_exists",
+                _path_text(broker_dispatch_dir),
+                "exists",
+                True,
+                bool(broker_dispatch_dir and (broker_dispatch_dir / "broker_dispatch_summary.csv").exists()),
+                "nested broker_dispatch_summary.csv is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_orders_exists",
+                _path_text(broker_dispatch_dir),
+                "exists",
+                True,
+                bool(broker_dispatch_dir and (broker_dispatch_dir / "broker_dispatch_orders.csv").exists()),
+                "nested broker_dispatch_orders.csv is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_config_exists",
+                _path_text(broker_dispatch_dir),
+                "exists",
+                True,
+                bool(broker_dispatch_dir and (broker_dispatch_dir / "broker_dispatch_config.json").exists()),
+                "nested broker_dispatch_config.json is required for round-trip proof",
+            ),
+            _check(
+                "generic_broker_dispatch_send_input_resolved",
+                _path_text(broker_dispatch_send_dir),
+                "present",
+                True,
+                bool(broker_dispatch_send_dir),
+                "nested generic broker dispatch send input is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_send_summary_exists",
+                _path_text(broker_dispatch_send_dir),
+                "exists",
+                True,
+                bool(
+                    broker_dispatch_send_dir
+                    and (broker_dispatch_send_dir / "broker_dispatch_send_summary.csv").exists()
+                ),
+                "nested broker_dispatch_send_summary.csv is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_send_requests_exists",
+                _path_text(broker_dispatch_send_dir),
+                "exists",
+                True,
+                bool(
+                    broker_dispatch_send_dir
+                    and (broker_dispatch_send_dir / "broker_dispatch_send_requests.csv").exists()
+                ),
+                "nested broker_dispatch_send_requests.csv is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_send_config_exists",
+                _path_text(broker_dispatch_send_dir),
+                "exists",
+                True,
+                bool(
+                    broker_dispatch_send_dir
+                    and (broker_dispatch_send_dir / "broker_dispatch_send_config.json").exists()
+                ),
+                "nested broker_dispatch_send_config.json is required for round-trip proof",
+            ),
+            _check(
+                "generic_broker_dispatch_ack_input_resolved",
+                _path_text(broker_dispatch_ack_dir),
+                "present",
+                True,
+                bool(broker_dispatch_ack_dir),
+                "nested generic broker dispatch ack input is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_ack_summary_exists",
+                _path_text(broker_dispatch_ack_dir),
+                "exists",
+                True,
+                bool(broker_dispatch_ack_dir and (broker_dispatch_ack_dir / "broker_dispatch_ack_summary.csv").exists()),
+                "nested broker_dispatch_ack_summary.csv is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_acknowledgements_exists",
+                _path_text(broker_dispatch_ack_dir),
+                "exists",
+                True,
+                bool(
+                    broker_dispatch_ack_dir
+                    and (broker_dispatch_ack_dir / "broker_dispatch_acknowledgements.csv").exists()
+                ),
+                "nested broker_dispatch_acknowledgements.csv is required for round-trip proof",
+            ),
+            _check(
+                "nested_broker_dispatch_ack_config_exists",
+                _path_text(broker_dispatch_ack_dir),
+                "exists",
+                True,
+                bool(broker_dispatch_ack_dir and (broker_dispatch_ack_dir / "broker_dispatch_ack_config.json").exists()),
+                "nested broker_dispatch_ack_config.json is required for round-trip proof",
+            ),
+        ]
+    )
+
+
+def _checks(
+    prechecks: pd.DataFrame,
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+    broker_dispatch_roundtrip_error: str,
+    provider_summary: pd.DataFrame,
+    config: ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+) -> pd.DataFrame:
+    rows = prechecks.to_dict(orient="records")
+    roundtrip_summary = broker_dispatch_roundtrip.summary if broker_dispatch_roundtrip is not None else pd.DataFrame()
+    rows.append(
+        _check(
+            "broker_dispatch_roundtrip_runnable",
+            broker_dispatch_roundtrip_error or ("ran" if broker_dispatch_roundtrip is not None else "not_run"),
+            "is",
+            "ran",
+            broker_dispatch_roundtrip is not None and not broker_dispatch_roundtrip_error,
+            broker_dispatch_roundtrip_error or "generic broker dispatch round-trip proof was not run",
+        )
+    )
+    rows.append(
+        _check(
+            "broker_dispatch_roundtrip_passed",
+            bool(broker_dispatch_roundtrip is not None and broker_dispatch_roundtrip.passed),
+            "is",
+            True,
+            bool(
+                broker_dispatch_roundtrip is not None
+                and (broker_dispatch_roundtrip.passed or not config.require_broker_dispatch_roundtrip_passed)
+            ),
+            _broker_dispatch_roundtrip_failure_reason(broker_dispatch_roundtrip)
+            or "broker dispatch round-trip proof did not pass",
+        )
+    )
+    strategy = _first_text(roundtrip_summary, "strategy") or _first_text(provider_summary, "strategy")
+    rows.append(
+        _check(
+            "strategy_identity_imbalance",
+            strategy,
+            "is",
+            PROFILE,
+            bool(broker_dispatch_roundtrip is not None) and _identity_key(strategy) == PROFILE,
+            "broker dispatch round-trip proof did not resolve to imbalance strategy",
+        )
+    )
+    expected_market = _first_text(provider_summary, "market")
+    roundtrip_market = _first_text(roundtrip_summary, "market")
+    rows.append(
+        _check(
+            "market_identity_consistent",
+            roundtrip_market or expected_market,
+            "is",
+            expected_market or "present",
+            bool(broker_dispatch_roundtrip is not None)
+            and (not expected_market or _identity_key(roundtrip_market) == _identity_key(expected_market)),
+            "broker dispatch round-trip market identity does not match provider ack",
+        )
+    )
+    expected_adapter = _first_text(provider_summary, "adapter")
+    roundtrip_adapter = _first_text(roundtrip_summary, "adapter")
+    rows.append(
+        _check(
+            "adapter_identity_consistent",
+            roundtrip_adapter or expected_adapter,
+            "is",
+            expected_adapter or "present",
+            bool(broker_dispatch_roundtrip is not None)
+            and (not expected_adapter or _identity_key(roundtrip_adapter) == _identity_key(expected_adapter)),
+            "broker dispatch round-trip adapter identity does not match provider ack",
+        )
+    )
+    return pd.DataFrame(rows)
+
+
+def _summary(
+    provider_root: Path,
+    broker_dispatch_dir: Path | None,
+    broker_dispatch_send_dir: Path | None,
+    broker_dispatch_ack_dir: Path | None,
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+    checks: pd.DataFrame,
+    output_dir: Path,
+    broker_dispatch_roundtrip_dir: Path,
+    provider_summary: pd.DataFrame,
+) -> pd.DataFrame:
+    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    passed = failed == 0
+    roundtrip_summary = broker_dispatch_roundtrip.summary if broker_dispatch_roundtrip is not None else pd.DataFrame()
+    nested_roundtrip_dir = (
+        broker_dispatch_roundtrip_dir
+        if broker_dispatch_roundtrip is None
+        else Path(broker_dispatch_roundtrip.output_dir or broker_dispatch_roundtrip_dir)
+    )
+    return pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "ready": passed,
+                "provider_broker_dispatch_ack_passed": _first_bool(provider_summary, "passed"),
+                "broker_dispatch_roundtrip_passed": bool(
+                    broker_dispatch_roundtrip is not None and broker_dispatch_roundtrip.passed
+                ),
+                "provider_broker_dispatch_ack_dir": str(provider_root),
+                "broker_dispatch_dir": _path_text(broker_dispatch_dir),
+                "broker_dispatch_send_dir": _path_text(broker_dispatch_send_dir),
+                "broker_dispatch_ack_dir": _path_text(broker_dispatch_ack_dir),
+                "broker_dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                "output_dir": str(output_dir),
+                "profile": PROFILE,
+                "provider": _first_text(provider_summary, "provider"),
+                "transport": _first_text(provider_summary, "transport"),
+                "market": _first_text(roundtrip_summary, "market") or _first_text(provider_summary, "market"),
+                "strategy": _first_text(roundtrip_summary, "strategy")
+                or _first_text(provider_summary, "strategy")
+                or PROFILE,
+                "target_mode": _first_text(roundtrip_summary, "target_mode")
+                or _first_text(provider_summary, "target_mode"),
+                "adapter": _first_text(roundtrip_summary, "adapter") or _first_text(provider_summary, "adapter"),
+                "scenario_key": _first_text(roundtrip_summary, "scenario_key")
+                or _first_text(provider_summary, "scenario_key"),
+                "dispatch_orders": int(
+                    _first_number(roundtrip_summary, "dispatch_orders")
+                    or _first_number(provider_summary, "dispatch_orders")
+                ),
+                "send_requests": int(_first_number(roundtrip_summary, "send_requests")),
+                "acked_orders": int(_first_number(roundtrip_summary, "acked_orders")),
+                "missing_request_acks": int(_first_number(roundtrip_summary, "missing_request_acks")),
+                "rejected_orders": int(_first_number(roundtrip_summary, "rejected_orders")),
+                "duplicate_ack_orders": int(_first_number(roundtrip_summary, "duplicate_ack_orders")),
+                "unmatched_acks": int(_first_number(roundtrip_summary, "unmatched_acks")),
+                "dispatch_total_notional": float(
+                    _first_number(roundtrip_summary, "dispatch_total_notional")
+                    or _first_number(provider_summary, "dispatch_total_notional")
+                ),
+                "route_readiness_required": _first_bool(roundtrip_summary, "route_readiness_required")
+                or _first_bool(provider_summary, "route_readiness_required"),
+                "route_readiness_ready": _first_bool(roundtrip_summary, "route_readiness_ready")
+                or _first_bool(provider_summary, "route_readiness_ready"),
+                "route_readiness_gap_pairs": int(
+                    _first_number(roundtrip_summary, "route_readiness_gap_pairs")
+                    or _first_number(provider_summary, "route_readiness_gap_pairs")
+                ),
+                "roundtrip_recommendation": _first_text(roundtrip_summary, "recommendation"),
+                "failed_checks": failed,
+                "failed_check_names": ";".join(
+                    checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+                ),
+                "recommendation": "feed_provider_imbalance_broker_roundtrip_into_broker_readiness"
+                if passed
+                else "repair_provider_imbalance_broker_dispatch_roundtrip",
+                "next_gate": READY_NEXT_GATE if passed else _blocked_next_gate(checks, broker_dispatch_roundtrip),
+                "next_gate_help_command": _help_command_for_gate(
+                    READY_NEXT_GATE if passed else _blocked_next_gate(checks, broker_dispatch_roundtrip)
+                ),
+                "primary_action_status": "ready" if passed else "blocked",
+            }
+        ]
+    )
+
+
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    if not action_queue.empty:
+        out["primary_action_status"] = str(action_queue.iloc[0].get("queue_status", ""))
+        out["next_gate"] = str(action_queue.iloc[0].get("next_gate", out.iloc[0].get("next_gate", "")))
+        out["next_gate_help_command"] = str(
+            action_queue.iloc[0].get("next_gate_help_command", out.iloc[0].get("next_gate_help_command", ""))
+        )
+    return out
+
+
+def _action_queue(
+    summary: pd.Series,
+    checks: pd.DataFrame,
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+) -> pd.DataFrame:
+    failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else pd.DataFrame()
+    if failed.empty:
+        return _action_frame(
+            [
+                {
+                    "queue_status": "ready",
+                    "source": "provider_market_data_imbalance_broker_dispatch_roundtrip_summary",
+                    "component": "broker_dispatch_roundtrip",
+                    "check": "broker_dispatch_roundtrip_passed",
+                    "actual": True,
+                    "operator": "is",
+                    "expected": True,
+                    "action": "feed_provider_imbalance_broker_dispatch_roundtrip_into_broker_readiness",
+                    "reason": "provider imbalance broker dispatch dry-run round-trip proof passed",
+                    "recommendation": "supply_nested_roundtrip_to_provider_broker_readiness_before_cutover",
+                    "next_gate": READY_NEXT_GATE,
+                    "next_gate_help_command": _help_command_for_gate(READY_NEXT_GATE),
+                }
+            ]
+        )
+    rows: list[dict[str, Any]] = []
+    for _, check in failed.iterrows():
+        name = str(check.get("check", ""))
+        next_gate = _next_gate_for_check(name, broker_dispatch_roundtrip)
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "provider_market_data_imbalance_broker_dispatch_roundtrip_checks",
+                "component": _component_for_check(name),
+                "check": name,
+                "actual": check.get("value"),
+                "operator": check.get("operator"),
+                "expected": check.get("threshold"),
+                "action": _action_for_check(name),
+                "reason": str(check.get("reason", "")) or name.replace("_", " "),
+                "recommendation": _recommendation_for_check(name),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command_for_gate(next_gate),
+            }
+        )
+    return _action_frame(rows)
+
+
+def _config(
+    summary: pd.Series,
+    provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+    config: ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+    broker_dispatch_roundtrip_inputs: dict[str, Any],
+) -> dict[str, Any]:
+    actions = _records(action_queue)
+    return {
+        "schema_version": 1,
+        "passed": bool(summary["passed"]),
+        "ready": bool(summary["ready"]),
+        "parameters": asdict(config),
+        "broker_dispatch_roundtrip_inputs": _jsonable(broker_dispatch_roundtrip_inputs),
+        "summary": _series_record(summary),
+        "provider_broker_dispatch_ack": _first_record(provider_summary),
+        "provider_broker_dispatch_ack_config": provider_config,
+        "broker_dispatch_roundtrip": {
+            "evaluated": broker_dispatch_roundtrip is not None,
+            "passed": False if broker_dispatch_roundtrip is None else bool(broker_dispatch_roundtrip.passed),
+            "output_dir": "" if broker_dispatch_roundtrip is None else str(broker_dispatch_roundtrip.output_dir or ""),
+            "orders": _records(None if broker_dispatch_roundtrip is None else broker_dispatch_roundtrip.orders),
+            "summary": _first_record(None if broker_dispatch_roundtrip is None else broker_dispatch_roundtrip.summary),
+            "checks": _records(None if broker_dispatch_roundtrip is None else broker_dispatch_roundtrip.checks),
+            "action_queue": _records(
+                None if broker_dispatch_roundtrip is None else broker_dispatch_roundtrip.action_queue
+            ),
+            "config": {}
+            if broker_dispatch_roundtrip is None or broker_dispatch_roundtrip.config is None
+            else broker_dispatch_roundtrip.config,
+        },
+        "checks": _records(checks),
+        "next_gate": str(summary["next_gate"]),
+        "next_gate_help_command": str(summary["next_gate_help_command"]),
+        "next_actions": actions,
+        "ready_actions": [row for row in actions if row.get("queue_status") == "ready"],
+        "blocked_actions": [row for row in actions if row.get("queue_status") == "blocked"],
+        "primary_action": actions[0] if actions else {},
+    }
+
+
+def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    lines = [
+        "# Provider Market Data Imbalance Broker Dispatch Round-Trip",
+        "",
+        f"- Passed: {'yes' if bool(summary['passed']) else 'no'}",
+        f"- Provider: {summary['provider']}",
+        f"- Market: {summary['market']}",
+        f"- Target mode: {summary['target_mode']}",
+        f"- Dispatch orders: {summary['dispatch_orders']}",
+        f"- Send requests: {summary['send_requests']}",
+        f"- Acked orders: {summary['acked_orders']}",
+        f"- Missing request acks: {summary['missing_request_acks']}",
+        f"- Rejected orders: {summary['rejected_orders']}",
+        f"- Broker dispatch round-trip dir: {summary['broker_dispatch_roundtrip_dir']}",
+        f"- Primary next gate: `{summary['next_gate']}`",
+        f"- Primary next gate help: `{summary['next_gate_help_command']}`",
+        "",
+        "## Checks",
+        "",
+        _checks_table(checks),
+        "",
+        "## Actions",
+        "",
+        _actions_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _thresholds(
+    config: ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+    provider_summary: pd.DataFrame,
+) -> BrokerDispatchRoundTripThresholds:
+    return BrokerDispatchRoundTripThresholds(
+        target_mode=config.target_mode or _first_text(provider_summary, "target_mode") or "live_dryrun",
+        require_dispatch_ready=config.require_dispatch_ready,
+        require_send_ready=config.require_send_ready,
+        require_ack_passed=config.require_ack_passed,
+        require_identity_match=config.require_identity_match,
+        require_submission_disabled=config.require_submission_disabled,
+        require_all_requests_acked=config.require_all_requests_acked,
+        require_route_readiness=config.require_route_readiness,
+        require_dispatch_roundtrip=config.require_dispatch_roundtrip,
+        allow_rejections=config.allow_rejections,
+        max_duplicate_ack_orders=config.max_duplicate_ack_orders,
+        max_unmatched_acks=config.max_unmatched_acks,
+        max_missing_request_acks=config.max_missing_request_acks,
+        max_total_failed_component_checks=config.max_total_failed_component_checks,
+    )
+
+
+def _broker_dispatch_roundtrip_failure_reason(
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+) -> str:
+    if broker_dispatch_roundtrip is None or broker_dispatch_roundtrip.checks.empty:
+        return ""
+    failed = broker_dispatch_roundtrip.checks.loc[~broker_dispatch_roundtrip.checks["passed"].astype(bool)]
+    if failed.empty:
+        return ""
+    row = failed.iloc[0]
+    return f"{row.get('check', '')}: {row.get('reason', '')}".strip(": ")
+
+
+def _blocked_next_gate(
+    checks: pd.DataFrame,
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+) -> str:
+    failed = checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+    if not failed:
+        return "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    return _next_gate_for_check(failed[0], broker_dispatch_roundtrip)
+
+
+def _next_gate_for_check(
+    check: str,
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+) -> str:
+    if check.startswith("provider_broker_dispatch_ack") or check.startswith("provider_nested_broker_dispatch_ack"):
+        return "reconcile-provider-market-data-imbalance-broker-dispatch"
+    if check.startswith("generic_broker_dispatch_send") or check.startswith("nested_broker_dispatch_send"):
+        return "prepare-provider-market-data-imbalance-broker-dispatch-send"
+    if check.startswith("generic_broker_dispatch_ack") or check.startswith("nested_broker_dispatch_ack"):
+        return "reconcile-provider-market-data-imbalance-broker-dispatch"
+    if check.startswith("generic_broker_dispatch") or check.startswith("nested_broker_dispatch"):
+        return "plan-provider-market-data-imbalance-broker-dispatch"
+    if check == "broker_dispatch_roundtrip_passed" and broker_dispatch_roundtrip is not None:
+        next_gate = _provider_gate(_first_action_value(broker_dispatch_roundtrip.action_queue, "next_gate"))
+        return next_gate or "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    if check.startswith("broker_dispatch_roundtrip"):
+        return "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    if check in {"strategy_identity_imbalance", "market_identity_consistent", "adapter_identity_consistent"}:
+        return "reconcile-provider-market-data-imbalance-broker-dispatch"
+    return "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+
+
+def _provider_gate(next_gate: str) -> str:
+    mapping = {
+        "plan-broker-dispatch": "plan-provider-market-data-imbalance-broker-dispatch",
+        "prepare-broker-dispatch-send": "prepare-provider-market-data-imbalance-broker-dispatch-send",
+        "reconcile-broker-dispatch": "reconcile-provider-market-data-imbalance-broker-dispatch",
+        "review-broker-dispatch-roundtrip": "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+        "review-broker-readiness": "review-provider-market-data-imbalance-broker-readiness",
+        "review-route-readiness": "review-provider-market-data-imbalance-route-readiness",
+    }
+    return mapping.get(next_gate, next_gate)
+
+
+def _help_command_for_gate(next_gate: str) -> str:
+    if next_gate == "review-provider-market-data-imbalance-broker-dispatch-roundtrip":
+        return "python -m hft_cli review-provider-market-data-imbalance-broker-dispatch-roundtrip --help"
+    if next_gate == "reconcile-provider-market-data-imbalance-broker-dispatch":
+        return "python -m hft_cli reconcile-provider-market-data-imbalance-broker-dispatch --help"
+    if next_gate == "prepare-provider-market-data-imbalance-broker-dispatch-send":
+        return "python -m hft_cli prepare-provider-market-data-imbalance-broker-dispatch-send --help"
+    if next_gate == "plan-provider-market-data-imbalance-broker-dispatch":
+        return "python -m hft_cli plan-provider-market-data-imbalance-broker-dispatch --help"
+    if next_gate == READY_NEXT_GATE:
+        return "python -m hft_cli review-provider-market-data-imbalance-broker-readiness --help"
+    if next_gate == "review-provider-market-data-imbalance-route-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
+    if next_gate == "reconcile-broker-dispatch":
+        return "python -m hft_cli reconcile-broker-dispatch --help"
+    if next_gate == "prepare-broker-dispatch-send":
+        return "python -m hft_cli prepare-broker-dispatch-send --help"
+    if next_gate == "plan-broker-dispatch":
+        return "python -m hft_cli plan-broker-dispatch --help"
+    if next_gate == "review-broker-dispatch-roundtrip":
+        return "python -m hft_cli review-broker-dispatch-roundtrip --help"
+    return f"python -m hft_cli {next_gate} --help" if next_gate else ""
+
+
+def _component_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_ack") or check.startswith("provider_nested_broker_dispatch_ack"):
+        return "provider_broker_dispatch_ack"
+    if check.startswith("generic_broker_dispatch_send") or check.startswith("nested_broker_dispatch_send"):
+        return "broker_dispatch_send"
+    if check.startswith("generic_broker_dispatch_ack") or check.startswith("nested_broker_dispatch_ack"):
+        return "broker_dispatch_ack"
+    if check.startswith("generic_broker_dispatch") or check.startswith("nested_broker_dispatch"):
+        return "broker_dispatch"
+    if check.startswith("broker_dispatch_roundtrip"):
+        return "broker_dispatch_roundtrip"
+    if check.endswith("identity_imbalance") or check.endswith("identity_consistent"):
+        return "runtime_identity"
+    return "provider_broker_dispatch_roundtrip"
+
+
+def _action_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_ack") or check.startswith("provider_nested_broker_dispatch_ack"):
+        return "repair_provider_imbalance_broker_dispatch_ack"
+    if check.startswith("generic_broker_dispatch_send") or check.startswith("nested_broker_dispatch_send"):
+        return "repair_provider_imbalance_broker_dispatch_send"
+    if check.startswith("generic_broker_dispatch_ack") or check.startswith("nested_broker_dispatch_ack"):
+        return "repair_provider_imbalance_broker_dispatch_ack_inputs"
+    if check.startswith("generic_broker_dispatch") or check.startswith("nested_broker_dispatch"):
+        return "repair_provider_imbalance_broker_dispatch_inputs"
+    if check.startswith("broker_dispatch_roundtrip"):
+        return "repair_broker_dispatch_roundtrip"
+    return "repair_provider_imbalance_broker_dispatch_roundtrip"
+
+
+def _recommendation_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_ack") or check.startswith("provider_nested_broker_dispatch_ack"):
+        return "rerun_provider_broker_dispatch_ack_before_roundtrip_review"
+    if check.startswith("generic_broker_dispatch_send") or check.startswith("nested_broker_dispatch_send"):
+        return "rerun_provider_broker_dispatch_send_to_refresh_nested_sender_packet"
+    if check.startswith("generic_broker_dispatch_ack") or check.startswith("nested_broker_dispatch_ack"):
+        return "rerun_provider_broker_dispatch_ack_to_refresh_nested_ack_proof"
+    if check.startswith("generic_broker_dispatch") or check.startswith("nested_broker_dispatch"):
+        return "rerun_provider_broker_dispatch_to_refresh_nested_dispatch_plan"
+    if check.startswith("broker_dispatch_roundtrip"):
+        return "review_nested_roundtrip_failures_and_rebuild_failed_component"
+    return "repair_provider_broker_dispatch_roundtrip_inputs"
+
+
+def _inferred_generic_inputs(
+    provider_root: Path,
+    provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+) -> dict[str, Path | None]:
+    provider_send_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "provider_broker_dispatch_send_dir")),
+        _path_from_text((provider_config.get("broker_dispatch_ack_inputs", {}) or {}).get("provider_broker_dispatch_send_dir")),
+    )
+    provider_send_config = provider_config.get("provider_broker_dispatch_send_config", {}) or {}
+    provider_send_summary = provider_config.get("provider_broker_dispatch_send", {}) or {}
+    nested_send = provider_send_config.get("broker_dispatch_send", {}) or {}
+    ack_inputs = provider_config.get("broker_dispatch_ack_inputs", {}) or {}
+    nested_ack = provider_config.get("broker_dispatch_ack", {}) or {}
+    nested_ack_config = nested_ack.get("config", {}) if isinstance(nested_ack, dict) else {}
+    nested_ack_inputs = nested_ack_config.get("inputs", {}) if isinstance(nested_ack_config, dict) else {}
+    return {
+        "broker_dispatch_dir": _first_existing_path(
+            _path_from_text(_first_text(provider_summary, "broker_dispatch_dir")),
+            _path_from_text(ack_inputs.get("broker_dispatch_dir")),
+            _path_from_text(nested_ack_inputs.get("dispatch_dir")),
+        ),
+        "broker_dispatch_send_dir": _first_existing_path(
+            _path_from_text(_first_text(provider_summary, "broker_dispatch_send_dir")),
+            _path_from_text(provider_send_summary.get("broker_dispatch_send_dir")),
+            _path_from_text(nested_send.get("output_dir") if isinstance(nested_send, dict) else ""),
+            _child_path(provider_send_dir, "broker_dispatch_send"),
+        ),
+        "broker_dispatch_ack_dir": _first_existing_path(
+            _path_from_text(_first_text(provider_summary, "broker_dispatch_ack_dir")),
+            _path_from_text(nested_ack.get("output_dir") if isinstance(nested_ack, dict) else ""),
+        ),
+    }
+
+
+def _explicit_or_inferred(explicit: str | Path | None, inferred: Path | None, use_inputs: bool) -> Path | None:
+    if explicit is not None:
+        return Path(explicit)
+    if not use_inputs:
+        return None
+    return inferred
+
+
+def _child_path(parent: Path | None, child: str) -> Path | None:
+    if parent is None:
+        return None
+    return parent / child
+
+
+def _first_action_value(action_queue: pd.DataFrame | None, column: str) -> str:
+    if action_queue is None or action_queue.empty or column not in action_queue.columns:
+        return ""
+    for value in action_queue[column].tolist():
+        text = _clean(value)
+        if text:
+            return text
+    return ""
+
+
+def _checks_table(checks: pd.DataFrame) -> str:
+    if checks.empty:
+        return "_None_"
+    rows = [
+        [
+            str(row.get("check", "")),
+            "pass" if _truthy(row.get("passed")) else "fail",
+            str(row.get("value", "")),
+            str(row.get("threshold", "")),
+            str(row.get("reason", "")),
+        ]
+        for row in checks.to_dict(orient="records")
+    ]
+    return _markdown_table(["Check", "Status", "Value", "Threshold", "Reason"], rows)
+
+
+def _actions_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    rows = [
+        [
+            str(row.get("priority", "")),
+            str(row.get("queue_status", "")),
+            str(row.get("action", "")),
+            str(row.get("next_gate", "")),
+            str(row.get("reason", "")),
+        ]
+        for row in action_queue.to_dict(orient="records")
+    ]
+    return _markdown_table(["#", "Status", "Action", "Next gate", "Reason"], rows)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(value.replace("|", "\\|").replace("\n", " ") for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _check(check: str, value: object, operator: str, threshold: object, passed: bool, reason: str) -> dict[str, Any]:
+    return {
+        "check": check,
+        "value": value,
+        "operator": operator,
+        "threshold": threshold,
+        "passed": bool(passed),
+        "reason": "" if passed else reason,
+    }
+
+
+def _action_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _first_existing_path(*paths: Path | None) -> Path | None:
+    for path in paths:
+        if path is not None and path.exists():
+            return path
+    for path in paths:
+        if path is not None:
+            return path
+    return None
+
+
+def _path_from_text(value: object) -> Path | None:
+    text = _clean(value)
+    if not text:
+        return None
+    return Path(text)
+
+
+def _path_or_empty(path: str | Path | None) -> Path:
+    if path is None:
+        return Path()
+    return Path(path)
+
+
+def _path_text(path: Path | None) -> str:
+    return "" if path is None else str(path)
+
+
+def _first_text(frame: pd.DataFrame | None, column: str) -> str:
+    if frame is None or frame.empty or column not in frame.columns:
+        return ""
+    return _clean(frame.iloc[0][column])
+
+
+def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
+    if frame is None or frame.empty or column not in frame.columns:
+        return False
+    return _truthy(frame.iloc[0][column])
+
+
+def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:
+    if frame is None or frame.empty or column not in frame.columns:
+        return float(fallback)
+    value = pd.to_numeric(frame.iloc[0][column], errors="coerce")
+    if pd.isna(value):
+        return float(fallback)
+    return float(value)
+
+
+def _identity_key(value: object) -> str:
+    return _clean(value).lower().replace("-", "_").replace(" ", "_")
+
+
+def _truthy(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    return text in {"1", "true", "yes", "y", "ready", "pass", "passed", "continue", "enabled"}
+
+
+def _clean(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
+    if frame is None or frame.empty:
+        return []
+    return [_jsonable(row) for row in frame.to_dict(orient="records")]
+
+
+def _first_record(frame: pd.DataFrame | None) -> dict[str, Any]:
+    records = _records(frame)
+    return records[0] if records else {}
+
+
+def _series_record(series: pd.Series) -> dict[str, Any]:
+    return _jsonable(series.to_dict())
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, pd.DataFrame):
+        return _records(value)
+    if isinstance(value, pd.Series):
+        return _series_record(value)
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            return str(value)
+    return value

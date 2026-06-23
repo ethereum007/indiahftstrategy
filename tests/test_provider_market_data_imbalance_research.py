@@ -72,6 +72,10 @@ from reports.provider_market_data_imbalance_broker_dispatch_ack import (
     ProviderMarketDataImbalanceBrokerDispatchAckConfig,
     write_provider_market_data_imbalance_broker_dispatch_ack,
 )
+from reports.provider_market_data_imbalance_broker_dispatch_roundtrip import (
+    ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+    write_provider_market_data_imbalance_broker_dispatch_roundtrip,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -527,6 +531,17 @@ def _write_provider_imbalance_accepted_ack_file(provider_send, output_path):
         )
     pd.DataFrame(rows).to_csv(output_path, index=False)
     return output_path
+
+
+def _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    acks_path = _write_provider_imbalance_accepted_ack_file(provider_send, tmp_path / "provider_imbalance_acks.csv")
+    return write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        tmp_path / "provider_imbalance_broker_dispatch_ack",
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
 
 
 def test_provider_market_data_imbalance_research_runs_pipeline_from_live_evidence(tmp_path):
@@ -2182,7 +2197,7 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_accepts_ready_send(t
     assert int(summary.loc[0, "rejected_orders"]) == 0
     assert bool(acknowledgements["acked"].astype(bool).all())
     assert action_queue.loc[0, "queue_status"] == "ready"
-    assert action_queue.loc[0, "next_gate"] == "review-broker-dispatch-roundtrip"
+    assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     assert config["broker_dispatch_ack"]["passed"]
     assert manifest["run_type"] == "provider_market_data_imbalance_broker_dispatch_ack"
     assert "provider_broker_dispatch_send_dir" in manifest["inputs"]
@@ -2274,3 +2289,132 @@ def test_cli_provider_market_data_imbalance_broker_dispatch_ack_blocks_unready_s
     assert not bool(summary.loc[0, "passed"])
     assert not bool(summary.loc[0, "broker_dispatch_ack_passed"])
     assert summary.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
+
+
+def test_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_ready_ack(tmp_path):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_action_queue.csv")
+    checks = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_checks.csv")
+    roundtrip_summary = pd.read_csv(out_dir / "broker_dispatch_roundtrip" / "broker_dispatch_roundtrip_summary.csv")
+    roundtrip_orders = pd.read_csv(out_dir / "broker_dispatch_roundtrip" / "broker_dispatch_roundtrip_orders.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert report.passed
+    assert bool(summary.loc[0, "provider_broker_dispatch_ack_passed"])
+    assert bool(summary.loc[0, "broker_dispatch_roundtrip_passed"])
+    assert bool(roundtrip_summary.loc[0, "passed"])
+    assert int(summary.loc[0, "missing_request_acks"]) == 0
+    assert int(summary.loc[0, "rejected_orders"]) == 0
+    assert bool(roundtrip_orders["acked"].astype(bool).all())
+    assert checks["passed"].astype(bool).all()
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
+    assert config["broker_dispatch_roundtrip"]["passed"]
+    assert manifest["run_type"] == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    assert "provider_broker_dispatch_ack_dir" in manifest["inputs"]
+    assert "broker_dispatch" in manifest["inputs"]
+    assert "broker_dispatch_send" in manifest["inputs"]
+    assert "broker_dispatch_ack" in manifest["inputs"]
+    assert "broker_dispatch_roundtrip" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_broker_dispatch_roundtrip_blocks_unready_ack(tmp_path):
+    ack_dir = tmp_path / "provider_imbalance_broker_dispatch_ack"
+    ack_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": False,
+                "ready": False,
+                "broker_dispatch_ack_passed": False,
+                "broker_dispatch_dir": "",
+                "broker_dispatch_send_dir": "",
+                "broker_dispatch_ack_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(ack_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv", index=False)
+    (ack_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").write_text(
+        json.dumps({"broker_dispatch_ack_inputs": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        ack_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_roundtrip",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.passed
+    assert "provider_broker_dispatch_ack_passed" in failed
+    assert "provider_nested_broker_dispatch_ack_passed" in failed
+    assert "generic_broker_dispatch_input_resolved" in failed
+    assert "generic_broker_dispatch_send_input_resolved" in failed
+    assert "generic_broker_dispatch_ack_input_resolved" in failed
+    assert "broker_dispatch_roundtrip_runnable" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "reconcile-provider-market-data-imbalance-broker-dispatch"
+    assert not (report.output_dir / "broker_dispatch_roundtrip" / "broker_dispatch_roundtrip_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_broker_dispatch_roundtrip_blocks_unready_ack(tmp_path):
+    ack_dir = tmp_path / "provider_imbalance_broker_dispatch_ack"
+    ack_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": False,
+                "ready": False,
+                "broker_dispatch_ack_passed": False,
+                "broker_dispatch_dir": "",
+                "broker_dispatch_send_dir": "",
+                "broker_dispatch_ack_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(ack_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv", index=False)
+    (ack_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").write_text(
+        json.dumps({"broker_dispatch_ack_inputs": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_broker_dispatch_roundtrip"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+            "--provider-broker-dispatch-ack",
+            str(ack_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "passed"])
+    assert not bool(summary.loc[0, "broker_dispatch_roundtrip_passed"])
+    assert summary.loc[0, "next_gate"] == "reconcile-provider-market-data-imbalance-broker-dispatch"

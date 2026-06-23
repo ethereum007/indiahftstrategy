@@ -190,6 +190,10 @@ from reports.provider_market_data_imbalance_broker_dispatch_ack import (
     ProviderMarketDataImbalanceBrokerDispatchAckConfig,
     write_provider_market_data_imbalance_broker_dispatch_ack,
 )
+from reports.provider_market_data_imbalance_broker_dispatch_roundtrip import (
+    ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+    write_provider_market_data_imbalance_broker_dispatch_roundtrip,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1839,6 +1843,85 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_broker_dispatch_roundtrip = sub.add_parser(
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+        help="Review provider imbalance broker dispatch send/ack round-trip proof.",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--provider-broker-dispatch-ack",
+        required=True,
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--out", required=True)
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--broker-dispatch", default=None)
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--broker-dispatch-send", default=None)
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--broker-dispatch-ack", default=None)
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--allow-unready-provider-broker-dispatch-ack",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--allow-failed-broker-dispatch-roundtrip",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--target-mode",
+        default="",
+        choices=["", "paper", "shadow", "live_dryrun"],
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--allow-unready-dispatch",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--allow-unready-send", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--allow-failed-ack", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--allow-identity-mismatch",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--allow-submission-enabled",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--allow-missing-request-acks",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--allow-rejections", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--require-route-readiness",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--require-dispatch-roundtrip",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--no-use-provider-broker-dispatch-ack-inputs",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--max-duplicate-ack-orders",
+        type=int,
+        default=0,
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--max-unmatched-acks", type=int, default=0)
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--max-missing-request-acks",
+        type=int,
+        default=0,
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--max-total-failed-component-checks",
+        type=int,
+        default=0,
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4919,6 +5002,46 @@ def main(argv: list[str] | None = None) -> int:
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-broker-dispatch-roundtrip":
+        result = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+            args.provider_broker_dispatch_ack,
+            args.out,
+            broker_dispatch_dir=args.broker_dispatch,
+            broker_dispatch_send_dir=args.broker_dispatch_send,
+            broker_dispatch_ack_dir=args.broker_dispatch_ack,
+            config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+                require_provider_broker_dispatch_ack_passed=not args.allow_unready_provider_broker_dispatch_ack,
+                require_broker_dispatch_roundtrip_passed=not args.allow_failed_broker_dispatch_roundtrip,
+                use_provider_broker_dispatch_ack_inputs=not args.no_use_provider_broker_dispatch_ack_inputs,
+                target_mode=args.target_mode,
+                require_dispatch_ready=not args.allow_unready_dispatch,
+                require_send_ready=not args.allow_unready_send,
+                require_ack_passed=not args.allow_failed_ack,
+                require_identity_match=not args.allow_identity_mismatch,
+                require_submission_disabled=not args.allow_submission_enabled,
+                require_all_requests_acked=not args.allow_missing_request_acks,
+                require_route_readiness=args.require_route_readiness,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                allow_rejections=args.allow_rejections,
+                max_duplicate_ack_orders=args.max_duplicate_ack_orders,
+                max_unmatched_acks=args.max_unmatched_acks,
+                max_missing_request_acks=args.max_missing_request_acks,
+                max_total_failed_component_checks=args.max_total_failed_component_checks,
             ),
         )
         print(result.summary.to_string(index=False))
