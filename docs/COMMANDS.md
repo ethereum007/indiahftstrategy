@@ -4729,7 +4729,28 @@ runs `review-cutover-gate` under a nested `cutover` folder, and writes provider
 checks/summary/action/config/runbook artifacts. It keeps the generic cutover
 safety model intact: if route-readiness or broker route proof is missing, the
 wrapper blocks with `review-route-readiness`; once cutover is fully clean, it
-points to `review-route-enable`.
+points to `review-route-enable`. Use `--allow-missing-route-readiness` only for
+diagnostic dry-runs that are not allowed to proceed into route-enable.
+
+Run the provider-specific route-enable wrapper:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-route-enable `
+  --provider-cutover runs\provider_market_data_imbalance_cutover\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_route_enable\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider route-enable wrapper reads the provider cutover summary/config,
+infers the nested generic `cutover` plus broker upload-pack/order-export inputs
+from the provider broker-readiness config, runs `review-route-enable` under a
+nested `route_enable` folder, and writes provider checks/summary/action/config
+runbook artifacts. Fully clean wrappers emit a ready
+`plan_provider_imbalance_broker_dispatch` action and point to
+`plan-broker-dispatch`; blocked wrappers route back to the exact repair gate,
+such as `review-route-readiness`, `pack-broker-upload`, or the provider cutover
+wrapper.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

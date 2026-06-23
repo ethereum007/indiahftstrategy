@@ -56,6 +56,10 @@ from reports.provider_market_data_imbalance_cutover import (
     ProviderMarketDataImbalanceCutoverConfig,
     write_provider_market_data_imbalance_cutover,
 )
+from reports.provider_market_data_imbalance_route_enable import (
+    ProviderMarketDataImbalanceRouteEnableConfig,
+    write_provider_market_data_imbalance_route_enable,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -414,6 +418,57 @@ def _write_ready_provider_imbalance_broker_readiness(tmp_path):
         runtime_session.output_dir,
         tmp_path / "provider_imbalance_broker_readiness",
         config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+
+
+def _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup_with_route",
+        route_readiness_dir=route_readiness.output_dir,
+    )
+    telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry_with_route",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    guard = write_provider_market_data_imbalance_runtime_guard(
+        telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard_with_route",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+    session = write_provider_market_data_imbalance_runtime_session(
+        guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session_with_route",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    broker_readiness = write_provider_market_data_imbalance_broker_readiness(
+        session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness_with_route",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+    return write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        tmp_path / "provider_imbalance_cutover_with_route",
+        config=ProviderMarketDataImbalanceCutoverConfig(),
     )
 
 
@@ -1686,3 +1741,120 @@ def test_cli_provider_market_data_imbalance_cutover_blocks_missing_route_proof(t
     assert not bool(summary.loc[0, "ready"])
     assert not bool(summary.loc[0, "cutover_ready"])
     assert summary.loc[0, "next_gate"] == "review-route-readiness"
+
+
+def test_provider_market_data_imbalance_route_enable_accepts_ready_cutover(tmp_path):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_route_enable"
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_enable_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_route_enable_action_queue.csv")
+    route_summary = pd.read_csv(out_dir / "route_enable" / "route_enable_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads((out_dir / "provider_market_data_imbalance_route_enable_config.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary.loc[0, "provider_cutover_ready"])
+    assert bool(summary.loc[0, "route_enable_ready"])
+    assert bool(summary.loc[0, "route_enabled"])
+    assert bool(route_summary.loc[0, "ready"])
+    assert summary.loc[0, "route_state"] == "enabled"
+    assert int(summary.loc[0, "upload_orders"]) > 0
+    assert summary.loc[0, "next_gate"] == "plan-broker-dispatch"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "plan-broker-dispatch"
+    assert config["route_enable"]["ready"]
+    assert manifest["run_type"] == "provider_market_data_imbalance_route_enable"
+    assert "provider_cutover_dir" in manifest["inputs"]
+    assert "route_enable" in manifest["inputs"]
+    assert "cutover" in manifest["inputs"]
+    assert "upload_pack" in manifest["inputs"]
+    assert "order_export" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_route_enable_blocks_unready_cutover(tmp_path):
+    cutover_dir = tmp_path / "provider_imbalance_cutover"
+    cutover_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "cutover_ready": False,
+                "provider_broker_readiness_dir": "",
+                "cutover_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(cutover_dir / "provider_market_data_imbalance_cutover_summary.csv", index=False)
+    (cutover_dir / "provider_market_data_imbalance_cutover_config.json").write_text(
+        json.dumps({"provider_broker_readiness_config": {"broker_inputs": {}}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_route_enable(
+        cutover_dir,
+        tmp_path / "provider_imbalance_route_enable",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_imbalance_cutover_ready" in failed
+    assert "generic_cutover_input_resolved" in failed
+    assert "upload_pack_input_resolved" in failed
+    assert "route_enable_runnable" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
+    assert not (report.output_dir / "route_enable" / "route_enable_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_route_enable_blocks_unready_cutover(tmp_path):
+    cutover_dir = tmp_path / "provider_imbalance_cutover"
+    cutover_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "cutover_ready": False,
+                "provider_broker_readiness_dir": "",
+                "cutover_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(cutover_dir / "provider_market_data_imbalance_cutover_summary.csv", index=False)
+    (cutover_dir / "provider_market_data_imbalance_cutover_config.json").write_text(
+        json.dumps({"provider_broker_readiness_config": {"broker_inputs": {}}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_route_enable"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-route-enable",
+            "--provider-cutover",
+            str(cutover_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_enable_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "route_enable_ready"])
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"

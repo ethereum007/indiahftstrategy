@@ -174,6 +174,10 @@ from reports.provider_market_data_imbalance_cutover import (
     ProviderMarketDataImbalanceCutoverConfig,
     write_provider_market_data_imbalance_cutover,
 )
+from reports.provider_market_data_imbalance_route_enable import (
+    ProviderMarketDataImbalanceRouteEnableConfig,
+    write_provider_market_data_imbalance_route_enable,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1676,6 +1680,7 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_cutover.add_argument("--allow-missing-runtime-session", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--allow-runtime-guard-halt", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--require-route-readiness", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--allow-missing-route-readiness", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--require-resume-gate", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--require-dispatch-roundtrip", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--require-operator-approval", action="store_true")
@@ -1686,6 +1691,37 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_cutover.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_cutover.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_route_enable = sub.add_parser(
+        "review-provider-market-data-imbalance-route-enable",
+        help="Gate provider imbalance cutover evidence for route enable and broker dispatch planning.",
+    )
+    provider_market_data_imbalance_route_enable.add_argument("--provider-cutover", required=True)
+    provider_market_data_imbalance_route_enable.add_argument("--out", required=True)
+    provider_market_data_imbalance_route_enable.add_argument("--cutover", default=None)
+    provider_market_data_imbalance_route_enable.add_argument("--upload-pack", default=None)
+    provider_market_data_imbalance_route_enable.add_argument("--order-export", default=None)
+    provider_market_data_imbalance_route_enable.add_argument(
+        "--target-mode",
+        default="",
+        choices=["", "paper", "shadow", "live_dryrun"],
+    )
+    provider_market_data_imbalance_route_enable.add_argument(
+        "--allow-unready-provider-cutover",
+        action="store_true",
+    )
+    provider_market_data_imbalance_route_enable.add_argument("--allow-unready-route-enable", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--allow-unready-cutover", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--allow-unready-upload", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--require-order-export", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--require-route-readiness", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--require-dispatch-roundtrip", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--allow-adapter-mismatch", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--no-use-provider-cutover-inputs", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--min-orders", type=int, default=1)
+    provider_market_data_imbalance_route_enable.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_route_enable.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4629,13 +4665,47 @@ def main(argv: list[str] | None = None) -> int:
                 require_broker_readiness=not args.allow_missing_broker_readiness,
                 require_runtime_session=not args.allow_missing_runtime_session,
                 require_runtime_guard_continue=not args.allow_runtime_guard_halt,
-                require_route_readiness=args.require_route_readiness,
+                require_route_readiness=args.require_route_readiness or not args.allow_missing_route_readiness,
                 require_resume_gate=args.require_resume_gate,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 require_operator_approval=args.require_operator_approval,
                 require_operator_identity_ack=args.require_operator_identity_ack,
                 require_operator_limits_ack=args.require_operator_limits_ack,
                 max_failed_scaleup_checks=args.max_failed_scaleup_checks,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-route-enable":
+        result = write_provider_market_data_imbalance_route_enable(
+            args.provider_cutover,
+            args.out,
+            cutover_dir=args.cutover,
+            upload_pack_dir=args.upload_pack,
+            order_export_dir=args.order_export,
+            config=ProviderMarketDataImbalanceRouteEnableConfig(
+                require_provider_cutover_ready=not args.allow_unready_provider_cutover,
+                require_route_enable_ready=not args.allow_unready_route_enable,
+                use_provider_cutover_inputs=not args.no_use_provider_cutover_inputs,
+                target_mode=args.target_mode,
+                require_cutover_ready=not args.allow_unready_cutover,
+                require_upload_ready=not args.allow_unready_upload,
+                require_order_export_ready=args.require_order_export,
+                require_adapter_match=not args.allow_adapter_mismatch,
+                require_route_readiness=args.require_route_readiness,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                min_orders=args.min_orders,
             ),
         )
         print(result.summary.to_string(index=False))

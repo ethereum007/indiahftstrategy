@@ -1429,6 +1429,12 @@
   reruns `review-cutover-gate` under a nested folder, preserves cutover safety
   blockers such as missing route-readiness proof, and routes fully clean runs to
   `review-route-enable`.
+- Provider-data imbalance now has a provider route-enable wrapper after cutover.
+  `review-provider-market-data-imbalance-route-enable` infers the nested generic
+  cutover and broker upload/order-export inputs, reruns `review-route-enable`
+  under a nested folder, writes provider checks/summary/action/config/runbook
+  artifacts, routes blockers back to the exact repair gate, and sends clean
+  Arrow.money/iRage dry-run routes to `plan-broker-dispatch`.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

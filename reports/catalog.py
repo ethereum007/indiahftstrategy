@@ -84,6 +84,7 @@ SUMMARY_FILES = [
     "provider_market_data_imbalance_runtime_session_summary.csv",
     "provider_market_data_imbalance_broker_readiness_summary.csv",
     "provider_market_data_imbalance_cutover_summary.csv",
+    "provider_market_data_imbalance_route_enable_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",

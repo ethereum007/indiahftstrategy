@@ -41,7 +41,7 @@ class ProviderMarketDataImbalanceCutoverConfig:
     require_broker_readiness: bool = True
     require_runtime_session: bool = True
     require_runtime_guard_continue: bool = True
-    require_route_readiness: bool = False
+    require_route_readiness: bool = True
     require_resume_gate: bool = False
     require_dispatch_roundtrip: bool = False
     require_operator_approval: bool = False

@@ -2098,7 +2098,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not broker_readiness.empty
                 else 0,
-                "broker_route_readiness_recommendation": str(
+                "broker_route_readiness_recommendation": _text(
                     broker_readiness.get("route_readiness_recommendation", "")
                 )
                 if not broker_readiness.empty
@@ -2108,9 +2108,9 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not broker_readiness.empty
                 else False,
-                "broker_route_readiness_ops_launch_control_failures": str(
+                "broker_route_readiness_ops_launch_control_failures": _text(
                     broker_readiness.get("route_readiness_ops_launch_control_failures", "")
-                ).strip()
+                )
                 if not broker_readiness.empty
                 else "",
                 "broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs": int(
@@ -2813,17 +2813,15 @@ def _broker_resume_route_readiness_summary_fields(plan_row: pd.Series, *, prefix
         f"{prefix}_required": _to_bool(plan_row[f"{prefix}_required"]),
         f"{prefix}_provided": _to_bool(plan_row[f"{prefix}_provided"]),
         f"{prefix}_ready": _to_bool(plan_row[f"{prefix}_ready"]),
-        f"{prefix}_strategy": str(plan_row[f"{prefix}_strategy"]),
-        f"{prefix}_market": str(plan_row[f"{prefix}_market"]),
+        f"{prefix}_strategy": _strategy_key(plan_row[f"{prefix}_strategy"]),
+        f"{prefix}_market": _identity_key(plan_row[f"{prefix}_market"]),
         f"{prefix}_route_ready_pairs": int(plan_row[f"{prefix}_route_ready_pairs"]),
         f"{prefix}_gap_pairs": int(plan_row[f"{prefix}_gap_pairs"]),
-        f"{prefix}_recommendation": str(plan_row[f"{prefix}_recommendation"]),
+        f"{prefix}_recommendation": _text(plan_row[f"{prefix}_recommendation"]),
         f"{prefix}_ops_launch_controls_ready": _to_bool(
             plan_row[f"{prefix}_ops_launch_controls_ready"]
         ),
-        f"{prefix}_ops_launch_control_failures": str(
-            plan_row[f"{prefix}_ops_launch_control_failures"]
-        ),
+        f"{prefix}_ops_launch_control_failures": _text(plan_row[f"{prefix}_ops_launch_control_failures"]),
         f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
             plan_row[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]
         ),
@@ -2844,13 +2842,13 @@ def _broker_resume_route_readiness_config(plan_row: pd.Series, *, prefix: str) -
         "required": _to_bool(plan_row[f"{prefix}_required"]),
         "provided": _to_bool(plan_row[f"{prefix}_provided"]),
         "ready": _to_bool(plan_row[f"{prefix}_ready"]),
-        "strategy": str(plan_row[f"{prefix}_strategy"]),
-        "market": str(plan_row[f"{prefix}_market"]),
+        "strategy": _strategy_key(plan_row[f"{prefix}_strategy"]),
+        "market": _identity_key(plan_row[f"{prefix}_market"]),
         "route_ready_pairs": int(plan_row[f"{prefix}_route_ready_pairs"]),
         "gap_pairs": int(plan_row[f"{prefix}_gap_pairs"]),
-        "recommendation": str(plan_row[f"{prefix}_recommendation"]),
+        "recommendation": _text(plan_row[f"{prefix}_recommendation"]),
         "ops_launch_controls_ready": _to_bool(plan_row[f"{prefix}_ops_launch_controls_ready"]),
-        "ops_launch_control_failures": str(plan_row[f"{prefix}_ops_launch_control_failures"]),
+        "ops_launch_control_failures": _text(plan_row[f"{prefix}_ops_launch_control_failures"]),
         "ops_broker_roundtrip_portfolio_safe_runs": int(
             plan_row[f"{prefix}_ops_broker_roundtrip_portfolio_safe_runs"]
         ),
@@ -3050,8 +3048,8 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "required": _to_bool(plan_row["route_readiness_required"]),
             "provided": _to_bool(plan_row["route_readiness_provided"]),
             "ready": _to_bool(plan_row["route_readiness_ready"]),
-            "strategy": str(plan_row["route_readiness_strategy"]),
-            "market": str(plan_row["route_readiness_market"]),
+            "strategy": _strategy_key(plan_row["route_readiness_strategy"]),
+            "market": _identity_key(plan_row["route_readiness_market"]),
             "route_ready_pairs": int(plan_row["route_readiness_route_ready_pairs"]),
             "gap_pairs": int(plan_row["route_readiness_gap_pairs"]),
             "ops_launch_controls_present": _to_bool(plan_row["route_readiness_ops_launch_controls_present"]),
@@ -3079,7 +3077,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
                 plan_row["route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs"]
             ),
-            "recommendation": str(plan_row["route_readiness_recommendation"]),
+            "recommendation": _text(plan_row["route_readiness_recommendation"]),
         },
         "broker_readiness": {
             "required": _broker_readiness_required(thresholds),
@@ -3093,17 +3091,15 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
                 "required": _to_bool(plan_row["broker_route_readiness_required"]),
                 "provided": _to_bool(plan_row["broker_route_readiness_provided"]),
                 "ready": _to_bool(plan_row["broker_route_readiness_ready"]),
-                "strategy": str(plan_row["broker_route_readiness_strategy"]),
-                "market": str(plan_row["broker_route_readiness_market"]),
+                "strategy": _strategy_key(plan_row["broker_route_readiness_strategy"]),
+                "market": _identity_key(plan_row["broker_route_readiness_market"]),
                 "route_ready_pairs": int(plan_row["broker_route_readiness_route_ready_pairs"]),
                 "gap_pairs": int(plan_row["broker_route_readiness_gap_pairs"]),
-                "recommendation": str(plan_row["broker_route_readiness_recommendation"]),
+                "recommendation": _text(plan_row["broker_route_readiness_recommendation"]),
                 "ops_launch_controls_ready": _to_bool(
                     plan_row["broker_route_readiness_ops_launch_controls_ready"]
                 ),
-                "ops_launch_control_failures": str(
-                    plan_row["broker_route_readiness_ops_launch_control_failures"]
-                ),
+                "ops_launch_control_failures": _text(plan_row["broker_route_readiness_ops_launch_control_failures"]),
                 "ops_broker_roundtrip_portfolio_safe_runs": int(
                     plan_row["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]
                 ),
@@ -3314,15 +3310,15 @@ def _broker_resume_route_readiness_plan_fields(
             _number(broker_readiness, f"{source_prefix}_route_ready_pairs", 0.0)
         ),
         f"{output_prefix}_gap_pairs": int(_number(broker_readiness, f"{source_prefix}_gap_pairs", 0.0)),
-        f"{output_prefix}_recommendation": str(
+        f"{output_prefix}_recommendation": _text(
             broker_readiness.get(f"{source_prefix}_recommendation", "")
         ),
         f"{output_prefix}_ops_launch_controls_ready": _to_bool(
             broker_readiness.get(f"{source_prefix}_ops_launch_controls_ready", False)
         ),
-        f"{output_prefix}_ops_launch_control_failures": str(
+        f"{output_prefix}_ops_launch_control_failures": _text(
             broker_readiness.get(f"{source_prefix}_ops_launch_control_failures", "")
-        ).strip(),
+        ),
         f"{output_prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
             _number(broker_readiness, f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs", 0.0)
         ),
@@ -4741,13 +4737,11 @@ def _broker_resume_route_readiness_flat_fields(
         f"{source_prefix}_market": _identity_key(config.get("market", "")),
         f"{source_prefix}_route_ready_pairs": int(_number_from(config, "route_ready_pairs", 0.0)),
         f"{source_prefix}_gap_pairs": int(_number_from(config, "gap_pairs", 0.0)),
-        f"{source_prefix}_recommendation": str(config.get("recommendation", "")),
+        f"{source_prefix}_recommendation": _text(config.get("recommendation", "")),
         f"{source_prefix}_ops_launch_controls_ready": _to_bool(
             config.get("ops_launch_controls_ready", False)
         ),
-        f"{source_prefix}_ops_launch_control_failures": str(
-            config.get("ops_launch_control_failures", "")
-        ).strip(),
+        f"{source_prefix}_ops_launch_control_failures": _text(config.get("ops_launch_control_failures", "")),
         f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
             _number_from(config, "ops_broker_roundtrip_portfolio_safe_runs", 0.0)
         ),
@@ -5208,13 +5202,13 @@ def _launch_pipeline_resume_route_readiness_fields(
             _number(row, f"{source_prefix}_route_ready_pairs", fallback=0.0)
         ),
         f"{output_prefix}_gap_pairs": int(_number(row, f"{source_prefix}_gap_pairs", fallback=0.0)),
-        f"{output_prefix}_recommendation": str(row.get(f"{source_prefix}_recommendation", "")),
+        f"{output_prefix}_recommendation": _text(row.get(f"{source_prefix}_recommendation", "")),
         f"{output_prefix}_ops_launch_controls_ready": _to_bool(
             row.get(f"{source_prefix}_ops_launch_controls_ready", False)
         ),
-        f"{output_prefix}_ops_launch_control_failures": str(
+        f"{output_prefix}_ops_launch_control_failures": _text(
             row.get(f"{source_prefix}_ops_launch_control_failures", "")
-        ).strip(),
+        ),
         f"{output_prefix}_ops_broker_roundtrip_portfolio_safe_runs": int(
             _number(row, f"{source_prefix}_ops_broker_roundtrip_portfolio_safe_runs", fallback=0.0)
         ),
