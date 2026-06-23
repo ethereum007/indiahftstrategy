@@ -4576,7 +4576,33 @@ python -m hft_cli score-provider-market-data-imbalance-readiness `
 
 This runs the standard strategy readiness scorecard on only the full `imbalance`
 profile from the launch-evidence catalog. A ready scorecard has readiness score
-`1.0` and points to `plan-scaleup` for paper/shadow capital and runtime sizing.
+`1.0` and points to `plan-provider-market-data-imbalance-scaleup` for
+paper/shadow capital and runtime sizing.
+
+Create the provider-data imbalance scale-up plan from that ready scorecard and
+an accepted shadow-session comparison:
+
+```powershell
+python -m hft_cli plan-provider-market-data-imbalance-scaleup `
+  --scorecard runs\provider_market_data_imbalance_scorecards\arrow_ws_nse_2026_06_23 `
+  --shadow-comparison runs\shadow_comparisons\provider_imbalance_arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_scaleup\arrow_ws_nse_2026_06_23 `
+  --allowed-adapter arrow_money `
+  --max-scale-multiplier 1.0 `
+  --max-orders-per-session 2 `
+  --max-session-notional 2000000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider wrapper infers the full imbalance `strategy_evidence` and nested
+`imbalance_launch_pipeline` paths from the scorecard and launch-evidence
+artifacts, but it still requires a real `shadow_session_comparison_summary.csv`.
+It writes provider wrapper checks/summary/action/config/runbook artifacts plus a
+nested generic `scaleup` folder with `scaleup_plan.csv`, `scaleup_checks.csv`,
+`scaleup_summary.csv`, and `scaleup_config.json`. A ready wrapper points to
+`build-runtime-telemetry`; missing or rejected shadow evidence stays blocked at
+`compare-shadow-sessions`.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

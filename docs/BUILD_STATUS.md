@@ -1387,6 +1387,12 @@
   coverage/provenance fields into its plan, summary, config, and broker-readiness
   sidecar hydration, and blocks scale-up when that broker/vendor proof is
   incomplete.
+- Provider-data imbalance now has a dedicated scale-up wrapper after the
+  readiness scorecard. `plan-provider-market-data-imbalance-scaleup` infers the
+  launch-evidence, full imbalance `strategy_evidence`, and nested launch
+  pipeline paths from the provider scorecard, requires a real shadow comparison,
+  writes provider wrapper action/config/runbook artifacts plus nested generic
+  `scaleup` outputs, and points ready runs to `build-runtime-telemetry`.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so

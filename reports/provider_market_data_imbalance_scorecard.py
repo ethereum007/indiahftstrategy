@@ -218,7 +218,6 @@ def _summary(
     ready = failed == 0
     scorecard_summary = scorecard.summary if scorecard is not None else pd.DataFrame()
     scorecard_items = scorecard.scorecard if scorecard is not None else pd.DataFrame()
-    scorecard_config = scorecard.config if scorecard is not None else {}
     return pd.DataFrame(
         [
             {
@@ -246,10 +245,9 @@ def _summary(
                 "recommendation": "plan_provider_imbalance_shadow_scaleup"
                 if ready
                 else "repair_provider_imbalance_scorecard",
-                "next_gate": _text(scorecard_config.get("next_gate"), "plan-scaleup") if ready else _blocked_next_gate(checks),
+                "next_gate": "plan-provider-market-data-imbalance-scaleup" if ready else _blocked_next_gate(checks),
                 "next_gate_help_command": _text(
-                    scorecard_config.get("next_gate_help_command"),
-                    "python -m hft_cli plan-scaleup --help",
+                    "python -m hft_cli plan-provider-market-data-imbalance-scaleup --help",
                 )
                 if ready
                 else _blocked_help_command(checks),
@@ -363,6 +361,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli review-provider-market-data-imbalance-launch-evidence --help"
     if next_gate == "score-strategy-readiness":
         return "python -m hft_cli score-strategy-readiness --profile imbalance --help"
+    if next_gate == "plan-provider-market-data-imbalance-scaleup":
+        return "python -m hft_cli plan-provider-market-data-imbalance-scaleup --help"
     if next_gate == "plan-scaleup":
         return "python -m hft_cli plan-scaleup --help"
     return "python -m hft_cli score-provider-market-data-imbalance-readiness --help"

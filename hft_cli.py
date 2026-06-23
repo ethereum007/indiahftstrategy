@@ -146,6 +146,10 @@ from reports.provider_market_data_imbalance_scorecard import (
     ProviderMarketDataImbalanceScorecardConfig,
     write_provider_market_data_imbalance_scorecard,
 )
+from reports.provider_market_data_imbalance_scaleup import (
+    ProviderMarketDataImbalanceScaleupConfig,
+    write_provider_market_data_imbalance_scaleup_plan,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -218,6 +222,92 @@ def _add_generic_cost_args(parser: argparse.ArgumentParser, *, default: float | 
     parser.add_argument("--generic-per-unit-fee", type=float, default=default)
     parser.add_argument("--generic-per-contract-fee", type=float, default=default)
     parser.add_argument("--generic-per-order-fee", type=float, default=default)
+
+
+def _add_scaleup_threshold_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--target-mode", default="shadow", choices=["paper", "shadow", "live_dryrun"])
+    parser.add_argument("--max-scale-multiplier", type=float, default=1.0)
+    parser.add_argument("--min-shadow-sessions", type=int, default=1)
+    parser.add_argument("--min-shadow-acceptance-rate", type=float, default=1.0)
+    parser.add_argument("--min-median-order-fill-rate", type=float, default=0.0)
+    parser.add_argument("--min-worst-order-fill-rate", type=float, default=None)
+    parser.add_argument("--max-worst-adverse-slippage", type=float, default=None)
+    parser.add_argument("--max-total-failed-component-checks", type=int, default=0)
+    parser.add_argument("--max-total-unmatched-fills", type=int, default=0)
+    parser.add_argument("--max-total-mismatched-orders", type=int, default=0)
+    parser.add_argument("--max-total-overfilled-orders", type=int, default=0)
+    parser.add_argument("--max-telemetry-age-ns", type=float, default=None)
+    parser.add_argument("--max-lifecycle-orders", type=int, default=None)
+    parser.add_argument("--max-replace-orders", type=int, default=None)
+    parser.add_argument("--max-open-order-count", type=int, default=None)
+    parser.add_argument("--max-open-order-qty", type=float, default=None)
+    parser.add_argument("--max-open-order-notional", type=float, default=None)
+    parser.add_argument("--max-open-order-age-ns", type=float, default=None)
+    parser.add_argument("--max-gross-position-qty", type=float, default=None)
+    parser.add_argument("--max-abs-net-position-qty", type=float, default=None)
+    parser.add_argument("--max-orders-per-session", type=int, default=None)
+    parser.add_argument("--max-session-notional", type=float, default=None)
+    parser.add_argument("--max-gross-notional", type=float, default=None)
+    parser.add_argument("--max-abs-net-delta", type=float, default=None)
+    parser.add_argument("--max-abs-net-vega", type=float, default=None)
+    parser.add_argument("--stop-loss", type=float, default=None)
+    parser.add_argument("--allowed-adapter", action="append", dest="allowed_adapters")
+    parser.add_argument("--require-proof-refresh", action="store_true")
+    parser.add_argument("--require-instrument-metadata", action="store_true")
+    parser.add_argument("--require-data-readiness", action="store_true")
+    parser.add_argument("--require-data-readiness-comparison", action="store_true")
+    parser.add_argument("--require-strategy-portfolio", action="store_true")
+    parser.add_argument("--require-route-readiness", action="store_true")
+    parser.add_argument("--require-broker-readiness", action="store_true")
+    parser.add_argument("--require-resume-gate", action="store_true")
+    parser.add_argument("--require-dispatch-roundtrip", action="store_true")
+    parser.add_argument("--min-instrument-parse-coverage", type=float, default=1.0)
+    parser.add_argument("--expected-strategy", default=None)
+    parser.add_argument("--expected-market", default=None)
+
+
+def _scaleup_thresholds_from_args(args: argparse.Namespace) -> ScaleUpThresholds:
+    return ScaleUpThresholds(
+        target_mode=args.target_mode,
+        max_scale_multiplier=args.max_scale_multiplier,
+        min_shadow_sessions=args.min_shadow_sessions,
+        min_shadow_acceptance_rate=args.min_shadow_acceptance_rate,
+        min_median_order_fill_rate=args.min_median_order_fill_rate,
+        min_worst_order_fill_rate=args.min_worst_order_fill_rate,
+        max_worst_adverse_slippage=args.max_worst_adverse_slippage,
+        max_total_failed_component_checks=args.max_total_failed_component_checks,
+        max_total_unmatched_fills=args.max_total_unmatched_fills,
+        max_total_mismatched_orders=args.max_total_mismatched_orders,
+        max_total_overfilled_orders=args.max_total_overfilled_orders,
+        max_telemetry_age_ns=args.max_telemetry_age_ns,
+        max_lifecycle_orders=args.max_lifecycle_orders,
+        max_replace_orders=args.max_replace_orders,
+        max_open_order_count=args.max_open_order_count,
+        max_open_order_qty=args.max_open_order_qty,
+        max_open_order_notional=args.max_open_order_notional,
+        max_open_order_age_ns=args.max_open_order_age_ns,
+        max_gross_position_qty=args.max_gross_position_qty,
+        max_abs_net_position_qty=args.max_abs_net_position_qty,
+        max_orders_per_session=args.max_orders_per_session,
+        max_session_notional=args.max_session_notional,
+        max_gross_notional=args.max_gross_notional,
+        max_abs_net_delta=args.max_abs_net_delta,
+        max_abs_net_vega=args.max_abs_net_vega,
+        stop_loss=args.stop_loss,
+        allowed_adapters=tuple(args.allowed_adapters or ()),
+        require_proof_refresh=args.require_proof_refresh,
+        require_instrument_metadata=args.require_instrument_metadata,
+        require_data_readiness=args.require_data_readiness,
+        require_data_readiness_comparison=args.require_data_readiness_comparison,
+        require_strategy_portfolio=args.require_strategy_portfolio,
+        require_route_readiness=args.require_route_readiness,
+        require_broker_readiness=args.require_broker_readiness,
+        require_resume_gate=args.require_resume_gate,
+        require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+        min_instrument_parse_coverage=args.min_instrument_parse_coverage,
+        expected_strategy=args.expected_strategy,
+        expected_market=args.expected_market,
+    )
 
 
 def _catalog_exit_code(
@@ -1371,6 +1461,28 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_scaleup = sub.add_parser(
+        "plan-provider-market-data-imbalance-scaleup",
+        help="Infer provider imbalance evidence/launch paths and create a shadow scale-up plan.",
+    )
+    provider_market_data_imbalance_scaleup.add_argument("--scorecard", required=True)
+    provider_market_data_imbalance_scaleup.add_argument("--shadow-comparison", required=True)
+    provider_market_data_imbalance_scaleup.add_argument("--out", required=True)
+    provider_market_data_imbalance_scaleup.add_argument("--order-exposure", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--proof-refresh", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--instrument-metadata", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--data-readiness", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--data-readiness-comparison", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--strategy-portfolio", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--route-readiness", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--broker-readiness", default=None)
+    provider_market_data_imbalance_scaleup.add_argument("--no-require-scorecard-ready", action="store_true")
+    provider_market_data_imbalance_scaleup.add_argument("--no-require-scaleup-ready", action="store_true")
+    _add_scaleup_threshold_args(provider_market_data_imbalance_scaleup)
+    provider_market_data_imbalance_scaleup.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_scaleup.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_scaleup.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4072,6 +4184,38 @@ def main(argv: list[str] | None = None) -> int:
                 expected_market=args.market,
                 require_file_inputs=args.require_file_inputs,
             ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "plan-provider-market-data-imbalance-scaleup":
+        result = write_provider_market_data_imbalance_scaleup_plan(
+            args.scorecard,
+            args.shadow_comparison,
+            args.out,
+            order_exposure_dir=args.order_exposure,
+            proof_refresh_dir=args.proof_refresh,
+            instrument_metadata_dir=args.instrument_metadata,
+            data_readiness_dir=args.data_readiness,
+            data_readiness_comparison_dir=args.data_readiness_comparison,
+            strategy_portfolio_dir=args.strategy_portfolio,
+            route_readiness_dir=args.route_readiness,
+            broker_readiness_dir=args.broker_readiness,
+            config=ProviderMarketDataImbalanceScaleupConfig(
+                require_scorecard_ready=not args.no_require_scorecard_ready,
+                require_scaleup_ready=not args.no_require_scaleup_ready,
+            ),
+            thresholds=_scaleup_thresholds_from_args(args),
         )
         print(result.summary.to_string(index=False))
         action_queue = result.action_queue
