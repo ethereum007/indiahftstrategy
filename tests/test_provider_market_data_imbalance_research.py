@@ -2416,6 +2416,75 @@ def test_provider_market_data_imbalance_broker_dispatch_carries_route_dispatch_r
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
 
 
+def test_provider_market_data_imbalance_broker_dispatch_preserves_upstream_roundtrip(tmp_path):
+    provider_route_enable = _write_ready_provider_imbalance_route_enable(tmp_path)
+    provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+    nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
+    upstream_provider_dir = tmp_path / "upstream_provider_imbalance_broker_dispatch_roundtrip"
+    upstream_nested_dir = upstream_provider_dir / "broker_dispatch_roundtrip"
+    nested_roundtrip_dir.mkdir(parents=True)
+    upstream_nested_dir.mkdir(parents=True)
+    (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
+        "true,true,true,0\n",
+        encoding="utf-8",
+    )
+    (upstream_nested_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready\ntrue\n",
+        encoding="utf-8",
+    )
+
+    route_summary_path = provider_route_enable.output_dir / "provider_market_data_imbalance_route_enable_summary.csv"
+    route_summary = pd.read_csv(route_summary_path)
+    route_summary["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
+    route_summary["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    route_summary["dispatch_roundtrip_provided"] = True
+    route_summary["dispatch_roundtrip_ready"] = True
+    route_summary["dispatch_roundtrip_failed_checks"] = 0
+    route_summary["upstream_provider_dispatch_roundtrip_dir"] = str(upstream_provider_dir)
+    route_summary["upstream_dispatch_roundtrip_dir"] = str(upstream_nested_dir)
+    route_summary["upstream_dispatch_roundtrip_provided"] = True
+    route_summary["upstream_dispatch_roundtrip_ready"] = True
+    route_summary["upstream_dispatch_roundtrip_failed_checks"] = 0
+    route_summary.to_csv(route_summary_path, index=False)
+
+    route_config_path = provider_route_enable.output_dir / "provider_market_data_imbalance_route_enable_config.json"
+    route_config = json.loads(route_config_path.read_text(encoding="utf-8"))
+    route_inputs = route_config.setdefault("route_enable_inputs", {})
+    route_inputs["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
+    route_inputs["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    route_inputs["upstream_provider_dispatch_roundtrip_dir"] = str(upstream_provider_dir)
+    route_inputs["upstream_dispatch_roundtrip_dir"] = str(upstream_nested_dir)
+    route_config_path.write_text(
+        json.dumps(route_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_with_upstream_roundtrip"
+
+    report = write_provider_market_data_imbalance_broker_dispatch(
+        provider_route_enable.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert report.ready
+    assert Path(summary.loc[0, "upstream_provider_dispatch_roundtrip_dir"]) == upstream_provider_dir
+    assert Path(summary.loc[0, "upstream_dispatch_roundtrip_dir"]) == upstream_nested_dir
+    assert bool(summary.loc[0, "upstream_dispatch_roundtrip_provided"])
+    assert bool(summary.loc[0, "upstream_dispatch_roundtrip_ready"])
+    assert int(summary.loc[0, "upstream_dispatch_roundtrip_failed_checks"]) == 0
+    assert config["broker_dispatch_inputs"]["upstream_provider_dispatch_roundtrip_dir"] == str(upstream_provider_dir)
+    assert config["broker_dispatch_inputs"]["upstream_dispatch_roundtrip_dir"] == str(upstream_nested_dir)
+    assert manifest["inputs"]["upstream_provider_dispatch_roundtrip"]["path"] == str(upstream_provider_dir)
+    assert manifest["inputs"]["upstream_dispatch_roundtrip"]["path"] == str(upstream_nested_dir)
+
+
 def test_provider_market_data_imbalance_broker_dispatch_blocks_unready_route_enable(tmp_path):
     route_enable_dir = tmp_path / "provider_imbalance_route_enable"
     route_enable_dir.mkdir(parents=True, exist_ok=True)

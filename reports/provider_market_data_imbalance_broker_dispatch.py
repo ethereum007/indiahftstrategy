@@ -101,6 +101,9 @@ def write_provider_market_data_imbalance_broker_dispatch(
         provider_summary,
         provider_config,
     )
+    inferred_upstream_provider_dispatch_roundtrip_dir, inferred_upstream_dispatch_roundtrip_dir = (
+        _inferred_upstream_dispatch_roundtrip_dirs(provider_summary, provider_config)
+    )
 
     prechecks = _prechecks(
         provider_root,
@@ -138,6 +141,8 @@ def write_provider_market_data_imbalance_broker_dispatch(
         resolved_upload_orders_path,
         inferred_provider_dispatch_roundtrip_dir,
         inferred_dispatch_roundtrip_dir,
+        inferred_upstream_provider_dispatch_roundtrip_dir,
+        inferred_upstream_dispatch_roundtrip_dir,
         broker_dispatch,
         checks,
         out,
@@ -161,6 +166,8 @@ def write_provider_market_data_imbalance_broker_dispatch(
             "upload_orders_path": resolved_upload_orders_path,
             "provider_dispatch_roundtrip_dir": inferred_provider_dispatch_roundtrip_dir,
             "dispatch_roundtrip_dir": inferred_dispatch_roundtrip_dir,
+            "upstream_provider_dispatch_roundtrip_dir": inferred_upstream_provider_dispatch_roundtrip_dir,
+            "upstream_dispatch_roundtrip_dir": inferred_upstream_dispatch_roundtrip_dir,
         },
     )
 
@@ -183,6 +190,8 @@ def write_provider_market_data_imbalance_broker_dispatch(
         "upload_orders": resolved_upload_orders_path,
         "provider_dispatch_roundtrip": inferred_provider_dispatch_roundtrip_dir,
         "dispatch_roundtrip": inferred_dispatch_roundtrip_dir,
+        "upstream_provider_dispatch_roundtrip": inferred_upstream_provider_dispatch_roundtrip_dir,
+        "upstream_dispatch_roundtrip": inferred_upstream_dispatch_roundtrip_dir,
     }.items():
         if value is not None:
             inputs[name] = Path(value)
@@ -419,6 +428,8 @@ def _summary(
     upload_orders_path: Path | None,
     provider_dispatch_roundtrip_dir: Path | None,
     dispatch_roundtrip_dir: Path | None,
+    upstream_provider_dispatch_roundtrip_dir: Path | None,
+    upstream_dispatch_roundtrip_dir: Path | None,
     broker_dispatch: BrokerDispatchReport | None,
     checks: pd.DataFrame,
     output_dir: Path,
@@ -441,6 +452,17 @@ def _summary(
                 "upload_orders_path": _path_text(upload_orders_path),
                 "provider_dispatch_roundtrip_dir": _path_text(provider_dispatch_roundtrip_dir),
                 "dispatch_roundtrip_dir": _path_text(dispatch_roundtrip_dir),
+                "upstream_provider_dispatch_roundtrip_dir": _path_text(upstream_provider_dispatch_roundtrip_dir),
+                "upstream_dispatch_roundtrip_dir": _path_text(upstream_dispatch_roundtrip_dir),
+                "upstream_dispatch_roundtrip_provided": bool(upstream_dispatch_roundtrip_dir)
+                or _first_bool(provider_summary, "upstream_dispatch_roundtrip_provided"),
+                "upstream_dispatch_roundtrip_ready": _first_bool(
+                    provider_summary,
+                    "upstream_dispatch_roundtrip_ready",
+                ),
+                "upstream_dispatch_roundtrip_failed_checks": int(
+                    _first_number(provider_summary, "upstream_dispatch_roundtrip_failed_checks")
+                ),
                 "dispatch_roundtrip_provided": _first_bool(provider_summary, "dispatch_roundtrip_provided"),
                 "dispatch_roundtrip_ready": _first_bool(provider_summary, "dispatch_roundtrip_ready"),
                 "dispatch_roundtrip_failed_checks": int(
@@ -635,6 +657,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Broker dispatch dir: {summary['broker_dispatch_dir']}",
         f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
         f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
+        f"- Upstream dispatch round-trip ready: {'yes' if bool(summary['upstream_dispatch_roundtrip_ready']) else 'no'}",
+        f"- Upstream dispatch round-trip dir: {summary['upstream_dispatch_roundtrip_dir']}",
         f"- Primary next gate: `{summary['next_gate']}`",
         f"- Primary next gate help: `{summary['next_gate_help_command']}`",
         "",
@@ -801,6 +825,22 @@ def _inferred_dispatch_roundtrip_dirs(
     dispatch_roundtrip_dir = _first_existing_path(
         _path_from_text(_first_text(provider_summary, "dispatch_roundtrip_dir")),
         _path_from_text(route_enable_inputs.get("dispatch_roundtrip_dir")),
+    )
+    return provider_dispatch_roundtrip_dir, dispatch_roundtrip_dir
+
+
+def _inferred_upstream_dispatch_roundtrip_dirs(
+    provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+) -> tuple[Path | None, Path | None]:
+    route_enable_inputs = provider_config.get("route_enable_inputs", {}) or {}
+    provider_dispatch_roundtrip_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "upstream_provider_dispatch_roundtrip_dir")),
+        _path_from_text(route_enable_inputs.get("upstream_provider_dispatch_roundtrip_dir")),
+    )
+    dispatch_roundtrip_dir = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "upstream_dispatch_roundtrip_dir")),
+        _path_from_text(route_enable_inputs.get("upstream_dispatch_roundtrip_dir")),
     )
     return provider_dispatch_roundtrip_dir, dispatch_roundtrip_dir
 

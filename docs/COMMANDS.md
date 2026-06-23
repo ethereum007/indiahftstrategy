@@ -4776,13 +4776,13 @@ python -m hft_cli plan-provider-market-data-imbalance-broker-dispatch `
 The provider broker-dispatch wrapper reads the provider route-enable
 summary/config, infers the nested generic `route_enable` plus broker upload-pack
 inputs, preserves any route-enable-carried provider broker-dispatch round-trip
-wrapper and nested generic `broker_dispatch_roundtrip` paths, runs
-`plan-broker-dispatch` under a nested `broker_dispatch` folder, and writes
-provider checks/summary/action/config/runbook artifacts. Fully clean wrappers
-emit a ready `prepare_provider_imbalance_broker_dispatch_send` action and point
-to `prepare-broker-dispatch-send`; blocked wrappers route back to the provider
-route-enable repair gate, `pack-broker-upload`, or the generic dispatch planner
-depending on the first failing proof.
+wrapper, nested generic `broker_dispatch_roundtrip` paths, and upstream proof
+lineage, runs `plan-broker-dispatch` under a nested `broker_dispatch` folder,
+and writes provider checks/summary/action/config/runbook artifacts. Fully clean
+wrappers emit a ready `prepare_provider_imbalance_broker_dispatch_send` action
+and point to `prepare-broker-dispatch-send`; blocked wrappers route back to the
+provider route-enable repair gate, `pack-broker-upload`, or the generic dispatch
+planner depending on the first failing proof.
 
 Run the provider-specific broker-dispatch send wrapper:
 
