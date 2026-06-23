@@ -4626,7 +4626,26 @@ plus a nested `runtime_telemetry` folder with `runtime_telemetry.csv`,
 `runtime_telemetry_summary.csv`. Supply live PnL, open-order, and position CSVs
 when they are available from Arrow.money/iRage; omit them for a dry guard-input
 snapshot based on scale-up and launch-pipeline metadata. A ready wrapper points
-to `monitor-scaleup-guard`.
+to `monitor-provider-market-data-imbalance-runtime-guard`.
+
+Run the provider-specific runtime guard wrapper:
+
+```powershell
+python -m hft_cli monitor-provider-market-data-imbalance-runtime-guard `
+  --runtime-telemetry runs\provider_market_data_imbalance_runtime_telemetry\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_runtime_guard\arrow_ws_nse_2026_06_23 `
+  --as-of-ts-ns 1782198900000000000 `
+  --max-telemetry-age-ns 1000000000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach `
+  --fail-on-halt
+```
+
+The wrapper reads the provider telemetry summary, resolves the nested
+`scaleup_config.json` and `runtime_telemetry.csv`, writes provider
+checks/summary/action/config/runbook artifacts plus nested generic
+`runtime_guard` outputs, and converts guard halts into a ready
+`plan-halt-response` action. A clean guard points to `monitor-runtime-session`.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

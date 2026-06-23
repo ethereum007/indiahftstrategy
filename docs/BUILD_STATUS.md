@@ -1399,7 +1399,15 @@
   infers nested `scaleup_config.json` plus broker export/upload inputs from the
   provider launch pipeline, accepts optional live PnL/open-order/position CSVs,
   writes provider wrapper action/config/runbook artifacts plus nested generic
-  `runtime_telemetry` outputs, and points ready runs to `monitor-scaleup-guard`.
+  `runtime_telemetry` outputs, and points ready runs to
+  `monitor-provider-market-data-imbalance-runtime-guard`.
+- Provider-data imbalance now has a provider runtime guard wrapper after runtime
+  telemetry. `monitor-provider-market-data-imbalance-runtime-guard` resolves the
+  nested `scaleup_config.json` and `runtime_telemetry.csv`, writes provider
+  checks/summary/action/config/runbook artifacts plus nested generic
+  `runtime_guard` outputs, converts guard halts into ready
+  `plan-halt-response` actions, and routes clean guards to
+  `monitor-runtime-session`.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so
@@ -1417,7 +1425,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 980 tests.
+Current passing suite: 1101 tests.
 
 ## Next Build Targets
 

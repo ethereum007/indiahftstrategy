@@ -36,6 +36,10 @@ from reports.provider_market_data_imbalance_runtime_telemetry import (
     ProviderMarketDataImbalanceRuntimeTelemetryConfig,
     write_provider_market_data_imbalance_runtime_telemetry_snapshot,
 )
+from reports.provider_market_data_imbalance_runtime_guard import (
+    ProviderMarketDataImbalanceRuntimeGuardConfig,
+    write_provider_market_data_imbalance_runtime_guard,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -291,6 +295,27 @@ def _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence, *, ac
         ]
     ).to_csv(out_dir / "shadow_session_comparison_summary.csv", index=False)
     return out_dir
+
+
+def _write_ready_provider_imbalance_runtime_telemetry(tmp_path, *, snapshot_ts_ns=1_000_000):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    return write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=snapshot_ts_ns,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
 
 
 def test_provider_market_data_imbalance_research_runs_pipeline_from_live_evidence(tmp_path):
@@ -970,9 +995,9 @@ def test_provider_market_data_imbalance_runtime_telemetry_builds_from_ready_scal
     assert bool(summary.loc[0, "runtime_telemetry_ready"])
     assert summary.loc[0, "strategy"] == "imbalance"
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
-    assert summary.loc[0, "next_gate"] == "monitor-scaleup-guard"
+    assert summary.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-guard"
     assert action_queue.loc[0, "queue_status"] == "ready"
-    assert action_queue.loc[0, "next_gate"] == "monitor-scaleup-guard"
+    assert action_queue.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-guard"
     assert bool(runtime_summary.loc[0, "ready"])
     assert runtime_summary.loc[0, "strategy"] == "imbalance"
     assert bool(sources.loc[sources["source"] == "export_summary", "provided"].iloc[0])
@@ -1044,4 +1069,116 @@ def test_cli_provider_market_data_imbalance_runtime_telemetry_accepts_ready_scal
     summary = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_telemetry_summary.csv")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
-    assert summary.loc[0, "next_gate"] == "monitor-scaleup-guard"
+    assert summary.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-guard"
+
+
+def test_provider_market_data_imbalance_runtime_guard_monitors_ready_telemetry(tmp_path):
+    runtime_telemetry = _write_ready_provider_imbalance_runtime_telemetry(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_runtime_guard"
+
+    report = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        out_dir,
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_guard_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_guard_action_queue.csv")
+    guard_summary = pd.read_csv(out_dir / "runtime_guard" / "runtime_guard_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert not report.halted
+    assert bool(summary.loc[0, "provider_runtime_telemetry_ready"])
+    assert bool(summary.loc[0, "runtime_guard_evaluated"])
+    assert bool(summary.loc[0, "runtime_guard_continue"])
+    assert summary.loc[0, "guard_action"] == "continue"
+    assert summary.loc[0, "next_gate"] == "monitor-runtime-session"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "monitor-runtime-session"
+    assert guard_summary.loc[0, "guard_action"] == "continue"
+    assert manifest["run_type"] == "provider_market_data_imbalance_runtime_guard"
+    assert "runtime_guard" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_runtime_guard_blocks_unready_telemetry(tmp_path):
+    telemetry_dir = tmp_path / "provider_imbalance_runtime_telemetry"
+    telemetry_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "runtime_telemetry_ready": False,
+                "scaleup_dir": "",
+                "runtime_telemetry_dir": "",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(telemetry_dir / "provider_market_data_imbalance_runtime_telemetry_summary.csv", index=False)
+
+    report = write_provider_market_data_imbalance_runtime_guard(
+        telemetry_dir,
+        tmp_path / "provider_imbalance_runtime_guard",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_runtime_telemetry_ready" in failed
+    assert "nested_scaleup_config_exists" in failed
+    assert "runtime_telemetry_csv_exists" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "build-provider-market-data-imbalance-runtime-telemetry"
+    assert not (report.output_dir / "runtime_guard" / "runtime_guard_summary.csv").exists()
+
+
+def test_provider_market_data_imbalance_runtime_guard_surfaces_guard_halts(tmp_path):
+    runtime_telemetry = _write_ready_provider_imbalance_runtime_telemetry(tmp_path, snapshot_ts_ns=1_000_000)
+    out_dir = tmp_path / "provider_imbalance_runtime_guard"
+
+    report = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        out_dir,
+        as_of_ts_ns=1_000_002,
+        max_telemetry_age_ns=1,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_guard_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_guard_action_queue.csv")
+    guard_checks = pd.read_csv(out_dir / "runtime_guard" / "runtime_guard_checks.csv")
+    failed_guard_checks = set(guard_checks.loc[~guard_checks["passed"].astype(bool), "check"])
+    assert report.ready
+    assert report.halted
+    assert summary.loc[0, "guard_action"] == "halt"
+    assert summary.loc[0, "next_gate"] == "plan-halt-response"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "action"] == "execute_provider_imbalance_halt_response"
+    assert "runtime_telemetry_age_ns" in failed_guard_checks
+
+
+def test_cli_provider_market_data_imbalance_runtime_guard_accepts_ready_telemetry(tmp_path):
+    runtime_telemetry = _write_ready_provider_imbalance_runtime_telemetry(tmp_path)
+    out_dir = tmp_path / "cli_provider_imbalance_runtime_guard"
+
+    code = main(
+        [
+            "monitor-provider-market-data-imbalance-runtime-guard",
+            "--runtime-telemetry",
+            str(runtime_telemetry.output_dir),
+            "--out",
+            str(out_dir),
+            "--as-of-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+            "--fail-on-halt",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_guard_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "guard_action"] == "continue"
+    assert summary.loc[0, "next_gate"] == "monitor-runtime-session"

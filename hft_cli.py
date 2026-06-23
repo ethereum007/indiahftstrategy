@@ -154,6 +154,10 @@ from reports.provider_market_data_imbalance_runtime_telemetry import (
     ProviderMarketDataImbalanceRuntimeTelemetryConfig,
     write_provider_market_data_imbalance_runtime_telemetry_snapshot,
 )
+from reports.provider_market_data_imbalance_runtime_guard import (
+    ProviderMarketDataImbalanceRuntimeGuardConfig,
+    write_provider_market_data_imbalance_runtime_guard,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1508,6 +1512,24 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_runtime_telemetry.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_runtime_telemetry.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_runtime_telemetry.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_runtime_guard = sub.add_parser(
+        "monitor-provider-market-data-imbalance-runtime-guard",
+        help="Run the runtime guard from provider imbalance telemetry and emit provider actions.",
+    )
+    provider_market_data_imbalance_runtime_guard.add_argument("--runtime-telemetry", required=True)
+    provider_market_data_imbalance_runtime_guard.add_argument("--out", required=True)
+    provider_market_data_imbalance_runtime_guard.add_argument("--as-of-ts-ns", type=float, default=None)
+    provider_market_data_imbalance_runtime_guard.add_argument("--max-telemetry-age-ns", type=float, default=None)
+    provider_market_data_imbalance_runtime_guard.add_argument(
+        "--no-require-provider-runtime-telemetry-ready",
+        action="store_true",
+    )
+    provider_market_data_imbalance_runtime_guard.add_argument("--require-runtime-guard-continue", action="store_true")
+    provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-halt", action="store_true")
+    provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4279,6 +4301,32 @@ def main(argv: list[str] | None = None) -> int:
         blocked_actions = 0
         if action_queue is not None and not action_queue.empty:
             blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "monitor-provider-market-data-imbalance-runtime-guard":
+        result = write_provider_market_data_imbalance_runtime_guard(
+            args.runtime_telemetry,
+            args.out,
+            as_of_ts_ns=args.as_of_ts_ns,
+            max_telemetry_age_ns=args.max_telemetry_age_ns,
+            config=ProviderMarketDataImbalanceRuntimeGuardConfig(
+                require_provider_runtime_telemetry_ready=not args.no_require_provider_runtime_telemetry_ready,
+                require_runtime_guard_continue=args.require_runtime_guard_continue,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_halt and result.halted:
+            return 2
         if args.fail_on_breach and not result.ready:
             return 2
         if args.fail_on_blocked_actions and blocked_actions > 0:

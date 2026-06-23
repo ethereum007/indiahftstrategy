@@ -352,8 +352,8 @@ def _summary(
                 "recommendation": "monitor_provider_imbalance_runtime_guard"
                 if ready
                 else "repair_provider_imbalance_runtime_telemetry",
-                "next_gate": "monitor-scaleup-guard" if ready else _blocked_next_gate(checks),
-                "next_gate_help_command": _help_command_for_gate("monitor-scaleup-guard")
+                "next_gate": "monitor-provider-market-data-imbalance-runtime-guard" if ready else _blocked_next_gate(checks),
+                "next_gate_help_command": _help_command_for_gate("monitor-provider-market-data-imbalance-runtime-guard")
                 if ready
                 else _blocked_help_command(checks),
                 "primary_action_status": "ready" if ready else "blocked",
@@ -375,8 +375,10 @@ def _action_queue(
                     "queue_status": "ready",
                     "action": "monitor_provider_imbalance_runtime_guard",
                     "reason": "provider imbalance runtime telemetry is ready for scale-up guard monitoring",
-                    "next_gate": "monitor-scaleup-guard",
-                    "next_gate_help_command": _help_command_for_gate("monitor-scaleup-guard"),
+                    "next_gate": "monitor-provider-market-data-imbalance-runtime-guard",
+                    "next_gate_help_command": _help_command_for_gate(
+                        "monitor-provider-market-data-imbalance-runtime-guard"
+                    ),
                 }
             ]
         )
@@ -498,8 +500,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli plan-provider-market-data-imbalance-scaleup --help"
     if next_gate == "build-runtime-telemetry":
         return "python -m hft_cli build-runtime-telemetry --help"
-    if next_gate == "monitor-scaleup-guard":
-        return "python -m hft_cli monitor-scaleup-guard --help"
+    if next_gate == "monitor-provider-market-data-imbalance-runtime-guard":
+        return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-guard --help"
     return "python -m hft_cli build-provider-market-data-imbalance-runtime-telemetry --help"
 
 
