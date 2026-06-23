@@ -4732,13 +4732,14 @@ The provider cutover wrapper reads the provider broker-readiness summary/config,
 infers nested generic scale-up, broker-readiness, runtime-session evidence, and
 any provider broker-dispatch round-trip proof carried by broker-readiness. It
 runs `review-cutover-gate` under a nested `cutover` folder, writes provider
-checks/summary/action/config/runbook artifacts, and preserves both the provider
-round-trip wrapper root and nested generic `broker_dispatch_roundtrip` folder in
-the cutover summary/config/manifest. It keeps the generic cutover safety model
-intact: if route-readiness or broker route proof is missing, the wrapper blocks
-with `review-route-readiness`; once cutover is fully clean, it points to
-`review-route-enable`. Use `--allow-missing-route-readiness` only for diagnostic
-dry-runs that are not allowed to proceed into route-enable.
+checks/summary/action/config/runbook artifacts, and preserves the provider
+round-trip wrapper root, nested generic `broker_dispatch_roundtrip` folder, and
+any upstream proof lineage in the cutover summary/config/manifest. It keeps the
+generic cutover safety model intact: if route-readiness or broker route proof is
+missing, the wrapper blocks with `review-route-readiness`; once cutover is fully
+clean, it points to `review-route-enable`. Use
+`--allow-missing-route-readiness` only for diagnostic dry-runs that are not
+allowed to proceed into route-enable.
 
 Run the provider-specific route-enable wrapper:
 
