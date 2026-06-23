@@ -1492,9 +1492,9 @@
   provider broker-dispatch planning.
 - Provider-data imbalance broker-dispatch now preserves the route-enable-carried
   provider broker-dispatch round-trip wrapper and nested generic
-  `broker_dispatch_roundtrip` paths plus upstream proof lineage in
-  broker-dispatch summary/config/manifest artifacts before the non-submitting
-  send packet is prepared.
+  `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
+  proof, and upstream proof lineage in broker-dispatch summary/config/manifest
+  artifacts before the non-submitting send packet is prepared.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths plus upstream proof lineage
   in send summary/config/runbook artifacts and manifests while still keeping
