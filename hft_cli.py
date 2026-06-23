@@ -182,6 +182,10 @@ from reports.provider_market_data_imbalance_broker_dispatch import (
     ProviderMarketDataImbalanceBrokerDispatchConfig,
     write_provider_market_data_imbalance_broker_dispatch,
 )
+from reports.provider_market_data_imbalance_broker_dispatch_send import (
+    ProviderMarketDataImbalanceBrokerDispatchSendConfig,
+    write_provider_market_data_imbalance_broker_dispatch_send,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1762,6 +1766,40 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_broker_dispatch.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_broker_dispatch.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_broker_dispatch.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_broker_dispatch_send = sub.add_parser(
+        "prepare-provider-market-data-imbalance-broker-dispatch-send",
+        help="Prepare a provider imbalance non-submitting broker dispatch send packet.",
+    )
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--provider-broker-dispatch", required=True)
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--out", required=True)
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--broker-dispatch", default=None)
+    provider_market_data_imbalance_broker_dispatch_send.add_argument(
+        "--target-mode",
+        default="",
+        choices=["", "paper", "shadow", "live_dryrun"],
+    )
+    provider_market_data_imbalance_broker_dispatch_send.add_argument(
+        "--allow-unready-provider-broker-dispatch",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_send.add_argument(
+        "--allow-unready-broker-dispatch-send",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--allow-unready-dispatch", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--allow-unarmed-dispatch", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--allow-non-dry-run", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--require-route-readiness", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--require-dispatch-roundtrip", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument(
+        "--no-use-provider-broker-dispatch-inputs",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--max-requests", type=int, default=None)
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_broker_dispatch_send.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4779,6 +4817,37 @@ def main(argv: list[str] | None = None) -> int:
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 min_orders=args.min_orders,
                 max_orders=args.max_orders,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "prepare-provider-market-data-imbalance-broker-dispatch-send":
+        result = write_provider_market_data_imbalance_broker_dispatch_send(
+            args.provider_broker_dispatch,
+            args.out,
+            broker_dispatch_dir=args.broker_dispatch,
+            config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(
+                require_provider_broker_dispatch_ready=not args.allow_unready_provider_broker_dispatch,
+                require_broker_dispatch_send_ready=not args.allow_unready_broker_dispatch_send,
+                use_provider_broker_dispatch_inputs=not args.no_use_provider_broker_dispatch_inputs,
+                target_mode=args.target_mode,
+                require_dispatch_ready=not args.allow_unready_dispatch,
+                require_armed_dispatch=not args.allow_unarmed_dispatch,
+                require_dry_run=not args.allow_non_dry_run,
+                require_route_readiness=args.require_route_readiness,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                max_requests=args.max_requests,
             ),
         )
         print(result.summary.to_string(index=False))

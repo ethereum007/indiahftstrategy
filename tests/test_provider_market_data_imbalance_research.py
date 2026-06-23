@@ -64,6 +64,10 @@ from reports.provider_market_data_imbalance_broker_dispatch import (
     ProviderMarketDataImbalanceBrokerDispatchConfig,
     write_provider_market_data_imbalance_broker_dispatch,
 )
+from reports.provider_market_data_imbalance_broker_dispatch_send import (
+    ProviderMarketDataImbalanceBrokerDispatchSendConfig,
+    write_provider_market_data_imbalance_broker_dispatch_send,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -482,6 +486,15 @@ def _write_ready_provider_imbalance_route_enable(tmp_path):
         provider_cutover.output_dir,
         tmp_path / "provider_imbalance_route_enable",
         config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+
+def _write_ready_provider_imbalance_broker_dispatch(tmp_path):
+    provider_route_enable = _write_ready_provider_imbalance_route_enable(tmp_path)
+    return write_provider_market_data_imbalance_broker_dispatch(
+        provider_route_enable.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch",
+        config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
     )
 
 
@@ -1990,3 +2003,120 @@ def test_cli_provider_market_data_imbalance_broker_dispatch_blocks_unready_route
     assert not bool(summary.loc[0, "ready"])
     assert not bool(summary.loc[0, "broker_dispatch_ready"])
     assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-enable"
+
+
+def test_provider_market_data_imbalance_broker_dispatch_send_accepts_ready_dispatch(tmp_path):
+    provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_send"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_send(
+        provider_dispatch.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_send_action_queue.csv")
+    send_summary = pd.read_csv(out_dir / "broker_dispatch_send" / "broker_dispatch_send_summary.csv")
+    send_requests = pd.read_csv(out_dir / "broker_dispatch_send" / "broker_dispatch_send_requests.csv")
+    expected_acks = pd.read_csv(out_dir / "broker_dispatch_send" / "broker_dispatch_expected_acks.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").read_text(encoding="utf-8")
+    )
+    assert report.ready
+    assert bool(summary.loc[0, "provider_broker_dispatch_ready"])
+    assert bool(summary.loc[0, "broker_dispatch_send_ready"])
+    assert bool(send_summary.loc[0, "ready"])
+    assert summary.loc[0, "request_state"] == "dry_run_send_packet_ready"
+    assert not bool(summary.loc[0, "submission_enabled"])
+    assert int(summary.loc[0, "requests"]) > 0
+    assert len(send_requests) == len(expected_acks)
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "reconcile-broker-dispatch"
+    assert config["broker_dispatch_send"]["ready"]
+    assert manifest["run_type"] == "provider_market_data_imbalance_broker_dispatch_send"
+    assert "provider_broker_dispatch_dir" in manifest["inputs"]
+    assert "broker_dispatch" in manifest["inputs"]
+    assert "broker_dispatch_send" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_broker_dispatch_send_blocks_unready_dispatch(tmp_path):
+    dispatch_dir = tmp_path / "provider_imbalance_broker_dispatch"
+    dispatch_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_dispatch_ready": False,
+                "broker_dispatch_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(dispatch_dir / "provider_market_data_imbalance_broker_dispatch_summary.csv", index=False)
+    (dispatch_dir / "provider_market_data_imbalance_broker_dispatch_config.json").write_text(
+        json.dumps({"broker_dispatch": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_broker_dispatch_send(
+        dispatch_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_send",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_broker_dispatch_ready" in failed
+    assert "provider_nested_broker_dispatch_ready" in failed
+    assert "generic_broker_dispatch_input_resolved" in failed
+    assert "broker_dispatch_send_runnable" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-broker-dispatch"
+    assert not (report.output_dir / "broker_dispatch_send" / "broker_dispatch_send_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_broker_dispatch_send_blocks_unready_dispatch(tmp_path):
+    dispatch_dir = tmp_path / "provider_imbalance_broker_dispatch"
+    dispatch_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_dispatch_ready": False,
+                "broker_dispatch_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(dispatch_dir / "provider_market_data_imbalance_broker_dispatch_summary.csv", index=False)
+    (dispatch_dir / "provider_market_data_imbalance_broker_dispatch_config.json").write_text(
+        json.dumps({"broker_dispatch": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_broker_dispatch_send"
+
+    code = main(
+        [
+            "prepare-provider-market-data-imbalance-broker-dispatch-send",
+            "--provider-broker-dispatch",
+            str(dispatch_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "broker_dispatch_send_ready"])
+    assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-broker-dispatch"

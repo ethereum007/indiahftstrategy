@@ -56,6 +56,9 @@ RUN_TYPE_NEXT_GATES = {
     "provider_market_data_imbalance_cutover": "review-provider-market-data-imbalance-cutover",
     "provider_market_data_imbalance_route_enable": "review-provider-market-data-imbalance-route-enable",
     "provider_market_data_imbalance_broker_dispatch": "plan-provider-market-data-imbalance-broker-dispatch",
+    "provider_market_data_imbalance_broker_dispatch_send": (
+        "prepare-provider-market-data-imbalance-broker-dispatch-send"
+    ),
     "proof_report": "proof-report",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",

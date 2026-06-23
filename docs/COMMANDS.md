@@ -4771,6 +4771,25 @@ and point to `prepare-broker-dispatch-send`; blocked wrappers route back to the
 provider route-enable repair gate, `pack-broker-upload`, or the generic
 dispatch planner depending on the first failing proof.
 
+Run the provider-specific broker-dispatch send wrapper:
+
+```powershell
+python -m hft_cli prepare-provider-market-data-imbalance-broker-dispatch-send `
+  --provider-broker-dispatch runs\provider_market_data_imbalance_broker_dispatch\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_broker_dispatch_send\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider broker-dispatch-send wrapper reads the provider dispatch
+summary/config, infers the nested generic `broker_dispatch` artifact, runs
+`prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
+and writes provider checks/summary/action/config/runbook artifacts. It still
+does not submit orders: the nested packet writes request envelopes and expected
+ack templates with `submission_enabled=false`. Fully clean wrappers emit a ready
+`capture_provider_imbalance_broker_acknowledgements` action and point to
+`reconcile-broker-dispatch` for the later dry-run acknowledgement file.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

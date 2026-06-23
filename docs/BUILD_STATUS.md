@@ -1442,6 +1442,13 @@
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean non-submitting dry-run dispatch
   plans to `prepare-broker-dispatch-send`.
+- Provider-data imbalance now has a provider broker-dispatch-send wrapper after
+  provider broker dispatch. `prepare-provider-market-data-imbalance-broker-dispatch-send`
+  infers the nested generic `broker_dispatch` plan, reruns
+  `prepare-broker-dispatch-send` under a nested folder, writes provider
+  checks/summary/action/config/runbook artifacts, indexes the run for
+  catalog/scorecard discovery, and routes clean non-submitting send packets to
+  dry-run acknowledgement capture via `reconcile-broker-dispatch`.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India
