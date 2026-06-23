@@ -1280,6 +1280,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     provider_market_data_live_ingest.add_argument("--live-session-packet", required=True)
     provider_market_data_live_ingest.add_argument("--out", required=True)
+    provider_market_data_live_ingest.add_argument("--capture-bundle", default="")
     provider_market_data_live_ingest.add_argument("--batch-output-dir", default="")
     provider_market_data_live_ingest.add_argument("--min-capture-rows", type=int, default=None)
     provider_market_data_live_ingest.add_argument("--pipeline-min-rows", type=int, default=None)
@@ -4349,6 +4350,7 @@ def main(argv: list[str] | None = None) -> int:
             args.live_session_packet,
             args.out,
             config=ProviderMarketDataLiveIngestConfig(
+                capture_bundle_path=args.capture_bundle,
                 batch_output_dir=args.batch_output_dir,
                 min_capture_rows=args.min_capture_rows,
                 pipeline_min_rows=args.pipeline_min_rows,

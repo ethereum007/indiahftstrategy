@@ -8,9 +8,17 @@ from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_f
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
 from reports.provider_market_data_client import write_provider_market_data_client_plan
 from reports.provider_market_data_fetcher import write_provider_market_data_fetcher_plan
+from reports.provider_market_data_live_bundle import (
+    ProviderMarketDataLiveCaptureBundleConfig,
+    write_provider_market_data_live_capture_bundle,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
+)
+from reports.provider_market_data_live_preflight import (
+    ProviderMarketDataLivePreflightConfig,
+    write_provider_market_data_live_session_preflight,
 )
 from reports.provider_market_data_live_session import (
     ProviderMarketDataLiveSessionConfig,
@@ -80,6 +88,23 @@ def _write_expected_captures(live_packet_path):
         _write_capture(window["capture_path"], "2026-06-23", base=100.0 + idx)
 
 
+def _write_capture_bundle(tmp_path, live_packet_path):
+    preflight = write_provider_market_data_live_session_preflight(
+        live_packet_path,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+    bundle = write_provider_market_data_live_capture_bundle(
+        live_packet_path,
+        tmp_path / "capture_bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(
+            preflight_config_path=str(preflight.output_dir / "provider_market_data_live_preflight_config.json"),
+            ingest_output_dir=str(tmp_path / "live_ingest"),
+        ),
+    )
+    return bundle.output_dir / "provider_market_data_live_capture_bundle.json"
+
+
 def test_provider_market_data_live_ingest_runs_batch_from_session_packet(tmp_path):
     plan = _write_live_plan(tmp_path)
     live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
@@ -107,6 +132,36 @@ def test_provider_market_data_live_ingest_runs_batch_from_session_packet(tmp_pat
     assert "batch_manifest" in manifest["inputs"]
     assert (tmp_path / "batch" / "provider_market_data_batch_summary.csv").exists()
     assert (out_dir / "provider_market_data_live_ingest_windows.csv").exists()
+
+
+def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_template(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _write_capture_bundle(tmp_path, live_packet)
+    env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    _write_expected_captures(live_packet)
+    out_dir = tmp_path / "live_ingest_with_bundle"
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        out_dir,
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_live_ingest_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert Path(summary["capture_bundle_path"]) == bundle_path
+    assert summary["capture_bundle_provided"]
+    assert summary["capture_bundle_ready"]
+    assert Path(summary["capture_env_template_path"]) == env_template_path
+    assert summary["capture_env_template_exists"]
+    assert config["capture_bundle"]["path"] == str(bundle_path)
+    assert config["capture_bundle"]["env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["env_template_exists"] is True
+    assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
 
 
 def test_provider_market_data_live_ingest_blocks_missing_capture_files(tmp_path):

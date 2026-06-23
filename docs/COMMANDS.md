@@ -4422,6 +4422,7 @@ session packet:
 ```powershell
 python -m hft_cli ingest-provider-market-data-live-session `
   --live-session-packet runs\provider_market_data_live_sessions\arrow_ws_nse_2026_06_23\provider_market_data_live_session_packet.json `
+  --capture-bundle runs\provider_market_data_live_capture_bundles\arrow_ws_nse_2026_06_23\provider_market_data_live_capture_bundle.json `
   --out runs\provider_market_data_live_ingest\arrow_ws_nse_2026_06_23 `
   --fail-on-blocked-actions `
   --fail-on-breach
@@ -4433,7 +4434,8 @@ session packet. It writes `provider_market_data_live_ingest_summary.csv`,
 `provider_market_data_live_ingest_windows.csv`,
 `provider_market_data_live_ingest_action_queue.csv`, config/runbook artifacts,
 and a manifest that fingerprints the session packet, client packet, captures,
-and batch output manifest.
+batch output manifest, and optionally the approved capture bundle plus its
+credential env-template artifact.
 
 Review the live ingest output before treating it as research evidence:
 

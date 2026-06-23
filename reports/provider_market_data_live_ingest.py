@@ -17,6 +17,7 @@ from reports.provider_market_data_batch import (
 
 @dataclass(frozen=True)
 class ProviderMarketDataLiveIngestConfig:
+    capture_bundle_path: str = ""
     batch_output_dir: str = ""
     min_capture_rows: int | None = None
     pipeline_min_rows: int | None = None
@@ -68,6 +69,12 @@ def write_provider_market_data_live_session_ingest(
     )
     packet_path = Path(live_session_packet_path)
     inputs: dict[str, Any] = {"live_session_packet": packet_path} if packet_path.exists() else {}
+    capture_bundle_path = _path_or_none(str(report.summary.iloc[0]["capture_bundle_path"]))
+    if capture_bundle_path is not None and capture_bundle_path.exists():
+        inputs["capture_bundle"] = capture_bundle_path
+    capture_env_template_path = _path_or_none(str(report.summary.iloc[0]["capture_env_template_path"]))
+    if capture_env_template_path is not None and capture_env_template_path.exists():
+        inputs["capture_env_template"] = capture_env_template_path
     client_packet = Path(str(report.summary.iloc[0]["client_packet_path"]))
     if client_packet.exists():
         inputs["client_packet"] = client_packet
@@ -108,8 +115,10 @@ def evaluate_provider_market_data_live_session_ingest(
     config = _normalize_config(config or ProviderMarketDataLiveIngestConfig())
     packet_path = Path(live_session_packet_path)
     packet, packet_error = _read_packet(packet_path)
+    bundle_path = Path(config.capture_bundle_path) if config.capture_bundle_path else Path("")
+    bundle, bundle_error = _read_optional_json(bundle_path, "capture bundle") if config.capture_bundle_path else ({}, "")
     windows = _windows(packet)
-    checks = pd.DataFrame(_checks(packet_path, packet, packet_error, windows))
+    checks = pd.DataFrame(_checks(packet_path, packet, packet_error, bundle_path, bundle, bundle_error, windows, config))
     preflight_ready = bool(not checks.empty and checks["passed"].astype(bool).all())
     batch = None
     effective = _effective_batch_config(packet, config)
@@ -128,7 +137,7 @@ def evaluate_provider_market_data_live_session_ingest(
             ),
         )
     action_queue = _action_queue(checks, batch)
-    summary = _summary(packet_path, packet, windows, checks, batch, action_queue, effective)
+    summary = _summary(packet_path, packet, bundle_path, bundle, windows, checks, batch, action_queue, config, effective)
     ingest_config = _config(summary.iloc[0], windows, checks, action_queue, batch, config, effective)
     return ProviderMarketDataLiveIngestReport(windows, checks, summary, batch, action_queue, ingest_config)
 
@@ -144,6 +153,20 @@ def _read_packet(path: Path) -> tuple[dict[str, Any], str]:
         return {}, f"live session packet JSON is invalid: {exc}"
     if not isinstance(payload, dict):
         return {}, "live session packet JSON must be an object"
+    return payload, ""
+
+
+def _read_optional_json(path: Path, label: str) -> tuple[dict[str, Any], str]:
+    if not path.exists():
+        return {}, f"{label} does not exist"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {}, f"{label} is not readable: {exc}"
+    except json.JSONDecodeError as exc:
+        return {}, f"{label} JSON is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return {}, f"{label} JSON must be an object"
     return payload, ""
 
 
@@ -187,14 +210,23 @@ def _checks(
     packet_path: Path,
     packet: dict[str, Any],
     packet_error: str,
+    bundle_path: Path,
+    bundle: dict[str, Any],
+    bundle_error: str,
     windows: pd.DataFrame,
+    config: ProviderMarketDataLiveIngestConfig,
 ) -> list[dict[str, Any]]:
     capture_exists = bool(windows["capture_exists"].astype(bool).all()) if not windows.empty else False
     capture_nonempty = bool(windows["capture_nonempty"].astype(bool).all()) if not windows.empty else False
     labels_unique = bool(windows["pipeline_label"].astype(str).nunique() == len(windows)) if not windows.empty else False
+    bundle_provided = bool(config.capture_bundle_path)
+    env_template_path = _env_template_path(bundle_path, bundle) if bundle_provided and not bundle_error else None
     return [
         _check("live_session_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "live session packet is required"),
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
+        _check("capture_bundle_json_readable", bundle_error or "ok", "is", "ok", not bundle_error if bundle_provided else True, bundle_error or "capture bundle could not be read"),
+        _check("capture_bundle_matches_session", _text(bundle.get("live_session_packet_path")), "matches", str(packet_path), _bundle_matches_session(bundle_path, bundle, packet_path) if bundle_provided and not bundle_error else True, "capture bundle must reference the same live session packet"),
+        _check("capture_env_template_exists", _path_text(env_template_path), "exists", True, bool(env_template_path is not None and env_template_path.exists()) if bundle_provided and not bundle_error else True, "capture bundle credential env template is required for bundle-linked ingest provenance"),
         _check("live_session_packet_ready", bool(packet.get("ready")), "is", True, bool(packet.get("ready")), "live session plan must be ready before ingest"),
         _check("client_packet_path_exists", _text(packet.get("client_packet_path")), "exists", True, Path(_text(packet.get("client_packet_path"))).exists(), "client packet referenced by live session plan is required"),
         _check("capture_windows_present", len(windows), ">=", 1, len(windows) >= 1, "live session packet must include capture windows"),
@@ -228,10 +260,13 @@ def _effective_batch_config(packet: dict[str, Any], config: ProviderMarketDataLi
 def _summary(
     packet_path: Path,
     packet: dict[str, Any],
+    bundle_path: Path,
+    bundle: dict[str, Any],
     windows: pd.DataFrame,
     checks: pd.DataFrame,
     batch: ProviderMarketDataBatchReport | None,
     action_queue: pd.DataFrame,
+    config: ProviderMarketDataLiveIngestConfig,
     effective: dict[str, Any],
 ) -> pd.DataFrame:
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -239,11 +274,20 @@ def _summary(
     next_action = action_queue.iloc[0] if not action_queue.empty else None
     batch_ready = bool(batch.ready) if batch is not None else False
     ready = bool(failed_checks == 0 and batch_ready and blocked_actions == 0)
+    capture_bundle_path = bundle_path if config.capture_bundle_path else None
+    capture_env_template_path = _env_template_path(bundle_path, bundle) if config.capture_bundle_path else None
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "live_session_packet_path": str(packet_path),
+                "capture_bundle_path": _path_text(capture_bundle_path),
+                "capture_bundle_provided": bool(config.capture_bundle_path),
+                "capture_bundle_ready": bool(bundle.get("ready")),
+                "capture_env_template_path": _path_text(capture_env_template_path),
+                "capture_env_template_exists": bool(
+                    capture_env_template_path is not None and capture_env_template_path.exists()
+                ),
                 "client_packet_path": _text(packet.get("client_packet_path")),
                 "provider": _text(packet.get("provider")),
                 "transport": _text(packet.get("transport")),
@@ -330,6 +374,13 @@ def _config(
         "ready": bool(summary["ready"]),
         "parameters": asdict(config),
         "effective_batch_config": effective,
+        "capture_bundle": {
+            "path": str(summary["capture_bundle_path"]),
+            "provided": bool(summary["capture_bundle_provided"]),
+            "ready": bool(summary["capture_bundle_ready"]),
+            "env_template_path": str(summary["capture_env_template_path"]),
+            "env_template_exists": bool(summary["capture_env_template_exists"]),
+        },
         "windows": _records(windows),
         "checks": _records(checks),
         "batch": {} if batch is None else _batch_config(batch),
@@ -359,6 +410,8 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         "",
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
+        f"- Capture bundle: {summary['capture_bundle_path']}",
+        f"- Credential env template: {summary['capture_env_template_path']}",
         f"- Expected captures: {summary['expected_capture_count']}",
         f"- Present captures: {summary['present_capture_count']}",
         f"- Batch output: {summary['batch_output_dir']}",
@@ -434,13 +487,20 @@ def _next_gate_for_check(check: str) -> str:
         return "plan-provider-market-data-live-session"
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
+    if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
+        return "bundle-provider-market-data-live-capture"
     if check.startswith("expected_capture"):
         return "provider_fetcher_live_run"
     return "pipeline-provider-market-data-batch"
 
 
 def _next_gate_help_command(next_gate: str) -> str:
-    if next_gate in {"plan-provider-market-data-live-session", "prepare-provider-market-data-client", "pipeline-provider-market-data-batch"}:
+    if next_gate in {
+        "plan-provider-market-data-live-session",
+        "prepare-provider-market-data-client",
+        "bundle-provider-market-data-live-capture",
+        "pipeline-provider-market-data-batch",
+    }:
         return f"python -m hft_cli {next_gate} --help"
     if next_gate == "provider_fetcher_live_run":
         return "execute the provider adapter for the missing live capture window"
@@ -456,6 +516,8 @@ def _repair_action(check: str) -> str:
         return "repair_provider_live_session_packet"
     if check.startswith("client_packet"):
         return "repair_provider_client_packet"
+    if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
+        return "repair_provider_live_capture_bundle"
     return "repair_provider_live_ingest"
 
 
@@ -469,6 +531,7 @@ def _provider_next_gate(next_gate: str) -> str:
 
 def _normalize_config(config: ProviderMarketDataLiveIngestConfig) -> ProviderMarketDataLiveIngestConfig:
     return ProviderMarketDataLiveIngestConfig(
+        capture_bundle_path=str(config.capture_bundle_path or "").strip(),
         batch_output_dir=str(config.batch_output_dir or "").strip(),
         min_capture_rows=config.min_capture_rows,
         pipeline_min_rows=config.pipeline_min_rows,
@@ -476,6 +539,38 @@ def _normalize_config(config: ProviderMarketDataLiveIngestConfig) -> ProviderMar
         max_p99_gap_ns=config.max_p99_gap_ns,
         max_median_spread_ticks=config.max_median_spread_ticks,
     )
+
+
+def _bundle_matches_session(bundle_path: Path, bundle: dict[str, Any], packet_path: Path) -> bool:
+    raw = _text(bundle.get("live_session_packet_path"))
+    if not raw:
+        return False
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = bundle_path.parent / candidate
+    try:
+        return candidate.resolve() == packet_path.resolve()
+    except OSError:
+        return str(candidate) == str(packet_path)
+
+
+def _env_template_path(bundle_path: Path, bundle: dict[str, Any]) -> Path | None:
+    template = _text(_mapping(bundle.get("authentication")).get("env_template"))
+    if not template:
+        return None
+    path = Path(template)
+    if path.is_absolute():
+        return path
+    return bundle_path.parent / path
+
+
+def _path_or_none(value: str) -> Path | None:
+    text = _text(value)
+    return Path(text) if text else None
+
+
+def _path_text(path: Path | None) -> str:
+    return "" if path is None else str(path)
 
 
 def _mapping(value: object) -> dict[str, Any]:

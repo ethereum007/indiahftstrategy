@@ -86,7 +86,9 @@
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured
-  provider batch ingestion and manifests the resulting proof chain.
+  provider batch ingestion and manifests the resulting proof chain. When an
+  approved capture bundle is supplied, ingest also fingerprints the bundle and
+  its blank credential env-template artifact for backend handoff provenance.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof, and
