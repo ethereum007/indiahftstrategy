@@ -1503,7 +1503,10 @@
   acknowledgement-carried provider/nested proof as upstream lineage while also
   generating a fresh nested `broker_dispatch_roundtrip` proof, so the final
   readiness handoff can distinguish inherited dry-run evidence from the newly
-  reviewed round-trip artifact.
+  reviewed round-trip artifact. The provider round-trip summary/config now also
+  surfaces nested broker vendor-market-data batch proof under both
+  `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
+  `broker_dispatch_roundtrip_vendor_market_data_batch_*` fields.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

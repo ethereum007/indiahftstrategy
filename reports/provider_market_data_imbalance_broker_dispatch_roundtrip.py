@@ -35,6 +35,33 @@ ACTION_QUEUE_COLUMNS = [
     "next_gate_help_command",
 ]
 
+VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES = (
+    "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch",
+    "broker_dispatch_roundtrip_vendor_market_data_batch",
+)
+
+VENDOR_MARKET_DATA_BATCH_SUMMARY_SUFFIXES = (
+    "provided",
+    "ready",
+    "adapter",
+    "kind",
+    "manifest_run_type",
+    "market",
+    "dataset_count",
+    "ready_datasets",
+    "failed_datasets",
+    "ready_rate",
+    "unique_source_files",
+    "unique_header_fingerprints",
+    "source_file_fingerprint_coverage",
+    "min_mapping_coverage",
+    "unique_mapping_drafts",
+    "mapping_sources",
+    "comparison_accepted",
+    "comparison_failed_checks",
+    "datasets_json",
+)
+
 
 @dataclass(frozen=True)
 class ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig:
@@ -578,6 +605,7 @@ def _summary(
                     or _first_number(provider_summary, "route_readiness_gap_pairs")
                 ),
                 "roundtrip_recommendation": _first_text(roundtrip_summary, "recommendation"),
+                **_nested_vendor_market_data_batch_summary_fields(broker_dispatch_roundtrip),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
@@ -679,6 +707,7 @@ def _config(
         "summary": _series_record(summary),
         "provider_broker_dispatch_ack": _first_record(provider_summary),
         "provider_broker_dispatch_ack_config": provider_config,
+        **_nested_vendor_market_data_batch_config_fields(broker_dispatch_roundtrip),
         "broker_dispatch_roundtrip": {
             "evaluated": broker_dispatch_roundtrip is not None,
             "passed": False if broker_dispatch_roundtrip is None else bool(broker_dispatch_roundtrip.passed),
@@ -700,6 +729,62 @@ def _config(
         "ready_actions": [row for row in actions if row.get("queue_status") == "ready"],
         "blocked_actions": [row for row in actions if row.get("queue_status") == "blocked"],
         "primary_action": actions[0] if actions else {},
+    }
+
+
+def _nested_vendor_market_data_batch_summary_fields(
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+) -> dict[str, object]:
+    summary = broker_dispatch_roundtrip.summary if broker_dispatch_roundtrip is not None else pd.DataFrame()
+    fields: dict[str, object] = {}
+    for prefix in VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES:
+        for suffix in VENDOR_MARKET_DATA_BATCH_SUMMARY_SUFFIXES:
+            key = f"{prefix}_{suffix}"
+            source_key = _vendor_market_data_batch_summary_key(summary, prefix, suffix)
+            if suffix in {"provided", "ready", "comparison_accepted"}:
+                fields[key] = _first_bool(summary, source_key)
+            elif suffix in {
+                "dataset_count",
+                "ready_datasets",
+                "failed_datasets",
+                "unique_source_files",
+                "unique_header_fingerprints",
+                "unique_mapping_drafts",
+                "comparison_failed_checks",
+            }:
+                fields[key] = int(_first_number(summary, source_key))
+            elif suffix in {"ready_rate", "source_file_fingerprint_coverage", "min_mapping_coverage"}:
+                fields[key] = float(_first_number(summary, source_key))
+            else:
+                fields[key] = _first_text(summary, source_key)
+    return fields
+
+
+def _vendor_market_data_batch_summary_key(summary: pd.DataFrame, prefix: str, suffix: str) -> str:
+    key = f"{prefix}_{suffix}"
+    if (
+        prefix == "broker_dispatch_roundtrip_vendor_market_data_batch"
+        and key not in summary.columns
+    ):
+        return f"roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_{suffix}"
+    return key
+
+
+def _nested_vendor_market_data_batch_config_fields(
+    broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
+) -> dict[str, Any]:
+    config = broker_dispatch_roundtrip.config if broker_dispatch_roundtrip is not None else {}
+    config = config if isinstance(config, dict) else {}
+    broker_dispatch_vendor = _mapping(config.get("broker_dispatch_roundtrip_vendor_market_data_batch"))
+    roundtrip_broker_dispatch_vendor = _mapping(
+        config.get("roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch")
+    )
+    return {
+        "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch": roundtrip_broker_dispatch_vendor,
+        "broker_dispatch_roundtrip_vendor_market_data_batch": (
+            broker_dispatch_vendor or roundtrip_broker_dispatch_vendor
+        ),
+        "roundtrip_vendor_market_data_batch": _mapping(config.get("roundtrip_vendor_market_data_batch")),
     }
 
 
@@ -1041,6 +1126,10 @@ def _path_or_empty(path: str | Path | None) -> Path:
 
 def _path_text(path: Path | None) -> str:
     return "" if path is None else str(path)
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return dict(value) if isinstance(value, dict) else {}
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
