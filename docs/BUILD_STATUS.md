@@ -1496,8 +1496,9 @@
   proof, and upstream proof lineage in broker-dispatch summary/config/manifest
   artifacts before the non-submitting send packet is prepared.
 - Provider-data imbalance broker-dispatch-send now preserves the same
-  provider/nested broker-dispatch round-trip paths plus upstream proof lineage
-  in send summary/config/runbook artifacts and manifests while still keeping
+  provider/nested broker-dispatch round-trip paths, broker-dispatch
+  vendor-market-data batch proof, and upstream proof lineage in send
+  summary/config/runbook artifacts and manifests while still keeping
   `submission_enabled=false`.
 - Provider-data imbalance broker-dispatch acknowledgement now preserves those
   provider/nested broker-dispatch round-trip paths plus upstream proof lineage
