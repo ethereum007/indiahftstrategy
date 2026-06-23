@@ -91,9 +91,10 @@
   its blank credential env-template artifact for backend handoff provenance.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
-  live ingest, batch readiness, capture row counts, manifest proof, and
-  credential-safe session packets while blocking `*.csv.rehearsal.json`
-  synthetic captures from being marked research-ready.
+  live ingest, batch readiness, capture row counts, manifest proof,
+  capture-bundle/env-template provenance when supplied, and credential-safe
+  session packets while blocking `*.csv.rehearsal.json` synthetic captures from
+  being marked research-ready.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds

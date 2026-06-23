@@ -4450,12 +4450,13 @@ python -m hft_cli review-provider-market-data-live-evidence `
 
 This writes `provider_market_data_live_evidence_summary.csv`,
 `provider_market_data_live_evidence_captures.csv`, check/action/config
-artifacts, and a manifest. It blocks captures that still have rehearsal
-sidecars (`*.csv.rehearsal.json`) from being marked research-ready, even if the
-ingest and batch pipelines passed. Use `--allow-synthetic-rehearsal` only to
-classify a smoke test; the recommendation remains to replace synthetic captures
-with real Arrow.money/iRage provider captures before feeding walk-forward
-research.
+artifacts, and a manifest. If the live ingest carried a capture bundle, the
+evidence manifest also fingerprints that bundle and its credential env-template
+before research handoff. It blocks captures that still have rehearsal sidecars
+(`*.csv.rehearsal.json`) from being marked research-ready, even if the ingest
+and batch pipelines passed. Use `--allow-synthetic-rehearsal` only to classify
+a smoke test; the recommendation remains to replace synthetic captures with
+real Arrow.money/iRage provider captures before feeding walk-forward research.
 
 Turn research-ready live evidence into concrete strategy research commands:
 

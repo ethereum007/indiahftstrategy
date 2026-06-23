@@ -61,6 +61,12 @@ def write_provider_market_data_live_evidence_review(
     )
     ingest_dir = Path(live_ingest_dir)
     inputs: dict[str, Any] = {"live_ingest_dir": ingest_dir} if ingest_dir.exists() else {}
+    capture_bundle = _path_from_text(str(report.summary.iloc[0]["capture_bundle_path"]))
+    if capture_bundle is not None and capture_bundle.exists():
+        inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(str(report.summary.iloc[0]["capture_env_template_path"]))
+    if capture_env_template is not None and capture_env_template.exists():
+        inputs["capture_env_template"] = capture_env_template
     live_packet = Path(str(report.summary.iloc[0]["live_session_packet_path"]))
     if live_packet.exists():
         inputs["live_session_packet"] = live_packet
@@ -107,6 +113,7 @@ def evaluate_provider_market_data_live_evidence(
     live_packet, packet_error = _read_json(live_packet_path)
     captures = _captures(ingest_windows, config)
     batch = _batch_status(ingest_summary, ingest_config)
+    capture_provenance = _capture_provenance(ingest_config, manifest)
     checks = pd.DataFrame(
         _checks(
             ingest_dir,
@@ -123,14 +130,41 @@ def evaluate_provider_market_data_live_evidence(
             packet_error,
             captures,
             batch,
+            capture_provenance,
             config,
         )
     )
     ready = bool(not checks.empty and checks["passed"].astype(bool).all())
     research_ready = bool(ready and int(captures["synthetic_rehearsal"].astype(bool).sum()) == 0)
     action_queue = _action_queue(checks, ready, research_ready, captures)
-    summary = _summary(ingest_dir, ingest_summary, live_packet_path, live_packet, captures, batch, checks, action_queue, config, ready, research_ready)
-    evidence_config = _config(summary.iloc[0], ingest_dir, ingest_summary, ingest_config, manifest, live_packet, captures, batch, checks, action_queue, config)
+    summary = _summary(
+        ingest_dir,
+        ingest_summary,
+        live_packet_path,
+        live_packet,
+        captures,
+        batch,
+        capture_provenance,
+        checks,
+        action_queue,
+        config,
+        ready,
+        research_ready,
+    )
+    evidence_config = _config(
+        summary.iloc[0],
+        ingest_dir,
+        ingest_summary,
+        ingest_config,
+        manifest,
+        live_packet,
+        captures,
+        batch,
+        capture_provenance,
+        checks,
+        action_queue,
+        config,
+    )
     return ProviderMarketDataLiveEvidenceReport(captures, checks, summary, action_queue, evidence_config)
 
 
@@ -230,6 +264,27 @@ def _batch_status(summary: pd.DataFrame, ingest_config: dict[str, Any]) -> dict[
     }
 
 
+def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    bundle = _mapping(ingest_config.get("capture_bundle"))
+    manifest_inputs = _mapping(manifest.get("inputs"))
+    manifest_bundle = _mapping(manifest_inputs.get("capture_bundle"))
+    manifest_env = _mapping(manifest_inputs.get("capture_env_template"))
+    bundle_path = _path_from_text(_text(bundle.get("path")) or _text(manifest_bundle.get("path")))
+    env_template_path = _path_from_text(
+        _text(bundle.get("env_template_path"))
+        or _text(manifest_env.get("path"))
+    )
+    return {
+        "capture_bundle_path": _path_text(bundle_path),
+        "capture_bundle_provided": bool(bundle_path),
+        "capture_bundle_exists": bool(bundle_path is not None and bundle_path.exists()),
+        "capture_bundle_ready": _truthy(bundle.get("ready")),
+        "capture_env_template_path": _path_text(env_template_path),
+        "capture_env_template_provided": bool(env_template_path),
+        "capture_env_template_exists": bool(env_template_path is not None and env_template_path.exists()),
+    }
+
+
 def _checks(
     ingest_dir: Path,
     ingest_summary: pd.DataFrame,
@@ -245,6 +300,7 @@ def _checks(
     packet_error: str,
     captures: pd.DataFrame,
     batch: dict[str, Any],
+    capture_provenance: dict[str, Any],
     config: ProviderMarketDataLiveEvidenceConfig,
 ) -> list[dict[str, Any]]:
     capture_count = int(len(captures))
@@ -253,6 +309,7 @@ def _checks(
     row_counts_ok = bool(captures["row_count_ok"].astype(bool).all()) if not captures.empty else False
     ingest_ready = _first_bool(ingest_summary, "ready")
     summary_packet = _first_text(ingest_summary, "live_session_packet_path")
+    bundle_provided = bool(capture_provenance["capture_bundle_provided"])
     return [
         _check("live_ingest_dir_exists", str(ingest_dir), "exists", True, ingest_dir.exists(), "live ingest directory is required"),
         _check("live_ingest_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live ingest summary could not be read"),
@@ -260,6 +317,8 @@ def _checks(
         _check("live_ingest_config_readable", config_error or "ok", "is", "ok", not config_error, config_error or "live ingest config could not be read"),
         _check("live_ingest_manifest_exists", manifest_error or "ok", "is", "ok", not manifest_error or not config.require_manifest, manifest_error or "live ingest manifest is required"),
         _check("live_ingest_manifest_type", _text(manifest.get("run_type")), "is", "provider_market_data_live_session_ingest", _text(manifest.get("run_type")) == "provider_market_data_live_session_ingest" or not config.require_manifest, "live ingest manifest run_type is not the expected provider live ingest"),
+        _check("capture_bundle_exists", capture_provenance["capture_bundle_path"], "exists", True, bool(capture_provenance["capture_bundle_exists"]) if bundle_provided else True, "capture bundle referenced by ingest provenance is missing"),
+        _check("capture_env_template_exists", capture_provenance["capture_env_template_path"], "exists", True, bool(capture_provenance["capture_env_template_exists"]) if bundle_provided else True, "credential env-template referenced by ingest provenance is missing"),
         _check("live_ingest_ready", ingest_ready, "is", True, ingest_ready or not config.require_ingest_ready, "live ingest summary is not ready"),
         _check("live_session_packet_path_present", summary_packet, "is_not", "", bool(summary_packet), "live ingest summary must point to the live session packet"),
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
@@ -280,6 +339,7 @@ def _summary(
     live_packet: dict[str, Any],
     captures: pd.DataFrame,
     batch: dict[str, Any],
+    capture_provenance: dict[str, Any],
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
     config: ProviderMarketDataLiveEvidenceConfig,
@@ -298,6 +358,11 @@ def _summary(
                 "synthetic_only": bool(synthetic_count > 0),
                 "live_ingest_dir": str(ingest_dir),
                 "live_session_packet_path": str(live_packet_path),
+                "capture_bundle_path": str(capture_provenance["capture_bundle_path"]),
+                "capture_bundle_provided": bool(capture_provenance["capture_bundle_provided"]),
+                "capture_bundle_ready": bool(capture_provenance["capture_bundle_ready"]),
+                "capture_env_template_path": str(capture_provenance["capture_env_template_path"]),
+                "capture_env_template_exists": bool(capture_provenance["capture_env_template_exists"]),
                 "provider": _text(live_packet.get("provider"), _first_text(ingest_summary, "provider")),
                 "transport": _text(live_packet.get("transport"), _first_text(ingest_summary, "transport")),
                 "market": _text(live_packet.get("market"), _first_text(ingest_summary, "market")),
@@ -375,6 +440,7 @@ def _config(
     live_packet: dict[str, Any],
     captures: pd.DataFrame,
     batch: dict[str, Any],
+    capture_provenance: dict[str, Any],
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
     config: ProviderMarketDataLiveEvidenceConfig,
@@ -390,6 +456,7 @@ def _config(
         "ingest_summary": _first_record(ingest_summary),
         "ingest_config": ingest_config,
         "ingest_manifest_run_type": _text(manifest.get("run_type")),
+        "capture_bundle": capture_provenance,
         "live_session_packet": _safe_packet(live_packet),
         "captures": _records(captures),
         "batch": batch,
@@ -434,6 +501,8 @@ def _recommendation(ready: bool, research_ready: bool, synthetic_count: int) -> 
 def _next_gate_for_check(check: str) -> str:
     if check.startswith("live_ingest"):
         return "ingest-provider-market-data-live-session"
+    if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
+        return "bundle-provider-market-data-live-capture"
     if check.startswith("live_session_packet") or check.startswith("credential"):
         return "plan-provider-market-data-live-session"
     if check.startswith("capture"):
@@ -448,6 +517,7 @@ def _next_gate_for_check(check: str) -> str:
 def _next_gate_help_command(next_gate: str) -> str:
     if next_gate in {
         "ingest-provider-market-data-live-session",
+        "bundle-provider-market-data-live-capture",
         "plan-provider-market-data-live-session",
         "pipeline-provider-market-data-batch",
         "review-provider-market-data-live-evidence",
@@ -463,6 +533,8 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("live_ingest"):
         return "repair_provider_live_ingest_artifacts"
+    if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
+        return "repair_provider_live_capture_bundle"
     if check.startswith("live_session_packet") or check.startswith("credential"):
         return "repair_provider_live_session_packet"
     if check.startswith("capture"):
@@ -480,6 +552,8 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         "",
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Research ready: {'yes' if bool(summary['research_ready']) else 'no'}",
+        f"- Capture bundle: {summary['capture_bundle_path']}",
+        f"- Credential env template: {summary['capture_env_template_path']}",
         f"- Synthetic captures: {summary['synthetic_capture_count']}",
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
         f"- Recommendation: {summary['recommendation']}",
@@ -564,6 +638,15 @@ def _first_record(frame: pd.DataFrame | None) -> dict[str, Any]:
     if frame is None or frame.empty:
         return {}
     return {str(key): _jsonable(value) for key, value in frame.iloc[0].to_dict().items()}
+
+
+def _path_from_text(value: str) -> Path | None:
+    text = _text(value)
+    return Path(text) if text else None
+
+
+def _path_text(path: Path | None) -> str:
+    return "" if path is None else str(path)
 
 
 def _first_text(frame: pd.DataFrame, column: str) -> str:
