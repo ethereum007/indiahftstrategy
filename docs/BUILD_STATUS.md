@@ -1449,6 +1449,13 @@
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean non-submitting send packets to
   dry-run acknowledgement capture via `reconcile-broker-dispatch`.
+- Provider-data imbalance now has a provider broker-dispatch acknowledgement
+  wrapper after provider send packets. `reconcile-provider-market-data-imbalance-broker-dispatch`
+  requires an explicit dry-run ack CSV, infers the nested generic
+  `broker_dispatch` plan, reruns `reconcile-broker-dispatch` under a nested
+  folder, writes provider checks/summary/action/config/runbook artifacts,
+  indexes the run for catalog/scorecard discovery, and routes clean ack proof to
+  `review-broker-dispatch-roundtrip`.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

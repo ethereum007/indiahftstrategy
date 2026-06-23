@@ -68,6 +68,10 @@ from reports.provider_market_data_imbalance_broker_dispatch_send import (
     ProviderMarketDataImbalanceBrokerDispatchSendConfig,
     write_provider_market_data_imbalance_broker_dispatch_send,
 )
+from reports.provider_market_data_imbalance_broker_dispatch_ack import (
+    ProviderMarketDataImbalanceBrokerDispatchAckConfig,
+    write_provider_market_data_imbalance_broker_dispatch_ack,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -496,6 +500,33 @@ def _write_ready_provider_imbalance_broker_dispatch(tmp_path):
         tmp_path / "provider_imbalance_broker_dispatch",
         config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
     )
+
+
+def _write_ready_provider_imbalance_broker_dispatch_send(tmp_path):
+    provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
+    return write_provider_market_data_imbalance_broker_dispatch_send(
+        provider_dispatch.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_send",
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+
+def _write_provider_imbalance_accepted_ack_file(provider_send, output_path):
+    requests = pd.read_csv(provider_send.output_dir / "broker_dispatch_send" / "broker_dispatch_send_requests.csv")
+    rows = []
+    for index, row in requests.reset_index(drop=True).iterrows():
+        rows.append(
+            {
+                "dispatch_order_id": row["dispatch_order_id"],
+                "source_order_id": row["source_order_id"],
+                "route_dispatch_roundtrip_batch_id": row.get("route_dispatch_roundtrip_batch_id", ""),
+                "status": "accepted",
+                "broker_order_id": f"BRK-{index + 1:06d}",
+                "ack_ts_ns": 2_000_000 + index,
+            }
+        )
+    pd.DataFrame(rows).to_csv(output_path, index=False)
+    return output_path
 
 
 def test_provider_market_data_imbalance_research_runs_pipeline_from_live_evidence(tmp_path):
@@ -2120,3 +2151,126 @@ def test_cli_provider_market_data_imbalance_broker_dispatch_send_blocks_unready_
     assert not bool(summary.loc[0, "ready"])
     assert not bool(summary.loc[0, "broker_dispatch_send_ready"])
     assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-broker-dispatch"
+
+
+def test_provider_market_data_imbalance_broker_dispatch_ack_accepts_ready_send(tmp_path):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    acks_path = _write_provider_imbalance_accepted_ack_file(provider_send, tmp_path / "provider_imbalance_acks.csv")
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_ack"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_ack_action_queue.csv")
+    ack_summary = pd.read_csv(out_dir / "broker_dispatch_ack" / "broker_dispatch_ack_summary.csv")
+    acknowledgements = pd.read_csv(out_dir / "broker_dispatch_ack" / "broker_dispatch_acknowledgements.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").read_text(encoding="utf-8")
+    )
+    assert report.passed
+    assert bool(summary.loc[0, "provider_broker_dispatch_send_ready"])
+    assert bool(summary.loc[0, "broker_dispatch_ack_passed"])
+    assert bool(ack_summary.loc[0, "passed"])
+    assert float(summary.loc[0, "ack_rate"]) == 1.0
+    assert int(summary.loc[0, "missing_acks"]) == 0
+    assert int(summary.loc[0, "rejected_orders"]) == 0
+    assert bool(acknowledgements["acked"].astype(bool).all())
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "review-broker-dispatch-roundtrip"
+    assert config["broker_dispatch_ack"]["passed"]
+    assert manifest["run_type"] == "provider_market_data_imbalance_broker_dispatch_ack"
+    assert "provider_broker_dispatch_send_dir" in manifest["inputs"]
+    assert "broker_dispatch" in manifest["inputs"]
+    assert "broker_acks" in manifest["inputs"]
+    assert "broker_dispatch_ack" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_unready_send(tmp_path):
+    send_dir = tmp_path / "provider_imbalance_broker_dispatch_send"
+    send_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_dispatch_send_ready": False,
+                "broker_dispatch_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(send_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv", index=False)
+    (send_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").write_text(
+        json.dumps({"broker_dispatch_send_inputs": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        send_dir,
+        tmp_path / "missing_acks.csv",
+        tmp_path / "provider_imbalance_broker_dispatch_ack",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.passed
+    assert "provider_broker_dispatch_send_ready" in failed
+    assert "provider_nested_broker_dispatch_send_ready" in failed
+    assert "generic_broker_dispatch_input_resolved" in failed
+    assert "broker_acks_path_exists" in failed
+    assert "broker_dispatch_ack_runnable" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
+    assert not (report.output_dir / "broker_dispatch_ack" / "broker_dispatch_ack_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_broker_dispatch_ack_blocks_unready_send(tmp_path):
+    send_dir = tmp_path / "provider_imbalance_broker_dispatch_send"
+    send_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_dispatch_send_ready": False,
+                "broker_dispatch_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(send_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv", index=False)
+    (send_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").write_text(
+        json.dumps({"broker_dispatch_send_inputs": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_broker_dispatch_ack"
+
+    code = main(
+        [
+            "reconcile-provider-market-data-imbalance-broker-dispatch",
+            "--provider-broker-dispatch-send",
+            str(send_dir),
+            "--acks",
+            str(tmp_path / "missing_acks.csv"),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "passed"])
+    assert not bool(summary.loc[0, "broker_dispatch_ack_passed"])
+    assert summary.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
