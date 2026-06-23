@@ -2486,6 +2486,63 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_accepts_ready_send(t
     assert "broker_dispatch_ack" in manifest["inputs"]
 
 
+def test_provider_market_data_imbalance_broker_dispatch_ack_carries_send_dispatch_roundtrip_paths(tmp_path):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+    nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
+    nested_roundtrip_dir.mkdir(parents=True)
+    (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
+        "true,true,true,0\n",
+        encoding="utf-8",
+    )
+    send_summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    send_summary = pd.read_csv(send_summary_path)
+    send_summary["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
+    send_summary["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    send_summary["dispatch_roundtrip_provided"] = True
+    send_summary["dispatch_roundtrip_ready"] = True
+    send_summary["dispatch_roundtrip_failed_checks"] = 0
+    send_summary.to_csv(send_summary_path, index=False)
+    send_config_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json"
+    send_config = json.loads(send_config_path.read_text(encoding="utf-8"))
+    send_config.setdefault("broker_dispatch_send_inputs", {})
+    send_config["broker_dispatch_send_inputs"]["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
+    send_config["broker_dispatch_send_inputs"]["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    send_config_path.write_text(
+        json.dumps(send_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_roundtrip_acks.csv",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_ack_with_roundtrip"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.passed
+    assert Path(summary.loc[0, "provider_dispatch_roundtrip_dir"]) == provider_roundtrip_dir
+    assert Path(summary.loc[0, "dispatch_roundtrip_dir"]) == nested_roundtrip_dir
+    assert bool(summary.loc[0, "dispatch_roundtrip_provided"])
+    assert bool(summary.loc[0, "dispatch_roundtrip_ready"])
+    assert int(summary.loc[0, "dispatch_roundtrip_failed_checks"]) == 0
+    assert config["broker_dispatch_ack_inputs"]["provider_dispatch_roundtrip_dir"] == str(provider_roundtrip_dir)
+    assert config["broker_dispatch_ack_inputs"]["dispatch_roundtrip_dir"] == str(nested_roundtrip_dir)
+    assert manifest["inputs"]["provider_dispatch_roundtrip"]["path"] == str(provider_roundtrip_dir)
+    assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
+
+
 def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_unready_send(tmp_path):
     send_dir = tmp_path / "provider_imbalance_broker_dispatch_send"
     send_dir.mkdir(parents=True, exist_ok=True)

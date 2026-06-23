@@ -1487,6 +1487,10 @@
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths in send summary/config/runbook
   artifacts and manifests while still keeping `submission_enabled=false`.
+- Provider-data imbalance broker-dispatch acknowledgement now preserves those
+  provider/nested broker-dispatch round-trip paths in acknowledgement
+  summary/config/runbook artifacts and manifests before the final provider
+  round-trip wrapper is trusted.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India
