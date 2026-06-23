@@ -4839,8 +4839,9 @@ The provider round-trip wrapper reads the provider acknowledgement
 summary/config, infers the nested generic `broker_dispatch`,
 `broker_dispatch_send`, and `broker_dispatch_ack` folders, runs
 `review-broker-dispatch-roundtrip` under a nested `broker_dispatch_roundtrip`
-folder, and writes provider checks/summary/action/config/runbook artifacts.
-Clean proof emits a ready
+folder, preserves any acknowledgement-carried upstream provider/nested
+round-trip proof as `upstream_*_roundtrip` lineage, and writes provider
+checks/summary/action/config/runbook artifacts. Clean proof emits a ready
 `feed_provider_imbalance_broker_dispatch_roundtrip_into_broker_readiness`
 action and points to `review-provider-market-data-imbalance-broker-readiness`
 so either the provider wrapper root or its nested `broker_dispatch_roundtrip`
