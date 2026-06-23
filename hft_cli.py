@@ -166,6 +166,10 @@ from reports.provider_market_data_imbalance_broker_readiness import (
     ProviderMarketDataImbalanceBrokerReadinessConfig,
     write_provider_market_data_imbalance_broker_readiness,
 )
+from reports.provider_market_data_imbalance_cutover import (
+    ProviderMarketDataImbalanceCutoverConfig,
+    write_provider_market_data_imbalance_cutover,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1619,6 +1623,39 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_broker_readiness.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_broker_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_broker_readiness.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_cutover = sub.add_parser(
+        "review-provider-market-data-imbalance-cutover",
+        help="Gate provider imbalance broker-readiness evidence for cutover and route-enable handoff.",
+    )
+    provider_market_data_imbalance_cutover.add_argument("--broker-readiness", required=True)
+    provider_market_data_imbalance_cutover.add_argument("--out", required=True)
+    provider_market_data_imbalance_cutover.add_argument("--scaleup", default=None)
+    provider_market_data_imbalance_cutover.add_argument("--nested-broker-readiness", default=None)
+    provider_market_data_imbalance_cutover.add_argument("--runtime-session", default=None)
+    provider_market_data_imbalance_cutover.add_argument("--operator-review", default=None)
+    provider_market_data_imbalance_cutover.add_argument(
+        "--target-mode",
+        default="",
+        choices=["", "paper", "shadow", "live_dryrun"],
+    )
+    provider_market_data_imbalance_cutover.add_argument("--allow-unready-provider-broker-readiness", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--allow-unready-cutover", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--allow-unready-scaleup", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--allow-missing-broker-readiness", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--allow-missing-runtime-session", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--allow-runtime-guard-halt", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--require-route-readiness", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--require-resume-gate", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--require-dispatch-roundtrip", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--require-operator-approval", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--require-operator-identity-ack", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--require-operator-limits-ack", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--no-use-provider-broker-readiness-inputs", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--max-failed-scaleup-checks", type=int, default=0)
+    provider_market_data_imbalance_cutover.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_cutover.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4500,6 +4537,45 @@ def main(argv: list[str] | None = None) -> int:
                 require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 require_adapter_match=not args.allow_adapter_mismatch,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-cutover":
+        result = write_provider_market_data_imbalance_cutover(
+            args.broker_readiness,
+            args.out,
+            scaleup_dir=args.scaleup,
+            broker_readiness_dir=args.nested_broker_readiness,
+            runtime_session_dir=args.runtime_session,
+            operator_review_path=args.operator_review,
+            config=ProviderMarketDataImbalanceCutoverConfig(
+                require_provider_broker_readiness_ready=not args.allow_unready_provider_broker_readiness,
+                require_cutover_ready=not args.allow_unready_cutover,
+                use_provider_broker_readiness_inputs=not args.no_use_provider_broker_readiness_inputs,
+                target_mode=args.target_mode,
+                require_scaleup_ready=not args.allow_unready_scaleup,
+                require_broker_readiness=not args.allow_missing_broker_readiness,
+                require_runtime_session=not args.allow_missing_runtime_session,
+                require_runtime_guard_continue=not args.allow_runtime_guard_halt,
+                require_route_readiness=args.require_route_readiness,
+                require_resume_gate=args.require_resume_gate,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                require_operator_approval=args.require_operator_approval,
+                require_operator_identity_ack=args.require_operator_identity_ack,
+                require_operator_limits_ack=args.require_operator_limits_ack,
+                max_failed_scaleup_checks=args.max_failed_scaleup_checks,
             ),
         )
         print(result.summary.to_string(index=False))

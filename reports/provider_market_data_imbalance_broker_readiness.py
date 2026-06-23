@@ -428,9 +428,9 @@ def _summary(
                 "recommendation": "prepare_provider_imbalance_cutover_review"
                 if ready
                 else "repair_provider_imbalance_broker_readiness",
-                "next_gate": "review-cutover-gate" if ready else _blocked_next_gate(checks),
+                "next_gate": "review-provider-market-data-imbalance-cutover" if ready else _blocked_next_gate(checks),
                 "next_gate_help_command": _help_command_for_gate(
-                    "review-cutover-gate" if ready else _blocked_next_gate(checks)
+                    "review-provider-market-data-imbalance-cutover" if ready else _blocked_next_gate(checks)
                 ),
                 "primary_action_status": "ready" if ready else "blocked",
             }
@@ -474,8 +474,10 @@ def _action_queue(
                     "action": "prepare_provider_imbalance_cutover_review",
                     "reason": "provider imbalance broker readiness is clear for cutover review",
                     "recommendation": "feed_broker_readiness_into_cutover_gate",
-                    "next_gate": "review-cutover-gate",
-                    "next_gate_help_command": _help_command_for_gate("review-cutover-gate"),
+                    "next_gate": "review-provider-market-data-imbalance-cutover",
+                    "next_gate_help_command": _help_command_for_gate(
+                        "review-provider-market-data-imbalance-cutover"
+                    ),
                 }
             ]
         )
@@ -647,6 +649,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli pipeline-provider-market-data-imbalance-launch --help"
     if next_gate == "review-broker-readiness":
         return "python -m hft_cli review-broker-readiness --help"
+    if next_gate == "review-provider-market-data-imbalance-cutover":
+        return "python -m hft_cli review-provider-market-data-imbalance-cutover --help"
     if next_gate == "review-cutover-gate":
         return "python -m hft_cli review-cutover-gate --help"
     return "python -m hft_cli review-provider-market-data-imbalance-broker-readiness --help"

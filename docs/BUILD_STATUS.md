@@ -1422,7 +1422,13 @@
   generic runtime session plus provider launch order export/upload pack,
   reruns `review-broker-readiness` under a nested folder with dry-run friendly
   defaults, writes provider checks/summary/action/config/runbook artifacts, and
-  routes ready runs to `review-cutover-gate`.
+  routes ready runs to `review-provider-market-data-imbalance-cutover`.
+- Provider-data imbalance now has a provider cutover wrapper after provider
+  broker-readiness. `review-provider-market-data-imbalance-cutover` infers
+  nested generic scale-up, broker-readiness, and runtime-session evidence,
+  reruns `review-cutover-gate` under a nested folder, preserves cutover safety
+  blockers such as missing route-readiness proof, and routes fully clean runs to
+  `review-route-enable`.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so
@@ -1440,7 +1446,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 1107 tests.
+Current passing suite: 1110 tests.
 
 ## Next Build Targets
 

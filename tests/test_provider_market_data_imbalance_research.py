@@ -48,6 +48,10 @@ from reports.provider_market_data_imbalance_broker_readiness import (
     ProviderMarketDataImbalanceBrokerReadinessConfig,
     write_provider_market_data_imbalance_broker_readiness,
 )
+from reports.provider_market_data_imbalance_cutover import (
+    ProviderMarketDataImbalanceCutoverConfig,
+    write_provider_market_data_imbalance_cutover,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -355,6 +359,15 @@ def _write_ready_provider_imbalance_runtime_session(
         tmp_path / "provider_imbalance_runtime_session",
         as_of_ts_ns=as_of_ts_ns,
         config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+
+
+def _write_ready_provider_imbalance_broker_readiness(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    return write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
     )
 
 
@@ -1333,9 +1346,9 @@ def test_provider_market_data_imbalance_broker_readiness_reviews_ready_session(t
     assert bool(summary.loc[0, "provider_runtime_session_ready"])
     assert bool(summary.loc[0, "broker_readiness_ready"])
     assert bool(broker_summary.loc[0, "ready"])
-    assert summary.loc[0, "next_gate"] == "review-cutover-gate"
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
     assert action_queue.loc[0, "queue_status"] == "ready"
-    assert action_queue.loc[0, "next_gate"] == "review-cutover-gate"
+    assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
     assert manifest["run_type"] == "provider_market_data_imbalance_broker_readiness"
     assert "broker_readiness" in manifest["inputs"]
     assert "runtime_session" in manifest["inputs"]
@@ -1401,4 +1414,97 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_ready_sessi
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "broker_readiness_ready"])
-    assert summary.loc[0, "next_gate"] == "review-cutover-gate"
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
+
+
+def test_provider_market_data_imbalance_cutover_blocks_missing_route_proof(tmp_path):
+    broker_readiness = _write_ready_provider_imbalance_broker_readiness(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_cutover"
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_cutover_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_cutover_action_queue.csv")
+    cutover_summary = pd.read_csv(out_dir / "cutover" / "cutover_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert bool(summary.loc[0, "provider_broker_readiness_ready"])
+    assert not bool(summary.loc[0, "cutover_ready"])
+    assert not bool(cutover_summary.loc[0, "ready"])
+    assert "cutover_ready" in failed
+    assert summary.loc[0, "next_gate"] == "review-route-readiness"
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "next_gate"] == "review-route-readiness"
+    assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
+    assert manifest["run_type"] == "provider_market_data_imbalance_cutover"
+    assert "cutover" in manifest["inputs"]
+    assert "scaleup" in manifest["inputs"]
+    assert "broker_readiness" in manifest["inputs"]
+    assert "runtime_session" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_cutover_blocks_unready_broker_readiness(tmp_path):
+    broker_dir = tmp_path / "provider_imbalance_broker_readiness"
+    broker_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_readiness_dir": "",
+                "runtime_session_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(broker_dir / "provider_market_data_imbalance_broker_readiness_summary.csv", index=False)
+    (broker_dir / "provider_market_data_imbalance_broker_readiness_config.json").write_text(
+        json.dumps({"provider_runtime_session": {"scaleup_dir": ""}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_dir,
+        tmp_path / "provider_imbalance_cutover",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_broker_readiness_ready" in failed
+    assert "nested_scaleup_config_exists" in failed
+    assert "nested_broker_readiness_summary_exists" in failed
+    assert "nested_runtime_session_summary_exists" in failed
+    assert "cutover_runnable" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
+    assert not (report.output_dir / "cutover" / "cutover_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_cutover_blocks_missing_route_proof(tmp_path):
+    broker_readiness = _write_ready_provider_imbalance_broker_readiness(tmp_path)
+    out_dir = tmp_path / "cli_provider_imbalance_cutover"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-cutover",
+            "--broker-readiness",
+            str(broker_readiness.output_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_cutover_summary.csv")
+    assert code == 2
+    assert not bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "cutover_ready"])
+    assert summary.loc[0, "next_gate"] == "review-route-readiness"

@@ -4688,7 +4688,25 @@ artifacts. By default it is suitable for initial Arrow.money/iRage dry-run
 testing: it requires the provider runtime session, order export, upload pack,
 and broker-readiness pass, while leaving reviewed schema, reconciliation, route
 readiness, and dispatch roundtrip as explicit promotion flags. A ready wrapper
-points to `review-cutover-gate`.
+points to `review-provider-market-data-imbalance-cutover`.
+
+Run the provider-specific cutover wrapper:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-cutover `
+  --broker-readiness runs\provider_market_data_imbalance_broker_readiness\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_cutover\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider cutover wrapper reads the provider broker-readiness summary/config,
+infers nested generic scale-up, broker-readiness, and runtime-session evidence,
+runs `review-cutover-gate` under a nested `cutover` folder, and writes provider
+checks/summary/action/config/runbook artifacts. It keeps the generic cutover
+safety model intact: if route-readiness or broker route proof is missing, the
+wrapper blocks with `review-route-readiness`; once cutover is fully clean, it
+points to `review-route-enable`.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
