@@ -72,6 +72,10 @@ def write_provider_market_data_live_rehearsal(
     )
     bundle_path = Path(capture_bundle_path)
     inputs: dict[str, Any] = {"capture_bundle": bundle_path} if bundle_path.exists() else {}
+    env_template_text = str(report.summary.iloc[0]["env_template_path"])
+    env_template_path = Path(env_template_text) if env_template_text else None
+    if env_template_path is not None and env_template_path.exists():
+        inputs["capture_env_template"] = env_template_path
     live_session_packet = Path(str(report.summary.iloc[0]["live_session_packet_path"]))
     if live_session_packet.exists():
         inputs["live_session_packet"] = live_session_packet
@@ -330,12 +334,16 @@ def _summary(
     next_action = action_queue.iloc[0] if not action_queue.empty else None
     ingest_ready = bool(ingest.ready) if ingest is not None else False
     ingest_output_dir = "" if ingest is None or ingest.output_dir is None else str(ingest.output_dir)
+    env_template_path = _env_template_path(bundle_path, bundle)
     return pd.DataFrame(
         [
             {
                 "ready": ready,
                 "synthetic_only": True,
                 "capture_bundle_path": str(bundle_path),
+                "env_template_path": _path_text(env_template_path),
+                "env_template_provided": bool(env_template_path),
+                "env_template_exists": bool(env_template_path is not None and env_template_path.exists()),
                 "live_session_packet_path": _text(bundle.get("live_session_packet_path")),
                 "provider": _text(bundle.get("provider")),
                 "transport": _text(bundle.get("transport")),
@@ -411,6 +419,9 @@ def _config(
         "synthetic_only": True,
         "parameters": asdict(config),
         "capture_bundle_path": str(bundle_path),
+        "env_template_path": str(summary["env_template_path"]),
+        "env_template_provided": bool(summary["env_template_provided"]),
+        "env_template_exists": bool(summary["env_template_exists"]),
         "live_session_packet_path": _text(bundle.get("live_session_packet_path")),
         "captures": _records(captures),
         "checks": _records(checks),
@@ -478,6 +489,7 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         "- Synthetic only: yes",
         f"- Captures: {summary['capture_count']}",
         f"- Rows per window: {summary['rows_per_window']}",
+        f"- Credential env template: {summary['env_template_path']}",
         f"- Ingest ready: {'yes' if bool(summary['ingest_ready']) else 'no'}",
         "",
         "## Synthetic Captures",
@@ -544,6 +556,20 @@ def _default_ingest_output(bundle: dict[str, Any], captures: pd.DataFrame) -> st
         if len(start) >= 10:
             day = start[:10].replace("-", "_")
     return f"runs/provider_market_data_live_rehearsal_ingest/{provider}_{market}_{day}"
+
+
+def _env_template_path(bundle_path: Path, bundle: dict[str, Any]) -> Path | None:
+    template = _text(_mapping(bundle.get("authentication")).get("env_template"))
+    if not template:
+        return None
+    path = Path(template)
+    if path.is_absolute():
+        return path
+    return bundle_path.parent / path
+
+
+def _path_text(path: Path | None) -> str:
+    return "" if path is None else str(path)
 
 
 def _parse_datetime(value: str) -> datetime:

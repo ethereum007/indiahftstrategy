@@ -97,6 +97,7 @@ def _first_capture_path(bundle_path):
 
 def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_ingest(tmp_path):
     bundle_path = _write_bundle(tmp_path)
+    env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
     out_dir = tmp_path / "rehearsal"
 
     report = write_provider_market_data_live_rehearsal(
@@ -119,12 +120,18 @@ def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_
     assert summary["capture_count"] == 2
     assert summary["synthetic_rows_written"] == 6
     assert summary["ingest_ready"]
+    assert Path(summary["env_template_path"]) == env_template_path
+    assert summary["env_template_provided"]
+    assert summary["env_template_exists"]
     assert captures["synthetic_rows_written"].tolist() == [3, 3]
     assert all(Path(path).exists() for path in captures["capture_path"])
     assert all(Path(path).exists() for path in captures["sidecar_path"])
     assert config["synthetic_only"] is True
+    assert config["env_template_path"] == str(env_template_path)
+    assert config["env_template_exists"] is True
     assert config["ingest"]["ready"] is True
     assert manifest["run_type"] == "provider_market_data_live_rehearsal"
+    assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert "synthetic_captures" in manifest["inputs"]
 
 
