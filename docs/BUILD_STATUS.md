@@ -1479,9 +1479,9 @@
   before live-data dry-runs.
 - Provider-data imbalance route-enable now preserves the cutover-carried
   provider broker-dispatch round-trip wrapper and nested generic
-  `broker_dispatch_roundtrip` paths in route-enable summary/config/manifest
-  artifacts, keeping dry-run broker proof visible through the handoff to
-  provider broker-dispatch planning.
+  `broker_dispatch_roundtrip` paths plus upstream proof lineage in route-enable
+  summary/config/manifest artifacts, keeping dry-run broker proof visible
+  through the handoff to provider broker-dispatch planning.
 - Provider-data imbalance broker-dispatch now preserves the route-enable-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths in broker-dispatch summary/config/manifest

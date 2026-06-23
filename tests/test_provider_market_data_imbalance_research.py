@@ -2177,6 +2177,75 @@ def test_provider_market_data_imbalance_route_enable_carries_cutover_dispatch_ro
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
 
 
+def test_provider_market_data_imbalance_route_enable_preserves_upstream_roundtrip(tmp_path):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+    nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
+    upstream_provider_dir = tmp_path / "upstream_provider_imbalance_broker_dispatch_roundtrip"
+    upstream_nested_dir = upstream_provider_dir / "broker_dispatch_roundtrip"
+    nested_roundtrip_dir.mkdir(parents=True)
+    upstream_nested_dir.mkdir(parents=True)
+    (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
+        "true,true,true,0\n",
+        encoding="utf-8",
+    )
+    (upstream_nested_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready\ntrue\n",
+        encoding="utf-8",
+    )
+
+    cutover_summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
+    cutover_summary = pd.read_csv(cutover_summary_path)
+    cutover_summary["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
+    cutover_summary["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    cutover_summary["dispatch_roundtrip_provided"] = True
+    cutover_summary["dispatch_roundtrip_ready"] = True
+    cutover_summary["dispatch_roundtrip_failed_checks"] = 0
+    cutover_summary["upstream_provider_dispatch_roundtrip_dir"] = str(upstream_provider_dir)
+    cutover_summary["upstream_dispatch_roundtrip_dir"] = str(upstream_nested_dir)
+    cutover_summary["upstream_dispatch_roundtrip_provided"] = True
+    cutover_summary["upstream_dispatch_roundtrip_ready"] = True
+    cutover_summary["upstream_dispatch_roundtrip_failed_checks"] = 0
+    cutover_summary.to_csv(cutover_summary_path, index=False)
+
+    cutover_config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
+    cutover_config = json.loads(cutover_config_path.read_text(encoding="utf-8"))
+    cutover_inputs = cutover_config.setdefault("cutover_inputs", {})
+    cutover_inputs["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
+    cutover_inputs["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    cutover_inputs["upstream_provider_dispatch_roundtrip_dir"] = str(upstream_provider_dir)
+    cutover_inputs["upstream_dispatch_roundtrip_dir"] = str(upstream_nested_dir)
+    cutover_config_path.write_text(
+        json.dumps(cutover_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_route_enable_with_upstream_roundtrip"
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_enable_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_route_enable_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert report.ready
+    assert Path(summary.loc[0, "upstream_provider_dispatch_roundtrip_dir"]) == upstream_provider_dir
+    assert Path(summary.loc[0, "upstream_dispatch_roundtrip_dir"]) == upstream_nested_dir
+    assert bool(summary.loc[0, "upstream_dispatch_roundtrip_provided"])
+    assert bool(summary.loc[0, "upstream_dispatch_roundtrip_ready"])
+    assert int(summary.loc[0, "upstream_dispatch_roundtrip_failed_checks"]) == 0
+    assert config["route_enable_inputs"]["upstream_provider_dispatch_roundtrip_dir"] == str(upstream_provider_dir)
+    assert config["route_enable_inputs"]["upstream_dispatch_roundtrip_dir"] == str(upstream_nested_dir)
+    assert manifest["inputs"]["upstream_provider_dispatch_roundtrip"]["path"] == str(upstream_provider_dir)
+    assert manifest["inputs"]["upstream_dispatch_roundtrip"]["path"] == str(upstream_nested_dir)
+
+
 def test_provider_market_data_imbalance_route_enable_blocks_unready_cutover(tmp_path):
     cutover_dir = tmp_path / "provider_imbalance_cutover"
     cutover_dir.mkdir(parents=True, exist_ok=True)
