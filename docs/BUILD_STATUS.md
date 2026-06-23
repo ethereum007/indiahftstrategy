@@ -1464,6 +1464,12 @@
   catalog/scorecard discovery, and routes clean dry-run round-trip evidence to
   `review-provider-market-data-imbalance-broker-readiness --dispatch-roundtrip`
   before cutover promotion.
+- Provider-data imbalance broker readiness now accepts that provider
+  broker-dispatch round-trip wrapper root directly. The wrapper resolves the
+  nested generic `broker_dispatch_roundtrip` proof, passes it into
+  `review-broker-readiness`, exposes provider and nested round-trip paths plus
+  ready/failed-check fields in the provider summary/config/runbook, and keeps
+  both roots in the manifest for audit.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

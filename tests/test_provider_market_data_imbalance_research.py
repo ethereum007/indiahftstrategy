@@ -544,6 +544,15 @@ def _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path):
     )
 
 
+def _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+    return write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_roundtrip",
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+
+
 def test_provider_market_data_imbalance_research_runs_pipeline_from_live_evidence(tmp_path):
     evidence = _write_real_evidence(tmp_path)
     out_dir = tmp_path / "provider_imbalance_research"
@@ -1659,6 +1668,45 @@ def test_provider_market_data_imbalance_broker_readiness_reviews_ready_session(t
     assert "runtime_session" in manifest["inputs"]
     assert "order_export" in manifest["inputs"]
     assert "upload_pack" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispatch_roundtrip_root(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_with_provider_roundtrip"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    broker_summary = pd.read_csv(out_dir / "broker_readiness" / "broker_readiness_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    nested_roundtrip_dir = provider_roundtrip.output_dir / "broker_dispatch_roundtrip"
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "broker_readiness_ready" in failed
+    assert bool(summary.loc[0, "dispatch_roundtrip_provided"])
+    assert bool(summary.loc[0, "dispatch_roundtrip_ready"])
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
+    assert summary.loc[0, "next_gate_help_command"] == (
+        "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
+    )
+    assert Path(summary.loc[0, "provider_dispatch_roundtrip_dir"]) == provider_roundtrip.output_dir
+    assert Path(summary.loc[0, "dispatch_roundtrip_dir"]) == nested_roundtrip_dir
+    assert bool(broker_summary.loc[0, "dispatch_roundtrip_provided"])
+    assert bool(broker_summary.loc[0, "dispatch_roundtrip_ready"])
+    assert bool(report.checks.set_index("check").loc["broker_readiness_runnable", "passed"])
+    assert config["broker_inputs"]["provider_dispatch_roundtrip_dir"] == str(provider_roundtrip.output_dir)
+    assert config["broker_inputs"]["dispatch_roundtrip_dir"] == str(nested_roundtrip_dir)
+    assert manifest["inputs"]["provider_dispatch_roundtrip"]["path"] == str(provider_roundtrip.output_dir)
+    assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
 
 
 def test_provider_market_data_imbalance_broker_readiness_blocks_unready_session(tmp_path):

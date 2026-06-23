@@ -109,7 +109,8 @@ def write_provider_market_data_imbalance_broker_readiness(
     resolved_mapped_orders_dir = Path(mapped_orders_dir) if mapped_orders_dir is not None else None
     resolved_halt_export_dir = Path(halt_export_dir) if halt_export_dir is not None else None
     resolved_resume_dir = Path(resume_dir) if resume_dir is not None else None
-    resolved_dispatch_roundtrip_dir = Path(dispatch_roundtrip_dir) if dispatch_roundtrip_dir is not None else None
+    provider_dispatch_roundtrip_dir = Path(dispatch_roundtrip_dir) if dispatch_roundtrip_dir is not None else None
+    resolved_dispatch_roundtrip_dir = _resolve_dispatch_roundtrip_dir(provider_dispatch_roundtrip_dir)
     resolved_vendor_market_data_batch_dir = Path(vendor_market_data_batch_dir) if vendor_market_data_batch_dir is not None else None
 
     prechecks = _prechecks(
@@ -158,6 +159,8 @@ def write_provider_market_data_imbalance_broker_readiness(
         resolved_schema_audit_dir,
         resolved_order_export_dir,
         resolved_upload_pack_dir,
+        provider_dispatch_roundtrip_dir,
+        resolved_dispatch_roundtrip_dir,
     )
     action_queue = _action_queue(summary.iloc[0], checks, broker)
     summary = _summary_with_actions(summary, action_queue)
@@ -179,6 +182,7 @@ def write_provider_market_data_imbalance_broker_readiness(
             "reconciliation_dir": resolved_reconciliation_dir,
             "runtime_session_dir": generic_runtime_session_dir,
             "resume_dir": resolved_resume_dir,
+            "provider_dispatch_roundtrip_dir": provider_dispatch_roundtrip_dir,
             "dispatch_roundtrip_dir": resolved_dispatch_roundtrip_dir,
             "vendor_market_data_batch_dir": resolved_vendor_market_data_batch_dir,
         },
@@ -208,6 +212,7 @@ def write_provider_market_data_imbalance_broker_readiness(
         "reconciliation": resolved_reconciliation_dir,
         "resume_gate": resolved_resume_dir,
         "dispatch_roundtrip": resolved_dispatch_roundtrip_dir,
+        "provider_dispatch_roundtrip": provider_dispatch_roundtrip_dir,
         "vendor_market_data_batch": resolved_vendor_market_data_batch_dir,
     }.items():
         if value is not None:
@@ -389,6 +394,8 @@ def _summary(
     schema_audit_dir: Path | None,
     order_export_dir: str | Path | None,
     upload_pack_dir: str | Path | None,
+    provider_dispatch_roundtrip_dir: Path | None,
+    dispatch_roundtrip_dir: Path | None,
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     ready = failed == 0
@@ -405,6 +412,13 @@ def _summary(
                 "schema_audit_dir": _path_text(schema_audit_dir),
                 "order_export_dir": _path_text(_path_or_none(order_export_dir)),
                 "upload_pack_dir": _path_text(_path_or_none(upload_pack_dir)),
+                "provider_dispatch_roundtrip_dir": _path_text(provider_dispatch_roundtrip_dir),
+                "dispatch_roundtrip_dir": _path_text(dispatch_roundtrip_dir),
+                "dispatch_roundtrip_provided": _first_bool(broker_summary, "dispatch_roundtrip_provided"),
+                "dispatch_roundtrip_ready": _first_bool(broker_summary, "dispatch_roundtrip_ready"),
+                "dispatch_roundtrip_failed_checks": int(
+                    _first_number(broker_summary, "dispatch_roundtrip_failed_checks")
+                ),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
                 "provider": _first_text(session_summary, "provider"),
@@ -571,6 +585,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Market: {summary['market']}",
         f"- Target mode: {summary['target_mode']}",
         f"- Broker readiness dir: {summary['broker_readiness_dir']}",
+        f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
+        f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
         f"- Primary next gate: `{summary['next_gate']}`",
         f"- Primary next gate help: `{summary['next_gate_help_command']}`",
         "",
@@ -633,8 +649,8 @@ def _next_gate_for_check(check: str, broker: BrokerReadinessReport | None) -> st
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "pipeline-provider-market-data-imbalance-launch"
     if check == "broker_readiness_ready" and broker is not None:
-        next_gate = _first_action_value(broker.action_queue, "next_gate")
-        return next_gate or "review-broker-readiness"
+        next_gate = _provider_next_gate(_first_action_value(broker.action_queue, "next_gate"))
+        return next_gate or "review-provider-market-data-imbalance-broker-readiness"
     if check.startswith("broker_readiness"):
         return "review-broker-readiness"
     if check in {"strategy_identity_imbalance", "market_identity_consistent"}:
@@ -642,11 +658,33 @@ def _next_gate_for_check(check: str, broker: BrokerReadinessReport | None) -> st
     return "review-provider-market-data-imbalance-broker-readiness"
 
 
+def _provider_next_gate(next_gate: str) -> str:
+    mapping = {
+        "review-broker-readiness": "review-provider-market-data-imbalance-broker-readiness",
+        "review-route-readiness": "review-provider-market-data-imbalance-route-readiness",
+        "review-broker-dispatch-roundtrip": "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+        "plan-broker-dispatch": "plan-provider-market-data-imbalance-broker-dispatch",
+        "prepare-broker-dispatch-send": "prepare-provider-market-data-imbalance-broker-dispatch-send",
+        "reconcile-broker-dispatch": "reconcile-provider-market-data-imbalance-broker-dispatch",
+    }
+    return mapping.get(next_gate, next_gate)
+
+
 def _help_command_for_gate(next_gate: str) -> str:
     if next_gate == "monitor-provider-market-data-imbalance-runtime-session":
         return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-session --help"
     if next_gate == "pipeline-provider-market-data-imbalance-launch":
         return "python -m hft_cli pipeline-provider-market-data-imbalance-launch --help"
+    if next_gate == "review-provider-market-data-imbalance-route-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
+    if next_gate == "review-provider-market-data-imbalance-broker-dispatch-roundtrip":
+        return "python -m hft_cli review-provider-market-data-imbalance-broker-dispatch-roundtrip --help"
+    if next_gate == "plan-provider-market-data-imbalance-broker-dispatch":
+        return "python -m hft_cli plan-provider-market-data-imbalance-broker-dispatch --help"
+    if next_gate == "prepare-provider-market-data-imbalance-broker-dispatch-send":
+        return "python -m hft_cli prepare-provider-market-data-imbalance-broker-dispatch-send --help"
+    if next_gate == "reconcile-provider-market-data-imbalance-broker-dispatch":
+        return "python -m hft_cli reconcile-provider-market-data-imbalance-broker-dispatch --help"
     if next_gate == "review-broker-readiness":
         return "python -m hft_cli review-broker-readiness --help"
     if next_gate == "review-provider-market-data-imbalance-cutover":
@@ -707,6 +745,39 @@ def _explicit_or_inferred(
         return None
     text = _clean(inferred_inputs.get(key))
     return text or None
+
+
+def _resolve_dispatch_roundtrip_dir(path: Path | None) -> Path | None:
+    if path is None:
+        return None
+    generic_summary = path / "broker_dispatch_roundtrip_summary.csv" if path.is_dir() else path
+    if generic_summary.exists():
+        return path
+    provider_summary, _ = _read_csv(path / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv")
+    provider_config, _ = _read_json(path / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json")
+    nested = _first_existing_path(
+        _path_from_text(_first_text(provider_summary, "broker_dispatch_roundtrip_dir")),
+        _path_from_text(((provider_config.get("broker_dispatch_roundtrip", {}) or {}).get("output_dir"))),
+        _manifest_input_path(path / "manifest.json", "broker_dispatch_roundtrip"),
+    )
+    return nested or path
+
+
+def _manifest_input_path(manifest_path: Path, input_name: str) -> Path | None:
+    if not manifest_path.exists():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    value = (manifest.get("inputs", {}) or {}).get(input_name)
+    raw_path = value.get("path") if isinstance(value, dict) else value
+    if not raw_path:
+        return None
+    candidate = Path(str(raw_path))
+    if not candidate.is_absolute():
+        candidate = manifest_path.parent / candidate
+    return candidate
 
 
 def _first_action_value(action_queue: pd.DataFrame | None, column: str) -> str:
@@ -817,6 +888,15 @@ def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
     if frame is None or frame.empty or column not in frame.columns:
         return False
     return _truthy(frame.iloc[0][column])
+
+
+def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:
+    if frame is None or frame.empty or column not in frame.columns:
+        return float(fallback)
+    value = pd.to_numeric(frame.iloc[0][column], errors="coerce")
+    if pd.isna(value):
+        return float(fallback)
+    return float(value)
 
 
 def _identity_key(value: object) -> str:

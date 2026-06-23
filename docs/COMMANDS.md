@@ -4698,6 +4698,8 @@ Run the provider-specific broker readiness wrapper:
 ```powershell
 python -m hft_cli review-provider-market-data-imbalance-broker-readiness `
   --runtime-session runs\provider_market_data_imbalance_runtime_session\arrow_ws_nse_2026_06_23 `
+  --dispatch-roundtrip runs\provider_market_data_imbalance_broker_dispatch_roundtrip\arrow_ws_nse_2026_06_23 `
+  --require-dispatch-roundtrip `
   --out runs\provider_market_data_imbalance_broker_readiness\arrow_ws_nse_2026_06_23 `
   --fail-on-blocked-actions `
   --fail-on-breach
@@ -4705,13 +4707,15 @@ python -m hft_cli review-provider-market-data-imbalance-broker-readiness `
 
 The provider broker-readiness wrapper reads the provider runtime-session
 summary/config, infers the nested generic `runtime_session` plus provider launch
-order export/upload-pack artifacts, runs the generic `broker_readiness` gate
-under a nested folder, and writes provider checks/summary/action/config/runbook
-artifacts. By default it is suitable for initial Arrow.money/iRage dry-run
-testing: it requires the provider runtime session, order export, upload pack,
-and broker-readiness pass, while leaving reviewed schema, reconciliation, route
-readiness, and dispatch roundtrip as explicit promotion flags. A ready wrapper
-points to `review-provider-market-data-imbalance-cutover`.
+order export/upload-pack artifacts, accepts either the provider broker-dispatch
+round-trip wrapper root or its nested generic `broker_dispatch_roundtrip`
+folder, runs the generic `broker_readiness` gate under a nested folder, and
+writes provider checks/summary/action/config/runbook artifacts. By default it
+is suitable for initial Arrow.money/iRage dry-run testing: it requires the
+provider runtime session, order export, upload pack, and broker-readiness pass,
+while leaving reviewed schema, reconciliation, route readiness, and dispatch
+roundtrip as explicit promotion flags. A ready wrapper points to
+`review-provider-market-data-imbalance-cutover`.
 
 Run the provider-specific cutover wrapper:
 
@@ -4830,8 +4834,9 @@ folder, and writes provider checks/summary/action/config/runbook artifacts.
 Clean proof emits a ready
 `feed_provider_imbalance_broker_dispatch_roundtrip_into_broker_readiness`
 action and points to `review-provider-market-data-imbalance-broker-readiness`
-so the nested `broker_dispatch_roundtrip` folder can be supplied through
-`--dispatch-roundtrip` before any provider cutover promotion.
+so either the provider wrapper root or its nested `broker_dispatch_roundtrip`
+folder can be supplied through `--dispatch-roundtrip` before any provider
+cutover promotion.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

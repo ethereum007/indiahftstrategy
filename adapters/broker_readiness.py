@@ -773,6 +773,18 @@ def _apply_shadow_broker_readiness_config(
     *,
     field_prefix: str,
 ) -> None:
+    _ensure_object_columns(
+        frame,
+        [
+            f"{field_prefix}_adapter",
+            f"{field_prefix}_route_readiness_strategy",
+            f"{field_prefix}_route_readiness_market",
+            f"{field_prefix}_dispatch_roundtrip_strategy",
+            f"{field_prefix}_dispatch_roundtrip_market",
+            f"{field_prefix}_route_dispatch_roundtrip_strategy",
+            f"{field_prefix}_route_dispatch_roundtrip_market",
+        ],
+    )
     route = readiness.get("route_readiness", {}) or {}
     dispatch = readiness.get("dispatch_roundtrip", {}) or {}
     route_dispatch = readiness.get("route_dispatch_roundtrip", {}) or {}
@@ -899,6 +911,12 @@ def _apply_shadow_broker_readiness_config(
             _number(row, f"{field_prefix}_route_dispatch_roundtrip_scenario_count", 0.0),
         )
     )
+
+
+def _ensure_object_columns(frame: pd.DataFrame, columns: list[str]) -> None:
+    for column in columns:
+        if column in frame.columns:
+            frame[column] = frame[column].astype("object")
 
 
 def _item(
