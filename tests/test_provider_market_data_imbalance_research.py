@@ -32,6 +32,10 @@ from reports.provider_market_data_imbalance_scaleup import (
     ProviderMarketDataImbalanceScaleupConfig,
     write_provider_market_data_imbalance_scaleup_plan,
 )
+from reports.provider_market_data_imbalance_runtime_telemetry import (
+    ProviderMarketDataImbalanceRuntimeTelemetryConfig,
+    write_provider_market_data_imbalance_runtime_telemetry_snapshot,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -848,9 +852,9 @@ def test_provider_market_data_imbalance_scaleup_plans_from_ready_scorecard(tmp_p
     assert bool(summary.loc[0, "scaleup_ready"])
     assert summary.loc[0, "strategy"] == "imbalance"
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
-    assert summary.loc[0, "next_gate"] == "build-runtime-telemetry"
+    assert summary.loc[0, "next_gate"] == "build-provider-market-data-imbalance-runtime-telemetry"
     assert action_queue.loc[0, "queue_status"] == "ready"
-    assert action_queue.loc[0, "next_gate"] == "build-runtime-telemetry"
+    assert action_queue.loc[0, "next_gate"] == "build-provider-market-data-imbalance-runtime-telemetry"
     assert bool(scaleup_summary.loc[0, "ready"])
     assert scaleup_summary.loc[0, "strategy"] == "imbalance"
     assert manifest["run_type"] == "provider_market_data_imbalance_scaleup_plan"
@@ -931,4 +935,113 @@ def test_cli_provider_market_data_imbalance_scaleup_accepts_ready_scorecard(tmp_
     summary = pd.read_csv(out_dir / "provider_market_data_imbalance_scaleup_summary.csv")
     assert code == 0
     assert bool(summary.loc[0, "ready"])
-    assert summary.loc[0, "next_gate"] == "build-runtime-telemetry"
+    assert summary.loc[0, "next_gate"] == "build-provider-market-data-imbalance-runtime-telemetry"
+
+
+def test_provider_market_data_imbalance_runtime_telemetry_builds_from_ready_scaleup(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    out_dir = tmp_path / "provider_imbalance_runtime_telemetry"
+
+    report = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        out_dir,
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_telemetry_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_telemetry_action_queue.csv")
+    runtime_summary = pd.read_csv(out_dir / "runtime_telemetry" / "runtime_telemetry_summary.csv")
+    sources = pd.read_csv(out_dir / "runtime_telemetry" / "runtime_telemetry_sources.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary.loc[0, "provider_scaleup_ready"])
+    assert bool(summary.loc[0, "runtime_telemetry_ready"])
+    assert summary.loc[0, "strategy"] == "imbalance"
+    assert summary.loc[0, "market"] == "india_nse_index_derivatives"
+    assert summary.loc[0, "next_gate"] == "monitor-scaleup-guard"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "monitor-scaleup-guard"
+    assert bool(runtime_summary.loc[0, "ready"])
+    assert runtime_summary.loc[0, "strategy"] == "imbalance"
+    assert bool(sources.loc[sources["source"] == "export_summary", "provided"].iloc[0])
+    assert bool(sources.loc[sources["source"] == "upload_summary", "provided"].iloc[0])
+    assert manifest["run_type"] == "provider_market_data_imbalance_runtime_telemetry_snapshot"
+    assert "runtime_telemetry" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_runtime_telemetry_blocks_unready_scaleup(tmp_path):
+    scaleup_dir = tmp_path / "provider_imbalance_scaleup"
+    scaleup_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "scaleup_ready": False,
+                "scaleup_dir": "",
+                "launch_pipeline_dir": "",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(scaleup_dir / "provider_market_data_imbalance_scaleup_summary.csv", index=False)
+
+    report = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_imbalance_scaleup_ready" in failed
+    assert "nested_scaleup_config_exists" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+    assert not (report.output_dir / "runtime_telemetry" / "runtime_telemetry_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_runtime_telemetry_accepts_ready_scaleup(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    out_dir = tmp_path / "cli_provider_imbalance_runtime_telemetry"
+
+    code = main(
+        [
+            "build-provider-market-data-imbalance-runtime-telemetry",
+            "--scaleup",
+            str(scaleup.output_dir),
+            "--out",
+            str(out_dir),
+            "--snapshot-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_runtime_telemetry_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "monitor-scaleup-guard"

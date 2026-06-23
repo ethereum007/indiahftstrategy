@@ -1392,7 +1392,14 @@
   launch-evidence, full imbalance `strategy_evidence`, and nested launch
   pipeline paths from the provider scorecard, requires a real shadow comparison,
   writes provider wrapper action/config/runbook artifacts plus nested generic
-  `scaleup` outputs, and points ready runs to `build-runtime-telemetry`.
+  `scaleup` outputs, and points ready runs to
+  `build-provider-market-data-imbalance-runtime-telemetry`.
+- Provider-data imbalance now has a dedicated runtime telemetry wrapper after
+  provider scale-up. `build-provider-market-data-imbalance-runtime-telemetry`
+  infers nested `scaleup_config.json` plus broker export/upload inputs from the
+  provider launch pipeline, accepts optional live PnL/open-order/position CSVs,
+  writes provider wrapper action/config/runbook artifacts plus nested generic
+  `runtime_telemetry` outputs, and points ready runs to `monitor-scaleup-guard`.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so

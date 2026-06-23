@@ -150,6 +150,10 @@ from reports.provider_market_data_imbalance_scaleup import (
     ProviderMarketDataImbalanceScaleupConfig,
     write_provider_market_data_imbalance_scaleup_plan,
 )
+from reports.provider_market_data_imbalance_runtime_telemetry import (
+    ProviderMarketDataImbalanceRuntimeTelemetryConfig,
+    write_provider_market_data_imbalance_runtime_telemetry_snapshot,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1483,6 +1487,27 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_scaleup.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_scaleup.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_scaleup.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_runtime_telemetry = sub.add_parser(
+        "build-provider-market-data-imbalance-runtime-telemetry",
+        help="Build guard-ready runtime telemetry from a provider imbalance scale-up wrapper.",
+    )
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--scaleup", required=True)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--out", required=True)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--export", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--upload-pack", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--reconciliation", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--instrument-metadata", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--pnl", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--open-orders", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--positions", default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--snapshot-ts-ns", type=float, default=None)
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--no-require-provider-scaleup-ready", action="store_true")
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--no-require-runtime-telemetry-ready", action="store_true")
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--no-use-launch-pipeline-broker-inputs", action="store_true")
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_runtime_telemetry.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4216,6 +4241,37 @@ def main(argv: list[str] | None = None) -> int:
                 require_scaleup_ready=not args.no_require_scaleup_ready,
             ),
             thresholds=_scaleup_thresholds_from_args(args),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "build-provider-market-data-imbalance-runtime-telemetry":
+        result = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+            args.scaleup,
+            args.out,
+            export_dir=args.export,
+            upload_pack_dir=args.upload_pack,
+            reconciliation_dir=args.reconciliation,
+            instrument_metadata_dir=args.instrument_metadata,
+            pnl_path=args.pnl,
+            open_orders_path=args.open_orders,
+            positions_path=args.positions,
+            snapshot_ts_ns=args.snapshot_ts_ns,
+            config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(
+                require_provider_scaleup_ready=not args.no_require_provider_scaleup_ready,
+                require_runtime_telemetry_ready=not args.no_require_runtime_telemetry_ready,
+                use_launch_pipeline_broker_inputs=not args.no_use_launch_pipeline_broker_inputs,
+            ),
         )
         print(result.summary.to_string(index=False))
         action_queue = result.action_queue

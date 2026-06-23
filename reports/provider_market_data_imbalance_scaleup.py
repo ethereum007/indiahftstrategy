@@ -437,8 +437,10 @@ def _summary(
                 "recommendation": "build_provider_imbalance_runtime_telemetry"
                 if ready
                 else "repair_provider_imbalance_scaleup",
-                "next_gate": "build-runtime-telemetry" if ready else _blocked_next_gate(checks),
-                "next_gate_help_command": _help_command_for_gate("build-runtime-telemetry")
+                "next_gate": "build-provider-market-data-imbalance-runtime-telemetry" if ready else _blocked_next_gate(checks),
+                "next_gate_help_command": _help_command_for_gate(
+                    "build-provider-market-data-imbalance-runtime-telemetry"
+                )
                 if ready
                 else _blocked_help_command(checks),
                 "primary_action_status": "ready" if ready else "blocked",
@@ -460,8 +462,10 @@ def _action_queue(
                     "queue_status": "ready",
                     "action": "build_provider_imbalance_runtime_telemetry",
                     "reason": "provider imbalance scale-up plan is ready for runtime telemetry and guard monitoring",
-                    "next_gate": "build-runtime-telemetry",
-                    "next_gate_help_command": _help_command_for_gate("build-runtime-telemetry"),
+                    "next_gate": "build-provider-market-data-imbalance-runtime-telemetry",
+                    "next_gate_help_command": _help_command_for_gate(
+                        "build-provider-market-data-imbalance-runtime-telemetry"
+                    ),
                 }
             ]
         )
@@ -597,6 +601,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli plan-scaleup --help"
     if next_gate == "build-runtime-telemetry":
         return "python -m hft_cli build-runtime-telemetry --help"
+    if next_gate == "build-provider-market-data-imbalance-runtime-telemetry":
+        return "python -m hft_cli build-provider-market-data-imbalance-runtime-telemetry --help"
     return "python -m hft_cli plan-provider-market-data-imbalance-scaleup --help"
 
 

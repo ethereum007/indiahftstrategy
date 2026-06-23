@@ -4601,8 +4601,32 @@ artifacts, but it still requires a real `shadow_session_comparison_summary.csv`.
 It writes provider wrapper checks/summary/action/config/runbook artifacts plus a
 nested generic `scaleup` folder with `scaleup_plan.csv`, `scaleup_checks.csv`,
 `scaleup_summary.csv`, and `scaleup_config.json`. A ready wrapper points to
-`build-runtime-telemetry`; missing or rejected shadow evidence stays blocked at
-`compare-shadow-sessions`.
+`build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
+shadow evidence stays blocked at `compare-shadow-sessions`.
+
+Build guard-ready runtime telemetry from that provider scale-up wrapper:
+
+```powershell
+python -m hft_cli build-provider-market-data-imbalance-runtime-telemetry `
+  --scaleup runs\provider_market_data_imbalance_scaleup\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_runtime_telemetry\arrow_ws_nse_2026_06_23 `
+  --pnl runs\runtime_snapshots\provider_imbalance_pnl.csv `
+  --open-orders runs\runtime_snapshots\provider_imbalance_open_orders.csv `
+  --positions runs\runtime_snapshots\provider_imbalance_positions.csv `
+  --snapshot-ts-ns 1782198900000000000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+By default the provider telemetry wrapper infers broker export and upload-pack
+inputs from the provider imbalance launch pipeline carried by the scale-up
+wrapper, then writes provider checks/summary/action/config/runbook artifacts
+plus a nested `runtime_telemetry` folder with `runtime_telemetry.csv`,
+`runtime_telemetry_sources.csv`, `runtime_telemetry_checks.csv`, and
+`runtime_telemetry_summary.csv`. Supply live PnL, open-order, and position CSVs
+when they are available from Arrow.money/iRage; omit them for a dry guard-input
+snapshot based on scale-up and launch-pipeline metadata. A ready wrapper points
+to `monitor-scaleup-guard`.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
