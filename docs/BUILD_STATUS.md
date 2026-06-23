@@ -1407,7 +1407,14 @@
   checks/summary/action/config/runbook artifacts plus nested generic
   `runtime_guard` outputs, converts guard halts into ready
   `plan-halt-response` actions, and routes clean guards to
-  `monitor-runtime-session`.
+  `monitor-provider-market-data-imbalance-runtime-session`.
+- Provider-data imbalance now has a provider runtime session wrapper after the
+  provider guard. `monitor-provider-market-data-imbalance-runtime-session`
+  infers the provider runtime telemetry inputs, reruns the nested generic
+  `runtime_session`, writes provider checks/summary/action/config/runbook
+  artifacts, routes clean sessions to `review-broker-readiness`, and exposes
+  ready `export-halt-response` actions when a guarded session halts with a ready
+  halt packet.
 - Broker-vendor data readiness now promotes broker schema review state into the
   wrapper summary/config/runbook, including `adapter_schema_status`,
   `schema_review_mode`, and placeholder-schema active/allowed/warning fields so
@@ -1425,7 +1432,7 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 1101 tests.
+Current passing suite: 1104 tests.
 
 ## Next Build Targets
 

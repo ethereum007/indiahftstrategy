@@ -4645,7 +4645,29 @@ The wrapper reads the provider telemetry summary, resolves the nested
 `scaleup_config.json` and `runtime_telemetry.csv`, writes provider
 checks/summary/action/config/runbook artifacts plus nested generic
 `runtime_guard` outputs, and converts guard halts into a ready
-`plan-halt-response` action. A clean guard points to `monitor-runtime-session`.
+`plan-halt-response` action. A clean guard points to
+`monitor-provider-market-data-imbalance-runtime-session`.
+
+Run the provider-specific runtime session wrapper:
+
+```powershell
+python -m hft_cli monitor-provider-market-data-imbalance-runtime-session `
+  --runtime-guard runs\provider_market_data_imbalance_runtime_guard\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_runtime_session\arrow_ws_nse_2026_06_23 `
+  --as-of-ts-ns 1782198900000000000 `
+  --max-telemetry-age-ns 1000000000 `
+  --fail-on-blocked-actions `
+  --fail-on-breach `
+  --fail-on-halt
+```
+
+The session wrapper reads the provider guard summary/config, infers the provider
+runtime telemetry directory, reuses the telemetry wrapper's broker export,
+upload-pack, reconciliation, metadata, PnL, open-order, and position inputs when
+available, writes provider session checks/summary/action/config/runbook
+artifacts plus a nested generic `runtime_session`, and routes clean sessions to
+`review-broker-readiness`. If the session guard halts and a halt response is
+ready, it emits a ready `export-halt-response` action.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

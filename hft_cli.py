@@ -158,6 +158,10 @@ from reports.provider_market_data_imbalance_runtime_guard import (
     ProviderMarketDataImbalanceRuntimeGuardConfig,
     write_provider_market_data_imbalance_runtime_guard,
 )
+from reports.provider_market_data_imbalance_runtime_session import (
+    ProviderMarketDataImbalanceRuntimeSessionConfig,
+    write_provider_market_data_imbalance_runtime_session,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1530,6 +1534,35 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_runtime_guard.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_runtime_session = sub.add_parser(
+        "monitor-provider-market-data-imbalance-runtime-session",
+        help="Run provider imbalance runtime session monitoring from provider guard output.",
+    )
+    provider_market_data_imbalance_runtime_session.add_argument("--runtime-guard", required=True)
+    provider_market_data_imbalance_runtime_session.add_argument("--out", required=True)
+    provider_market_data_imbalance_runtime_session.add_argument("--export", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--upload-pack", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--reconciliation", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--instrument-metadata", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--pnl", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--open-orders", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--positions", default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--snapshot-ts-ns", type=float, default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--as-of-ts-ns", type=float, default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--max-telemetry-age-ns", type=float, default=None)
+    provider_market_data_imbalance_runtime_session.add_argument("--skip-halt-response", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--allow-missing-flatten-prices", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--default-order-type", default="LIMIT")
+    provider_market_data_imbalance_runtime_session.add_argument("--default-time-in-force", default="DAY")
+    provider_market_data_imbalance_runtime_session.add_argument("--no-require-provider-runtime-guard-ready", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--require-runtime-session-continue", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--no-require-halt-response-ready", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--no-use-provider-runtime-telemetry-inputs", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--fail-on-halt", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_runtime_session.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4317,6 +4350,49 @@ def main(argv: list[str] | None = None) -> int:
             config=ProviderMarketDataImbalanceRuntimeGuardConfig(
                 require_provider_runtime_telemetry_ready=not args.no_require_provider_runtime_telemetry_ready,
                 require_runtime_guard_continue=args.require_runtime_guard_continue,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_halt and result.halted:
+            return 2
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "monitor-provider-market-data-imbalance-runtime-session":
+        result = write_provider_market_data_imbalance_runtime_session(
+            args.runtime_guard,
+            args.out,
+            export_dir=args.export,
+            upload_pack_dir=args.upload_pack,
+            reconciliation_dir=args.reconciliation,
+            instrument_metadata_dir=args.instrument_metadata,
+            pnl_path=args.pnl,
+            open_orders_path=args.open_orders,
+            positions_path=args.positions,
+            snapshot_ts_ns=args.snapshot_ts_ns,
+            as_of_ts_ns=args.as_of_ts_ns,
+            max_telemetry_age_ns=args.max_telemetry_age_ns,
+            plan_halt_response=not args.skip_halt_response,
+            halt_response_config=HaltResponseConfig(
+                require_guard_halt=True,
+                require_flatten_prices=not args.allow_missing_flatten_prices,
+                default_order_type=args.default_order_type,
+                default_time_in_force=args.default_time_in_force,
+            ),
+            config=ProviderMarketDataImbalanceRuntimeSessionConfig(
+                require_provider_runtime_guard_ready=not args.no_require_provider_runtime_guard_ready,
+                require_runtime_session_continue=args.require_runtime_session_continue,
+                require_halt_response_ready=not args.no_require_halt_response_ready,
+                use_provider_runtime_telemetry_inputs=not args.no_use_provider_runtime_telemetry_inputs,
             ),
         )
         print(result.summary.to_string(index=False))

@@ -394,8 +394,10 @@ def _action_queue(
                     "action": "monitor_provider_imbalance_runtime_session",
                     "reason": "provider imbalance runtime guard is clear to continue monitoring",
                     "recommendation": "continue_provider_imbalance_shadow_monitoring",
-                    "next_gate": "monitor-runtime-session",
-                    "next_gate_help_command": _help_command_for_gate("monitor-runtime-session"),
+                    "next_gate": "monitor-provider-market-data-imbalance-runtime-session",
+                    "next_gate_help_command": _help_command_for_gate(
+                        "monitor-provider-market-data-imbalance-runtime-session"
+                    ),
                 }
             ]
         )
@@ -628,7 +630,7 @@ def _ready_next_gate(guard: RuntimeGuardReport | None) -> str:
         return "monitor-provider-market-data-imbalance-runtime-guard"
     if guard.halted:
         return _first_action_value(guard.action_queue, "next_gate") or "plan-halt-response"
-    return "monitor-runtime-session"
+    return "monitor-provider-market-data-imbalance-runtime-session"
 
 
 def _blocked_next_gate(checks: pd.DataFrame, guard: RuntimeGuardReport | None) -> str:
@@ -674,6 +676,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli plan-halt-response --help"
     if next_gate == "monitor-runtime-session":
         return "python -m hft_cli monitor-runtime-session --help"
+    if next_gate == "monitor-provider-market-data-imbalance-runtime-session":
+        return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-session --help"
     return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-guard --help"
 
 

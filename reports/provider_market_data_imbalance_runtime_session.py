@@ -1,0 +1,990 @@
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import pandas as pd
+
+from reports.halt_response import HaltResponseConfig
+from reports.manifest import write_experiment_manifest
+from reports.runtime_session import RuntimeSessionMonitorReport, write_runtime_session_monitor
+
+
+PROFILE = "imbalance"
+RUN_TYPE = "provider_market_data_imbalance_runtime_session"
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "action",
+    "reason",
+    "recommendation",
+    "next_gate",
+    "next_gate_help_command",
+]
+
+
+@dataclass(frozen=True)
+class ProviderMarketDataImbalanceRuntimeSessionConfig:
+    require_provider_runtime_guard_ready: bool = True
+    require_runtime_session_continue: bool = False
+    require_halt_response_ready: bool = True
+    use_provider_runtime_telemetry_inputs: bool = True
+
+
+@dataclass(frozen=True)
+class ProviderMarketDataImbalanceRuntimeSessionReport:
+    session: RuntimeSessionMonitorReport | None
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    action_queue: pd.DataFrame
+    config: dict[str, Any]
+    output_dir: Path | None = None
+
+    @property
+    def ready(self) -> bool:
+        if self.summary.empty:
+            return False
+        return bool(self.summary.iloc[0]["ready"])
+
+    @property
+    def halted(self) -> bool:
+        if self.summary.empty:
+            return True
+        return bool(self.summary.iloc[0]["halted"])
+
+
+def write_provider_market_data_imbalance_runtime_session(
+    provider_runtime_guard_dir: str | Path,
+    output_dir: str | Path,
+    *,
+    export_dir: str | Path | None = None,
+    upload_pack_dir: str | Path | None = None,
+    reconciliation_dir: str | Path | None = None,
+    instrument_metadata_dir: str | Path | None = None,
+    pnl_path: str | Path | None = None,
+    open_orders_path: str | Path | None = None,
+    positions_path: str | Path | None = None,
+    snapshot_ts_ns: int | float | None = None,
+    as_of_ts_ns: int | float | None = None,
+    max_telemetry_age_ns: int | float | None = None,
+    plan_halt_response: bool = True,
+    halt_response_config: HaltResponseConfig | None = None,
+    config: ProviderMarketDataImbalanceRuntimeSessionConfig | None = None,
+) -> ProviderMarketDataImbalanceRuntimeSessionReport:
+    config = config or ProviderMarketDataImbalanceRuntimeSessionConfig()
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    guard_root = Path(provider_runtime_guard_dir)
+    guard_summary, guard_summary_error = _read_csv(
+        guard_root / "provider_market_data_imbalance_runtime_guard_summary.csv"
+    )
+    guard_config, guard_config_error = _read_json(
+        guard_root / "provider_market_data_imbalance_runtime_guard_config.json"
+    )
+    telemetry_root = _first_existing_path(
+        _path_from_text(_first_text(guard_summary, "provider_runtime_telemetry_dir")),
+        _path_from_text(
+            (guard_config.get("summary", {}) or {}).get("provider_runtime_telemetry_dir")
+            if isinstance(guard_config, dict)
+            else ""
+        ),
+    )
+    telemetry_config, telemetry_config_error = _read_json(
+        _path_or_empty(telemetry_root) / "provider_market_data_imbalance_runtime_telemetry_config.json"
+    )
+    inferred_inputs = _runtime_inputs(telemetry_config)
+    scaleup_dir = _first_existing_path(
+        _path_from_text(_first_text(guard_summary, "scaleup_dir")),
+        _path_from_text(
+            (guard_config.get("summary", {}) or {}).get("scaleup_dir") if isinstance(guard_config, dict) else ""
+        ),
+    )
+    resolved_export_dir = _explicit_or_inferred(export_dir, inferred_inputs, "export_dir", config)
+    resolved_upload_pack_dir = _explicit_or_inferred(upload_pack_dir, inferred_inputs, "upload_pack_dir", config)
+    resolved_reconciliation_dir = _explicit_or_inferred(reconciliation_dir, inferred_inputs, "reconciliation_dir", config)
+    resolved_instrument_metadata_dir = _explicit_or_inferred(
+        instrument_metadata_dir,
+        inferred_inputs,
+        "instrument_metadata_dir",
+        config,
+    )
+    resolved_pnl_path = _explicit_or_inferred(pnl_path, inferred_inputs, "pnl_path", config)
+    resolved_open_orders_path = _explicit_or_inferred(open_orders_path, inferred_inputs, "open_orders_path", config)
+    resolved_positions_path = _explicit_or_inferred(positions_path, inferred_inputs, "positions_path", config)
+    resolved_snapshot_ts_ns = _first_number(snapshot_ts_ns, inferred_inputs.get("snapshot_ts_ns"))
+
+    prechecks = _prechecks(
+        guard_root,
+        guard_summary,
+        guard_summary_error,
+        guard_config_error,
+        telemetry_root,
+        telemetry_config_error,
+        scaleup_dir,
+        config,
+    )
+    session: RuntimeSessionMonitorReport | None = None
+    session_error = ""
+    session_dir = out / "runtime_session"
+    if bool(prechecks["passed"].all()):
+        try:
+            session = write_runtime_session_monitor(
+                scaleup_dir=_path_or_empty(scaleup_dir),
+                output_dir=session_dir,
+                export_dir=resolved_export_dir,
+                upload_pack_dir=resolved_upload_pack_dir,
+                reconciliation_dir=resolved_reconciliation_dir,
+                instrument_metadata_dir=resolved_instrument_metadata_dir,
+                pnl_path=resolved_pnl_path,
+                open_orders_path=resolved_open_orders_path,
+                positions_path=resolved_positions_path,
+                snapshot_ts_ns=resolved_snapshot_ts_ns,
+                as_of_ts_ns=as_of_ts_ns,
+                max_telemetry_age_ns=max_telemetry_age_ns,
+                plan_halt_response=plan_halt_response,
+                halt_response_config=halt_response_config,
+            )
+        except (OSError, ValueError, FileNotFoundError, pd.errors.ParserError) as exc:
+            session_error = str(exc)
+    else:
+        session_error = "provider imbalance runtime session prerequisites are not ready"
+
+    checks = _checks(prechecks, session, session_error, guard_summary, config)
+    summary = _summary(
+        guard_root,
+        telemetry_root,
+        scaleup_dir,
+        session,
+        checks,
+        out,
+        guard_summary,
+    )
+    action_queue = _action_queue(summary.iloc[0], checks, session)
+    summary = _summary_with_actions(summary, action_queue)
+    payload = _config(
+        summary.iloc[0],
+        guard_summary,
+        guard_config,
+        telemetry_config,
+        session,
+        checks,
+        action_queue,
+        config,
+        {
+            "export_dir": resolved_export_dir,
+            "upload_pack_dir": resolved_upload_pack_dir,
+            "reconciliation_dir": resolved_reconciliation_dir,
+            "instrument_metadata_dir": resolved_instrument_metadata_dir,
+            "pnl_path": resolved_pnl_path,
+            "open_orders_path": resolved_open_orders_path,
+            "positions_path": resolved_positions_path,
+            "snapshot_ts_ns": resolved_snapshot_ts_ns,
+            "as_of_ts_ns": as_of_ts_ns,
+            "max_telemetry_age_ns": max_telemetry_age_ns,
+            "plan_halt_response": plan_halt_response,
+        },
+    )
+
+    checks.to_csv(out / "provider_market_data_imbalance_runtime_session_checks.csv", index=False)
+    summary.to_csv(out / "provider_market_data_imbalance_runtime_session_summary.csv", index=False)
+    action_queue.to_csv(out / "provider_market_data_imbalance_runtime_session_action_queue.csv", index=False)
+    (out / "provider_market_data_imbalance_runtime_session_config.json").write_text(
+        json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "provider_market_data_imbalance_runtime_session_runbook.md").write_text(
+        _runbook_markdown(summary.iloc[0], checks, action_queue),
+        encoding="utf-8",
+    )
+
+    inputs: dict[str, Any] = {"provider_runtime_guard_dir": guard_root}
+    if telemetry_root is not None:
+        inputs["provider_runtime_telemetry_dir"] = telemetry_root
+    if scaleup_dir is not None:
+        inputs["scaleup"] = scaleup_dir
+    if session is not None and session.output_dir is not None:
+        inputs["runtime_session"] = session.output_dir
+    for name, value in {
+        "export": resolved_export_dir,
+        "upload_pack": resolved_upload_pack_dir,
+        "reconciliation": resolved_reconciliation_dir,
+        "instrument_metadata": resolved_instrument_metadata_dir,
+        "pnl": resolved_pnl_path,
+        "open_orders": resolved_open_orders_path,
+        "positions": resolved_positions_path,
+    }.items():
+        if value is not None:
+            inputs[name] = Path(value)
+
+    write_experiment_manifest(
+        out,
+        run_type=RUN_TYPE,
+        parameters={
+            "config": asdict(config),
+            "runtime_inputs": _jsonable(payload["runtime_inputs"]),
+        },
+        inputs=inputs,
+        extra={
+            "ready": bool(summary.iloc[0]["ready"]),
+            "halted": bool(summary.iloc[0]["halted"]),
+            "guard_action": str(summary.iloc[0]["guard_action"]),
+            "profile": PROFILE,
+        },
+    )
+    return ProviderMarketDataImbalanceRuntimeSessionReport(session, checks, summary, action_queue, payload, out)
+
+
+def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
+    if not path.exists():
+        return pd.DataFrame(), f"{path.name} does not exist"
+    try:
+        return pd.read_csv(path), ""
+    except (OSError, pd.errors.ParserError) as exc:
+        return pd.DataFrame(), f"{path.name} is not readable: {exc}"
+
+
+def _read_json(path: Path) -> tuple[dict[str, Any], str]:
+    if not path.exists():
+        return {}, f"{path.name} does not exist"
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {}, f"{path.name} is not readable: {exc}"
+    return value if isinstance(value, dict) else {}, ""
+
+
+def _runtime_inputs(telemetry_config: tuple[dict[str, Any], str] | dict[str, Any]) -> dict[str, Any]:
+    payload = telemetry_config[0] if isinstance(telemetry_config, tuple) else telemetry_config
+    if not isinstance(payload, dict):
+        return {}
+    inputs = payload.get("runtime_inputs", {}) or {}
+    return inputs if isinstance(inputs, dict) else {}
+
+
+def _prechecks(
+    guard_root: Path,
+    guard_summary: pd.DataFrame,
+    guard_summary_error: str,
+    guard_config_error: str,
+    telemetry_root: Path | None,
+    telemetry_config_error: str,
+    scaleup_dir: Path | None,
+    config: ProviderMarketDataImbalanceRuntimeSessionConfig,
+) -> pd.DataFrame:
+    telemetry_config_ok = (not config.use_provider_runtime_telemetry_inputs) or not telemetry_config_error
+    return pd.DataFrame(
+        [
+            _check(
+                "provider_runtime_guard_dir_exists",
+                str(guard_root),
+                "exists",
+                True,
+                guard_root.exists(),
+                "provider imbalance runtime guard directory is required",
+            ),
+            _check(
+                "provider_runtime_guard_summary_readable",
+                guard_summary_error or "ok",
+                "is",
+                "ok",
+                not guard_summary_error,
+                guard_summary_error or "provider imbalance runtime guard summary could not be read",
+            ),
+            _check(
+                "provider_runtime_guard_config_readable",
+                guard_config_error or "ok",
+                "is",
+                "ok",
+                not guard_config_error,
+                guard_config_error or "provider imbalance runtime guard config could not be read",
+            ),
+            _check(
+                "provider_runtime_guard_ready",
+                _first_bool(guard_summary, "ready"),
+                "is",
+                True,
+                _first_bool(guard_summary, "ready") or not config.require_provider_runtime_guard_ready,
+                "provider imbalance runtime guard is not ready",
+            ),
+            _check(
+                "provider_runtime_telemetry_config_readable",
+                telemetry_config_error or "ok",
+                "is",
+                "ok",
+                telemetry_config_ok,
+                telemetry_config_error or "provider runtime telemetry config could not be read",
+            ),
+            _check(
+                "provider_runtime_telemetry_dir_exists",
+                _path_text(telemetry_root),
+                "exists",
+                True,
+                bool(telemetry_root and telemetry_root.exists()),
+                "provider runtime telemetry directory is required for inferred runtime inputs",
+            ),
+            _check(
+                "nested_scaleup_config_exists",
+                _path_text(scaleup_dir),
+                "exists",
+                True,
+                bool(scaleup_dir and (scaleup_dir / "scaleup_config.json").exists()),
+                "nested scaleup_config.json is required for runtime session",
+            ),
+        ]
+    )
+
+
+def _checks(
+    prechecks: pd.DataFrame,
+    session: RuntimeSessionMonitorReport | None,
+    session_error: str,
+    guard_summary: pd.DataFrame,
+    config: ProviderMarketDataImbalanceRuntimeSessionConfig,
+) -> pd.DataFrame:
+    rows = prechecks.to_dict(orient="records")
+    session_summary = session.summary if session is not None else pd.DataFrame()
+    session_halted = _first_bool(session_summary, "halted")
+    halt_response_ready = _first_bool(session_summary, "halt_response_ready")
+    rows.append(
+        _check(
+            "runtime_session_runnable",
+            session_error or ("ran" if session is not None else "not_run"),
+            "is",
+            "ran",
+            session is not None and not session_error,
+            session_error or "generic runtime session monitor was not run",
+        )
+    )
+    rows.append(
+        _check(
+            "runtime_session_evaluated",
+            bool(session is not None and not session_summary.empty),
+            "is",
+            True,
+            bool(session is not None and not session_summary.empty),
+            "generic runtime session did not write a summary",
+        )
+    )
+    rows.append(
+        _check(
+            "runtime_session_continue",
+            not session_halted,
+            "is",
+            True,
+            bool(session is not None and ((not session_halted) or not config.require_runtime_session_continue)),
+            "runtime session guard halted routing",
+        )
+    )
+    rows.append(
+        _check(
+            "runtime_session_halt_response_ready",
+            halt_response_ready,
+            "is",
+            True,
+            bool(
+                session is not None
+                and ((not session_halted) or halt_response_ready or not config.require_halt_response_ready)
+            ),
+            "runtime session halted but did not produce a ready halt response",
+        )
+    )
+    strategy = _first_text(session_summary, "strategy") or _first_text(guard_summary, "strategy")
+    rows.append(
+        _check(
+            "strategy_identity_imbalance",
+            strategy,
+            "is",
+            PROFILE,
+            _identity_key(strategy) == PROFILE,
+            "runtime session did not resolve to imbalance strategy",
+        )
+    )
+    expected_market = _first_text(guard_summary, "market")
+    session_market = _first_text(session_summary, "market")
+    rows.append(
+        _check(
+            "market_identity_consistent",
+            session_market or expected_market,
+            "is",
+            expected_market or "present",
+            bool(session_market)
+            and (not expected_market or _identity_key(session_market) == _identity_key(expected_market)),
+            "runtime session market identity does not match provider guard",
+        )
+    )
+    return pd.DataFrame(rows)
+
+
+def _summary(
+    guard_root: Path,
+    telemetry_root: Path | None,
+    scaleup_dir: Path | None,
+    session: RuntimeSessionMonitorReport | None,
+    checks: pd.DataFrame,
+    output_dir: Path,
+    guard_summary: pd.DataFrame,
+) -> pd.DataFrame:
+    failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
+    ready = failed == 0
+    session_summary = session.summary if session is not None else pd.DataFrame()
+    halted = True if session is None else _first_bool(session_summary, "halted")
+    guard_action = _first_text(session_summary, "guard_action") or ("halt" if halted else "continue")
+    return pd.DataFrame(
+        [
+            {
+                "ready": ready,
+                "provider_runtime_guard_ready": _first_bool(guard_summary, "ready"),
+                "runtime_session_ready": bool(session.ready) if session is not None else False,
+                "runtime_session_evaluated": session is not None and not session_summary.empty,
+                "runtime_session_continue": bool(session is not None and not halted),
+                "halted": halted,
+                "guard_action": guard_action,
+                "halt_response_created": _first_bool(session_summary, "halt_response_created"),
+                "halt_response_ready": _first_bool(session_summary, "halt_response_ready"),
+                "provider_runtime_guard_dir": str(guard_root),
+                "provider_runtime_telemetry_dir": _path_text(telemetry_root),
+                "scaleup_dir": _path_text(scaleup_dir),
+                "runtime_session_dir": "" if session is None else str(session.output_dir or ""),
+                "output_dir": str(output_dir),
+                "profile": PROFILE,
+                "provider": _first_text(guard_summary, "provider"),
+                "transport": _first_text(guard_summary, "transport"),
+                "market": _first_text(session_summary, "market") or _first_text(guard_summary, "market"),
+                "strategy": _first_text(session_summary, "strategy") or _first_text(guard_summary, "strategy") or PROFILE,
+                "target_mode": _first_text(session_summary, "target_mode") or _first_text(guard_summary, "target_mode"),
+                "adapter": _first_text(session_summary, "adapter") or _first_text(guard_summary, "adapter"),
+                "scenario_key": _first_text(session_summary, "scenario_key")
+                or _first_text(guard_summary, "scenario_key"),
+                "orders_sent": _first_number(_first_text(session_summary, "orders_sent")),
+                "session_notional": _first_number(_first_text(session_summary, "session_notional")),
+                "runtime_session_failed_checks": _first_number(
+                    _first_text(session_summary, "failed_check_count")
+                ),
+                "runtime_session_failed_check_names": _first_text(session_summary, "failed_check_names"),
+                "runtime_session_primary_blocker": _first_text(session_summary, "primary_blocker_check"),
+                "failed_checks": failed,
+                "failed_check_names": ";".join(
+                    checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+                ),
+                "recommendation": _recommendation(ready, halted, _first_bool(session_summary, "halt_response_ready")),
+                "next_gate": _ready_next_gate(session) if ready else _blocked_next_gate(checks, session),
+                "next_gate_help_command": _help_command_for_gate(
+                    _ready_next_gate(session) if ready else _blocked_next_gate(checks, session)
+                ),
+                "primary_action_status": "ready" if ready else "blocked",
+            }
+        ]
+    )
+
+
+def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
+    out = summary.copy()
+    statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
+    out["action_queue_count"] = int(len(action_queue))
+    out["ready_action_count"] = int((statuses == "ready").sum()) if not statuses.empty else 0
+    out["blocked_action_count"] = int((statuses == "blocked").sum()) if not statuses.empty else 0
+    out["review_action_count"] = int((statuses == "review").sum()) if not statuses.empty else 0
+    if not action_queue.empty:
+        out["primary_action_status"] = str(action_queue.iloc[0].get("queue_status", ""))
+        out["next_gate"] = str(action_queue.iloc[0].get("next_gate", out.iloc[0].get("next_gate", "")))
+        out["next_gate_help_command"] = str(
+            action_queue.iloc[0].get("next_gate_help_command", out.iloc[0].get("next_gate_help_command", ""))
+        )
+    return out
+
+
+def _action_queue(
+    summary: pd.Series,
+    checks: pd.DataFrame,
+    session: RuntimeSessionMonitorReport | None,
+) -> pd.DataFrame:
+    failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else pd.DataFrame()
+    if failed.empty and session is not None and not _first_bool(session.summary, "halted"):
+        return _action_frame(
+            [
+                {
+                    "queue_status": "ready",
+                    "source": "provider_market_data_imbalance_runtime_session_summary",
+                    "component": "runtime_session",
+                    "check": "runtime_session_continue",
+                    "actual": True,
+                    "operator": "is",
+                    "expected": True,
+                    "action": "review_provider_imbalance_broker_readiness",
+                    "reason": "provider imbalance runtime session is clean for broker readiness review",
+                    "recommendation": "feed_runtime_session_into_broker_readiness",
+                    "next_gate": "review-broker-readiness",
+                    "next_gate_help_command": _help_command_for_gate("review-broker-readiness"),
+                }
+            ]
+        )
+    if failed.empty and session is not None:
+        return _session_halt_actions(session)
+    rows: list[dict[str, Any]] = []
+    for _, check in failed.iterrows():
+        name = str(check.get("check", ""))
+        next_gate = _next_gate_for_check(name, session)
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "provider_market_data_imbalance_runtime_session_checks",
+                "component": _component_for_check(name),
+                "check": name,
+                "actual": check.get("value"),
+                "operator": check.get("operator"),
+                "expected": check.get("threshold"),
+                "action": _action_for_check(name),
+                "reason": str(check.get("reason", "")) or name.replace("_", " "),
+                "recommendation": _recommendation_for_check(name),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command_for_gate(next_gate),
+            }
+        )
+    if not rows:
+        rows.append(
+            {
+                "queue_status": "blocked",
+                "source": "provider_market_data_imbalance_runtime_session_checks",
+                "component": "runtime_session",
+                "check": "provider_runtime_session_ready",
+                "actual": bool(summary.get("ready", False)),
+                "operator": "is",
+                "expected": True,
+                "action": "repair_provider_imbalance_runtime_session",
+                "reason": "provider imbalance runtime session is not ready",
+                "recommendation": "rerun_provider_imbalance_runtime_session",
+                "next_gate": "monitor-provider-market-data-imbalance-runtime-session",
+                "next_gate_help_command": _help_command_for_gate(
+                    "monitor-provider-market-data-imbalance-runtime-session"
+                ),
+            }
+        )
+    return _action_frame(rows)
+
+
+def _session_halt_actions(session: RuntimeSessionMonitorReport) -> pd.DataFrame:
+    session_queue = session.action_queue if session.action_queue is not None else pd.DataFrame()
+    rows: list[dict[str, Any]] = []
+    if session_queue.empty:
+        rows.append(
+            {
+                "queue_status": "ready",
+                "source": "runtime_session_summary",
+                "component": "halt_response",
+                "check": "guard_halted",
+                "actual": "halt",
+                "operator": "is",
+                "expected": "continue",
+                "action": "export_provider_imbalance_halt_response",
+                "reason": "runtime session halted routing",
+                "recommendation": "export_and_execute_halt_response_packet",
+                "next_gate": "export-halt-response",
+                "next_gate_help_command": _help_command_for_gate("export-halt-response"),
+            }
+        )
+    for item in session_queue.to_dict(orient="records"):
+        next_gate = str(item.get("next_gate") or "export-halt-response")
+        rows.append(
+            {
+                "queue_status": str(item.get("queue_status") or "ready"),
+                "source": "runtime_session_action_queue",
+                "component": str(item.get("component") or "runtime_session"),
+                "check": str(item.get("check") or "guard_halted"),
+                "actual": item.get("actual"),
+                "operator": item.get("operator"),
+                "expected": item.get("expected"),
+                "action": "export_provider_imbalance_halt_response"
+                if next_gate == "export-halt-response"
+                else "repair_provider_imbalance_runtime_session",
+                "reason": str(item.get("reason") or "runtime session halted routing"),
+                "recommendation": str(item.get("recommendation") or "export_and_execute_halt_response_packet"),
+                "next_gate": next_gate,
+                "next_gate_help_command": _help_command_for_gate(next_gate),
+            }
+        )
+    return _action_frame(rows)
+
+
+def _config(
+    summary: pd.Series,
+    guard_summary: pd.DataFrame,
+    guard_config: dict[str, Any],
+    telemetry_config: dict[str, Any],
+    session: RuntimeSessionMonitorReport | None,
+    checks: pd.DataFrame,
+    action_queue: pd.DataFrame,
+    config: ProviderMarketDataImbalanceRuntimeSessionConfig,
+    runtime_inputs: dict[str, Any],
+) -> dict[str, Any]:
+    actions = _records(action_queue)
+    return {
+        "schema_version": 1,
+        "ready": bool(summary["ready"]),
+        "halted": bool(summary["halted"]),
+        "guard_action": str(summary["guard_action"]),
+        "parameters": asdict(config),
+        "runtime_inputs": _jsonable(runtime_inputs),
+        "summary": _series_record(summary),
+        "provider_runtime_guard": _first_record(guard_summary),
+        "provider_runtime_guard_config": guard_config,
+        "provider_runtime_telemetry_config": telemetry_config,
+        "runtime_session": {
+            "evaluated": session is not None,
+            "ready": False if session is None else bool(session.ready),
+            "halted": True if session is None else _first_bool(session.summary, "halted"),
+            "output_dir": "" if session is None else str(session.output_dir or ""),
+            "summary": _first_record(None if session is None else session.summary),
+            "steps": _records(None if session is None else session.steps),
+            "action_queue": _records(None if session is None else session.action_queue),
+            "config": {} if session is None or session.config is None else session.config,
+        },
+        "checks": _records(checks),
+        "next_gate": str(summary["next_gate"]),
+        "next_gate_help_command": str(summary["next_gate_help_command"]),
+        "next_actions": actions,
+        "ready_actions": [row for row in actions if row.get("queue_status") == "ready"],
+        "blocked_actions": [row for row in actions if row.get("queue_status") == "blocked"],
+        "primary_action": actions[0] if actions else {},
+    }
+
+
+def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    lines = [
+        "# Provider Market Data Imbalance Runtime Session",
+        "",
+        f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
+        f"- Halted: {'yes' if bool(summary['halted']) else 'no'}",
+        f"- Guard action: {summary['guard_action']}",
+        f"- Provider: {summary['provider']}",
+        f"- Market: {summary['market']}",
+        f"- Target mode: {summary['target_mode']}",
+        f"- Runtime session dir: {summary['runtime_session_dir']}",
+        f"- Primary next gate: `{summary['next_gate']}`",
+        f"- Primary next gate help: `{summary['next_gate_help_command']}`",
+        "",
+        "## Checks",
+        "",
+        _checks_table(checks),
+        "",
+        "## Actions",
+        "",
+        _actions_table(action_queue),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def _checks_table(checks: pd.DataFrame) -> str:
+    if checks.empty:
+        return "_None_"
+    rows = [
+        [
+            str(row.get("check", "")),
+            "pass" if _truthy(row.get("passed")) else "fail",
+            str(row.get("value", "")),
+            str(row.get("threshold", "")),
+            str(row.get("reason", "")),
+        ]
+        for row in checks.to_dict(orient="records")
+    ]
+    return _markdown_table(["Check", "Status", "Value", "Threshold", "Reason"], rows)
+
+
+def _actions_table(action_queue: pd.DataFrame) -> str:
+    if action_queue.empty:
+        return "_None_"
+    rows = [
+        [
+            str(row.get("priority", "")),
+            str(row.get("queue_status", "")),
+            str(row.get("action", "")),
+            str(row.get("next_gate", "")),
+            str(row.get("reason", "")),
+        ]
+        for row in action_queue.to_dict(orient="records")
+    ]
+    return _markdown_table(["#", "Status", "Action", "Next gate", "Reason"], rows)
+
+
+def _markdown_table(headers: list[str], rows: list[list[str]]) -> str:
+    if not rows:
+        return "_None_"
+    header = "| " + " | ".join(headers) + " |"
+    separator = "| " + " | ".join("---" for _ in headers) + " |"
+    body = ["| " + " | ".join(value.replace("|", "\\|").replace("\n", " ") for value in row) + " |" for row in rows]
+    return "\n".join([header, separator, *body])
+
+
+def _check(check: str, value: object, operator: str, threshold: object, passed: bool, reason: str) -> dict[str, Any]:
+    return {
+        "check": check,
+        "value": value,
+        "operator": operator,
+        "threshold": threshold,
+        "passed": bool(passed),
+        "reason": "" if passed else reason,
+    }
+
+
+def _action_frame(rows: list[dict[str, Any]]) -> pd.DataFrame:
+    ordered_rows = []
+    for priority, row in enumerate(rows, start=1):
+        item = {column: row.get(column, "") for column in ACTION_QUEUE_COLUMNS}
+        item["priority"] = priority
+        ordered_rows.append(item)
+    return pd.DataFrame(ordered_rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _recommendation(ready: bool, halted: bool, halt_response_ready: bool) -> str:
+    if halted and halt_response_ready:
+        return "export_provider_imbalance_halt_response"
+    if halted:
+        return "repair_provider_imbalance_halt_response"
+    if ready:
+        return "review_provider_imbalance_broker_readiness"
+    return "repair_provider_imbalance_runtime_session"
+
+
+def _ready_next_gate(session: RuntimeSessionMonitorReport | None) -> str:
+    if session is None:
+        return "monitor-provider-market-data-imbalance-runtime-session"
+    if _first_bool(session.summary, "halted"):
+        return _first_action_value(session.action_queue, "next_gate") or "export-halt-response"
+    return "review-broker-readiness"
+
+
+def _blocked_next_gate(checks: pd.DataFrame, session: RuntimeSessionMonitorReport | None) -> str:
+    failed = checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
+    if not failed:
+        return _ready_next_gate(session)
+    return _next_gate_for_check(failed[0], session)
+
+
+def _next_gate_for_check(check: str, session: RuntimeSessionMonitorReport | None) -> str:
+    if check.startswith("provider_runtime_guard"):
+        return "monitor-provider-market-data-imbalance-runtime-guard"
+    if check.startswith("provider_runtime_telemetry"):
+        return "build-provider-market-data-imbalance-runtime-telemetry"
+    if check == "nested_scaleup_config_exists":
+        return "plan-provider-market-data-imbalance-scaleup"
+    if check in {"runtime_session_runnable", "runtime_session_evaluated"}:
+        return "monitor-runtime-session"
+    if check == "runtime_session_halt_response_ready":
+        return _first_action_value(None if session is None else session.action_queue, "next_gate") or "plan-halt-response"
+    if check in {"runtime_session_continue", "strategy_identity_imbalance", "market_identity_consistent"}:
+        return "monitor-provider-market-data-imbalance-runtime-session"
+    return "monitor-provider-market-data-imbalance-runtime-session"
+
+
+def _help_command_for_gate(next_gate: str) -> str:
+    if next_gate == "monitor-provider-market-data-imbalance-runtime-guard":
+        return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-guard --help"
+    if next_gate == "build-provider-market-data-imbalance-runtime-telemetry":
+        return "python -m hft_cli build-provider-market-data-imbalance-runtime-telemetry --help"
+    if next_gate == "plan-provider-market-data-imbalance-scaleup":
+        return "python -m hft_cli plan-provider-market-data-imbalance-scaleup --help"
+    if next_gate == "monitor-runtime-session":
+        return "python -m hft_cli monitor-runtime-session --help"
+    if next_gate == "plan-halt-response":
+        return "python -m hft_cli plan-halt-response --help"
+    if next_gate == "export-halt-response":
+        return "python -m hft_cli export-halt-response --help"
+    if next_gate == "review-broker-readiness":
+        return "python -m hft_cli review-broker-readiness --help"
+    return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-session --help"
+
+
+def _component_for_check(check: str) -> str:
+    if check.startswith("provider_runtime_guard"):
+        return "provider_runtime_guard"
+    if check.startswith("provider_runtime_telemetry"):
+        return "provider_runtime_telemetry"
+    if check.startswith("nested_scaleup"):
+        return "scaleup_plan"
+    if check.startswith("runtime_session"):
+        return "runtime_session"
+    if check.endswith("identity_imbalance") or check.endswith("identity_consistent"):
+        return "runtime_identity"
+    return "provider_runtime_session"
+
+
+def _action_for_check(check: str) -> str:
+    if check.startswith("provider_runtime_guard"):
+        return "repair_provider_imbalance_runtime_guard"
+    if check.startswith("provider_runtime_telemetry"):
+        return "repair_provider_imbalance_runtime_telemetry"
+    if check.startswith("nested_scaleup"):
+        return "rebuild_provider_imbalance_scaleup"
+    if check == "runtime_session_halt_response_ready":
+        return "repair_provider_imbalance_halt_response"
+    if check.startswith("runtime_session"):
+        return "repair_provider_imbalance_runtime_session"
+    return "repair_provider_imbalance_runtime_session"
+
+
+def _recommendation_for_check(check: str) -> str:
+    if check.startswith("provider_runtime_guard"):
+        return "rerun_provider_runtime_guard_before_session"
+    if check.startswith("provider_runtime_telemetry"):
+        return "rebuild_provider_runtime_telemetry_before_session"
+    if check.startswith("nested_scaleup"):
+        return "rebuild_provider_scaleup_before_session"
+    if check == "runtime_session_halt_response_ready":
+        return "repair_halt_response_inputs_before_export"
+    if check.startswith("runtime_session"):
+        return "rerun_runtime_session_with_valid_inputs"
+    return "repair_provider_runtime_session_inputs"
+
+
+def _first_action_value(action_queue: pd.DataFrame | None, column: str) -> str:
+    if action_queue is None or action_queue.empty or column not in action_queue.columns:
+        return ""
+    for value in action_queue[column].tolist():
+        text = _clean(value)
+        if text:
+            return text
+    return ""
+
+
+def _explicit_or_inferred(
+    explicit: str | Path | None,
+    inferred_inputs: dict[str, Any],
+    key: str,
+    config: ProviderMarketDataImbalanceRuntimeSessionConfig,
+) -> str | Path | None:
+    if explicit is not None:
+        return explicit
+    if not config.use_provider_runtime_telemetry_inputs:
+        return None
+    text = _clean(inferred_inputs.get(key))
+    return text or None
+
+
+def _first_existing_path(*paths: Path | None) -> Path | None:
+    for path in paths:
+        if path is not None and path.exists():
+            return path
+    for path in paths:
+        if path is not None:
+            return path
+    return None
+
+
+def _path_from_text(value: object) -> Path | None:
+    text = _clean(value)
+    if not text:
+        return None
+    return Path(text)
+
+
+def _path_text(path: Path | None) -> str:
+    return "" if path is None else str(path)
+
+
+def _path_or_empty(path: Path | None) -> Path:
+    return Path("") if path is None else path
+
+
+def _first_text(frame: pd.DataFrame | None, column: str) -> str:
+    if frame is None or frame.empty or column not in frame.columns:
+        return ""
+    return _clean(frame.iloc[0][column])
+
+
+def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
+    if frame is None or frame.empty or column not in frame.columns:
+        return False
+    return _truthy(frame.iloc[0][column])
+
+
+def _first_number(*values: object) -> float | None:
+    for value in values:
+        text = _clean(value)
+        if not text:
+            continue
+        try:
+            return float(text)
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
+def _identity_key(value: object) -> str:
+    return _clean(value).lower().replace("-", "_").replace(" ", "_")
+
+
+def _truthy(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    text = str(value).strip().lower()
+    return text in {"1", "true", "yes", "y", "ready", "pass", "passed", "continue"}
+
+
+def _clean(value: object) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
+def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
+    if frame is None or frame.empty:
+        return []
+    return [_jsonable(row) for row in frame.to_dict(orient="records")]
+
+
+def _first_record(frame: pd.DataFrame | None) -> dict[str, Any]:
+    records = _records(frame)
+    return records[0] if records else {}
+
+
+def _series_record(series: pd.Series) -> dict[str, Any]:
+    return _jsonable(series.to_dict())
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, tuple):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, pd.DataFrame):
+        return _records(value)
+    if isinstance(value, pd.Series):
+        return _series_record(value)
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            return str(value)
+    return value
