@@ -4769,8 +4769,9 @@ The provider route-enable wrapper reads the provider cutover summary/config,
 infers the nested generic `cutover` plus broker upload-pack/order-export inputs
 from the provider broker-readiness config, carries any cutover-retained provider
 broker-dispatch round-trip wrapper, nested generic `broker_dispatch_roundtrip`
-paths, and upstream proof lineage, runs `review-route-enable` under a nested
-`route_enable` folder, and writes provider checks/summary/action/config runbook
+paths, cutover-retained vendor-market-data batch readiness fields/config, and
+upstream proof lineage, runs `review-route-enable` under a nested
+`route_enable` folder, and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready
 `plan_provider_imbalance_broker_dispatch` action and point to
 `plan-broker-dispatch`; blocked wrappers route back to the exact repair gate,

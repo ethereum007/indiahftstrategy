@@ -30,6 +30,38 @@ ACTION_QUEUE_COLUMNS = [
     "next_gate_help_command",
 ]
 
+VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES = (
+    "dispatch_roundtrip_vendor_market_data_batch",
+    "broker_dispatch_roundtrip_vendor_market_data_batch",
+)
+VENDOR_MARKET_DATA_BATCH_BOOL_SUFFIXES = (
+    "provided",
+    "ready",
+    "comparison_accepted",
+)
+VENDOR_MARKET_DATA_BATCH_INT_SUFFIXES = (
+    "dataset_count",
+    "ready_datasets",
+    "failed_datasets",
+    "unique_source_files",
+    "unique_header_fingerprints",
+    "unique_mapping_drafts",
+    "comparison_failed_checks",
+)
+VENDOR_MARKET_DATA_BATCH_FLOAT_SUFFIXES = (
+    "ready_rate",
+    "source_file_fingerprint_coverage",
+    "min_mapping_coverage",
+)
+VENDOR_MARKET_DATA_BATCH_TEXT_SUFFIXES = (
+    "adapter",
+    "kind",
+    "manifest_run_type",
+    "market",
+    "mapping_sources",
+    "datasets_json",
+)
+
 
 @dataclass(frozen=True)
 class ProviderMarketDataImbalanceRouteEnableConfig:
@@ -231,6 +263,12 @@ def write_provider_market_data_imbalance_route_enable(
             "profile": PROFILE,
             "strategy": str(summary.iloc[0]["strategy"]),
             "market": str(summary.iloc[0]["market"]),
+            "dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
+            "broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
         },
     )
     return ProviderMarketDataImbalanceRouteEnableReport(
@@ -566,6 +604,7 @@ def _summary(
                         provider_broker_summary,
                     )
                 ),
+                **_vendor_market_data_batch_summary_fields(provider_summary, provider_broker_summary),
                 "route_enable_dir": route_dir,
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -610,6 +649,53 @@ def _summary(
             }
         ]
     )
+
+
+def _vendor_market_data_batch_summary_fields(
+    provider_summary: pd.DataFrame,
+    provider_broker_summary: pd.DataFrame,
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for prefix in VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES:
+        for suffix in VENDOR_MARKET_DATA_BATCH_BOOL_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = _first_bool_from_frames(
+                f"{prefix}_{suffix}",
+                provider_summary,
+                provider_broker_summary,
+            )
+        for suffix in VENDOR_MARKET_DATA_BATCH_INT_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = int(
+                _first_number_from_frames(
+                    f"{prefix}_{suffix}",
+                    provider_summary,
+                    provider_broker_summary,
+                )
+            )
+        for suffix in VENDOR_MARKET_DATA_BATCH_FLOAT_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = _first_number_from_frames(
+                f"{prefix}_{suffix}",
+                provider_summary,
+                provider_broker_summary,
+            )
+        for suffix in VENDOR_MARKET_DATA_BATCH_TEXT_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = _first_text_from_frames(
+                f"{prefix}_{suffix}",
+                provider_summary,
+                provider_broker_summary,
+            )
+    return fields
+
+
+def _vendor_market_data_batch_config(
+    key: str,
+    provider_config: dict[str, Any],
+    provider_broker_config: dict[str, Any],
+) -> dict[str, Any]:
+    for source in (provider_config, provider_broker_config):
+        vendor = source.get(key, {})
+        if isinstance(vendor, dict) and vendor:
+            return dict(vendor)
+    return {}
 
 
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
@@ -718,6 +804,16 @@ def _config(
         "provider_cutover_config": provider_config,
         "provider_broker_readiness": _first_record(provider_broker_summary),
         "provider_broker_readiness_config": provider_broker_config,
+        "dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
+            "dispatch_roundtrip_vendor_market_data_batch",
+            provider_config,
+            provider_broker_config,
+        ),
+        "broker_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+            provider_config,
+            provider_broker_config,
+        ),
         "route_enable": {
             "evaluated": route_enable is not None,
             "ready": False if route_enable is None else bool(route_enable.ready),
@@ -750,6 +846,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Route enable dir: {summary['route_enable_dir']}",
         f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
         f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
+        "- Dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
+        "- Broker dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['broker_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
         f"- Upstream dispatch round-trip ready: {'yes' if bool(summary['upstream_dispatch_roundtrip_ready']) else 'no'}",
         f"- Upstream dispatch round-trip dir: {summary['upstream_dispatch_roundtrip_dir']}",
         f"- Primary next gate: `{summary['next_gate']}`",
@@ -1109,6 +1209,14 @@ def _first_text(frame: pd.DataFrame | None, column: str) -> str:
     if frame is None or frame.empty or column not in frame.columns:
         return ""
     return _clean(frame.iloc[0][column])
+
+
+def _first_text_from_frames(column: str, *frames: pd.DataFrame | None) -> str:
+    for frame in frames:
+        text = _first_text(frame, column)
+        if text:
+            return text
+    return ""
 
 
 def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
