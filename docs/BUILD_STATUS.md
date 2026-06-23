@@ -1435,6 +1435,13 @@
   under a nested folder, writes provider checks/summary/action/config/runbook
   artifacts, routes blockers back to the exact repair gate, and sends clean
   Arrow.money/iRage dry-run routes to `plan-broker-dispatch`.
+- Provider-data imbalance now has a provider broker-dispatch wrapper after
+  provider route-enable. `plan-provider-market-data-imbalance-broker-dispatch`
+  infers the nested generic `route_enable` and broker upload pack, reruns
+  `plan-broker-dispatch` under a nested folder, writes provider
+  checks/summary/action/config/runbook artifacts, indexes the run for
+  catalog/scorecard discovery, and routes clean non-submitting dry-run dispatch
+  plans to `prepare-broker-dispatch-send`.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

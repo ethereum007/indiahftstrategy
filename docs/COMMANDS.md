@@ -4752,6 +4752,25 @@ runbook artifacts. Fully clean wrappers emit a ready
 such as `review-route-readiness`, `pack-broker-upload`, or the provider cutover
 wrapper.
 
+Run the provider-specific broker-dispatch wrapper:
+
+```powershell
+python -m hft_cli plan-provider-market-data-imbalance-broker-dispatch `
+  --provider-route-enable runs\provider_market_data_imbalance_route_enable\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_broker_dispatch\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider broker-dispatch wrapper reads the provider route-enable
+summary/config, infers the nested generic `route_enable` plus broker upload-pack
+inputs, runs `plan-broker-dispatch` under a nested `broker_dispatch` folder, and
+writes provider checks/summary/action/config/runbook artifacts. Fully clean
+wrappers emit a ready `prepare_provider_imbalance_broker_dispatch_send` action
+and point to `prepare-broker-dispatch-send`; blocked wrappers route back to the
+provider route-enable repair gate, `pack-broker-upload`, or the generic
+dispatch planner depending on the first failing proof.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 
