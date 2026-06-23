@@ -4793,13 +4793,14 @@ python -m hft_cli prepare-provider-market-data-imbalance-broker-dispatch-send `
 ```
 
 The provider broker-dispatch-send wrapper reads the provider dispatch
-summary/config, infers the nested generic `broker_dispatch` artifact, runs
-`prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
-and writes provider checks/summary/action/config/runbook artifacts. It still
-does not submit orders: the nested packet writes request envelopes and expected
-ack templates with `submission_enabled=false`. Fully clean wrappers emit a ready
-`capture_provider_imbalance_broker_acknowledgements` action and point to
-`reconcile-broker-dispatch` for the later dry-run acknowledgement file.
+summary/config, infers the nested generic `broker_dispatch` artifact, preserves
+any provider/nested broker-dispatch round-trip paths from the dispatch wrapper,
+runs `prepare-broker-dispatch-send` under a nested `broker_dispatch_send`
+folder, and writes provider checks/summary/action/config/runbook artifacts. It
+still does not submit orders: the nested packet writes request envelopes and
+expected ack templates with `submission_enabled=false`. Fully clean wrappers
+emit a ready `capture_provider_imbalance_broker_acknowledgements` action and
+point to `reconcile-broker-dispatch` for the later dry-run acknowledgement file.
 
 Run the provider-specific acknowledgement reconciliation wrapper once a dry-run
 ack CSV is available:
