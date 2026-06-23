@@ -44,6 +44,10 @@ from reports.provider_market_data_imbalance_runtime_session import (
     ProviderMarketDataImbalanceRuntimeSessionConfig,
     write_provider_market_data_imbalance_runtime_session,
 )
+from reports.provider_market_data_imbalance_broker_readiness import (
+    ProviderMarketDataImbalanceBrokerReadinessConfig,
+    write_provider_market_data_imbalance_broker_readiness,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -332,6 +336,25 @@ def _write_ready_provider_imbalance_runtime_guard(tmp_path, *, snapshot_ts_ns=1_
         tmp_path / "provider_imbalance_runtime_guard",
         as_of_ts_ns=as_of_ts_ns,
         config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+
+
+def _write_ready_provider_imbalance_runtime_session(
+    tmp_path,
+    *,
+    snapshot_ts_ns=1_000_000,
+    as_of_ts_ns=1_000_000,
+):
+    runtime_guard = _write_ready_provider_imbalance_runtime_guard(
+        tmp_path,
+        snapshot_ts_ns=snapshot_ts_ns,
+        as_of_ts_ns=as_of_ts_ns,
+    )
+    return write_provider_market_data_imbalance_runtime_session(
+        runtime_guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session",
+        as_of_ts_ns=as_of_ts_ns,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
     )
 
 
@@ -1222,9 +1245,9 @@ def test_provider_market_data_imbalance_runtime_session_monitors_ready_guard(tmp
     assert bool(summary.loc[0, "runtime_session_evaluated"])
     assert bool(summary.loc[0, "runtime_session_continue"])
     assert summary.loc[0, "guard_action"] == "continue"
-    assert summary.loc[0, "next_gate"] == "review-broker-readiness"
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
     assert action_queue.loc[0, "queue_status"] == "ready"
-    assert action_queue.loc[0, "next_gate"] == "review-broker-readiness"
+    assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
     assert bool(session_summary.loc[0, "ready"])
     assert session_summary.loc[0, "strategy"] == "imbalance"
     assert manifest["run_type"] == "provider_market_data_imbalance_runtime_session"
@@ -1289,4 +1312,93 @@ def test_cli_provider_market_data_imbalance_runtime_session_accepts_ready_guard(
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "guard_action"] == "continue"
-    assert summary.loc[0, "next_gate"] == "review-broker-readiness"
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
+
+
+def test_provider_market_data_imbalance_broker_readiness_reviews_ready_session(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    out_dir = tmp_path / "provider_imbalance_broker_readiness"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_action_queue.csv")
+    broker_summary = pd.read_csv(out_dir / "broker_readiness" / "broker_readiness_summary.csv")
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(summary.loc[0, "provider_runtime_session_ready"])
+    assert bool(summary.loc[0, "broker_readiness_ready"])
+    assert bool(broker_summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "review-cutover-gate"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "review-cutover-gate"
+    assert manifest["run_type"] == "provider_market_data_imbalance_broker_readiness"
+    assert "broker_readiness" in manifest["inputs"]
+    assert "runtime_session" in manifest["inputs"]
+    assert "order_export" in manifest["inputs"]
+    assert "upload_pack" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_broker_readiness_blocks_unready_session(tmp_path):
+    session_dir = tmp_path / "provider_imbalance_runtime_session"
+    session_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "runtime_session_dir": "",
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(session_dir / "provider_market_data_imbalance_runtime_session_summary.csv", index=False)
+    (session_dir / "provider_market_data_imbalance_runtime_session_config.json").write_text(
+        json.dumps({"runtime_inputs": {}}, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        session_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_runtime_session_ready" in failed
+    assert "nested_runtime_session_summary_exists" in failed
+    assert "order_export_input_resolved" in failed
+    assert "upload_pack_input_resolved" in failed
+    assert "broker_readiness_runnable" in failed
+    assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-session"
+    assert not (report.output_dir / "broker_readiness" / "broker_readiness_summary.csv").exists()
+
+
+def test_cli_provider_market_data_imbalance_broker_readiness_accepts_ready_session(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    out_dir = tmp_path / "cli_provider_imbalance_broker_readiness"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-broker-readiness",
+            "--runtime-session",
+            str(runtime_session.output_dir),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "broker_readiness_ready"])
+    assert summary.loc[0, "next_gate"] == "review-cutover-gate"

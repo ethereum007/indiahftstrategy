@@ -4666,8 +4666,29 @@ runtime telemetry directory, reuses the telemetry wrapper's broker export,
 upload-pack, reconciliation, metadata, PnL, open-order, and position inputs when
 available, writes provider session checks/summary/action/config/runbook
 artifacts plus a nested generic `runtime_session`, and routes clean sessions to
-`review-broker-readiness`. If the session guard halts and a halt response is
-ready, it emits a ready `export-halt-response` action.
+`review-provider-market-data-imbalance-broker-readiness`. If the session guard
+halts and a halt response is ready, it emits a ready `export-halt-response`
+action.
+
+Run the provider-specific broker readiness wrapper:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-broker-readiness `
+  --runtime-session runs\provider_market_data_imbalance_runtime_session\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_broker_readiness\arrow_ws_nse_2026_06_23 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The provider broker-readiness wrapper reads the provider runtime-session
+summary/config, infers the nested generic `runtime_session` plus provider launch
+order export/upload-pack artifacts, runs the generic `broker_readiness` gate
+under a nested folder, and writes provider checks/summary/action/config/runbook
+artifacts. By default it is suitable for initial Arrow.money/iRage dry-run
+testing: it requires the provider runtime session, order export, upload pack,
+and broker-readiness pass, while leaving reviewed schema, reconciliation, route
+readiness, and dispatch roundtrip as explicit promotion flags. A ready wrapper
+points to `review-cutover-gate`.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:

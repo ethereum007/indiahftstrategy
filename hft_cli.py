@@ -162,6 +162,10 @@ from reports.provider_market_data_imbalance_runtime_session import (
     ProviderMarketDataImbalanceRuntimeSessionConfig,
     write_provider_market_data_imbalance_runtime_session,
 )
+from reports.provider_market_data_imbalance_broker_readiness import (
+    ProviderMarketDataImbalanceBrokerReadinessConfig,
+    write_provider_market_data_imbalance_broker_readiness,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1563,6 +1567,58 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_runtime_session.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_runtime_session.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_runtime_session.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_broker_readiness = sub.add_parser(
+        "review-provider-market-data-imbalance-broker-readiness",
+        help="Gate provider imbalance runtime-session evidence for broker cutover readiness.",
+    )
+    provider_market_data_imbalance_broker_readiness.add_argument("--runtime-session", required=True)
+    provider_market_data_imbalance_broker_readiness.add_argument("--out", required=True)
+    provider_market_data_imbalance_broker_readiness.add_argument("--schema-audit", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--order-export", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--mapping-draft", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--mapped-orders", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--upload-pack", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--halt-export", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--reconciliation", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--resume-gate", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--dispatch-roundtrip", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--vendor-market-data-batch", default=None)
+    provider_market_data_imbalance_broker_readiness.add_argument("--adapter", default="")
+    provider_market_data_imbalance_broker_readiness.add_argument("--expected-market", default="")
+    provider_market_data_imbalance_broker_readiness.add_argument(
+        "--expected-vendor-data-kind",
+        default="ticks",
+        choices=["ticks", "chain"],
+    )
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-reviewed-schema", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-schema-audit", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--skip-order-export", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-mapping-draft", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-mapped-orders", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--skip-upload-pack", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-halt-export", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-reconciliation", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--skip-runtime-session", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-resume-gate", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-route-readiness", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--require-dispatch-roundtrip", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--allow-adapter-mismatch", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument(
+        "--no-require-provider-runtime-session-ready",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_readiness.add_argument(
+        "--no-require-broker-readiness-ready",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_readiness.add_argument(
+        "--no-use-provider-runtime-session-inputs",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_readiness.add_argument("--fail-on-breach", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--fail-on-blocked-actions", action="store_true")
+    provider_market_data_imbalance_broker_readiness.add_argument("--fail-on-actions", action="store_true")
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -4403,6 +4459,55 @@ def main(argv: list[str] | None = None) -> int:
             blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
         if args.fail_on_halt and result.halted:
             return 2
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "review-provider-market-data-imbalance-broker-readiness":
+        result = write_provider_market_data_imbalance_broker_readiness(
+            args.runtime_session,
+            args.out,
+            schema_audit_dir=args.schema_audit,
+            order_export_dir=args.order_export,
+            mapping_draft_dir=args.mapping_draft,
+            mapped_orders_dir=args.mapped_orders,
+            upload_pack_dir=args.upload_pack,
+            halt_export_dir=args.halt_export,
+            reconciliation_dir=args.reconciliation,
+            resume_dir=args.resume_gate,
+            dispatch_roundtrip_dir=args.dispatch_roundtrip,
+            vendor_market_data_batch_dir=args.vendor_market_data_batch,
+            config=ProviderMarketDataImbalanceBrokerReadinessConfig(
+                require_provider_runtime_session_ready=not args.no_require_provider_runtime_session_ready,
+                require_broker_readiness_ready=not args.no_require_broker_readiness_ready,
+                use_provider_runtime_session_inputs=not args.no_use_provider_runtime_session_inputs,
+                adapter=args.adapter,
+                expected_market=args.expected_market,
+                expected_vendor_data_kind=args.expected_vendor_data_kind,
+                require_reviewed_schema=args.require_reviewed_schema,
+                require_schema_audit=args.require_schema_audit,
+                require_order_export=not args.skip_order_export,
+                require_mapping_draft=args.require_mapping_draft,
+                require_mapped_orders=args.require_mapped_orders,
+                require_upload_pack=not args.skip_upload_pack,
+                require_halt_export=args.require_halt_export,
+                require_reconciliation=args.require_reconciliation,
+                require_runtime_session=not args.skip_runtime_session,
+                require_resume_gate=args.require_resume_gate,
+                require_route_readiness=args.require_route_readiness,
+                require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                require_adapter_match=not args.allow_adapter_mismatch,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
         if args.fail_on_breach and not result.ready:
             return 2
         if args.fail_on_blocked_actions and blocked_actions > 0:

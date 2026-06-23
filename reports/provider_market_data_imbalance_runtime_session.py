@@ -522,8 +522,10 @@ def _action_queue(
                     "action": "review_provider_imbalance_broker_readiness",
                     "reason": "provider imbalance runtime session is clean for broker readiness review",
                     "recommendation": "feed_runtime_session_into_broker_readiness",
-                    "next_gate": "review-broker-readiness",
-                    "next_gate_help_command": _help_command_for_gate("review-broker-readiness"),
+                    "next_gate": "review-provider-market-data-imbalance-broker-readiness",
+                    "next_gate_help_command": _help_command_for_gate(
+                        "review-provider-market-data-imbalance-broker-readiness"
+                    ),
                 }
             ]
         )
@@ -759,7 +761,7 @@ def _ready_next_gate(session: RuntimeSessionMonitorReport | None) -> str:
         return "monitor-provider-market-data-imbalance-runtime-session"
     if _first_bool(session.summary, "halted"):
         return _first_action_value(session.action_queue, "next_gate") or "export-halt-response"
-    return "review-broker-readiness"
+    return "review-provider-market-data-imbalance-broker-readiness"
 
 
 def _blocked_next_gate(checks: pd.DataFrame, session: RuntimeSessionMonitorReport | None) -> str:
@@ -798,8 +800,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli plan-halt-response --help"
     if next_gate == "export-halt-response":
         return "python -m hft_cli export-halt-response --help"
-    if next_gate == "review-broker-readiness":
-        return "python -m hft_cli review-broker-readiness --help"
+    if next_gate == "review-provider-market-data-imbalance-broker-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-broker-readiness --help"
     return "python -m hft_cli monitor-provider-market-data-imbalance-runtime-session --help"
 
 
