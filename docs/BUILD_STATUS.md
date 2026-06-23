@@ -1501,9 +1501,10 @@
   summary/config/runbook artifacts and manifests while still keeping
   `submission_enabled=false`.
 - Provider-data imbalance broker-dispatch acknowledgement now preserves those
-  provider/nested broker-dispatch round-trip paths plus upstream proof lineage
-  in acknowledgement summary/config/runbook artifacts and manifests before the
-  final provider round-trip wrapper is trusted.
+  provider/nested broker-dispatch round-trip paths, broker-dispatch
+  vendor-market-data batch proof, and upstream proof lineage in acknowledgement
+  summary/config/runbook artifacts and manifests before the final provider
+  round-trip wrapper is trusted.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof as upstream lineage while also
   generating a fresh nested `broker_dispatch_roundtrip` proof, so the final

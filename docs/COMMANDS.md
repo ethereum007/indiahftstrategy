@@ -4838,9 +4838,11 @@ python -m hft_cli reconcile-provider-market-data-imbalance-broker-dispatch `
 The provider acknowledgement wrapper reads the provider send-packet
 summary/config, requires an explicit broker/dry-run ack CSV, infers the nested
 generic `broker_dispatch` plan, preserves any provider/nested broker-dispatch
-round-trip paths plus upstream proof lineage from the send packet, runs
+round-trip paths, broker-dispatch vendor-market-data batch readiness/config,
+and upstream proof lineage from the send packet, runs
 `reconcile-broker-dispatch` under a nested `broker_dispatch_ack` folder, and
-writes provider checks/summary/action/config/runbook artifacts. Clean acknowledgement proof emits a ready
+writes provider checks, summary, action, config, and runbook artifacts. Clean
+acknowledgement proof emits a ready
 `review_provider_imbalance_broker_dispatch_roundtrip` action and points to
 `review-provider-market-data-imbalance-broker-dispatch-roundtrip`; missing ack
 files, unready send packets, and rejected/duplicate/unmatched acknowledgements
