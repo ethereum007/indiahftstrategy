@@ -4863,10 +4863,12 @@ summary/config, infers the nested generic `broker_dispatch`,
 `broker_dispatch_send`, and `broker_dispatch_ack` folders, runs
 `review-broker-dispatch-roundtrip` under a nested `broker_dispatch_roundtrip`
 folder, preserves any acknowledgement-carried upstream provider/nested
-round-trip proof as `upstream_*_roundtrip` lineage, and writes provider
-checks/summary/action/config/runbook artifacts. When the nested generic
-round-trip carries broker vendor-market-data batch evidence, the provider
-wrapper also exposes that proof in its own summary/config under both
+round-trip proof as `upstream_*_roundtrip` lineage, preserves inherited
+vendor-market-data batch evidence under `upstream_*_vendor_market_data_batch_*`
+fields, and writes provider checks/summary/action/config/runbook artifacts.
+When the nested generic round-trip carries broker vendor-market-data batch
+evidence, the provider wrapper also exposes that fresh proof in its own
+summary/config under both
 `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
 `broker_dispatch_roundtrip_vendor_market_data_batch_*` fields. Clean proof emits
 a ready `feed_provider_imbalance_broker_dispatch_roundtrip_into_broker_readiness`

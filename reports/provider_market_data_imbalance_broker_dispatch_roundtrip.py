@@ -40,6 +40,17 @@ VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES = (
     "broker_dispatch_roundtrip_vendor_market_data_batch",
 )
 
+UPSTREAM_VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES = (
+    (
+        "dispatch_roundtrip_vendor_market_data_batch",
+        "upstream_dispatch_roundtrip_vendor_market_data_batch",
+    ),
+    (
+        "broker_dispatch_roundtrip_vendor_market_data_batch",
+        "upstream_broker_dispatch_roundtrip_vendor_market_data_batch",
+    ),
+)
+
 VENDOR_MARKET_DATA_BATCH_SUMMARY_SUFFIXES = (
     "provided",
     "ready",
@@ -256,6 +267,18 @@ def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
             "profile": PROFILE,
             "strategy": str(summary.iloc[0]["strategy"]),
             "market": str(summary.iloc[0]["market"]),
+            "upstream_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["upstream_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
+            "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
+            "roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
+            "broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
         },
     )
     return ProviderMarketDataImbalanceBrokerDispatchRoundTripReport(
@@ -605,6 +628,7 @@ def _summary(
                     or _first_number(provider_summary, "route_readiness_gap_pairs")
                 ),
                 "roundtrip_recommendation": _first_text(roundtrip_summary, "recommendation"),
+                **_upstream_vendor_market_data_batch_summary_fields(provider_summary),
                 **_nested_vendor_market_data_batch_summary_fields(broker_dispatch_roundtrip),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(
@@ -707,6 +731,7 @@ def _config(
         "summary": _series_record(summary),
         "provider_broker_dispatch_ack": _first_record(provider_summary),
         "provider_broker_dispatch_ack_config": provider_config,
+        **_upstream_vendor_market_data_batch_config_fields(provider_config),
         **_nested_vendor_market_data_batch_config_fields(broker_dispatch_roundtrip),
         "broker_dispatch_roundtrip": {
             "evaluated": broker_dispatch_roundtrip is not None,
@@ -730,6 +755,31 @@ def _config(
         "blocked_actions": [row for row in actions if row.get("queue_status") == "blocked"],
         "primary_action": actions[0] if actions else {},
     }
+
+
+def _upstream_vendor_market_data_batch_summary_fields(provider_summary: pd.DataFrame) -> dict[str, object]:
+    fields: dict[str, object] = {}
+    for source_prefix, target_prefix in UPSTREAM_VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES:
+        for suffix in VENDOR_MARKET_DATA_BATCH_SUMMARY_SUFFIXES:
+            source_key = f"{source_prefix}_{suffix}"
+            key = f"{target_prefix}_{suffix}"
+            if suffix in {"provided", "ready", "comparison_accepted"}:
+                fields[key] = _first_bool(provider_summary, source_key)
+            elif suffix in {
+                "dataset_count",
+                "ready_datasets",
+                "failed_datasets",
+                "unique_source_files",
+                "unique_header_fingerprints",
+                "unique_mapping_drafts",
+                "comparison_failed_checks",
+            }:
+                fields[key] = int(_first_number(provider_summary, source_key))
+            elif suffix in {"ready_rate", "source_file_fingerprint_coverage", "min_mapping_coverage"}:
+                fields[key] = float(_first_number(provider_summary, source_key))
+            else:
+                fields[key] = _first_text(provider_summary, source_key)
+    return fields
 
 
 def _nested_vendor_market_data_batch_summary_fields(
@@ -770,6 +820,29 @@ def _vendor_market_data_batch_summary_key(summary: pd.DataFrame, prefix: str, su
     return key
 
 
+def _upstream_vendor_market_data_batch_config_fields(provider_config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "upstream_dispatch_roundtrip_vendor_market_data_batch": _provider_vendor_market_data_batch_config(
+            provider_config,
+            "dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        "upstream_broker_dispatch_roundtrip_vendor_market_data_batch": _provider_vendor_market_data_batch_config(
+            provider_config,
+            "broker_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+    }
+
+
+def _provider_vendor_market_data_batch_config(provider_config: dict[str, Any], key: str) -> dict[str, Any]:
+    vendor = _mapping(provider_config.get(key))
+    if vendor:
+        return vendor
+    provider_send_config = provider_config.get("provider_broker_dispatch_send_config", {})
+    if isinstance(provider_send_config, dict):
+        return _mapping(provider_send_config.get(key))
+    return {}
+
+
 def _nested_vendor_market_data_batch_config_fields(
     broker_dispatch_roundtrip: BrokerDispatchRoundTripReport | None,
 ) -> dict[str, Any]:
@@ -803,6 +876,12 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Rejected orders: {summary['rejected_orders']}",
         f"- Upstream dispatch round-trip ready: {'yes' if bool(summary['upstream_dispatch_roundtrip_ready']) else 'no'}",
         f"- Upstream dispatch round-trip dir: {summary['upstream_dispatch_roundtrip_dir']}",
+        "- Upstream dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['upstream_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
+        "- Upstream broker dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
+        "- Fresh broker dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['broker_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
         f"- Broker dispatch round-trip dir: {summary['broker_dispatch_roundtrip_dir']}",
         f"- Primary next gate: `{summary['next_gate']}`",
         f"- Primary next gate help: `{summary['next_gate_help_command']}`",

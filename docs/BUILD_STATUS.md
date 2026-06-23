@@ -1506,11 +1506,12 @@
   summary/config/runbook artifacts and manifests before the final provider
   round-trip wrapper is trusted.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
-  acknowledgement-carried provider/nested proof as upstream lineage while also
-  generating a fresh nested `broker_dispatch_roundtrip` proof, so the final
-  readiness handoff can distinguish inherited dry-run evidence from the newly
-  reviewed round-trip artifact. The provider round-trip summary/config now also
-  surfaces nested broker vendor-market-data batch proof under both
+  acknowledgement-carried provider/nested proof and vendor-market-data batch
+  proof as upstream lineage while also generating a fresh nested
+  `broker_dispatch_roundtrip` proof, so the final readiness handoff can
+  distinguish inherited dry-run evidence from the newly reviewed round-trip
+  artifact. The provider round-trip summary/config now also surfaces nested
+  broker vendor-market-data batch proof under both
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
   `broker_dispatch_roundtrip_vendor_market_data_batch_*` fields.
 - Provider-data imbalance now has a provider route-readiness wrapper before

@@ -3631,6 +3631,77 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_vendor
     assert vendor["datasets"][0]["source_file_sha256"] == "a" * 64
 
 
+def test_provider_market_data_imbalance_broker_dispatch_roundtrip_preserves_ack_vendor_batch_as_upstream(tmp_path):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+    broker_vendor = _vendor_market_data_batch_config()
+    ack_summary_path = provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    ack_summary = pd.read_csv(ack_summary_path)
+    ack_summary["dispatch_roundtrip_vendor_market_data_batch_ready"] = False
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_provided"] = True
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_ready"] = True
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] = "arrow_money"
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_kind"] = "ticks"
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] = (
+        "vendor_market_data_batch_pipeline"
+    )
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_market"] = "india_nse_index_derivatives"
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"] = 2
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"] = 2
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] = 1.0
+    ack_summary["broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted"] = True
+    ack_summary.to_csv(ack_summary_path, index=False)
+
+    ack_config_path = provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json"
+    ack_config = json.loads(ack_config_path.read_text(encoding="utf-8"))
+    ack_config["dispatch_roundtrip_vendor_market_data_batch"] = {
+        "provided": False,
+        "ready": False,
+        "datasets": [],
+    }
+    ack_config["broker_dispatch_roundtrip_vendor_market_data_batch"] = broker_vendor
+    ack_config_path.write_text(
+        json.dumps(ack_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip_with_upstream_vendor_batch"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert report.passed
+    assert "upstream_dispatch_roundtrip_vendor_market_data_batch_ready" in summary.columns
+    assert not bool(summary.loc[0, "upstream_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert bool(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert not bool(summary.loc[0, "broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert not config["upstream_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"]["comparison"]["accepted"]
+    assert manifest["extra"]["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert not manifest["extra"]["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert "- Upstream broker dispatch round-trip vendor batch ready: yes" in runbook
+    assert "- Fresh broker dispatch round-trip vendor batch ready: no" in runbook
+
+
 def test_provider_market_data_imbalance_broker_dispatch_roundtrip_preserves_upstream_roundtrip(tmp_path):
     provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
     upstream_provider_dir = tmp_path / "upstream_provider_imbalance_broker_dispatch_roundtrip"
