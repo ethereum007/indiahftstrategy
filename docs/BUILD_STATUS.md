@@ -1480,7 +1480,8 @@
 - Provider-data imbalance cutover now carries that broker-dispatch round-trip
   audit trail forward from provider broker-readiness. The provider cutover
   summary/config/manifest preserve both the provider wrapper root and nested
-  generic `broker_dispatch_roundtrip` path plus any upstream proof lineage so
+  generic `broker_dispatch_roundtrip` path, broker-dispatch
+  vendor-market-data batch proof, and any upstream proof lineage so
   route-enable and later broker dispatch stages can trace the same proof chain
   before live-data dry-runs.
 - Provider-data imbalance route-enable now preserves the cutover-carried

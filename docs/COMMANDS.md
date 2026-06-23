@@ -4745,7 +4745,10 @@ any provider broker-dispatch round-trip proof carried by broker-readiness. It
 runs `review-cutover-gate` under a nested `cutover` folder, writes provider
 checks/summary/action/config/runbook artifacts, and preserves the provider
 round-trip wrapper root, nested generic `broker_dispatch_roundtrip` folder, and
-any upstream proof lineage in the cutover summary/config/manifest. It keeps the
+any upstream proof lineage in the cutover summary/config/manifest. If provider
+broker-readiness carried vendor-market-data batch evidence, cutover also
+retains the generic dispatch and broker-dispatch vendor batch readiness fields
+plus config snapshots for route-enable and dispatch reviewers. It keeps the
 generic cutover safety model intact: if route-readiness or broker route proof is
 missing, the wrapper blocks with `review-route-readiness`; once cutover is fully
 clean, it points to `review-route-enable`. Use
