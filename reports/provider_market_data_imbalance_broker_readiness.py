@@ -34,6 +34,10 @@ VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES = (
     "dispatch_roundtrip_vendor_market_data_batch",
     "broker_dispatch_roundtrip_vendor_market_data_batch",
 )
+UPSTREAM_VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES = (
+    "upstream_dispatch_roundtrip_vendor_market_data_batch",
+    "upstream_broker_dispatch_roundtrip_vendor_market_data_batch",
+)
 VENDOR_MARKET_DATA_BATCH_BOOL_SUFFIXES = (
     "provided",
     "ready",
@@ -209,6 +213,7 @@ def write_provider_market_data_imbalance_broker_readiness(
         summary.iloc[0],
         session_summary,
         session_config,
+        provider_roundtrip_config,
         broker,
         checks,
         action_queue,
@@ -281,6 +286,12 @@ def write_provider_market_data_imbalance_broker_readiness(
             ),
             "broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
                 summary.iloc[0]["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
+            "upstream_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["upstream_dispatch_roundtrip_vendor_market_data_batch_ready"]
+            ),
+            "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
+                summary.iloc[0]["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
         },
     )
@@ -484,6 +495,7 @@ def _summary(
                 "dispatch_roundtrip_failed_checks": int(
                     _first_number(broker_summary, "dispatch_roundtrip_failed_checks")
                 ),
+                **_provider_roundtrip_upstream_vendor_market_data_batch_summary_fields(provider_roundtrip_summary),
                 **_broker_readiness_vendor_market_data_batch_summary_fields(broker_summary),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -516,6 +528,22 @@ def _summary(
             }
         ]
     )
+
+
+def _provider_roundtrip_upstream_vendor_market_data_batch_summary_fields(
+    provider_roundtrip_summary: pd.DataFrame,
+) -> dict[str, Any]:
+    fields: dict[str, Any] = {}
+    for prefix in UPSTREAM_VENDOR_MARKET_DATA_BATCH_SUMMARY_PREFIXES:
+        for suffix in VENDOR_MARKET_DATA_BATCH_BOOL_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = _first_bool(provider_roundtrip_summary, f"{prefix}_{suffix}")
+        for suffix in VENDOR_MARKET_DATA_BATCH_INT_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = int(_first_number(provider_roundtrip_summary, f"{prefix}_{suffix}"))
+        for suffix in VENDOR_MARKET_DATA_BATCH_FLOAT_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = _first_number(provider_roundtrip_summary, f"{prefix}_{suffix}")
+        for suffix in VENDOR_MARKET_DATA_BATCH_TEXT_SUFFIXES:
+            fields[f"{prefix}_{suffix}"] = _first_text(provider_roundtrip_summary, f"{prefix}_{suffix}")
+    return fields
 
 
 def _broker_readiness_vendor_market_data_batch_summary_fields(broker_summary: pd.DataFrame) -> dict[str, Any]:
@@ -634,6 +662,7 @@ def _config(
     summary: pd.Series,
     session_summary: pd.DataFrame,
     session_config: dict[str, Any],
+    provider_roundtrip_config: dict[str, Any],
     broker: BrokerReadinessReport | None,
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
@@ -649,6 +678,16 @@ def _config(
         "summary": _series_record(summary),
         "provider_runtime_session": _first_record(session_summary),
         "provider_runtime_session_config": session_config,
+        "upstream_dispatch_roundtrip_vendor_market_data_batch": _provider_roundtrip_vendor_market_data_batch_config(
+            provider_roundtrip_config,
+            "upstream_dispatch_roundtrip_vendor_market_data_batch",
+        ),
+        "upstream_broker_dispatch_roundtrip_vendor_market_data_batch": (
+            _provider_roundtrip_vendor_market_data_batch_config(
+                provider_roundtrip_config,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch",
+            )
+        ),
         "dispatch_roundtrip_vendor_market_data_batch": _broker_readiness_vendor_market_data_batch_config(
             broker,
             "vendor_market_data_batch",
@@ -677,6 +716,14 @@ def _config(
     }
 
 
+def _provider_roundtrip_vendor_market_data_batch_config(
+    provider_roundtrip_config: dict[str, Any],
+    key: str,
+) -> dict[str, Any]:
+    vendor = provider_roundtrip_config.get(key, {})
+    return dict(vendor) if isinstance(vendor, dict) else {}
+
+
 def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd.DataFrame) -> str:
     lines = [
         "# Provider Market Data Imbalance Broker Readiness",
@@ -694,6 +741,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"{'yes' if bool(summary['broker_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
         f"- Upstream dispatch round-trip ready: {'yes' if bool(summary['upstream_dispatch_roundtrip_ready']) else 'no'}",
         f"- Upstream dispatch round-trip dir: {summary['upstream_dispatch_roundtrip_dir']}",
+        "- Upstream dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['upstream_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
+        "- Upstream broker dispatch round-trip vendor batch ready: "
+        f"{'yes' if bool(summary['upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",
         f"- Primary next gate: `{summary['next_gate']}`",
         f"- Primary next gate help: `{summary['next_gate_help_command']}`",
         "",

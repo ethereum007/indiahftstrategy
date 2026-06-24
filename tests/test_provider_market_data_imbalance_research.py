@@ -1834,6 +1834,83 @@ def test_provider_market_data_imbalance_broker_readiness_surfaces_roundtrip_vend
     assert "- Broker dispatch round-trip vendor batch ready: yes" in runbook
 
 
+def test_provider_market_data_imbalance_broker_readiness_preserves_roundtrip_upstream_vendor_batch(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    broker_vendor = _vendor_market_data_batch_config()
+
+    roundtrip_summary_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    roundtrip_summary = pd.read_csv(roundtrip_summary_path)
+    roundtrip_summary["upstream_dispatch_roundtrip_vendor_market_data_batch_ready"] = False
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_provided"] = True
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"] = True
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] = "arrow_money"
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_kind"] = "ticks"
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] = (
+        "vendor_market_data_batch_pipeline"
+    )
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_market"] = (
+        "india_nse_index_derivatives"
+    )
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"] = 2
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files"] = 2
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] = 1.0
+    roundtrip_summary["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted"] = True
+    roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
+
+    roundtrip_config_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+    )
+    roundtrip_config = json.loads(roundtrip_config_path.read_text(encoding="utf-8"))
+    roundtrip_config["upstream_dispatch_roundtrip_vendor_market_data_batch"] = {
+        "provided": False,
+        "ready": False,
+        "datasets": [],
+    }
+    roundtrip_config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"] = broker_vendor
+    roundtrip_config_path.write_text(
+        json.dumps(roundtrip_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_with_upstream_vendor_batch"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_readiness_runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert not report.ready
+    assert bool(report.checks.set_index("check").loc["broker_readiness_runnable", "passed"])
+    assert "upstream_dispatch_roundtrip_vendor_market_data_batch_ready" in summary.columns
+    assert not bool(summary.loc[0, "upstream_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert bool(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert not config["upstream_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"]["comparison"]["accepted"]
+    assert manifest["extra"]["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert "- Upstream broker dispatch round-trip vendor batch ready: yes" in runbook
+
+
 def test_provider_market_data_imbalance_broker_readiness_preserves_upstream_roundtrip(tmp_path):
     runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
     provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
