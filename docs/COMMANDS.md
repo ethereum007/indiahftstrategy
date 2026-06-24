@@ -4774,8 +4774,11 @@ infers the nested generic `cutover` plus broker upload-pack/order-export inputs
 from the provider broker-readiness config, carries any cutover-retained provider
 broker-dispatch round-trip wrapper, nested generic `broker_dispatch_roundtrip`
 paths, cutover-retained vendor-market-data batch readiness fields/config, and
-upstream proof lineage, runs `review-route-enable` under a nested
-`route_enable` folder, and writes provider checks/summary/action/config/runbook
+upstream proof lineage. It also preserves inherited
+`upstream_*_vendor_market_data_batch_*` readiness fields/config so dispatch
+planners can see the full Arrow.money/iRage vendor-data chain from the
+route-enable artifact. The wrapper runs `review-route-enable` under a nested
+`route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready
 `plan_provider_imbalance_broker_dispatch` action and point to
 `plan-broker-dispatch`; blocked wrappers route back to the exact repair gate,
