@@ -2243,6 +2243,112 @@ def test_provider_market_data_imbalance_cutover_carries_broker_vendor_batch(tmp_
     assert "- Broker dispatch round-trip vendor batch ready: yes" in runbook
 
 
+def test_provider_market_data_imbalance_cutover_preserves_upstream_vendor_batch(tmp_path):
+    provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+    nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
+    nested_roundtrip_dir.mkdir(parents=True)
+    (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
+        "true,true,true,0\n",
+        encoding="utf-8",
+    )
+    broker_readiness_dir = tmp_path / "provider_imbalance_broker_readiness_with_upstream_vendor_batch"
+    broker_readiness_dir.mkdir(parents=True)
+    broker_vendor = _vendor_market_data_batch_config()
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_readiness_dir": "",
+                "runtime_session_dir": "",
+                "scaleup_dir": "",
+                "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
+                "dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                "dispatch_roundtrip_provided": True,
+                "dispatch_roundtrip_ready": True,
+                "dispatch_roundtrip_failed_checks": 0,
+                "upstream_dispatch_roundtrip_vendor_market_data_batch_ready": False,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_provided": True,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready": True,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_adapter": "arrow_money",
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_kind": "ticks",
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type": (
+                    "vendor_market_data_batch_pipeline"
+                ),
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_market": (
+                    "india_nse_index_derivatives"
+                ),
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count": 2,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_unique_source_files": 2,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage": 1.0,
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_comparison_accepted": True,
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_summary.csv",
+        index=False,
+    )
+    (
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_config.json"
+    ).write_text(
+        json.dumps(
+            {
+                "broker_inputs": {
+                    "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
+                    "dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                },
+                "provider_runtime_session": {"scaleup_dir": ""},
+                "upstream_dispatch_roundtrip_vendor_market_data_batch": {
+                    "provided": False,
+                    "ready": False,
+                    "datasets": [],
+                },
+                "upstream_broker_dispatch_roundtrip_vendor_market_data_batch": broker_vendor,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_cutover_with_upstream_vendor_batch"
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_cutover_summary.csv")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_cutover_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_cutover_runbook.md").read_text(encoding="utf-8")
+
+    assert not report.ready
+    assert "upstream_dispatch_roundtrip_vendor_market_data_batch_ready" in summary.columns
+    assert not bool(summary.loc[0, "upstream_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert bool(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_provided"])
+    assert bool(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"])
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_adapter"] == "arrow_money"
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_manifest_run_type"] == (
+        "vendor_market_data_batch_pipeline"
+    )
+    assert int(summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_dataset_count"]) == 2
+    assert summary.loc[0, "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_min_mapping_coverage"] == 1.0
+    assert not config["upstream_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"]["ready"]
+    assert config["upstream_broker_dispatch_roundtrip_vendor_market_data_batch"]["comparison"]["accepted"]
+    assert manifest["extra"]["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+    assert "- Upstream broker dispatch round-trip vendor batch ready: yes" in runbook
+
+
 def test_provider_market_data_imbalance_cutover_preserves_upstream_roundtrip(tmp_path):
     provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
     nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"

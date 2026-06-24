@@ -4749,11 +4749,13 @@ checks/summary/action/config/runbook artifacts, and preserves the provider
 round-trip wrapper root, nested generic `broker_dispatch_roundtrip` folder, and
 any upstream proof lineage in the cutover summary/config/manifest. If provider
 broker-readiness carried vendor-market-data batch evidence, cutover also
-retains the generic dispatch and broker-dispatch vendor batch readiness fields
-plus config snapshots for route-enable and dispatch reviewers. It keeps the
-generic cutover safety model intact: if route-readiness or broker route proof is
-missing, the wrapper blocks with `review-route-readiness`; once cutover is fully
-clean, it points to `review-route-enable`. Use
+retains the generic dispatch, broker-dispatch, and inherited upstream vendor
+batch readiness fields plus config snapshots, including
+`upstream_*_vendor_market_data_batch_*` fields for route-enable and dispatch
+reviewers. It keeps the generic cutover safety model intact: if route-readiness
+or broker route proof is missing, the wrapper blocks with
+`review-route-readiness`; once cutover is fully clean, it points to
+`review-route-enable`. Use
 `--allow-missing-route-readiness` only for diagnostic dry-runs that are not
 allowed to proceed into route-enable.
 
