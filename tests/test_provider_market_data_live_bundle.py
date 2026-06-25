@@ -102,7 +102,9 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     summary = report.summary.iloc[0]
     commands = pd.read_csv(out_dir / "provider_market_data_live_capture_commands.csv")
     bundle = json.loads((out_dir / "provider_market_data_live_capture_bundle.json").read_text(encoding="utf-8"))
+    handoff = json.loads((out_dir / "provider_market_data_adapter_handoff.json").read_text(encoding="utf-8"))
     env_template = (out_dir / "provider_market_data_live_capture_env_template.env").read_text(encoding="utf-8")
+    runbook = (out_dir / "provider_market_data_live_capture_runbook.md").read_text(encoding="utf-8")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
     assert summary["command_count"] == 2
@@ -113,12 +115,25 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["authentication"]["env_template"] == "provider_market_data_live_capture_env_template.env"
     assert "ARROW_MONEY_API_KEY=\n" in env_template
     assert "ARROW_MONEY_API_SECRET=\n" in env_template
+    assert handoff["provider"] == "arrow_money"
+    assert handoff["transport"] == "websocket"
+    assert handoff["authentication"]["values_stored"] is False
+    assert handoff["authentication"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
+    assert handoff["output"]["schema_columns"] == ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
+    assert len(handoff["capture_windows"]) == 2
+    assert "provider-adapter capture" in handoff["capture_windows"][0]["adapter_command"]
+    assert "ingest-provider-market-data-live-session" in handoff["post_capture_ingest_command"]
+    assert handoff["handoff_invariants"]["credential_values_must_not_be_persisted"]
+    assert report.adapter_handoff["provider"] == "arrow_money"
     assert bundle["primary_action"]["next_gate"] == "ingest-provider-market-data-live-session"
     assert bundle["commands"][0]["queue_status"] == "ready"
+    assert "provider_market_data_adapter_handoff.json" in runbook
     assert manifest["run_type"] == "provider_market_data_live_capture_bundle"
+    assert manifest["extra"]["adapter_handoff_file"] == "provider_market_data_adapter_handoff.json"
     assert "provider_market_data_live_capture_env_template.env" in {
         artifact["path"] for artifact in manifest["artifacts"]
     }
+    assert "provider_market_data_adapter_handoff.json" in {artifact["path"] for artifact in manifest["artifacts"]}
 
 
 def test_provider_market_data_live_capture_bundle_blocks_missing_preflight_by_default(tmp_path):

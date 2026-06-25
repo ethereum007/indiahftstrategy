@@ -4385,13 +4385,16 @@ python -m hft_cli bundle-provider-market-data-live-capture `
 
 This writes `provider_market_data_live_capture_commands.csv`,
 `provider_market_data_live_capture_bundle.json`,
-`provider_market_data_live_capture_env_template.env`, summary/check/action
-artifacts, a runbook, and a manifest. The command queue is adapter-neutral by
-default (`provider-adapter capture ...`) and can be replaced with
+`provider_market_data_live_capture_env_template.env`,
+`provider_market_data_adapter_handoff.json`, summary/check/action artifacts, a
+runbook, and a manifest. The command queue is adapter-neutral by default
+(`provider-adapter capture ...`) and can be replaced with
 `--adapter-command-template` once the Arrow.money or iRage client command is
-approved. It carries only credential env-var names, blank env-template
-placeholders, and runtime presence booleans, plus the exact post-capture
-`ingest-provider-market-data-live-session` command.
+approved. The adapter handoff contract carries provider, transport, endpoint,
+output schema columns, per-window capture commands, credential env-var names,
+blank env-template references, runtime presence booleans, and the exact
+post-capture `ingest-provider-market-data-live-session` command without storing
+credential values.
 
 Before using real provider credentials, rehearse the backend handoff with
 synthetic normalized captures:

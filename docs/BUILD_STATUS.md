@@ -75,8 +75,10 @@
 - Provider market-data live capture bundling now turns a ready preflight into
   a backend adapter handoff: `bundle-provider-market-data-live-capture` writes
   per-window capture commands, a credential-safe JSON bundle, a blank env-var
-  template for provider credentials, and the exact post-capture ingest command
-  while blocking missing preflight evidence and capture overwrite risk.
+  template for provider credentials, a dedicated
+  `provider_market_data_adapter_handoff.json` contract with schema columns and
+  rendered commands, and the exact post-capture ingest command while blocking
+  missing preflight evidence and capture overwrite risk.
 - Provider market-data live rehearsal now proves the backend handoff without
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally

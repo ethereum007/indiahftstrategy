@@ -19,6 +19,7 @@ DEFAULT_ADAPTER_TEMPLATE = (
     "--output {capture_path}"
 )
 ENV_TEMPLATE_NAME = "provider_market_data_live_capture_env_template.env"
+ADAPTER_HANDOFF_NAME = "provider_market_data_adapter_handoff.json"
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class ProviderMarketDataLiveCaptureBundleReport:
     summary: pd.DataFrame
     action_queue: pd.DataFrame
     bundle: dict[str, Any]
+    adapter_handoff: dict[str, Any]
     output_dir: Path | None = None
 
     @property
@@ -71,6 +73,10 @@ def write_provider_market_data_live_capture_bundle(
         _env_template(_string_list(report.bundle.get("authentication", {}).get("env_vars"))),
         encoding="utf-8",
     )
+    (out / ADAPTER_HANDOFF_NAME).write_text(
+        json.dumps(report.adapter_handoff, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     (out / "provider_market_data_live_capture_runbook.md").write_text(
         _runbook_markdown(report.summary.iloc[0], report.commands, report.action_queue),
         encoding="utf-8",
@@ -90,6 +96,7 @@ def write_provider_market_data_live_capture_bundle(
             "command_count": int(report.summary.iloc[0]["command_count"]),
             "failed_checks": int(report.summary.iloc[0]["failed_checks"]),
             "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
+            "adapter_handoff_file": ADAPTER_HANDOFF_NAME,
         },
     )
     return ProviderMarketDataLiveCaptureBundleReport(
@@ -98,6 +105,7 @@ def write_provider_market_data_live_capture_bundle(
         report.summary,
         report.action_queue,
         report.bundle,
+        report.adapter_handoff,
         out,
     )
 
@@ -119,7 +127,8 @@ def evaluate_provider_market_data_live_capture_bundle(
     action_queue = _action_queue(checks, ready)
     summary = _summary(packet_path, packet, preflight_path, preflight, env_presence, commands, checks, action_queue, config, ready)
     bundle = _bundle(summary.iloc[0], packet_path, packet, preflight_path, preflight, env_presence, commands, checks, action_queue, config)
-    return ProviderMarketDataLiveCaptureBundleReport(commands, checks, summary, action_queue, bundle)
+    adapter_handoff = _adapter_handoff(summary.iloc[0], packet_path, packet, preflight_path, env_presence, commands, config)
+    return ProviderMarketDataLiveCaptureBundleReport(commands, checks, summary, action_queue, bundle, adapter_handoff)
 
 
 def _read_json(path: Path, label: str) -> tuple[dict[str, Any], str]:
@@ -378,6 +387,58 @@ def _bundle(
     }
 
 
+def _adapter_handoff(
+    summary: pd.Series,
+    packet_path: Path,
+    packet: dict[str, Any],
+    preflight_path: Path,
+    env_presence: dict[str, bool],
+    commands: pd.DataFrame,
+    config: ProviderMarketDataLiveCaptureBundleConfig,
+) -> dict[str, Any]:
+    output = _mapping(packet.get("output"))
+    auth = _mapping(packet.get("authentication"))
+    return {
+        "schema_version": 1,
+        "ready": bool(summary["ready"]),
+        "live_session_packet_path": str(packet_path),
+        "preflight_config_path": str(preflight_path) if config.preflight_config_path else "",
+        "provider": _text(packet.get("provider")),
+        "transport": _text(packet.get("transport")),
+        "template_kind": _text(packet.get("template_kind")),
+        "market": _text(packet.get("market")),
+        "kind": _text(packet.get("kind")),
+        "endpoint": _text(packet.get("endpoint")),
+        "request": _mapping(packet.get("request")),
+        "runtime": _mapping(packet.get("runtime")),
+        "authentication": {
+            "env_vars": list(env_presence.keys()),
+            "env_presence": env_presence,
+            "env_template": ENV_TEMPLATE_NAME,
+            "values_stored": False,
+            "injection": _text(auth.get("injection")),
+        },
+        "output": {
+            "format": _text(output.get("format")),
+            "filename": _text(output.get("filename")),
+            "schema_columns": _string_list(output.get("schema_columns")),
+        },
+        "adapter_command_template": config.adapter_command_template or DEFAULT_ADAPTER_TEMPLATE,
+        "adapter_template_default": not bool(config.adapter_command_template),
+        "capture_windows": _records(
+            _commands_with_status(commands, "ready" if bool(summary["ready"]) else "blocked")
+        ),
+        "post_capture_ingest_command": str(summary["post_capture_ingest_command"]),
+        "handoff_invariants": {
+            "credential_values_must_not_be_persisted": True,
+            "credential_values_must_be_loaded_from_env": True,
+            "adapter_must_write_exact_capture_paths": True,
+            "capture_output_must_match_schema_columns": _string_list(output.get("schema_columns")),
+            "run_post_capture_ingest_after_all_windows": True,
+        },
+    }
+
+
 def _commands_with_status(commands: pd.DataFrame, status: str) -> pd.DataFrame:
     if commands.empty:
         return commands.copy()
@@ -488,6 +549,7 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         f"- Market: {summary['market']}",
         f"- Commands: {summary['command_count']}",
         f"- Credential env template: `{ENV_TEMPLATE_NAME}`",
+        f"- Adapter handoff: `{ADAPTER_HANDOFF_NAME}`",
         f"- Post-capture ingest: `{summary['post_capture_ingest_command']}`",
         "",
         "## Capture Commands",
