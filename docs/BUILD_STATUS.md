@@ -1498,8 +1498,9 @@
   non-submitting send packet is prepared.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths, broker-dispatch
-  vendor-market-data batch proof, and upstream proof lineage in send
-  summary/config/runbook artifacts and manifests while still keeping
+  vendor-market-data batch proof, upstream proof lineage, and upstream
+  vendor-market-data batch lineage in send summary/config/runbook artifacts
+  and manifests while still keeping
   `submission_enabled=false`.
 - Provider-data imbalance broker-dispatch acknowledgement now preserves those
   provider/nested broker-dispatch round-trip paths, broker-dispatch

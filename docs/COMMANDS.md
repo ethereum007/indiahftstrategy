@@ -4821,8 +4821,9 @@ python -m hft_cli prepare-provider-market-data-imbalance-broker-dispatch-send `
 The provider broker-dispatch-send wrapper reads the provider dispatch
 summary/config, infers the nested generic `broker_dispatch` artifact, preserves
 any provider/nested broker-dispatch round-trip paths, broker-dispatch
-vendor-market-data batch readiness/config, and upstream proof lineage from the
-dispatch wrapper, runs `prepare-broker-dispatch-send` under a nested
+vendor-market-data batch readiness/config, upstream proof lineage, and inherited
+`upstream_*_vendor_market_data_batch_*` readiness/config from the dispatch
+wrapper, runs `prepare-broker-dispatch-send` under a nested
 `broker_dispatch_send` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. It still does not submit orders: the nested
 packet writes request envelopes and expected ack templates with
