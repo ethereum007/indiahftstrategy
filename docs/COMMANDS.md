@@ -4799,7 +4799,8 @@ The provider broker-dispatch wrapper reads the provider route-enable
 summary/config, infers the nested generic `route_enable` plus broker upload-pack
 inputs, preserves any route-enable-carried provider broker-dispatch round-trip
 wrapper, nested generic `broker_dispatch_roundtrip` paths, vendor-market-data
-batch readiness fields/config, and upstream proof lineage, runs
+batch readiness fields/config, upstream proof lineage, and inherited
+`upstream_*_vendor_market_data_batch_*` readiness fields/config, runs
 `plan-broker-dispatch` under a nested `broker_dispatch` folder, and writes
 provider checks/summary/action/config/runbook artifacts. Fully clean wrappers
 emit a ready `prepare_provider_imbalance_broker_dispatch_send` action and point
