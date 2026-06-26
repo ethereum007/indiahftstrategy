@@ -225,6 +225,17 @@ def write_provider_market_data_imbalance_runtime_session(
         if value is not None:
             inputs[name] = Path(value)
 
+    summary_row = summary.iloc[0]
+    capture_bundle = _path_from_text(summary_row["capture_bundle_path"])
+    if capture_bundle is not None and capture_bundle.exists():
+        inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(summary_row["capture_env_template_path"])
+    if capture_env_template is not None and capture_env_template.exists():
+        inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(summary_row["adapter_handoff_path"])
+    if adapter_handoff is not None and adapter_handoff.exists():
+        inputs["adapter_handoff"] = adapter_handoff
+
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
@@ -234,10 +245,13 @@ def write_provider_market_data_imbalance_runtime_session(
         },
         inputs=inputs,
         extra={
-            "ready": bool(summary.iloc[0]["ready"]),
-            "halted": bool(summary.iloc[0]["halted"]),
-            "guard_action": str(summary.iloc[0]["guard_action"]),
+            "ready": bool(summary_row["ready"]),
+            "halted": bool(summary_row["halted"]),
+            "guard_action": str(summary_row["guard_action"]),
             "profile": PROFILE,
+            "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
+            "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
+            "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
         },
     )
     return ProviderMarketDataImbalanceRuntimeSessionReport(session, checks, summary, action_queue, payload, out)
@@ -453,6 +467,16 @@ def _summary(
                 "provider_runtime_guard_dir": str(guard_root),
                 "provider_runtime_telemetry_dir": _path_text(telemetry_root),
                 "scaleup_dir": _path_text(scaleup_dir),
+                "capture_bundle_path": _first_text(guard_summary, "capture_bundle_path"),
+                "capture_bundle_provided": _first_bool(guard_summary, "capture_bundle_provided"),
+                "capture_bundle_exists": _first_bool(guard_summary, "capture_bundle_exists"),
+                "capture_bundle_ready": _first_bool(guard_summary, "capture_bundle_ready"),
+                "capture_env_template_path": _first_text(guard_summary, "capture_env_template_path"),
+                "capture_env_template_provided": _first_bool(guard_summary, "capture_env_template_provided"),
+                "capture_env_template_exists": _first_bool(guard_summary, "capture_env_template_exists"),
+                "adapter_handoff_path": _first_text(guard_summary, "adapter_handoff_path"),
+                "adapter_handoff_provided": _first_bool(guard_summary, "adapter_handoff_provided"),
+                "adapter_handoff_exists": _first_bool(guard_summary, "adapter_handoff_exists"),
                 "runtime_session_dir": "" if session is None else str(session.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -636,6 +660,18 @@ def _config(
         "parameters": asdict(config),
         "runtime_inputs": _jsonable(runtime_inputs),
         "summary": _series_record(summary),
+        "capture_bundle": {
+            "capture_bundle_path": str(summary["capture_bundle_path"]),
+            "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+            "capture_env_template_path": str(summary["capture_env_template_path"]),
+            "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
+            "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+            "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+            "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+        },
         "provider_runtime_guard": _first_record(guard_summary),
         "provider_runtime_guard_config": guard_config,
         "provider_runtime_telemetry_config": telemetry_config,
@@ -672,6 +708,9 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Runtime session dir: {summary['runtime_session_dir']}",
         f"- Primary next gate: `{summary['next_gate']}`",
         f"- Primary next gate help: `{summary['next_gate_help_command']}`",
+        f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
+        f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
+        f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         "",
         "## Checks",
         "",

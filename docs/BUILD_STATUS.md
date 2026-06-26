@@ -1433,8 +1433,9 @@
 - Provider-data imbalance now has a provider runtime session wrapper after the
   provider guard. `monitor-provider-market-data-imbalance-runtime-session`
   infers the provider runtime telemetry inputs, reruns the nested generic
-  `runtime_session`, writes provider checks/summary/action/config/runbook
-  artifacts, routes clean sessions to
+  `runtime_session`, carries capture bundle/env-template/adapter handoff
+  provenance into provider summary/config/runbook artifacts plus manifest,
+  routes clean sessions to
   `review-provider-market-data-imbalance-broker-readiness`, and exposes ready
   `export-halt-response` actions when a guarded session halts with a ready halt
   packet.
