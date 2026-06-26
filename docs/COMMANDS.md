@@ -4842,11 +4842,14 @@ summary/config, infers the nested generic `route_enable` plus broker upload-pack
 inputs, preserves any route-enable-carried provider broker-dispatch round-trip
 wrapper, nested generic `broker_dispatch_roundtrip` paths, vendor-market-data
 batch readiness fields/config, upstream proof lineage, and inherited
-`upstream_*_vendor_market_data_batch_*` readiness fields/config, runs
-`plan-broker-dispatch` under a nested `broker_dispatch` folder, and writes
-provider checks/summary/action/config/runbook artifacts. Fully clean wrappers
-emit a ready `prepare_provider_imbalance_broker_dispatch_send` action and point
-to `prepare-broker-dispatch-send`; blocked wrappers route back to the
+`upstream_*_vendor_market_data_batch_*` readiness fields/config. It also
+preserves the capture bundle, blank credential env-template, and adapter
+handoff paths inherited from route-enable so broker dispatch reviewers can
+trace the live data source before generating non-submitting dry-run orders. The
+wrapper runs `plan-broker-dispatch` under a nested `broker_dispatch` folder,
+and writes provider checks/summary/action/config/runbook artifacts. Fully clean
+wrappers emit a ready `prepare_provider_imbalance_broker_dispatch_send` action
+and point to `prepare-broker-dispatch-send`; blocked wrappers route back to the
 provider route-enable repair gate, `pack-broker-upload`, or the generic dispatch
 planner depending on the first failing proof.
 

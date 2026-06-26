@@ -233,6 +233,14 @@ def write_provider_market_data_imbalance_broker_dispatch(
             inputs[name] = Path(value)
     if broker_dispatch is not None and broker_dispatch.output_dir is not None:
         inputs["broker_dispatch"] = broker_dispatch.output_dir
+    summary_row = summary.iloc[0]
+    for name, value in {
+        "capture_bundle": _path_from_text(summary_row["capture_bundle_path"]),
+        "capture_env_template": _path_from_text(summary_row["capture_env_template_path"]),
+        "adapter_handoff": _path_from_text(summary_row["adapter_handoff_path"]),
+    }.items():
+        if value is not None:
+            inputs[name] = value
 
     write_experiment_manifest(
         out,
@@ -243,22 +251,28 @@ def write_provider_market_data_imbalance_broker_dispatch(
         },
         inputs=inputs,
         extra={
-            "ready": bool(summary.iloc[0]["ready"]),
-            "broker_dispatch_ready": bool(summary.iloc[0]["broker_dispatch_ready"]),
+            "ready": bool(summary_row["ready"]),
+            "broker_dispatch_ready": bool(summary_row["broker_dispatch_ready"]),
             "profile": PROFILE,
-            "strategy": str(summary.iloc[0]["strategy"]),
-            "market": str(summary.iloc[0]["market"]),
+            "strategy": str(summary_row["strategy"]),
+            "market": str(summary_row["market"]),
+            "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary_row["capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary_row["capture_bundle_ready"]),
+            "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
+            "adapter_handoff_provided": bool(summary_row["adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
             "dispatch_roundtrip_vendor_market_data_batch_ready": bool(
-                summary.iloc[0]["dispatch_roundtrip_vendor_market_data_batch_ready"]
+                summary_row["dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
             "broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
-                summary.iloc[0]["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+                summary_row["broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
             "upstream_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
-                summary.iloc[0]["upstream_dispatch_roundtrip_vendor_market_data_batch_ready"]
+                summary_row["upstream_dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
             "upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
-                summary.iloc[0]["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
+                summary_row["upstream_broker_dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
         },
     )
@@ -498,6 +512,16 @@ def _summary(
                 "route_enable_dir": _path_text(route_enable_dir),
                 "upload_pack_dir": _path_text(upload_pack_dir),
                 "upload_orders_path": _path_text(upload_orders_path),
+                "capture_bundle_path": _first_text(provider_summary, "capture_bundle_path"),
+                "capture_bundle_provided": _first_bool(provider_summary, "capture_bundle_provided"),
+                "capture_bundle_exists": _first_bool(provider_summary, "capture_bundle_exists"),
+                "capture_bundle_ready": _first_bool(provider_summary, "capture_bundle_ready"),
+                "capture_env_template_path": _first_text(provider_summary, "capture_env_template_path"),
+                "capture_env_template_provided": _first_bool(provider_summary, "capture_env_template_provided"),
+                "capture_env_template_exists": _first_bool(provider_summary, "capture_env_template_exists"),
+                "adapter_handoff_path": _first_text(provider_summary, "adapter_handoff_path"),
+                "adapter_handoff_provided": _first_bool(provider_summary, "adapter_handoff_provided"),
+                "adapter_handoff_exists": _first_bool(provider_summary, "adapter_handoff_exists"),
                 "provider_dispatch_roundtrip_dir": _path_text(provider_dispatch_roundtrip_dir),
                 "dispatch_roundtrip_dir": _path_text(dispatch_roundtrip_dir),
                 "upstream_provider_dispatch_roundtrip_dir": _path_text(upstream_provider_dispatch_roundtrip_dir),
@@ -694,6 +718,18 @@ def _config(
         "parameters": asdict(config),
         "broker_dispatch_inputs": _jsonable(broker_dispatch_inputs),
         "summary": _series_record(summary),
+        "capture_bundle": {
+            "capture_bundle_path": str(summary["capture_bundle_path"]),
+            "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+            "capture_env_template_path": str(summary["capture_env_template_path"]),
+            "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
+            "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+            "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+            "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+        },
         "provider_route_enable": _first_record(provider_summary),
         "provider_route_enable_config": provider_config,
         "upstream_dispatch_roundtrip_vendor_market_data_batch": _vendor_market_data_batch_config(
@@ -742,6 +778,9 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Target mode: {summary['target_mode']}",
         f"- Dispatch state: {summary['dispatch_state']}",
         f"- Broker dispatch dir: {summary['broker_dispatch_dir']}",
+        f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
+        f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
+        f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
         f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
         "- Dispatch round-trip vendor batch ready: "

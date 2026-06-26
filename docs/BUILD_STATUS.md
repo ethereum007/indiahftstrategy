@@ -1467,10 +1467,12 @@
 - Provider-data imbalance now has a provider broker-dispatch wrapper after
   provider route-enable. `plan-provider-market-data-imbalance-broker-dispatch`
   infers the nested generic `route_enable` and broker upload pack, reruns
-  `plan-broker-dispatch` under a nested folder, writes provider
+  `plan-broker-dispatch` under a nested folder, carries capture
+  bundle/env-template/adapter handoff provenance into provider
+  summary/config/runbook artifacts plus manifest, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
-  catalog/scorecard discovery, and routes clean non-submitting dry-run dispatch
-  plans to `prepare-broker-dispatch-send`.
+  catalog/scorecard discovery, and routes clean non-submitting dry-run
+  dispatch plans to `prepare-broker-dispatch-send`.
 - Provider-data imbalance now has a provider broker-dispatch-send wrapper after
   provider broker dispatch. `prepare-provider-market-data-imbalance-broker-dispatch-send`
   infers the nested generic `broker_dispatch` plan, reruns
