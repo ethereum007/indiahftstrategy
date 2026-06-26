@@ -3595,6 +3595,83 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert str(adapter_handoff_path) in runbook
 
 
+def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_bundle_provenance(tmp_path):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
+    env_template_path = tmp_path / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = tmp_path / "provider_market_data_adapter_handoff.json"
+    for path in (bundle_path, env_template_path, adapter_handoff_path):
+        path.write_text("{}", encoding="utf-8")
+
+    cutover_summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
+    cutover_summary = pd.read_csv(cutover_summary_path)
+    cutover_summary["dispatch_roundtrip_capture_bundle_path"] = str(bundle_path)
+    cutover_summary["dispatch_roundtrip_capture_bundle_provided"] = True
+    cutover_summary["dispatch_roundtrip_capture_bundle_exists"] = True
+    cutover_summary["dispatch_roundtrip_capture_bundle_ready"] = True
+    cutover_summary["dispatch_roundtrip_capture_bundle_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_capture_env_template_path"] = str(env_template_path)
+    cutover_summary["dispatch_roundtrip_capture_env_template_provided"] = True
+    cutover_summary["dispatch_roundtrip_capture_env_template_exists"] = True
+    cutover_summary["dispatch_roundtrip_capture_env_template_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_adapter_handoff_path"] = str(adapter_handoff_path)
+    cutover_summary["dispatch_roundtrip_adapter_handoff_provided"] = True
+    cutover_summary["dispatch_roundtrip_adapter_handoff_exists"] = True
+    cutover_summary["dispatch_roundtrip_adapter_handoff_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_capture_provenance_consistent"] = True
+    cutover_summary.to_csv(cutover_summary_path, index=False)
+
+    cutover_config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
+    cutover_config = json.loads(cutover_config_path.read_text(encoding="utf-8"))
+    cutover_config["dispatch_roundtrip_provenance"] = {
+        "capture_bundle_path": str(bundle_path),
+        "capture_env_template_path": str(env_template_path),
+        "adapter_handoff_path": str(adapter_handoff_path),
+        "consistent_with_runtime_session": True,
+    }
+    cutover_config_path.write_text(
+        json.dumps(cutover_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_route_enable_with_roundtrip_provenance"
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_route_enable_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_route_enable_runbook.md").read_text(encoding="utf-8")
+    assert report.ready
+    assert Path(summary["dispatch_roundtrip_capture_bundle_path"]) == bundle_path
+    assert bool(summary["dispatch_roundtrip_capture_bundle_provided"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_ready"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
+    assert Path(summary["dispatch_roundtrip_capture_env_template_path"]) == env_template_path
+    assert bool(summary["dispatch_roundtrip_capture_env_template_matches_session"])
+    assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
+    assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
+    assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
+    assert config["provider_cutover"]["dispatch_roundtrip_adapter_handoff_path"] == str(adapter_handoff_path)
+    assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
+    assert str(adapter_handoff_path) in runbook
+    assert "- Dispatch round-trip provenance consistent: yes" in runbook
+
+
 def test_provider_market_data_imbalance_route_enable_carries_cutover_dispatch_roundtrip_paths(tmp_path):
     provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
     provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"

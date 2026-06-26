@@ -4827,7 +4827,11 @@ upstream proof lineage. It also preserves inherited
 planners can see the full Arrow.money/iRage vendor-data chain from the
 route-enable artifact. It also preserves the capture bundle, blank credential
 env-template, and adapter handoff paths inherited from cutover so dispatch
-planners can trace the live data source before packaging broker orders. The
+planners can trace the live data source before packaging broker orders. If
+cutover retained broker-readiness validated round-trip capture
+bundle/env-template/adapter handoff provenance, route-enable carries those
+`dispatch_roundtrip_*` fields, manifest inputs, and consistency flags forward
+for broker-dispatch planning. The
 wrapper runs `review-route-enable` under a nested
 `route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready
