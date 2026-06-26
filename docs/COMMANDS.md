@@ -4678,10 +4678,12 @@ inputs from the provider imbalance launch pipeline carried by the scale-up
 wrapper, then writes provider checks/summary/action/config/runbook artifacts
 plus a nested `runtime_telemetry` folder with `runtime_telemetry.csv`,
 `runtime_telemetry_sources.csv`, `runtime_telemetry_checks.csv`, and
-`runtime_telemetry_summary.csv`. Supply live PnL, open-order, and position CSVs
-when they are available from Arrow.money/iRage; omit them for a dry guard-input
-snapshot based on scale-up and launch-pipeline metadata. A ready wrapper points
-to `monitor-provider-market-data-imbalance-runtime-guard`.
+`runtime_telemetry_summary.csv`. The provider wrapper also retains the upstream
+capture bundle, blank credential env-template, and adapter handoff paths in its
+summary/config/runbook and manifest. Supply live PnL, open-order, and position
+CSVs when they are available from Arrow.money/iRage; omit them for a dry
+guard-input snapshot based on scale-up and launch-pipeline metadata. A ready
+wrapper points to `monitor-provider-market-data-imbalance-runtime-guard`.
 
 Run the provider-specific runtime guard wrapper:
 

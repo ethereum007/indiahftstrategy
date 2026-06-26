@@ -166,16 +166,30 @@ def write_provider_market_data_imbalance_runtime_telemetry_snapshot(
     if telemetry is not None and telemetry.output_dir is not None:
         inputs["runtime_telemetry"] = telemetry.output_dir
 
+    summary_row = summary.iloc[0]
+    capture_bundle = _path_from_text(str(summary_row["capture_bundle_path"]))
+    if capture_bundle is not None and capture_bundle.exists():
+        inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(str(summary_row["capture_env_template_path"]))
+    if capture_env_template is not None and capture_env_template.exists():
+        inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
+    if adapter_handoff is not None and adapter_handoff.exists():
+        inputs["adapter_handoff"] = adapter_handoff
+
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
         parameters={"config": asdict(config), "snapshot_ts_ns": snapshot_ts_ns},
         inputs=inputs,
         extra={
-            "ready": bool(summary.iloc[0]["ready"]),
-            "provider_scaleup_ready": bool(summary.iloc[0]["provider_scaleup_ready"]),
-            "runtime_telemetry_ready": bool(summary.iloc[0]["runtime_telemetry_ready"]),
+            "ready": bool(summary_row["ready"]),
+            "provider_scaleup_ready": bool(summary_row["provider_scaleup_ready"]),
+            "runtime_telemetry_ready": bool(summary_row["runtime_telemetry_ready"]),
             "profile": PROFILE,
+            "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
+            "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
+            "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
         },
     )
     return ProviderMarketDataImbalanceRuntimeTelemetryReport(
@@ -330,6 +344,16 @@ def _summary(
                 "provider_scaleup_dir": str(scaleup_root),
                 "scaleup_dir": _path_text(scaleup_dir),
                 "launch_pipeline_dir": _path_text(launch_pipeline_dir),
+                "capture_bundle_path": _first_text(provider_summary, "capture_bundle_path"),
+                "capture_bundle_provided": _first_bool(provider_summary, "capture_bundle_provided"),
+                "capture_bundle_exists": _first_bool(provider_summary, "capture_bundle_exists"),
+                "capture_bundle_ready": _first_bool(provider_summary, "capture_bundle_ready"),
+                "capture_env_template_path": _first_text(provider_summary, "capture_env_template_path"),
+                "capture_env_template_provided": _first_bool(provider_summary, "capture_env_template_provided"),
+                "capture_env_template_exists": _first_bool(provider_summary, "capture_env_template_exists"),
+                "adapter_handoff_path": _first_text(provider_summary, "adapter_handoff_path"),
+                "adapter_handoff_provided": _first_bool(provider_summary, "adapter_handoff_provided"),
+                "adapter_handoff_exists": _first_bool(provider_summary, "adapter_handoff_exists"),
                 "runtime_telemetry_dir": "" if telemetry is None else str(telemetry.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -446,6 +470,18 @@ def _config(
             "snapshot_ts_ns": snapshot_ts_ns,
         },
         "summary": _series_record(summary),
+        "capture_bundle": {
+            "capture_bundle_path": str(summary["capture_bundle_path"]),
+            "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+            "capture_env_template_path": str(summary["capture_env_template_path"]),
+            "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
+            "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+            "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+            "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+        },
         "provider_scaleup": _first_record(provider_summary),
         "runtime_telemetry": {
             "ready": False if telemetry is None else bool(telemetry.ready),
@@ -530,6 +566,9 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Market: {summary['market']}",
         f"- Target mode: {summary['target_mode']}",
         f"- Runtime telemetry dir: {summary['runtime_telemetry_dir']}",
+        f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
+        f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
+        f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         "",
         "## Checks",
         "",
