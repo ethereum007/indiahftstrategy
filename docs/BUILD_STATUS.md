@@ -1451,7 +1451,9 @@
 - Provider-data imbalance now has a provider cutover wrapper after provider
   broker-readiness. `review-provider-market-data-imbalance-cutover` infers
   nested generic scale-up, broker-readiness, and runtime-session evidence,
-  reruns `review-cutover-gate` under a nested folder, preserves cutover safety
+  reruns `review-cutover-gate` under a nested folder, carries capture
+  bundle/env-template/adapter handoff provenance into provider
+  summary/config/runbook artifacts plus manifest, preserves cutover safety
   blockers such as missing route-readiness proof, and routes fully clean runs to
   `review-route-enable`.
 - Provider-data imbalance now has a provider route-enable wrapper after cutover.
