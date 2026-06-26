@@ -99,16 +99,29 @@ def write_provider_market_data_imbalance_scorecard(
         inputs["catalog"] = catalog_path
     if scorecard is not None and scorecard.output_dir is not None:
         inputs["scorecard"] = scorecard.output_dir
+    summary_row = summary.iloc[0]
+    capture_bundle = _path_from_text(str(summary_row["capture_bundle_path"]))
+    if capture_bundle is not None and capture_bundle.exists():
+        inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(str(summary_row["capture_env_template_path"]))
+    if capture_env_template is not None and capture_env_template.exists():
+        inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
+    if adapter_handoff is not None and adapter_handoff.exists():
+        inputs["adapter_handoff"] = adapter_handoff
     write_experiment_manifest(
         out,
         run_type="provider_market_data_imbalance_scorecard",
         parameters={"config": asdict(config)},
         inputs=inputs,
         extra={
-            "ready": bool(summary.iloc[0]["ready"]),
-            "launch_evidence_ready": bool(summary.iloc[0]["launch_evidence_ready"]),
-            "scorecard_ready": bool(summary.iloc[0]["scorecard_ready"]),
+            "ready": bool(summary_row["ready"]),
+            "launch_evidence_ready": bool(summary_row["launch_evidence_ready"]),
+            "scorecard_ready": bool(summary_row["scorecard_ready"]),
             "profile": PROFILE,
+            "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
+            "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
+            "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
         },
     )
     return ProviderMarketDataImbalanceScorecardReport(scorecard, checks, summary, action_queue, payload, out)
@@ -227,6 +240,16 @@ def _summary(
                 "provider_launch_evidence_dir": str(evidence_dir),
                 "provider_launch_dir": _first_text(evidence_summary, "provider_launch_dir"),
                 "provider_research_dir": _first_text(evidence_summary, "provider_research_dir"),
+                "capture_bundle_path": _first_text(evidence_summary, "capture_bundle_path"),
+                "capture_bundle_provided": _first_bool(evidence_summary, "capture_bundle_provided"),
+                "capture_bundle_exists": _first_bool(evidence_summary, "capture_bundle_exists"),
+                "capture_bundle_ready": _first_bool(evidence_summary, "capture_bundle_ready"),
+                "capture_env_template_path": _first_text(evidence_summary, "capture_env_template_path"),
+                "capture_env_template_provided": _first_bool(evidence_summary, "capture_env_template_provided"),
+                "capture_env_template_exists": _first_bool(evidence_summary, "capture_env_template_exists"),
+                "adapter_handoff_path": _first_text(evidence_summary, "adapter_handoff_path"),
+                "adapter_handoff_provided": _first_bool(evidence_summary, "adapter_handoff_provided"),
+                "adapter_handoff_exists": _first_bool(evidence_summary, "adapter_handoff_exists"),
                 "catalog": str(catalog_path if catalog_path.exists() else ""),
                 "scorecard_dir": "" if scorecard is None else str(scorecard.output_dir or ""),
                 "output_dir": str(output_dir),
@@ -318,6 +341,18 @@ def _config(
         "ready": bool(summary["ready"]),
         "parameters": asdict(config),
         "summary": _series_record(summary),
+        "capture_bundle": {
+            "capture_bundle_path": str(summary["capture_bundle_path"]),
+            "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+            "capture_env_template_path": str(summary["capture_env_template_path"]),
+            "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
+            "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+            "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+            "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+        },
         "provider_launch_evidence": _first_record(evidence_summary),
         "scorecard": {
             "ready": False if scorecard is None else bool(scorecard.ready),
@@ -392,6 +427,9 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Profile: {summary['profile']}",
         f"- Market: {summary['market']}",
         f"- Readiness score: {summary['readiness_score']}",
+        f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
+        f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
+        f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         "",
         "## Checks",
         "",
@@ -489,6 +527,13 @@ def _first_number(frame: pd.DataFrame | None, column: str) -> float:
     if frame is None or frame.empty or column not in frame.columns:
         return 0.0
     return _number(frame.iloc[0][column])
+
+
+def _path_from_text(value: str) -> Path | None:
+    text = _text(value)
+    if not text:
+        return None
+    return Path(text)
 
 
 def _text(value: object, fallback: str = "") -> str:

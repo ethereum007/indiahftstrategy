@@ -135,8 +135,10 @@
   `imbalance` profile, and hands ready packets to `score-strategy-readiness`.
 - Provider market-data imbalance scorecard now makes the final readiness gate
   provider-specific: `score-provider-market-data-imbalance-readiness` consumes
-  the launch-evidence review, scores only the full `imbalance` profile, and hands
-  ready evidence to `plan-scaleup`.
+  the launch-evidence review, scores only the full `imbalance` profile, carries
+  capture bundle/env-template/adapter handoff provenance into its
+  summary/config/runbook artifacts plus manifest, and hands ready evidence to
+  `plan-provider-market-data-imbalance-scaleup`.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

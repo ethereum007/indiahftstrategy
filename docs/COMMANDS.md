@@ -4603,7 +4603,10 @@ python -m hft_cli score-provider-market-data-imbalance-readiness `
 This runs the standard strategy readiness scorecard on only the full `imbalance`
 profile from the launch-evidence catalog. A ready scorecard has readiness score
 `1.0` and points to `plan-provider-market-data-imbalance-scaleup` for
-paper/shadow capital and runtime sizing.
+paper/shadow capital and runtime sizing. The provider scorecard
+summary/config/runbook and manifest also retain the upstream capture bundle,
+blank credential env-template, and adapter handoff paths before scale-up
+planning begins.
 
 Build provider route-readiness proof from the same launch evidence:
 
