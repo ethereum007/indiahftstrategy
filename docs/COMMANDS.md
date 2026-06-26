@@ -4751,8 +4751,12 @@ folder, preserves any upstream round-trip lineage carried by the provider
 wrapper, preserves inherited upstream vendor-market-data batch evidence under
 `upstream_*_vendor_market_data_batch_*` fields, runs the generic
 `broker_readiness` gate under a nested folder, and writes provider
-checks/summary/action/config/runbook artifacts. When the final round-trip proof
-carries Arrow.money/iRage vendor-market-data batch evidence, the wrapper
+checks/summary/action/config/runbook artifacts. It also retains the upstream
+capture bundle, blank credential env-template, and adapter handoff paths in the
+provider summary/config/runbook plus manifest, so broker integration reviewers
+can trace the live data source without opening nested runtime-session folders.
+When the final round-trip proof carries Arrow.money/iRage vendor-market-data
+batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields
 into the provider summary/config/runbook plus manifest metadata, so cutover
 reviewers do not need to inspect nested generic folders.

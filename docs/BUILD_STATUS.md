@@ -1444,8 +1444,10 @@
   `review-provider-market-data-imbalance-broker-readiness` infers the nested
   generic runtime session plus provider launch order export/upload pack,
   reruns `review-broker-readiness` under a nested folder with dry-run friendly
-  defaults, writes provider checks/summary/action/config/runbook artifacts, and
-  routes ready runs to `review-provider-market-data-imbalance-cutover`.
+  defaults, carries capture bundle/env-template/adapter handoff provenance into
+  provider summary/config/runbook artifacts plus manifest, writes provider
+  checks/summary/action/config/runbook artifacts, and routes ready runs to
+  `review-provider-market-data-imbalance-cutover`.
 - Provider-data imbalance now has a provider cutover wrapper after provider
   broker-readiness. `review-provider-market-data-imbalance-cutover` infers
   nested generic scale-up, broker-readiness, and runtime-session evidence,
