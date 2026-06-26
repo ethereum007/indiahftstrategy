@@ -4926,7 +4926,10 @@ summary/config, infers the nested generic `broker_dispatch`,
 folder, preserves any acknowledgement-carried upstream provider/nested
 round-trip proof as `upstream_*_roundtrip` lineage, preserves inherited
 vendor-market-data batch evidence under `upstream_*_vendor_market_data_batch_*`
-fields, and writes provider checks/summary/action/config/runbook artifacts.
+fields, carries the acknowledgement-inherited capture bundle, blank credential
+env-template, and adapter handoff paths into summary/config/runbook artifacts
+plus manifest inputs/extra metadata, and writes provider checks/action
+artifacts.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own
 summary/config under both
