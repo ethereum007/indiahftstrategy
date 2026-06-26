@@ -1424,8 +1424,9 @@
   `monitor-provider-market-data-imbalance-runtime-guard`.
 - Provider-data imbalance now has a provider runtime guard wrapper after runtime
   telemetry. `monitor-provider-market-data-imbalance-runtime-guard` resolves the
-  nested `scaleup_config.json` and `runtime_telemetry.csv`, writes provider
-  checks/summary/action/config/runbook artifacts plus nested generic
+  nested `scaleup_config.json` and `runtime_telemetry.csv`, carries capture
+  bundle/env-template/adapter handoff provenance into provider wrapper
+  summary/config/runbook artifacts plus manifest, writes nested generic
   `runtime_guard` outputs, converts guard halts into ready
   `plan-halt-response` actions, and routes clean guards to
   `monitor-provider-market-data-imbalance-runtime-session`.

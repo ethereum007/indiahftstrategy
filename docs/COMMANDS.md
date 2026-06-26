@@ -4701,7 +4701,9 @@ python -m hft_cli monitor-provider-market-data-imbalance-runtime-guard `
 The wrapper reads the provider telemetry summary, resolves the nested
 `scaleup_config.json` and `runtime_telemetry.csv`, writes provider
 checks/summary/action/config/runbook artifacts plus nested generic
-`runtime_guard` outputs, and converts guard halts into a ready
+`runtime_guard` outputs, and retains the upstream capture bundle, blank
+credential env-template, and adapter handoff paths in its provider wrapper
+summary/config/runbook and manifest. It converts guard halts into a ready
 `plan-halt-response` action. A clean guard points to
 `monitor-provider-market-data-imbalance-runtime-session`.
 

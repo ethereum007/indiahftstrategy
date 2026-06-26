@@ -1952,6 +1952,64 @@ def test_provider_market_data_imbalance_runtime_guard_monitors_ready_telemetry(t
     assert "runtime_guard" in manifest["inputs"]
 
 
+def test_provider_market_data_imbalance_runtime_guard_carries_capture_bundle_provenance(tmp_path):
+    launch_evidence, bundle_path = _write_bundle_linked_provider_imbalance_launch_evidence(tmp_path)
+    env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    runtime_telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    out_dir = tmp_path / "provider_imbalance_runtime_guard"
+
+    report = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        out_dir,
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_runtime_guard_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_runtime_guard_runbook.md").read_text(encoding="utf-8")
+    assert report.ready
+    assert not report.halted
+    assert Path(summary["capture_bundle_path"]) == bundle_path
+    assert bool(summary["capture_bundle_provided"])
+    assert bool(summary["capture_bundle_exists"])
+    assert bool(summary["capture_bundle_ready"])
+    assert Path(summary["capture_env_template_path"]) == env_template_path
+    assert bool(summary["capture_env_template_exists"])
+    assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["adapter_handoff_provided"])
+    assert bool(summary["adapter_handoff_exists"])
+    assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
+    assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["provider_runtime_telemetry"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["extra"]["capture_bundle_provided"]
+    assert manifest["extra"]["capture_env_template_exists"]
+    assert manifest["extra"]["adapter_handoff_exists"]
+    assert str(adapter_handoff_path) in runbook
+
+
 def test_provider_market_data_imbalance_runtime_guard_blocks_unready_telemetry(tmp_path):
     telemetry_dir = tmp_path / "provider_imbalance_runtime_telemetry"
     telemetry_dir.mkdir(parents=True, exist_ok=True)
