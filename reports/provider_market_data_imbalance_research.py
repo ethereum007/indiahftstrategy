@@ -152,6 +152,16 @@ def write_provider_market_data_imbalance_research(
         "live_evidence_dir": Path(live_evidence_dir),
         "research_handoff": handoff_dir,
     }
+    summary_row = summary.iloc[0]
+    capture_bundle = _path_from_text(str(summary_row["capture_bundle_path"]))
+    if capture_bundle is not None and capture_bundle.exists():
+        manifest_inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(str(summary_row["capture_env_template_path"]))
+    if capture_env_template is not None and capture_env_template.exists():
+        manifest_inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
+    if adapter_handoff is not None and adapter_handoff.exists():
+        manifest_inputs["adapter_handoff"] = adapter_handoff
     if pipeline is not None:
         manifest_inputs["imbalance_research"] = pipeline_dir
     write_experiment_manifest(
@@ -164,6 +174,9 @@ def write_provider_market_data_imbalance_research(
             "pipeline_ready": bool(summary.iloc[0]["pipeline_ready"]),
             "handoff_ready": bool(summary.iloc[0]["handoff_ready"]),
             "candidate_ready": bool(summary.iloc[0]["candidate_ready"]),
+            "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
+            "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
+            "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
         },
     )
     return ProviderMarketDataImbalanceResearchReport(
@@ -376,6 +389,16 @@ def _summary(
                 "strategy": "imbalance",
                 "provider": _first_text(handoff.summary, "provider"),
                 "transport": _first_text(handoff.summary, "transport"),
+                "capture_bundle_path": str(handoff_row.get("capture_bundle_path", "") or ""),
+                "capture_bundle_provided": _truthy(handoff_row.get("capture_bundle_provided")),
+                "capture_bundle_exists": _truthy(handoff_row.get("capture_bundle_exists")),
+                "capture_bundle_ready": _truthy(handoff_row.get("capture_bundle_ready")),
+                "capture_env_template_path": str(handoff_row.get("capture_env_template_path", "") or ""),
+                "capture_env_template_provided": _truthy(handoff_row.get("capture_env_template_provided")),
+                "capture_env_template_exists": _truthy(handoff_row.get("capture_env_template_exists")),
+                "adapter_handoff_path": str(handoff_row.get("adapter_handoff_path", "") or ""),
+                "adapter_handoff_provided": _truthy(handoff_row.get("adapter_handoff_provided")),
+                "adapter_handoff_exists": _truthy(handoff_row.get("adapter_handoff_exists")),
                 "dataset_count": int(handoff_row.get("dataset_count", 0) or 0),
                 "ready_command_count": int(handoff_row.get("ready_command_count", 0) or 0),
                 "synthetic_dataset_count": int(handoff_row.get("synthetic_dataset_count", 0) or 0),
@@ -473,6 +496,7 @@ def _config(
         "parameters": asdict(config),
         "summary": _series_record(summary),
         "checks": _records(checks),
+        "capture_bundle": _handoff_capture_bundle(handoff),
         "research_handoff": {
             "ready": bool(handoff.ready),
             "output_dir": str(handoff.output_dir or ""),
@@ -547,6 +571,9 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         "",
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Market: {summary['market']}",
+        f"- Capture bundle: {summary['capture_bundle_path']}",
+        f"- Credential env template: {summary['capture_env_template_path']}",
+        f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
         f"- Replay passed: {'yes' if bool(summary['replay_passed']) else 'no'}",
@@ -703,6 +730,30 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
     return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
+
+
+def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) -> dict[str, Any]:
+    payload = handoff.config.get("capture_bundle") if isinstance(handoff.config, dict) else {}
+    if isinstance(payload, dict) and payload:
+        return {str(key): _jsonable(value) for key, value in payload.items()}
+    row = handoff.summary.iloc[0] if not handoff.summary.empty else pd.Series(dtype=object)
+    return {
+        "capture_bundle_path": str(row.get("capture_bundle_path", "") or ""),
+        "capture_bundle_provided": _truthy(row.get("capture_bundle_provided")),
+        "capture_bundle_exists": _truthy(row.get("capture_bundle_exists")),
+        "capture_bundle_ready": _truthy(row.get("capture_bundle_ready")),
+        "capture_env_template_path": str(row.get("capture_env_template_path", "") or ""),
+        "capture_env_template_provided": _truthy(row.get("capture_env_template_provided")),
+        "capture_env_template_exists": _truthy(row.get("capture_env_template_exists")),
+        "adapter_handoff_path": str(row.get("adapter_handoff_path", "") or ""),
+        "adapter_handoff_provided": _truthy(row.get("adapter_handoff_provided")),
+        "adapter_handoff_exists": _truthy(row.get("adapter_handoff_exists")),
+    }
+
+
+def _path_from_text(value: str) -> Path | None:
+    text = _text(value)
+    return Path(text) if text else None
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:

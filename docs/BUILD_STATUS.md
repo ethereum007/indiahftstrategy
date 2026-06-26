@@ -108,8 +108,10 @@
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real
-  provider tick folds, and blocks before strategy math when evidence is
-  synthetic smoke or not research-ready.
+  provider tick folds, preserves live capture bundle/env-template/adapter
+  handoff provenance through the strategy wrapper artifacts and manifest, and
+  blocks before strategy math when evidence is synthetic smoke or not
+  research-ready.
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider

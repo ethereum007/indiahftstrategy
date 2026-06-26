@@ -84,7 +84,10 @@ from reports.provider_market_data_live_evidence import (
     ProviderMarketDataLiveEvidenceConfig,
     write_provider_market_data_live_evidence_review,
 )
-from reports.provider_market_data_live_ingest import write_provider_market_data_live_session_ingest
+from reports.provider_market_data_live_ingest import (
+    ProviderMarketDataLiveIngestConfig,
+    write_provider_market_data_live_session_ingest,
+)
 from reports.provider_market_data_live_preflight import (
     ProviderMarketDataLivePreflightConfig,
     write_provider_market_data_live_session_preflight,
@@ -215,6 +218,37 @@ def _write_real_evidence(tmp_path):
         tmp_path / "evidence",
         config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=5),
     )
+
+
+def _write_bundle_linked_real_evidence(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    preflight = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+    bundle = write_provider_market_data_live_capture_bundle(
+        live_packet,
+        tmp_path / "bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(
+            preflight_config_path=str(preflight.output_dir / "provider_market_data_live_preflight_config.json"),
+            ingest_output_dir=str(tmp_path / "live_ingest"),
+        ),
+    )
+    bundle_path = bundle.output_dir / "provider_market_data_live_capture_bundle.json"
+    _write_expected_imbalance_captures(live_packet)
+    ingest = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+    evidence = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=5),
+    )
+    return evidence, bundle_path
 
 
 def _write_synthetic_smoke_evidence(tmp_path):
@@ -665,6 +699,42 @@ def test_provider_market_data_imbalance_research_runs_pipeline_from_live_evidenc
     assert (out_dir / "research_handoff" / "provider_market_data_research_handoff_summary.csv").exists()
     assert (out_dir / "imbalance_research" / "imbalance_pipeline_summary.csv").exists()
     assert (out_dir / "imbalance_research" / "promotion" / "promotion_summary.csv").exists()
+
+
+def test_provider_market_data_imbalance_research_carries_capture_bundle_provenance(tmp_path):
+    evidence, bundle_path = _write_bundle_linked_real_evidence(tmp_path)
+    env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    out_dir = tmp_path / "provider_imbalance_research"
+
+    report = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        out_dir,
+        config=_passing_config(),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_research_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_research_runbook.md").read_text(encoding="utf-8")
+    assert report.ready
+    assert Path(summary["capture_bundle_path"]) == bundle_path
+    assert bool(summary["capture_bundle_provided"])
+    assert bool(summary["capture_bundle_exists"])
+    assert bool(summary["capture_bundle_ready"])
+    assert Path(summary["capture_env_template_path"]) == env_template_path
+    assert bool(summary["capture_env_template_exists"])
+    assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["adapter_handoff_provided"])
+    assert bool(summary["adapter_handoff_exists"])
+    assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
+    assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["research_handoff"]["summary"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert str(adapter_handoff_path) in runbook
 
 
 def test_provider_market_data_imbalance_research_blocks_synthetic_smoke_evidence(tmp_path):
