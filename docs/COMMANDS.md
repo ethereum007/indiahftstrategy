@@ -4564,7 +4564,11 @@ The provider launch packet infers the promoted imbalance candidate from the
 provider research root and runs the standard imbalance order-plan, staging,
 launch, export, upload-pack, and broker-readiness pipeline. When ready, the next
 gate is `review-strategy-evidence --profile imbalance`, which verifies the full
-launch-ready profile rather than only the provider-data research profile.
+launch-ready profile rather than only the provider-data research profile. The
+provider launch summary/config/runbook and manifest retain the upstream capture
+bundle, blank credential env-template, and adapter handoff paths when present in
+the provider evidence review, keeping broker-facing artifacts tied to the live
+data source contract.
 
 Review the full launch-ready imbalance profile from the provider launch packet:
 

@@ -126,6 +126,16 @@ def write_provider_market_data_imbalance_launch_packet(
         inputs["promotion"] = promotion_dir
     if launch is not None and launch.output_dir is not None:
         inputs["imbalance_launch_pipeline"] = launch.output_dir
+    summary_row = summary.iloc[0]
+    capture_bundle = _path_from_text(str(summary_row["capture_bundle_path"]))
+    if capture_bundle is not None and capture_bundle.exists():
+        inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(str(summary_row["capture_env_template_path"]))
+    if capture_env_template is not None and capture_env_template.exists():
+        inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
+    if adapter_handoff is not None and adapter_handoff.exists():
+        inputs["adapter_handoff"] = adapter_handoff
     write_experiment_manifest(
         out,
         run_type="provider_market_data_imbalance_launch_packet",
@@ -137,6 +147,9 @@ def write_provider_market_data_imbalance_launch_packet(
             "launch_pipeline_ready": bool(summary.iloc[0]["launch_pipeline_ready"]),
             "strategy": str(summary.iloc[0]["strategy"]),
             "market": str(summary.iloc[0]["market"]),
+            "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
+            "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
+            "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
         },
     )
     return ProviderMarketDataImbalanceLaunchReport(launch, components, checks, summary, action_queue, payload, out)
@@ -365,6 +378,16 @@ def _summary(
                 "output_dir": str(output_dir),
                 "provider": _first_text(evidence_summary, "provider"),
                 "transport": _first_text(evidence_summary, "transport"),
+                "capture_bundle_path": _first_text(evidence_summary, "capture_bundle_path"),
+                "capture_bundle_provided": _first_bool(evidence_summary, "capture_bundle_provided"),
+                "capture_bundle_exists": _first_bool(evidence_summary, "capture_bundle_exists"),
+                "capture_bundle_ready": _first_bool(evidence_summary, "capture_bundle_ready"),
+                "capture_env_template_path": _first_text(evidence_summary, "capture_env_template_path"),
+                "capture_env_template_provided": _first_bool(evidence_summary, "capture_env_template_provided"),
+                "capture_env_template_exists": _first_bool(evidence_summary, "capture_env_template_exists"),
+                "adapter_handoff_path": _first_text(evidence_summary, "adapter_handoff_path"),
+                "adapter_handoff_provided": _first_bool(evidence_summary, "adapter_handoff_provided"),
+                "adapter_handoff_exists": _first_bool(evidence_summary, "adapter_handoff_exists"),
                 "market": _first_text(launch_summary, "market") or _first_text(evidence_summary, "market"),
                 "strategy": _first_text(launch_summary, "strategy") or _first_text(evidence_summary, "strategy"),
                 "adapter": config.adapter,
@@ -441,6 +464,7 @@ def _config(
         "parameters": asdict(config),
         "summary": _series_record(summary),
         "provider_evidence": _first_record(evidence_summary),
+        "capture_bundle": _provider_capture_bundle(evidence_summary),
         "launch_pipeline": {
             "ready": False if launch is None else bool(launch.ready),
             "output_dir": "" if launch is None else str(launch.output_dir or ""),
@@ -525,6 +549,9 @@ def _runbook_markdown(
         f"- Market: {summary['market']}",
         f"- Adapter: {summary['adapter']}",
         f"- Mode: {summary['mode']}",
+        f"- Capture bundle: {summary['capture_bundle_path']}",
+        f"- Credential env template: {summary['capture_env_template_path']}",
+        f"- Adapter handoff: {summary['adapter_handoff_path']}",
         "",
         "## Components",
         "",
@@ -623,6 +650,26 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
     return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
+
+
+def _provider_capture_bundle(evidence_summary: pd.DataFrame) -> dict[str, Any]:
+    return {
+        "capture_bundle_path": _first_text(evidence_summary, "capture_bundle_path"),
+        "capture_bundle_provided": _first_bool(evidence_summary, "capture_bundle_provided"),
+        "capture_bundle_exists": _first_bool(evidence_summary, "capture_bundle_exists"),
+        "capture_bundle_ready": _first_bool(evidence_summary, "capture_bundle_ready"),
+        "capture_env_template_path": _first_text(evidence_summary, "capture_env_template_path"),
+        "capture_env_template_provided": _first_bool(evidence_summary, "capture_env_template_provided"),
+        "capture_env_template_exists": _first_bool(evidence_summary, "capture_env_template_exists"),
+        "adapter_handoff_path": _first_text(evidence_summary, "adapter_handoff_path"),
+        "adapter_handoff_provided": _first_bool(evidence_summary, "adapter_handoff_provided"),
+        "adapter_handoff_exists": _first_bool(evidence_summary, "adapter_handoff_exists"),
+    }
+
+
+def _path_from_text(value: str) -> Path | None:
+    text = _text(value)
+    return Path(text) if text else None
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
