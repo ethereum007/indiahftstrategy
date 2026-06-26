@@ -4652,9 +4652,12 @@ wrapper resolve its nested generic `route_readiness` proof automatically, then
 the generic scale-up gate revalidates ops-launch route controls before runtime
 sizing. It writes provider wrapper checks/summary/action/config/runbook
 artifacts plus a nested generic `scaleup` folder with `scaleup_plan.csv`,
-`scaleup_checks.csv`, `scaleup_summary.csv`, and `scaleup_config.json`. A ready
-wrapper points to `build-provider-market-data-imbalance-runtime-telemetry`;
-missing or rejected shadow evidence stays blocked at `compare-shadow-sessions`.
+`scaleup_checks.csv`, `scaleup_summary.csv`, and `scaleup_config.json`, while
+retaining the upstream capture bundle, blank credential env-template, and
+adapter handoff paths in the provider wrapper summary/config/runbook and
+manifest. A ready wrapper points to
+`build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
+shadow evidence stays blocked at `compare-shadow-sessions`.
 
 Build guard-ready runtime telemetry from that provider scale-up wrapper:
 

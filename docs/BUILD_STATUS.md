@@ -1410,8 +1410,9 @@
   readiness scorecard. `plan-provider-market-data-imbalance-scaleup` infers the
   launch-evidence, full imbalance `strategy_evidence`, and nested launch
   pipeline paths from the provider scorecard, requires a real shadow comparison,
-  writes provider wrapper action/config/runbook artifacts plus nested generic
-  `scaleup` outputs, and points ready runs to
+  carries capture bundle/env-template/adapter handoff provenance into the
+  provider wrapper summary/config/runbook artifacts plus manifest, writes nested
+  generic `scaleup` outputs, and points ready runs to
   `build-provider-market-data-imbalance-runtime-telemetry`.
 - Provider-data imbalance now has a dedicated runtime telemetry wrapper after
   provider scale-up. `build-provider-market-data-imbalance-runtime-telemetry`
