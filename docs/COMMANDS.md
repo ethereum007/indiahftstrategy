@@ -4816,7 +4816,10 @@ paths, cutover-retained vendor-market-data batch readiness fields/config, and
 upstream proof lineage. It also preserves inherited
 `upstream_*_vendor_market_data_batch_*` readiness fields/config so dispatch
 planners can see the full Arrow.money/iRage vendor-data chain from the
-route-enable artifact. The wrapper runs `review-route-enable` under a nested
+route-enable artifact. It also preserves the capture bundle, blank credential
+env-template, and adapter handoff paths inherited from cutover so dispatch
+planners can trace the live data source before packaging broker orders. The
+wrapper runs `review-route-enable` under a nested
 `route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready
 `plan_provider_imbalance_broker_dispatch` action and point to
