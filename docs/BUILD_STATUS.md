@@ -115,8 +115,10 @@
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider
-  research run, reviews the `provider_imbalance_research` profile, and points
-  ready candidates to `pipeline-imbalance-launch` without weakening the full
+  research run, reviews the `provider_imbalance_research` profile, carries
+  capture bundle/env-template/adapter handoff provenance into evidence
+  summary/config/runbook artifacts plus the manifest, and points ready
+  candidates to `pipeline-imbalance-launch` without weakening the full
   launch-ready `imbalance` profile.
 - Provider market-data imbalance launch packaging now bridges ready provider
   research evidence into broker handoff artifacts:

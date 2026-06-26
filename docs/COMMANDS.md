@@ -4535,9 +4535,12 @@ This writes a nested experiment `catalog` and `strategy_evidence` review using
 the `provider_imbalance_research` profile. That profile requires the provider
 research handoff, imbalance edge walk-forward, replay walk-forward, promotion,
 the root imbalance research pipeline, and the provider imbalance research
-manifest. A ready review points to `pipeline-imbalance-launch`; it does not
-weaken the full `imbalance` profile, which still requires order-plan and launch
-pipeline proof before shadow scale-up.
+manifest. The evidence summary/config/runbook and manifest also retain the
+approved capture bundle, blank credential env-template, and adapter handoff paths
+when they were present in the upstream provider research wrapper. A ready review
+points to `pipeline-imbalance-launch`; it does not weaken the full `imbalance`
+profile, which still requires order-plan and launch pipeline proof before shadow
+scale-up.
 
 Build the provider imbalance launch packet directly from the ready evidence
 review:

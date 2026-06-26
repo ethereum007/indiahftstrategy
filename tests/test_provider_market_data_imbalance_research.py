@@ -844,6 +844,47 @@ def test_provider_market_data_imbalance_evidence_reviews_ready_research_profile(
     assert manifest["run_type"] == "provider_market_data_imbalance_evidence_review"
 
 
+def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenance(tmp_path):
+    evidence, bundle_path = _write_bundle_linked_real_evidence(tmp_path)
+    env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    out_dir = tmp_path / "provider_imbalance_evidence"
+
+    report = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_evidence_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_evidence_runbook.md").read_text(encoding="utf-8")
+    assert report.ready
+    assert Path(summary["capture_bundle_path"]) == bundle_path
+    assert bool(summary["capture_bundle_provided"])
+    assert bool(summary["capture_bundle_exists"])
+    assert bool(summary["capture_bundle_ready"])
+    assert Path(summary["capture_env_template_path"]) == env_template_path
+    assert bool(summary["capture_env_template_exists"])
+    assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["adapter_handoff_provided"])
+    assert bool(summary["adapter_handoff_exists"])
+    assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
+    assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["provider_research"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert str(adapter_handoff_path) in runbook
+
+
 def test_provider_market_data_imbalance_evidence_blocks_unready_research(tmp_path):
     smoke = _write_synthetic_smoke_evidence(tmp_path)
     research = write_provider_market_data_imbalance_research(
