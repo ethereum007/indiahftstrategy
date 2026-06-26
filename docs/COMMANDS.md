@@ -4791,7 +4791,11 @@ round-trip wrapper root, nested generic `broker_dispatch_roundtrip` folder, and
 any upstream proof lineage in the cutover summary/config/manifest. It also
 preserves the capture bundle, blank credential env-template, and adapter
 handoff paths inherited from broker-readiness, so route-enable reviewers can
-trace the live data source from the cutover artifact set. If provider
+trace the live data source from the cutover artifact set. If broker-readiness
+validated round-trip capture bundle/env-template/adapter handoff provenance,
+cutover also carries those `dispatch_roundtrip_*` provenance fields,
+manifest inputs, and consistency flags forward for route-enable and dispatch
+reviewers. If provider
 broker-readiness carried vendor-market-data batch evidence, cutover also
 retains the generic dispatch, broker-dispatch, and inherited upstream vendor
 batch readiness fields plus config snapshots, including

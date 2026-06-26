@@ -1515,8 +1515,11 @@
   summary/config/manifest preserve both the provider wrapper root and nested
   generic `broker_dispatch_roundtrip` path, broker-dispatch
   vendor-market-data batch proof, any upstream proof lineage, and upstream
-  vendor-market-data batch lineage so route-enable and later broker dispatch
-  stages can trace the same proof chain before live-data dry-runs.
+  vendor-market-data batch lineage. It now also keeps the broker-readiness
+  validated round-trip capture bundle/env-template/adapter handoff paths and
+  provenance-consistency flags in summary/config/runbook/manifest artifacts so
+  route-enable and later broker dispatch stages can trace the same proof chain
+  before live-data dry-runs.
 - Provider-data imbalance route-enable now preserves the cutover-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch

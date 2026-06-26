@@ -2910,6 +2910,131 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert str(adapter_handoff_path) in runbook
 
 
+def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle_provenance(tmp_path):
+    bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
+    env_template_path = tmp_path / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = tmp_path / "provider_market_data_adapter_handoff.json"
+    provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
+    nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
+    for path in (bundle_path, env_template_path, adapter_handoff_path):
+        path.write_text("{}", encoding="utf-8")
+    nested_roundtrip_dir.mkdir(parents=True)
+    (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
+        "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
+        "true,true,true,0\n",
+        encoding="utf-8",
+    )
+    broker_readiness_dir = tmp_path / "provider_imbalance_broker_readiness_with_roundtrip_provenance"
+    broker_readiness_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_readiness_dir": "",
+                "runtime_session_dir": "",
+                "scaleup_dir": "",
+                "capture_bundle_path": str(bundle_path),
+                "capture_bundle_provided": True,
+                "capture_bundle_exists": True,
+                "capture_bundle_ready": True,
+                "capture_env_template_path": str(env_template_path),
+                "capture_env_template_provided": True,
+                "capture_env_template_exists": True,
+                "adapter_handoff_path": str(adapter_handoff_path),
+                "adapter_handoff_provided": True,
+                "adapter_handoff_exists": True,
+                "dispatch_roundtrip_capture_bundle_path": str(bundle_path),
+                "dispatch_roundtrip_capture_bundle_provided": True,
+                "dispatch_roundtrip_capture_bundle_exists": True,
+                "dispatch_roundtrip_capture_bundle_ready": True,
+                "dispatch_roundtrip_capture_bundle_matches_session": True,
+                "dispatch_roundtrip_capture_env_template_path": str(env_template_path),
+                "dispatch_roundtrip_capture_env_template_provided": True,
+                "dispatch_roundtrip_capture_env_template_exists": True,
+                "dispatch_roundtrip_capture_env_template_matches_session": True,
+                "dispatch_roundtrip_adapter_handoff_path": str(adapter_handoff_path),
+                "dispatch_roundtrip_adapter_handoff_provided": True,
+                "dispatch_roundtrip_adapter_handoff_exists": True,
+                "dispatch_roundtrip_adapter_handoff_matches_session": True,
+                "dispatch_roundtrip_capture_provenance_consistent": True,
+                "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
+                "dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                "dispatch_roundtrip_provided": True,
+                "dispatch_roundtrip_ready": True,
+                "dispatch_roundtrip_failed_checks": 0,
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_summary.csv",
+        index=False,
+    )
+    (
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_config.json"
+    ).write_text(
+        json.dumps(
+            {
+                "broker_inputs": {
+                    "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
+                    "dispatch_roundtrip_dir": str(nested_roundtrip_dir),
+                },
+                "provider_runtime_session": {"scaleup_dir": ""},
+                "dispatch_roundtrip_provenance": {
+                    "capture_bundle_path": str(bundle_path),
+                    "capture_env_template_path": str(env_template_path),
+                    "adapter_handoff_path": str(adapter_handoff_path),
+                    "consistent_with_runtime_session": True,
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_cutover_with_roundtrip_provenance"
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_cutover_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_cutover_runbook.md").read_text(encoding="utf-8")
+    assert not report.ready
+    assert Path(summary["dispatch_roundtrip_capture_bundle_path"]) == bundle_path
+    assert bool(summary["dispatch_roundtrip_capture_bundle_provided"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_ready"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
+    assert Path(summary["dispatch_roundtrip_capture_env_template_path"]) == env_template_path
+    assert bool(summary["dispatch_roundtrip_capture_env_template_matches_session"])
+    assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
+    assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
+    assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
+    assert config["provider_broker_readiness"]["dispatch_roundtrip_adapter_handoff_path"] == str(
+        adapter_handoff_path
+    )
+    assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
+    assert str(adapter_handoff_path) in runbook
+    assert "- Dispatch round-trip provenance consistent: yes" in runbook
+
+
 def test_provider_market_data_imbalance_cutover_carries_provider_dispatch_roundtrip_paths(tmp_path):
     provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
     nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
