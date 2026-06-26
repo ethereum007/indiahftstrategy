@@ -4755,6 +4755,11 @@ checks/summary/action/config/runbook artifacts. It also retains the upstream
 capture bundle, blank credential env-template, and adapter handoff paths in the
 provider summary/config/runbook plus manifest, so broker integration reviewers
 can trace the live data source without opening nested runtime-session folders.
+When a provider round-trip proof carries its own capture bundle/env-template or
+adapter handoff path, broker-readiness records those as
+`dispatch_roundtrip_*` provenance, adds manifest inputs for them, and fails
+closed back to `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
+if they conflict with the runtime-session provenance.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
 batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields

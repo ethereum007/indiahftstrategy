@@ -190,7 +190,7 @@ def write_provider_market_data_imbalance_broker_readiness(
     else:
         broker_error = "provider imbalance broker readiness prerequisites are not ready"
 
-    checks = _checks(prechecks, broker, broker_error, session_summary, config)
+    checks = _checks(prechecks, broker, broker_error, session_summary, provider_roundtrip_summary, config)
     summary = _summary(
         session_root,
         generic_runtime_session_dir,
@@ -274,6 +274,11 @@ def write_provider_market_data_imbalance_broker_readiness(
         "capture_bundle": _path_from_text(summary_row["capture_bundle_path"]),
         "capture_env_template": _path_from_text(summary_row["capture_env_template_path"]),
         "adapter_handoff": _path_from_text(summary_row["adapter_handoff_path"]),
+        "dispatch_roundtrip_capture_bundle": _path_from_text(summary_row["dispatch_roundtrip_capture_bundle_path"]),
+        "dispatch_roundtrip_capture_env_template": _path_from_text(
+            summary_row["dispatch_roundtrip_capture_env_template_path"]
+        ),
+        "dispatch_roundtrip_adapter_handoff": _path_from_text(summary_row["dispatch_roundtrip_adapter_handoff_path"]),
     }.items():
         if value is not None:
             inputs[name] = value
@@ -295,6 +300,18 @@ def write_provider_market_data_imbalance_broker_readiness(
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_provided": bool(summary_row["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "dispatch_roundtrip_capture_provenance_consistent": bool(
+                summary_row["dispatch_roundtrip_capture_provenance_consistent"]
+            ),
+            "dispatch_roundtrip_capture_bundle_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_bundle_matches_session"]
+            ),
+            "dispatch_roundtrip_capture_env_template_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_env_template_matches_session"]
+            ),
+            "dispatch_roundtrip_adapter_handoff_matches_session": bool(
+                summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]
+            ),
             "dispatch_roundtrip_vendor_market_data_batch_ready": bool(
                 summary_row["dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
@@ -408,6 +425,7 @@ def _checks(
     broker: BrokerReadinessReport | None,
     broker_error: str,
     session_summary: pd.DataFrame,
+    provider_roundtrip_summary: pd.DataFrame,
     config: ProviderMarketDataImbalanceBrokerReadinessConfig,
 ) -> pd.DataFrame:
     rows = prechecks.to_dict(orient="records")
@@ -422,6 +440,7 @@ def _checks(
             broker_error or "generic broker readiness was not run",
         )
     )
+    rows.extend(_dispatch_roundtrip_provenance_checks(session_summary, provider_roundtrip_summary))
     rows.append(
         _check(
             "broker_readiness_ready",
@@ -458,6 +477,43 @@ def _checks(
         )
     )
     return pd.DataFrame(rows)
+
+
+def _dispatch_roundtrip_provenance_checks(
+    session_summary: pd.DataFrame,
+    provider_roundtrip_summary: pd.DataFrame,
+) -> list[dict[str, Any]]:
+    return [
+        _provenance_check(
+            "dispatch_roundtrip_capture_bundle_consistent",
+            _first_text(session_summary, "capture_bundle_path"),
+            _first_text(provider_roundtrip_summary, "capture_bundle_path"),
+            "dispatch round-trip capture bundle does not match provider runtime session",
+        ),
+        _provenance_check(
+            "dispatch_roundtrip_capture_env_template_consistent",
+            _first_text(session_summary, "capture_env_template_path"),
+            _first_text(provider_roundtrip_summary, "capture_env_template_path"),
+            "dispatch round-trip capture env template does not match provider runtime session",
+        ),
+        _provenance_check(
+            "dispatch_roundtrip_adapter_handoff_consistent",
+            _first_text(session_summary, "adapter_handoff_path"),
+            _first_text(provider_roundtrip_summary, "adapter_handoff_path"),
+            "dispatch round-trip adapter handoff does not match provider runtime session",
+        ),
+    ]
+
+
+def _provenance_check(check: str, expected: str, actual: str, reason: str) -> dict[str, Any]:
+    return _check(
+        check,
+        actual or "not_provided",
+        "matches",
+        expected or "runtime_session_provenance_or_empty",
+        _provenance_matches(expected, actual),
+        reason,
+    )
 
 
 def _summary(
@@ -498,6 +554,74 @@ def _summary(
                 "adapter_handoff_path": _first_text(session_summary, "adapter_handoff_path"),
                 "adapter_handoff_provided": _first_bool(session_summary, "adapter_handoff_provided"),
                 "adapter_handoff_exists": _first_bool(session_summary, "adapter_handoff_exists"),
+                "dispatch_roundtrip_capture_bundle_path": _first_text(
+                    provider_roundtrip_summary,
+                    "capture_bundle_path",
+                ),
+                "dispatch_roundtrip_capture_bundle_provided": _first_bool(
+                    provider_roundtrip_summary,
+                    "capture_bundle_provided",
+                ),
+                "dispatch_roundtrip_capture_bundle_exists": _first_bool(
+                    provider_roundtrip_summary,
+                    "capture_bundle_exists",
+                ),
+                "dispatch_roundtrip_capture_bundle_ready": _first_bool(
+                    provider_roundtrip_summary,
+                    "capture_bundle_ready",
+                ),
+                "dispatch_roundtrip_capture_bundle_matches_session": _provenance_matches(
+                    _first_text(session_summary, "capture_bundle_path"),
+                    _first_text(provider_roundtrip_summary, "capture_bundle_path"),
+                ),
+                "dispatch_roundtrip_capture_env_template_path": _first_text(
+                    provider_roundtrip_summary,
+                    "capture_env_template_path",
+                ),
+                "dispatch_roundtrip_capture_env_template_provided": _first_bool(
+                    provider_roundtrip_summary,
+                    "capture_env_template_provided",
+                ),
+                "dispatch_roundtrip_capture_env_template_exists": _first_bool(
+                    provider_roundtrip_summary,
+                    "capture_env_template_exists",
+                ),
+                "dispatch_roundtrip_capture_env_template_matches_session": _provenance_matches(
+                    _first_text(session_summary, "capture_env_template_path"),
+                    _first_text(provider_roundtrip_summary, "capture_env_template_path"),
+                ),
+                "dispatch_roundtrip_adapter_handoff_path": _first_text(
+                    provider_roundtrip_summary,
+                    "adapter_handoff_path",
+                ),
+                "dispatch_roundtrip_adapter_handoff_provided": _first_bool(
+                    provider_roundtrip_summary,
+                    "adapter_handoff_provided",
+                ),
+                "dispatch_roundtrip_adapter_handoff_exists": _first_bool(
+                    provider_roundtrip_summary,
+                    "adapter_handoff_exists",
+                ),
+                "dispatch_roundtrip_adapter_handoff_matches_session": _provenance_matches(
+                    _first_text(session_summary, "adapter_handoff_path"),
+                    _first_text(provider_roundtrip_summary, "adapter_handoff_path"),
+                ),
+                "dispatch_roundtrip_capture_provenance_consistent": all(
+                    [
+                        _provenance_matches(
+                            _first_text(session_summary, "capture_bundle_path"),
+                            _first_text(provider_roundtrip_summary, "capture_bundle_path"),
+                        ),
+                        _provenance_matches(
+                            _first_text(session_summary, "capture_env_template_path"),
+                            _first_text(provider_roundtrip_summary, "capture_env_template_path"),
+                        ),
+                        _provenance_matches(
+                            _first_text(session_summary, "adapter_handoff_path"),
+                            _first_text(provider_roundtrip_summary, "adapter_handoff_path"),
+                        ),
+                    ]
+                ),
                 "schema_audit_dir": _path_text(schema_audit_dir),
                 "order_export_dir": _path_text(_path_or_none(order_export_dir)),
                 "upload_pack_dir": _path_text(_path_or_none(upload_pack_dir)),
@@ -712,6 +836,24 @@ def _config(
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
         },
+        "dispatch_roundtrip_provenance": {
+            "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
+            "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary["dispatch_roundtrip_capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary["dispatch_roundtrip_capture_bundle_ready"]),
+            "capture_bundle_matches_session": bool(summary["dispatch_roundtrip_capture_bundle_matches_session"]),
+            "capture_env_template_path": str(summary["dispatch_roundtrip_capture_env_template_path"]),
+            "capture_env_template_provided": bool(summary["dispatch_roundtrip_capture_env_template_provided"]),
+            "capture_env_template_exists": bool(summary["dispatch_roundtrip_capture_env_template_exists"]),
+            "capture_env_template_matches_session": bool(
+                summary["dispatch_roundtrip_capture_env_template_matches_session"]
+            ),
+            "adapter_handoff_path": str(summary["dispatch_roundtrip_adapter_handoff_path"]),
+            "adapter_handoff_provided": bool(summary["dispatch_roundtrip_adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary["dispatch_roundtrip_adapter_handoff_exists"]),
+            "adapter_handoff_matches_session": bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"]),
+            "consistent_with_runtime_session": bool(summary["dispatch_roundtrip_capture_provenance_consistent"]),
+        },
         "provider_runtime_session": _first_record(session_summary),
         "provider_runtime_session_config": session_config,
         "upstream_dispatch_roundtrip_vendor_market_data_batch": _provider_roundtrip_vendor_market_data_batch_config(
@@ -772,6 +914,12 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
         f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
+        f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
+        "- Dispatch round-trip capture env template: "
+        f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",
+        f"- Dispatch round-trip adapter handoff: {summary['dispatch_roundtrip_adapter_handoff_path'] or 'not provided'}",
+        "- Dispatch round-trip provenance consistent: "
+        f"{'yes' if bool(summary['dispatch_roundtrip_capture_provenance_consistent']) else 'no'}",
         f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
         f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
         "- Dispatch round-trip vendor batch ready: "
@@ -848,6 +996,8 @@ def _next_gate_for_check(check: str, broker: BrokerReadinessReport | None) -> st
     if check == "broker_readiness_ready" and broker is not None:
         next_gate = _provider_next_gate(_first_action_value(broker.action_queue, "next_gate"))
         return next_gate or "review-provider-market-data-imbalance-broker-readiness"
+    if check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"):
+        return "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     if check.startswith("broker_readiness"):
         return "review-broker-readiness"
     if check in {"strategy_identity_imbalance", "market_identity_consistent"}:
@@ -898,6 +1048,8 @@ def _component_for_check(check: str) -> str:
         return "order_export"
     if check.startswith("upload_pack"):
         return "upload_pack"
+    if check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"):
+        return "provider_broker_dispatch_roundtrip"
     if check.startswith("broker_readiness"):
         return "broker_readiness"
     if check.endswith("identity_imbalance") or check.endswith("identity_consistent"):
@@ -910,6 +1062,8 @@ def _action_for_check(check: str) -> str:
         return "repair_provider_imbalance_runtime_session"
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "repair_provider_imbalance_launch_broker_artifacts"
+    if check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"):
+        return "repair_provider_imbalance_broker_dispatch_roundtrip"
     if check.startswith("broker_readiness"):
         return "repair_broker_readiness_inputs"
     return "repair_provider_imbalance_broker_readiness"
@@ -920,6 +1074,8 @@ def _recommendation_for_check(check: str) -> str:
         return "rerun_provider_runtime_session_before_broker_readiness"
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "rebuild_provider_launch_pipeline_broker_artifacts"
+    if check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"):
+        return "rerun_provider_broker_dispatch_roundtrip_from_same_runtime_capture_bundle"
     if check.startswith("broker_readiness"):
         return "rerun_generic_broker_readiness_with_required_artifacts"
     return "repair_provider_broker_readiness_inputs"
@@ -1118,6 +1274,21 @@ def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _provenance_matches(expected: object, actual: object) -> bool:
+    expected_text = _clean(expected)
+    actual_text = _clean(actual)
+    if not expected_text or not actual_text:
+        return True
+    return _path_identity(expected_text) == _path_identity(actual_text)
+
+
+def _path_identity(value: str) -> str:
+    try:
+        return str(Path(value).resolve()).lower()
+    except (OSError, RuntimeError, ValueError):
+        return value.strip().lower()
 
 
 def _identity_key(value: object) -> str:
