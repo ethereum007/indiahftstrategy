@@ -4897,9 +4897,12 @@ summary/config, requires an explicit broker/dry-run ack CSV, infers the nested
 generic `broker_dispatch` plan, preserves any provider/nested broker-dispatch
 round-trip paths, broker-dispatch vendor-market-data batch readiness/config,
 upstream proof lineage, and inherited
-`upstream_*_vendor_market_data_batch_*` readiness/config from the send packet, runs
-`reconcile-broker-dispatch` under a nested `broker_dispatch_ack` folder, and
-writes provider checks, summary, action, config, and runbook artifacts. Clean
+`upstream_*_vendor_market_data_batch_*` readiness/config from the send packet.
+It also preserves the capture bundle, blank credential env-template, and
+adapter handoff paths inherited from the send packet beside the acknowledgement
+proof. The wrapper runs `reconcile-broker-dispatch` under a nested
+`broker_dispatch_ack` folder, and writes provider checks, summary, action,
+config, and runbook artifacts. Clean
 acknowledgement proof emits a ready
 `review_provider_imbalance_broker_dispatch_roundtrip` action and points to
 `review-provider-market-data-imbalance-broker-dispatch-roundtrip`; missing ack

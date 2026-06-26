@@ -1486,8 +1486,10 @@
   wrapper after provider send packets. `reconcile-provider-market-data-imbalance-broker-dispatch`
   requires an explicit dry-run ack CSV, infers the nested generic
   `broker_dispatch` plan, reruns `reconcile-broker-dispatch` under a nested
-  folder, writes provider checks/summary/action/config/runbook artifacts,
-  indexes the run for catalog/scorecard discovery, and routes clean ack proof to
+  folder, carries capture bundle/env-template/adapter handoff provenance into
+  provider summary/config/runbook artifacts plus manifest, writes provider
+  checks/summary/action/config/runbook artifacts, indexes the run for
+  catalog/scorecard discovery, and routes clean ack proof to
   `review-provider-market-data-imbalance-broker-dispatch-roundtrip`.
 - Provider-data imbalance now has a provider broker-dispatch round-trip wrapper
   after provider acknowledgement proof. `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
