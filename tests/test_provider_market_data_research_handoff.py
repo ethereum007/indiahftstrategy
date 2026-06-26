@@ -16,7 +16,10 @@ from reports.provider_market_data_live_evidence import (
     ProviderMarketDataLiveEvidenceConfig,
     write_provider_market_data_live_evidence_review,
 )
-from reports.provider_market_data_live_ingest import write_provider_market_data_live_session_ingest
+from reports.provider_market_data_live_ingest import (
+    ProviderMarketDataLiveIngestConfig,
+    write_provider_market_data_live_session_ingest,
+)
 from reports.provider_market_data_live_preflight import (
     ProviderMarketDataLivePreflightConfig,
     write_provider_market_data_live_session_preflight,
@@ -113,6 +116,37 @@ def _write_real_evidence(tmp_path):
     )
 
 
+def _write_bundle_linked_real_evidence(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    preflight = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+    bundle = write_provider_market_data_live_capture_bundle(
+        live_packet,
+        tmp_path / "bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(
+            preflight_config_path=str(preflight.output_dir / "provider_market_data_live_preflight_config.json"),
+            ingest_output_dir=str(tmp_path / "live_ingest"),
+        ),
+    )
+    bundle_path = bundle.output_dir / "provider_market_data_live_capture_bundle.json"
+    _write_expected_captures(live_packet)
+    ingest = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+    evidence = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+    return evidence, bundle_path
+
+
 def _write_rehearsal_ingest(tmp_path):
     plan = _write_live_plan(tmp_path)
     live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
@@ -182,6 +216,46 @@ def test_provider_market_data_research_handoff_builds_imbalance_commands_from_li
     assert action_queue.loc[0, "next_gate"] == "walkforward-imbalance-edge"
     assert "walkforward-imbalance-edge" in action_queue.loc[0, "next_gate_help_command"]
     assert manifest["run_type"] == "provider_market_data_research_handoff"
+
+
+def test_provider_market_data_research_handoff_carries_capture_bundle_provenance(tmp_path):
+    evidence, bundle_path = _write_bundle_linked_real_evidence(tmp_path)
+    env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    out_dir = tmp_path / "handoff"
+
+    report = write_provider_market_data_research_handoff(
+        evidence.output_dir,
+        out_dir,
+        config=ProviderMarketDataResearchHandoffConfig(
+            output_root=str(tmp_path / "research"),
+            min_tick_folds=2,
+            tick_size=0.05,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_research_handoff_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_research_handoff_runbook.md").read_text(encoding="utf-8")
+    assert report.ready
+    assert Path(summary["capture_bundle_path"]) == bundle_path
+    assert bool(summary["capture_bundle_provided"])
+    assert bool(summary["capture_bundle_exists"])
+    assert bool(summary["capture_bundle_ready"])
+    assert Path(summary["capture_env_template_path"]) == env_template_path
+    assert bool(summary["capture_env_template_exists"])
+    assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["adapter_handoff_provided"])
+    assert bool(summary["adapter_handoff_exists"])
+    assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
+    assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["capture_bundle"]["adapter_handoff_exists"] is True
+    assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert str(adapter_handoff_path) in runbook
 
 
 def test_provider_market_data_research_handoff_blocks_synthetic_smoke_evidence(tmp_path):

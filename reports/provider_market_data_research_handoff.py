@@ -67,6 +67,16 @@ def write_provider_market_data_research_handoff(
     )
     evidence_dir = Path(live_evidence_dir)
     inputs: dict[str, Any] = {"live_evidence_dir": evidence_dir} if evidence_dir.exists() else {}
+    summary_row = report.summary.iloc[0]
+    capture_bundle = _path_from_text(str(summary_row["capture_bundle_path"]))
+    if capture_bundle is not None and capture_bundle.exists():
+        inputs["capture_bundle"] = capture_bundle
+    capture_env_template = _path_from_text(str(summary_row["capture_env_template_path"]))
+    if capture_env_template is not None and capture_env_template.exists():
+        inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
+    if adapter_handoff is not None and adapter_handoff.exists():
+        inputs["adapter_handoff"] = adapter_handoff
     capture_paths = [Path(str(path)) for path in report.datasets["capture_path"].astype(str).tolist()] if not report.datasets.empty else []
     if capture_paths:
         inputs["captures"] = [path for path in capture_paths if path.exists()]
@@ -76,10 +86,13 @@ def write_provider_market_data_research_handoff(
         parameters={"config": asdict(config or ProviderMarketDataResearchHandoffConfig())},
         inputs=inputs,
         extra={
-            "ready": bool(report.summary.iloc[0]["ready"]),
-            "research_ready": bool(report.summary.iloc[0]["research_ready"]),
-            "ready_command_count": int(report.summary.iloc[0]["ready_command_count"]),
-            "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
+            "ready": bool(summary_row["ready"]),
+            "research_ready": bool(summary_row["research_ready"]),
+            "ready_command_count": int(summary_row["ready_command_count"]),
+            "blocked_action_count": int(summary_row["blocked_action_count"]),
+            "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
+            "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
+            "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
         },
     )
     return ProviderMarketDataResearchHandoffReport(
@@ -106,6 +119,7 @@ def evaluate_provider_market_data_research_handoff(
     manifest, manifest_error = _read_json(evidence_dir / "manifest.json")
     datasets = _datasets(evidence_captures)
     commands = _commands(evidence_summary, datasets, config)
+    capture_provenance = _capture_provenance(evidence_config, manifest)
     checks = pd.DataFrame(
         _checks(
             evidence_dir,
@@ -119,13 +133,26 @@ def evaluate_provider_market_data_research_handoff(
             manifest_error,
             datasets,
             commands,
+            capture_provenance,
             config,
         )
     )
     ready = bool(not checks.empty and checks["passed"].astype(bool).all())
     action_queue = _action_queue(checks, commands, ready)
-    summary = _summary(evidence_dir, evidence_summary, datasets, commands, checks, action_queue, config, ready)
-    handoff_config = _config(summary.iloc[0], evidence_dir, evidence_summary, evidence_config, manifest, datasets, commands, checks, action_queue, config)
+    summary = _summary(evidence_dir, evidence_summary, datasets, commands, checks, action_queue, capture_provenance, config, ready)
+    handoff_config = _config(
+        summary.iloc[0],
+        evidence_dir,
+        evidence_summary,
+        evidence_config,
+        manifest,
+        datasets,
+        commands,
+        capture_provenance,
+        checks,
+        action_queue,
+        config,
+    )
     return ProviderMarketDataResearchHandoffReport(datasets, commands, checks, summary, action_queue, handoff_config)
 
 
@@ -179,6 +206,40 @@ def _datasets(captures: pd.DataFrame) -> pd.DataFrame:
             "role",
         ],
     )
+
+
+def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
+    bundle = _mapping(evidence_config.get("capture_bundle"))
+    manifest_inputs = _mapping(manifest.get("inputs"))
+    manifest_bundle = _mapping(manifest_inputs.get("capture_bundle"))
+    manifest_env = _mapping(manifest_inputs.get("capture_env_template"))
+    manifest_handoff = _mapping(manifest_inputs.get("adapter_handoff"))
+    bundle_path = _path_from_text(
+        _text(bundle.get("capture_bundle_path"))
+        or _text(bundle.get("path"))
+        or _text(manifest_bundle.get("path"))
+    )
+    env_template_path = _path_from_text(
+        _text(bundle.get("capture_env_template_path"))
+        or _text(bundle.get("env_template_path"))
+        or _text(manifest_env.get("path"))
+    )
+    adapter_handoff_path = _path_from_text(
+        _text(bundle.get("adapter_handoff_path"))
+        or _text(manifest_handoff.get("path"))
+    )
+    return {
+        "capture_bundle_path": _path_text(bundle_path),
+        "capture_bundle_provided": bool(bundle_path),
+        "capture_bundle_exists": bool(bundle_path is not None and bundle_path.exists()),
+        "capture_bundle_ready": _truthy(bundle.get("capture_bundle_ready")) or _truthy(bundle.get("ready")),
+        "capture_env_template_path": _path_text(env_template_path),
+        "capture_env_template_provided": bool(env_template_path),
+        "capture_env_template_exists": bool(env_template_path is not None and env_template_path.exists()),
+        "adapter_handoff_path": _path_text(adapter_handoff_path),
+        "adapter_handoff_provided": bool(adapter_handoff_path),
+        "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
+    }
 
 
 def _commands(
@@ -361,6 +422,7 @@ def _checks(
     manifest_error: str,
     datasets: pd.DataFrame,
     commands: pd.DataFrame,
+    capture_provenance: dict[str, Any],
     config: ProviderMarketDataResearchHandoffConfig,
 ) -> list[dict[str, Any]]:
     dataset_count = int(len(datasets))
@@ -368,6 +430,9 @@ def _checks(
     ready_commands = int((commands["queue_status"].astype(str) == "ready").sum()) if not commands.empty else 0
     blocked_commands = int((commands["queue_status"].astype(str) == "blocked").sum()) if not commands.empty else 0
     unsupported = [strategy for strategy in config.strategies if strategy not in SUPPORTED_STRATEGIES]
+    bundle_provided = bool(capture_provenance["capture_bundle_provided"])
+    env_template_required = bool(bundle_provided or capture_provenance["capture_env_template_provided"])
+    handoff_required = bool(bundle_provided or capture_provenance["adapter_handoff_provided"])
     return [
         _check("live_evidence_dir_exists", str(evidence_dir), "exists", True, evidence_dir.exists(), "live evidence directory is required"),
         _check("live_evidence_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live evidence summary could not be read"),
@@ -375,6 +440,9 @@ def _checks(
         _check("live_evidence_config_readable", config_error or "ok", "is", "ok", not config_error, config_error or "live evidence config could not be read"),
         _check("live_evidence_manifest_readable", manifest_error or "ok", "is", "ok", not manifest_error, manifest_error or "live evidence manifest could not be read"),
         _check("live_evidence_manifest_type", _text(manifest.get("run_type")), "is", "provider_market_data_live_evidence_review", _text(manifest.get("run_type")) == "provider_market_data_live_evidence_review", "live evidence manifest run_type is not expected"),
+        _check("capture_bundle_exists", capture_provenance["capture_bundle_path"], "exists", True, bool(capture_provenance["capture_bundle_exists"]) if bundle_provided else True, "capture bundle referenced by live evidence is missing"),
+        _check("capture_env_template_exists", capture_provenance["capture_env_template_path"], "exists", True, bool(capture_provenance["capture_env_template_exists"]) if env_template_required else True, "credential env-template referenced by live evidence is missing"),
+        _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if handoff_required else True, "adapter handoff referenced by live evidence is missing"),
         _check("live_evidence_ready", _first_bool(evidence_summary, "ready"), "is", True, _first_bool(evidence_summary, "ready"), "live evidence review is not ready"),
         _check("live_evidence_research_ready", _first_bool(evidence_summary, "research_ready"), "is", True, _first_bool(evidence_summary, "research_ready") or not config.require_research_ready, "live evidence is not research-ready"),
         _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_smoke else "allowed", synthetic_count == 0 or config.allow_synthetic_smoke, "synthetic rehearsal captures cannot be handed to strategy research"),
@@ -395,6 +463,7 @@ def _summary(
     commands: pd.DataFrame,
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
+    capture_provenance: dict[str, Any],
     config: ProviderMarketDataResearchHandoffConfig,
     ready: bool,
 ) -> pd.DataFrame:
@@ -414,6 +483,16 @@ def _summary(
                 "kind": _first_text(evidence_summary, "kind"),
                 "strategy": ";".join(config.strategies),
                 "strategy_profiles": ";".join(config.strategies),
+                "capture_bundle_path": str(capture_provenance["capture_bundle_path"]),
+                "capture_bundle_provided": bool(capture_provenance["capture_bundle_provided"]),
+                "capture_bundle_exists": bool(capture_provenance["capture_bundle_exists"]),
+                "capture_bundle_ready": bool(capture_provenance["capture_bundle_ready"]),
+                "capture_env_template_path": str(capture_provenance["capture_env_template_path"]),
+                "capture_env_template_provided": bool(capture_provenance["capture_env_template_provided"]),
+                "capture_env_template_exists": bool(capture_provenance["capture_env_template_exists"]),
+                "adapter_handoff_path": str(capture_provenance["adapter_handoff_path"]),
+                "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
+                "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
                 "dataset_count": int(len(datasets)),
                 "ready_command_count": int((commands["queue_status"].astype(str) == "ready").sum()) if not commands.empty else 0,
                 "blocked_command_count": int((commands["queue_status"].astype(str) == "blocked").sum()) if not commands.empty else 0,
@@ -473,6 +552,7 @@ def _config(
     manifest: dict[str, Any],
     datasets: pd.DataFrame,
     commands: pd.DataFrame,
+    capture_provenance: dict[str, Any],
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
     config: ProviderMarketDataResearchHandoffConfig,
@@ -487,6 +567,7 @@ def _config(
         "evidence_summary": _first_record(evidence_summary),
         "evidence_manifest_run_type": _text(manifest.get("run_type")),
         "evidence_config_ready": bool(evidence_config.get("ready", False)),
+        "capture_bundle": capture_provenance,
         "datasets": _records(datasets),
         "commands": _records(commands),
         "checks": _records(checks),
@@ -501,6 +582,12 @@ def _config(
 
 
 def _next_gate_for_check(check: str) -> str:
+    if (
+        check.startswith("capture_bundle")
+        or check.startswith("capture_env_template")
+        or check.startswith("adapter_handoff")
+    ):
+        return "bundle-provider-market-data-live-capture"
     if check.startswith("live_evidence"):
         return "review-provider-market-data-live-evidence"
     if check.startswith("synthetic"):
@@ -515,7 +602,11 @@ def _next_gate_for_check(check: str) -> str:
 
 
 def _next_gate_help_command(next_gate: str) -> str:
-    if next_gate in {"review-provider-market-data-live-evidence", "handoff-provider-market-data-research"}:
+    if next_gate in {
+        "bundle-provider-market-data-live-capture",
+        "review-provider-market-data-live-evidence",
+        "handoff-provider-market-data-research",
+    }:
         return f"python -m hft_cli {next_gate} --help"
     if next_gate == "provider_fetcher_live_run":
         return "replace synthetic captures with real Arrow.money/iRage provider captures"
@@ -523,6 +614,12 @@ def _next_gate_help_command(next_gate: str) -> str:
 
 
 def _repair_action(check: str) -> str:
+    if (
+        check.startswith("capture_bundle")
+        or check.startswith("capture_env_template")
+        or check.startswith("adapter_handoff")
+    ):
+        return "repair_provider_live_capture_bundle"
     if check.startswith("live_evidence"):
         return "repair_live_evidence_review"
     if check.startswith("synthetic"):
@@ -565,6 +662,9 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Market: {summary['market']}",
         f"- Strategies: {summary['strategy_profiles']}",
+        f"- Capture bundle: {summary['capture_bundle_path']}",
+        f"- Credential env template: {summary['capture_env_template_path']}",
+        f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Ready commands: {summary['ready_command_count']}",
         "",
@@ -704,6 +804,19 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
     return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
+
+
+def _path_from_text(value: str) -> Path | None:
+    text = _text(value)
+    return Path(text) if text else None
+
+
+def _path_text(path: Path | None) -> str:
+    return "" if path is None else str(path)
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _text(value: object, fallback: str = "") -> str:
