@@ -4868,10 +4868,13 @@ summary/config, infers the nested generic `broker_dispatch` artifact, preserves
 any provider/nested broker-dispatch round-trip paths, broker-dispatch
 vendor-market-data batch readiness/config, upstream proof lineage, and inherited
 `upstream_*_vendor_market_data_batch_*` readiness/config from the dispatch
-wrapper, runs `prepare-broker-dispatch-send` under a nested
-`broker_dispatch_send` folder, and writes provider checks, summary, action,
-config, and runbook artifacts. It still does not submit orders: the nested
-packet writes request envelopes and expected ack templates with
+wrapper. It also preserves the capture bundle, blank credential env-template,
+and adapter handoff paths inherited from dispatch, so operators can trace the
+live data source beside the dry-run request envelopes. The wrapper runs
+`prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
+and writes provider checks, summary, action, config, and runbook artifacts. It
+still does not submit orders: the nested packet writes request envelopes and
+expected ack templates with
 `submission_enabled=false`.
 Fully clean wrappers emit a ready
 `capture_provider_imbalance_broker_acknowledgements` action and point to
