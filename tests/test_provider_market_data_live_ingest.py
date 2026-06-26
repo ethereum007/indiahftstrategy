@@ -139,6 +139,7 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
     bundle_path = _write_capture_bundle(tmp_path, live_packet)
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
     _write_expected_captures(live_packet)
     out_dir = tmp_path / "live_ingest_with_bundle"
 
@@ -157,11 +158,17 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert summary["capture_bundle_ready"]
     assert Path(summary["capture_env_template_path"]) == env_template_path
     assert summary["capture_env_template_exists"]
+    assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
+    assert summary["adapter_handoff_provided"]
+    assert summary["adapter_handoff_exists"]
     assert config["capture_bundle"]["path"] == str(bundle_path)
     assert config["capture_bundle"]["env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["env_template_exists"] is True
+    assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["capture_bundle"]["adapter_handoff_exists"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
 
 
 def test_provider_market_data_live_ingest_blocks_missing_capture_files(tmp_path):

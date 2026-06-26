@@ -181,6 +181,7 @@ def test_provider_market_data_live_evidence_accepts_real_provider_ingest(tmp_pat
 def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tmp_path):
     ingest, bundle_path = _write_bundle_linked_real_ingest(tmp_path)
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
     out_dir = tmp_path / "evidence_with_bundle"
 
     report = write_provider_market_data_live_evidence_review(
@@ -199,10 +200,16 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert summary["capture_bundle_ready"]
     assert Path(summary["capture_env_template_path"]) == env_template_path
     assert summary["capture_env_template_exists"]
+    assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
+    assert summary["adapter_handoff_provided"]
+    assert summary["adapter_handoff_exists"]
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["capture_bundle"]["adapter_handoff_exists"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
 
 
 def test_provider_market_data_live_evidence_blocks_synthetic_rehearsal_by_default(tmp_path):

@@ -82,21 +82,22 @@
 - Provider market-data live rehearsal now proves the backend handoff without
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally
-  runs live-session ingest, fingerprints the bundle credential env-template
-  when present, and reports that the result is smoke-test evidence only until
-  replaced by real Arrow.money/iRage captures.
+  runs live-session ingest, fingerprints the bundle credential env-template and
+  adapter handoff contract when present, and reports that the result is
+  smoke-test evidence only until replaced by real Arrow.money/iRage captures.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured
   provider batch ingestion and manifests the resulting proof chain. When an
   approved capture bundle is supplied, ingest also fingerprints the bundle and
-  its blank credential env-template artifact for backend handoff provenance.
+  its blank credential env-template plus adapter handoff contract artifacts for
+  backend handoff provenance.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
-  capture-bundle/env-template provenance when supplied, and credential-safe
-  session packets while blocking `*.csv.rehearsal.json` synthetic captures from
-  being marked research-ready.
+  capture-bundle/env-template/adapter-handoff provenance when supplied, and
+  credential-safe session packets while blocking `*.csv.rehearsal.json`
+  synthetic captures from being marked research-ready.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds

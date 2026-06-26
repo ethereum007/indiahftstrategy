@@ -374,6 +374,7 @@ def _bundle(
             "next_gate": _text(preflight.get("next_gate")),
             "primary_action_status": _text(preflight.get("primary_action_status")),
         },
+        "adapter_handoff": ADAPTER_HANDOFF_NAME,
         "commands": command_records,
         "post_capture_ingest_command": str(summary["post_capture_ingest_command"]),
         "checks": _records(checks),

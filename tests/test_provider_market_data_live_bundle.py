@@ -113,6 +113,7 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert "ingest-provider-market-data-live-session" in summary["post_capture_ingest_command"]
     assert bundle["authentication"]["values_stored"] is False
     assert bundle["authentication"]["env_template"] == "provider_market_data_live_capture_env_template.env"
+    assert bundle["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert "ARROW_MONEY_API_KEY=\n" in env_template
     assert "ARROW_MONEY_API_SECRET=\n" in env_template
     assert handoff["provider"] == "arrow_money"

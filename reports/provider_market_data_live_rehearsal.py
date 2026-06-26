@@ -76,6 +76,10 @@ def write_provider_market_data_live_rehearsal(
     env_template_path = Path(env_template_text) if env_template_text else None
     if env_template_path is not None and env_template_path.exists():
         inputs["capture_env_template"] = env_template_path
+    adapter_handoff_text = str(report.summary.iloc[0]["adapter_handoff_path"])
+    adapter_handoff_path = Path(adapter_handoff_text) if adapter_handoff_text else None
+    if adapter_handoff_path is not None and adapter_handoff_path.exists():
+        inputs["adapter_handoff"] = adapter_handoff_path
     live_session_packet = Path(str(report.summary.iloc[0]["live_session_packet_path"]))
     if live_session_packet.exists():
         inputs["live_session_packet"] = live_session_packet
@@ -335,6 +339,7 @@ def _summary(
     ingest_ready = bool(ingest.ready) if ingest is not None else False
     ingest_output_dir = "" if ingest is None or ingest.output_dir is None else str(ingest.output_dir)
     env_template_path = _env_template_path(bundle_path, bundle)
+    adapter_handoff_path = _adapter_handoff_path(bundle_path, bundle)
     return pd.DataFrame(
         [
             {
@@ -344,6 +349,11 @@ def _summary(
                 "env_template_path": _path_text(env_template_path),
                 "env_template_provided": bool(env_template_path),
                 "env_template_exists": bool(env_template_path is not None and env_template_path.exists()),
+                "adapter_handoff_path": _path_text(adapter_handoff_path),
+                "adapter_handoff_provided": bool(adapter_handoff_path),
+                "adapter_handoff_exists": bool(
+                    adapter_handoff_path is not None and adapter_handoff_path.exists()
+                ),
                 "live_session_packet_path": _text(bundle.get("live_session_packet_path")),
                 "provider": _text(bundle.get("provider")),
                 "transport": _text(bundle.get("transport")),
@@ -422,6 +432,9 @@ def _config(
         "env_template_path": str(summary["env_template_path"]),
         "env_template_provided": bool(summary["env_template_provided"]),
         "env_template_exists": bool(summary["env_template_exists"]),
+        "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+        "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+        "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
         "live_session_packet_path": _text(bundle.get("live_session_packet_path")),
         "captures": _records(captures),
         "checks": _records(checks),
@@ -490,6 +503,7 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         f"- Captures: {summary['capture_count']}",
         f"- Rows per window: {summary['rows_per_window']}",
         f"- Credential env template: {summary['env_template_path']}",
+        f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Ingest ready: {'yes' if bool(summary['ingest_ready']) else 'no'}",
         "",
         "## Synthetic Captures",
@@ -563,6 +577,14 @@ def _env_template_path(bundle_path: Path, bundle: dict[str, Any]) -> Path | None
     if not template:
         return None
     path = Path(template)
+    if path.is_absolute():
+        return path
+    return bundle_path.parent / path
+
+
+def _adapter_handoff_path(bundle_path: Path, bundle: dict[str, Any]) -> Path | None:
+    handoff = _text(bundle.get("adapter_handoff")) or "provider_market_data_adapter_handoff.json"
+    path = Path(handoff)
     if path.is_absolute():
         return path
     return bundle_path.parent / path

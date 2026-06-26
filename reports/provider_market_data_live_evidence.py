@@ -67,6 +67,9 @@ def write_provider_market_data_live_evidence_review(
     capture_env_template = _path_from_text(str(report.summary.iloc[0]["capture_env_template_path"]))
     if capture_env_template is not None and capture_env_template.exists():
         inputs["capture_env_template"] = capture_env_template
+    adapter_handoff = _path_from_text(str(report.summary.iloc[0]["adapter_handoff_path"]))
+    if adapter_handoff is not None and adapter_handoff.exists():
+        inputs["adapter_handoff"] = adapter_handoff
     live_packet = Path(str(report.summary.iloc[0]["live_session_packet_path"]))
     if live_packet.exists():
         inputs["live_session_packet"] = live_packet
@@ -269,10 +272,15 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
     manifest_inputs = _mapping(manifest.get("inputs"))
     manifest_bundle = _mapping(manifest_inputs.get("capture_bundle"))
     manifest_env = _mapping(manifest_inputs.get("capture_env_template"))
+    manifest_handoff = _mapping(manifest_inputs.get("adapter_handoff"))
     bundle_path = _path_from_text(_text(bundle.get("path")) or _text(manifest_bundle.get("path")))
     env_template_path = _path_from_text(
         _text(bundle.get("env_template_path"))
         or _text(manifest_env.get("path"))
+    )
+    adapter_handoff_path = _path_from_text(
+        _text(bundle.get("adapter_handoff_path"))
+        or _text(manifest_handoff.get("path"))
     )
     return {
         "capture_bundle_path": _path_text(bundle_path),
@@ -282,6 +290,11 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
         "capture_env_template_path": _path_text(env_template_path),
         "capture_env_template_provided": bool(env_template_path),
         "capture_env_template_exists": bool(env_template_path is not None and env_template_path.exists()),
+        "adapter_handoff_path": _path_text(adapter_handoff_path),
+        "adapter_handoff_provided": bool(adapter_handoff_path),
+        "adapter_handoff_exists": bool(
+            adapter_handoff_path is not None and adapter_handoff_path.exists()
+        ),
     }
 
 
@@ -319,6 +332,7 @@ def _checks(
         _check("live_ingest_manifest_type", _text(manifest.get("run_type")), "is", "provider_market_data_live_session_ingest", _text(manifest.get("run_type")) == "provider_market_data_live_session_ingest" or not config.require_manifest, "live ingest manifest run_type is not the expected provider live ingest"),
         _check("capture_bundle_exists", capture_provenance["capture_bundle_path"], "exists", True, bool(capture_provenance["capture_bundle_exists"]) if bundle_provided else True, "capture bundle referenced by ingest provenance is missing"),
         _check("capture_env_template_exists", capture_provenance["capture_env_template_path"], "exists", True, bool(capture_provenance["capture_env_template_exists"]) if bundle_provided else True, "credential env-template referenced by ingest provenance is missing"),
+        _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if bool(capture_provenance["adapter_handoff_provided"]) else True, "adapter handoff referenced by ingest provenance is missing"),
         _check("live_ingest_ready", ingest_ready, "is", True, ingest_ready or not config.require_ingest_ready, "live ingest summary is not ready"),
         _check("live_session_packet_path_present", summary_packet, "is_not", "", bool(summary_packet), "live ingest summary must point to the live session packet"),
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
@@ -363,6 +377,9 @@ def _summary(
                 "capture_bundle_ready": bool(capture_provenance["capture_bundle_ready"]),
                 "capture_env_template_path": str(capture_provenance["capture_env_template_path"]),
                 "capture_env_template_exists": bool(capture_provenance["capture_env_template_exists"]),
+                "adapter_handoff_path": str(capture_provenance["adapter_handoff_path"]),
+                "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
+                "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
                 "provider": _text(live_packet.get("provider"), _first_text(ingest_summary, "provider")),
                 "transport": _text(live_packet.get("transport"), _first_text(ingest_summary, "transport")),
                 "market": _text(live_packet.get("market"), _first_text(ingest_summary, "market")),
@@ -501,7 +518,11 @@ def _recommendation(ready: bool, research_ready: bool, synthetic_count: int) -> 
 def _next_gate_for_check(check: str) -> str:
     if check.startswith("live_ingest"):
         return "ingest-provider-market-data-live-session"
-    if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
+    if (
+        check.startswith("capture_bundle")
+        or check.startswith("capture_env_template")
+        or check.startswith("adapter_handoff")
+    ):
         return "bundle-provider-market-data-live-capture"
     if check.startswith("live_session_packet") or check.startswith("credential"):
         return "plan-provider-market-data-live-session"
@@ -533,7 +554,11 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("live_ingest"):
         return "repair_provider_live_ingest_artifacts"
-    if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
+    if (
+        check.startswith("capture_bundle")
+        or check.startswith("capture_env_template")
+        or check.startswith("adapter_handoff")
+    ):
         return "repair_provider_live_capture_bundle"
     if check.startswith("live_session_packet") or check.startswith("credential"):
         return "repair_provider_live_session_packet"
@@ -554,6 +579,7 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         f"- Research ready: {'yes' if bool(summary['research_ready']) else 'no'}",
         f"- Capture bundle: {summary['capture_bundle_path']}",
         f"- Credential env template: {summary['capture_env_template_path']}",
+        f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Synthetic captures: {summary['synthetic_capture_count']}",
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
         f"- Recommendation: {summary['recommendation']}",
