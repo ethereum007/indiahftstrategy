@@ -4497,7 +4497,8 @@ session packet. It writes `provider_market_data_live_ingest_summary.csv`,
 `provider_market_data_live_ingest_action_queue.csv`, config/runbook artifacts,
 and a manifest that fingerprints the session packet, client packet, captures,
 batch output manifest, and optionally the approved capture bundle plus its
-credential env-template and adapter handoff artifacts.
+credential env-template, adapter handoff artifacts, source env-template proof,
+and upstream `live_fetch_contract`.
 
 Review the live ingest output before treating it as research evidence:
 

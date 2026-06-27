@@ -104,8 +104,9 @@
   all expected capture files exist and are non-empty, then runs the structured
   provider batch ingestion and manifests the resulting proof chain. When an
   approved capture bundle is supplied, ingest also fingerprints the bundle and
-  its blank credential env-template plus adapter handoff contract artifacts for
-  backend handoff provenance.
+  its blank credential env-template plus adapter handoff contract artifacts,
+  source env-template proof, and `live_fetch_contract` for backend handoff
+  provenance.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,

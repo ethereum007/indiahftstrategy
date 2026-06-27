@@ -78,6 +78,9 @@ def write_provider_market_data_live_session_ingest(
     adapter_handoff_path = _path_or_none(str(report.summary.iloc[0]["adapter_handoff_path"]))
     if adapter_handoff_path is not None and adapter_handoff_path.exists():
         inputs["adapter_handoff"] = adapter_handoff_path
+    source_env_template_path = _path_or_none(str(report.summary.iloc[0]["source_credential_env_template_path"]))
+    if source_env_template_path is not None and source_env_template_path.exists():
+        inputs["source_credential_env_template"] = source_env_template_path
     client_packet = Path(str(report.summary.iloc[0]["client_packet_path"]))
     if client_packet.exists():
         inputs["client_packet"] = client_packet
@@ -97,6 +100,12 @@ def write_provider_market_data_live_session_ingest(
             "ready": bool(report.summary.iloc[0]["ready"]),
             "batch_ready": bool(report.summary.iloc[0]["batch_ready"]),
             "batch_output_dir": str(report.summary.iloc[0]["batch_output_dir"]),
+            "source_credential_env_template": {
+                "path": str(report.summary.iloc[0]["source_credential_env_template_path"]),
+                "exists": bool(report.summary.iloc[0]["source_credential_env_template_exists"]),
+                "sha256": str(report.summary.iloc[0]["source_credential_env_template_sha256"]),
+            },
+            "live_fetch_contract": _mapping(report.config.get("capture_bundle", {}).get("live_fetch_contract")),
         },
     )
     return ProviderMarketDataLiveIngestReport(
@@ -224,12 +233,16 @@ def _checks(
     labels_unique = bool(windows["pipeline_label"].astype(str).nunique() == len(windows)) if not windows.empty else False
     bundle_provided = bool(config.capture_bundle_path)
     env_template_path = _env_template_path(bundle_path, bundle) if bundle_provided and not bundle_error else None
+    source_env_template = _source_credential_env_template(bundle_path, bundle) if bundle_provided and not bundle_error else {}
+    live_fetch_contract = _live_fetch_contract(bundle) if bundle_provided and not bundle_error else {}
     return [
         _check("live_session_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "live session packet is required"),
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
         _check("capture_bundle_json_readable", bundle_error or "ok", "is", "ok", not bundle_error if bundle_provided else True, bundle_error or "capture bundle could not be read"),
         _check("capture_bundle_matches_session", _text(bundle.get("live_session_packet_path")), "matches", str(packet_path), _bundle_matches_session(bundle_path, bundle, packet_path) if bundle_provided and not bundle_error else True, "capture bundle must reference the same live session packet"),
         _check("capture_env_template_exists", _path_text(env_template_path), "exists", True, bool(env_template_path is not None and env_template_path.exists()) if bundle_provided and not bundle_error else True, "capture bundle credential env template is required for bundle-linked ingest provenance"),
+        _check("capture_bundle_source_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, bool(source_env_template.get("exists")) and bool(_text(source_env_template.get("sha256"))) if bundle_provided and not bundle_error else True, "capture bundle must carry source credential env-template proof"),
+        _check("capture_bundle_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher" if bundle_provided and not bundle_error else True, "capture bundle must carry the upstream live fetch-contract handoff"),
         _check("live_session_packet_ready", bool(packet.get("ready")), "is", True, bool(packet.get("ready")), "live session plan must be ready before ingest"),
         _check("client_packet_path_exists", _text(packet.get("client_packet_path")), "exists", True, Path(_text(packet.get("client_packet_path"))).exists(), "client packet referenced by live session plan is required"),
         _check("capture_windows_present", len(windows), ">=", 1, len(windows) >= 1, "live session packet must include capture windows"),
@@ -280,6 +293,8 @@ def _summary(
     capture_bundle_path = bundle_path if config.capture_bundle_path else None
     capture_env_template_path = _env_template_path(bundle_path, bundle) if config.capture_bundle_path else None
     adapter_handoff_path = _adapter_handoff_path(bundle_path, bundle) if config.capture_bundle_path else None
+    source_env_template = _source_credential_env_template(bundle_path, bundle) if config.capture_bundle_path else {}
+    live_fetch_contract = _live_fetch_contract(bundle) if config.capture_bundle_path else {}
     return pd.DataFrame(
         [
             {
@@ -295,6 +310,12 @@ def _summary(
                 "adapter_handoff_path": _path_text(adapter_handoff_path),
                 "adapter_handoff_provided": bool(adapter_handoff_path),
                 "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
+                "source_credential_env_template_path": _text(source_env_template.get("path")),
+                "source_credential_env_template_exists": bool(source_env_template.get("exists")),
+                "source_credential_env_template_sha256": _text(source_env_template.get("sha256")),
+                "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
+                "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
+                "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
                 "client_packet_path": _text(packet.get("client_packet_path")),
                 "provider": _text(packet.get("provider")),
                 "transport": _text(packet.get("transport")),
@@ -390,6 +411,16 @@ def _config(
             "adapter_handoff_path": str(summary["adapter_handoff_path"]),
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+            "source_credential_env_template": {
+                "path": str(summary["source_credential_env_template_path"]),
+                "exists": bool(summary["source_credential_env_template_exists"]),
+                "sha256": str(summary["source_credential_env_template_sha256"]),
+            },
+            "live_fetch_contract": {
+                "available": bool(summary["source_live_fetch_contract_available"]),
+                "next_gate": str(summary["source_live_fetch_contract_next_gate"]),
+                "command_template": str(summary["source_live_fetch_contract_command_template"]),
+            },
         },
         "windows": _records(windows),
         "checks": _records(checks),
@@ -422,6 +453,7 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
         f"- Capture bundle: {summary['capture_bundle_path']}",
         f"- Credential env template: {summary['capture_env_template_path']}",
+        f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Expected captures: {summary['expected_capture_count']}",
         f"- Present captures: {summary['present_capture_count']}",
@@ -527,6 +559,10 @@ def _repair_action(check: str) -> str:
         return "repair_provider_live_session_packet"
     if check.startswith("client_packet"):
         return "repair_provider_client_packet"
+    if check == "capture_bundle_source_credential_env_template_carried":
+        return "regenerate_capture_bundle_with_source_env_template"
+    if check == "capture_bundle_live_fetch_contract_carried":
+        return "regenerate_capture_bundle_with_live_fetch_contract"
     if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
         return "repair_provider_live_capture_bundle"
     return "repair_provider_live_ingest"
@@ -581,6 +617,34 @@ def _adapter_handoff_path(bundle_path: Path, bundle: dict[str, Any]) -> Path | N
     if path.is_absolute():
         return path
     return bundle_path.parent / path
+
+
+def _source_credential_env_template(bundle_path: Path, bundle: dict[str, Any]) -> dict[str, Any]:
+    env_template = _mapping(bundle.get("source_credential_env_template"))
+    if not env_template:
+        env_template = _mapping(_mapping(bundle.get("authentication")).get("source_env_template"))
+    path = _path_from_text(_text(env_template.get("path")), bundle_path.parent)
+    return {
+        "path": _path_text(path),
+        "exists": bool(path is not None and path.exists()),
+        "sha256": _text(env_template.get("sha256")),
+    }
+
+
+def _live_fetch_contract(bundle: dict[str, Any]) -> dict[str, Any]:
+    contract = _mapping(bundle.get("live_fetch_contract"))
+    if not contract:
+        contract = _mapping(_mapping(bundle.get("preflight")).get("live_fetch_contract"))
+    return contract.copy()
+
+
+def _path_from_text(value: str, base_dir: Path) -> Path | None:
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return base_dir / path
 
 
 def _path_or_none(value: str) -> Path | None:

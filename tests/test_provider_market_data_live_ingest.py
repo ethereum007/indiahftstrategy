@@ -105,6 +105,14 @@ def _write_capture_bundle(tmp_path, live_packet_path):
     return bundle.output_dir / "provider_market_data_live_capture_bundle.json"
 
 
+def _mutate_bundle(bundle_path, mutator):
+    target = Path(bundle_path)
+    bundle = json.loads(target.read_text(encoding="utf-8"))
+    mutator(bundle)
+    target.write_text(json.dumps(bundle, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
 def test_provider_market_data_live_ingest_runs_batch_from_session_packet(tmp_path):
     plan = _write_live_plan(tmp_path)
     live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
@@ -138,8 +146,10 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     plan = _write_live_plan(tmp_path)
     live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
     bundle_path = _write_capture_bundle(tmp_path, live_packet)
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
     adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    source_env_template_path = Path(bundle["source_credential_env_template"]["path"])
     _write_expected_captures(live_packet)
     out_dir = tmp_path / "live_ingest_with_bundle"
 
@@ -161,14 +171,78 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
     assert summary["adapter_handoff_provided"]
     assert summary["adapter_handoff_exists"]
+    assert Path(summary["source_credential_env_template_path"]) == source_env_template_path
+    assert summary["source_credential_env_template_exists"]
+    assert len(summary["source_credential_env_template_sha256"]) == 64
+    assert summary["source_live_fetch_contract_available"]
+    assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert config["capture_bundle"]["path"] == str(bundle_path)
     assert config["capture_bundle"]["env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["env_template_exists"] is True
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["capture_bundle"]["adapter_handoff_exists"] is True
+    assert config["capture_bundle"]["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
+    assert config["capture_bundle"]["live_fetch_contract"]["available"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
+    assert manifest["extra"]["source_credential_env_template"]["exists"] is True
+    assert manifest["extra"]["live_fetch_contract"]["available"] is True
+
+
+def test_provider_market_data_live_ingest_blocks_missing_source_env_template(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _mutate_bundle(
+        _write_capture_bundle(tmp_path, live_packet),
+        lambda bundle: (
+            bundle.update({"source_credential_env_template": {"path": "", "exists": False, "sha256": ""}}),
+            bundle["authentication"].pop("source_env_template", None),
+        ),
+    )
+    _write_expected_captures(live_packet)
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_source_credential_env_template_carried" in failed
+    assert not bool(report.summary.iloc[0]["source_credential_env_template_exists"])
+    assert report.batch is None
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_source_env_template"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
+
+
+def test_provider_market_data_live_ingest_blocks_missing_live_fetch_contract(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _mutate_bundle(
+        _write_capture_bundle(tmp_path, live_packet),
+        lambda bundle: (
+            bundle.update({"live_fetch_contract": {"available": False}}),
+            bundle["preflight"].pop("live_fetch_contract", None),
+        ),
+    )
+    _write_expected_captures(live_packet)
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_live_fetch_contract_carried" in failed
+    assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
+    assert report.batch is None
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 
 def test_provider_market_data_live_ingest_blocks_missing_capture_files(tmp_path):
