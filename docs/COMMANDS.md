@@ -5029,7 +5029,9 @@ round-trip proof as `upstream_*_roundtrip` lineage, preserves inherited
 vendor-market-data batch evidence under `upstream_*_vendor_market_data_batch_*`
 fields, carries the acknowledgement-inherited capture bundle, blank credential
 env-template, adapter handoff paths, source credential env-template proof, and
-`live_fetch_contract` into summary/config/runbook artifacts plus manifest
+`live_fetch_contract`, plus the ack-retained validated dispatch round-trip
+source credential env-template, `live_fetch_contract`, and source-provenance
+consistency flags, into summary/config/runbook artifacts plus manifest
 inputs/extra metadata, and writes provider checks/action artifacts.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own

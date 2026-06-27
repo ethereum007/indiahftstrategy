@@ -1599,9 +1599,10 @@
   artifact. It also preserves the acknowledgement-carried capture bundle,
   blank credential env-template, adapter handoff paths, source credential
   env-template proof, and `live_fetch_contract`, plus the ack-retained
-  validated round-trip capture bundle/env-template/adapter handoff paths and
-  provenance-consistency flags, in provider summary/config/runbook artifacts
-  plus manifest inputs/extra metadata. The
+  validated round-trip capture bundle/env-template/adapter handoff paths,
+  source credential env-template proof, `live_fetch_contract`, and
+  source/capture provenance-consistency flags, in provider
+  summary/config/runbook artifacts plus manifest inputs/extra metadata. The
   provider round-trip summary/config now also surfaces nested broker
   vendor-market-data batch proof under both
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
