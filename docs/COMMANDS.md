@@ -4576,11 +4576,12 @@ tick folds, then writes
 `provider_market_data_imbalance_research_summary.csv`,
 `provider_market_data_imbalance_research_action_queue.csv`, config/runbook
 artifacts, and a manifest. When available, those wrapper artifacts also retain
-the approved capture bundle, blank credential env-template, and adapter handoff
-paths carried by the nested research handoff. If the live evidence is synthetic
-smoke evidence, not research-ready, or too thin, the strategy pipeline is not
-run and the action queue points back to the provider evidence or imbalance
-research gate.
+the approved capture bundle, blank credential env-template, adapter handoff
+paths, upstream source credential env-template proof, and `live_fetch_contract`
+carried by the nested research handoff. If the live evidence is synthetic smoke
+evidence, not research-ready, or too thin, the strategy pipeline is not run and
+the action queue points back to the provider evidence or imbalance research
+gate.
 
 Review the provider imbalance research evidence before building broker launch
 artifacts:

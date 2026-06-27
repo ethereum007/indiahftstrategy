@@ -162,6 +162,9 @@ def write_provider_market_data_imbalance_research(
     adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
     if adapter_handoff is not None and adapter_handoff.exists():
         manifest_inputs["adapter_handoff"] = adapter_handoff
+    source_env_template = _path_from_text(str(summary_row["source_credential_env_template_path"]))
+    if source_env_template is not None and source_env_template.exists():
+        manifest_inputs["source_credential_env_template"] = source_env_template
     if pipeline is not None:
         manifest_inputs["imbalance_research"] = pipeline_dir
     write_experiment_manifest(
@@ -177,6 +180,16 @@ def write_provider_market_data_imbalance_research(
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
+            "source_credential_env_template": {
+                "path": str(summary.iloc[0]["source_credential_env_template_path"]),
+                "exists": bool(summary.iloc[0]["source_credential_env_template_exists"]),
+                "sha256": str(summary.iloc[0]["source_credential_env_template_sha256"]),
+            },
+            "live_fetch_contract": {
+                "available": bool(summary.iloc[0]["source_live_fetch_contract_available"]),
+                "next_gate": str(summary.iloc[0]["source_live_fetch_contract_next_gate"]),
+                "command_template": str(summary.iloc[0]["source_live_fetch_contract_command_template"]),
+            },
         },
     )
     return ProviderMarketDataImbalanceResearchReport(
@@ -399,6 +412,24 @@ def _summary(
                 "adapter_handoff_path": str(handoff_row.get("adapter_handoff_path", "") or ""),
                 "adapter_handoff_provided": _truthy(handoff_row.get("adapter_handoff_provided")),
                 "adapter_handoff_exists": _truthy(handoff_row.get("adapter_handoff_exists")),
+                "source_credential_env_template_path": str(
+                    handoff_row.get("source_credential_env_template_path", "") or ""
+                ),
+                "source_credential_env_template_exists": _truthy(
+                    handoff_row.get("source_credential_env_template_exists")
+                ),
+                "source_credential_env_template_sha256": str(
+                    handoff_row.get("source_credential_env_template_sha256", "") or ""
+                ),
+                "source_live_fetch_contract_available": _truthy(
+                    handoff_row.get("source_live_fetch_contract_available")
+                ),
+                "source_live_fetch_contract_next_gate": str(
+                    handoff_row.get("source_live_fetch_contract_next_gate", "") or ""
+                ),
+                "source_live_fetch_contract_command_template": str(
+                    handoff_row.get("source_live_fetch_contract_command_template", "") or ""
+                ),
                 "dataset_count": int(handoff_row.get("dataset_count", 0) or 0),
                 "ready_command_count": int(handoff_row.get("ready_command_count", 0) or 0),
                 "synthetic_dataset_count": int(handoff_row.get("synthetic_dataset_count", 0) or 0),
@@ -574,6 +605,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Capture bundle: {summary['capture_bundle_path']}",
         f"- Credential env template: {summary['capture_env_template_path']}",
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
+        f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
+        f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
         f"- Replay passed: {'yes' if bool(summary['replay_passed']) else 'no'}",
@@ -748,6 +781,15 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         "adapter_handoff_path": str(row.get("adapter_handoff_path", "") or ""),
         "adapter_handoff_provided": _truthy(row.get("adapter_handoff_provided")),
         "adapter_handoff_exists": _truthy(row.get("adapter_handoff_exists")),
+        "source_credential_env_template_path": str(row.get("source_credential_env_template_path", "") or ""),
+        "source_credential_env_template_provided": _truthy(row.get("source_credential_env_template_provided")),
+        "source_credential_env_template_exists": _truthy(row.get("source_credential_env_template_exists")),
+        "source_credential_env_template_sha256": str(row.get("source_credential_env_template_sha256", "") or ""),
+        "source_live_fetch_contract_available": _truthy(row.get("source_live_fetch_contract_available")),
+        "source_live_fetch_contract_next_gate": str(row.get("source_live_fetch_contract_next_gate", "") or ""),
+        "source_live_fetch_contract_command_template": str(
+            row.get("source_live_fetch_contract_command_template", "") or ""
+        ),
     }
 
 
