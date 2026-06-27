@@ -1586,7 +1586,8 @@
   vendor-market-data batch proof, upstream proof lineage, and upstream
   vendor-market-data batch lineage in acknowledgement summary/config/runbook
   artifacts and manifests. It now also carries the send-retained validated
-  round-trip capture bundle/env-template/adapter handoff paths and
+  round-trip capture bundle/env-template/adapter handoff paths, source
+  credential env-template proof, `live_fetch_contract`, and source/capture
   provenance-consistency flags through acknowledgement summary/config/runbook
   artifacts plus manifest inputs/metadata before the final provider round-trip
   wrapper is trusted.
