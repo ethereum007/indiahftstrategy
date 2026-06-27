@@ -4964,8 +4964,11 @@ vendor-market-data batch readiness/config, upstream proof lineage, and inherited
 `upstream_*_vendor_market_data_batch_*` readiness/config from the dispatch
 wrapper. It also preserves the capture bundle, blank credential env-template,
 adapter handoff paths, source credential env-template proof, and
-`live_fetch_contract` inherited from dispatch, so operators can trace the live
-data source beside the dry-run request envelopes. The wrapper runs
+`live_fetch_contract` inherited from dispatch. It also carries the
+broker-dispatch-retained validated dispatch round-trip source credential
+env-template, `live_fetch_contract`, and source-provenance consistency flags,
+so operators can trace the exact live data source beside the dry-run request
+envelopes. The wrapper runs
 `prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
 and writes provider checks, summary, action, config, and runbook artifacts. It
 still does not submit orders: the nested packet writes request envelopes and
