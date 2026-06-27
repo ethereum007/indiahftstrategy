@@ -3947,7 +3947,8 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
     env_template_path = tmp_path / "provider_market_data_live_capture_env_template.env"
     adapter_handoff_path = tmp_path / "provider_market_data_adapter_handoff.json"
-    for path in (bundle_path, env_template_path, adapter_handoff_path):
+    source_env_template_path = tmp_path / "provider_source_credentials.env"
+    for path in (bundle_path, env_template_path, adapter_handoff_path, source_env_template_path):
         path.write_text("{}", encoding="utf-8")
 
     cutover_summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
@@ -3966,6 +3967,25 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     cutover_summary["dispatch_roundtrip_adapter_handoff_exists"] = True
     cutover_summary["dispatch_roundtrip_adapter_handoff_matches_session"] = True
     cutover_summary["dispatch_roundtrip_capture_provenance_consistent"] = True
+    cutover_summary["source_credential_env_template_path"] = str(source_env_template_path)
+    cutover_summary["source_credential_env_template_exists"] = True
+    cutover_summary["source_credential_env_template_sha256"] = "a" * 64
+    cutover_summary["source_live_fetch_contract_available"] = True
+    cutover_summary["source_live_fetch_contract_next_gate"] = "provider_fetcher"
+    cutover_summary["source_live_fetch_contract_command_template"] = "python -m hft_cli fetch-provider-live-data"
+    cutover_summary["dispatch_roundtrip_source_credential_env_template_path"] = str(source_env_template_path)
+    cutover_summary["dispatch_roundtrip_source_credential_env_template_exists"] = True
+    cutover_summary["dispatch_roundtrip_source_credential_env_template_sha256"] = "a" * 64
+    cutover_summary["dispatch_roundtrip_source_credential_env_template_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_source_live_fetch_contract_available"] = True
+    cutover_summary["dispatch_roundtrip_source_live_fetch_contract_next_gate"] = "provider_fetcher"
+    cutover_summary["dispatch_roundtrip_source_live_fetch_contract_command_template"] = (
+        "python -m hft_cli fetch-provider-live-data"
+    )
+    cutover_summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_source_provenance_consistent"] = True
     cutover_summary.to_csv(cutover_summary_path, index=False)
 
     cutover_config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
@@ -3975,6 +3995,16 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
         "capture_env_template_path": str(env_template_path),
         "adapter_handoff_path": str(adapter_handoff_path),
         "consistent_with_runtime_session": True,
+        "source_credential_env_template_path": str(source_env_template_path),
+        "source_credential_env_template_sha256": "a" * 64,
+        "source_credential_env_template_matches_session": True,
+        "source_credential_env_template_sha256_matches_session": True,
+        "source_live_fetch_contract_available": True,
+        "source_live_fetch_contract_next_gate": "provider_fetcher",
+        "source_live_fetch_contract_command_template": "python -m hft_cli fetch-provider-live-data",
+        "source_live_fetch_contract_next_gate_matches_session": True,
+        "source_live_fetch_contract_command_template_matches_session": True,
+        "source_provenance_consistent_with_runtime_session": True,
     }
     cutover_config_path.write_text(
         json.dumps(cutover_config, indent=2, sort_keys=True) + "\n",
@@ -4004,19 +4034,40 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert Path(summary["dispatch_roundtrip_source_credential_env_template_path"]) == source_env_template_path
+    assert bool(summary["dispatch_roundtrip_source_credential_env_template_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_path"] == str(
+        source_env_template_path
+    )
+    assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_matches_session"]
+    assert config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
     assert config["provider_cutover"]["dispatch_roundtrip_adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["provider_cutover"]["dispatch_roundtrip_source_credential_env_template_path"] == str(
+        source_env_template_path
+    )
     assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_source_credential_env_template"]["path"] == str(
+        source_env_template_path.resolve()
+    )
     assert manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
     assert str(adapter_handoff_path) in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
+    assert str(source_env_template_path) in runbook
+    assert "- Dispatch round-trip source provenance consistent: yes" in runbook
 
 
 def test_provider_market_data_imbalance_route_enable_carries_cutover_dispatch_roundtrip_paths(tmp_path):

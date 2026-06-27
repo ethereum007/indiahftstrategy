@@ -4906,8 +4906,9 @@ env-template, adapter handoff paths, source credential env-template proof, and
 live data source before packaging broker orders. If
 cutover retained broker-readiness validated round-trip capture
 bundle/env-template/adapter handoff provenance, route-enable carries those
-`dispatch_roundtrip_*` fields, manifest inputs, and consistency flags forward
-for broker-dispatch planning. The
+`dispatch_roundtrip_*` fields plus the validated round-trip source credential
+env-template and `live_fetch_contract` snapshot, manifest inputs, and
+consistency flags forward for broker-dispatch planning. The
 wrapper runs `review-route-enable` under a nested
 `route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready
