@@ -4935,8 +4935,11 @@ batch readiness fields/config, upstream proof lineage, and inherited
 `upstream_*_vendor_market_data_batch_*` readiness fields/config. It also
 preserves the capture bundle, blank credential env-template, and adapter
 handoff paths, source credential env-template proof, and `live_fetch_contract`
-inherited from route-enable so broker dispatch reviewers can trace the live
-data source before generating non-submitting dry-run orders. The
+inherited from route-enable. It also carries the route-enable-retained
+validated dispatch round-trip source credential env-template,
+`live_fetch_contract`, and source-provenance consistency flags so broker
+dispatch reviewers can trace the exact live data source before generating
+non-submitting dry-run orders. The
 wrapper runs `plan-broker-dispatch` under a nested `broker_dispatch` folder,
 and writes provider checks/summary/action/config/runbook artifacts. Fully clean
 wrappers emit a ready `prepare_provider_imbalance_broker_dispatch_send` action
