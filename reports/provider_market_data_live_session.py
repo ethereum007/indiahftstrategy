@@ -220,6 +220,7 @@ def _checks(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    source_session = _mapping(packet.get("session"))
     return [
         _check("client_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "provider client packet is required"),
         _check("client_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "provider client packet JSON could not be read"),
@@ -232,6 +233,10 @@ def _checks(
         _check("credential_env_vars_present_in_runtime", sum(env_presence.values()), "==", len(env_presence), all(env_presence.values()) if config.require_env_present else True, "required credential environment variables are missing from runtime"),
         _check("credential_env_template_carried", _text(credential_env_template.get("path")), "exists", True, bool(credential_env_template.get("exists")) and bool(_text(credential_env_template.get("sha256"))), "provider client packet must carry blank credential env-template proof"),
         _check("source_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher", "provider client packet must carry the upstream live fetch-contract handoff"),
+        _check("source_exchange_carried", _text(packet.get("exchange")), "is_not", "", bool(_text(packet.get("exchange"))), "provider client packet must carry source exchange/segment metadata"),
+        _check("source_session_contract_carried", _session_contract_text(source_session), "has", "timezone/open/close", _source_session_carried(source_session), "provider client packet must carry source session timezone and open/close metadata"),
+        _check("source_session_matches_market_profile", _session_contract_text(source_session), "==", _profile_session_text(profile), _source_session_matches_profile(source_session, profile), "source session metadata must match the selected market profile"),
+        _check("source_live_fetch_contract_metadata_matches_packet", _live_contract_metadata_text(live_fetch_contract), "==", "client packet source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract), "live fetch contract exchange/session metadata must match the provider client packet"),
         _check("trade_date_weekday", trade_day.isoformat(), "weekday", "Mon-Fri", trade_day.weekday() < 5 or config.allow_weekend, "trade date is a weekend; pass allow_weekend only for test captures"),
         _check("market_session_known", profile.name, "known", True, bool(profile.name), "market profile must be known"),
         _check("windows_present", len(windows), ">=", 1, len(windows) >= 1, "at least one capture window is required"),
@@ -255,6 +260,7 @@ def _summary(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    source_session = _mapping(packet.get("session"))
     return pd.DataFrame(
         [
             {
@@ -264,11 +270,16 @@ def _summary(
                 "transport": _text(packet.get("transport")),
                 "template_kind": _text(packet.get("template_kind")),
                 "market": profile.name,
+                "exchange": _text(packet.get("exchange")),
                 "kind": _text(packet.get("kind")),
                 "trade_date": trade_day.isoformat(),
                 "timezone": profile.session.timezone,
                 "session_open_local": _seconds_to_hhmm(profile.session.open_seconds),
                 "session_close_local": _seconds_to_hhmm(profile.session.close_seconds),
+                "source_session_timezone": _text(source_session.get("timezone")),
+                "source_session_open_local": _text(source_session.get("open_local")),
+                "source_session_close_local": _text(source_session.get("close_local")),
+                "source_session_matches_market_profile": _source_session_matches_profile(source_session, profile),
                 "window_count": int(len(windows)),
                 "total_capture_seconds": int(pd.to_numeric(windows["duration_seconds"], errors="coerce").sum()) if not windows.empty else 0,
                 "credential_env_var_count": int(len(env_presence)),
@@ -355,6 +366,13 @@ def _session_packet(
         "transport": _text(packet.get("transport")),
         "template_kind": _text(packet.get("template_kind")),
         "market": profile.name,
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": {
+            "timezone": str(summary["timezone"]),
+            "open_local": str(summary["session_open_local"]),
+            "close_local": str(summary["session_close_local"]),
+        },
         "kind": _text(packet.get("kind")),
         "endpoint": _text(packet.get("endpoint")),
         "request": _mapping(packet.get("request")),
@@ -407,6 +425,8 @@ def _config(
             "session_close_local": str(summary["session_close_local"]),
             "window_count": int(summary["window_count"]),
         },
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
         "credential_env_template": _credential_env_template_contract(summary),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "packet": packet,
@@ -527,7 +547,14 @@ def _check(check: str, value: object, operator: str, threshold: object, passed: 
 def _next_gate_for_check(check: str) -> str:
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
-    if check in {"credential_env_template_carried", "source_live_fetch_contract_carried"}:
+    if check in {
+        "credential_env_template_carried",
+        "source_live_fetch_contract_carried",
+        "source_exchange_carried",
+        "source_session_contract_carried",
+        "source_session_matches_market_profile",
+        "source_live_fetch_contract_metadata_matches_packet",
+    }:
         return "prepare-provider-market-data-client"
     if check.startswith("credential"):
         return "provider_credentials_runtime"
@@ -555,6 +582,13 @@ def _repair_action(check: str) -> str:
         return "regenerate_provider_client_with_credential_env_template"
     if check == "source_live_fetch_contract_carried":
         return "regenerate_provider_client_with_source_live_fetch_contract"
+    if check in {
+        "source_exchange_carried",
+        "source_session_contract_carried",
+        "source_session_matches_market_profile",
+        "source_live_fetch_contract_metadata_matches_packet",
+    }:
+        return "regenerate_provider_client_with_market_session_contract"
     if check.startswith("credential"):
         return "load_provider_credentials_into_runtime"
     if check.startswith("window") or check.startswith("trade_date"):
@@ -569,8 +603,10 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Trade date: {summary['trade_date']}",
         f"- Session: {summary['session_open_local']} - {summary['session_close_local']} {summary['timezone']}",
+        f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         f"- Post-capture batch command: `{summary['post_capture_batch_command']}`",
         "",
@@ -665,6 +701,67 @@ def _credential_env_template_from_packet(packet: dict[str, Any]) -> dict[str, An
     }
 
 
+def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_session_timezone"]),
+        "open_local": str(summary["source_session_open_local"]),
+        "close_local": str(summary["source_session_close_local"]),
+    }
+
+
+def _source_session_carried(session: dict[str, Any]) -> bool:
+    return all(_text(session.get(key)) for key in ("timezone", "open_local", "close_local"))
+
+
+def _source_session_matches_profile(session: dict[str, Any], profile) -> bool:
+    if not _source_session_carried(session):
+        return False
+    return (
+        _text(session.get("timezone")) == profile.session.timezone
+        and _wall_clock_seconds(session.get("open_local")) == profile.session.open_seconds
+        and _wall_clock_seconds(session.get("close_local")) == profile.session.close_seconds
+    )
+
+
+def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_contract: dict[str, Any]) -> bool:
+    if not bool(live_fetch_contract.get("available")):
+        return True
+    packet_session = _mapping(packet.get("session"))
+    contract_session = _mapping(live_fetch_contract.get("session"))
+    return (
+        _text(live_fetch_contract.get("exchange")) == _text(packet.get("exchange"))
+        and _text(live_fetch_contract.get("market")) == _text(packet.get("market"))
+        and _text(contract_session.get("timezone")) == _text(packet_session.get("timezone"))
+        and _wall_clock_seconds(contract_session.get("open_local")) == _wall_clock_seconds(packet_session.get("open_local"))
+        and _wall_clock_seconds(contract_session.get("close_local")) == _wall_clock_seconds(packet_session.get("close_local"))
+    )
+
+
+def _session_contract_text(session: dict[str, Any]) -> str:
+    return (
+        f"{_text(session.get('timezone'))}|"
+        f"{_text(session.get('open_local'))}|"
+        f"{_text(session.get('close_local'))}"
+    )
+
+
+def _profile_session_text(profile) -> str:
+    return (
+        f"{profile.session.timezone}|"
+        f"{_seconds_to_hhmm(profile.session.open_seconds)}|"
+        f"{_seconds_to_hhmm(profile.session.close_seconds)}"
+    )
+
+
+def _live_contract_metadata_text(live_fetch_contract: dict[str, Any]) -> str:
+    session = _mapping(live_fetch_contract.get("session"))
+    return (
+        f"{_text(live_fetch_contract.get('market'))}|"
+        f"{_text(live_fetch_contract.get('exchange'))}|"
+        f"{_session_contract_text(session)}"
+    )
+
+
 def _validate_config(config: ProviderMarketDataLiveSessionConfig) -> None:
     if not str(config.trade_date).strip():
         raise ValueError("trade_date is required")
@@ -713,6 +810,20 @@ def _seconds_to_hhmm(seconds: int) -> str:
     hour = seconds // 3600
     minute = (seconds % 3600) // 60
     return f"{hour:02d}:{minute:02d}"
+
+
+def _wall_clock_seconds(value: object) -> int | None:
+    parts = _text(value).split(":")
+    if len(parts) not in {2, 3}:
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return hour * 3600 + minute * 60 + second
 
 
 def _shell_quote(value: object) -> str:

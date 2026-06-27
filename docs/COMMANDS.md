@@ -4403,8 +4403,11 @@ This writes `provider_market_data_live_session_windows.csv`,
 `provider_market_data_live_session_packet.json`, summary/check/action/config
 artifacts, and a runbook. It records only credential environment-variable
 names, runtime presence booleans, the blank env-template path/hash, and the
-upstream `live_fetch_contract`. The session packet includes per-window capture
-paths and the exact post-capture `pipeline-provider-market-data-batch` command.
+upstream `live_fetch_contract`. It also verifies that the provider client
+packet still carries exchange/segment plus source-session metadata matching the
+selected market profile, then preserves that proof in the session packet. The
+session packet includes per-window capture paths and the exact post-capture
+`pipeline-provider-market-data-batch` command.
 
 Run a pre-market preflight against that session packet before starting the
 credentialed provider client:

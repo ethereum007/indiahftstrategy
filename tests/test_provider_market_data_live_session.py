@@ -77,8 +77,13 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert report.ready
     assert summary["trade_date"] == "2026-06-23"
     assert summary["window_count"] == 2
+    assert summary["exchange"] == "NFO"
     assert summary["session_open_local"] == "09:15"
     assert summary["session_close_local"] == "15:30"
+    assert summary["source_session_timezone"] == "Asia/Kolkata"
+    assert summary["source_session_open_local"] == "09:15:00"
+    assert summary["source_session_close_local"] == "15:30:00"
+    assert bool(summary["source_session_matches_market_profile"])
     assert bool(summary["credential_env_template_exists"])
     assert len(summary["credential_env_template_sha256"]) == 64
     assert bool(summary["source_live_fetch_contract_available"])
@@ -90,9 +95,18 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert windows["within_market_session"].astype(bool).all()
     assert packet["authentication"]["values_stored"] is False
     assert packet["authentication"]["env_template"]["exists"] is True
+    assert packet["exchange"] == "NFO"
+    assert packet["source_session"] == {
+        "timezone": "Asia/Kolkata",
+        "open_local": "09:15:00",
+        "close_local": "15:30:00",
+    }
+    assert packet["market_session"]["open_local"] == "09:15"
     assert packet["live_fetch_contract"]["available"] is True
     assert packet["capture_windows"][0]["label"] == "open"
     assert config["ready"]
+    assert config["exchange"] == "NFO"
+    assert config["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["credential_env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
     assert config["live_fetch_contract"]["available"] is True
     assert config["primary_action"]["action"] == "run_provider_live_capture_windows"
@@ -168,6 +182,52 @@ def test_provider_market_data_live_session_blocks_missing_live_contract(tmp_path
     assert report.config["live_fetch_contract"]["available"] is False
     assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-client"
     assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_source_live_fetch_contract"
+
+
+def test_provider_market_data_live_session_blocks_missing_source_session_contract(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    payload = json.loads(client_packet.read_text(encoding="utf-8"))
+    payload.pop("exchange", None)
+    payload["session"] = {"timezone": "", "open_local": "", "close_local": ""}
+    client_packet.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:30",),
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {"source_exchange_carried", "source_session_contract_carried"} <= failed
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-client"
+    assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_market_session_contract"
+
+
+def test_provider_market_data_live_session_blocks_source_session_mismatch(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    payload = json.loads(client_packet.read_text(encoding="utf-8"))
+    payload["session"]["open_local"] = "09:30:00"
+    payload["live_fetch_contract"]["session"]["open_local"] = "09:30:00"
+    client_packet.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:30",),
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "source_session_matches_market_profile" in failed
+    assert report.config["source_session"]["open_local"] == "09:30:00"
+    assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_market_session_contract"
 
 
 def test_provider_market_data_live_session_plan_blocks_out_of_session_window(tmp_path):
