@@ -142,9 +142,10 @@
   research evidence into broker handoff artifacts:
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
   runs the standard imbalance launch pipeline, preserves capture
-  bundle/env-template/adapter handoff provenance in the launch wrapper
-  summary/config/runbook artifacts plus manifest, and points ready packets to
-  the full `review-strategy-evidence --profile imbalance` gate.
+  bundle/env-template/adapter handoff provenance, source env-template proof, and
+  `live_fetch_contract` in the launch wrapper summary/config/runbook artifacts
+  plus manifest, and points ready packets to the full
+  `review-strategy-evidence --profile imbalance` gate.
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture
