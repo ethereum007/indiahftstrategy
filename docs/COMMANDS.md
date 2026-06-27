@@ -4746,7 +4746,8 @@ wrapper, then writes provider checks/summary/action/config/runbook artifacts
 plus a nested `runtime_telemetry` folder with `runtime_telemetry.csv`,
 `runtime_telemetry_sources.csv`, `runtime_telemetry_checks.csv`, and
 `runtime_telemetry_summary.csv`. The provider wrapper also retains the upstream
-capture bundle, blank credential env-template, and adapter handoff paths in its
+capture bundle, blank credential env-template, adapter handoff paths, source
+credential env-template proof, and `live_fetch_contract` in its
 summary/config/runbook and manifest. Supply live PnL, open-order, and position
 CSVs when they are available from Arrow.money/iRage; omit them for a dry
 guard-input snapshot based on scale-up and launch-pipeline metadata. A ready
