@@ -161,6 +161,9 @@ def write_provider_market_data_imbalance_runtime_guard(
     adapter_handoff = _path_from_text(summary_row["adapter_handoff_path"])
     if adapter_handoff is not None and adapter_handoff.exists():
         inputs["adapter_handoff"] = adapter_handoff
+    source_env_template = _path_from_text(summary_row["source_credential_env_template_path"])
+    if source_env_template is not None and source_env_template.exists():
+        inputs["source_credential_env_template"] = source_env_template
 
     write_experiment_manifest(
         out,
@@ -179,6 +182,16 @@ def write_provider_market_data_imbalance_runtime_guard(
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "source_credential_env_template": {
+                "path": str(summary_row["source_credential_env_template_path"]),
+                "exists": bool(summary_row["source_credential_env_template_exists"]),
+                "sha256": str(summary_row["source_credential_env_template_sha256"]),
+            },
+            "live_fetch_contract": {
+                "available": bool(summary_row["source_live_fetch_contract_available"]),
+                "next_gate": str(summary_row["source_live_fetch_contract_next_gate"]),
+                "command_template": str(summary_row["source_live_fetch_contract_command_template"]),
+            },
         },
     )
     return ProviderMarketDataImbalanceRuntimeGuardReport(guard, checks, summary, action_queue, payload, out)
@@ -350,6 +363,24 @@ def _summary(
                 "adapter_handoff_path": _first_text(provider_summary, "adapter_handoff_path"),
                 "adapter_handoff_provided": _first_bool(provider_summary, "adapter_handoff_provided"),
                 "adapter_handoff_exists": _first_bool(provider_summary, "adapter_handoff_exists"),
+                "source_credential_env_template_path": _first_text(
+                    provider_summary, "source_credential_env_template_path"
+                ),
+                "source_credential_env_template_exists": _first_bool(
+                    provider_summary, "source_credential_env_template_exists"
+                ),
+                "source_credential_env_template_sha256": _first_text(
+                    provider_summary, "source_credential_env_template_sha256"
+                ),
+                "source_live_fetch_contract_available": _first_bool(
+                    provider_summary, "source_live_fetch_contract_available"
+                ),
+                "source_live_fetch_contract_next_gate": _first_text(
+                    provider_summary, "source_live_fetch_contract_next_gate"
+                ),
+                "source_live_fetch_contract_command_template": _first_text(
+                    provider_summary, "source_live_fetch_contract_command_template"
+                ),
                 "runtime_guard_dir": "" if guard is None else str(guard.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -544,6 +575,14 @@ def _config(
             "adapter_handoff_path": str(summary["adapter_handoff_path"]),
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+            "source_credential_env_template_path": str(summary["source_credential_env_template_path"]),
+            "source_credential_env_template_exists": bool(summary["source_credential_env_template_exists"]),
+            "source_credential_env_template_sha256": str(summary["source_credential_env_template_sha256"]),
+            "source_live_fetch_contract_available": bool(summary["source_live_fetch_contract_available"]),
+            "source_live_fetch_contract_next_gate": str(summary["source_live_fetch_contract_next_gate"]),
+            "source_live_fetch_contract_command_template": str(
+                summary["source_live_fetch_contract_command_template"]
+            ),
         },
         "provider_runtime_telemetry": _first_record(provider_summary),
         "runtime_guard": {
@@ -581,6 +620,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
         f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
+        f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
+        f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         "",
         "## Checks",
         "",
