@@ -323,6 +323,21 @@ def write_provider_market_data_imbalance_broker_readiness(
             "dispatch_roundtrip_adapter_handoff_matches_session": bool(
                 summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]
             ),
+            "dispatch_roundtrip_source_provenance_consistent": bool(
+                summary_row["dispatch_roundtrip_source_provenance_consistent"]
+            ),
+            "dispatch_roundtrip_source_credential_env_template_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_credential_env_template_matches_session"]
+            ),
+            "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"]
+            ),
             "dispatch_roundtrip_vendor_market_data_batch_ready": bool(
                 summary_row["dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
@@ -513,6 +528,30 @@ def _dispatch_roundtrip_provenance_checks(
             _first_text(provider_roundtrip_summary, "adapter_handoff_path"),
             "dispatch round-trip adapter handoff does not match provider runtime session",
         ),
+        _provenance_check(
+            "dispatch_roundtrip_source_credential_env_template_consistent",
+            _first_text(session_summary, "source_credential_env_template_path"),
+            _first_text(provider_roundtrip_summary, "source_credential_env_template_path"),
+            "dispatch round-trip source credential env template does not match provider runtime session",
+        ),
+        _text_consistency_check(
+            "dispatch_roundtrip_source_credential_env_template_sha256_consistent",
+            _first_text(session_summary, "source_credential_env_template_sha256"),
+            _first_text(provider_roundtrip_summary, "source_credential_env_template_sha256"),
+            "dispatch round-trip source credential env template digest does not match provider runtime session",
+        ),
+        _text_consistency_check(
+            "dispatch_roundtrip_live_fetch_contract_next_gate_consistent",
+            _first_text(session_summary, "source_live_fetch_contract_next_gate"),
+            _first_text(provider_roundtrip_summary, "source_live_fetch_contract_next_gate"),
+            "dispatch round-trip live fetch contract next gate does not match provider runtime session",
+        ),
+        _text_consistency_check(
+            "dispatch_roundtrip_live_fetch_contract_command_template_consistent",
+            _first_text(session_summary, "source_live_fetch_contract_command_template"),
+            _first_text(provider_roundtrip_summary, "source_live_fetch_contract_command_template"),
+            "dispatch round-trip live fetch contract command template does not match provider runtime session",
+        ),
     ]
 
 
@@ -523,6 +562,17 @@ def _provenance_check(check: str, expected: str, actual: str, reason: str) -> di
         "matches",
         expected or "runtime_session_provenance_or_empty",
         _provenance_matches(expected, actual),
+        reason,
+    )
+
+
+def _text_consistency_check(check: str, expected: str, actual: str, reason: str) -> dict[str, Any]:
+    return _check(
+        check,
+        actual or "not_provided",
+        "matches",
+        expected or "runtime_session_provenance_or_empty",
+        _text_matches(expected, actual),
         reason,
     )
 
@@ -589,6 +639,46 @@ def _summary(
                     session_summary,
                     "source_live_fetch_contract_command_template",
                 ),
+                "dispatch_roundtrip_source_credential_env_template_path": _first_text(
+                    provider_roundtrip_summary,
+                    "source_credential_env_template_path",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_exists": _first_bool(
+                    provider_roundtrip_summary,
+                    "source_credential_env_template_exists",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_sha256": _first_text(
+                    provider_roundtrip_summary,
+                    "source_credential_env_template_sha256",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_matches_session": _provenance_matches(
+                    _first_text(session_summary, "source_credential_env_template_path"),
+                    _first_text(provider_roundtrip_summary, "source_credential_env_template_path"),
+                ),
+                "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": _text_matches(
+                    _first_text(session_summary, "source_credential_env_template_sha256"),
+                    _first_text(provider_roundtrip_summary, "source_credential_env_template_sha256"),
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_available": _first_bool(
+                    provider_roundtrip_summary,
+                    "source_live_fetch_contract_available",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_next_gate": _first_text(
+                    provider_roundtrip_summary,
+                    "source_live_fetch_contract_next_gate",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_command_template": _first_text(
+                    provider_roundtrip_summary,
+                    "source_live_fetch_contract_command_template",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": _text_matches(
+                    _first_text(session_summary, "source_live_fetch_contract_next_gate"),
+                    _first_text(provider_roundtrip_summary, "source_live_fetch_contract_next_gate"),
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": _text_matches(
+                    _first_text(session_summary, "source_live_fetch_contract_command_template"),
+                    _first_text(provider_roundtrip_summary, "source_live_fetch_contract_command_template"),
+                ),
                 "dispatch_roundtrip_capture_bundle_path": _first_text(
                     provider_roundtrip_summary,
                     "capture_bundle_path",
@@ -654,6 +744,26 @@ def _summary(
                         _provenance_matches(
                             _first_text(session_summary, "adapter_handoff_path"),
                             _first_text(provider_roundtrip_summary, "adapter_handoff_path"),
+                        ),
+                    ]
+                ),
+                "dispatch_roundtrip_source_provenance_consistent": all(
+                    [
+                        _provenance_matches(
+                            _first_text(session_summary, "source_credential_env_template_path"),
+                            _first_text(provider_roundtrip_summary, "source_credential_env_template_path"),
+                        ),
+                        _text_matches(
+                            _first_text(session_summary, "source_credential_env_template_sha256"),
+                            _first_text(provider_roundtrip_summary, "source_credential_env_template_sha256"),
+                        ),
+                        _text_matches(
+                            _first_text(session_summary, "source_live_fetch_contract_next_gate"),
+                            _first_text(provider_roundtrip_summary, "source_live_fetch_contract_next_gate"),
+                        ),
+                        _text_matches(
+                            _first_text(session_summary, "source_live_fetch_contract_command_template"),
+                            _first_text(provider_roundtrip_summary, "source_live_fetch_contract_command_template"),
                         ),
                     ]
                 ),
@@ -896,6 +1006,39 @@ def _config(
             "adapter_handoff_exists": bool(summary["dispatch_roundtrip_adapter_handoff_exists"]),
             "adapter_handoff_matches_session": bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"]),
             "consistent_with_runtime_session": bool(summary["dispatch_roundtrip_capture_provenance_consistent"]),
+            "source_credential_env_template_path": str(
+                summary["dispatch_roundtrip_source_credential_env_template_path"]
+            ),
+            "source_credential_env_template_exists": bool(
+                summary["dispatch_roundtrip_source_credential_env_template_exists"]
+            ),
+            "source_credential_env_template_sha256": str(
+                summary["dispatch_roundtrip_source_credential_env_template_sha256"]
+            ),
+            "source_credential_env_template_matches_session": bool(
+                summary["dispatch_roundtrip_source_credential_env_template_matches_session"]
+            ),
+            "source_credential_env_template_sha256_matches_session": bool(
+                summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"]
+            ),
+            "source_live_fetch_contract_available": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_available"]
+            ),
+            "source_live_fetch_contract_next_gate": str(
+                summary["dispatch_roundtrip_source_live_fetch_contract_next_gate"]
+            ),
+            "source_live_fetch_contract_command_template": str(
+                summary["dispatch_roundtrip_source_live_fetch_contract_command_template"]
+            ),
+            "source_live_fetch_contract_next_gate_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"]
+            ),
+            "source_live_fetch_contract_command_template_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"]
+            ),
+            "source_provenance_consistent_with_runtime_session": bool(
+                summary["dispatch_roundtrip_source_provenance_consistent"]
+            ),
         },
         "provider_runtime_session": _first_record(session_summary),
         "provider_runtime_session_config": session_config,
@@ -966,6 +1109,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Dispatch round-trip adapter handoff: {summary['dispatch_roundtrip_adapter_handoff_path'] or 'not provided'}",
         "- Dispatch round-trip provenance consistent: "
         f"{'yes' if bool(summary['dispatch_roundtrip_capture_provenance_consistent']) else 'no'}",
+        "- Dispatch round-trip source credential env template: "
+        f"{summary['dispatch_roundtrip_source_credential_env_template_path'] or 'not provided'}",
+        "- Dispatch round-trip source provenance consistent: "
+        f"{'yes' if bool(summary['dispatch_roundtrip_source_provenance_consistent']) else 'no'}",
         f"- Dispatch round-trip ready: {'yes' if bool(summary['dispatch_roundtrip_ready']) else 'no'}",
         f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
         "- Dispatch round-trip vendor batch ready: "
@@ -1121,7 +1268,7 @@ def _recommendation_for_check(check: str) -> str:
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "rebuild_provider_launch_pipeline_broker_artifacts"
     if check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"):
-        return "rerun_provider_broker_dispatch_roundtrip_from_same_runtime_capture_bundle"
+        return "rerun_provider_broker_dispatch_roundtrip_from_same_runtime_and_live_source_provenance"
     if check.startswith("broker_readiness"):
         return "rerun_generic_broker_readiness_with_required_artifacts"
     return "repair_provider_broker_readiness_inputs"
@@ -1328,6 +1475,14 @@ def _provenance_matches(expected: object, actual: object) -> bool:
     if not expected_text or not actual_text:
         return True
     return _path_identity(expected_text) == _path_identity(actual_text)
+
+
+def _text_matches(expected: object, actual: object) -> bool:
+    expected_text = _clean(expected)
+    actual_text = _clean(actual)
+    if not expected_text or not actual_text:
+        return True
+    return expected_text == actual_text
 
 
 def _path_identity(value: str) -> str:

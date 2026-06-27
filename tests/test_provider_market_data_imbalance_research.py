@@ -2524,8 +2524,10 @@ def test_provider_market_data_imbalance_broker_readiness_carries_capture_bundle_
 
 def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_capture_bundle_provenance(tmp_path):
     launch_evidence, bundle_path = _write_bundle_linked_provider_imbalance_launch_evidence(tmp_path)
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
     adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    source_env_template_path = Path(bundle["source_credential_env_template"]["path"])
     ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
     route_readiness = write_provider_market_data_imbalance_route_readiness(
         launch_evidence.output_dir,
@@ -2632,13 +2634,28 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert Path(summary["dispatch_roundtrip_source_credential_env_template_path"]) == source_env_template_path
+    assert bool(summary["dispatch_roundtrip_source_credential_env_template_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert bool(checks.loc["dispatch_roundtrip_capture_bundle_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_capture_env_template_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_adapter_handoff_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_source_credential_env_template_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_source_credential_env_template_sha256_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_next_gate_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_command_template_consistent", "passed"])
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_path"] == str(
+        source_env_template_path
+    )
+    assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_matches_session"]
+    assert config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
     assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
@@ -2646,8 +2663,12 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_capture_env_template_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
     assert str(adapter_handoff_path) in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
+    assert str(source_env_template_path) in runbook
+    assert "- Dispatch round-trip source provenance consistent: yes" in runbook
 
 
 def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispatch_roundtrip_root(tmp_path):
@@ -2733,6 +2754,68 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_captur
     assert bool(checks.loc["dispatch_roundtrip_adapter_handoff_consistent", "passed"])
     assert not bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
     assert not bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert report.action_queue.iloc[0]["next_gate"] == (
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    )
+    assert report.action_queue.iloc[0]["action"] == "repair_provider_imbalance_broker_dispatch_roundtrip"
+
+
+def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_source_mismatch(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    runtime_source = tmp_path / "runtime_source_credentials.env"
+    roundtrip_source = tmp_path / "roundtrip_source_credentials.env"
+    runtime_source.write_text("IRAGE_CLIENT_ID=runtime\n", encoding="utf-8")
+    roundtrip_source.write_text("IRAGE_CLIENT_ID=roundtrip\n", encoding="utf-8")
+
+    session_summary_path = (
+        runtime_session.output_dir / "provider_market_data_imbalance_runtime_session_summary.csv"
+    )
+    session_summary = pd.read_csv(session_summary_path)
+    session_summary["source_credential_env_template_path"] = str(runtime_source)
+    session_summary["source_credential_env_template_exists"] = True
+    session_summary["source_credential_env_template_sha256"] = "a" * 64
+    session_summary["source_live_fetch_contract_available"] = True
+    session_summary["source_live_fetch_contract_next_gate"] = "provider_fetcher"
+    session_summary["source_live_fetch_contract_command_template"] = "python -m hft_cli fetch-provider-live-data"
+    session_summary.to_csv(session_summary_path, index=False)
+
+    roundtrip_summary_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    roundtrip_summary = pd.read_csv(roundtrip_summary_path)
+    roundtrip_summary["source_credential_env_template_path"] = str(roundtrip_source)
+    roundtrip_summary["source_credential_env_template_exists"] = True
+    roundtrip_summary["source_credential_env_template_sha256"] = "a" * 64
+    roundtrip_summary["source_live_fetch_contract_available"] = True
+    roundtrip_summary["source_live_fetch_contract_next_gate"] = "provider_fetcher"
+    roundtrip_summary["source_live_fetch_contract_command_template"] = "python -m hft_cli fetch-provider-live-data"
+    roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_with_source_mismatch"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    summary = report.summary.iloc[0]
+    checks = report.checks.set_index("check")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert not bool(checks.loc["dispatch_roundtrip_source_credential_env_template_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_source_credential_env_template_sha256_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_next_gate_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_command_template_consistent", "passed"])
+    assert not bool(summary["dispatch_roundtrip_source_credential_env_template_matches_session"])
+    assert not bool(summary["dispatch_roundtrip_source_provenance_consistent"])
+    assert not config["dispatch_roundtrip_provenance"]["source_credential_env_template_matches_session"]
+    assert not config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
+    assert not manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
     assert report.action_queue.iloc[0]["next_gate"] == (
         "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     )

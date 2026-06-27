@@ -4826,11 +4826,13 @@ capture bundle, blank credential env-template, adapter handoff paths, source
 credential env-template proof, and `live_fetch_contract` in the provider
 summary/config/runbook plus manifest, so broker integration reviewers can trace
 the live data source without opening nested runtime-session folders.
-When a provider round-trip proof carries its own capture bundle/env-template or
-adapter handoff path, broker-readiness records those as
-`dispatch_roundtrip_*` provenance, adds manifest inputs for them, and fails
-closed back to `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
-if they conflict with the runtime-session provenance.
+When a provider round-trip proof carries its own capture bundle/env-template,
+adapter handoff path, source credential env-template proof, or
+`live_fetch_contract`, broker-readiness records those as
+`dispatch_roundtrip_*` provenance, adds manifest inputs/metadata for them, and
+fails closed back to
+`review-provider-market-data-imbalance-broker-dispatch-roundtrip` if they
+conflict with the runtime-session provenance.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
 batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields
