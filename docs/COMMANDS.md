@@ -4515,8 +4515,9 @@ This writes `provider_market_data_live_evidence_summary.csv`,
 `provider_market_data_live_evidence_captures.csv`, check/action/config
 artifacts, and a manifest. If the live ingest carried a capture bundle, the
 evidence manifest also fingerprints that bundle, its credential env-template,
-and the adapter handoff contract before research handoff. It blocks captures
-that still have rehearsal sidecars (`*.csv.rehearsal.json`) from being marked
+the adapter handoff contract, source env-template proof, and upstream
+`live_fetch_contract` before research handoff. It blocks captures that still
+have rehearsal sidecars (`*.csv.rehearsal.json`) from being marked
 research-ready, even if the ingest and batch pipelines passed. Use
 `--allow-synthetic-rehearsal` only to classify a smoke test; the recommendation
 remains to replace synthetic captures with real Arrow.money/iRage provider

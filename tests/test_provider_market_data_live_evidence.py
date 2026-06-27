@@ -129,6 +129,14 @@ def _write_bundle_linked_real_ingest(tmp_path):
     return ingest, bundle_path
 
 
+def _mutate_json(path, mutator):
+    target = Path(path)
+    payload = json.loads(target.read_text(encoding="utf-8"))
+    mutator(payload)
+    target.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return target
+
+
 def _write_rehearsal_ingest(tmp_path):
     plan = _write_live_plan(tmp_path)
     live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
@@ -180,8 +188,10 @@ def test_provider_market_data_live_evidence_accepts_real_provider_ingest(tmp_pat
 
 def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tmp_path):
     ingest, bundle_path = _write_bundle_linked_real_ingest(tmp_path)
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
     adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    source_env_template_path = Path(bundle["source_credential_env_template"]["path"])
     out_dir = tmp_path / "evidence_with_bundle"
 
     report = write_provider_market_data_live_evidence_review(
@@ -203,13 +213,82 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
     assert summary["adapter_handoff_provided"]
     assert summary["adapter_handoff_exists"]
+    assert Path(summary["source_credential_env_template_path"]) == source_env_template_path
+    assert summary["source_credential_env_template_exists"]
+    assert len(summary["source_credential_env_template_sha256"]) == 64
+    assert summary["source_live_fetch_contract_available"]
+    assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["capture_bundle"]["adapter_handoff_exists"] is True
+    assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
+    assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
+    assert manifest["extra"]["source_credential_env_template"]["exists"] is True
+    assert manifest["extra"]["live_fetch_contract"]["available"] is True
+
+
+def test_provider_market_data_live_evidence_blocks_missing_source_env_template(tmp_path):
+    ingest, _ = _write_bundle_linked_real_ingest(tmp_path)
+    ingest_config_path = ingest.output_dir / "provider_market_data_live_ingest_config.json"
+    manifest_path = ingest.output_dir / "manifest.json"
+    _mutate_json(
+        ingest_config_path,
+        lambda payload: payload["capture_bundle"].update(
+            {"source_credential_env_template": {"path": "", "exists": False, "sha256": ""}}
+        ),
+    )
+    _mutate_json(
+        manifest_path,
+        lambda payload: (
+            payload["inputs"].pop("source_credential_env_template", None),
+            payload["extra"].update({"source_credential_env_template": {"path": "", "exists": False, "sha256": ""}}),
+        ),
+    )
+
+    report = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_source_credential_env_template_carried" in failed
+    assert not bool(report.summary.iloc[0]["source_credential_env_template_exists"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_source_env_template"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
+
+
+def test_provider_market_data_live_evidence_blocks_missing_live_fetch_contract(tmp_path):
+    ingest, _ = _write_bundle_linked_real_ingest(tmp_path)
+    ingest_config_path = ingest.output_dir / "provider_market_data_live_ingest_config.json"
+    manifest_path = ingest.output_dir / "manifest.json"
+    _mutate_json(
+        ingest_config_path,
+        lambda payload: payload["capture_bundle"].update({"live_fetch_contract": {"available": False}}),
+    )
+    _mutate_json(
+        manifest_path,
+        lambda payload: payload["extra"].update({"live_fetch_contract": {"available": False}}),
+    )
+
+    report = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_live_fetch_contract_carried" in failed
+    assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 
 def test_provider_market_data_live_evidence_blocks_synthetic_rehearsal_by_default(tmp_path):
