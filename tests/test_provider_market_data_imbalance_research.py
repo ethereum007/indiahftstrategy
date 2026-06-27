@@ -897,8 +897,10 @@ def test_provider_market_data_imbalance_evidence_reviews_ready_research_profile(
 
 def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenance(tmp_path):
     evidence, bundle_path = _write_bundle_linked_real_evidence(tmp_path)
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
     adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
+    source_env_template_path = Path(bundle["source_credential_env_template"]["path"])
     research = write_provider_market_data_imbalance_research(
         evidence.output_dir,
         tmp_path / "provider_imbalance_research",
@@ -926,13 +928,26 @@ def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenan
     assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["adapter_handoff_provided"])
     assert bool(summary["adapter_handoff_exists"])
+    assert Path(summary["source_credential_env_template_path"]) == source_env_template_path
+    assert bool(summary["source_credential_env_template_exists"])
+    assert len(summary["source_credential_env_template_sha256"]) == 64
+    assert bool(summary["source_live_fetch_contract_available"])
+    assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
+    assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
     assert config["provider_research"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["provider_research"]["source_credential_env_template_path"] == str(source_env_template_path)
+    assert config["provider_research"]["source_live_fetch_contract_available"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
+    assert manifest["extra"]["source_credential_env_template"]["exists"] is True
+    assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
 
 
