@@ -86,6 +86,11 @@ def write_provider_market_data_live_capture_bundle(
     preflight_path = Path((config or ProviderMarketDataLiveCaptureBundleConfig()).preflight_config_path)
     if str(preflight_path) and preflight_path.exists():
         inputs["preflight_config"] = preflight_path
+    source_env_template = _mapping(report.bundle.get("source_credential_env_template"))
+    if source_env_template.get("path"):
+        source_env_template_path = Path(str(source_env_template["path"]))
+        if source_env_template_path.exists():
+            inputs["source_credential_env_template"] = source_env_template_path
     write_experiment_manifest(
         out,
         run_type="provider_market_data_live_capture_bundle",
@@ -97,6 +102,8 @@ def write_provider_market_data_live_capture_bundle(
             "failed_checks": int(report.summary.iloc[0]["failed_checks"]),
             "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
             "adapter_handoff_file": ADAPTER_HANDOFF_NAME,
+            "source_credential_env_template": source_env_template,
+            "live_fetch_contract": _mapping(report.bundle.get("live_fetch_contract")),
         },
     )
     return ProviderMarketDataLiveCaptureBundleReport(
@@ -127,7 +134,7 @@ def evaluate_provider_market_data_live_capture_bundle(
     action_queue = _action_queue(checks, ready)
     summary = _summary(packet_path, packet, preflight_path, preflight, env_presence, commands, checks, action_queue, config, ready)
     bundle = _bundle(summary.iloc[0], packet_path, packet, preflight_path, preflight, env_presence, commands, checks, action_queue, config)
-    adapter_handoff = _adapter_handoff(summary.iloc[0], packet_path, packet, preflight_path, env_presence, commands, config)
+    adapter_handoff = _adapter_handoff(summary.iloc[0], packet_path, packet, preflight_path, preflight, env_presence, commands, config)
     return ProviderMarketDataLiveCaptureBundleReport(commands, checks, summary, action_queue, bundle, adapter_handoff)
 
 
@@ -239,6 +246,27 @@ def _checks(
     existing_capture_count = int(commands["capture_exists"].astype(bool).sum()) if not commands.empty else 0
     preflight_provided = bool(config.preflight_config_path)
     preflight_packet_match = _preflight_packet_matches(packet_path, packet, preflight) if preflight_provided and not preflight_error else False
+    preflight_required = bool(preflight_provided or config.require_preflight_ready)
+    source_env_template = _preflight_credential_env_template(preflight)
+    live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    source_env_template_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and bool(source_env_template.get("exists"))
+            and bool(_text(source_env_template.get("sha256")))
+        )
+    )
+    live_fetch_contract_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and bool(live_fetch_contract.get("available"))
+            and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher"
+        )
+    )
     return [
         _check("live_session_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "live session packet is required"),
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
@@ -247,6 +275,8 @@ def _checks(
         _check("preflight_config_json_readable", preflight_error or "ok", "is", "ok", not preflight_error if preflight_provided else not config.require_preflight_ready, preflight_error or "preflight config could not be read"),
         _check("preflight_config_ready", bool(preflight.get("ready")), "is", True, bool(preflight.get("ready")) if preflight_provided else not config.require_preflight_ready, "preflight must be ready before capture bundling"),
         _check("preflight_packet_matches_session", preflight_packet_match, "is", True, preflight_packet_match if preflight_provided else not config.require_preflight_ready, "preflight config must reference the same live session packet"),
+        _check("preflight_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, source_env_template_ok, "preflight config must carry blank source credential env-template proof"),
+        _check("preflight_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, live_fetch_contract_ok, "preflight config must carry the upstream live fetch-contract handoff"),
         _check("credential_values_not_stored", bool(_mapping(packet.get("authentication")).get("values_stored", True)), "is", False, bool(_mapping(packet.get("authentication")).get("values_stored", True)) is False, "live session packet must not store credential values"),
         _check("credential_env_vars_present", len(env_presence), ">=", 1, len(env_presence) >= 1, "credential env-var names are required"),
         _check("credential_env_vars_present_in_runtime", sum(env_presence.values()), "==", len(env_presence), all(env_presence.values()) if require_env else True, "required credential environment variables are missing from runtime"),
@@ -273,6 +303,8 @@ def _summary(
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     blocked = int((action_queue["queue_status"].astype(str) == "blocked").sum()) if not action_queue.empty else 0
     next_action = action_queue.iloc[0] if not action_queue.empty else None
+    source_env_template = _preflight_credential_env_template(preflight)
+    live_fetch_contract = _preflight_live_fetch_contract(preflight)
     return pd.DataFrame(
         [
             {
@@ -289,6 +321,12 @@ def _summary(
                 "credential_env_var_count": int(len(env_presence)),
                 "credential_env_vars": ";".join(env_presence.keys()),
                 "credential_env_vars_present": int(sum(env_presence.values())),
+                "source_credential_env_template_path": _text(source_env_template.get("path")),
+                "source_credential_env_template_exists": bool(source_env_template.get("exists")),
+                "source_credential_env_template_sha256": _text(source_env_template.get("sha256")),
+                "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
+                "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
+                "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
                 "require_env_present": bool(config.require_env_present or bool(_mapping(preflight.get("parameters")).get("require_env_present", False))),
                 "adapter_template_default": not bool(config.adapter_command_template),
                 "ingest_output_dir": _ingest_output_dir(packet, config),
@@ -367,12 +405,17 @@ def _bundle(
             "env_vars": list(env_presence.keys()),
             "env_presence": env_presence,
             "env_template": ENV_TEMPLATE_NAME,
+            "source_env_template": _credential_env_template_contract(summary),
             "values_stored": False,
         },
+        "source_credential_env_template": _credential_env_template_contract(summary),
+        "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "preflight": {
             "ready": bool(preflight.get("ready")) if config.preflight_config_path else False,
             "next_gate": _text(preflight.get("next_gate")),
             "primary_action_status": _text(preflight.get("primary_action_status")),
+            "credential_env_template": _credential_env_template_contract(summary),
+            "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         },
         "adapter_handoff": ADAPTER_HANDOFF_NAME,
         "commands": command_records,
@@ -393,6 +436,7 @@ def _adapter_handoff(
     packet_path: Path,
     packet: dict[str, Any],
     preflight_path: Path,
+    preflight: dict[str, Any],
     env_presence: dict[str, bool],
     commands: pd.DataFrame,
     config: ProviderMarketDataLiveCaptureBundleConfig,
@@ -416,9 +460,12 @@ def _adapter_handoff(
             "env_vars": list(env_presence.keys()),
             "env_presence": env_presence,
             "env_template": ENV_TEMPLATE_NAME,
+            "source_env_template": _credential_env_template_contract(summary),
             "values_stored": False,
             "injection": _text(auth.get("injection")),
         },
+        "source_credential_env_template": _credential_env_template_contract(summary),
+        "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "output": {
             "format": _text(output.get("format")),
             "filename": _text(output.get("filename")),
@@ -459,6 +506,33 @@ def _preflight_packet_matches(packet_path: Path, packet: dict[str, Any], preflig
                 return True
     session_packet = _mapping(preflight.get("session_packet"))
     return _text(session_packet.get("client_packet_path")) == _text(packet.get("client_packet_path"))
+
+
+def _preflight_credential_env_template(preflight: dict[str, Any]) -> dict[str, Any]:
+    env_template = _mapping(preflight.get("credential_env_template"))
+    if not env_template:
+        auth = _mapping(_mapping(preflight.get("session_packet")).get("authentication"))
+        env_template = _mapping(auth.get("env_template"))
+    return {
+        "path": _text(env_template.get("path")),
+        "exists": bool(env_template.get("exists")),
+        "sha256": _text(env_template.get("sha256")),
+    }
+
+
+def _preflight_live_fetch_contract(preflight: dict[str, Any]) -> dict[str, Any]:
+    contract = _mapping(preflight.get("live_fetch_contract"))
+    if not contract:
+        contract = _mapping(_mapping(preflight.get("session_packet")).get("live_fetch_contract"))
+    return contract.copy()
+
+
+def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "path": str(summary["source_credential_env_template_path"]),
+        "exists": bool(summary["source_credential_env_template_exists"]),
+        "sha256": str(summary["source_credential_env_template_sha256"]),
+    }
 
 
 def _ingest_command(packet_path: Path, packet: dict[str, Any], config: ProviderMarketDataLiveCaptureBundleConfig) -> str:
@@ -528,6 +602,10 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("live_session_packet"):
         return "repair_provider_live_session_packet"
+    if check == "preflight_credential_env_template_carried":
+        return "rerun_preflight_with_credential_env_template"
+    if check == "preflight_live_fetch_contract_carried":
+        return "rerun_preflight_with_live_fetch_contract"
     if check.startswith("preflight"):
         return "rerun_provider_market_data_live_preflight"
     if check.startswith("credential"):
@@ -549,7 +627,8 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
         f"- Commands: {summary['command_count']}",
-        f"- Credential env template: `{ENV_TEMPLATE_NAME}`",
+        f"- Capture env template: `{ENV_TEMPLATE_NAME}`",
+        f"- Source credential env template: {summary['source_credential_env_template_path'] or 'missing'}",
         f"- Adapter handoff: `{ADAPTER_HANDOFF_NAME}`",
         f"- Post-capture ingest: `{summary['post_capture_ingest_command']}`",
         "",
