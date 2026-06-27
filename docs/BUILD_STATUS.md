@@ -1550,8 +1550,11 @@
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream
   vendor-market-data batch lineage in acknowledgement summary/config/runbook
-  artifacts and manifests before the final provider round-trip wrapper is
-  trusted.
+  artifacts and manifests. It now also carries the send-retained validated
+  round-trip capture bundle/env-template/adapter handoff paths and
+  provenance-consistency flags through acknowledgement summary/config/runbook
+  artifacts plus manifest inputs/metadata before the final provider round-trip
+  wrapper is trusted.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof and vendor-market-data batch
   proof as upstream lineage while also generating a fresh nested

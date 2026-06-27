@@ -3809,6 +3809,16 @@ and allocation blockers route to `review-cutover-gate`. Use
 `--fail-on-blocked-actions` when blocked acknowledgement actions should stop
 automation, or `--fail-on-actions` when any ack action should stop automation.
 
+When the provider broker-dispatch-send wrapper retained validated dispatch
+round-trip capture provenance, acknowledgement reconciliation carries the same
+`dispatch_roundtrip_capture_bundle_*`,
+`dispatch_roundtrip_capture_env_template_*`,
+`dispatch_roundtrip_adapter_handoff_*`, and
+`dispatch_roundtrip_capture_provenance_consistent` fields into its
+summary/config/runbook and manifest inputs/extra metadata. That keeps the
+live-capture bundle, blank credential env-template, and adapter handoff lineage
+visible before the final provider round-trip wrapper consumes ack evidence.
+
 The gate matches acknowledgements by `dispatch_order_id` with
 `source_order_id` fallback, accepts common broker success status names, and
 fails closed on unready dispatch plans, missing acknowledgements, rejected
