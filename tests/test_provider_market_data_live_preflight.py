@@ -72,6 +72,14 @@ def _first_capture_path(live_packet_path):
     return Path(packet["capture_windows"][0]["capture_path"])
 
 
+def _mutate_live_packet(live_packet_path, mutator):
+    packet_path = Path(live_packet_path)
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    mutator(packet)
+    packet_path.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return packet_path
+
+
 def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_path):
     plan = _write_live_plan(tmp_path)
     live_packet = _live_packet(plan)
@@ -96,14 +104,26 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert config["ready"]
     assert config["primary_action"]["next_gate"] == "provider_fetcher_live_run"
     assert config["environment"]["values_stored"] is False
+    assert summary["credential_env_template_exists"]
+    assert len(summary["credential_env_template_sha256"]) == 64
+    assert summary["source_live_fetch_contract_available"]
+    assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert config["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
+    assert config["live_fetch_contract"]["available"] is True
     assert "ARROW_MONEY_API_KEY" in config["session_packet"]["authentication"]["env_vars"]
+    assert config["session_packet"]["authentication"]["env_template"]["sha256"] == summary["credential_env_template_sha256"]
+    assert config["session_packet"]["live_fetch_contract"]["available"] is True
     assert sorted(config["session_packet"]["authentication"].keys()) == [
         "env_presence",
+        "env_template",
         "env_vars",
         "injection",
         "values_stored",
     ]
     assert manifest["run_type"] == "provider_market_data_live_preflight"
+    assert manifest["inputs"]["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
+    assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["live_fetch_contract"]["available"] is True
 
 
 def test_provider_market_data_live_preflight_blocks_existing_capture_collision(tmp_path):
@@ -146,6 +166,50 @@ def test_provider_market_data_live_preflight_blocks_missing_runtime_env_when_req
     assert not report.ready
     assert "credential_env_vars_present_in_runtime" in failed
     assert report.action_queue.loc[0, "next_gate"] == "provider_credentials_runtime"
+
+
+def test_provider_market_data_live_preflight_blocks_missing_env_template_provenance(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _mutate_live_packet(
+        _live_packet(plan),
+        lambda packet: packet["authentication"].pop("env_template"),
+    )
+    out_dir = tmp_path / "preflight"
+
+    report = write_provider_market_data_live_session_preflight(
+        live_packet,
+        out_dir,
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads((out_dir / "provider_market_data_live_preflight_config.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert "credential_env_template_carried" in failed
+    assert config["credential_env_template"]["exists"] is False
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_credential_env_template"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_preflight_blocks_missing_live_fetch_contract(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _mutate_live_packet(
+        _live_packet(plan),
+        lambda packet: packet.update({"live_fetch_contract": {"available": False}}),
+    )
+
+    report = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "source_live_fetch_contract_carried" in failed
+    assert report.config["live_fetch_contract"]["available"] is False
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_source_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-live-session"
 
 
 def test_cli_provider_market_data_live_preflight_accepts_session_packet(tmp_path):

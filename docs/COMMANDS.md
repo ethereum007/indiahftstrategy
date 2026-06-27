@@ -4414,14 +4414,17 @@ python -m hft_cli preflight-provider-market-data-live-session `
 ```
 
 This verifies the session packet is ready, credential env-var names are present
-and available in the runtime when required, capture output directories are
-writable, planned capture files do not already exist, the batch output has not
-already been ingested, and the local clock has not passed the final capture
-window. It writes `provider_market_data_live_preflight_summary.csv`,
+and available in the runtime when required, the blank source env-template
+path/hash and upstream `live_fetch_contract` survived the live-session handoff,
+capture output directories are writable, planned capture files do not already
+exist, the batch output has not already been ingested, and the local clock has
+not passed the final capture window. It writes
+`provider_market_data_live_preflight_summary.csv`,
 `provider_market_data_live_preflight_windows.csv`,
 `provider_market_data_live_preflight_checks.csv`,
 `provider_market_data_live_preflight_action_queue.csv`, config/runbook
-artifacts, and a manifest without storing credential values.
+artifacts, and a manifest that fingerprints the blank env-template without
+storing credential values.
 
 Bundle the preflighted session into a per-window provider adapter handoff:
 

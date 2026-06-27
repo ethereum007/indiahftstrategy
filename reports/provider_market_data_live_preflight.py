@@ -77,6 +77,11 @@ def write_provider_market_data_live_session_preflight(
     batch_summary_path = Path(str(report.summary.iloc[0]["batch_output_dir"])) / BATCH_SUMMARY_NAME
     if batch_summary_path.exists():
         inputs["existing_batch_summary"] = batch_summary_path
+    credential_env_template = _mapping(report.config.get("credential_env_template"))
+    if credential_env_template.get("path"):
+        credential_env_template_path = Path(str(credential_env_template["path"]))
+        if credential_env_template_path.exists():
+            inputs["credential_env_template"] = credential_env_template_path
     write_experiment_manifest(
         out,
         run_type="provider_market_data_live_preflight",
@@ -87,6 +92,8 @@ def write_provider_market_data_live_session_preflight(
             "timing_status": str(report.summary.iloc[0]["timing_status"]),
             "failed_checks": int(report.summary.iloc[0]["failed_checks"]),
             "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
+            "credential_env_template": credential_env_template,
+            "live_fetch_contract": _mapping(report.config.get("live_fetch_contract")),
         },
     )
     return ProviderMarketDataLivePreflightReport(
@@ -324,6 +331,9 @@ def _checks(
     existing_capture_count = int(windows["capture_exists"].astype(bool).sum()) if not windows.empty else 0
     client_packet_text = _text(packet.get("client_packet_path"))
     client_packet_exists = bool(client_packet_text and Path(client_packet_text).exists() and Path(client_packet_text).is_file())
+    authentication = _mapping(packet.get("authentication"))
+    credential_env_template = _mapping(authentication.get("env_template"))
+    live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
     credential_runtime_ok = all(env_presence.values()) if config.require_env_present else True
     collision_ok = config.allow_existing_captures or existing_capture_count == 0
     batch_collision_ok = config.allow_existing_batch or not bool(batch["summary_exists"])
@@ -336,9 +346,11 @@ def _checks(
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
         _check("live_session_packet_ready", bool(packet.get("ready")), "is", True, bool(packet.get("ready")), "live session plan must be ready before preflight"),
         _check("client_packet_path_exists", client_packet_text, "exists", True, client_packet_exists, "client packet referenced by live session plan is required"),
-        _check("credential_values_not_stored", bool(_mapping(packet.get("authentication")).get("values_stored", True)), "is", False, bool(_mapping(packet.get("authentication")).get("values_stored", True)) is False, "live session packet must not store credential values"),
+        _check("credential_values_not_stored", bool(authentication.get("values_stored", True)), "is", False, bool(authentication.get("values_stored", True)) is False, "live session packet must not store credential values"),
         _check("credential_env_vars_present", len(env_presence), ">=", 1, len(env_presence) >= 1, "credential env-var names are required"),
         _check("credential_env_vars_present_in_runtime", sum(env_presence.values()), "==", len(env_presence), credential_runtime_ok, "required credential environment variables are missing from runtime"),
+        _check("credential_env_template_carried", _text(credential_env_template.get("path")), "exists", True, bool(credential_env_template.get("exists")) and bool(_text(credential_env_template.get("sha256"))), "live session packet must carry blank credential env-template proof"),
+        _check("source_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher", "live session packet must carry the upstream live fetch-contract handoff"),
         _check("capture_windows_present", capture_count, ">=", 1, capture_count >= 1, "live session packet must include capture windows"),
         _check("capture_window_times_parseable", int(clock["time_parse_error_count"]), "==", 0, int(clock["time_parse_error_count"]) == 0, str(clock["time_parse_errors"]) or "capture window times must parse"),
         _check("capture_output_dirs_writable", writable_count, "==", capture_count, capture_count >= 1 and writable_count == capture_count, "capture output directories must be creatable and writable"),
@@ -363,6 +375,9 @@ def _summary(
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     next_action = action_queue.iloc[0] if not action_queue.empty else None
+    authentication = _mapping(packet.get("authentication"))
+    credential_env_template = _mapping(authentication.get("env_template"))
+    live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
     return pd.DataFrame(
         [
             {
@@ -381,6 +396,12 @@ def _summary(
                 "credential_env_var_count": int(len(env_presence)),
                 "credential_env_vars": ";".join(env_presence.keys()),
                 "credential_env_vars_present": int(sum(env_presence.values())),
+                "credential_env_template_path": _text(credential_env_template.get("path")),
+                "credential_env_template_exists": bool(credential_env_template.get("exists")),
+                "credential_env_template_sha256": _text(credential_env_template.get("sha256")),
+                "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
+                "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
+                "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
                 "require_env_present": bool(config.require_env_present),
                 "now_local": str(clock["now_local"]),
                 "timing_status": str(clock["timing_status"]),
@@ -453,6 +474,8 @@ def _config(
         "parameters": asdict(config),
         "live_session_packet_path": str(packet_path),
         "session_packet": _safe_packet_view(packet, env_presence),
+        "credential_env_template": _credential_env_template_contract(summary),
+        "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "clock": clock,
         "environment": {
             "env_vars": [{"name": name, "present": bool(present)} for name, present in env_presence.items()],
@@ -488,9 +511,11 @@ def _safe_packet_view(packet: dict[str, Any], env_presence: dict[str, bool]) -> 
         "authentication": {
             "env_vars": list(env_presence.keys()),
             "env_presence": env_presence,
+            "env_template": _mapping(auth.get("env_template")),
             "values_stored": bool(auth.get("values_stored", True)),
             "injection": _text(auth.get("injection")),
         },
+        "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "capture_windows": [
             {
                 "label": _text(row.get("label")),
@@ -513,6 +538,8 @@ def _next_gate_for_check(check: str) -> str:
         return "plan-provider-market-data-live-session"
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
+    if check in {"credential_env_template_carried", "source_live_fetch_contract_carried"}:
+        return "plan-provider-market-data-live-session"
     if check.startswith("credential"):
         return "provider_credentials_runtime"
     if check.startswith("batch_output"):
@@ -544,6 +571,10 @@ def _repair_action(check: str) -> str:
         return "repair_provider_live_session_packet"
     if check.startswith("client_packet"):
         return "repair_provider_client_packet"
+    if check == "credential_env_template_carried":
+        return "regenerate_live_session_with_credential_env_template"
+    if check == "source_live_fetch_contract_carried":
+        return "regenerate_live_session_with_source_live_fetch_contract"
     if check.startswith("credential"):
         return "load_provider_credentials_into_runtime"
     if check == "capture_files_do_not_already_exist":
@@ -569,6 +600,7 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
         f"- Timing: {summary['timing_status']} at {summary['now_local']}",
+        f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         f"- Expected captures: {summary['expected_capture_count']}",
         f"- Existing captures: {summary['existing_capture_count']}",
         f"- Batch output: {summary['batch_output_dir']}",
@@ -688,3 +720,11 @@ def _jsonable(value: object) -> object:
     except (TypeError, ValueError):
         pass
     return value
+
+
+def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "path": str(summary["credential_env_template_path"]),
+        "exists": bool(summary["credential_env_template_exists"]),
+        "sha256": str(summary["credential_env_template_sha256"]),
+    }
