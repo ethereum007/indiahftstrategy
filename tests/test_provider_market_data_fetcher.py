@@ -85,11 +85,14 @@ def test_provider_market_data_fetcher_writes_websocket_template(tmp_path):
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert template["transport"] == "websocket"
+    assert template["exchange"] == "NFO"
+    assert template["session"]["timezone"] == "Asia/Kolkata"
     assert template["authentication"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
     assert template["authentication"]["env_template"]["exists"] is True
     assert len(template["authentication"]["env_template"]["sha256"]) == 64
     assert template["authentication"]["values_stored"] is False
     assert template["subscriptions"][0]["symbol"] == "NIFTY-I"
+    assert template["subscriptions"][0]["exchange"] == "NFO"
     assert config["credentials"]["values_stored"] is False
     assert config["credentials"]["env_template"]["sha256"] == template["authentication"]["env_template"]["sha256"]
     assert config["fetch_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]

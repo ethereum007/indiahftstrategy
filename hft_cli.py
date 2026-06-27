@@ -1151,6 +1151,10 @@ def main(argv: list[str] | None = None) -> int:
     market_data_source.add_argument("--transport", default="file", choices=["file", "rest", "websocket"])
     market_data_source.add_argument("--source-uri", required=True)
     market_data_source.add_argument("--market", default="india_nse_index_derivatives")
+    market_data_source.add_argument("--exchange", default="NFO")
+    market_data_source.add_argument("--session-timezone", default="")
+    market_data_source.add_argument("--session-open", default="")
+    market_data_source.add_argument("--session-close", default="")
     market_data_source.add_argument("--auth-env", action="append", dest="auth_envs")
     market_data_source.add_argument("--label", default="")
     market_data_source.add_argument("--fail-on-breach", action="store_true")
@@ -4136,6 +4140,10 @@ def main(argv: list[str] | None = None) -> int:
                 transport=args.transport,
                 source_uri=args.source_uri,
                 market=args.market,
+                exchange=args.exchange,
+                session_timezone=args.session_timezone,
+                session_open=args.session_open,
+                session_close=args.session_close,
                 auth_env_vars=tuple(args.auth_envs or ()),
                 label=args.label,
             ),

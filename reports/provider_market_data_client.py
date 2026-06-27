@@ -395,6 +395,7 @@ def _summary(
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(fetch_plan.get("live_fetch_contract"))
     output = _mapping(template.get("output"))
+    session = _mapping(template.get("session"))
     env_vars = _string_list(authentication.get("env_vars"))
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     return pd.DataFrame(
@@ -409,6 +410,10 @@ def _summary(
                 "template_kind": _text(template.get("template_kind")),
                 "mode": _text(template.get("mode")),
                 "market": _text(template.get("market")),
+                "exchange": _text(template.get("exchange")),
+                "session_timezone": _text(session.get("timezone")),
+                "session_open_local": _text(session.get("open_local")),
+                "session_close_local": _text(session.get("close_local")),
                 "endpoint": _text(template.get("endpoint")),
                 "output_filename": _text(output.get("filename")),
                 "output_schema_columns": ";".join(output_schema["column"].astype(str).tolist())
@@ -584,6 +589,8 @@ def _client_packet(
         "provider": _text(template.get("provider")),
         "adapter": _text(template.get("adapter")),
         "market": _text(template.get("market")),
+        "exchange": _text(template.get("exchange")),
+        "session": _mapping(template.get("session")),
         "kind": _text(template.get("kind")),
         "transport": _text(template.get("transport")),
         "template_kind": _text(template.get("template_kind")),
@@ -669,6 +676,8 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Template: {summary['template_kind']}",
         f"- Kind: {summary['kind']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Session: {summary['session_open_local'] or '?'} - {summary['session_close_local'] or '?'} {summary['session_timezone'] or ''}",
         f"- Output: {summary['output_filename']}",
         f"- Output schema columns: {summary['output_schema_columns']}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",

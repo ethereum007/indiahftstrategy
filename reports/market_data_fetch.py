@@ -366,6 +366,7 @@ def _summary(
     ready: bool,
 ) -> pd.DataFrame:
     source = _mapping(source_config.get("source"))
+    session = _mapping(source_config.get("session"))
     credentials = _mapping(source_config.get("credentials"))
     live_fetch_contract = _mapping(source_config.get("live_fetch_contract"))
     credential_env_template_path = _credential_env_template_path(source_plan_path, source_config)
@@ -382,6 +383,10 @@ def _summary(
                 "transport": transport,
                 "mode": _fetch_mode(transport),
                 "market": _text(source_config.get("market")),
+                "exchange": _text(source_config.get("exchange")),
+                "session_timezone": _text(session.get("timezone")),
+                "session_open_local": _text(session.get("open_local")),
+                "session_close_local": _text(session.get("close_local")),
                 "source_uri": _text(source.get("uri")),
                 "source_uri_kind": _text(source.get("uri_kind")),
                 "symbols": ";".join(config.symbols),
@@ -559,6 +564,12 @@ def _source_plan_contract(summary: pd.Series, source_config: dict[str, Any]) -> 
         "kind": str(summary["kind"]),
         "transport": str(summary["transport"]),
         "market": str(summary["market"]),
+        "exchange": str(summary["exchange"]),
+        "session": {
+            "timezone": str(summary["session_timezone"]),
+            "open_local": str(summary["session_open_local"]),
+            "close_local": str(summary["session_close_local"]),
+        },
         "source": {
             "uri": str(summary["source_uri"]),
             "uri_kind": str(summary["source_uri_kind"]),
@@ -592,6 +603,8 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Transport: {summary['transport']}",
         f"- Mode: {summary['mode']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Session: {summary['session_open_local'] or '?'} - {summary['session_close_local'] or '?'} {summary['session_timezone'] or ''}",
         f"- Symbols: {summary['symbols'] or 'none'}",
         f"- Window: {summary['window_start'] or 'open'} to {summary['window_end'] or 'open'}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",

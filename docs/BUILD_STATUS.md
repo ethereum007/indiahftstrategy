@@ -49,6 +49,10 @@
   `market_data_source_env_template.env` sidecar and a manifest-backed
   `live_fetch_contract` command template so Arrow.money/iRage credential
   staging and dry-run fetch planning are traceable from the first backend gate.
+  Source, fetch, fetcher, and client handoffs now also preserve the provider
+  exchange/segment plus the market-session timezone/open/close window, giving
+  iRage/Arrow adapter wiring an explicit NSE/NFO session contract instead of
+  relying on implicit defaults.
 - Market-data fetch planning now consumes those source contracts:
   `plan-market-data-fetch` validates provider/file handoff, symbols, REST
   backfill windows, latency budgets, credential env-var references, and output

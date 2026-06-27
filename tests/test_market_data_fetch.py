@@ -73,6 +73,12 @@ def test_market_data_fetch_plan_accepts_arrow_websocket_source(tmp_path):
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert config["fetch"]["symbols"] == ["NIFTY-I", "BANKNIFTY-I"]
+    assert config["source_plan"]["exchange"] == "NFO"
+    assert config["source_plan"]["session"] == {
+        "timezone": "Asia/Kolkata",
+        "open_local": "09:15:00",
+        "close_local": "15:30:00",
+    }
     assert config["credentials"]["values_stored"] is False
     assert config["credentials"]["env_template"]["exists"] is True
     assert len(config["credentials"]["env_template"]["sha256"]) == 64

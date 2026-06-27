@@ -350,6 +350,7 @@ def _summary(
     credentials = _mapping(fetch_config.get("credentials"))
     credential_env_template = _mapping(credentials.get("env_template"))
     live_fetch_contract = _mapping(source_plan.get("live_fetch_contract"))
+    session = _mapping(source_plan.get("session"))
     env_vars = _string_list(credentials.get("env_vars"))
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     return pd.DataFrame(
@@ -363,6 +364,10 @@ def _summary(
                 "transport": _text(source_plan.get("transport")),
                 "mode": _text(fetch.get("mode")),
                 "market": _text(source_plan.get("market")),
+                "exchange": _text(source_plan.get("exchange")),
+                "session_timezone": _text(session.get("timezone")),
+                "session_open_local": _text(session.get("open_local")),
+                "session_close_local": _text(session.get("close_local")),
                 "source_uri": _text(_mapping(source_plan.get("source")).get("uri")),
                 "symbols": ";".join(_string_list(fetch.get("symbols"))),
                 "symbol_count": int(len(_string_list(fetch.get("symbols")))),
@@ -538,6 +543,8 @@ def _request_template(
         "adapter": _text(source_plan.get("adapter")),
         "kind": _text(source_plan.get("kind")),
         "market": _text(source_plan.get("market")),
+        "exchange": _text(source_plan.get("exchange")),
+        "session": _mapping(source_plan.get("session")),
         "transport": transport,
         "mode": _text(fetch.get("mode")),
         "endpoint": _text(_mapping(source_plan.get("source")).get("uri")),
@@ -569,6 +576,8 @@ def _request_template(
                     "window_start": _text(window.get("start")),
                     "window_end": _text(window.get("end")),
                     "kind": _text(source_plan.get("kind")),
+                    "market": _text(source_plan.get("market")),
+                    "exchange": _text(source_plan.get("exchange")),
                 },
             }
         )
@@ -581,6 +590,7 @@ def _request_template(
                         "symbol": symbol,
                         "kind": _text(source_plan.get("kind")),
                         "market": _text(source_plan.get("market")),
+                        "exchange": _text(source_plan.get("exchange")),
                     }
                     for symbol in symbols
                 ],
@@ -601,6 +611,8 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Transport: {summary['transport']}",
         f"- Mode: {summary['mode']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Session: {summary['session_open_local'] or '?'} - {summary['session_close_local'] or '?'} {summary['session_timezone'] or ''}",
         f"- Symbols: {summary['symbols'] or 'none'}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",
         f"- Credential env vars present: {summary['credential_env_vars_present']}",

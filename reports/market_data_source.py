@@ -6,11 +6,12 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pandas as pd
 
 from adapters.broker import get_adapter
-from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
+from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES, MARKET_PROFILES
 from reports.manifest import file_sha256, write_experiment_manifest
 
 
@@ -40,6 +41,7 @@ SUPPORTED_TRANSPORTS = ("file", "rest", "websocket")
 SECRET_QUERY_KEYS = {"api_key", "apikey", "key", "secret", "token", "access_token", "password"}
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 ENV_TEMPLATE_NAME = "market_data_source_env_template.env"
+DEFAULT_EXCHANGE = "NFO"
 
 
 @dataclass(frozen=True)
@@ -50,6 +52,10 @@ class MarketDataSourceConfig:
     transport: str = "file"
     source_uri: str = ""
     market: str = INDIA_NSE_INDEX_DERIVATIVES.name
+    exchange: str = DEFAULT_EXCHANGE
+    session_timezone: str = ""
+    session_open: str = ""
+    session_close: str = ""
     auth_env_vars: tuple[str, ...] = ()
     label: str = ""
 
@@ -130,13 +136,19 @@ def _normalize_config(config: MarketDataSourceConfig) -> MarketDataSourceConfig:
     provider_spec = PROVIDER_SPECS.get(provider, {})
     default_adapter = str(provider_spec.get("adapter", provider))
     adapter = _identity_key(config.adapter) or default_adapter
+    market = _identity_key(config.market) or INDIA_NSE_INDEX_DERIVATIVES.name
+    profile = MARKET_PROFILES.get(market, INDIA_NSE_INDEX_DERIVATIVES)
     return MarketDataSourceConfig(
         provider=provider,
         adapter=adapter,
         kind=_identity_key(config.kind) or "ticks",
         transport=_identity_key(config.transport) or "file",
         source_uri=str(config.source_uri or "").strip(),
-        market=_identity_key(config.market) or INDIA_NSE_INDEX_DERIVATIVES.name,
+        market=market,
+        exchange=_exchange_key(config.exchange) or DEFAULT_EXCHANGE,
+        session_timezone=str(config.session_timezone or profile.session.timezone).strip(),
+        session_open=_session_hhmmss(config.session_open, _seconds_to_hhmmss(profile.session.open_seconds)),
+        session_close=_session_hhmmss(config.session_close, _seconds_to_hhmmss(profile.session.close_seconds)),
         auth_env_vars=tuple(_normalize_auth_envs(config.auth_env_vars)),
         label=str(config.label or "").strip(),
     )
@@ -156,6 +168,8 @@ def _checks(config: MarketDataSourceConfig) -> list[dict[str, Any]]:
     auth_required = bool(provider_spec.get("auth_required", False)) if provider_spec else False
     auth_envs_valid = all(_auth_env_name_valid(value) for value in config.auth_env_vars)
     query_secret_keys = _secret_query_keys(config.source_uri)
+    session_open_valid = _hhmmss_seconds(config.session_open) is not None
+    session_close_valid = _hhmmss_seconds(config.session_close) is not None
     return [
         _check(
             "provider_known",
@@ -214,6 +228,46 @@ def _checks(config: MarketDataSourceConfig) -> list[dict[str, Any]]:
             "market-data source URI or file path is required",
         ),
         _check(
+            "exchange_present",
+            config.exchange,
+            "is_not",
+            "",
+            bool(config.exchange),
+            "exchange or segment code is required for provider handoff",
+        ),
+        _check(
+            "session_timezone_known",
+            config.session_timezone,
+            "known",
+            "IANA timezone",
+            _timezone_known(config.session_timezone),
+            "session timezone must be a valid IANA timezone such as Asia/Kolkata",
+        ),
+        _check(
+            "session_open_shape",
+            config.session_open,
+            "matches",
+            "HH:MM:SS",
+            session_open_valid,
+            "session open must be HH:MM:SS",
+        ),
+        _check(
+            "session_close_shape",
+            config.session_close,
+            "matches",
+            "HH:MM:SS",
+            session_close_valid,
+            "session close must be HH:MM:SS",
+        ),
+        _check(
+            "session_window_order",
+            f"{config.session_open}..{config.session_close}",
+            "<",
+            "close after open",
+            _session_window_order_valid(config.session_open, config.session_close),
+            "session close must be after session open",
+        ),
+        _check(
             "source_uri_shape",
             source_kind,
             "matches",
@@ -269,6 +323,10 @@ def _summary(config: MarketDataSourceConfig, checks: pd.DataFrame, ready: bool) 
                 "kind": config.kind,
                 "transport": config.transport,
                 "market": config.market,
+                "exchange": config.exchange,
+                "session_timezone": config.session_timezone,
+                "session_open_local": config.session_open,
+                "session_close_local": config.session_close,
                 "label": config.label,
                 "source_uri": _sanitize_uri(config.source_uri),
                 "source_uri_kind": source_kind,
@@ -384,6 +442,12 @@ def _config(
         "kind": str(summary["kind"]),
         "transport": str(summary["transport"]),
         "market": str(summary["market"]),
+        "exchange": str(summary["exchange"]),
+        "session": {
+            "timezone": str(summary["session_timezone"]),
+            "open_local": str(summary["session_open_local"]),
+            "close_local": str(summary["session_close_local"]),
+        },
         "label": str(summary["label"]),
         "source": {
             "uri": str(summary["source_uri"]),
@@ -445,6 +509,13 @@ def _live_fetch_contract(summary: pd.Series) -> dict[str, Any]:
             "command_template": "",
             "required_inputs": [],
             "credential_env_template_file": ENV_TEMPLATE_NAME,
+            "exchange": str(summary.get("exchange", "")),
+            "market": str(summary.get("market", "")),
+            "session": {
+                "timezone": str(summary.get("session_timezone", "")),
+                "open_local": str(summary.get("session_open_local", "")),
+                "close_local": str(summary.get("session_close_local", "")),
+            },
         }
     required_inputs = ["symbol"]
     if str(summary["transport"]) == "rest":
@@ -455,6 +526,13 @@ def _live_fetch_contract(summary: pd.Series) -> dict[str, Any]:
         "command_template": str(summary["live_fetch_contract_command"]),
         "required_inputs": required_inputs,
         "credential_env_template_file": ENV_TEMPLATE_NAME,
+        "exchange": str(summary["exchange"]),
+        "market": str(summary["market"]),
+        "session": {
+            "timezone": str(summary["session_timezone"]),
+            "open_local": str(summary["session_open_local"]),
+            "close_local": str(summary["session_close_local"]),
+        },
     }
 
 
@@ -491,6 +569,8 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Kind: {summary['kind']}",
         f"- Transport: {summary['transport']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange']}",
+        f"- Session: {summary['session_open_local']} - {summary['session_close_local']} {summary['session_timezone']}",
         f"- Source: {summary['source_uri']}",
         f"- Credential env vars: {summary['auth_env_vars'] or 'none'}",
     ]
@@ -626,6 +706,8 @@ def _env_template(env_vars: tuple[str, ...]) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("source_"):
         return "fix_market_data_source_uri"
+    if check.startswith("session_") or check.startswith("exchange_"):
+        return "fix_market_session_metadata"
     if check.startswith("auth_"):
         return "provide_credential_environment_variable_names"
     if check.startswith("provider"):
@@ -675,6 +757,55 @@ def _identity_key(value: object) -> str:
     if text.lower() in {"", "nan", "none", "<na>"}:
         return ""
     return text.lower().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _exchange_key(value: object) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.lower() in {"", "nan", "none", "<na>"}:
+        return ""
+    return text.upper().replace("-", "_").replace(" ", "_").replace(".", "_")
+
+
+def _seconds_to_hhmmss(value: int) -> str:
+    hour, remainder = divmod(int(value), 3600)
+    minute, second = divmod(remainder, 60)
+    return f"{hour:02d}:{minute:02d}:{second:02d}"
+
+
+def _session_hhmmss(value: object, default: str) -> str:
+    text = str(value or "").strip()
+    return text or default
+
+
+def _hhmmss_seconds(value: str) -> int | None:
+    parts = str(value or "").split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        hour, minute, second = (int(part) for part in parts)
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return hour * 3600 + minute * 60 + second
+
+
+def _session_window_order_valid(open_time: str, close_time: str) -> bool:
+    open_seconds = _hhmmss_seconds(open_time)
+    close_seconds = _hhmmss_seconds(close_time)
+    return open_seconds is not None and close_seconds is not None and open_seconds < close_seconds
+
+
+def _timezone_known(value: str) -> bool:
+    if not value:
+        return False
+    try:
+        ZoneInfo(value)
+    except ZoneInfoNotFoundError:
+        return False
+    return True
 
 
 def _jsonable(value: object) -> object:

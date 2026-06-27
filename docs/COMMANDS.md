@@ -4283,6 +4283,10 @@ python -m hft_cli plan-market-data-source `
   --auth-env ARROW_MONEY_API_KEY `
   --auth-env ARROW_MONEY_API_SECRET `
   --market india_nse_index_derivatives `
+  --exchange NFO `
+  --session-timezone Asia/Kolkata `
+  --session-open 09:15:00 `
+  --session-close 15:30:00 `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -4290,8 +4294,9 @@ python -m hft_cli plan-market-data-source `
 For historical replay or vendor onboarding from a file, use `--transport file`
 and point `--source-uri` at the raw CSV. The generated
 `market_data_source_config.json` stores provider, adapter, kind, transport,
-market, sanitized source URI, credential environment variable names, and the
-next gate. It also writes a blank `market_data_source_env_template.env` sidecar
+market, exchange/segment, session timezone/window, sanitized source URI,
+credential environment variable names, and the next gate. It also writes a
+blank `market_data_source_env_template.env` sidecar
 and records a `live_fetch_contract` command template for REST/websocket sources,
 so Arrow.money/iRage credentials can be staged by environment variable name
 before any provider API call is attempted. It never stores credential values and

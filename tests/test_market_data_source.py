@@ -74,14 +74,26 @@ def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
     assert report.ready
     assert summary["adapter"] == "arrow_money"
     assert summary["source_uri_kind"] == "wss"
+    assert summary["exchange"] == "NFO"
+    assert summary["session_timezone"] == "Asia/Kolkata"
+    assert summary["session_open_local"] == "09:15:00"
+    assert summary["session_close_local"] == "15:30:00"
     assert summary["auth_env_var_count"] == 2
     assert summary["credential_env_template_file"] == "market_data_source_env_template.env"
     assert bool(summary["live_fetch_contract_available"])
     assert "plan-market-data-fetch" in summary["live_fetch_contract_command"]
     assert config["normalized_pipeline"]["available"] is False
+    assert config["exchange"] == "NFO"
+    assert config["session"] == {
+        "timezone": "Asia/Kolkata",
+        "open_local": "09:15:00",
+        "close_local": "15:30:00",
+    }
     assert config["live_fetch_contract"]["available"] is True
     assert config["live_fetch_contract"]["next_gate"] == "provider_fetcher"
     assert config["live_fetch_contract"]["required_inputs"] == ["symbol"]
+    assert config["live_fetch_contract"]["exchange"] == "NFO"
+    assert config["live_fetch_contract"]["session"]["timezone"] == "Asia/Kolkata"
     assert "market_data_source_config.json" in config["live_fetch_contract"]["command_template"]
     assert "ARROW_MONEY_API_KEY=\n" in env_template
     assert "ARROW_MONEY_API_SECRET=\n" in env_template
@@ -118,6 +130,30 @@ def test_market_data_source_plan_blocks_missing_live_credentials_and_embedded_se
     assert "secret-value" not in config["source"]["uri"]
 
 
+def test_market_data_source_plan_blocks_invalid_session_metadata(tmp_path):
+    out_dir = tmp_path / "source_plan"
+
+    report = write_market_data_source_plan(
+        out_dir,
+        config=MarketDataSourceConfig(
+            provider="irage",
+            kind="ticks",
+            transport="websocket",
+            source_uri="wss://feed.irage.example/nse",
+            auth_env_vars=("IRAGE_API_KEY",),
+            session_timezone="Mars/Base",
+            session_open="15:30:00",
+            session_close="09:15:00",
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {"session_timezone_known", "session_window_order"} <= failed
+    config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
+    assert config["blocked_actions"][0]["action"] == "fix_market_session_metadata"
+
+
 def test_cli_market_data_source_plan(tmp_path):
     source = tmp_path / "irage_ticks.csv"
     source.write_text(
@@ -142,6 +178,14 @@ def test_cli_market_data_source_plan(tmp_path):
             "file",
             "--source-uri",
             str(source),
+            "--exchange",
+            "nfo",
+            "--session-timezone",
+            "Asia/Kolkata",
+            "--session-open",
+            "09:15:00",
+            "--session-close",
+            "15:30:00",
             "--fail-on-breach",
         ]
     )
@@ -150,3 +194,4 @@ def test_cli_market_data_source_plan(tmp_path):
     assert code == 0
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "provider"] == "irage"
+    assert summary.loc[0, "exchange"] == "NFO"
