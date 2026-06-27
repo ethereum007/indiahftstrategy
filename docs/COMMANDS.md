@@ -4544,11 +4544,12 @@ tick folds to `walkforward-imbalance-edge` and the follow-on
 `walkforward-imbalance-replay` command that consumes the edge
 `candidate_config.json`. If the live evidence came from an approved capture
 bundle, the handoff summary/config/runbook and manifest retain the capture
-bundle, blank credential env-template, and adapter handoff contract paths before
-strategy research starts. Synthetic smoke evidence and unsupported strategy lanes
-stay blocked: lead-lag needs explicit leader/laggard groups, while settlement,
-parity, and surface market-making need option-chain or surface inputs in
-addition to top-of-book ticks.
+bundle, blank credential env-template, adapter handoff contract paths, upstream
+source credential env-template proof, and `live_fetch_contract` before strategy
+research starts. Synthetic smoke evidence and unsupported strategy lanes stay
+blocked: lead-lag needs explicit leader/laggard groups, while settlement,
+parity, and surface market-making need option-chain or surface inputs in addition
+to top-of-book ticks.
 
 Run the first full provider-data imbalance research pilot directly from
 research-ready live evidence:

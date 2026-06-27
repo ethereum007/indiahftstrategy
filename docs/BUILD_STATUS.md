@@ -118,9 +118,10 @@
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds
   to imbalance edge/replay walk-forward runs, carries capture
-  bundle/env-template/adapter-handoff provenance into summary/config/runbook
-  artifacts plus the manifest, and keeps synthetic smoke evidence or unsupported
-  strategy lanes blocked until the needed real inputs exist.
+  bundle/env-template/adapter-handoff provenance, source env-template proof, and
+  `live_fetch_contract` into summary/config/runbook artifacts plus the manifest,
+  and keeps synthetic smoke evidence, missing upstream live-data contracts, or
+  unsupported strategy lanes blocked until the needed real inputs exist.
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real

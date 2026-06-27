@@ -77,6 +77,9 @@ def write_provider_market_data_research_handoff(
     adapter_handoff = _path_from_text(str(summary_row["adapter_handoff_path"]))
     if adapter_handoff is not None and adapter_handoff.exists():
         inputs["adapter_handoff"] = adapter_handoff
+    source_env_template = _path_from_text(str(summary_row["source_credential_env_template_path"]))
+    if source_env_template is not None and source_env_template.exists():
+        inputs["source_credential_env_template"] = source_env_template
     capture_paths = [Path(str(path)) for path in report.datasets["capture_path"].astype(str).tolist()] if not report.datasets.empty else []
     if capture_paths:
         inputs["captures"] = [path for path in capture_paths if path.exists()]
@@ -93,6 +96,16 @@ def write_provider_market_data_research_handoff(
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "source_credential_env_template": {
+                "path": str(summary_row["source_credential_env_template_path"]),
+                "exists": bool(summary_row["source_credential_env_template_exists"]),
+                "sha256": str(summary_row["source_credential_env_template_sha256"]),
+            },
+            "live_fetch_contract": {
+                "available": bool(summary_row["source_live_fetch_contract_available"]),
+                "next_gate": str(summary_row["source_live_fetch_contract_next_gate"]),
+                "command_template": str(summary_row["source_live_fetch_contract_command_template"]),
+            },
         },
     )
     return ProviderMarketDataResearchHandoffReport(
@@ -214,6 +227,11 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
     manifest_bundle = _mapping(manifest_inputs.get("capture_bundle"))
     manifest_env = _mapping(manifest_inputs.get("capture_env_template"))
     manifest_handoff = _mapping(manifest_inputs.get("adapter_handoff"))
+    manifest_source_env = _mapping(manifest_inputs.get("source_credential_env_template"))
+    manifest_extra = _mapping(manifest.get("extra"))
+    manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
+    bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
+    live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
     bundle_path = _path_from_text(
         _text(bundle.get("capture_bundle_path"))
         or _text(bundle.get("path"))
@@ -228,6 +246,36 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         _text(bundle.get("adapter_handoff_path"))
         or _text(manifest_handoff.get("path"))
     )
+    source_env_template_path = _path_from_text(
+        _text(bundle.get("source_credential_env_template_path"))
+        or _text(bundle_source_env.get("path"))
+        or _text(manifest_source_env.get("path"))
+        or _text(manifest_extra_source_env.get("path"))
+    )
+    source_env_template_exists = bool(
+        _truthy(bundle.get("source_credential_env_template_exists"))
+        or _truthy(bundle_source_env.get("exists"))
+        or _truthy(manifest_extra_source_env.get("exists"))
+        or (source_env_template_path is not None and source_env_template_path.exists())
+    )
+    source_env_template_sha256 = (
+        _text(bundle.get("source_credential_env_template_sha256"))
+        or _text(bundle_source_env.get("sha256"))
+        or _text(manifest_source_env.get("sha256"))
+        or _text(manifest_extra_source_env.get("sha256"))
+    )
+    live_fetch_available = bool(
+        _truthy(bundle.get("source_live_fetch_contract_available"))
+        or _truthy(live_fetch_contract.get("available"))
+    )
+    live_fetch_next_gate = (
+        _text(bundle.get("source_live_fetch_contract_next_gate"))
+        or _text(live_fetch_contract.get("next_gate"))
+    )
+    live_fetch_command_template = (
+        _text(bundle.get("source_live_fetch_contract_command_template"))
+        or _text(live_fetch_contract.get("command_template"))
+    )
     return {
         "capture_bundle_path": _path_text(bundle_path),
         "capture_bundle_provided": bool(bundle_path),
@@ -239,6 +287,13 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         "adapter_handoff_path": _path_text(adapter_handoff_path),
         "adapter_handoff_provided": bool(adapter_handoff_path),
         "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
+        "source_credential_env_template_path": _path_text(source_env_template_path),
+        "source_credential_env_template_provided": bool(source_env_template_path),
+        "source_credential_env_template_exists": source_env_template_exists,
+        "source_credential_env_template_sha256": source_env_template_sha256,
+        "source_live_fetch_contract_available": live_fetch_available,
+        "source_live_fetch_contract_next_gate": live_fetch_next_gate,
+        "source_live_fetch_contract_command_template": live_fetch_command_template,
     }
 
 
@@ -443,6 +498,8 @@ def _checks(
         _check("capture_bundle_exists", capture_provenance["capture_bundle_path"], "exists", True, bool(capture_provenance["capture_bundle_exists"]) if bundle_provided else True, "capture bundle referenced by live evidence is missing"),
         _check("capture_env_template_exists", capture_provenance["capture_env_template_path"], "exists", True, bool(capture_provenance["capture_env_template_exists"]) if env_template_required else True, "credential env-template referenced by live evidence is missing"),
         _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if handoff_required else True, "adapter handoff referenced by live evidence is missing"),
+        _check("capture_bundle_source_credential_env_template_carried", capture_provenance["source_credential_env_template_path"], "exists", True, bool(capture_provenance["source_credential_env_template_exists"]) and bool(capture_provenance["source_credential_env_template_sha256"]) if bundle_provided else True, "source credential env-template referenced by live evidence is missing"),
+        _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by live evidence is missing"),
         _check("live_evidence_ready", _first_bool(evidence_summary, "ready"), "is", True, _first_bool(evidence_summary, "ready"), "live evidence review is not ready"),
         _check("live_evidence_research_ready", _first_bool(evidence_summary, "research_ready"), "is", True, _first_bool(evidence_summary, "research_ready") or not config.require_research_ready, "live evidence is not research-ready"),
         _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_smoke else "allowed", synthetic_count == 0 or config.allow_synthetic_smoke, "synthetic rehearsal captures cannot be handed to strategy research"),
@@ -493,6 +550,12 @@ def _summary(
                 "adapter_handoff_path": str(capture_provenance["adapter_handoff_path"]),
                 "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
                 "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
+                "source_credential_env_template_path": str(capture_provenance["source_credential_env_template_path"]),
+                "source_credential_env_template_exists": bool(capture_provenance["source_credential_env_template_exists"]),
+                "source_credential_env_template_sha256": str(capture_provenance["source_credential_env_template_sha256"]),
+                "source_live_fetch_contract_available": bool(capture_provenance["source_live_fetch_contract_available"]),
+                "source_live_fetch_contract_next_gate": str(capture_provenance["source_live_fetch_contract_next_gate"]),
+                "source_live_fetch_contract_command_template": str(capture_provenance["source_live_fetch_contract_command_template"]),
                 "dataset_count": int(len(datasets)),
                 "ready_command_count": int((commands["queue_status"].astype(str) == "ready").sum()) if not commands.empty else 0,
                 "blocked_command_count": int((commands["queue_status"].astype(str) == "blocked").sum()) if not commands.empty else 0,
@@ -614,6 +677,10 @@ def _next_gate_help_command(next_gate: str) -> str:
 
 
 def _repair_action(check: str) -> str:
+    if check == "capture_bundle_source_credential_env_template_carried":
+        return "regenerate_capture_bundle_with_source_env_template"
+    if check == "capture_bundle_live_fetch_contract_carried":
+        return "regenerate_capture_bundle_with_live_fetch_contract"
     if (
         check.startswith("capture_bundle")
         or check.startswith("capture_env_template")
@@ -665,6 +732,8 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         f"- Capture bundle: {summary['capture_bundle_path']}",
         f"- Credential env template: {summary['capture_env_template_path']}",
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
+        f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
+        f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Ready commands: {summary['ready_command_count']}",
         "",
