@@ -1505,8 +1505,9 @@
   provider broker dispatch. `prepare-provider-market-data-imbalance-broker-dispatch-send`
   infers the nested generic `broker_dispatch` plan, reruns
   `prepare-broker-dispatch-send` under a nested folder, carries capture
-  bundle/env-template/adapter handoff provenance into provider
-  summary/config/runbook artifacts plus manifest, writes provider
+  bundle/env-template/adapter handoff provenance, source env-template proof,
+  and `live_fetch_contract` into provider summary/config/runbook artifacts plus
+  manifest, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean non-submitting send packets to
   dry-run acknowledgement capture via `reconcile-broker-dispatch`.
