@@ -94,6 +94,11 @@ def write_provider_market_data_client_plan(
     inputs: dict[str, Any] = {}
     if plan_path.exists():
         inputs["fetcher_plan"] = plan_path
+    credential_env_template = _credential_env_template_from_client_config(report.config)
+    if credential_env_template["path"]:
+        credential_env_template_path = Path(credential_env_template["path"])
+        if credential_env_template_path.exists():
+            inputs["credential_env_template"] = credential_env_template_path
     write_experiment_manifest(
         out,
         run_type="provider_market_data_client_dry_run",
@@ -105,6 +110,7 @@ def write_provider_market_data_client_plan(
         extra={
             "client": report.config["client"],
             "packet": report.packet,
+            "credential_env_template": credential_env_template,
             "output_schema_columns": report.output_schema["column"].astype(str).tolist(),
         },
     )
@@ -151,7 +157,10 @@ def _checks(
     output_schema: pd.DataFrame,
 ) -> list[dict[str, Any]]:
     template = _request_template(fetcher_config)
+    fetch_plan = _mapping(fetcher_config.get("fetch_plan"))
     authentication = _mapping(template.get("authentication"))
+    credential_env_template = _mapping(authentication.get("env_template"))
+    live_fetch_contract = _mapping(fetch_plan.get("live_fetch_contract"))
     output = _mapping(template.get("output"))
     runtime = _mapping(template.get("runtime"))
     env_vars = _string_list(authentication.get("env_vars"))
@@ -265,6 +274,22 @@ def _checks(
             "required credential environment variables are missing from runtime",
         ),
         _check(
+            "credential_env_template_carried",
+            _text(credential_env_template.get("path")),
+            "exists",
+            True,
+            bool(credential_env_template.get("exists")) and bool(_text(credential_env_template.get("sha256"))),
+            "request template must carry the blank credential env-template proof",
+        ),
+        _check(
+            "source_live_fetch_contract_carried",
+            bool(live_fetch_contract.get("available")),
+            "is",
+            True,
+            bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher",
+            "fetcher plan must carry the upstream live fetch-contract handoff",
+        ),
+        _check(
             "output_format_normalized_csv",
             _text(output.get("format")),
             "==",
@@ -365,7 +390,10 @@ def _summary(
     output_schema: pd.DataFrame,
 ) -> pd.DataFrame:
     template = _request_template(fetcher_config)
+    fetch_plan = _mapping(fetcher_config.get("fetch_plan"))
     authentication = _mapping(template.get("authentication"))
+    credential_env_template = _mapping(authentication.get("env_template"))
+    live_fetch_contract = _mapping(fetch_plan.get("live_fetch_contract"))
     output = _mapping(template.get("output"))
     env_vars = _string_list(authentication.get("env_vars"))
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -390,6 +418,14 @@ def _summary(
                 "credential_env_var_count": int(len(env_vars)),
                 "credential_env_vars": ";".join(env_vars),
                 "credential_env_vars_present": int(sum(_env_presence(env_vars).values())),
+                "credential_env_template_path": _text(credential_env_template.get("path")),
+                "credential_env_template_exists": bool(credential_env_template.get("exists")),
+                "credential_env_template_sha256": _text(credential_env_template.get("sha256")),
+                "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
+                "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
+                "source_live_fetch_contract_command_template": _text(
+                    live_fetch_contract.get("command_template")
+                ),
                 "require_env_present": bool(config.require_env_present),
                 "session_label": config.session_label,
                 "max_clock_skew_ms": int(config.max_clock_skew_ms),
@@ -495,6 +531,8 @@ def _config(
             "path": str(summary["fetcher_plan_path"]),
             "ready": bool(fetcher_config.get("ready")),
             "request_template": template,
+            "credential_env_template": _credential_env_template_contract(summary),
+            "live_fetch_contract": _mapping(_mapping(fetcher_config.get("fetch_plan")).get("live_fetch_contract")),
         },
         "client": {
             "dry_run": bool(config.dry_run),
@@ -508,6 +546,7 @@ def _config(
         "credentials": {
             "env_vars": env_vars,
             "env_presence": _env_presence(env_vars),
+            "env_template": _credential_env_template_contract(summary),
             "values_stored": False,
         },
         "output_schema": _records(output_schema),
@@ -553,6 +592,7 @@ def _client_packet(
         "authentication": {
             "env_vars": env_vars,
             "env_presence": _env_presence(env_vars),
+            "env_template": _mapping(authentication.get("env_template")),
             "values_stored": False,
             "injection": _text(authentication.get("injection")),
         },
@@ -632,6 +672,7 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Output schema columns: {summary['output_schema_columns']}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",
         f"- Credential env vars present: {summary['credential_env_vars_present']}",
+        f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         "",
         "## Actions",
     ]
@@ -683,6 +724,8 @@ def _blocked_next_gate(check: str) -> str:
         "credential_values_not_stored",
         "credential_env_vars_present",
         "credential_env_vars_are_names",
+        "credential_env_template_carried",
+        "source_live_fetch_contract_carried",
         "output_format_normalized_csv",
         "output_filename_safe",
         "output_schema_known",
@@ -708,8 +751,12 @@ def _repair_action(check: str) -> str:
         return "select_supported_live_provider_fetcher_plan"
     if check.startswith("endpoint"):
         return "repair_provider_endpoint_contract"
+    if check == "credential_env_template_carried":
+        return "regenerate_provider_fetcher_with_credential_env_template"
     if check.startswith("credential"):
         return "provide_runtime_credential_environment_variables"
+    if check == "source_live_fetch_contract_carried":
+        return "regenerate_provider_fetcher_with_source_live_fetch_contract"
     if check.startswith("output"):
         return "repair_provider_output_contract"
     if check.startswith("rest") or check.startswith("websocket"):
@@ -727,6 +774,24 @@ def _env_presence(env_vars: list[str]) -> dict[str, bool]:
 
 def _auth_env_name_valid(value: str) -> bool:
     return bool(ENV_NAME_RE.match(value)) and "=" not in value
+
+
+def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "path": str(summary["credential_env_template_path"]),
+        "exists": bool(summary["credential_env_template_exists"]),
+        "sha256": str(summary["credential_env_template_sha256"]),
+    }
+
+
+def _credential_env_template_from_client_config(client_config: dict[str, Any]) -> dict[str, Any]:
+    credentials = _mapping(client_config.get("credentials"))
+    env_template = _mapping(credentials.get("env_template"))
+    return {
+        "path": _text(env_template.get("path")),
+        "exists": bool(env_template.get("exists")),
+        "sha256": _text(env_template.get("sha256")),
+    }
 
 
 def _mapping(value: object) -> dict[str, Any]:

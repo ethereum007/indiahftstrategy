@@ -69,7 +69,8 @@
 - Provider market-data client dry-run packets now close the backend data-source
   handoff before live credentials: `prepare-provider-market-data-client`
   validates ready request templates, env-var contracts, normalized CSV output
-  schema, runtime budgets, and emits a manifest-backed execution packet for the
+  schema, runtime budgets, carried blank env-template proof, and carried
+  `live_fetch_contract`, then emits a manifest-backed execution packet for the
   eventual Arrow.money/iRage client without making external API calls.
 - Provider market-data live session planning now creates credential-safe capture
   packets before the market opens: `plan-provider-market-data-live-session`

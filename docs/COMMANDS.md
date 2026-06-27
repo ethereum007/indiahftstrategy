@@ -4368,9 +4368,10 @@ python -m hft_cli prepare-provider-market-data-client `
 This writes `provider_market_data_client_packet.json`,
 `provider_market_data_output_schema.csv`, summary/check/action artifacts, and a
 manifest. The packet is still dry-run only: it stores request details,
-normalized output schema, runtime budgets, and credential env-var names/presence
-booleans, but never credential values. Its ready action is the explicit live-run
-approval gate for the provider client.
+normalized output schema, runtime budgets, credential env-var names/presence
+booleans, the blank env-template path/hash, and the upstream
+`live_fetch_contract`, but never credential values. Its ready action is the
+explicit live-run approval gate for the provider client.
 
 Plan the live capture windows before running a credentialed provider client:
 
