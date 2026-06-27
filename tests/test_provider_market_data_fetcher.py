@@ -80,14 +80,25 @@ def test_provider_market_data_fetcher_writes_websocket_template(tmp_path):
     assert report.ready
     assert summary["template_kind"] == "websocket_subscription"
     assert summary["next_gate"] == "provider_fetcher_client"
+    assert bool(summary["credential_env_template_exists"])
+    assert len(summary["credential_env_template_sha256"]) == 64
+    assert bool(summary["source_live_fetch_contract_available"])
+    assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert template["transport"] == "websocket"
     assert template["authentication"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
+    assert template["authentication"]["env_template"]["exists"] is True
+    assert len(template["authentication"]["env_template"]["sha256"]) == 64
     assert template["authentication"]["values_stored"] is False
     assert template["subscriptions"][0]["symbol"] == "NIFTY-I"
     assert config["credentials"]["values_stored"] is False
+    assert config["credentials"]["env_template"]["sha256"] == template["authentication"]["env_template"]["sha256"]
+    assert config["fetch_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
+    assert config["fetch_plan"]["live_fetch_contract"]["available"] is True
     assert config["primary_action"]["action"] == "review_provider_fetcher_request_template"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert manifest["run_type"] == "provider_market_data_fetcher_plan"
+    assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
+    assert manifest["extra"]["credential_env_template"]["exists"] is True
 
 
 def test_provider_market_data_fetcher_can_require_env_presence(tmp_path, monkeypatch):
@@ -120,6 +131,52 @@ def test_provider_market_data_fetcher_can_require_env_presence(tmp_path, monkeyp
         "ARROW_MONEY_API_SECRET": True,
     }
     assert "not-written-to-artifacts" not in json.dumps(artifact)
+
+
+def test_provider_market_data_fetcher_blocks_missing_fetch_env_template_proof(tmp_path):
+    fetch_report = _write_source_and_fetch_plan(tmp_path)
+    fetch_config_path = fetch_report.output_dir / "market_data_fetch_config.json"
+    payload = json.loads(fetch_config_path.read_text(encoding="utf-8"))
+    payload["credentials"]["env_template"] = {"path": "", "exists": False, "sha256": ""}
+    fetch_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_fetcher_plan(
+        fetch_config_path,
+        tmp_path / "provider_fetcher_missing_env_template",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads(
+        (report.output_dir / "provider_market_data_fetcher_config.json").read_text(encoding="utf-8")
+    )
+    assert not report.ready
+    assert "credential_env_template_carried" in failed
+    assert config["credentials"]["env_template"]["exists"] is False
+    assert config["blocked_actions"][0]["next_gate"] == "plan-market-data-fetch"
+    assert config["blocked_actions"][0]["action"] == "regenerate_fetch_plan_with_credential_env_template"
+
+
+def test_provider_market_data_fetcher_blocks_missing_source_live_contract(tmp_path):
+    fetch_report = _write_source_and_fetch_plan(tmp_path)
+    fetch_config_path = fetch_report.output_dir / "market_data_fetch_config.json"
+    payload = json.loads(fetch_config_path.read_text(encoding="utf-8"))
+    payload["source_plan"]["live_fetch_contract"] = {"available": False, "next_gate": ""}
+    fetch_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_fetcher_plan(
+        fetch_config_path,
+        tmp_path / "provider_fetcher_missing_live_contract",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads(
+        (report.output_dir / "provider_market_data_fetcher_config.json").read_text(encoding="utf-8")
+    )
+    assert not report.ready
+    assert "source_live_fetch_contract_carried" in failed
+    assert config["fetch_plan"]["live_fetch_contract"]["available"] is False
+    assert config["blocked_actions"][0]["next_gate"] == "plan-market-data-fetch"
+    assert config["blocked_actions"][0]["action"] == "regenerate_fetch_plan_with_source_live_fetch_contract"
 
 
 def test_provider_market_data_fetcher_blocks_file_fetch_plan(tmp_path):

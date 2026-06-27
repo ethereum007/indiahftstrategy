@@ -4343,10 +4343,13 @@ python -m hft_cli plan-provider-market-data-fetcher `
 This writes `provider_market_data_request_template.json` plus checks,
 summary, action queue, runbook, config, and manifest artifacts. It does not
 call the provider; it validates the ready fetch plan, live transport,
-credential env-var names, optional runtime env-var presence, symbol coverage,
-and runtime budgets. Use `--require-env-present` only in the deployment shell
-where Arrow.money/iRage credentials are already configured, since the artifacts
-store presence booleans but never credential values.
+credential env-var names, the carried source-plan env-template proof, the
+upstream `live_fetch_contract`, optional runtime env-var presence, symbol
+coverage, and runtime budgets. The request template carries only the blank
+env-template path/hash and env-var names, never credential values. Use
+`--require-env-present` only in the deployment shell where Arrow.money/iRage
+credentials are already configured, since the artifacts store presence booleans
+but never credential values.
 
 Generate the final dry-run client packet that an Arrow.money/iRage adapter
 implementation must satisfy before any live provider call is allowed:

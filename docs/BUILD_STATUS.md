@@ -62,8 +62,10 @@
 - Provider market-data fetcher preparation now turns ready REST/websocket fetch
   plans into credential-safe request/subscription templates:
   `plan-provider-market-data-fetcher` validates live transport, symbols,
-  runtime budgets, and optional env-var presence while writing only env-var
-  names and presence booleans, not secret values.
+  runtime budgets, carried source-plan env-template proof, carried
+  `live_fetch_contract`, and optional env-var presence while writing only
+  env-var names, blank env-template path/hash references, and presence booleans,
+  not secret values.
 - Provider market-data client dry-run packets now close the backend data-source
   handoff before live credentials: `prepare-provider-market-data-client`
   validates ready request templates, env-var contracts, normalized CSV output
