@@ -4650,8 +4650,9 @@ provider launch packet root before running the full `imbalance` evidence profile
 A ready review proves that edge walk-forward, replay walk-forward, promotion,
 research pipeline, order plan, and launch pipeline evidence all share the same
 imbalance/market identity. The launch-evidence summary/config/runbook and
-manifest retain the upstream capture bundle, blank credential env-template, and
-adapter handoff paths, so scorecards and later broker handoffs can trace the
+manifest retain the upstream capture bundle, blank credential env-template,
+adapter handoff paths, source credential env-template proof, and
+`live_fetch_contract`, so scorecards and later broker handoffs can trace the
 provider-data source contract. Its next gate is
 `score-strategy-readiness --profile imbalance`.
 

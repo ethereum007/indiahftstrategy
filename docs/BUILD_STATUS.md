@@ -149,9 +149,10 @@
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture
-  bundle/env-template/adapter handoff provenance into launch-evidence
-  summary/config/runbook artifacts plus manifest, verifies the full launch-ready
-  `imbalance` profile, and hands ready packets to `score-strategy-readiness`.
+  bundle/env-template/adapter handoff provenance, source env-template proof, and
+  `live_fetch_contract` into launch-evidence summary/config/runbook artifacts
+  plus manifest, verifies the full launch-ready `imbalance` profile, and hands
+  ready packets to `score-strategy-readiness`.
 - Provider market-data imbalance scorecard now makes the final readiness gate
   provider-specific: `score-provider-market-data-imbalance-readiness` consumes
   the launch-evidence review, scores only the full `imbalance` profile, carries
