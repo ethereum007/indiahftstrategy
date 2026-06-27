@@ -96,8 +96,9 @@
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally
   runs live-session ingest, fingerprints the bundle credential env-template and
-  adapter handoff contract when present, and reports that the result is
-  smoke-test evidence only until replaced by real Arrow.money/iRage captures.
+  adapter handoff contract when present, carries the source env-template proof
+  and `live_fetch_contract`, and reports that the result is smoke-test evidence
+  only until replaced by real Arrow.money/iRage captures.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured

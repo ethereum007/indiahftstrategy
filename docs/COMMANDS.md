@@ -4472,10 +4472,11 @@ captures to the planned capture paths, sidecar files marking them as rehearsal
 data, `provider_market_data_live_rehearsal_*` artifacts, and optionally runs
 `ingest-provider-market-data-live-session` against those synthetic captures.
 The rehearsal manifest also fingerprints the bundle's credential env-template
-and adapter handoff artifacts when present, without storing credential values.
-Treat the result only as a backend smoke test; real research evidence still
-requires replacing the synthetic captures with Arrow.money/iRage provider
-captures from the approved bundle.
+and adapter handoff artifacts when present, plus the bundle-carried source
+env-template proof and upstream `live_fetch_contract`, without storing
+credential values. Treat the result only as a backend smoke test; real research
+evidence still requires replacing the synthetic captures with Arrow.money/iRage
+provider captures from the approved bundle.
 
 After those live capture files land, ingest the whole planned session from the
 session packet:
