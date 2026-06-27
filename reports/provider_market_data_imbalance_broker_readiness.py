@@ -279,6 +279,9 @@ def write_provider_market_data_imbalance_broker_readiness(
             summary_row["dispatch_roundtrip_capture_env_template_path"]
         ),
         "dispatch_roundtrip_adapter_handoff": _path_from_text(summary_row["dispatch_roundtrip_adapter_handoff_path"]),
+        "dispatch_roundtrip_source_credential_env_template": _path_from_text(
+            summary_row["dispatch_roundtrip_source_credential_env_template_path"]
+        ),
         "source_credential_env_template": _path_from_text(summary_row["source_credential_env_template_path"]),
     }.items():
         if value is not None:

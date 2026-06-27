@@ -4829,8 +4829,9 @@ the live data source without opening nested runtime-session folders.
 When a provider round-trip proof carries its own capture bundle/env-template,
 adapter handoff path, source credential env-template proof, or
 `live_fetch_contract`, broker-readiness records those as
-`dispatch_roundtrip_*` provenance, adds manifest inputs/metadata for them, and
-fails closed back to
+`dispatch_roundtrip_*` provenance, adds manifest inputs/metadata for every
+proof root including the round-trip source credential env-template, and fails
+closed back to
 `review-provider-market-data-imbalance-broker-dispatch-roundtrip` if they
 conflict with the runtime-session provenance.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
