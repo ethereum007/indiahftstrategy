@@ -257,6 +257,15 @@ def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
         "capture_bundle": _path_from_text(summary_row["capture_bundle_path"]),
         "capture_env_template": _path_from_text(summary_row["capture_env_template_path"]),
         "adapter_handoff": _path_from_text(summary_row["adapter_handoff_path"]),
+        "dispatch_roundtrip_capture_bundle": _path_from_text(
+            summary_row["dispatch_roundtrip_capture_bundle_path"]
+        ),
+        "dispatch_roundtrip_capture_env_template": _path_from_text(
+            summary_row["dispatch_roundtrip_capture_env_template_path"]
+        ),
+        "dispatch_roundtrip_adapter_handoff": _path_from_text(
+            summary_row["dispatch_roundtrip_adapter_handoff_path"]
+        ),
     }.items():
         if value is not None:
             inputs[name] = value
@@ -281,6 +290,18 @@ def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_provided": bool(summary_row["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "dispatch_roundtrip_capture_provenance_consistent": bool(
+                summary_row["dispatch_roundtrip_capture_provenance_consistent"]
+            ),
+            "dispatch_roundtrip_capture_bundle_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_bundle_matches_session"]
+            ),
+            "dispatch_roundtrip_capture_env_template_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_env_template_matches_session"]
+            ),
+            "dispatch_roundtrip_adapter_handoff_matches_session": bool(
+                summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]
+            ),
             "upstream_dispatch_roundtrip_vendor_market_data_batch_ready": bool(
                 summary_row["upstream_dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
@@ -607,6 +628,62 @@ def _summary(
                 "adapter_handoff_path": _first_text(provider_summary, "adapter_handoff_path"),
                 "adapter_handoff_provided": _first_bool(provider_summary, "adapter_handoff_provided"),
                 "adapter_handoff_exists": _first_bool(provider_summary, "adapter_handoff_exists"),
+                "dispatch_roundtrip_capture_bundle_path": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_path",
+                ),
+                "dispatch_roundtrip_capture_bundle_provided": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_provided",
+                ),
+                "dispatch_roundtrip_capture_bundle_exists": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_exists",
+                ),
+                "dispatch_roundtrip_capture_bundle_ready": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_ready",
+                ),
+                "dispatch_roundtrip_capture_bundle_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_matches_session",
+                ),
+                "dispatch_roundtrip_capture_env_template_path": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_env_template_path",
+                ),
+                "dispatch_roundtrip_capture_env_template_provided": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_env_template_provided",
+                ),
+                "dispatch_roundtrip_capture_env_template_exists": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_env_template_exists",
+                ),
+                "dispatch_roundtrip_capture_env_template_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_env_template_matches_session",
+                ),
+                "dispatch_roundtrip_adapter_handoff_path": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_adapter_handoff_path",
+                ),
+                "dispatch_roundtrip_adapter_handoff_provided": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_adapter_handoff_provided",
+                ),
+                "dispatch_roundtrip_adapter_handoff_exists": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_adapter_handoff_exists",
+                ),
+                "dispatch_roundtrip_adapter_handoff_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_adapter_handoff_matches_session",
+                ),
+                "dispatch_roundtrip_capture_provenance_consistent": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_provenance_consistent",
+                ),
                 "upstream_provider_dispatch_roundtrip_dir": _path_text(upstream_provider_dispatch_roundtrip_dir),
                 "upstream_dispatch_roundtrip_dir": _path_text(upstream_dispatch_roundtrip_dir),
                 "upstream_dispatch_roundtrip_provided": bool(upstream_dispatch_roundtrip_dir)
@@ -765,6 +842,24 @@ def _config(
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
         },
+        "dispatch_roundtrip_provenance": {
+            "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
+            "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
+            "capture_bundle_exists": bool(summary["dispatch_roundtrip_capture_bundle_exists"]),
+            "capture_bundle_ready": bool(summary["dispatch_roundtrip_capture_bundle_ready"]),
+            "capture_bundle_matches_session": bool(summary["dispatch_roundtrip_capture_bundle_matches_session"]),
+            "capture_env_template_path": str(summary["dispatch_roundtrip_capture_env_template_path"]),
+            "capture_env_template_provided": bool(summary["dispatch_roundtrip_capture_env_template_provided"]),
+            "capture_env_template_exists": bool(summary["dispatch_roundtrip_capture_env_template_exists"]),
+            "capture_env_template_matches_session": bool(
+                summary["dispatch_roundtrip_capture_env_template_matches_session"]
+            ),
+            "adapter_handoff_path": str(summary["dispatch_roundtrip_adapter_handoff_path"]),
+            "adapter_handoff_provided": bool(summary["dispatch_roundtrip_adapter_handoff_provided"]),
+            "adapter_handoff_exists": bool(summary["dispatch_roundtrip_adapter_handoff_exists"]),
+            "adapter_handoff_matches_session": bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"]),
+            "consistent_with_runtime_session": bool(summary["dispatch_roundtrip_capture_provenance_consistent"]),
+        },
         "provider_broker_dispatch_ack": _first_record(provider_summary),
         "provider_broker_dispatch_ack_config": provider_config,
         **_upstream_vendor_market_data_batch_config_fields(provider_config),
@@ -913,6 +1008,12 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
         f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
+        f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
+        "- Dispatch round-trip capture env template: "
+        f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",
+        f"- Dispatch round-trip adapter handoff: {summary['dispatch_roundtrip_adapter_handoff_path'] or 'not provided'}",
+        "- Dispatch round-trip provenance consistent: "
+        f"{'yes' if bool(summary['dispatch_roundtrip_capture_provenance_consistent']) else 'no'}",
         f"- Upstream dispatch round-trip ready: {'yes' if bool(summary['upstream_dispatch_roundtrip_ready']) else 'no'}",
         f"- Upstream dispatch round-trip dir: {summary['upstream_dispatch_roundtrip_dir']}",
         "- Upstream dispatch round-trip vendor batch ready: "

@@ -3929,6 +3929,16 @@ Use `--fail-on-blocked-actions` when blocked round-trip actions should stop
 automation, or `--fail-on-actions` when any final proof action should stop
 automation.
 
+When the provider broker-dispatch-ack wrapper retained validated dispatch
+round-trip capture provenance, the final provider round-trip wrapper carries
+the same `dispatch_roundtrip_capture_bundle_*`,
+`dispatch_roundtrip_capture_env_template_*`,
+`dispatch_roundtrip_adapter_handoff_*`, and
+`dispatch_roundtrip_capture_provenance_consistent` fields into its
+summary/config/runbook and manifest inputs/extra metadata. That keeps the
+live-capture bundle, blank credential env-template, and adapter handoff lineage
+attached to the final dry-run broker proof.
+
 This gate proves the broker dry-run bridge as a whole. It joins dispatch rows
 to sender requests and acknowledgement rows, including the raw ack-log route
 proof tag recorded by the acknowledgement reconciler, then fails closed unless
