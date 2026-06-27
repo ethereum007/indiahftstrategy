@@ -75,7 +75,8 @@
 - Provider market-data live session planning now creates credential-safe capture
   packets before the market opens: `plan-provider-market-data-live-session`
   validates the dry-run client packet, NSE session windows, weekday, optional
-  runtime env-var presence, per-window capture paths, and emits the exact
+  runtime env-var presence, carried blank env-template proof, carried
+  `live_fetch_contract`, per-window capture paths, and emits the exact
   post-capture `pipeline-provider-market-data-batch` command.
 - Provider market-data live preflight now checks the planned provider capture
   just before the market run: `preflight-provider-market-data-live-session`

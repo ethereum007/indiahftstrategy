@@ -96,6 +96,8 @@ def test_provider_market_data_client_writes_websocket_packet_and_schema(tmp_path
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert packet["execution_mode"] == "dry_run"
     assert packet["template_kind"] == "websocket_subscription"
+    assert packet["live_fetch_contract"]["available"] is True
+    assert packet["live_fetch_contract"]["next_gate"] == "provider_fetcher"
     assert packet["request"]["subscriptions"][0]["symbol"] == "NIFTY-I"
     assert packet["authentication"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
     assert packet["authentication"]["env_template"]["exists"] is True

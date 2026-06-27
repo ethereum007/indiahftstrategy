@@ -79,17 +79,28 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert summary["window_count"] == 2
     assert summary["session_open_local"] == "09:15"
     assert summary["session_close_local"] == "15:30"
+    assert bool(summary["credential_env_template_exists"])
+    assert len(summary["credential_env_template_sha256"]) == 64
+    assert bool(summary["source_live_fetch_contract_available"])
+    assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert "--capture" in summary["post_capture_batch_command"]
     assert "pipeline-provider-market-data-batch" in summary["post_capture_batch_command"]
     assert "--min-unique-source-files 2" in summary["post_capture_batch_command"]
     assert windows["label"].tolist() == ["open", "close"]
     assert windows["within_market_session"].astype(bool).all()
     assert packet["authentication"]["values_stored"] is False
+    assert packet["authentication"]["env_template"]["exists"] is True
+    assert packet["live_fetch_contract"]["available"] is True
     assert packet["capture_windows"][0]["label"] == "open"
     assert config["ready"]
+    assert config["credential_env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
+    assert config["live_fetch_contract"]["available"] is True
     assert config["primary_action"]["action"] == "run_provider_live_capture_windows"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert manifest["run_type"] == "provider_market_data_live_session_plan"
+    assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credential_env_template"]["sha256"]
+    assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["live_fetch_contract"]["available"] is True
 
 
 def test_provider_market_data_live_session_plan_blocks_missing_runtime_env_when_required(tmp_path, monkeypatch):
@@ -111,6 +122,52 @@ def test_provider_market_data_live_session_plan_blocks_missing_runtime_env_when_
     assert not report.ready
     assert "credential_env_vars_present_in_runtime" in failed
     assert report.action_queue.loc[0, "next_gate"] == "provider_credentials_runtime"
+
+
+def test_provider_market_data_live_session_blocks_missing_env_template_proof(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    payload = json.loads(client_packet.read_text(encoding="utf-8"))
+    payload["authentication"]["env_template"] = {"path": "", "exists": False, "sha256": ""}
+    client_packet.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:30",),
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "credential_env_template_carried" in failed
+    assert report.config["credential_env_template"]["exists"] is False
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-client"
+    assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_credential_env_template"
+
+
+def test_provider_market_data_live_session_blocks_missing_live_contract(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    payload = json.loads(client_packet.read_text(encoding="utf-8"))
+    payload["live_fetch_contract"] = {"available": False, "next_gate": ""}
+    client_packet.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:30",),
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "source_live_fetch_contract_carried" in failed
+    assert report.config["live_fetch_contract"]["available"] is False
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-client"
+    assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_source_live_fetch_contract"
 
 
 def test_provider_market_data_live_session_plan_blocks_out_of_session_window(tmp_path):

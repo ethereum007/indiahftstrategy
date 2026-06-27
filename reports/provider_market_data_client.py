@@ -589,6 +589,7 @@ def _client_packet(
         "template_kind": _text(template.get("template_kind")),
         "endpoint": _text(template.get("endpoint")),
         "request": _request_payload(template),
+        "live_fetch_contract": _mapping(_mapping(fetcher_config.get("fetch_plan")).get("live_fetch_contract")),
         "authentication": {
             "env_vars": env_vars,
             "env_presence": _env_presence(env_vars),

@@ -4397,9 +4397,9 @@ python -m hft_cli plan-provider-market-data-live-session `
 This writes `provider_market_data_live_session_windows.csv`,
 `provider_market_data_live_session_packet.json`, summary/check/action/config
 artifacts, and a runbook. It records only credential environment-variable
-names and runtime presence booleans. The session packet includes per-window
-capture paths and the exact post-capture
-`pipeline-provider-market-data-batch` command.
+names, runtime presence booleans, the blank env-template path/hash, and the
+upstream `live_fetch_contract`. The session packet includes per-window capture
+paths and the exact post-capture `pipeline-provider-market-data-batch` command.
 
 Run a pre-market preflight against that session packet before starting the
 credentialed provider client:
