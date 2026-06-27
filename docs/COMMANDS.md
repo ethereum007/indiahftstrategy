@@ -4987,7 +4987,8 @@ round-trip paths, broker-dispatch vendor-market-data batch readiness/config,
 upstream proof lineage, and inherited
 `upstream_*_vendor_market_data_batch_*` readiness/config from the send packet.
 It also preserves the capture bundle, blank credential env-template, and
-adapter handoff paths inherited from the send packet beside the acknowledgement
+adapter handoff paths, source credential env-template proof, and
+`live_fetch_contract` inherited from the send packet beside the acknowledgement
 proof. The wrapper runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. Clean
