@@ -3685,6 +3685,16 @@ vendor-data blockers route to their vendor pipelines. Use
 `--fail-on-blocked-actions` to fail only when blocked send-packet actions
 exist, or `--fail-on-actions` when any send action should stop automation.
 
+When the provider broker-dispatch wrapper retained validated dispatch
+round-trip capture provenance, the send packet carries the same
+`dispatch_roundtrip_capture_bundle_*`,
+`dispatch_roundtrip_capture_env_template_*`,
+`dispatch_roundtrip_adapter_handoff_*`, and
+`dispatch_roundtrip_capture_provenance_consistent` fields into its
+summary/config/runbook and manifest inputs/extra metadata. That keeps the
+live-capture bundle, blank credential env-template, and adapter handoff lineage
+visible before acknowledgement reconciliation consumes the send packet.
+
 This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
