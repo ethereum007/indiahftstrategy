@@ -4317,10 +4317,13 @@ python -m hft_cli plan-market-data-fetch `
 
 For REST backfills, include `--window-start` and `--window-end`. The command
 does not call external APIs; it validates the source plan, market identity,
-credential env-var references, symbols, timing budget, output file contract,
-and next gate. File sources route to the existing `pipeline-vendor-market-data`
-command, while REST/websocket sources route to the provider fetcher with
-`market_data_fetch_config.json`.
+credential env-var references, the source-plan env-template sidecar, symbols,
+timing budget, output file contract, and next gate. The fetch manifest
+fingerprints `market_data_source_env_template.env` for live REST/websocket
+plans, and `market_data_fetch_config.json` carries both the credential template
+hash and the upstream `live_fetch_contract`. File sources route to the existing
+`pipeline-vendor-market-data` command, while REST/websocket sources route to
+the provider fetcher with `market_data_fetch_config.json`.
 
 Prepare the provider fetcher handoff from a ready REST/websocket fetch plan:
 

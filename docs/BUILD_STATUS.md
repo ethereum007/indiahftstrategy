@@ -54,7 +54,11 @@
   backfill windows, latency budgets, credential env-var references, and output
   filenames without calling external APIs or storing secrets; file plans route
   to `pipeline-vendor-market-data` and REST/websocket plans route to the
-  provider fetcher with a manifest-backed config.
+  provider fetcher with a manifest-backed config. Fetch plans now fail closed
+  when a live source plan is missing its blank credential env-template sidecar,
+  fingerprint that template in the manifest, and carry the upstream
+  `live_fetch_contract` into `market_data_fetch_config.json` for Arrow.money
+  and iRage adapter handoff.
 - Provider market-data fetcher preparation now turns ready REST/websocket fetch
   plans into credential-safe request/subscription templates:
   `plan-provider-market-data-fetcher` validates live transport, symbols,

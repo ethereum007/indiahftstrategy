@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from markets.profiles import INDIA_NSE_INDEX_DERIVATIVES
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.market_data_source import PROVIDER_SPECS, SUPPORTED_KINDS, SUPPORTED_TRANSPORTS
 
 
@@ -86,6 +86,9 @@ def write_market_data_fetch_plan(
     inputs: dict[str, Any] = {}
     if plan_path.exists():
         inputs["source_plan"] = plan_path
+    credential_env_template_path = _credential_env_template_path(plan_path, report.config)
+    if credential_env_template_path is not None and credential_env_template_path.exists():
+        inputs["credential_env_template"] = credential_env_template_path
     write_experiment_manifest(
         out,
         run_type="market_data_fetch_plan",
@@ -97,6 +100,7 @@ def write_market_data_fetch_plan(
         extra={
             "fetch": report.config["fetch"],
             "source_plan": report.config["source_plan"],
+            "credential_env_template": report.config["credentials"]["env_template"],
         },
     )
     return MarketDataFetchReport(report.checks, report.summary, report.action_queue, report.config, out)
@@ -143,6 +147,8 @@ def _checks(
     source = _mapping(source_config.get("source"))
     credentials = _mapping(source_config.get("credentials"))
     normalized_pipeline = _mapping(source_config.get("normalized_pipeline"))
+    live_fetch_contract = _mapping(source_config.get("live_fetch_contract"))
+    credential_env_template_path = _credential_env_template_path(source_plan_path, source_config)
     provider_spec = PROVIDER_SPECS.get(provider)
     auth_required = bool(provider_spec.get("auth_required", False)) if provider_spec else False
     env_vars = _string_list(credentials.get("env_vars"))
@@ -226,6 +232,16 @@ def _checks(
             1 if live_transport and auth_required else 0,
             len(env_vars) >= 1 if live_transport and auth_required else True,
             "live provider fetches require credential environment variable names",
+        ),
+        _check(
+            "credential_env_template_available",
+            _text(credentials.get("env_template_file")),
+            "exists",
+            True if live_transport and auth_required else "optional",
+            bool(credential_env_template_path and credential_env_template_path.exists())
+            if live_transport and auth_required
+            else True,
+            "live provider fetches require the source-plan credential env template sidecar",
         ),
         _check(
             "source_uri_not_censored",
@@ -324,6 +340,14 @@ def _checks(
             "live source plans must hand off to the provider fetcher gate",
         ),
         _check(
+            "live_fetch_contract_available",
+            bool(live_fetch_contract.get("available")),
+            "is",
+            True if live_transport else "not_applicable",
+            bool(live_fetch_contract.get("available")) if live_transport else True,
+            "live source plans must provide a fetch-contract handoff template",
+        ),
+        _check(
             "dry_run_only",
             config.dry_run,
             "is",
@@ -343,6 +367,8 @@ def _summary(
 ) -> pd.DataFrame:
     source = _mapping(source_config.get("source"))
     credentials = _mapping(source_config.get("credentials"))
+    live_fetch_contract = _mapping(source_config.get("live_fetch_contract"))
+    credential_env_template_path = _credential_env_template_path(source_plan_path, source_config)
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     transport = _text(source_config.get("transport"))
     return pd.DataFrame(
@@ -369,6 +395,21 @@ def _summary(
                 "dry_run": bool(config.dry_run),
                 "credential_env_var_count": int(len(_string_list(credentials.get("env_vars")))),
                 "credential_env_vars": ";".join(_string_list(credentials.get("env_vars"))),
+                "credential_env_template_file": _text(credentials.get("env_template_file")),
+                "credential_env_template_path": str(credential_env_template_path or ""),
+                "credential_env_template_exists": bool(
+                    credential_env_template_path is not None and credential_env_template_path.exists()
+                ),
+                "credential_env_template_sha256": file_sha256(credential_env_template_path)
+                if credential_env_template_path is not None
+                and credential_env_template_path.exists()
+                and credential_env_template_path.is_file()
+                else "",
+                "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
+                "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
+                "source_live_fetch_contract_command_template": _text(
+                    live_fetch_contract.get("command_template")
+                ),
                 "failed_checks": failed_checks,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
@@ -491,6 +532,7 @@ def _config(
         },
         "credentials": {
             "env_vars": _string_list(credentials.get("env_vars")),
+            "env_template": _credential_env_template_contract(summary),
             "values_stored": False,
         },
         "failed_check_count": len(failed_checks),
@@ -523,8 +565,19 @@ def _source_plan_contract(summary: pd.Series, source_config: dict[str, Any]) -> 
             "file_exists": bool(source.get("file_exists", False)),
             "file_sha256": _text(source.get("file_sha256")),
         },
+        "credential_env_template": _credential_env_template_contract(summary),
         "normalized_pipeline": _mapping(source_config.get("normalized_pipeline")),
+        "live_fetch_contract": _mapping(source_config.get("live_fetch_contract")),
         "source_next_gate": _text(source_config.get("next_gate")),
+    }
+
+
+def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
+    return {
+        "file": str(summary["credential_env_template_file"]),
+        "path": str(summary["credential_env_template_path"]),
+        "exists": bool(summary["credential_env_template_exists"]),
+        "sha256": str(summary["credential_env_template_sha256"]),
     }
 
 
@@ -542,6 +595,7 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Symbols: {summary['symbols'] or 'none'}",
         f"- Window: {summary['window_start'] or 'open'} to {summary['window_end'] or 'open'}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",
+        f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         f"- Output filename: {summary['output_filename']}",
         "",
         "## Actions",
@@ -592,11 +646,13 @@ def _blocked_next_gate(check: str) -> str:
         "transport_supported",
         "credentials_values_not_stored",
         "credential_env_vars_are_names",
+        "credential_env_template_available",
         "live_credentials_present",
         "source_uri_not_censored",
         "market_matches_expected",
         "file_pipeline_available",
         "live_source_next_gate",
+        "live_fetch_contract_available",
     }:
         return "plan-market-data-source"
     return "plan-market-data-fetch"
@@ -620,6 +676,8 @@ def _repair_action(check: str) -> str:
         return "repair_or_regenerate_market_data_source_plan"
     if check in {"provider_known", "kind_supported", "transport_supported", "market_matches_expected"}:
         return "select_matching_market_data_source_plan"
+    if check == "credential_env_template_available":
+        return "regenerate_source_plan_with_credential_env_template"
     if check.startswith("credential") or check == "live_credentials_present":
         return "provide_credential_environment_variable_names"
     if check == "source_uri_not_censored":
@@ -636,6 +694,8 @@ def _repair_action(check: str) -> str:
         return "regenerate_file_source_plan_with_pipeline_command"
     if check == "live_source_next_gate":
         return "regenerate_live_source_plan_for_provider_fetcher"
+    if check == "live_fetch_contract_available":
+        return "regenerate_live_source_plan_with_fetch_contract"
     if check == "dry_run_only":
         return "keep_provider_fetch_plan_in_dry_run"
     return "repair_market_data_fetch_plan"
@@ -677,6 +737,21 @@ def _timestamp(value: str) -> pd.Timestamp | None:
 
 def _auth_env_name_valid(value: str) -> bool:
     return bool(ENV_NAME_RE.match(value)) and "=" not in value
+
+
+def _credential_env_template_path(source_plan_path: Path, payload: dict[str, Any]) -> Path | None:
+    credentials = _mapping(payload.get("credentials"))
+    env_template = _mapping(credentials.get("env_template"))
+    direct_path = _text(env_template.get("path"))
+    if direct_path:
+        return Path(direct_path)
+    template_file = _text(credentials.get("env_template_file"))
+    if not template_file:
+        return None
+    path = Path(template_file)
+    if path.is_absolute():
+        return path
+    return source_plan_path.parent / path
 
 
 def _mapping(value: object) -> dict[str, Any]:
