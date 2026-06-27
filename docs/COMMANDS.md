@@ -4291,10 +4291,14 @@ For historical replay or vendor onboarding from a file, use `--transport file`
 and point `--source-uri` at the raw CSV. The generated
 `market_data_source_config.json` stores provider, adapter, kind, transport,
 market, sanitized source URI, credential environment variable names, and the
-next gate. It never stores credential values and fails closed if secrets appear
-in query parameters or `--auth-env` values. File sources emit a ready action for
-`pipeline-vendor-market-data`; REST/websocket sources emit a ready action for
-the provider fetcher implementation that will consume the same config.
+next gate. It also writes a blank `market_data_source_env_template.env` sidecar
+and records a `live_fetch_contract` command template for REST/websocket sources,
+so Arrow.money/iRage credentials can be staged by environment variable name
+before any provider API call is attempted. It never stores credential values and
+fails closed if secrets appear in query parameters or `--auth-env` values. File
+sources emit a ready action for `pipeline-vendor-market-data`; REST/websocket
+sources emit a ready action for the provider fetcher implementation that will
+consume the same config.
 
 Turn a ready source plan into a credential-safe fetch contract before writing
 any provider-specific Arrow.money/iRage client code:

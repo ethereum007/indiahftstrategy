@@ -39,6 +39,7 @@ SUPPORTED_KINDS = ("ticks", "chain")
 SUPPORTED_TRANSPORTS = ("file", "rest", "websocket")
 SECRET_QUERY_KEYS = {"api_key", "apikey", "key", "secret", "token", "access_token", "password"}
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+ENV_TEMPLATE_NAME = "market_data_source_env_template.env"
 
 
 @dataclass(frozen=True)
@@ -98,6 +99,10 @@ def write_market_data_source_plan(
         json.dumps(report.config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    (out / ENV_TEMPLATE_NAME).write_text(
+        _env_template(normalized.auth_env_vars),
+        encoding="utf-8",
+    )
     (out / "market_data_source_runbook.md").write_text(
         _runbook_markdown(report.summary.iloc[0], report.action_queue),
         encoding="utf-8",
@@ -111,7 +116,11 @@ def write_market_data_source_plan(
         run_type="market_data_source_plan",
         parameters={"config": asdict(normalized)},
         inputs=inputs,
-        extra={"source": report.config["source"]},
+        extra={
+            "source": report.config["source"],
+            "credential_env_template_file": ENV_TEMPLATE_NAME,
+            "live_fetch_contract": report.config["live_fetch_contract"],
+        },
     )
     return MarketDataSourceReport(report.checks, report.summary, report.action_queue, report.config, out)
 
@@ -269,6 +278,9 @@ def _summary(config: MarketDataSourceConfig, checks: pd.DataFrame, ready: bool) 
                 else "",
                 "auth_env_var_count": int(len(config.auth_env_vars)),
                 "auth_env_vars": ";".join(config.auth_env_vars),
+                "credential_env_template_file": ENV_TEMPLATE_NAME,
+                "live_fetch_contract_available": bool(ready and config.transport in {"rest", "websocket"}),
+                "live_fetch_contract_command": _live_fetch_contract_command(config, ready),
                 "failed_checks": failed_checks,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
@@ -381,10 +393,13 @@ def _config(
         },
         "credentials": {
             "env_vars": list(config.auth_env_vars),
+            "env_template_file": ENV_TEMPLATE_NAME,
+            "env_template_entry_count": int(len(config.auth_env_vars)),
             "values_stored": False,
         },
         "capabilities": list(PROVIDER_SPECS.get(config.provider, {}).get("capabilities", ())),
         "normalized_pipeline": _normalized_pipeline(summary),
+        "live_fetch_contract": _live_fetch_contract(summary),
         "failed_check_count": len(failed_checks),
         "failed_checks": failed_checks,
         "ready_action_count": len(ready_actions),
@@ -421,6 +436,51 @@ def _normalized_pipeline(summary: pd.Series) -> dict[str, Any]:
     }
 
 
+def _live_fetch_contract(summary: pd.Series) -> dict[str, Any]:
+    available = bool(summary["ready"]) and str(summary["transport"]) in {"rest", "websocket"}
+    if not available:
+        return {
+            "available": False,
+            "next_gate": "",
+            "command_template": "",
+            "required_inputs": [],
+            "credential_env_template_file": ENV_TEMPLATE_NAME,
+        }
+    required_inputs = ["symbol"]
+    if str(summary["transport"]) == "rest":
+        required_inputs.extend(["window_start", "window_end"])
+    return {
+        "available": True,
+        "next_gate": "provider_fetcher",
+        "command_template": str(summary["live_fetch_contract_command"]),
+        "required_inputs": required_inputs,
+        "credential_env_template_file": ENV_TEMPLATE_NAME,
+    }
+
+
+def _live_fetch_contract_command(config: MarketDataSourceConfig, ready: bool) -> str:
+    if not ready or config.transport not in {"rest", "websocket"}:
+        return ""
+    output_dir = f"runs/market_data_fetch/{config.provider}_{config.kind}"
+    parts = [
+        "python -m hft_cli plan-market-data-fetch",
+        "--source-plan market_data_source_config.json",
+        f"--out {_shell_quote(output_dir)}",
+        "--symbol <SYMBOL>",
+    ]
+    if config.transport == "rest":
+        parts.extend(["--window-start <WINDOW_START_ISO>", "--window-end <WINDOW_END_ISO>"])
+    parts.extend(
+        [
+            "--max-latency-ms 150",
+            f"--expected-market {config.market}",
+            "--fail-on-blocked-actions",
+            "--fail-on-breach",
+        ]
+    )
+    return " ".join(parts)
+
+
 def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
     lines = [
         "# Market Data Source Runbook",
@@ -433,9 +493,11 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Market: {summary['market']}",
         f"- Source: {summary['source_uri']}",
         f"- Credential env vars: {summary['auth_env_vars'] or 'none'}",
-        "",
-        "## Actions",
     ]
+    lines.append(f"- Credential env template: {summary['credential_env_template_file']}")
+    if str(summary["live_fetch_contract_command"]):
+        lines.append(f"- Live fetch contract command: `{summary['live_fetch_contract_command']}`")
+    lines.extend(["", "## Actions"])
     if action_queue.empty:
         lines.append("- None")
     else:
@@ -555,6 +617,10 @@ def _normalize_auth_envs(values: tuple[str, ...]) -> list[str]:
 
 def _auth_env_name_valid(value: str) -> bool:
     return bool(ENV_NAME_RE.match(value)) and "=" not in value
+
+
+def _env_template(env_vars: tuple[str, ...]) -> str:
+    return "".join(f"{env_var}=\n" for env_var in env_vars)
 
 
 def _repair_action(check: str) -> str:

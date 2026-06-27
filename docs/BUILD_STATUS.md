@@ -45,7 +45,10 @@
   source contracts, records sanitized REST/websocket/file URIs, stores only
   credential environment variable names, and hands ready file sources to
   `pipeline-vendor-market-data` while live sources point to the provider
-  fetcher implementation.
+  fetcher implementation. Source plans now also write a blank
+  `market_data_source_env_template.env` sidecar and a manifest-backed
+  `live_fetch_contract` command template so Arrow.money/iRage credential
+  staging and dry-run fetch planning are traceable from the first backend gate.
 - Market-data fetch planning now consumes those source contracts:
   `plan-market-data-fetch` validates provider/file handoff, symbols, REST
   backfill windows, latency budgets, credential env-var references, and output

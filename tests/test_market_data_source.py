@@ -32,6 +32,7 @@ def test_market_data_source_plan_accepts_arrow_file_source(tmp_path):
     config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
     action_queue = pd.read_csv(out_dir / "market_data_source_action_queue.csv")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    env_template = (out_dir / "market_data_source_env_template.env").read_text(encoding="utf-8")
     assert report.ready
     assert bool(summary["source_file_exists"])
     assert len(summary["source_file_sha256"]) == 64
@@ -39,12 +40,17 @@ def test_market_data_source_plan_accepts_arrow_file_source(tmp_path):
     assert config["ready"]
     assert config["source"]["file_exists"]
     assert config["credentials"]["values_stored"] is False
+    assert config["credentials"]["env_template_file"] == "market_data_source_env_template.env"
     assert config["normalized_pipeline"]["available"]
+    assert config["live_fetch_contract"]["available"] is False
     assert "pipeline-vendor-market-data" in config["normalized_pipeline"]["command"]
+    assert env_template == ""
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert action_queue.loc[0, "action"] == "run_vendor_market_data_pipeline"
     assert manifest["run_type"] == "market_data_source_plan"
     assert manifest["inputs"]["source_file"]["sha256"] == summary["source_file_sha256"]
+    assert manifest["extra"]["credential_env_template_file"] == "market_data_source_env_template.env"
+    assert "market_data_source_env_template.env" in {artifact["path"] for artifact in manifest["artifacts"]}
 
 
 def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
@@ -63,14 +69,28 @@ def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
 
     summary = report.summary.iloc[0]
     config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
+    env_template = (out_dir / "market_data_source_env_template.env").read_text(encoding="utf-8")
+    runbook = (out_dir / "market_data_source_runbook.md").read_text(encoding="utf-8")
     assert report.ready
     assert summary["adapter"] == "arrow_money"
     assert summary["source_uri_kind"] == "wss"
     assert summary["auth_env_var_count"] == 2
+    assert summary["credential_env_template_file"] == "market_data_source_env_template.env"
+    assert bool(summary["live_fetch_contract_available"])
+    assert "plan-market-data-fetch" in summary["live_fetch_contract_command"]
     assert config["normalized_pipeline"]["available"] is False
+    assert config["live_fetch_contract"]["available"] is True
+    assert config["live_fetch_contract"]["next_gate"] == "provider_fetcher"
+    assert config["live_fetch_contract"]["required_inputs"] == ["symbol"]
+    assert "market_data_source_config.json" in config["live_fetch_contract"]["command_template"]
+    assert "ARROW_MONEY_API_KEY=\n" in env_template
+    assert "ARROW_MONEY_API_SECRET=\n" in env_template
+    assert "Live fetch contract command" in runbook
     assert config["next_gate"] == "provider_fetcher"
     assert config["primary_action"]["action"] == "wire_provider_market_data_fetcher"
     assert config["credentials"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
+    assert config["credentials"]["env_template_entry_count"] == 2
+    assert config["credentials"]["values_stored"] is False
 
 
 def test_market_data_source_plan_blocks_missing_live_credentials_and_embedded_secret(tmp_path):
