@@ -1533,8 +1533,11 @@
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
   proof, upstream proof lineage, and upstream vendor-market-data batch lineage
-  in broker-dispatch summary/config/manifest artifacts before the
-  non-submitting send packet is prepared.
+  in broker-dispatch summary/config/manifest artifacts. It also carries the
+  route-enable-retained validated round-trip capture bundle/env-template/adapter
+  handoff paths and provenance-consistency flags through summary/config/runbook
+  artifacts plus manifest inputs/metadata before the non-submitting send packet
+  is prepared.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream

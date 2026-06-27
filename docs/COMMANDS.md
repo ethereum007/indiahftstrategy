@@ -3564,6 +3564,17 @@ Use `--fail-on-blocked-actions` to fail only when blocked dispatch actions
 exist, or `--fail-on-actions` when any broker dispatch action should stop
 automation.
 
+When the provider route-enable wrapper retained validated dispatch round-trip
+capture provenance, broker-dispatch carries the same
+`dispatch_roundtrip_capture_bundle_*`,
+`dispatch_roundtrip_capture_env_template_*`,
+`dispatch_roundtrip_adapter_handoff_*`, and
+`dispatch_roundtrip_capture_provenance_consistent` fields into its
+summary/config/runbook and manifest inputs/extra metadata. That keeps the
+capture bundle, blank credential env-template, and adapter handoff traceable
+before broker send packets and acknowledgement checks inherit the dispatch
+plan.
+
 This command still does not submit orders. It hashes the route-enable
 authorization and upload file, creates one dry-run dispatch row per upload
 order, and requires unique source order IDs, unique dispatch IDs, route-enabled
