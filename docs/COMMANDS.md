@@ -4794,8 +4794,9 @@ runtime telemetry directory, reuses the telemetry wrapper's broker export,
 upload-pack, reconciliation, metadata, PnL, open-order, and position inputs when
 available, writes provider session checks/summary/action/config/runbook
 artifacts plus a nested generic `runtime_session`, and retains the upstream
-capture bundle, blank credential env-template, and adapter handoff paths in its
-provider wrapper summary/config/runbook and manifest. Clean sessions route to
+capture bundle, blank credential env-template, adapter handoff paths, source
+credential env-template proof, and `live_fetch_contract` in its provider
+wrapper summary/config/runbook and manifest. Clean sessions route to
 `review-provider-market-data-imbalance-broker-readiness`. If the session guard
 halts and a halt response is ready, it emits a ready `export-halt-response`
 action.
