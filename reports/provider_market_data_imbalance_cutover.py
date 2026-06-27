@@ -254,6 +254,9 @@ def write_provider_market_data_imbalance_cutover(
             summary_row["dispatch_roundtrip_capture_env_template_path"]
         ),
         "dispatch_roundtrip_adapter_handoff": _path_from_text(summary_row["dispatch_roundtrip_adapter_handoff_path"]),
+        "dispatch_roundtrip_source_credential_env_template": _path_from_text(
+            summary_row["dispatch_roundtrip_source_credential_env_template_path"]
+        ),
         "source_credential_env_template": _path_from_text(summary_row["source_credential_env_template_path"]),
     }.items():
         if value is not None:
@@ -297,6 +300,21 @@ def write_provider_market_data_imbalance_cutover(
             ),
             "dispatch_roundtrip_adapter_handoff_matches_session": bool(
                 summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]
+            ),
+            "dispatch_roundtrip_source_provenance_consistent": bool(
+                summary_row["dispatch_roundtrip_source_provenance_consistent"]
+            ),
+            "dispatch_roundtrip_source_credential_env_template_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_credential_env_template_matches_session"]
+            ),
+            "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"]
             ),
             "dispatch_roundtrip_vendor_market_data_batch_ready": bool(
                 summary_row["dispatch_roundtrip_vendor_market_data_batch_ready"]
@@ -525,6 +543,50 @@ def _summary(
                 "source_live_fetch_contract_command_template": _first_text(
                     provider_summary,
                     "source_live_fetch_contract_command_template",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_path": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_credential_env_template_path",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_exists": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_credential_env_template_exists",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_sha256": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_credential_env_template_sha256",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_credential_env_template_matches_session",
+                ),
+                "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_credential_env_template_sha256_matches_session",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_available": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_available",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_next_gate": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_next_gate",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_command_template": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_command_template",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session",
+                ),
+                "dispatch_roundtrip_source_provenance_consistent": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_provenance_consistent",
                 ),
                 "dispatch_roundtrip_capture_bundle_path": _first_text(
                     provider_summary,
@@ -798,6 +860,39 @@ def _config(
             "adapter_handoff_exists": bool(summary["dispatch_roundtrip_adapter_handoff_exists"]),
             "adapter_handoff_matches_session": bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"]),
             "consistent_with_runtime_session": bool(summary["dispatch_roundtrip_capture_provenance_consistent"]),
+            "source_credential_env_template_path": str(
+                summary["dispatch_roundtrip_source_credential_env_template_path"]
+            ),
+            "source_credential_env_template_exists": bool(
+                summary["dispatch_roundtrip_source_credential_env_template_exists"]
+            ),
+            "source_credential_env_template_sha256": str(
+                summary["dispatch_roundtrip_source_credential_env_template_sha256"]
+            ),
+            "source_credential_env_template_matches_session": bool(
+                summary["dispatch_roundtrip_source_credential_env_template_matches_session"]
+            ),
+            "source_credential_env_template_sha256_matches_session": bool(
+                summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"]
+            ),
+            "source_live_fetch_contract_available": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_available"]
+            ),
+            "source_live_fetch_contract_next_gate": str(
+                summary["dispatch_roundtrip_source_live_fetch_contract_next_gate"]
+            ),
+            "source_live_fetch_contract_command_template": str(
+                summary["dispatch_roundtrip_source_live_fetch_contract_command_template"]
+            ),
+            "source_live_fetch_contract_next_gate_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"]
+            ),
+            "source_live_fetch_contract_command_template_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"]
+            ),
+            "source_provenance_consistent_with_runtime_session": bool(
+                summary["dispatch_roundtrip_source_provenance_consistent"]
+            ),
         },
         "provider_broker_readiness": _first_record(provider_summary),
         "provider_broker_readiness_config": provider_config,
@@ -864,6 +959,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Dispatch round-trip adapter handoff: {summary['dispatch_roundtrip_adapter_handoff_path'] or 'not provided'}",
         "- Dispatch round-trip provenance consistent: "
         f"{'yes' if bool(summary['dispatch_roundtrip_capture_provenance_consistent']) else 'no'}",
+        "- Dispatch round-trip source credential env template: "
+        f"{summary['dispatch_roundtrip_source_credential_env_template_path'] or 'not provided'}",
+        "- Dispatch round-trip source provenance consistent: "
+        f"{'yes' if bool(summary['dispatch_roundtrip_source_provenance_consistent']) else 'no'}",
         f"- Dispatch round-trip dir: {summary['dispatch_roundtrip_dir']}",
         "- Dispatch round-trip vendor batch ready: "
         f"{'yes' if bool(summary['dispatch_roundtrip_vendor_market_data_batch_ready']) else 'no'}",

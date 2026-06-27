@@ -1547,7 +1547,8 @@
   generic `broker_dispatch_roundtrip` path, broker-dispatch
   vendor-market-data batch proof, any upstream proof lineage, and upstream
   vendor-market-data batch lineage. It now also keeps the broker-readiness
-  validated round-trip capture bundle/env-template/adapter handoff paths and
+  validated round-trip capture bundle/env-template/adapter handoff paths,
+  source credential env-template proof, `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
   before live-data dry-runs.
