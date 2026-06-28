@@ -1546,9 +1546,13 @@
 - Provider-data imbalance now has a provider broker-dispatch round-trip wrapper
   after provider acknowledgement proof. `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
   infers the nested generic dispatch, send, and ack folders, reruns
-  `review-broker-dispatch-roundtrip` under a nested folder, writes provider
-  checks/summary/action/config/runbook artifacts, indexes the run for
-  catalog/scorecard discovery, and routes clean dry-run round-trip evidence to
+  `review-broker-dispatch-roundtrip` under a nested folder, carries the
+  acknowledgement-inherited capture bundle/source credential proof,
+  exchange/session metadata, capture-bundle session match proof, and
+  `live_fetch_contract` into provider summary/config/runbook artifacts plus
+  manifest metadata, writes provider checks/summary/action/config/runbook
+  artifacts, indexes the run for catalog/scorecard discovery, and routes clean
+  dry-run round-trip evidence to
   `review-provider-market-data-imbalance-broker-readiness --dispatch-roundtrip`
   before cutover promotion.
 - Provider-data imbalance broker readiness now accepts that provider
