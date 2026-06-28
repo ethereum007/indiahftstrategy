@@ -4997,9 +4997,10 @@ adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, and `live_fetch_contract`
 inherited from dispatch. It also carries the
 broker-dispatch-retained validated dispatch round-trip source credential
-env-template, `live_fetch_contract`, and source-provenance consistency flags,
-so operators can trace the exact live data source beside the dry-run request
-envelopes. The wrapper runs
+env-template, round-trip exchange/session metadata, capture-bundle session
+proof, live-fetch exchange/session identity, `live_fetch_contract`, and
+source-provenance consistency flags, so operators can trace the exact live data
+source beside the dry-run request envelopes. The wrapper runs
 `prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
 and writes provider checks, summary, action, config, and runbook artifacts. It
 still does not submit orders: the nested packet writes request envelopes and

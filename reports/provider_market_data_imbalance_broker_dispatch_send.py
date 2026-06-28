@@ -313,6 +313,60 @@ def write_provider_market_data_imbalance_broker_dispatch_send(
             "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": bool(
                 summary_row["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"]
             ),
+            "dispatch_roundtrip_exchange_matches_session": bool(
+                summary_row["dispatch_roundtrip_exchange_matches_session"]
+            ),
+            "dispatch_roundtrip_source_session_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_session_matches_session"]
+            ),
+            "dispatch_roundtrip_market_session_matches_session": bool(
+                summary_row["dispatch_roundtrip_market_session_matches_session"]
+            ),
+            "dispatch_roundtrip_metadata_consistent": bool(summary_row["dispatch_roundtrip_metadata_consistent"]),
+            "dispatch_roundtrip_capture_bundle_exchange_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_bundle_exchange_matches_session"]
+            ),
+            "dispatch_roundtrip_capture_bundle_source_session_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_bundle_source_session_matches_session"]
+            ),
+            "dispatch_roundtrip_capture_bundle_market_session_matches_session": bool(
+                summary_row["dispatch_roundtrip_capture_bundle_market_session_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_market_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_market_matches_session"]
+            ),
+            "dispatch_roundtrip_source_live_fetch_contract_session_matches_session": bool(
+                summary_row["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"]
+            ),
+            "dispatch_roundtrip": {
+                "exchange": str(summary_row["dispatch_roundtrip_exchange"]),
+                "source_session": _dispatch_roundtrip_source_session_contract_from_summary(summary_row),
+                "market_session": _dispatch_roundtrip_market_session_contract_from_summary(summary_row),
+                "metadata_consistent": bool(summary_row["dispatch_roundtrip_metadata_consistent"]),
+                "capture_bundle": {
+                    "exchange": str(summary_row["dispatch_roundtrip_capture_bundle_exchange"]),
+                    "source_session": _dispatch_roundtrip_capture_bundle_source_session_contract_from_summary(
+                        summary_row
+                    ),
+                    "market_session": _dispatch_roundtrip_capture_bundle_market_session_contract_from_summary(
+                        summary_row
+                    ),
+                    "metadata_matches_session": bool(
+                        summary_row["dispatch_roundtrip_capture_bundle_metadata_matches_session"]
+                    ),
+                    "live_fetch_contract_metadata_matches_session": bool(
+                        summary_row["dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session"]
+                    ),
+                },
+                "live_fetch_contract": {
+                    "exchange": str(summary_row["dispatch_roundtrip_source_live_fetch_contract_exchange"]),
+                    "market": str(summary_row["dispatch_roundtrip_source_live_fetch_contract_market"]),
+                    "session": _dispatch_roundtrip_source_live_fetch_contract_session_from_summary(summary_row),
+                },
+            },
             "dispatch_roundtrip_vendor_market_data_batch_ready": bool(
                 summary_row["dispatch_roundtrip_vendor_market_data_batch_ready"]
             ),
@@ -631,6 +685,47 @@ def _summary(
                     provider_summary,
                     "source_live_fetch_contract_session_close_local",
                 ),
+                "dispatch_roundtrip_exchange": _first_text(provider_summary, "dispatch_roundtrip_exchange"),
+                "dispatch_roundtrip_source_session_timezone": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_session_timezone",
+                ),
+                "dispatch_roundtrip_source_session_open_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_session_open_local",
+                ),
+                "dispatch_roundtrip_source_session_close_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_session_close_local",
+                ),
+                "dispatch_roundtrip_market_session_timezone": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_market_session_timezone",
+                ),
+                "dispatch_roundtrip_market_session_open_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_market_session_open_local",
+                ),
+                "dispatch_roundtrip_market_session_close_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_market_session_close_local",
+                ),
+                "dispatch_roundtrip_exchange_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_exchange_matches_session",
+                ),
+                "dispatch_roundtrip_source_session_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_session_matches_session",
+                ),
+                "dispatch_roundtrip_market_session_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_market_session_matches_session",
+                ),
+                "dispatch_roundtrip_metadata_consistent": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_metadata_consistent",
+                ),
                 "dispatch_roundtrip_source_credential_env_template_path": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_credential_env_template_path",
@@ -663,6 +758,26 @@ def _summary(
                     provider_summary,
                     "dispatch_roundtrip_source_live_fetch_contract_command_template",
                 ),
+                "dispatch_roundtrip_source_live_fetch_contract_exchange": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_exchange",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_market": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_market",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_session_timezone": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_session_timezone",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_session_open_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_session_open_local",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_session_close_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_session_close_local",
+                ),
                 "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": _first_bool(
                     provider_summary,
                     "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session",
@@ -670,6 +785,18 @@ def _summary(
                 "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": _first_bool(
                     provider_summary,
                     "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_market_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_market_matches_session",
+                ),
+                "dispatch_roundtrip_source_live_fetch_contract_session_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_source_live_fetch_contract_session_matches_session",
                 ),
                 "dispatch_roundtrip_source_provenance_consistent": _first_bool(
                     provider_summary,
@@ -691,9 +818,57 @@ def _summary(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_ready",
                 ),
+                "dispatch_roundtrip_capture_bundle_exchange": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_exchange",
+                ),
+                "dispatch_roundtrip_capture_bundle_source_session_timezone": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_source_session_timezone",
+                ),
+                "dispatch_roundtrip_capture_bundle_source_session_open_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_source_session_open_local",
+                ),
+                "dispatch_roundtrip_capture_bundle_source_session_close_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_source_session_close_local",
+                ),
+                "dispatch_roundtrip_capture_bundle_market_session_timezone": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_market_session_timezone",
+                ),
+                "dispatch_roundtrip_capture_bundle_market_session_open_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_market_session_open_local",
+                ),
+                "dispatch_roundtrip_capture_bundle_market_session_close_local": _first_text(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_market_session_close_local",
+                ),
+                "dispatch_roundtrip_capture_bundle_metadata_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_metadata_matches_session",
+                ),
+                "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session",
+                ),
                 "dispatch_roundtrip_capture_bundle_matches_session": _first_bool(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_matches_session",
+                ),
+                "dispatch_roundtrip_capture_bundle_exchange_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_exchange_matches_session",
+                ),
+                "dispatch_roundtrip_capture_bundle_source_session_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_source_session_matches_session",
+                ),
+                "dispatch_roundtrip_capture_bundle_market_session_matches_session": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_market_session_matches_session",
                 ),
                 "dispatch_roundtrip_capture_env_template_path": _first_text(
                     provider_summary,
@@ -981,11 +1156,40 @@ def _config(
             ),
         },
         "dispatch_roundtrip_provenance": {
+            "exchange": str(summary["dispatch_roundtrip_exchange"]),
+            "source_session": _dispatch_roundtrip_source_session_contract_from_summary(summary),
+            "market_session": _dispatch_roundtrip_market_session_contract_from_summary(summary),
+            "exchange_matches_session": bool(summary["dispatch_roundtrip_exchange_matches_session"]),
+            "source_session_matches_session": bool(summary["dispatch_roundtrip_source_session_matches_session"]),
+            "market_session_matches_session": bool(summary["dispatch_roundtrip_market_session_matches_session"]),
+            "metadata_consistent_with_runtime_session": bool(summary["dispatch_roundtrip_metadata_consistent"]),
             "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
             "capture_bundle_exists": bool(summary["dispatch_roundtrip_capture_bundle_exists"]),
             "capture_bundle_ready": bool(summary["dispatch_roundtrip_capture_bundle_ready"]),
+            "capture_bundle_exchange": str(summary["dispatch_roundtrip_capture_bundle_exchange"]),
+            "capture_bundle_source_session": _dispatch_roundtrip_capture_bundle_source_session_contract_from_summary(
+                summary
+            ),
+            "capture_bundle_market_session": _dispatch_roundtrip_capture_bundle_market_session_contract_from_summary(
+                summary
+            ),
+            "capture_bundle_metadata_matches_session": bool(
+                summary["dispatch_roundtrip_capture_bundle_metadata_matches_session"]
+            ),
+            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+                summary["dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session"]
+            ),
             "capture_bundle_matches_session": bool(summary["dispatch_roundtrip_capture_bundle_matches_session"]),
+            "capture_bundle_exchange_matches_session": bool(
+                summary["dispatch_roundtrip_capture_bundle_exchange_matches_session"]
+            ),
+            "capture_bundle_source_session_matches_session": bool(
+                summary["dispatch_roundtrip_capture_bundle_source_session_matches_session"]
+            ),
+            "capture_bundle_market_session_matches_session": bool(
+                summary["dispatch_roundtrip_capture_bundle_market_session_matches_session"]
+            ),
             "capture_env_template_path": str(summary["dispatch_roundtrip_capture_env_template_path"]),
             "capture_env_template_provided": bool(summary["dispatch_roundtrip_capture_env_template_provided"]),
             "capture_env_template_exists": bool(summary["dispatch_roundtrip_capture_env_template_exists"]),
@@ -1021,11 +1225,29 @@ def _config(
             "source_live_fetch_contract_command_template": str(
                 summary["dispatch_roundtrip_source_live_fetch_contract_command_template"]
             ),
+            "source_live_fetch_contract_exchange": str(
+                summary["dispatch_roundtrip_source_live_fetch_contract_exchange"]
+            ),
+            "source_live_fetch_contract_market": str(
+                summary["dispatch_roundtrip_source_live_fetch_contract_market"]
+            ),
+            "source_live_fetch_contract_session": (
+                _dispatch_roundtrip_source_live_fetch_contract_session_from_summary(summary)
+            ),
             "source_live_fetch_contract_next_gate_matches_session": bool(
                 summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"]
             ),
             "source_live_fetch_contract_command_template_matches_session": bool(
                 summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"]
+            ),
+            "source_live_fetch_contract_exchange_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"]
+            ),
+            "source_live_fetch_contract_market_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_market_matches_session"]
+            ),
+            "source_live_fetch_contract_session_matches_session": bool(
+                summary["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"]
             ),
             "source_provenance_consistent_with_runtime_session": bool(
                 summary["dispatch_roundtrip_source_provenance_consistent"]
@@ -1081,6 +1303,11 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
+        f"- Dispatch round-trip exchange: {summary['dispatch_roundtrip_exchange'] or 'unspecified'}",
+        "- Dispatch round-trip source session: "
+        f"{summary['dispatch_roundtrip_source_session_open_local'] or '?'} - "
+        f"{summary['dispatch_roundtrip_source_session_close_local'] or '?'} "
+        f"{summary['dispatch_roundtrip_source_session_timezone'] or ''}",
         f"- Target mode: {summary['target_mode']}",
         f"- Request state: {summary['request_state']}",
         f"- Requests: {summary['requests']}",
@@ -1092,6 +1319,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         "- Live fetch contract: "
         f"{'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        "- Dispatch round-trip live fetch contract: "
+        f"{'available' if bool(summary['dispatch_roundtrip_source_live_fetch_contract_available']) else 'missing'}",
         f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
         "- Dispatch round-trip capture env template: "
         f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",
@@ -1426,6 +1655,52 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
         "timezone": str(summary["source_live_fetch_contract_session_timezone"]),
         "open_local": str(summary["source_live_fetch_contract_session_open_local"]),
         "close_local": str(summary["source_live_fetch_contract_session_close_local"]),
+    }
+
+
+def _dispatch_roundtrip_source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["dispatch_roundtrip_source_session_timezone"]),
+        "open_local": str(summary["dispatch_roundtrip_source_session_open_local"]),
+        "close_local": str(summary["dispatch_roundtrip_source_session_close_local"]),
+    }
+
+
+def _dispatch_roundtrip_market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["dispatch_roundtrip_market_session_timezone"]),
+        "open_local": str(summary["dispatch_roundtrip_market_session_open_local"]),
+        "close_local": str(summary["dispatch_roundtrip_market_session_close_local"]),
+    }
+
+
+def _dispatch_roundtrip_capture_bundle_source_session_contract_from_summary(
+    summary: pd.Series,
+) -> dict[str, str]:
+    return {
+        "timezone": str(summary["dispatch_roundtrip_capture_bundle_source_session_timezone"]),
+        "open_local": str(summary["dispatch_roundtrip_capture_bundle_source_session_open_local"]),
+        "close_local": str(summary["dispatch_roundtrip_capture_bundle_source_session_close_local"]),
+    }
+
+
+def _dispatch_roundtrip_capture_bundle_market_session_contract_from_summary(
+    summary: pd.Series,
+) -> dict[str, str]:
+    return {
+        "timezone": str(summary["dispatch_roundtrip_capture_bundle_market_session_timezone"]),
+        "open_local": str(summary["dispatch_roundtrip_capture_bundle_market_session_open_local"]),
+        "close_local": str(summary["dispatch_roundtrip_capture_bundle_market_session_close_local"]),
+    }
+
+
+def _dispatch_roundtrip_source_live_fetch_contract_session_from_summary(
+    summary: pd.Series,
+) -> dict[str, str]:
+    return {
+        "timezone": str(summary["dispatch_roundtrip_source_live_fetch_contract_session_timezone"]),
+        "open_local": str(summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"]),
+        "close_local": str(summary["dispatch_roundtrip_source_live_fetch_contract_session_close_local"]),
     }
 
 
