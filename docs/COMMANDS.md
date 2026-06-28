@@ -4788,8 +4788,9 @@ The wrapper reads the provider telemetry summary, resolves the nested
 checks/summary/action/config/runbook artifacts plus nested generic
 `runtime_guard` outputs, and retains the upstream capture bundle, blank
 credential env-template, adapter handoff paths, source credential env-template
-proof, and `live_fetch_contract` in its provider wrapper summary/config/runbook
-and manifest. It converts guard halts into a ready
+proof, exchange/session metadata, capture-bundle session match proof, and
+`live_fetch_contract` in its provider wrapper summary/config/runbook and
+manifest. It converts guard halts into a ready
 `plan-halt-response` action. A clean guard points to
 `monitor-provider-market-data-imbalance-runtime-session`.
 

@@ -1463,8 +1463,9 @@
   telemetry. `monitor-provider-market-data-imbalance-runtime-guard` resolves the
   nested `scaleup_config.json` and `runtime_telemetry.csv`, carries capture
   bundle/env-template/adapter handoff provenance, source env-template proof,
-  and `live_fetch_contract` into provider wrapper summary/config/runbook
-  artifacts plus manifest, writes nested generic `runtime_guard` outputs,
+  exchange/session metadata, capture-bundle session match proof, and
+  `live_fetch_contract` into provider wrapper summary/config/runbook artifacts
+  plus manifest, writes nested generic `runtime_guard` outputs,
   converts guard halts into ready
   `plan-halt-response` actions, and routes clean guards to
   `monitor-provider-market-data-imbalance-runtime-session`.
