@@ -5022,8 +5022,9 @@ round-trip paths, broker-dispatch vendor-market-data batch readiness/config,
 upstream proof lineage, and inherited
 `upstream_*_vendor_market_data_batch_*` readiness/config from the send packet.
 It also preserves the capture bundle, blank credential env-template, and
-adapter handoff paths, source credential env-template proof, and
-`live_fetch_contract` inherited from the send packet. It also carries the
+adapter handoff paths, source credential env-template proof, exchange/session
+metadata, capture-bundle session match proof, and `live_fetch_contract`
+inherited from the send packet. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
 `live_fetch_contract`, and source-provenance consistency flags beside the
 acknowledgement proof. The wrapper runs `reconcile-broker-dispatch` under a nested
