@@ -204,6 +204,8 @@ def write_provider_market_data_imbalance_route_enable(
         out,
         provider_summary,
         provider_broker_summary,
+        provider_config,
+        provider_broker_config,
     )
     action_queue = _action_queue(summary.iloc[0], checks, route_enable)
     summary = _summary_with_actions(summary, action_queue)
@@ -691,12 +693,19 @@ def _summary(
     output_dir: Path,
     provider_summary: pd.DataFrame,
     provider_broker_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+    provider_broker_config: dict[str, Any],
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     ready = failed == 0
     route_summary = route_enable.summary if route_enable is not None else pd.DataFrame()
     route_packet = route_enable.packet if route_enable is not None else pd.DataFrame()
     route_dir = "" if route_enable is None else str(route_enable.output_dir or "")
+    provider_summary = _with_dispatch_roundtrip_config_fallback(provider_summary, provider_config)
+    provider_broker_summary = _with_dispatch_roundtrip_config_fallback(
+        provider_broker_summary,
+        provider_broker_config,
+    )
     return pd.DataFrame(
         [
             {
@@ -1311,6 +1320,380 @@ def _vendor_market_data_batch_config(
         if isinstance(vendor, dict) and vendor:
             return dict(vendor)
     return {}
+
+
+def _with_dispatch_roundtrip_config_fallback(
+    frame: pd.DataFrame,
+    *configs: dict[str, Any],
+) -> pd.DataFrame:
+    fallback = _dispatch_roundtrip_config_summary(*configs)
+    if fallback.empty:
+        return frame
+    if frame is None or frame.empty:
+        return fallback
+    out = frame.copy()
+    fallback_row = fallback.iloc[0]
+    for column in fallback.columns:
+        value = fallback_row[column]
+        if not _value_present(value):
+            continue
+        if column not in out.columns:
+            out[column] = ""
+        if not _first_value_present(out, column):
+            out[column] = out[column].astype("object")
+            out.loc[out.index[0], column] = value
+    return out
+
+
+def _dispatch_roundtrip_config_summary(*configs: dict[str, Any]) -> pd.DataFrame:
+    record: dict[str, Any] = {}
+    for config in configs:
+        provenance = _dispatch_roundtrip_provenance(config)
+        if not provenance:
+            continue
+        _set_config_text(record, "dispatch_roundtrip_exchange", provenance, "exchange")
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_source_session_timezone",
+            provenance,
+            "source_session",
+            "timezone",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_source_session_open_local",
+            provenance,
+            "source_session",
+            "open_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_source_session_close_local",
+            provenance,
+            "source_session",
+            "close_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_market_session_timezone",
+            provenance,
+            "market_session",
+            "timezone",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_market_session_open_local",
+            provenance,
+            "market_session",
+            "open_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_market_session_close_local",
+            provenance,
+            "market_session",
+            "close_local",
+        )
+        _set_config_bool(record, "dispatch_roundtrip_exchange_matches_session", provenance, "exchange_matches_session")
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_session_matches_session",
+            provenance,
+            "source_session_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_market_session_matches_session",
+            provenance,
+            "market_session_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_metadata_consistent",
+            provenance,
+            "metadata_consistent_with_runtime_session",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_source_credential_env_template_path",
+            provenance,
+            "source_credential_env_template_path",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_credential_env_template_exists",
+            provenance,
+            "source_credential_env_template_exists",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_source_credential_env_template_sha256",
+            provenance,
+            "source_credential_env_template_sha256",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_credential_env_template_matches_session",
+            provenance,
+            "source_credential_env_template_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_credential_env_template_sha256_matches_session",
+            provenance,
+            "source_credential_env_template_sha256_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_available",
+            provenance,
+            "source_live_fetch_contract_available",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_next_gate",
+            provenance,
+            "source_live_fetch_contract_next_gate",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_command_template",
+            provenance,
+            "source_live_fetch_contract_command_template",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_exchange",
+            provenance,
+            "source_live_fetch_contract_exchange",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_market",
+            provenance,
+            "source_live_fetch_contract_market",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_session_timezone",
+            provenance,
+            "source_live_fetch_contract_session",
+            "timezone",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_session_open_local",
+            provenance,
+            "source_live_fetch_contract_session",
+            "open_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_session_close_local",
+            provenance,
+            "source_live_fetch_contract_session",
+            "close_local",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session",
+            provenance,
+            "source_live_fetch_contract_next_gate_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session",
+            provenance,
+            "source_live_fetch_contract_command_template_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session",
+            provenance,
+            "source_live_fetch_contract_exchange_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_market_matches_session",
+            provenance,
+            "source_live_fetch_contract_market_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_live_fetch_contract_session_matches_session",
+            provenance,
+            "source_live_fetch_contract_session_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_source_provenance_consistent",
+            provenance,
+            "source_provenance_consistent_with_runtime_session",
+        )
+        _set_config_text(record, "dispatch_roundtrip_capture_bundle_path", provenance, "capture_bundle_path")
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_provided",
+            provenance,
+            "capture_bundle_provided",
+        )
+        _set_config_bool(record, "dispatch_roundtrip_capture_bundle_exists", provenance, "capture_bundle_exists")
+        _set_config_bool(record, "dispatch_roundtrip_capture_bundle_ready", provenance, "capture_bundle_ready")
+        _set_config_text(record, "dispatch_roundtrip_capture_bundle_exchange", provenance, "capture_bundle_exchange")
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_source_session_timezone",
+            provenance,
+            "capture_bundle_source_session",
+            "timezone",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_source_session_open_local",
+            provenance,
+            "capture_bundle_source_session",
+            "open_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_source_session_close_local",
+            provenance,
+            "capture_bundle_source_session",
+            "close_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_market_session_timezone",
+            provenance,
+            "capture_bundle_market_session",
+            "timezone",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_market_session_open_local",
+            provenance,
+            "capture_bundle_market_session",
+            "open_local",
+        )
+        _set_nested_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_market_session_close_local",
+            provenance,
+            "capture_bundle_market_session",
+            "close_local",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_metadata_matches_session",
+            provenance,
+            "capture_bundle_metadata_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session",
+            provenance,
+            "capture_bundle_live_fetch_contract_metadata_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_matches_session",
+            provenance,
+            "capture_bundle_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_exchange_matches_session",
+            provenance,
+            "capture_bundle_exchange_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_source_session_matches_session",
+            provenance,
+            "capture_bundle_source_session_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_market_session_matches_session",
+            provenance,
+            "capture_bundle_market_session_matches_session",
+        )
+        _set_config_text(record, "dispatch_roundtrip_capture_env_template_path", provenance, "capture_env_template_path")
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_env_template_provided",
+            provenance,
+            "capture_env_template_provided",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_env_template_exists",
+            provenance,
+            "capture_env_template_exists",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_env_template_matches_session",
+            provenance,
+            "capture_env_template_matches_session",
+        )
+        _set_config_text(record, "dispatch_roundtrip_adapter_handoff_path", provenance, "adapter_handoff_path")
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_adapter_handoff_provided",
+            provenance,
+            "adapter_handoff_provided",
+        )
+        _set_config_bool(record, "dispatch_roundtrip_adapter_handoff_exists", provenance, "adapter_handoff_exists")
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_adapter_handoff_matches_session",
+            provenance,
+            "adapter_handoff_matches_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_provenance_consistent",
+            provenance,
+            "consistent_with_runtime_session",
+        )
+    return pd.DataFrame([record]) if record else pd.DataFrame()
+
+
+def _dispatch_roundtrip_provenance(config: dict[str, Any]) -> dict[str, Any]:
+    value = config.get("dispatch_roundtrip_provenance", {})
+    return value if isinstance(value, dict) else {}
+
+
+def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
+    if _value_present(record.get(column)) or key not in mapping:
+        return
+    value = _clean(mapping.get(key))
+    if value:
+        record[column] = value
+
+
+def _set_config_bool(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
+    if _value_present(record.get(column)) or key not in mapping:
+        return
+    record[column] = _truthy(mapping.get(key))
+
+
+def _set_nested_config_text(
+    record: dict[str, Any],
+    column: str,
+    mapping: dict[str, Any],
+    key: str,
+    nested_key: str,
+) -> None:
+    if _value_present(record.get(column)):
+        return
+    nested = mapping.get(key, {})
+    if not isinstance(nested, dict) or nested_key not in nested:
+        return
+    value = _clean(nested.get(nested_key))
+    if value:
+        record[column] = value
 
 
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
@@ -2113,9 +2496,15 @@ def _first_bool_from_frames(column: str, *frames: pd.DataFrame | None) -> bool:
         if frame is None or frame.empty or column not in frame.columns:
             continue
         value = frame.iloc[0][column]
-        if _clean(value):
+        if _value_present(value):
             return _truthy(value)
     return False
+
+
+def _first_value_present(frame: pd.DataFrame | None, column: str) -> bool:
+    if frame is None or frame.empty or column not in frame.columns:
+        return False
+    return _value_present(frame.iloc[0][column])
 
 
 def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:
@@ -2139,6 +2528,19 @@ def _first_number_from_frames(column: str, *frames: pd.DataFrame | None, fallbac
 
 def _identity_key(value: object) -> str:
     return _clean(value).lower().replace("-", "_").replace(" ", "_")
+
+
+def _value_present(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _truthy(value: object) -> bool:

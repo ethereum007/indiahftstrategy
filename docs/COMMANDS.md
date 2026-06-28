@@ -4941,7 +4941,11 @@ bundle/env-template/adapter handoff provenance, route-enable carries those
 env-template, round-trip exchange/session metadata, capture-bundle session
 proof, live-fetch exchange/session identity, and `live_fetch_contract`
 snapshot, manifest inputs, and consistency flags forward for broker-dispatch
-planning. The
+planning. When a cutover CSV is sparse but its config sidecar has
+`dispatch_roundtrip_provenance`, route-enable hydrates missing or blank
+`dispatch_roundtrip_*` fields from that config before falling back to the
+broker-readiness config sidecar, while keeping explicit summary `False` values
+authoritative. The
 wrapper runs `review-route-enable` under a nested
 `route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready

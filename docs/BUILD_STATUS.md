@@ -1600,7 +1600,11 @@
   exchange/session identity, `live_fetch_contract`, and provenance-consistency
   flags into summary/config/runbook artifacts plus manifest inputs/metadata,
   keeping dry-run broker proof visible through the handoff to provider
-  broker-dispatch planning.
+  broker-dispatch planning. Route-enable now also hydrates missing or blank
+  cutover `dispatch_roundtrip_*` summary fields from the cutover
+  `dispatch_roundtrip_provenance` config block before falling back to the
+  broker-readiness config block, while preserving explicit summary `False`
+  values, so sparse cutover CSVs do not lose the validated live-data handoff.
 - Provider-data imbalance broker-dispatch now preserves the route-enable-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
