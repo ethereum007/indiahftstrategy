@@ -4687,7 +4687,8 @@ profile from the launch-evidence catalog. A ready scorecard has readiness score
 paper/shadow capital and runtime sizing. The provider scorecard
 summary/config/runbook and manifest also retain the upstream capture bundle,
 blank credential env-template, adapter handoff paths, source credential
-env-template proof, and `live_fetch_contract` before scale-up planning begins.
+env-template proof, exchange/session metadata, capture-bundle session match
+proof, and `live_fetch_contract` before scale-up planning begins.
 
 Build provider route-readiness proof from the same launch evidence:
 
