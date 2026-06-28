@@ -1577,8 +1577,9 @@
   vendor-market-data batch proof, any upstream proof lineage, and upstream
   vendor-market-data batch lineage. It now also keeps the broker-readiness
   validated round-trip capture bundle/env-template/adapter handoff paths,
-  source credential env-template proof, exchange/session metadata,
-  capture-bundle session match proof, `live_fetch_contract`, and
+  source credential env-template proof, round-trip exchange/session metadata,
+  capture-bundle session match proof, live-fetch exchange/session identity,
+  `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
   before live-data dry-runs.

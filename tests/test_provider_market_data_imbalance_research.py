@@ -3600,6 +3600,17 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "source_live_fetch_contract_available": True,
                 "source_live_fetch_contract_next_gate": "provider_fetcher",
                 "source_live_fetch_contract_command_template": "python -m hft_cli fetch-provider-live-data",
+                "dispatch_roundtrip_exchange": "NFO",
+                "dispatch_roundtrip_source_session_timezone": "Asia/Kolkata",
+                "dispatch_roundtrip_source_session_open_local": "09:15:00",
+                "dispatch_roundtrip_source_session_close_local": "15:30:00",
+                "dispatch_roundtrip_market_session_timezone": "Asia/Kolkata",
+                "dispatch_roundtrip_market_session_open_local": "09:15",
+                "dispatch_roundtrip_market_session_close_local": "15:30",
+                "dispatch_roundtrip_exchange_matches_session": True,
+                "dispatch_roundtrip_source_session_matches_session": True,
+                "dispatch_roundtrip_market_session_matches_session": True,
+                "dispatch_roundtrip_metadata_consistent": True,
                 "dispatch_roundtrip_source_credential_env_template_path": str(source_env_template_path),
                 "dispatch_roundtrip_source_credential_env_template_exists": True,
                 "dispatch_roundtrip_source_credential_env_template_sha256": "a" * 64,
@@ -3610,14 +3621,34 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "dispatch_roundtrip_source_live_fetch_contract_command_template": (
                     "python -m hft_cli fetch-provider-live-data"
                 ),
+                "dispatch_roundtrip_source_live_fetch_contract_exchange": "NFO",
+                "dispatch_roundtrip_source_live_fetch_contract_market": "india_nse_index_derivatives",
+                "dispatch_roundtrip_source_live_fetch_contract_session_timezone": "Asia/Kolkata",
+                "dispatch_roundtrip_source_live_fetch_contract_session_open_local": "09:15:00",
+                "dispatch_roundtrip_source_live_fetch_contract_session_close_local": "15:30:00",
                 "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": True,
                 "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": True,
+                "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session": True,
+                "dispatch_roundtrip_source_live_fetch_contract_market_matches_session": True,
+                "dispatch_roundtrip_source_live_fetch_contract_session_matches_session": True,
                 "dispatch_roundtrip_source_provenance_consistent": True,
                 "dispatch_roundtrip_capture_bundle_path": str(bundle_path),
                 "dispatch_roundtrip_capture_bundle_provided": True,
                 "dispatch_roundtrip_capture_bundle_exists": True,
                 "dispatch_roundtrip_capture_bundle_ready": True,
+                "dispatch_roundtrip_capture_bundle_exchange": "NFO",
+                "dispatch_roundtrip_capture_bundle_source_session_timezone": "Asia/Kolkata",
+                "dispatch_roundtrip_capture_bundle_source_session_open_local": "09:15:00",
+                "dispatch_roundtrip_capture_bundle_source_session_close_local": "15:30:00",
+                "dispatch_roundtrip_capture_bundle_market_session_timezone": "Asia/Kolkata",
+                "dispatch_roundtrip_capture_bundle_market_session_open_local": "09:15",
+                "dispatch_roundtrip_capture_bundle_market_session_close_local": "15:30",
+                "dispatch_roundtrip_capture_bundle_metadata_matches_session": True,
+                "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session": True,
                 "dispatch_roundtrip_capture_bundle_matches_session": True,
+                "dispatch_roundtrip_capture_bundle_exchange_matches_session": True,
+                "dispatch_roundtrip_capture_bundle_source_session_matches_session": True,
+                "dispatch_roundtrip_capture_bundle_market_session_matches_session": True,
                 "dispatch_roundtrip_capture_env_template_path": str(env_template_path),
                 "dispatch_roundtrip_capture_env_template_provided": True,
                 "dispatch_roundtrip_capture_env_template_exists": True,
@@ -3700,13 +3731,36 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert summary["dispatch_roundtrip_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_source_session_open_local"] == "09:15:00"
+    assert bool(summary["dispatch_roundtrip_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_session_matches_session"])
+    assert bool(summary["dispatch_roundtrip_metadata_consistent"])
+    assert summary["dispatch_roundtrip_capture_bundle_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_capture_bundle_source_session_open_local"] == "09:15:00"
+    assert summary["dispatch_roundtrip_capture_bundle_market_session_open_local"] == "09:15"
+    assert bool(summary["dispatch_roundtrip_capture_bundle_metadata_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_exchange_matches_session"])
     assert Path(summary["dispatch_roundtrip_source_credential_env_template_path"]) == source_env_template_path
     assert bool(summary["dispatch_roundtrip_source_credential_env_template_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"])
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_market"] == "india_nse_index_derivatives"
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"] == "09:15:00"
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
+    assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
+    assert config["dispatch_roundtrip_provenance"]["metadata_consistent_with_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_source_session"]["open_local"] == "09:15:00"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_market_session"]["open_local"] == "09:15"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_metadata_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
@@ -3714,6 +3768,9 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
         source_env_template_path
     )
     assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_matches_session"]
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_session"]["open_local"] == "09:15:00"
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_exchange_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
     assert config["provider_broker_readiness"]["dispatch_roundtrip_adapter_handoff_path"] == str(
         adapter_handoff_path
@@ -3732,7 +3789,14 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_metadata_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip"]["exchange"] == "NFO"
+    assert manifest["extra"]["dispatch_roundtrip"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
+    assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
     assert str(adapter_handoff_path) in runbook
+    assert "Dispatch round-trip exchange: NFO" in runbook
+    assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert str(source_env_template_path) in runbook
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
