@@ -5068,8 +5068,9 @@ exchange/session metadata, capture-bundle session match proof, and
 source credential env-template, round-trip exchange/session metadata,
 capture-bundle session proof, live-fetch exchange/session identity,
 `live_fetch_contract`, and source-provenance consistency flags, into
-summary/config/runbook artifacts plus manifest inputs/extra metadata, and
-writes provider checks/action artifacts.
+summary/config/runbook artifacts plus manifest inputs/extra metadata; the
+runbook also prints the ack-retained round-trip exchange/session and
+live-fetch availability before writing provider checks/action artifacts.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own
 summary/config under both
