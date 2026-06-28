@@ -142,8 +142,9 @@
   `review-provider-market-data-imbalance-evidence` catalogs the provider
   research run, reviews the `provider_imbalance_research` profile, carries
   capture bundle/env-template/adapter handoff provenance, source env-template
-  proof, and `live_fetch_contract` into evidence summary/config/runbook
-  artifacts plus the manifest, and points ready candidates to
+  proof, exchange/session metadata, capture-bundle session match proof, and
+  `live_fetch_contract` into evidence summary/config/runbook artifacts plus the
+  manifest, and points ready candidates to
   `pipeline-imbalance-launch` without weakening the full launch-ready
   `imbalance` profile.
 - Provider market-data imbalance launch packaging now bridges ready provider
