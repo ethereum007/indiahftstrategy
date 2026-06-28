@@ -4957,8 +4957,9 @@ wrapper, nested generic `broker_dispatch_roundtrip` paths, vendor-market-data
 batch readiness fields/config, upstream proof lineage, and inherited
 `upstream_*_vendor_market_data_batch_*` readiness fields/config. It also
 preserves the capture bundle, blank credential env-template, and adapter
-handoff paths, source credential env-template proof, and `live_fetch_contract`
-inherited from route-enable. It also carries the route-enable-retained
+handoff paths, source credential env-template proof, exchange/session metadata,
+capture-bundle session match proof, and `live_fetch_contract` inherited from
+route-enable. It also carries the route-enable-retained
 validated dispatch round-trip source credential env-template,
 `live_fetch_contract`, and source-provenance consistency flags so broker
 dispatch reviewers can trace the exact live data source before generating
