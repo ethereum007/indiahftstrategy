@@ -4842,8 +4842,9 @@ wrapper, preserves inherited upstream vendor-market-data batch evidence under
 `broker_readiness` gate under a nested folder, and writes provider
 checks/summary/action/config/runbook artifacts. It also retains the upstream
 capture bundle, blank credential env-template, adapter handoff paths, source
-credential env-template proof, and `live_fetch_contract` in the provider
-summary/config/runbook plus manifest, so broker integration reviewers can trace
+credential env-template proof, exchange/session metadata, capture-bundle session
+match proof, and `live_fetch_contract` in the provider summary/config/runbook
+plus manifest, so broker integration reviewers can trace
 the live data source without opening nested runtime-session folders.
 When a provider round-trip proof carries its own capture bundle/env-template,
 adapter handoff path, source credential env-template proof, or
