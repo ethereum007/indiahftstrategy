@@ -1616,6 +1616,11 @@
   exchange/session identity, `live_fetch_contract`, and source/capture
   provenance-consistency flags through summary/config/runbook artifacts plus
   manifest inputs/metadata before the non-submitting send packet is prepared.
+  Broker-dispatch now also hydrates missing or blank route-enable
+  `dispatch_roundtrip_*` summary fields from the route-enable
+  `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
+  summary `False` values, so sparse route-enable CSVs do not lose the
+  validated live-data handoff before send packet preparation.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream

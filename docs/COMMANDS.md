@@ -4978,7 +4978,10 @@ validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
 exchange/session identity, `live_fetch_contract`, and source-provenance
 consistency flags so broker dispatch reviewers can trace the exact live data
-source before generating non-submitting dry-run orders. The
+source before generating non-submitting dry-run orders. When a route-enable CSV
+is sparse but its config sidecar has `dispatch_roundtrip_provenance`,
+broker-dispatch hydrates missing or blank `dispatch_roundtrip_*` fields from
+that config while keeping explicit summary `False` values authoritative. The
 wrapper runs `plan-broker-dispatch` under a nested `broker_dispatch` folder,
 and writes provider checks/summary/action/config/runbook artifacts. Fully clean
 wrappers emit a ready `prepare_provider_imbalance_broker_dispatch_send` action
