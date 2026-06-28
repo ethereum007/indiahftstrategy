@@ -14,6 +14,7 @@ from reports.manifest import write_experiment_manifest
 
 DEFAULT_ADAPTER_TEMPLATE = (
     "provider-adapter capture "
+    "--handoff {adapter_handoff} --env-template {capture_env_template} "
     "--provider {provider} --transport {transport} --endpoint {endpoint} "
     "--market {market} --exchange {exchange} --kind {kind} --start {start_local} --end {end_local} "
     "--output {capture_path}"
@@ -182,6 +183,11 @@ def _commands(
             "end_local": _shell_quote(_text(window.get("end_local"))),
             "capture_path": _shell_quote(capture_path),
             "env_vars": _shell_quote(";".join(env_vars)),
+            "adapter_handoff": _shell_quote(ADAPTER_HANDOFF_NAME),
+            "capture_env_template": _shell_quote(ENV_TEMPLATE_NAME),
+            "source_env_template": _shell_quote(
+                _text(_mapping(_mapping(packet.get("authentication")).get("env_template")).get("path"))
+            ),
         }
         command, render_error = _render_template(template, context)
         capture_exists = bool(capture_path and Path(capture_path).exists() and Path(capture_path).is_file())
@@ -530,6 +536,7 @@ def _adapter_handoff(
             "injection": _text(auth.get("injection")),
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
+        "capture_env_template": ENV_TEMPLATE_NAME,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "output": {
             "format": _text(output.get("format")),

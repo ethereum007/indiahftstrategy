@@ -102,6 +102,9 @@
   `live_fetch_contract` provenance, inherited exchange/session metadata for the
   approved source, and the exact post-capture ingest command while blocking
   missing preflight evidence, metadata drift, and capture overwrite risk.
+  Default adapter commands now explicitly pass the handoff JSON and blank
+  capture env-template file, so Arrow.money/iRage adapter processes receive
+  the same contract artifacts the bundle manifests.
 - Provider market-data live rehearsal now proves the backend handoff without
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally
