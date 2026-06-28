@@ -1454,7 +1454,8 @@
   infers nested `scaleup_config.json` plus broker export/upload inputs from the
   provider launch pipeline, accepts optional live PnL/open-order/position CSVs,
   carries capture bundle/env-template/adapter handoff provenance, source
-  env-template proof, and `live_fetch_contract` into provider wrapper
+  env-template proof, exchange/session metadata, capture-bundle session match
+  proof, and `live_fetch_contract` into provider wrapper
   summary/config/runbook artifacts plus manifest, writes nested generic
   `runtime_telemetry` outputs, and points ready runs to
   `monitor-provider-market-data-imbalance-runtime-guard`.
