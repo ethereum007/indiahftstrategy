@@ -105,6 +105,38 @@ def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
     assert config["credentials"]["values_stored"] is False
 
 
+def test_market_data_source_plan_defaults_irage_live_env_contract(tmp_path):
+    out_dir = tmp_path / "source_plan"
+
+    report = write_market_data_source_plan(
+        out_dir,
+        config=MarketDataSourceConfig(
+            provider="irage",
+            kind="ticks",
+            transport="rest",
+            source_uri="https://api.irage.example/market-data/nfo/ticks",
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "market_data_source_config.json").read_text(encoding="utf-8"))
+    env_template = (out_dir / "market_data_source_env_template.env").read_text(encoding="utf-8")
+    assert report.ready
+    assert summary["provider"] == "irage"
+    assert summary["adapter"] == "irage"
+    assert summary["transport"] == "rest"
+    assert summary["auth_env_var_count"] == 2
+    assert summary["auth_env_vars"] == "IRAGE_API_KEY;IRAGE_API_SECRET"
+    assert bool(summary["live_fetch_contract_available"])
+    assert config["credentials"]["env_vars"] == ["IRAGE_API_KEY", "IRAGE_API_SECRET"]
+    assert config["credentials"]["env_template_entry_count"] == 2
+    assert config["credentials"]["values_stored"] is False
+    assert config["next_gate"] == "provider_fetcher"
+    assert config["live_fetch_contract"]["required_inputs"] == ["symbol", "window_start", "window_end"]
+    assert "IRAGE_API_KEY=\n" in env_template
+    assert "IRAGE_API_SECRET=\n" in env_template
+
+
 def test_market_data_source_plan_blocks_missing_live_credentials_and_embedded_secret(tmp_path):
     out_dir = tmp_path / "source_plan"
 

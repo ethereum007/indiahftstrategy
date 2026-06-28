@@ -26,12 +26,14 @@ PROVIDER_SPECS: dict[str, dict[str, object]] = {
         "adapter": "arrow_money",
         "transports": ("file", "rest", "websocket"),
         "auth_required": True,
+        "credential_env_vars": ("ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"),
         "capabilities": ("historical_batch", "live_ticks", "option_chain"),
     },
     "irage": {
         "adapter": "irage",
         "transports": ("file", "rest", "websocket"),
         "auth_required": True,
+        "credential_env_vars": ("IRAGE_API_KEY", "IRAGE_API_SECRET"),
         "capabilities": ("historical_batch", "live_ticks", "option_chain"),
     },
 }
@@ -136,20 +138,24 @@ def _normalize_config(config: MarketDataSourceConfig) -> MarketDataSourceConfig:
     provider_spec = PROVIDER_SPECS.get(provider, {})
     default_adapter = str(provider_spec.get("adapter", provider))
     adapter = _identity_key(config.adapter) or default_adapter
+    transport = _identity_key(config.transport) or "file"
     market = _identity_key(config.market) or INDIA_NSE_INDEX_DERIVATIVES.name
     profile = MARKET_PROFILES.get(market, INDIA_NSE_INDEX_DERIVATIVES)
+    auth_env_vars = tuple(_normalize_auth_envs(config.auth_env_vars))
+    if not auth_env_vars and transport != "file" and provider_spec.get("auth_required"):
+        auth_env_vars = tuple(_normalize_auth_envs(provider_spec.get("credential_env_vars", ())))
     return MarketDataSourceConfig(
         provider=provider,
         adapter=adapter,
         kind=_identity_key(config.kind) or "ticks",
-        transport=_identity_key(config.transport) or "file",
+        transport=transport,
         source_uri=str(config.source_uri or "").strip(),
         market=market,
         exchange=_exchange_key(config.exchange) or DEFAULT_EXCHANGE,
         session_timezone=str(config.session_timezone or profile.session.timezone).strip(),
         session_open=_session_hhmmss(config.session_open, _seconds_to_hhmmss(profile.session.open_seconds)),
         session_close=_session_hhmmss(config.session_close, _seconds_to_hhmmss(profile.session.close_seconds)),
-        auth_env_vars=tuple(_normalize_auth_envs(config.auth_env_vars)),
+        auth_env_vars=auth_env_vars,
         label=str(config.label or "").strip(),
     )
 

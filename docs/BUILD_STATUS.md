@@ -49,6 +49,10 @@
   `market_data_source_env_template.env` sidecar and a manifest-backed
   `live_fetch_contract` command template so Arrow.money/iRage credential
   staging and dry-run fetch planning are traceable from the first backend gate.
+  Arrow.money and iRage live plans now default missing credential env-var names
+  into blank provider-specific template entries, preserving the no-secret
+  artifact contract while letting adapter setup proceed before real credentials
+  arrive.
   Source, fetch, fetcher, and client handoffs now also preserve the provider
   exchange/segment plus the market-session timezone/open/close window, giving
   iRage/Arrow adapter wiring an explicit NSE/NFO session contract instead of
