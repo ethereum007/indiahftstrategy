@@ -150,7 +150,9 @@
   handoff provenance, source env-template proof, exchange/session metadata, and
   `live_fetch_contract` through the strategy wrapper artifacts and manifest, and
   blocks before strategy math when evidence is synthetic smoke or not
-  research-ready.
+  research-ready. The wrapper summary/config and manifest extras also expose
+  capture env-template and adapter handoff SHA-256 values directly for
+  strategy-layer audit.
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider

@@ -183,6 +183,16 @@ def write_provider_market_data_imbalance_research(
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
+            "capture_env_template": {
+                "path": str(summary.iloc[0]["capture_env_template_path"]),
+                "exists": bool(summary.iloc[0]["capture_env_template_exists"]),
+                "sha256": str(summary.iloc[0]["capture_env_template_sha256"]),
+            },
+            "adapter_handoff": {
+                "path": str(summary.iloc[0]["adapter_handoff_path"]),
+                "exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
+                "sha256": str(summary.iloc[0]["adapter_handoff_sha256"]),
+            },
             "capture_bundle_metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -435,9 +445,11 @@ def _summary(
                 "capture_env_template_path": str(handoff_row.get("capture_env_template_path", "") or ""),
                 "capture_env_template_provided": _truthy(handoff_row.get("capture_env_template_provided")),
                 "capture_env_template_exists": _truthy(handoff_row.get("capture_env_template_exists")),
+                "capture_env_template_sha256": str(handoff_row.get("capture_env_template_sha256", "") or ""),
                 "adapter_handoff_path": str(handoff_row.get("adapter_handoff_path", "") or ""),
                 "adapter_handoff_provided": _truthy(handoff_row.get("adapter_handoff_provided")),
                 "adapter_handoff_exists": _truthy(handoff_row.get("adapter_handoff_exists")),
+                "adapter_handoff_sha256": str(handoff_row.get("adapter_handoff_sha256", "") or ""),
                 "source_credential_env_template_path": str(
                     handoff_row.get("source_credential_env_template_path", "") or ""
                 ),
@@ -889,9 +901,11 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         "capture_env_template_path": str(row.get("capture_env_template_path", "") or ""),
         "capture_env_template_provided": _truthy(row.get("capture_env_template_provided")),
         "capture_env_template_exists": _truthy(row.get("capture_env_template_exists")),
+        "capture_env_template_sha256": str(row.get("capture_env_template_sha256", "") or ""),
         "adapter_handoff_path": str(row.get("adapter_handoff_path", "") or ""),
         "adapter_handoff_provided": _truthy(row.get("adapter_handoff_provided")),
         "adapter_handoff_exists": _truthy(row.get("adapter_handoff_exists")),
+        "adapter_handoff_sha256": str(row.get("adapter_handoff_sha256", "") or ""),
         "source_credential_env_template_path": str(row.get("source_credential_env_template_path", "") or ""),
         "source_credential_env_template_provided": _truthy(row.get("source_credential_env_template_provided")),
         "source_credential_env_template_exists": _truthy(row.get("source_credential_env_template_exists")),
