@@ -5091,6 +5091,10 @@ capture-bundle session proof, live-fetch exchange/session identity,
 summary/config/runbook artifacts plus manifest inputs/extra metadata; the
 runbook also prints the ack-retained round-trip exchange/session and
 live-fetch availability before writing provider checks/action artifacts.
+When an acknowledgement CSV is sparse but its config sidecar has
+`dispatch_roundtrip_provenance`, the provider round-trip wrapper hydrates
+missing or blank `dispatch_roundtrip_*` fields from that config while keeping
+explicit summary `False` values authoritative.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own
 summary/config under both

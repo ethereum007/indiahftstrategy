@@ -201,6 +201,7 @@ def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
         out,
         broker_dispatch_roundtrip_dir,
         provider_summary,
+        provider_config,
         upstream_provider_dispatch_roundtrip_dir,
         upstream_dispatch_roundtrip_dir,
     )
@@ -696,6 +697,7 @@ def _summary(
     output_dir: Path,
     broker_dispatch_roundtrip_dir: Path,
     provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
     upstream_provider_dispatch_roundtrip_dir: Path | None,
     upstream_dispatch_roundtrip_dir: Path | None,
 ) -> pd.DataFrame:
@@ -707,6 +709,7 @@ def _summary(
         if broker_dispatch_roundtrip is None
         else Path(broker_dispatch_roundtrip.output_dir or broker_dispatch_roundtrip_dir)
     )
+    provider_summary = _with_dispatch_roundtrip_config_fallback(provider_summary, provider_config)
     return pd.DataFrame(
         [
             {
@@ -1090,6 +1093,253 @@ def _summary(
             }
         ]
     )
+
+
+DISPATCH_ROUNDTRIP_CONFIG_TEXT_FIELDS = (
+    ("dispatch_roundtrip_exchange", "exchange"),
+    (
+        "dispatch_roundtrip_source_credential_env_template_path",
+        "source_credential_env_template_path",
+    ),
+    (
+        "dispatch_roundtrip_source_credential_env_template_sha256",
+        "source_credential_env_template_sha256",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_next_gate",
+        "source_live_fetch_contract_next_gate",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_command_template",
+        "source_live_fetch_contract_command_template",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_exchange",
+        "source_live_fetch_contract_exchange",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_market",
+        "source_live_fetch_contract_market",
+    ),
+    ("dispatch_roundtrip_capture_bundle_path", "capture_bundle_path"),
+    ("dispatch_roundtrip_capture_bundle_exchange", "capture_bundle_exchange"),
+    ("dispatch_roundtrip_capture_env_template_path", "capture_env_template_path"),
+    ("dispatch_roundtrip_adapter_handoff_path", "adapter_handoff_path"),
+)
+
+DISPATCH_ROUNDTRIP_CONFIG_BOOL_FIELDS = (
+    ("dispatch_roundtrip_exchange_matches_session", "exchange_matches_session"),
+    ("dispatch_roundtrip_source_session_matches_session", "source_session_matches_session"),
+    ("dispatch_roundtrip_market_session_matches_session", "market_session_matches_session"),
+    (
+        "dispatch_roundtrip_metadata_consistent",
+        "metadata_consistent_with_runtime_session",
+    ),
+    (
+        "dispatch_roundtrip_source_credential_env_template_exists",
+        "source_credential_env_template_exists",
+    ),
+    (
+        "dispatch_roundtrip_source_credential_env_template_matches_session",
+        "source_credential_env_template_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_credential_env_template_sha256_matches_session",
+        "source_credential_env_template_sha256_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_available",
+        "source_live_fetch_contract_available",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session",
+        "source_live_fetch_contract_next_gate_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session",
+        "source_live_fetch_contract_command_template_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session",
+        "source_live_fetch_contract_exchange_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_market_matches_session",
+        "source_live_fetch_contract_market_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_session_matches_session",
+        "source_live_fetch_contract_session_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_source_provenance_consistent",
+        "source_provenance_consistent_with_runtime_session",
+    ),
+    ("dispatch_roundtrip_capture_bundle_provided", "capture_bundle_provided"),
+    ("dispatch_roundtrip_capture_bundle_exists", "capture_bundle_exists"),
+    ("dispatch_roundtrip_capture_bundle_ready", "capture_bundle_ready"),
+    (
+        "dispatch_roundtrip_capture_bundle_metadata_matches_session",
+        "capture_bundle_metadata_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session",
+        "capture_bundle_live_fetch_contract_metadata_matches_session",
+    ),
+    ("dispatch_roundtrip_capture_bundle_matches_session", "capture_bundle_matches_session"),
+    (
+        "dispatch_roundtrip_capture_bundle_exchange_matches_session",
+        "capture_bundle_exchange_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_source_session_matches_session",
+        "capture_bundle_source_session_matches_session",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_market_session_matches_session",
+        "capture_bundle_market_session_matches_session",
+    ),
+    ("dispatch_roundtrip_capture_env_template_provided", "capture_env_template_provided"),
+    ("dispatch_roundtrip_capture_env_template_exists", "capture_env_template_exists"),
+    (
+        "dispatch_roundtrip_capture_env_template_matches_session",
+        "capture_env_template_matches_session",
+    ),
+    ("dispatch_roundtrip_adapter_handoff_provided", "adapter_handoff_provided"),
+    ("dispatch_roundtrip_adapter_handoff_exists", "adapter_handoff_exists"),
+    ("dispatch_roundtrip_adapter_handoff_matches_session", "adapter_handoff_matches_session"),
+    (
+        "dispatch_roundtrip_capture_provenance_consistent",
+        "consistent_with_runtime_session",
+    ),
+)
+
+DISPATCH_ROUNDTRIP_CONFIG_NESTED_TEXT_FIELDS = (
+    ("dispatch_roundtrip_source_session_timezone", "source_session", "timezone"),
+    ("dispatch_roundtrip_source_session_open_local", "source_session", "open_local"),
+    ("dispatch_roundtrip_source_session_close_local", "source_session", "close_local"),
+    ("dispatch_roundtrip_market_session_timezone", "market_session", "timezone"),
+    ("dispatch_roundtrip_market_session_open_local", "market_session", "open_local"),
+    ("dispatch_roundtrip_market_session_close_local", "market_session", "close_local"),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_session_timezone",
+        "source_live_fetch_contract_session",
+        "timezone",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_session_open_local",
+        "source_live_fetch_contract_session",
+        "open_local",
+    ),
+    (
+        "dispatch_roundtrip_source_live_fetch_contract_session_close_local",
+        "source_live_fetch_contract_session",
+        "close_local",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_source_session_timezone",
+        "capture_bundle_source_session",
+        "timezone",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_source_session_open_local",
+        "capture_bundle_source_session",
+        "open_local",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_source_session_close_local",
+        "capture_bundle_source_session",
+        "close_local",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_market_session_timezone",
+        "capture_bundle_market_session",
+        "timezone",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_market_session_open_local",
+        "capture_bundle_market_session",
+        "open_local",
+    ),
+    (
+        "dispatch_roundtrip_capture_bundle_market_session_close_local",
+        "capture_bundle_market_session",
+        "close_local",
+    ),
+)
+
+
+def _with_dispatch_roundtrip_config_fallback(
+    frame: pd.DataFrame,
+    provider_config: dict[str, Any],
+) -> pd.DataFrame:
+    fallback = _dispatch_roundtrip_config_summary(provider_config)
+    if fallback.empty:
+        return frame
+    if frame is None or frame.empty:
+        return fallback
+    out = frame.copy()
+    fallback_row = fallback.iloc[0]
+    for column in fallback.columns:
+        value = fallback_row[column]
+        if not _value_present(value):
+            continue
+        if column not in out.columns:
+            out[column] = ""
+        if not _first_value_present(out, column):
+            out[column] = out[column].astype("object")
+            out.loc[out.index[0], column] = value
+    return out
+
+
+def _dispatch_roundtrip_config_summary(provider_config: dict[str, Any]) -> pd.DataFrame:
+    provenance = _dispatch_roundtrip_provenance(provider_config)
+    if not provenance:
+        return pd.DataFrame()
+    record: dict[str, Any] = {}
+    for column, key in DISPATCH_ROUNDTRIP_CONFIG_TEXT_FIELDS:
+        _set_config_text(record, column, provenance, key)
+    for column, key in DISPATCH_ROUNDTRIP_CONFIG_BOOL_FIELDS:
+        _set_config_bool(record, column, provenance, key)
+    for column, key, nested_key in DISPATCH_ROUNDTRIP_CONFIG_NESTED_TEXT_FIELDS:
+        _set_nested_config_text(record, column, provenance, key, nested_key)
+    return pd.DataFrame([record]) if record else pd.DataFrame()
+
+
+def _dispatch_roundtrip_provenance(provider_config: dict[str, Any]) -> dict[str, Any]:
+    value = provider_config.get("dispatch_roundtrip_provenance", {})
+    return value if isinstance(value, dict) else {}
+
+
+def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
+    if _value_present(record.get(column)) or key not in mapping:
+        return
+    value = _clean(mapping.get(key))
+    if value:
+        record[column] = value
+
+
+def _set_config_bool(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
+    if _value_present(record.get(column)) or key not in mapping:
+        return
+    record[column] = _truthy(mapping.get(key))
+
+
+def _set_nested_config_text(
+    record: dict[str, Any],
+    column: str,
+    mapping: dict[str, Any],
+    key: str,
+    nested_key: str,
+) -> None:
+    if _value_present(record.get(column)):
+        return
+    nested = mapping.get(key, {})
+    if not isinstance(nested, dict) or nested_key not in nested:
+        return
+    value = _clean(nested.get(nested_key))
+    if value:
+        record[column] = value
 
 
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
@@ -1922,6 +2172,12 @@ def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
     return _truthy(frame.iloc[0][column])
 
 
+def _first_value_present(frame: pd.DataFrame | None, column: str) -> bool:
+    if frame is None or frame.empty or column not in frame.columns:
+        return False
+    return _value_present(frame.iloc[0][column])
+
+
 def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:
     if frame is None or frame.empty or column not in frame.columns:
         return float(fallback)
@@ -1933,6 +2189,19 @@ def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0
 
 def _identity_key(value: object) -> str:
     return _clean(value).lower().replace("-", "_").replace(" ", "_")
+
+
+def _value_present(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _truthy(value: object) -> bool:

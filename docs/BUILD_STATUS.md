@@ -1669,7 +1669,12 @@
   metadata. The provider round-trip summary/config now also surfaces nested broker
   vendor-market-data batch proof under both
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
-  `broker_dispatch_roundtrip_vendor_market_data_batch_*` fields.
+  `broker_dispatch_roundtrip_vendor_market_data_batch_*` fields. The final
+  provider round-trip wrapper now also hydrates missing or blank acknowledgement
+  `dispatch_roundtrip_*` summary fields from the acknowledgement
+  `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
+  summary `False` values, so sparse acknowledgement CSVs do not lose validated
+  live-data provenance before broker-readiness promotion.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India
