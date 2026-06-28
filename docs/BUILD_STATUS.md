@@ -1444,7 +1444,8 @@
   launch-evidence, full imbalance `strategy_evidence`, and nested launch
   pipeline paths from the provider scorecard, requires a real shadow comparison,
   carries capture bundle/env-template/adapter handoff provenance, source
-  env-template proof, and `live_fetch_contract` into the provider wrapper
+  env-template proof, exchange/session metadata, capture-bundle session match
+  proof, and `live_fetch_contract` into the provider wrapper
   summary/config/runbook artifacts plus manifest, writes nested generic
   `scaleup` outputs, and points ready runs to
   `build-provider-market-data-imbalance-runtime-telemetry`.

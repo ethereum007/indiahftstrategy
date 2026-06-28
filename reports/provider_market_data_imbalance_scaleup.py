@@ -235,9 +235,25 @@ def write_provider_market_data_imbalance_scaleup_plan(
             "scorecard_ready": bool(summary_row["scorecard_ready"]),
             "scaleup_ready": bool(summary_row["scaleup_ready"]),
             "profile": PROFILE,
+            "exchange": str(summary_row["exchange"]),
+            "source_session": _source_session_contract_from_summary(summary_row),
+            "market_session": _market_session_contract_from_summary(summary_row),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "capture_bundle_metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
+            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+                summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
+            ),
+            "capture_bundle": {
+                "exchange": str(summary_row["capture_bundle_exchange"]),
+                "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
+                "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
+                "live_fetch_contract_metadata_matches_session": bool(
+                    summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
+                ),
+            },
             "source_credential_env_template": {
                 "path": str(summary_row["source_credential_env_template_path"]),
                 "exists": bool(summary_row["source_credential_env_template_exists"]),
@@ -247,6 +263,9 @@ def write_provider_market_data_imbalance_scaleup_plan(
                 "available": bool(summary_row["source_live_fetch_contract_available"]),
                 "next_gate": str(summary_row["source_live_fetch_contract_next_gate"]),
                 "command_template": str(summary_row["source_live_fetch_contract_command_template"]),
+                "exchange": str(summary_row["source_live_fetch_contract_exchange"]),
+                "market": str(summary_row["source_live_fetch_contract_market"]),
+                "session": _source_live_fetch_contract_session_from_summary(summary_row),
             },
         },
     )
@@ -452,6 +471,27 @@ def _summary(
                 "provider_launch_dir": _path_text(provider_launch_dir),
                 "strategy_evidence_dir": _path_text(strategy_evidence_dir),
                 "launch_pipeline_dir": _path_text(launch_pipeline_dir),
+                "exchange": _first_text(scorecard_summary, "exchange")
+                or _first_text(launch_evidence_summary, "exchange")
+                or _first_text(provider_launch_summary, "exchange"),
+                "source_session_timezone": _first_text(scorecard_summary, "source_session_timezone")
+                or _first_text(launch_evidence_summary, "source_session_timezone")
+                or _first_text(provider_launch_summary, "source_session_timezone"),
+                "source_session_open_local": _first_text(scorecard_summary, "source_session_open_local")
+                or _first_text(launch_evidence_summary, "source_session_open_local")
+                or _first_text(provider_launch_summary, "source_session_open_local"),
+                "source_session_close_local": _first_text(scorecard_summary, "source_session_close_local")
+                or _first_text(launch_evidence_summary, "source_session_close_local")
+                or _first_text(provider_launch_summary, "source_session_close_local"),
+                "market_session_timezone": _first_text(scorecard_summary, "market_session_timezone")
+                or _first_text(launch_evidence_summary, "market_session_timezone")
+                or _first_text(provider_launch_summary, "market_session_timezone"),
+                "market_session_open_local": _first_text(scorecard_summary, "market_session_open_local")
+                or _first_text(launch_evidence_summary, "market_session_open_local")
+                or _first_text(provider_launch_summary, "market_session_open_local"),
+                "market_session_close_local": _first_text(scorecard_summary, "market_session_close_local")
+                or _first_text(launch_evidence_summary, "market_session_close_local")
+                or _first_text(provider_launch_summary, "market_session_close_local"),
                 "capture_bundle_path": _first_text(scorecard_summary, "capture_bundle_path")
                 or _first_text(launch_evidence_summary, "capture_bundle_path")
                 or _first_text(provider_launch_summary, "capture_bundle_path"),
@@ -464,6 +504,49 @@ def _summary(
                 "capture_bundle_ready": _first_bool(scorecard_summary, "capture_bundle_ready")
                 or _first_bool(launch_evidence_summary, "capture_bundle_ready")
                 or _first_bool(provider_launch_summary, "capture_bundle_ready"),
+                "capture_bundle_exchange": _first_text(scorecard_summary, "capture_bundle_exchange")
+                or _first_text(launch_evidence_summary, "capture_bundle_exchange")
+                or _first_text(provider_launch_summary, "capture_bundle_exchange"),
+                "capture_bundle_source_session_timezone": _first_text(
+                    scorecard_summary, "capture_bundle_source_session_timezone"
+                )
+                or _first_text(launch_evidence_summary, "capture_bundle_source_session_timezone")
+                or _first_text(provider_launch_summary, "capture_bundle_source_session_timezone"),
+                "capture_bundle_source_session_open_local": _first_text(
+                    scorecard_summary, "capture_bundle_source_session_open_local"
+                )
+                or _first_text(launch_evidence_summary, "capture_bundle_source_session_open_local")
+                or _first_text(provider_launch_summary, "capture_bundle_source_session_open_local"),
+                "capture_bundle_source_session_close_local": _first_text(
+                    scorecard_summary, "capture_bundle_source_session_close_local"
+                )
+                or _first_text(launch_evidence_summary, "capture_bundle_source_session_close_local")
+                or _first_text(provider_launch_summary, "capture_bundle_source_session_close_local"),
+                "capture_bundle_market_session_timezone": _first_text(
+                    scorecard_summary, "capture_bundle_market_session_timezone"
+                )
+                or _first_text(launch_evidence_summary, "capture_bundle_market_session_timezone")
+                or _first_text(provider_launch_summary, "capture_bundle_market_session_timezone"),
+                "capture_bundle_market_session_open_local": _first_text(
+                    scorecard_summary, "capture_bundle_market_session_open_local"
+                )
+                or _first_text(launch_evidence_summary, "capture_bundle_market_session_open_local")
+                or _first_text(provider_launch_summary, "capture_bundle_market_session_open_local"),
+                "capture_bundle_market_session_close_local": _first_text(
+                    scorecard_summary, "capture_bundle_market_session_close_local"
+                )
+                or _first_text(launch_evidence_summary, "capture_bundle_market_session_close_local")
+                or _first_text(provider_launch_summary, "capture_bundle_market_session_close_local"),
+                "capture_bundle_metadata_matches_session": _first_bool(
+                    scorecard_summary, "capture_bundle_metadata_matches_session"
+                )
+                or _first_bool(launch_evidence_summary, "capture_bundle_metadata_matches_session")
+                or _first_bool(provider_launch_summary, "capture_bundle_metadata_matches_session"),
+                "capture_bundle_live_fetch_contract_metadata_matches_session": _first_bool(
+                    scorecard_summary, "capture_bundle_live_fetch_contract_metadata_matches_session"
+                )
+                or _first_bool(launch_evidence_summary, "capture_bundle_live_fetch_contract_metadata_matches_session")
+                or _first_bool(provider_launch_summary, "capture_bundle_live_fetch_contract_metadata_matches_session"),
                 "capture_env_template_path": _first_text(scorecard_summary, "capture_env_template_path")
                 or _first_text(launch_evidence_summary, "capture_env_template_path")
                 or _first_text(provider_launch_summary, "capture_env_template_path"),
@@ -512,6 +595,31 @@ def _summary(
                 )
                 or _first_text(launch_evidence_summary, "source_live_fetch_contract_command_template")
                 or _first_text(provider_launch_summary, "source_live_fetch_contract_command_template"),
+                "source_live_fetch_contract_exchange": _first_text(
+                    scorecard_summary, "source_live_fetch_contract_exchange"
+                )
+                or _first_text(launch_evidence_summary, "source_live_fetch_contract_exchange")
+                or _first_text(provider_launch_summary, "source_live_fetch_contract_exchange"),
+                "source_live_fetch_contract_market": _first_text(
+                    scorecard_summary, "source_live_fetch_contract_market"
+                )
+                or _first_text(launch_evidence_summary, "source_live_fetch_contract_market")
+                or _first_text(provider_launch_summary, "source_live_fetch_contract_market"),
+                "source_live_fetch_contract_session_timezone": _first_text(
+                    scorecard_summary, "source_live_fetch_contract_session_timezone"
+                )
+                or _first_text(launch_evidence_summary, "source_live_fetch_contract_session_timezone")
+                or _first_text(provider_launch_summary, "source_live_fetch_contract_session_timezone"),
+                "source_live_fetch_contract_session_open_local": _first_text(
+                    scorecard_summary, "source_live_fetch_contract_session_open_local"
+                )
+                or _first_text(launch_evidence_summary, "source_live_fetch_contract_session_open_local")
+                or _first_text(provider_launch_summary, "source_live_fetch_contract_session_open_local"),
+                "source_live_fetch_contract_session_close_local": _first_text(
+                    scorecard_summary, "source_live_fetch_contract_session_close_local"
+                )
+                or _first_text(launch_evidence_summary, "source_live_fetch_contract_session_close_local")
+                or _first_text(provider_launch_summary, "source_live_fetch_contract_session_close_local"),
                 "shadow_comparison_dir": str(shadow_dir),
                 "route_readiness_dir": _path_text(route_readiness_dir),
                 "provider_route_readiness_wrapper_dir": _path_text(provider_route_readiness_wrapper_dir),
@@ -632,11 +740,25 @@ def _config(
         "parameters": asdict(config),
         "scaleup_thresholds": asdict(thresholds),
         "summary": _series_record(summary),
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": _market_session_contract_from_summary(summary),
         "capture_bundle": {
             "capture_bundle_path": str(summary["capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
             "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
             "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+            "exchange": str(summary["capture_bundle_exchange"]),
+            "source_session": _capture_bundle_source_session_contract_from_summary(summary),
+            "market_session": _capture_bundle_market_session_contract_from_summary(summary),
+            "capture_bundle_metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
+            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+                summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+            ),
+            "metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
+            "live_fetch_contract_metadata_matches_session": bool(
+                summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+            ),
             "capture_env_template_path": str(summary["capture_env_template_path"]),
             "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
             "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
@@ -650,6 +772,17 @@ def _config(
             "source_live_fetch_contract_next_gate": str(summary["source_live_fetch_contract_next_gate"]),
             "source_live_fetch_contract_command_template": str(
                 summary["source_live_fetch_contract_command_template"]
+            ),
+            "source_live_fetch_contract_exchange": str(summary["source_live_fetch_contract_exchange"]),
+            "source_live_fetch_contract_market": str(summary["source_live_fetch_contract_market"]),
+            "source_live_fetch_contract_session_timezone": str(
+                summary["source_live_fetch_contract_session_timezone"]
+            ),
+            "source_live_fetch_contract_session_open_local": str(
+                summary["source_live_fetch_contract_session_open_local"]
+            ),
+            "source_live_fetch_contract_session_close_local": str(
+                summary["source_live_fetch_contract_session_close_local"]
             ),
         },
         "scorecard": _first_record(scorecard_summary),
@@ -774,6 +907,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Target mode: {summary['target_mode']}",
         f"- Scale-up dir: {summary['scaleup_dir']}",
         f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
@@ -916,6 +1051,46 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
     return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
+
+
+def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_session_timezone"]),
+        "open_local": str(summary["source_session_open_local"]),
+        "close_local": str(summary["source_session_close_local"]),
+    }
+
+
+def _market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["market_session_timezone"]),
+        "open_local": str(summary["market_session_open_local"]),
+        "close_local": str(summary["market_session_close_local"]),
+    }
+
+
+def _capture_bundle_source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["capture_bundle_source_session_timezone"]),
+        "open_local": str(summary["capture_bundle_source_session_open_local"]),
+        "close_local": str(summary["capture_bundle_source_session_close_local"]),
+    }
+
+
+def _capture_bundle_market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["capture_bundle_market_session_timezone"]),
+        "open_local": str(summary["capture_bundle_market_session_open_local"]),
+        "close_local": str(summary["capture_bundle_market_session_close_local"]),
+    }
+
+
+def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_live_fetch_contract_session_timezone"]),
+        "open_local": str(summary["source_live_fetch_contract_session_open_local"]),
+        "close_local": str(summary["source_live_fetch_contract_session_close_local"]),
+    }
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
