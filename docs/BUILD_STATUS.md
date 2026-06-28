@@ -1473,8 +1473,9 @@
   provider guard. `monitor-provider-market-data-imbalance-runtime-session`
   infers the provider runtime telemetry inputs, reruns the nested generic
   `runtime_session`, carries capture bundle/env-template/adapter handoff
-  provenance, source env-template proof, and `live_fetch_contract` into
-  provider summary/config/runbook artifacts plus manifest, routes clean sessions to
+  provenance, source env-template proof, exchange/session metadata,
+  capture-bundle session match proof, and `live_fetch_contract` into provider
+  summary/config/runbook artifacts plus manifest, routes clean sessions to
   `review-provider-market-data-imbalance-broker-readiness`, and exposes ready
   `export-halt-response` actions when a guarded session halts with a ready halt
   packet.
