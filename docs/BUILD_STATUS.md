@@ -1495,7 +1495,8 @@
   nested generic scale-up, broker-readiness, and runtime-session evidence,
   reruns `review-cutover-gate` under a nested folder, carries capture
   bundle/env-template/adapter handoff provenance, source env-template proof,
-  and `live_fetch_contract` into provider summary/config/runbook artifacts plus
+  exchange/session metadata, capture-bundle session match proof, and
+  `live_fetch_contract` into provider summary/config/runbook artifacts plus
   manifest, preserves cutover safety
   blockers such as missing route-readiness proof, and routes fully clean runs to
   `review-route-enable`.
@@ -1566,7 +1567,8 @@
   vendor-market-data batch proof, any upstream proof lineage, and upstream
   vendor-market-data batch lineage. It now also keeps the broker-readiness
   validated round-trip capture bundle/env-template/adapter handoff paths,
-  source credential env-template proof, `live_fetch_contract`, and
+  source credential env-template proof, exchange/session metadata,
+  capture-bundle session match proof, `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
   before live-data dry-runs.

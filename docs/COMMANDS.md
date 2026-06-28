@@ -4884,9 +4884,10 @@ checks/summary/action/config/runbook artifacts, and preserves the provider
 round-trip wrapper root, nested generic `broker_dispatch_roundtrip` folder, and
 any upstream proof lineage in the cutover summary/config/manifest. It also
 preserves the capture bundle, blank credential env-template, adapter handoff
-paths, source credential env-template proof, and `live_fetch_contract`
-inherited from broker-readiness, so route-enable reviewers can trace the live
-data source from the cutover artifact set. If broker-readiness
+paths, source credential env-template proof, exchange/session metadata,
+capture-bundle session match proof, and `live_fetch_contract` inherited from
+broker-readiness, so route-enable reviewers can trace the live data source from
+the cutover artifact set. If broker-readiness
 validated round-trip capture bundle/env-template/adapter handoff provenance,
 cutover also carries those `dispatch_roundtrip_*` provenance fields plus the
 validated round-trip source credential env-template and `live_fetch_contract`
