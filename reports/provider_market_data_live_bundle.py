@@ -15,7 +15,7 @@ from reports.manifest import write_experiment_manifest
 DEFAULT_ADAPTER_TEMPLATE = (
     "provider-adapter capture "
     "--provider {provider} --transport {transport} --endpoint {endpoint} "
-    "--market {market} --kind {kind} --start {start_local} --end {end_local} "
+    "--market {market} --exchange {exchange} --kind {kind} --start {start_local} --end {end_local} "
     "--output {capture_path}"
 )
 ENV_TEMPLATE_NAME = "provider_market_data_live_capture_env_template.env"
@@ -102,6 +102,9 @@ def write_provider_market_data_live_capture_bundle(
             "failed_checks": int(report.summary.iloc[0]["failed_checks"]),
             "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
             "adapter_handoff_file": ADAPTER_HANDOFF_NAME,
+            "exchange": str(report.summary.iloc[0]["exchange"]),
+            "source_session": _source_session_contract_from_summary(report.summary.iloc[0]),
+            "market_session": _market_session_contract_from_summary(report.summary.iloc[0]),
             "source_credential_env_template": source_env_template,
             "live_fetch_contract": _mapping(report.bundle.get("live_fetch_contract")),
         },
@@ -171,6 +174,7 @@ def _commands(
             "transport": _shell_quote(_text(packet.get("transport"))),
             "endpoint": _shell_quote(_text(packet.get("endpoint"))),
             "market": _shell_quote(_text(packet.get("market"))),
+            "exchange": _shell_quote(_text(packet.get("exchange"))),
             "kind": _shell_quote(_text(packet.get("kind"))),
             "label": _shell_quote(_text(window.get("label"), f"window_{index}")),
             "pipeline_label": _shell_quote(_text(window.get("pipeline_label"), _text(window.get("label"), f"window_{index}"))),
@@ -190,6 +194,7 @@ def _commands(
                 "provider": _text(packet.get("provider")),
                 "transport": _text(packet.get("transport")),
                 "market": _text(packet.get("market")),
+                "exchange": _text(packet.get("exchange")),
                 "kind": _text(packet.get("kind")),
                 "endpoint": _text(packet.get("endpoint")),
                 "start_local": _text(window.get("start_local")),
@@ -213,6 +218,7 @@ def _commands(
             "provider",
             "transport",
             "market",
+            "exchange",
             "kind",
             "endpoint",
             "start_local",
@@ -249,6 +255,11 @@ def _checks(
     preflight_required = bool(preflight_provided or config.require_preflight_ready)
     source_env_template = _preflight_credential_env_template(preflight)
     live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    preflight_exchange = _preflight_exchange(preflight)
+    preflight_source_session = _preflight_source_session(preflight)
+    preflight_market_session = _preflight_market_session(preflight)
+    packet_source_session = _mapping(packet.get("source_session"))
+    packet_market_session = _mapping(packet.get("market_session"))
     source_env_template_ok = (
         not preflight_required
         or (
@@ -267,6 +278,33 @@ def _checks(
             and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher"
         )
     )
+    preflight_exchange_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and bool(preflight_exchange)
+            and preflight_exchange == _text(packet.get("exchange"))
+        )
+    )
+    preflight_source_session_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and _session_contract_carried(preflight_source_session)
+            and _session_contracts_match(preflight_source_session, packet_source_session)
+        )
+    )
+    preflight_market_session_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and _session_contract_carried(preflight_market_session)
+            and _session_contracts_match(preflight_market_session, packet_market_session)
+        )
+    )
     return [
         _check("live_session_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "live session packet is required"),
         _check("live_session_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "live session packet could not be read"),
@@ -277,6 +315,14 @@ def _checks(
         _check("preflight_packet_matches_session", preflight_packet_match, "is", True, preflight_packet_match if preflight_provided else not config.require_preflight_ready, "preflight config must reference the same live session packet"),
         _check("preflight_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, source_env_template_ok, "preflight config must carry blank source credential env-template proof"),
         _check("preflight_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, live_fetch_contract_ok, "preflight config must carry the upstream live fetch-contract handoff"),
+        _check("source_exchange_carried", _text(packet.get("exchange")), "is_not", "", bool(_text(packet.get("exchange"))), "live session packet must carry source exchange/segment metadata"),
+        _check("source_session_contract_carried", _session_contract_text(packet_source_session), "has", "timezone/open/close", _session_contract_carried(packet_source_session), "live session packet must carry source session metadata"),
+        _check("market_session_contract_carried", _session_contract_text(packet_market_session), "has", "timezone/open/close", _session_contract_carried(packet_market_session), "live session packet must carry market session metadata"),
+        _check("source_session_matches_market_session", _session_contract_text(packet_source_session), "==", _session_contract_text(packet_market_session), _session_contracts_match(packet_source_session, packet_market_session), "source session metadata must match the market session used for capture windows"),
+        _check("preflight_exchange_matches_session", preflight_exchange, "==", _text(packet.get("exchange")), preflight_exchange_ok, "preflight exchange metadata must match the live session packet"),
+        _check("preflight_source_session_matches_session", _session_contract_text(preflight_source_session), "==", _session_contract_text(packet_source_session), preflight_source_session_ok, "preflight source session metadata must match the live session packet"),
+        _check("preflight_market_session_matches_session", _session_contract_text(preflight_market_session), "==", _session_contract_text(packet_market_session), preflight_market_session_ok, "preflight market session metadata must match the live session packet"),
+        _check("preflight_live_fetch_contract_metadata_matches_session", _live_contract_metadata_text(live_fetch_contract), "==", "live session source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract), "preflight live fetch contract exchange/session metadata must match the live session packet"),
         _check("credential_values_not_stored", bool(_mapping(packet.get("authentication")).get("values_stored", True)), "is", False, bool(_mapping(packet.get("authentication")).get("values_stored", True)) is False, "live session packet must not store credential values"),
         _check("credential_env_vars_present", len(env_presence), ">=", 1, len(env_presence) >= 1, "credential env-var names are required"),
         _check("credential_env_vars_present_in_runtime", sum(env_presence.values()), "==", len(env_presence), all(env_presence.values()) if require_env else True, "required credential environment variables are missing from runtime"),
@@ -305,6 +351,8 @@ def _summary(
     next_action = action_queue.iloc[0] if not action_queue.empty else None
     source_env_template = _preflight_credential_env_template(preflight)
     live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    source_session = _mapping(packet.get("source_session"))
+    market_session = _mapping(packet.get("market_session"))
     return pd.DataFrame(
         [
             {
@@ -315,7 +363,15 @@ def _summary(
                 "provider": _text(packet.get("provider")),
                 "transport": _text(packet.get("transport")),
                 "market": _text(packet.get("market")),
+                "exchange": _text(packet.get("exchange")),
                 "kind": _text(packet.get("kind")),
+                "source_session_timezone": _text(source_session.get("timezone")),
+                "source_session_open_local": _text(source_session.get("open_local")),
+                "source_session_close_local": _text(source_session.get("close_local")),
+                "market_session_timezone": _text(market_session.get("timezone")),
+                "market_session_open_local": _text(market_session.get("open_local")),
+                "market_session_close_local": _text(market_session.get("close_local")),
+                "source_session_matches_market_session": _session_contracts_match(source_session, market_session),
                 "command_count": int(len(commands)),
                 "capture_file_collision_count": int(commands["capture_exists"].astype(bool).sum()) if not commands.empty else 0,
                 "credential_env_var_count": int(len(env_presence)),
@@ -400,6 +456,9 @@ def _bundle(
         "provider": _text(packet.get("provider")),
         "transport": _text(packet.get("transport")),
         "market": _text(packet.get("market")),
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": _market_session_contract_from_summary(summary),
         "kind": _text(packet.get("kind")),
         "authentication": {
             "env_vars": list(env_presence.keys()),
@@ -416,6 +475,9 @@ def _bundle(
             "primary_action_status": _text(preflight.get("primary_action_status")),
             "credential_env_template": _credential_env_template_contract(summary),
             "live_fetch_contract": _preflight_live_fetch_contract(preflight),
+            "exchange": _preflight_exchange(preflight),
+            "source_session": _preflight_source_session(preflight),
+            "market_session": _preflight_market_session(preflight),
         },
         "adapter_handoff": ADAPTER_HANDOFF_NAME,
         "commands": command_records,
@@ -452,6 +514,9 @@ def _adapter_handoff(
         "transport": _text(packet.get("transport")),
         "template_kind": _text(packet.get("template_kind")),
         "market": _text(packet.get("market")),
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": _market_session_contract_from_summary(summary),
         "kind": _text(packet.get("kind")),
         "endpoint": _text(packet.get("endpoint")),
         "request": _mapping(packet.get("request")),
@@ -527,12 +592,105 @@ def _preflight_live_fetch_contract(preflight: dict[str, Any]) -> dict[str, Any]:
     return contract.copy()
 
 
+def _preflight_exchange(preflight: dict[str, Any]) -> str:
+    return _text(preflight.get("exchange")) or _text(_mapping(preflight.get("session_packet")).get("exchange"))
+
+
+def _preflight_source_session(preflight: dict[str, Any]) -> dict[str, Any]:
+    session = _mapping(preflight.get("source_session"))
+    if not session:
+        session = _mapping(_mapping(preflight.get("session_packet")).get("source_session"))
+    return session.copy()
+
+
+def _preflight_market_session(preflight: dict[str, Any]) -> dict[str, Any]:
+    session = _mapping(preflight.get("market_session"))
+    if not session:
+        session = _mapping(_mapping(preflight.get("session_packet")).get("market_session"))
+    return session.copy()
+
+
 def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
     return {
         "path": str(summary["source_credential_env_template_path"]),
         "exists": bool(summary["source_credential_env_template_exists"]),
         "sha256": str(summary["source_credential_env_template_sha256"]),
     }
+
+
+def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_session_timezone"]),
+        "open_local": str(summary["source_session_open_local"]),
+        "close_local": str(summary["source_session_close_local"]),
+    }
+
+
+def _market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["market_session_timezone"]),
+        "open_local": str(summary["market_session_open_local"]),
+        "close_local": str(summary["market_session_close_local"]),
+    }
+
+
+def _session_contract_carried(session: dict[str, Any]) -> bool:
+    return all(_text(session.get(key)) for key in ("timezone", "open_local", "close_local"))
+
+
+def _session_contracts_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if not (_session_contract_carried(left) and _session_contract_carried(right)):
+        return False
+    return (
+        _text(left.get("timezone")) == _text(right.get("timezone"))
+        and _wall_clock_seconds(left.get("open_local")) == _wall_clock_seconds(right.get("open_local"))
+        and _wall_clock_seconds(left.get("close_local")) == _wall_clock_seconds(right.get("close_local"))
+    )
+
+
+def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_contract: dict[str, Any]) -> bool:
+    if not bool(live_fetch_contract.get("available")):
+        return True
+    source_session = _mapping(packet.get("source_session"))
+    contract_session = _mapping(live_fetch_contract.get("session"))
+    return (
+        _text(live_fetch_contract.get("exchange")) == _text(packet.get("exchange"))
+        and _text(live_fetch_contract.get("market")) == _text(packet.get("market"))
+        and _text(contract_session.get("timezone")) == _text(source_session.get("timezone"))
+        and _wall_clock_seconds(contract_session.get("open_local")) == _wall_clock_seconds(source_session.get("open_local"))
+        and _wall_clock_seconds(contract_session.get("close_local")) == _wall_clock_seconds(source_session.get("close_local"))
+    )
+
+
+def _session_contract_text(session: dict[str, Any]) -> str:
+    return (
+        f"{_text(session.get('timezone'))}|"
+        f"{_text(session.get('open_local'))}|"
+        f"{_text(session.get('close_local'))}"
+    )
+
+
+def _live_contract_metadata_text(live_fetch_contract: dict[str, Any]) -> str:
+    session = _mapping(live_fetch_contract.get("session"))
+    return (
+        f"{_text(live_fetch_contract.get('market'))}|"
+        f"{_text(live_fetch_contract.get('exchange'))}|"
+        f"{_session_contract_text(session)}"
+    )
+
+
+def _wall_clock_seconds(value: object) -> int | None:
+    parts = _text(value).split(":")
+    if len(parts) not in {2, 3}:
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return hour * 3600 + minute * 60 + second
 
 
 def _ingest_command(packet_path: Path, packet: dict[str, Any], config: ProviderMarketDataLiveCaptureBundleConfig) -> str:
@@ -575,6 +733,13 @@ def _ingest_output_dir(
 def _next_gate_for_check(check: str) -> str:
     if check.startswith("live_session_packet"):
         return "plan-provider-market-data-live-session"
+    if check in {
+        "source_exchange_carried",
+        "source_session_contract_carried",
+        "market_session_contract_carried",
+        "source_session_matches_market_session",
+    }:
+        return "plan-provider-market-data-live-session"
     if check.startswith("preflight"):
         return "preflight-provider-market-data-live-session"
     if check.startswith("credential"):
@@ -602,10 +767,24 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("live_session_packet"):
         return "repair_provider_live_session_packet"
+    if check in {
+        "source_exchange_carried",
+        "source_session_contract_carried",
+        "market_session_contract_carried",
+        "source_session_matches_market_session",
+    }:
+        return "regenerate_live_session_with_market_session_contract"
     if check == "preflight_credential_env_template_carried":
         return "rerun_preflight_with_credential_env_template"
     if check == "preflight_live_fetch_contract_carried":
         return "rerun_preflight_with_live_fetch_contract"
+    if check in {
+        "preflight_exchange_matches_session",
+        "preflight_source_session_matches_session",
+        "preflight_market_session_matches_session",
+        "preflight_live_fetch_contract_metadata_matches_session",
+    }:
+        return "rerun_preflight_with_market_session_contract"
     if check.startswith("preflight"):
         return "rerun_provider_market_data_live_preflight"
     if check.startswith("credential"):
@@ -626,6 +805,8 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Commands: {summary['command_count']}",
         f"- Capture env template: `{ENV_TEMPLATE_NAME}`",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'missing'}",

@@ -95,8 +95,9 @@
   template for provider credentials, a dedicated
   `provider_market_data_adapter_handoff.json` contract with schema columns and
   rendered commands, preflight-carried source env-template proof and
-  `live_fetch_contract` provenance, and the exact post-capture ingest command
-  while blocking missing preflight evidence and capture overwrite risk.
+  `live_fetch_contract` provenance, inherited exchange/session metadata for the
+  approved source, and the exact post-capture ingest command while blocking
+  missing preflight evidence, metadata drift, and capture overwrite risk.
 - Provider market-data live rehearsal now proves the backend handoff without
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally

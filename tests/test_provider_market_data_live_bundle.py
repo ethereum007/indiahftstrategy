@@ -117,22 +117,36 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert report.ready
     assert summary["command_count"] == 2
     assert summary["preflight_ready"]
+    assert summary["exchange"] == "NFO"
+    assert summary["source_session_timezone"] == "Asia/Kolkata"
+    assert summary["source_session_open_local"] == "09:15:00"
+    assert summary["source_session_close_local"] == "15:30:00"
+    assert summary["market_session_open_local"] == "09:15"
+    assert bool(summary["source_session_matches_market_session"])
     assert summary["source_credential_env_template_exists"]
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert "provider-adapter capture" in commands.loc[0, "adapter_command"]
+    assert "--exchange NFO" in commands.loc[0, "adapter_command"]
     assert "ingest-provider-market-data-live-session" in summary["post_capture_ingest_command"]
     assert bundle["authentication"]["values_stored"] is False
     assert bundle["authentication"]["env_template"] == "provider_market_data_live_capture_env_template.env"
     assert bundle["authentication"]["source_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert bundle["source_credential_env_template"]["exists"] is True
+    assert bundle["exchange"] == "NFO"
+    assert bundle["source_session"]["timezone"] == "Asia/Kolkata"
+    assert bundle["market_session"]["open_local"] == "09:15"
+    assert bundle["preflight"]["exchange"] == "NFO"
     assert bundle["live_fetch_contract"]["available"] is True
     assert bundle["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert "ARROW_MONEY_API_KEY=\n" in env_template
     assert "ARROW_MONEY_API_SECRET=\n" in env_template
     assert handoff["provider"] == "arrow_money"
     assert handoff["transport"] == "websocket"
+    assert handoff["exchange"] == "NFO"
+    assert handoff["source_session"]["close_local"] == "15:30:00"
+    assert handoff["market_session"]["timezone"] == "Asia/Kolkata"
     assert handoff["authentication"]["values_stored"] is False
     assert handoff["authentication"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
     assert handoff["authentication"]["source_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
@@ -150,6 +164,9 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert "Source credential env template" in runbook
     assert manifest["run_type"] == "provider_market_data_live_capture_bundle"
     assert manifest["extra"]["adapter_handoff_file"] == "provider_market_data_adapter_handoff.json"
+    assert manifest["extra"]["exchange"] == "NFO"
+    assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["market_session"]["open_local"] == "09:15"
     assert manifest["inputs"]["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
@@ -249,6 +266,29 @@ def test_provider_market_data_live_capture_bundle_blocks_missing_preflight_live_
     assert "preflight_live_fetch_contract_carried" in failed
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.action_queue.loc[0, "action"] == "rerun_preflight_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_capture_bundle_blocks_preflight_session_mismatch(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _live_packet(plan)
+    preflight = _write_preflight(tmp_path, live_packet)
+    preflight_config = _mutate_json(
+        preflight.output_dir / "provider_market_data_live_preflight_config.json",
+        lambda payload: payload["source_session"].update({"open_local": "09:30:00"}),
+    )
+
+    report = write_provider_market_data_live_capture_bundle(
+        live_packet,
+        tmp_path / "capture_bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(preflight_config_path=str(preflight_config)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "preflight_source_session_matches_session" in failed
+    assert report.summary.iloc[0]["source_session_open_local"] == "09:15:00"
+    assert report.action_queue.loc[0, "action"] == "rerun_preflight_with_market_session_contract"
     assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
 
 
