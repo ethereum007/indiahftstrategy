@@ -182,7 +182,9 @@
   exchange/session metadata, capture-bundle session match proof, and
   `live_fetch_contract` into launch-evidence summary/config/runbook artifacts
   plus manifest, verifies the full launch-ready `imbalance` profile, and hands
-  ready packets to `score-strategy-readiness`.
+  ready packets to `score-strategy-readiness`. Launch-evidence summary/config
+  and manifest extras now also expose capture env-template and adapter handoff
+  SHA-256 values directly.
 - Provider market-data imbalance scorecard now makes the final readiness gate
   provider-specific: `score-provider-market-data-imbalance-readiness` consumes
   the launch-evidence review, scores only the full `imbalance` profile, carries

@@ -161,6 +161,16 @@ def write_provider_market_data_imbalance_launch_evidence_review(
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
+            "capture_env_template": {
+                "path": str(summary.iloc[0]["capture_env_template_path"]),
+                "exists": bool(summary.iloc[0]["capture_env_template_exists"]),
+                "sha256": str(summary.iloc[0]["capture_env_template_sha256"]),
+            },
+            "adapter_handoff": {
+                "path": str(summary.iloc[0]["adapter_handoff_path"]),
+                "exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
+                "sha256": str(summary.iloc[0]["adapter_handoff_sha256"]),
+            },
             "capture_bundle_metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -378,9 +388,11 @@ def _summary(
                 "capture_env_template_path": _first_text(launch_summary, "capture_env_template_path"),
                 "capture_env_template_provided": _first_bool(launch_summary, "capture_env_template_provided"),
                 "capture_env_template_exists": _first_bool(launch_summary, "capture_env_template_exists"),
+                "capture_env_template_sha256": _first_text(launch_summary, "capture_env_template_sha256"),
                 "adapter_handoff_path": _first_text(launch_summary, "adapter_handoff_path"),
                 "adapter_handoff_provided": _first_bool(launch_summary, "adapter_handoff_provided"),
                 "adapter_handoff_exists": _first_bool(launch_summary, "adapter_handoff_exists"),
+                "adapter_handoff_sha256": _first_text(launch_summary, "adapter_handoff_sha256"),
                 "source_credential_env_template_path": _first_text(
                     launch_summary, "source_credential_env_template_path"
                 ),
@@ -770,9 +782,11 @@ def _provider_capture_bundle(launch_summary: pd.DataFrame) -> dict[str, Any]:
         "capture_env_template_path": _first_text(launch_summary, "capture_env_template_path"),
         "capture_env_template_provided": _first_bool(launch_summary, "capture_env_template_provided"),
         "capture_env_template_exists": _first_bool(launch_summary, "capture_env_template_exists"),
+        "capture_env_template_sha256": _first_text(launch_summary, "capture_env_template_sha256"),
         "adapter_handoff_path": _first_text(launch_summary, "adapter_handoff_path"),
         "adapter_handoff_provided": _first_bool(launch_summary, "adapter_handoff_provided"),
         "adapter_handoff_exists": _first_bool(launch_summary, "adapter_handoff_exists"),
+        "adapter_handoff_sha256": _first_text(launch_summary, "adapter_handoff_sha256"),
         "source_credential_env_template_path": _first_text(
             launch_summary, "source_credential_env_template_path"
         ),
