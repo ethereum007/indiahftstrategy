@@ -177,9 +177,25 @@ def write_provider_market_data_imbalance_research(
             "pipeline_ready": bool(summary.iloc[0]["pipeline_ready"]),
             "handoff_ready": bool(summary.iloc[0]["handoff_ready"]),
             "candidate_ready": bool(summary.iloc[0]["candidate_ready"]),
+            "exchange": str(summary.iloc[0]["exchange"]),
+            "source_session": _source_session_contract_from_summary(summary.iloc[0]),
+            "market_session": _market_session_contract_from_summary(summary.iloc[0]),
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
+            "capture_bundle_metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
+            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+                summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
+            ),
+            "capture_bundle": {
+                "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
+                "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
+                "market_session": _capture_bundle_market_session_contract_from_summary(summary.iloc[0]),
+                "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
+                "live_fetch_contract_metadata_matches_session": bool(
+                    summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
+                ),
+            },
             "source_credential_env_template": {
                 "path": str(summary.iloc[0]["source_credential_env_template_path"]),
                 "exists": bool(summary.iloc[0]["source_credential_env_template_exists"]),
@@ -189,6 +205,9 @@ def write_provider_market_data_imbalance_research(
                 "available": bool(summary.iloc[0]["source_live_fetch_contract_available"]),
                 "next_gate": str(summary.iloc[0]["source_live_fetch_contract_next_gate"]),
                 "command_template": str(summary.iloc[0]["source_live_fetch_contract_command_template"]),
+                "exchange": str(summary.iloc[0]["source_live_fetch_contract_exchange"]),
+                "market": str(summary.iloc[0]["source_live_fetch_contract_market"]),
+                "session": _source_live_fetch_contract_session_from_summary(summary.iloc[0]),
             },
         },
     )
@@ -402,6 +421,13 @@ def _summary(
                 "strategy": "imbalance",
                 "provider": _first_text(handoff.summary, "provider"),
                 "transport": _first_text(handoff.summary, "transport"),
+                "exchange": str(handoff_row.get("exchange", "") or ""),
+                "source_session_timezone": str(handoff_row.get("source_session_timezone", "") or ""),
+                "source_session_open_local": str(handoff_row.get("source_session_open_local", "") or ""),
+                "source_session_close_local": str(handoff_row.get("source_session_close_local", "") or ""),
+                "market_session_timezone": str(handoff_row.get("market_session_timezone", "") or ""),
+                "market_session_open_local": str(handoff_row.get("market_session_open_local", "") or ""),
+                "market_session_close_local": str(handoff_row.get("market_session_close_local", "") or ""),
                 "capture_bundle_path": str(handoff_row.get("capture_bundle_path", "") or ""),
                 "capture_bundle_provided": _truthy(handoff_row.get("capture_bundle_provided")),
                 "capture_bundle_exists": _truthy(handoff_row.get("capture_bundle_exists")),
@@ -429,6 +455,46 @@ def _summary(
                 ),
                 "source_live_fetch_contract_command_template": str(
                     handoff_row.get("source_live_fetch_contract_command_template", "") or ""
+                ),
+                "source_live_fetch_contract_exchange": str(
+                    handoff_row.get("source_live_fetch_contract_exchange", "") or ""
+                ),
+                "source_live_fetch_contract_market": str(
+                    handoff_row.get("source_live_fetch_contract_market", "") or ""
+                ),
+                "source_live_fetch_contract_session_timezone": str(
+                    handoff_row.get("source_live_fetch_contract_session_timezone", "") or ""
+                ),
+                "source_live_fetch_contract_session_open_local": str(
+                    handoff_row.get("source_live_fetch_contract_session_open_local", "") or ""
+                ),
+                "source_live_fetch_contract_session_close_local": str(
+                    handoff_row.get("source_live_fetch_contract_session_close_local", "") or ""
+                ),
+                "capture_bundle_exchange": str(handoff_row.get("capture_bundle_exchange", "") or ""),
+                "capture_bundle_source_session_timezone": str(
+                    handoff_row.get("capture_bundle_source_session_timezone", "") or ""
+                ),
+                "capture_bundle_source_session_open_local": str(
+                    handoff_row.get("capture_bundle_source_session_open_local", "") or ""
+                ),
+                "capture_bundle_source_session_close_local": str(
+                    handoff_row.get("capture_bundle_source_session_close_local", "") or ""
+                ),
+                "capture_bundle_market_session_timezone": str(
+                    handoff_row.get("capture_bundle_market_session_timezone", "") or ""
+                ),
+                "capture_bundle_market_session_open_local": str(
+                    handoff_row.get("capture_bundle_market_session_open_local", "") or ""
+                ),
+                "capture_bundle_market_session_close_local": str(
+                    handoff_row.get("capture_bundle_market_session_close_local", "") or ""
+                ),
+                "capture_bundle_metadata_matches_session": _truthy(
+                    handoff_row.get("capture_bundle_metadata_matches_session")
+                ),
+                "capture_bundle_live_fetch_contract_metadata_matches_session": _truthy(
+                    handoff_row.get("capture_bundle_live_fetch_contract_metadata_matches_session")
                 ),
                 "dataset_count": int(handoff_row.get("dataset_count", 0) or 0),
                 "ready_command_count": int(handoff_row.get("ready_command_count", 0) or 0),
@@ -527,6 +593,9 @@ def _config(
         "parameters": asdict(config),
         "summary": _series_record(summary),
         "checks": _records(checks),
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": _market_session_contract_from_summary(summary),
         "capture_bundle": _handoff_capture_bundle(handoff),
         "research_handoff": {
             "ready": bool(handoff.ready),
@@ -602,6 +671,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         "",
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Capture bundle: {summary['capture_bundle_path']}",
         f"- Credential env template: {summary['capture_env_template_path']}",
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
@@ -765,6 +836,46 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
 
 
+def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_session_timezone"]),
+        "open_local": str(summary["source_session_open_local"]),
+        "close_local": str(summary["source_session_close_local"]),
+    }
+
+
+def _market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["market_session_timezone"]),
+        "open_local": str(summary["market_session_open_local"]),
+        "close_local": str(summary["market_session_close_local"]),
+    }
+
+
+def _capture_bundle_source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["capture_bundle_source_session_timezone"]),
+        "open_local": str(summary["capture_bundle_source_session_open_local"]),
+        "close_local": str(summary["capture_bundle_source_session_close_local"]),
+    }
+
+
+def _capture_bundle_market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["capture_bundle_market_session_timezone"]),
+        "open_local": str(summary["capture_bundle_market_session_open_local"]),
+        "close_local": str(summary["capture_bundle_market_session_close_local"]),
+    }
+
+
+def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_live_fetch_contract_session_timezone"]),
+        "open_local": str(summary["source_live_fetch_contract_session_open_local"]),
+        "close_local": str(summary["source_live_fetch_contract_session_close_local"]),
+    }
+
+
 def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) -> dict[str, Any]:
     payload = handoff.config.get("capture_bundle") if isinstance(handoff.config, dict) else {}
     if isinstance(payload, dict) and payload:
@@ -789,6 +900,32 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         "source_live_fetch_contract_next_gate": str(row.get("source_live_fetch_contract_next_gate", "") or ""),
         "source_live_fetch_contract_command_template": str(
             row.get("source_live_fetch_contract_command_template", "") or ""
+        ),
+        "source_live_fetch_contract_exchange": str(row.get("source_live_fetch_contract_exchange", "") or ""),
+        "source_live_fetch_contract_market": str(row.get("source_live_fetch_contract_market", "") or ""),
+        "source_live_fetch_contract_session_timezone": str(
+            row.get("source_live_fetch_contract_session_timezone", "") or ""
+        ),
+        "source_live_fetch_contract_session_open_local": str(
+            row.get("source_live_fetch_contract_session_open_local", "") or ""
+        ),
+        "source_live_fetch_contract_session_close_local": str(
+            row.get("source_live_fetch_contract_session_close_local", "") or ""
+        ),
+        "exchange": str(row.get("capture_bundle_exchange", "") or ""),
+        "source_session": {
+            "timezone": str(row.get("capture_bundle_source_session_timezone", "") or ""),
+            "open_local": str(row.get("capture_bundle_source_session_open_local", "") or ""),
+            "close_local": str(row.get("capture_bundle_source_session_close_local", "") or ""),
+        },
+        "market_session": {
+            "timezone": str(row.get("capture_bundle_market_session_timezone", "") or ""),
+            "open_local": str(row.get("capture_bundle_market_session_open_local", "") or ""),
+            "close_local": str(row.get("capture_bundle_market_session_close_local", "") or ""),
+        },
+        "metadata_matches_session": _truthy(row.get("capture_bundle_metadata_matches_session")),
+        "live_fetch_contract_metadata_matches_session": _truthy(
+            row.get("capture_bundle_live_fetch_contract_metadata_matches_session")
         ),
     }
 

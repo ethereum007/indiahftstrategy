@@ -93,9 +93,25 @@ def write_provider_market_data_research_handoff(
             "research_ready": bool(summary_row["research_ready"]),
             "ready_command_count": int(summary_row["ready_command_count"]),
             "blocked_action_count": int(summary_row["blocked_action_count"]),
+            "exchange": str(summary_row["exchange"]),
+            "source_session": _source_session_contract_from_summary(summary_row),
+            "market_session": _market_session_contract_from_summary(summary_row),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "capture_bundle_metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
+            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+                summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
+            ),
+            "capture_bundle": {
+                "exchange": str(summary_row["capture_bundle_exchange"]),
+                "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
+                "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
+                "live_fetch_contract_metadata_matches_session": bool(
+                    summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
+                ),
+            },
             "source_credential_env_template": {
                 "path": str(summary_row["source_credential_env_template_path"]),
                 "exists": bool(summary_row["source_credential_env_template_exists"]),
@@ -105,6 +121,9 @@ def write_provider_market_data_research_handoff(
                 "available": bool(summary_row["source_live_fetch_contract_available"]),
                 "next_gate": str(summary_row["source_live_fetch_contract_next_gate"]),
                 "command_template": str(summary_row["source_live_fetch_contract_command_template"]),
+                "exchange": str(summary_row["source_live_fetch_contract_exchange"]),
+                "market": str(summary_row["source_live_fetch_contract_market"]),
+                "session": _source_live_fetch_contract_session_from_summary(summary_row),
             },
         },
     )
@@ -229,9 +248,19 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
     manifest_handoff = _mapping(manifest_inputs.get("adapter_handoff"))
     manifest_source_env = _mapping(manifest_inputs.get("source_credential_env_template"))
     manifest_extra = _mapping(manifest.get("extra"))
+    manifest_extra_bundle = _mapping(manifest_extra.get("capture_bundle"))
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
+    live_fetch_session = _mapping(live_fetch_contract.get("session"))
+    evidence_source_session = _mapping(evidence_config.get("source_session")) or _mapping(manifest_extra.get("source_session"))
+    evidence_market_session = _mapping(evidence_config.get("market_session")) or _mapping(manifest_extra.get("market_session"))
+    capture_bundle_source_session = _mapping(bundle.get("capture_bundle_source_session")) or _mapping(
+        manifest_extra_bundle.get("source_session")
+    )
+    capture_bundle_market_session = _mapping(bundle.get("capture_bundle_market_session")) or _mapping(
+        manifest_extra_bundle.get("market_session")
+    )
     bundle_path = _path_from_text(
         _text(bundle.get("capture_bundle_path"))
         or _text(bundle.get("path"))
@@ -294,6 +323,33 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         "source_live_fetch_contract_available": live_fetch_available,
         "source_live_fetch_contract_next_gate": live_fetch_next_gate,
         "source_live_fetch_contract_command_template": live_fetch_command_template,
+        "source_live_fetch_contract_exchange": _text(bundle.get("source_live_fetch_contract_exchange"))
+        or _text(live_fetch_contract.get("exchange")),
+        "source_live_fetch_contract_market": _text(bundle.get("source_live_fetch_contract_market"))
+        or _text(live_fetch_contract.get("market")),
+        "source_live_fetch_contract_session_timezone": _text(bundle.get("source_live_fetch_contract_session_timezone"))
+        or _text(live_fetch_session.get("timezone")),
+        "source_live_fetch_contract_session_open_local": _text(bundle.get("source_live_fetch_contract_session_open_local"))
+        or _text(live_fetch_session.get("open_local")),
+        "source_live_fetch_contract_session_close_local": _text(bundle.get("source_live_fetch_contract_session_close_local"))
+        or _text(live_fetch_session.get("close_local")),
+        "exchange": _text(evidence_config.get("exchange")) or _text(manifest_extra.get("exchange")),
+        "source_session": evidence_source_session,
+        "market_session": evidence_market_session,
+        "capture_bundle_exchange": _text(bundle.get("capture_bundle_exchange"))
+        or _text(manifest_extra_bundle.get("exchange")),
+        "capture_bundle_source_session": capture_bundle_source_session,
+        "capture_bundle_market_session": capture_bundle_market_session,
+        "capture_bundle_metadata_matches_session": _coalesced_bool(
+            bundle.get("capture_bundle_metadata_matches_session"),
+            manifest_extra_bundle.get("metadata_matches_session"),
+            manifest_extra.get("capture_bundle_metadata_matches_session"),
+        ),
+        "capture_bundle_live_fetch_contract_metadata_matches_session": _coalesced_bool(
+            bundle.get("capture_bundle_live_fetch_contract_metadata_matches_session"),
+            manifest_extra_bundle.get("live_fetch_contract_metadata_matches_session"),
+            manifest_extra.get("capture_bundle_live_fetch_contract_metadata_matches_session"),
+        ),
     }
 
 
@@ -488,6 +544,10 @@ def _checks(
     bundle_provided = bool(capture_provenance["capture_bundle_provided"])
     env_template_required = bool(bundle_provided or capture_provenance["capture_env_template_provided"])
     handoff_required = bool(bundle_provided or capture_provenance["adapter_handoff_provided"])
+    source_session = _mapping(capture_provenance.get("source_session"))
+    market_session = _mapping(capture_provenance.get("market_session"))
+    bundle_source_session = _mapping(capture_provenance.get("capture_bundle_source_session"))
+    bundle_market_session = _mapping(capture_provenance.get("capture_bundle_market_session"))
     return [
         _check("live_evidence_dir_exists", str(evidence_dir), "exists", True, evidence_dir.exists(), "live evidence directory is required"),
         _check("live_evidence_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live evidence summary could not be read"),
@@ -500,6 +560,14 @@ def _checks(
         _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if handoff_required else True, "adapter handoff referenced by live evidence is missing"),
         _check("capture_bundle_source_credential_env_template_carried", capture_provenance["source_credential_env_template_path"], "exists", True, bool(capture_provenance["source_credential_env_template_exists"]) and bool(capture_provenance["source_credential_env_template_sha256"]) if bundle_provided else True, "source credential env-template referenced by live evidence is missing"),
         _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by live evidence is missing"),
+        _check("live_evidence_exchange_carried", capture_provenance["exchange"], "is_not", "", bool(capture_provenance["exchange"]) if bundle_provided else True, "live evidence exchange metadata is missing"),
+        _check("live_evidence_source_session_carried", _session_contract_text(source_session), "has", "timezone/open/close", _session_contract_carried(source_session) if bundle_provided else True, "live evidence source-session metadata is missing"),
+        _check("live_evidence_market_session_carried", _session_contract_text(market_session), "has", "timezone/open/close", _session_contract_carried(market_session) if bundle_provided else True, "live evidence market-session metadata is missing"),
+        _check("capture_bundle_exchange_matches_evidence", capture_provenance["capture_bundle_exchange"], "==", capture_provenance["exchange"], capture_provenance["capture_bundle_exchange"] == capture_provenance["exchange"] if bundle_provided else True, "capture bundle exchange metadata must match live evidence"),
+        _check("capture_bundle_source_session_matches_evidence", _session_contract_text(bundle_source_session), "==", _session_contract_text(source_session), _session_contracts_match(bundle_source_session, source_session) if bundle_provided else True, "capture bundle source-session metadata must match live evidence"),
+        _check("capture_bundle_market_session_matches_evidence", _session_contract_text(bundle_market_session), "==", _session_contract_text(market_session), _session_contracts_match(bundle_market_session, market_session) if bundle_provided else True, "capture bundle market-session metadata must match live evidence"),
+        _check("capture_bundle_metadata_matches_session", bool(capture_provenance["capture_bundle_metadata_matches_session"]), "is", True, bool(capture_provenance["capture_bundle_metadata_matches_session"]) if bundle_provided else True, "live evidence must mark capture-bundle exchange/session metadata as matching"),
+        _check("capture_bundle_live_fetch_contract_metadata_matches_session", bool(capture_provenance["capture_bundle_live_fetch_contract_metadata_matches_session"]), "is", True, bool(capture_provenance["capture_bundle_live_fetch_contract_metadata_matches_session"]) if bundle_provided else True, "live evidence must mark live fetch-contract exchange/session metadata as matching"),
         _check("live_evidence_ready", _first_bool(evidence_summary, "ready"), "is", True, _first_bool(evidence_summary, "ready"), "live evidence review is not ready"),
         _check("live_evidence_research_ready", _first_bool(evidence_summary, "research_ready"), "is", True, _first_bool(evidence_summary, "research_ready") or not config.require_research_ready, "live evidence is not research-ready"),
         _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_smoke else "allowed", synthetic_count == 0 or config.allow_synthetic_smoke, "synthetic rehearsal captures cannot be handed to strategy research"),
@@ -528,6 +596,10 @@ def _summary(
     blocked = int((action_queue["queue_status"].astype(str) == "blocked").sum()) if not action_queue.empty else 0
     ready_actions = int((action_queue["queue_status"].astype(str) == "ready").sum()) if not action_queue.empty else 0
     next_action = action_queue.iloc[0] if not action_queue.empty else None
+    source_session = _mapping(capture_provenance.get("source_session"))
+    market_session = _mapping(capture_provenance.get("market_session"))
+    bundle_source_session = _mapping(capture_provenance.get("capture_bundle_source_session"))
+    bundle_market_session = _mapping(capture_provenance.get("capture_bundle_market_session"))
     return pd.DataFrame(
         [
             {
@@ -537,7 +609,14 @@ def _summary(
                 "provider": _first_text(evidence_summary, "provider"),
                 "transport": _first_text(evidence_summary, "transport"),
                 "market": _effective_market(evidence_summary, config),
+                "exchange": str(capture_provenance["exchange"]),
                 "kind": _first_text(evidence_summary, "kind"),
+                "source_session_timezone": _text(source_session.get("timezone")),
+                "source_session_open_local": _text(source_session.get("open_local")),
+                "source_session_close_local": _text(source_session.get("close_local")),
+                "market_session_timezone": _text(market_session.get("timezone")),
+                "market_session_open_local": _text(market_session.get("open_local")),
+                "market_session_close_local": _text(market_session.get("close_local")),
                 "strategy": ";".join(config.strategies),
                 "strategy_profiles": ";".join(config.strategies),
                 "capture_bundle_path": str(capture_provenance["capture_bundle_path"]),
@@ -556,6 +635,22 @@ def _summary(
                 "source_live_fetch_contract_available": bool(capture_provenance["source_live_fetch_contract_available"]),
                 "source_live_fetch_contract_next_gate": str(capture_provenance["source_live_fetch_contract_next_gate"]),
                 "source_live_fetch_contract_command_template": str(capture_provenance["source_live_fetch_contract_command_template"]),
+                "source_live_fetch_contract_exchange": str(capture_provenance["source_live_fetch_contract_exchange"]),
+                "source_live_fetch_contract_market": str(capture_provenance["source_live_fetch_contract_market"]),
+                "source_live_fetch_contract_session_timezone": str(capture_provenance["source_live_fetch_contract_session_timezone"]),
+                "source_live_fetch_contract_session_open_local": str(capture_provenance["source_live_fetch_contract_session_open_local"]),
+                "source_live_fetch_contract_session_close_local": str(capture_provenance["source_live_fetch_contract_session_close_local"]),
+                "capture_bundle_exchange": str(capture_provenance["capture_bundle_exchange"]),
+                "capture_bundle_source_session_timezone": _text(bundle_source_session.get("timezone")),
+                "capture_bundle_source_session_open_local": _text(bundle_source_session.get("open_local")),
+                "capture_bundle_source_session_close_local": _text(bundle_source_session.get("close_local")),
+                "capture_bundle_market_session_timezone": _text(bundle_market_session.get("timezone")),
+                "capture_bundle_market_session_open_local": _text(bundle_market_session.get("open_local")),
+                "capture_bundle_market_session_close_local": _text(bundle_market_session.get("close_local")),
+                "capture_bundle_metadata_matches_session": bool(capture_provenance["capture_bundle_metadata_matches_session"]),
+                "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+                    capture_provenance["capture_bundle_live_fetch_contract_metadata_matches_session"]
+                ),
                 "dataset_count": int(len(datasets)),
                 "ready_command_count": int((commands["queue_status"].astype(str) == "ready").sum()) if not commands.empty else 0,
                 "blocked_command_count": int((commands["queue_status"].astype(str) == "blocked").sum()) if not commands.empty else 0,
@@ -630,6 +725,9 @@ def _config(
         "evidence_summary": _first_record(evidence_summary),
         "evidence_manifest_run_type": _text(manifest.get("run_type")),
         "evidence_config_ready": bool(evidence_config.get("ready", False)),
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": _market_session_contract_from_summary(summary),
         "capture_bundle": capture_provenance,
         "datasets": _records(datasets),
         "commands": _records(commands),
@@ -681,6 +779,18 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_source_env_template"
     if check == "capture_bundle_live_fetch_contract_carried":
         return "regenerate_capture_bundle_with_live_fetch_contract"
+    if check in {
+        "live_evidence_exchange_carried",
+        "live_evidence_source_session_carried",
+        "live_evidence_market_session_carried",
+        "capture_bundle_exchange_matches_evidence",
+        "capture_bundle_source_session_matches_evidence",
+        "capture_bundle_market_session_matches_evidence",
+        "capture_bundle_metadata_matches_session",
+    }:
+        return "regenerate_live_evidence_with_session_metadata"
+    if check == "capture_bundle_live_fetch_contract_metadata_matches_session":
+        return "regenerate_live_evidence_with_live_fetch_contract_metadata"
     if (
         check.startswith("capture_bundle")
         or check.startswith("capture_env_template")
@@ -728,6 +838,8 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         "",
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Strategies: {summary['strategy_profiles']}",
         f"- Capture bundle: {summary['capture_bundle_path']}",
         f"- Credential env template: {summary['capture_env_template_path']}",
@@ -849,6 +961,92 @@ def _normalize_strategy(value: object) -> str:
         "surface_market_making": "surface_mm",
     }
     return aliases.get(text, text)
+
+
+def _coalesced_bool(*values: object) -> bool:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return _truthy(value)
+    return False
+
+
+def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_session_timezone"]),
+        "open_local": str(summary["source_session_open_local"]),
+        "close_local": str(summary["source_session_close_local"]),
+    }
+
+
+def _market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["market_session_timezone"]),
+        "open_local": str(summary["market_session_open_local"]),
+        "close_local": str(summary["market_session_close_local"]),
+    }
+
+
+def _capture_bundle_source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["capture_bundle_source_session_timezone"]),
+        "open_local": str(summary["capture_bundle_source_session_open_local"]),
+        "close_local": str(summary["capture_bundle_source_session_close_local"]),
+    }
+
+
+def _capture_bundle_market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["capture_bundle_market_session_timezone"]),
+        "open_local": str(summary["capture_bundle_market_session_open_local"]),
+        "close_local": str(summary["capture_bundle_market_session_close_local"]),
+    }
+
+
+def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_live_fetch_contract_session_timezone"]),
+        "open_local": str(summary["source_live_fetch_contract_session_open_local"]),
+        "close_local": str(summary["source_live_fetch_contract_session_close_local"]),
+    }
+
+
+def _session_contracts_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if not (_session_contract_carried(left) and _session_contract_carried(right)):
+        return False
+    return (
+        _text(left.get("timezone")) == _text(right.get("timezone"))
+        and _wall_clock_seconds(left.get("open_local")) == _wall_clock_seconds(right.get("open_local"))
+        and _wall_clock_seconds(left.get("close_local")) == _wall_clock_seconds(right.get("close_local"))
+    )
+
+
+def _session_contract_carried(session: dict[str, Any]) -> bool:
+    return all(_text(session.get(key)) for key in ("timezone", "open_local", "close_local"))
+
+
+def _session_contract_text(session: dict[str, Any]) -> str:
+    return (
+        f"{_text(session.get('timezone'))}|"
+        f"{_text(session.get('open_local'))}|"
+        f"{_text(session.get('close_local'))}"
+    )
+
+
+def _wall_clock_seconds(value: object) -> int | None:
+    parts = _text(value).split(":")
+    if len(parts) not in {2, 3}:
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return hour * 3600 + minute * 60 + second
 
 
 def _first_record(frame: pd.DataFrame | None) -> dict[str, Any]:
