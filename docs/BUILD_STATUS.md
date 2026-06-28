@@ -140,7 +140,9 @@
   `live_fetch_contract` plus exchange/session metadata into summary/config/runbook
   artifacts plus the manifest, and keeps synthetic smoke evidence, missing
   upstream live-data contracts, metadata drift, or unsupported strategy lanes
-  blocked until the needed real inputs exist.
+  blocked until the needed real inputs exist. Research handoff summary/config and
+  manifest extras now also expose the capture env-template and adapter handoff
+  SHA-256 values directly for downstream strategy audit.
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real

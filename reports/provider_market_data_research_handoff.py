@@ -99,6 +99,16 @@ def write_provider_market_data_research_handoff(
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "capture_env_template": {
+                "path": str(summary_row["capture_env_template_path"]),
+                "exists": bool(summary_row["capture_env_template_exists"]),
+                "sha256": str(summary_row["capture_env_template_sha256"]),
+            },
+            "adapter_handoff": {
+                "path": str(summary_row["adapter_handoff_path"]),
+                "exists": bool(summary_row["adapter_handoff_exists"]),
+                "sha256": str(summary_row["adapter_handoff_sha256"]),
+            },
             "capture_bundle_metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -249,6 +259,8 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
     manifest_source_env = _mapping(manifest_inputs.get("source_credential_env_template"))
     manifest_extra = _mapping(manifest.get("extra"))
     manifest_extra_bundle = _mapping(manifest_extra.get("capture_bundle"))
+    manifest_extra_env = _mapping(manifest_extra.get("capture_env_template"))
+    manifest_extra_handoff = _mapping(manifest_extra.get("adapter_handoff"))
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
@@ -293,6 +305,17 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         or _text(manifest_source_env.get("sha256"))
         or _text(manifest_extra_source_env.get("sha256"))
     )
+    capture_env_template_sha256 = (
+        _text(bundle.get("capture_env_template_sha256"))
+        or _text(bundle.get("env_template_sha256"))
+        or _text(manifest_env.get("sha256"))
+        or _text(manifest_extra_env.get("sha256"))
+    )
+    adapter_handoff_sha256 = (
+        _text(bundle.get("adapter_handoff_sha256"))
+        or _text(manifest_handoff.get("sha256"))
+        or _text(manifest_extra_handoff.get("sha256"))
+    )
     live_fetch_available = bool(
         _truthy(bundle.get("source_live_fetch_contract_available"))
         or _truthy(live_fetch_contract.get("available"))
@@ -313,9 +336,11 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         "capture_env_template_path": _path_text(env_template_path),
         "capture_env_template_provided": bool(env_template_path),
         "capture_env_template_exists": bool(env_template_path is not None and env_template_path.exists()),
+        "capture_env_template_sha256": capture_env_template_sha256,
         "adapter_handoff_path": _path_text(adapter_handoff_path),
         "adapter_handoff_provided": bool(adapter_handoff_path),
         "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
+        "adapter_handoff_sha256": adapter_handoff_sha256,
         "source_credential_env_template_path": _path_text(source_env_template_path),
         "source_credential_env_template_provided": bool(source_env_template_path),
         "source_credential_env_template_exists": source_env_template_exists,
@@ -626,9 +651,11 @@ def _summary(
                 "capture_env_template_path": str(capture_provenance["capture_env_template_path"]),
                 "capture_env_template_provided": bool(capture_provenance["capture_env_template_provided"]),
                 "capture_env_template_exists": bool(capture_provenance["capture_env_template_exists"]),
+                "capture_env_template_sha256": str(capture_provenance["capture_env_template_sha256"]),
                 "adapter_handoff_path": str(capture_provenance["adapter_handoff_path"]),
                 "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
                 "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
+                "adapter_handoff_sha256": str(capture_provenance["adapter_handoff_sha256"]),
                 "source_credential_env_template_path": str(capture_provenance["source_credential_env_template_path"]),
                 "source_credential_env_template_exists": bool(capture_provenance["source_credential_env_template_exists"]),
                 "source_credential_env_template_sha256": str(capture_provenance["source_credential_env_template_sha256"]),

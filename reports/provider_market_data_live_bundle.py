@@ -76,14 +76,17 @@ def write_provider_market_data_live_capture_bundle(
     (out / "provider_market_data_live_capture_bundle.json").write_text(
         _json_text(bundle),
         encoding="utf-8",
+        newline="\n",
     )
     (out / ENV_TEMPLATE_NAME).write_text(
         env_template_text,
         encoding="utf-8",
+        newline="\n",
     )
     (out / ADAPTER_HANDOFF_NAME).write_text(
         adapter_handoff_text,
         encoding="utf-8",
+        newline="\n",
     )
     (out / "provider_market_data_live_capture_runbook.md").write_text(
         _runbook_markdown(summary.iloc[0], report.commands, report.action_queue),

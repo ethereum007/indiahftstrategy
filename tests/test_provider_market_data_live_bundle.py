@@ -6,6 +6,7 @@ import pandas as pd
 from hft_cli import main
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
+from reports.manifest import file_sha256
 from reports.provider_market_data_client import write_provider_market_data_client_plan
 from reports.provider_market_data_fetcher import write_provider_market_data_fetcher_plan
 from reports.provider_market_data_live_bundle import (
@@ -110,8 +111,10 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     summary = report.summary.iloc[0]
     commands = pd.read_csv(out_dir / "provider_market_data_live_capture_commands.csv")
     bundle = json.loads((out_dir / "provider_market_data_live_capture_bundle.json").read_text(encoding="utf-8"))
-    handoff = json.loads((out_dir / "provider_market_data_adapter_handoff.json").read_text(encoding="utf-8"))
-    env_template = (out_dir / "provider_market_data_live_capture_env_template.env").read_text(encoding="utf-8")
+    env_template_path = out_dir / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = out_dir / "provider_market_data_adapter_handoff.json"
+    handoff = json.loads(adapter_handoff_path.read_text(encoding="utf-8"))
+    env_template = env_template_path.read_text(encoding="utf-8")
     runbook = (out_dir / "provider_market_data_live_capture_runbook.md").read_text(encoding="utf-8")
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
@@ -149,6 +152,8 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert "ARROW_MONEY_API_KEY=\n" in env_template
     assert "ARROW_MONEY_API_SECRET=\n" in env_template
+    assert file_sha256(env_template_path) == summary["capture_env_template_sha256"]
+    assert file_sha256(adapter_handoff_path) == summary["adapter_handoff_sha256"]
     assert handoff["provider"] == "arrow_money"
     assert handoff["transport"] == "websocket"
     assert handoff["exchange"] == "NFO"
