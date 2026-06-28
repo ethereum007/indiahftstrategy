@@ -3007,10 +3007,10 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_captur
         provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
     )
     roundtrip_summary = pd.read_csv(roundtrip_summary_path)
-    roundtrip_summary["capture_bundle_path"] = str(roundtrip_bundle)
-    roundtrip_summary["capture_bundle_provided"] = True
-    roundtrip_summary["capture_bundle_exists"] = True
-    roundtrip_summary["capture_bundle_ready"] = True
+    roundtrip_summary["dispatch_roundtrip_capture_bundle_path"] = str(roundtrip_bundle)
+    roundtrip_summary["dispatch_roundtrip_capture_bundle_provided"] = True
+    roundtrip_summary["dispatch_roundtrip_capture_bundle_exists"] = True
+    roundtrip_summary["dispatch_roundtrip_capture_bundle_ready"] = True
     roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
     out_dir = tmp_path / "provider_imbalance_broker_readiness_with_capture_mismatch"
 
@@ -3059,12 +3059,14 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_source
         provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
     )
     roundtrip_summary = pd.read_csv(roundtrip_summary_path)
-    roundtrip_summary["source_credential_env_template_path"] = str(roundtrip_source)
-    roundtrip_summary["source_credential_env_template_exists"] = True
-    roundtrip_summary["source_credential_env_template_sha256"] = "a" * 64
-    roundtrip_summary["source_live_fetch_contract_available"] = True
-    roundtrip_summary["source_live_fetch_contract_next_gate"] = "provider_fetcher"
-    roundtrip_summary["source_live_fetch_contract_command_template"] = "python -m hft_cli fetch-provider-live-data"
+    roundtrip_summary["dispatch_roundtrip_source_credential_env_template_path"] = str(roundtrip_source)
+    roundtrip_summary["dispatch_roundtrip_source_credential_env_template_exists"] = True
+    roundtrip_summary["dispatch_roundtrip_source_credential_env_template_sha256"] = "a" * 64
+    roundtrip_summary["dispatch_roundtrip_source_live_fetch_contract_available"] = True
+    roundtrip_summary["dispatch_roundtrip_source_live_fetch_contract_next_gate"] = "provider_fetcher"
+    roundtrip_summary["dispatch_roundtrip_source_live_fetch_contract_command_template"] = (
+        "python -m hft_cli fetch-provider-live-data"
+    )
     roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
     out_dir = tmp_path / "provider_imbalance_broker_readiness_with_source_mismatch"
 
@@ -3116,10 +3118,10 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_sessio
         provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
     )
     roundtrip_summary = pd.read_csv(roundtrip_summary_path)
-    roundtrip_summary["exchange"] = "BFO"
-    roundtrip_summary["source_session_open_local"] = "09:16:00"
-    roundtrip_summary["source_live_fetch_contract_exchange"] = "BFO"
-    roundtrip_summary["source_live_fetch_contract_session_open_local"] = "09:16:00"
+    roundtrip_summary["dispatch_roundtrip_exchange"] = "BFO"
+    roundtrip_summary["dispatch_roundtrip_source_session_open_local"] = "09:16:00"
+    roundtrip_summary["dispatch_roundtrip_source_live_fetch_contract_exchange"] = "BFO"
+    roundtrip_summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"] = "09:16:00"
     roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
     out_dir = tmp_path / "provider_imbalance_broker_readiness_with_session_metadata_mismatch"
 

@@ -1563,12 +1563,14 @@
   any nested dispatch and broker-dispatch vendor-market-data batch proof into
   provider summary/config/runbook/manifest metadata, preserves any upstream
   proof and upstream vendor-market-data batch lineage from the provider
-  wrapper, carries the round-trip capture bundle/env-template/adapter handoff
-  lineage plus round-trip source credential env-template, exchange/session
-  metadata, capture-bundle session match proof, and `live_fetch_contract`
-  proof beside runtime-session provenance, fails closed if both sides provide
-  conflicting file provenance or exchange/session/live-fetch identity, and
-  keeps all proof roots, including the round-trip
+  wrapper, now prefers explicit provider-roundtrip `dispatch_roundtrip_*`
+  proof fields before falling back to older top-level wrapper fields, carries
+  the round-trip capture bundle/env-template/adapter handoff lineage plus
+  round-trip source credential env-template, exchange/session metadata,
+  capture-bundle session match proof, and `live_fetch_contract` proof beside
+  runtime-session provenance, fails closed if both sides provide conflicting
+  file provenance or exchange/session/live-fetch identity, and keeps all proof
+  roots, including the round-trip
   source credential env-template, in the manifest for audit.
 - Provider-data imbalance cutover now carries that broker-dispatch round-trip
   audit trail forward from provider broker-readiness. The provider cutover
