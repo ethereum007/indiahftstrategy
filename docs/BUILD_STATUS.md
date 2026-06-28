@@ -162,7 +162,8 @@
   `live_fetch_contract` into evidence summary/config/runbook artifacts plus the
   manifest, and points ready candidates to
   `pipeline-imbalance-launch` without weakening the full launch-ready
-  `imbalance` profile.
+  `imbalance` profile. Evidence summary/config and manifest extras now also
+  expose capture env-template and adapter handoff SHA-256 values directly.
 - Provider market-data imbalance launch packaging now bridges ready provider
   research evidence into broker handoff artifacts:
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
