@@ -1631,7 +1631,12 @@
   capture-bundle session match proof, live-fetch exchange/session identity,
   `live_fetch_contract`, and source/capture provenance-consistency flags
   through send summary/config/runbook artifacts plus manifest inputs/metadata
-  while still keeping `submission_enabled=false`.
+  while still keeping `submission_enabled=false`. Broker-dispatch-send now also
+  hydrates missing or blank broker-dispatch `dispatch_roundtrip_*` summary
+  fields from the broker-dispatch `dispatch_roundtrip_provenance` config
+  sidecar, while preserving explicit summary `False` values, so sparse
+  broker-dispatch CSVs do not lose validated live-data provenance before
+  dry-run request envelopes are produced.
 - Provider-data imbalance broker-dispatch acknowledgement now preserves those
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream

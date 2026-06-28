@@ -5012,7 +5012,11 @@ broker-dispatch-retained validated dispatch round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
 proof, live-fetch exchange/session identity, `live_fetch_contract`, and
 source-provenance consistency flags, so operators can trace the exact live data
-source beside the dry-run request envelopes. The wrapper runs
+source beside the dry-run request envelopes. When a broker-dispatch CSV is
+sparse but its config sidecar has `dispatch_roundtrip_provenance`,
+broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields
+from that config while keeping explicit summary `False` values authoritative.
+The wrapper runs
 `prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
 and writes provider checks, summary, action, config, and runbook artifacts. It
 still does not submit orders: the nested packet writes request envelopes and
