@@ -104,7 +104,9 @@
   missing preflight evidence, metadata drift, and capture overwrite risk.
   Default adapter commands now explicitly pass the handoff JSON and blank
   capture env-template file, so Arrow.money/iRage adapter processes receive
-  the same contract artifacts the bundle manifests.
+  the same contract artifacts the bundle manifests. Bundle summary/JSON,
+  adapter handoff, and manifest extras now include capture env-template and
+  adapter handoff SHA-256 values for direct provider handoff audit.
 - Provider market-data live rehearsal now proves the backend handoff without
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally

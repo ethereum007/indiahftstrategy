@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -60,26 +62,31 @@ def write_provider_market_data_live_capture_bundle(
         live_session_packet_path,
         config=config,
     )
+    summary, bundle, adapter_handoff, env_template_text, adapter_handoff_text = _with_artifact_fingerprints(
+        report.summary,
+        report.bundle,
+        report.adapter_handoff,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.commands.to_csv(out / "provider_market_data_live_capture_commands.csv", index=False)
     report.checks.to_csv(out / "provider_market_data_live_capture_checks.csv", index=False)
-    report.summary.to_csv(out / "provider_market_data_live_capture_summary.csv", index=False)
+    summary.to_csv(out / "provider_market_data_live_capture_summary.csv", index=False)
     report.action_queue.to_csv(out / "provider_market_data_live_capture_action_queue.csv", index=False)
     (out / "provider_market_data_live_capture_bundle.json").write_text(
-        json.dumps(report.bundle, indent=2, sort_keys=True) + "\n",
+        _json_text(bundle),
         encoding="utf-8",
     )
     (out / ENV_TEMPLATE_NAME).write_text(
-        _env_template(_string_list(report.bundle.get("authentication", {}).get("env_vars"))),
+        env_template_text,
         encoding="utf-8",
     )
     (out / ADAPTER_HANDOFF_NAME).write_text(
-        json.dumps(report.adapter_handoff, indent=2, sort_keys=True) + "\n",
+        adapter_handoff_text,
         encoding="utf-8",
     )
     (out / "provider_market_data_live_capture_runbook.md").write_text(
-        _runbook_markdown(report.summary.iloc[0], report.commands, report.action_queue),
+        _runbook_markdown(summary.iloc[0], report.commands, report.action_queue),
         encoding="utf-8",
     )
     packet_path = Path(live_session_packet_path)
@@ -92,31 +99,42 @@ def write_provider_market_data_live_capture_bundle(
         source_env_template_path = Path(str(source_env_template["path"]))
         if source_env_template_path.exists():
             inputs["source_credential_env_template"] = source_env_template_path
+    summary_row = summary.iloc[0]
     write_experiment_manifest(
         out,
         run_type="provider_market_data_live_capture_bundle",
         parameters={"config": asdict(config or ProviderMarketDataLiveCaptureBundleConfig())},
         inputs=inputs,
         extra={
-            "ready": bool(report.summary.iloc[0]["ready"]),
-            "command_count": int(report.summary.iloc[0]["command_count"]),
-            "failed_checks": int(report.summary.iloc[0]["failed_checks"]),
-            "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
+            "ready": bool(summary_row["ready"]),
+            "command_count": int(summary_row["command_count"]),
+            "failed_checks": int(summary_row["failed_checks"]),
+            "blocked_action_count": int(summary_row["blocked_action_count"]),
+            "capture_env_template": {
+                "path": ENV_TEMPLATE_NAME,
+                "exists": True,
+                "sha256": str(summary_row["capture_env_template_sha256"]),
+            },
+            "adapter_handoff": {
+                "path": ADAPTER_HANDOFF_NAME,
+                "exists": True,
+                "sha256": str(summary_row["adapter_handoff_sha256"]),
+            },
             "adapter_handoff_file": ADAPTER_HANDOFF_NAME,
-            "exchange": str(report.summary.iloc[0]["exchange"]),
-            "source_session": _source_session_contract_from_summary(report.summary.iloc[0]),
-            "market_session": _market_session_contract_from_summary(report.summary.iloc[0]),
+            "exchange": str(summary_row["exchange"]),
+            "source_session": _source_session_contract_from_summary(summary_row),
+            "market_session": _market_session_contract_from_summary(summary_row),
             "source_credential_env_template": source_env_template,
-            "live_fetch_contract": _mapping(report.bundle.get("live_fetch_contract")),
+            "live_fetch_contract": _mapping(bundle.get("live_fetch_contract")),
         },
     )
     return ProviderMarketDataLiveCaptureBundleReport(
         report.commands,
         report.checks,
-        report.summary,
+        summary,
         report.action_queue,
-        report.bundle,
-        report.adapter_handoff,
+        bundle,
+        adapter_handoff,
         out,
     )
 
@@ -140,6 +158,30 @@ def evaluate_provider_market_data_live_capture_bundle(
     bundle = _bundle(summary.iloc[0], packet_path, packet, preflight_path, preflight, env_presence, commands, checks, action_queue, config)
     adapter_handoff = _adapter_handoff(summary.iloc[0], packet_path, packet, preflight_path, preflight, env_presence, commands, config)
     return ProviderMarketDataLiveCaptureBundleReport(commands, checks, summary, action_queue, bundle, adapter_handoff)
+
+
+def _with_artifact_fingerprints(
+    summary: pd.DataFrame,
+    bundle: dict[str, Any],
+    adapter_handoff: dict[str, Any],
+) -> tuple[pd.DataFrame, dict[str, Any], dict[str, Any], str, str]:
+    out_summary = summary.copy()
+    out_bundle = deepcopy(bundle)
+    out_handoff = deepcopy(adapter_handoff)
+    env_vars = _string_list(_mapping(out_bundle.get("authentication")).get("env_vars"))
+    env_template_text = _env_template(env_vars)
+    env_template_sha256 = _sha256_text(env_template_text)
+    out_handoff["capture_env_template_sha256"] = env_template_sha256
+    adapter_handoff_text = _json_text(out_handoff)
+    adapter_handoff_sha256 = _sha256_text(adapter_handoff_text)
+    out_bundle["capture_env_template_sha256"] = env_template_sha256
+    out_bundle["adapter_handoff_sha256"] = adapter_handoff_sha256
+    authentication = _mapping(out_bundle.get("authentication"))
+    authentication["env_template_sha256"] = env_template_sha256
+    out_bundle["authentication"] = authentication
+    out_summary["capture_env_template_sha256"] = env_template_sha256
+    out_summary["adapter_handoff_sha256"] = adapter_handoff_sha256
+    return out_summary, out_bundle, out_handoff, env_template_text, adapter_handoff_text
 
 
 def _read_json(path: Path, label: str) -> tuple[dict[str, Any], str]:
@@ -972,6 +1014,14 @@ def _shell_quote(value: object) -> str:
     if re.search(r"[\s'\"`]", text):
         return '"' + text.replace('"', '\\"') + '"'
     return text
+
+
+def _json_text(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, indent=2, sort_keys=True) + "\n"
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
 def _jsonable(value: object) -> object:

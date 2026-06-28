@@ -125,6 +125,8 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bool(summary["source_session_matches_market_session"])
     assert summary["source_credential_env_template_exists"]
     assert len(summary["source_credential_env_template_sha256"]) == 64
+    assert len(summary["capture_env_template_sha256"]) == 64
+    assert len(summary["adapter_handoff_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert "provider-adapter capture" in commands.loc[0, "adapter_command"]
@@ -134,7 +136,10 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert "ingest-provider-market-data-live-session" in summary["post_capture_ingest_command"]
     assert bundle["authentication"]["values_stored"] is False
     assert bundle["authentication"]["env_template"] == "provider_market_data_live_capture_env_template.env"
+    assert bundle["authentication"]["env_template_sha256"] == summary["capture_env_template_sha256"]
     assert bundle["authentication"]["source_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
+    assert bundle["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
+    assert bundle["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert bundle["source_credential_env_template"]["exists"] is True
     assert bundle["exchange"] == "NFO"
     assert bundle["source_session"]["timezone"] == "Asia/Kolkata"
@@ -154,6 +159,7 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert handoff["authentication"]["source_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert handoff["source_credential_env_template"]["exists"] is True
     assert handoff["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
+    assert handoff["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
     assert handoff["live_fetch_contract"]["available"] is True
     assert handoff["output"]["schema_columns"] == ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
     assert len(handoff["capture_windows"]) == 2
@@ -169,6 +175,8 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert "Source credential env template" in runbook
     assert manifest["run_type"] == "provider_market_data_live_capture_bundle"
     assert manifest["extra"]["adapter_handoff_file"] == "provider_market_data_adapter_handoff.json"
+    assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
+    assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["market_session"]["open_local"] == "09:15"
