@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.provider_market_data_batch import (
     ProviderMarketDataBatchConfig,
     ProviderMarketDataBatchReport,
@@ -115,6 +115,11 @@ def write_provider_market_data_live_session_ingest(
                 "live_fetch_contract_metadata_matches_session": bool(
                     report.summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
                 ),
+            },
+            "capture_env_template": {
+                "path": str(report.summary.iloc[0]["capture_env_template_path"]),
+                "exists": bool(report.summary.iloc[0]["capture_env_template_exists"]),
+                "sha256": str(report.summary.iloc[0]["capture_env_template_sha256"]),
             },
             "source_credential_env_template": {
                 "path": str(report.summary.iloc[0]["source_credential_env_template_path"]),
@@ -336,6 +341,7 @@ def _summary(
                 "capture_env_template_exists": bool(
                     capture_env_template_path is not None and capture_env_template_path.exists()
                 ),
+                "capture_env_template_sha256": _file_sha256_or_empty(capture_env_template_path),
                 "adapter_handoff_path": _path_text(adapter_handoff_path),
                 "adapter_handoff_provided": bool(adapter_handoff_path),
                 "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
@@ -464,6 +470,7 @@ def _config(
             "ready": bool(summary["capture_bundle_ready"]),
             "env_template_path": str(summary["capture_env_template_path"]),
             "env_template_exists": bool(summary["capture_env_template_exists"]),
+            "env_template_sha256": str(summary["capture_env_template_sha256"]),
             "adapter_handoff_path": str(summary["adapter_handoff_path"]),
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
@@ -856,6 +863,12 @@ def _path_or_none(value: str) -> Path | None:
 
 def _path_text(path: Path | None) -> str:
     return "" if path is None else str(path)
+
+
+def _file_sha256_or_empty(path: Path | None) -> str:
+    if path is None or not path.exists() or not path.is_file():
+        return ""
+    return file_sha256(path)
 
 
 def _mapping(value: object) -> dict[str, Any]:
