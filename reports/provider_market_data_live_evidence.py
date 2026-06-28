@@ -113,6 +113,12 @@ def write_provider_market_data_live_evidence_review(
                 "exists": bool(report.summary.iloc[0]["capture_env_template_exists"]),
                 "sha256": str(report.summary.iloc[0]["capture_env_template_sha256"]),
             },
+            "adapter_handoff": {
+                "path": str(report.summary.iloc[0]["adapter_handoff_path"]),
+                "provided": bool(report.summary.iloc[0]["adapter_handoff_provided"]),
+                "exists": bool(report.summary.iloc[0]["adapter_handoff_exists"]),
+                "sha256": str(report.summary.iloc[0]["adapter_handoff_sha256"]),
+            },
             "source_credential_env_template": {
                 "path": str(report.summary.iloc[0]["source_credential_env_template_path"]),
                 "exists": bool(report.summary.iloc[0]["source_credential_env_template_exists"]),
@@ -314,6 +320,7 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
     manifest_extra = _mapping(manifest.get("extra"))
     manifest_extra_bundle = _mapping(manifest_extra.get("capture_bundle"))
     manifest_extra_capture_env = _mapping(manifest_extra.get("capture_env_template"))
+    manifest_extra_handoff = _mapping(manifest_extra.get("adapter_handoff"))
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
@@ -350,6 +357,9 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
         "adapter_handoff_exists": bool(
             adapter_handoff_path is not None and adapter_handoff_path.exists()
         ),
+        "adapter_handoff_sha256": _text(bundle.get("adapter_handoff_sha256"))
+        or _text(manifest_handoff.get("sha256"))
+        or _text(manifest_extra_handoff.get("sha256")),
         "source_credential_env_template_path": _path_text(source_env_template_path),
         "source_credential_env_template_provided": bool(source_env_template_path),
         "source_credential_env_template_exists": bool(
@@ -426,6 +436,7 @@ def _checks(
         _check("capture_env_template_exists", capture_provenance["capture_env_template_path"], "exists", True, bool(capture_provenance["capture_env_template_exists"]) if bundle_provided else True, "credential env-template referenced by ingest provenance is missing"),
         _check("capture_env_template_fingerprinted", capture_provenance["capture_env_template_sha256"], "has", "sha256", bool(capture_provenance["capture_env_template_sha256"]) if bundle_provided else True, "credential env-template fingerprint is missing from ingest provenance"),
         _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if bool(capture_provenance["adapter_handoff_provided"]) else True, "adapter handoff referenced by ingest provenance is missing"),
+        _check("adapter_handoff_fingerprinted", capture_provenance["adapter_handoff_sha256"], "has", "sha256", bool(capture_provenance["adapter_handoff_sha256"]) if bool(capture_provenance["adapter_handoff_provided"]) else True, "adapter handoff fingerprint is missing from ingest provenance"),
         _check("capture_bundle_source_credential_env_template_carried", capture_provenance["source_credential_env_template_path"], "exists", True, bool(capture_provenance["source_credential_env_template_exists"]) and bool(capture_provenance["source_credential_env_template_sha256"]) if bundle_provided else True, "source credential env-template referenced by ingest provenance is missing"),
         _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by ingest provenance is missing"),
         _check("capture_bundle_exchange_carried", capture_provenance["capture_bundle_exchange"], "is_not", "", bool(capture_provenance["capture_bundle_exchange"]) if bundle_provided else True, "capture bundle exchange metadata is missing from ingest provenance"),
@@ -485,6 +496,7 @@ def _summary(
                 "adapter_handoff_path": str(capture_provenance["adapter_handoff_path"]),
                 "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
                 "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
+                "adapter_handoff_sha256": str(capture_provenance["adapter_handoff_sha256"]),
                 "source_credential_env_template_path": str(capture_provenance["source_credential_env_template_path"]),
                 "source_credential_env_template_exists": bool(capture_provenance["source_credential_env_template_exists"]),
                 "source_credential_env_template_sha256": str(capture_provenance["source_credential_env_template_sha256"]),

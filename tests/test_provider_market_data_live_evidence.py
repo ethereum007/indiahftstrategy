@@ -214,6 +214,7 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
     assert summary["adapter_handoff_provided"]
     assert summary["adapter_handoff_exists"]
+    assert len(summary["adapter_handoff_sha256"]) == 64
     assert Path(summary["source_credential_env_template_path"]) == source_env_template_path
     assert summary["source_credential_env_template_exists"]
     assert len(summary["source_credential_env_template_sha256"]) == 64
@@ -233,6 +234,7 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert config["capture_bundle"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["capture_bundle"]["adapter_handoff_exists"] is True
+    assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
     assert config["capture_bundle"]["capture_bundle_exchange"] == "NFO"
@@ -245,12 +247,14 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["capture_bundle_metadata_matches_session"] is True
     assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
+    assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"

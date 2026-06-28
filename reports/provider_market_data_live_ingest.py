@@ -121,6 +121,12 @@ def write_provider_market_data_live_session_ingest(
                 "exists": bool(report.summary.iloc[0]["capture_env_template_exists"]),
                 "sha256": str(report.summary.iloc[0]["capture_env_template_sha256"]),
             },
+            "adapter_handoff": {
+                "path": str(report.summary.iloc[0]["adapter_handoff_path"]),
+                "provided": bool(report.summary.iloc[0]["adapter_handoff_provided"]),
+                "exists": bool(report.summary.iloc[0]["adapter_handoff_exists"]),
+                "sha256": str(report.summary.iloc[0]["adapter_handoff_sha256"]),
+            },
             "source_credential_env_template": {
                 "path": str(report.summary.iloc[0]["source_credential_env_template_path"]),
                 "exists": bool(report.summary.iloc[0]["source_credential_env_template_exists"]),
@@ -345,6 +351,7 @@ def _summary(
                 "adapter_handoff_path": _path_text(adapter_handoff_path),
                 "adapter_handoff_provided": bool(adapter_handoff_path),
                 "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
+                "adapter_handoff_sha256": _file_sha256_or_empty(adapter_handoff_path),
                 "source_credential_env_template_path": _text(source_env_template.get("path")),
                 "source_credential_env_template_exists": bool(source_env_template.get("exists")),
                 "source_credential_env_template_sha256": _text(source_env_template.get("sha256")),
@@ -474,6 +481,7 @@ def _config(
             "adapter_handoff_path": str(summary["adapter_handoff_path"]),
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+            "adapter_handoff_sha256": str(summary["adapter_handoff_sha256"]),
             "source_credential_env_template": {
                 "path": str(summary["source_credential_env_template_path"]),
                 "exists": bool(summary["source_credential_env_template_exists"]),

@@ -120,9 +120,9 @@
   its blank credential env-template plus adapter handoff contract artifacts,
   source env-template proof, exchange/session metadata matching the live packet,
   and `live_fetch_contract` for backend handoff provenance. Ingest and evidence
-  summaries/configs now also carry the capture env-template SHA-256 directly,
-  so provider credential-template provenance is visible without parsing the
-  manifest input block.
+  summaries/configs now also carry the capture env-template and adapter handoff
+  SHA-256 values directly, so provider credential-template and adapter-contract
+  provenance are visible without parsing the manifest input block.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
