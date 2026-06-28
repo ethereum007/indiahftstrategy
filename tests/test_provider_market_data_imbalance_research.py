@@ -2857,20 +2857,59 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert summary["dispatch_roundtrip_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_source_session_open_local"] == "09:15:00"
+    assert summary["dispatch_roundtrip_source_session_close_local"] == "15:30:00"
+    assert summary["dispatch_roundtrip_market_session_open_local"] == "09:15"
+    assert bool(summary["dispatch_roundtrip_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_session_matches_session"])
+    assert bool(summary["dispatch_roundtrip_market_session_matches_session"])
+    assert bool(summary["dispatch_roundtrip_metadata_consistent"])
+    assert summary["dispatch_roundtrip_capture_bundle_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_capture_bundle_source_session_open_local"] == "09:15:00"
+    assert summary["dispatch_roundtrip_capture_bundle_market_session_open_local"] == "09:15"
+    assert bool(summary["dispatch_roundtrip_capture_bundle_metadata_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_source_session_matches_session"])
+    assert bool(summary["dispatch_roundtrip_capture_bundle_market_session_matches_session"])
     assert Path(summary["dispatch_roundtrip_source_credential_env_template_path"]) == source_env_template_path
     assert bool(summary["dispatch_roundtrip_source_credential_env_template_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session"])
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_market"] == "india_nse_index_derivatives"
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"] == "09:15:00"
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_market_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert bool(checks.loc["dispatch_roundtrip_capture_bundle_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_capture_env_template_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_adapter_handoff_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_exchange_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_source_session_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_market_session_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_capture_bundle_exchange_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_capture_bundle_source_session_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_capture_bundle_market_session_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_source_credential_env_template_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_source_credential_env_template_sha256_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_next_gate_consistent", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_command_template_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_exchange_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_market_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_live_fetch_contract_session_consistent", "passed"])
+    assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
+    assert config["dispatch_roundtrip_provenance"]["metadata_consistent_with_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_source_session"]["open_local"] == "09:15:00"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_market_session"]["open_local"] == "09:15"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_metadata_matches_session"]
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_exchange_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
@@ -2878,6 +2917,9 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
         source_env_template_path
     )
     assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_matches_session"]
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_session"]["open_local"] == "09:15:00"
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_exchange_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
     assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
@@ -2891,7 +2933,14 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_metadata_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip"]["exchange"] == "NFO"
+    assert manifest["extra"]["dispatch_roundtrip"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
+    assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
     assert str(adapter_handoff_path) in runbook
+    assert "Dispatch round-trip exchange: NFO" in runbook
+    assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert str(source_env_template_path) in runbook
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
@@ -3042,6 +3091,74 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_source
     assert not config["dispatch_roundtrip_provenance"]["source_credential_env_template_matches_session"]
     assert not config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
     assert not manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
+    assert report.action_queue.iloc[0]["next_gate"] == (
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    )
+    assert report.action_queue.iloc[0]["action"] == "repair_provider_imbalance_broker_dispatch_roundtrip"
+
+
+def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_session_metadata_mismatch(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+
+    session_summary_path = (
+        runtime_session.output_dir / "provider_market_data_imbalance_runtime_session_summary.csv"
+    )
+    session_summary = pd.read_csv(session_summary_path)
+    session_summary["source_live_fetch_contract_exchange"] = "NFO"
+    session_summary["source_live_fetch_contract_market"] = "india_nse_index_derivatives"
+    session_summary["source_live_fetch_contract_session_timezone"] = "Asia/Kolkata"
+    session_summary["source_live_fetch_contract_session_open_local"] = "09:15:00"
+    session_summary["source_live_fetch_contract_session_close_local"] = "15:30:00"
+    session_summary.to_csv(session_summary_path, index=False)
+
+    roundtrip_summary_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    roundtrip_summary = pd.read_csv(roundtrip_summary_path)
+    roundtrip_summary["exchange"] = "BFO"
+    roundtrip_summary["source_session_open_local"] = "09:16:00"
+    roundtrip_summary["source_live_fetch_contract_exchange"] = "BFO"
+    roundtrip_summary["source_live_fetch_contract_session_open_local"] = "09:16:00"
+    roundtrip_summary.to_csv(roundtrip_summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_with_session_metadata_mismatch"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    summary = report.summary.iloc[0]
+    checks = report.checks.set_index("check")
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert not bool(checks.loc["dispatch_roundtrip_exchange_consistent", "passed"])
+    assert not bool(checks.loc["dispatch_roundtrip_source_session_consistent", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_market_session_consistent", "passed"])
+    assert not bool(checks.loc["dispatch_roundtrip_live_fetch_contract_exchange_consistent", "passed"])
+    assert not bool(checks.loc["dispatch_roundtrip_live_fetch_contract_session_consistent", "passed"])
+    assert summary["dispatch_roundtrip_exchange"] == "BFO"
+    assert not bool(summary["dispatch_roundtrip_exchange_matches_session"])
+    assert not bool(summary["dispatch_roundtrip_source_session_matches_session"])
+    assert not bool(summary["dispatch_roundtrip_metadata_consistent"])
+    assert not bool(summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"])
+    assert not bool(summary["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"])
+    assert not bool(summary["dispatch_roundtrip_source_provenance_consistent"])
+    assert not config["dispatch_roundtrip_provenance"]["exchange_matches_session"]
+    assert not config["dispatch_roundtrip_provenance"]["source_session_matches_session"]
+    assert not config["dispatch_roundtrip_provenance"]["metadata_consistent_with_runtime_session"]
+    assert not config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_exchange_matches_session"]
+    assert not config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_session_matches_session"]
+    assert not manifest["extra"]["dispatch_roundtrip_exchange_matches_session"]
+    assert not manifest["extra"]["dispatch_roundtrip_source_session_matches_session"]
+    assert not manifest["extra"]["dispatch_roundtrip_metadata_consistent"]
+    assert not manifest["extra"]["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"]
+    assert not manifest["extra"]["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"]
     assert report.action_queue.iloc[0]["next_gate"] == (
         "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     )
