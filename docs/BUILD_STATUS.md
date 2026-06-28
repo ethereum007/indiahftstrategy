@@ -152,6 +152,7 @@
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
   runs the standard imbalance launch pipeline, preserves capture
   bundle/env-template/adapter handoff provenance, source env-template proof, and
+  exchange/session metadata, capture-bundle session match proof, and
   `live_fetch_contract` in the launch wrapper summary/config/runbook artifacts
   plus manifest, and points ready packets to the full
   `review-strategy-evidence --profile imbalance` gate.

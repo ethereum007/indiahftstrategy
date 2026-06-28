@@ -4645,9 +4645,9 @@ gate is `review-strategy-evidence --profile imbalance`, which verifies the full
 launch-ready profile rather than only the provider-data research profile. The
 provider launch summary/config/runbook and manifest retain the upstream capture
 bundle, blank credential env-template, adapter handoff paths, source credential
-env-template proof, and `live_fetch_contract` when present in the provider
-evidence review, keeping broker-facing artifacts tied to the live data source
-contract.
+env-template proof, exchange/session metadata, capture-bundle session match
+proof, and `live_fetch_contract` when present in the provider evidence review,
+keeping broker-facing artifacts tied to the live data source contract.
 
 Review the full launch-ready imbalance profile from the provider launch packet:
 
