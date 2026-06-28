@@ -111,15 +111,15 @@
   provider batch ingestion and manifests the resulting proof chain. When an
   approved capture bundle is supplied, ingest also fingerprints the bundle and
   its blank credential env-template plus adapter handoff contract artifacts,
-  source env-template proof, and `live_fetch_contract` for backend handoff
-  provenance.
+  source env-template proof, exchange/session metadata matching the live packet,
+  and `live_fetch_contract` for backend handoff provenance.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
   capture-bundle/env-template/adapter-handoff provenance, source env-template
-  proof and `live_fetch_contract` when supplied, and credential-safe session
-  packets while blocking `*.csv.rehearsal.json` synthetic captures from being
-  marked research-ready.
+  proof, exchange/session metadata, and `live_fetch_contract` when supplied, and
+  credential-safe session packets while blocking `*.csv.rehearsal.json`
+  synthetic captures from being marked research-ready.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds

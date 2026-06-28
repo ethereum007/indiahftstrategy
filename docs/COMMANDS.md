@@ -4509,7 +4509,8 @@ session packet. It writes `provider_market_data_live_ingest_summary.csv`,
 and a manifest that fingerprints the session packet, client packet, captures,
 batch output manifest, and optionally the approved capture bundle plus its
 credential env-template, adapter handoff artifacts, source env-template proof,
-and upstream `live_fetch_contract`.
+exchange/session metadata matching the live session packet, and upstream
+`live_fetch_contract`.
 
 Review the live ingest output before treating it as research evidence:
 
@@ -4526,13 +4527,14 @@ This writes `provider_market_data_live_evidence_summary.csv`,
 `provider_market_data_live_evidence_captures.csv`, check/action/config
 artifacts, and a manifest. If the live ingest carried a capture bundle, the
 evidence manifest also fingerprints that bundle, its credential env-template,
-the adapter handoff contract, source env-template proof, and upstream
-`live_fetch_contract` before research handoff. It blocks captures that still
-have rehearsal sidecars (`*.csv.rehearsal.json`) from being marked
-research-ready, even if the ingest and batch pipelines passed. Use
-`--allow-synthetic-rehearsal` only to classify a smoke test; the recommendation
-remains to replace synthetic captures with real Arrow.money/iRage provider
-captures before feeding walk-forward research.
+the adapter handoff contract, source env-template proof, exchange/session
+metadata, and upstream `live_fetch_contract` before research handoff. It blocks
+captures that still have rehearsal sidecars (`*.csv.rehearsal.json`) from being
+marked research-ready, even if the ingest and batch pipelines passed, and fails
+closed if capture-bundle source metadata drifts from the live session packet.
+Use `--allow-synthetic-rehearsal` only to classify a smoke test; the
+recommendation remains to replace synthetic captures with real Arrow.money/iRage
+provider captures before feeding walk-forward research.
 
 Turn research-ready live evidence into concrete strategy research commands:
 

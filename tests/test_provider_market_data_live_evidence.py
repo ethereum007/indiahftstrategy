@@ -218,18 +218,64 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["exchange"] == "NFO"
+    assert summary["source_session_timezone"] == "Asia/Kolkata"
+    assert summary["source_session_open_local"] == "09:15:00"
+    assert summary["source_session_close_local"] == "15:30:00"
+    assert summary["capture_bundle_exchange"] == "NFO"
+    assert summary["capture_bundle_source_session_open_local"] == "09:15:00"
+    assert summary["capture_bundle_market_session_open_local"] == "09:15"
+    assert summary["capture_bundle_metadata_matches_session"]
+    assert summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["capture_bundle"]["adapter_handoff_exists"] is True
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
+    assert config["capture_bundle"]["capture_bundle_exchange"] == "NFO"
+    assert config["capture_bundle"]["capture_bundle_source_session"]["timezone"] == "Asia/Kolkata"
+    assert config["capture_bundle"]["capture_bundle_market_session"]["open_local"] == "09:15"
+    assert config["capture_bundle"]["capture_bundle_metadata_matches_session"] is True
+    assert config["exchange"] == "NFO"
+    assert config["source_session"]["close_local"] == "15:30:00"
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
+    assert manifest["extra"]["exchange"] == "NFO"
+    assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["capture_bundle_metadata_matches_session"] is True
+    assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
+    assert manifest["extra"]["live_fetch_contract"]["session"]["close_local"] == "15:30:00"
+
+
+def test_provider_market_data_live_evidence_blocks_capture_bundle_session_mismatch(tmp_path):
+    ingest, _ = _write_bundle_linked_real_ingest(tmp_path)
+    ingest_config_path = ingest.output_dir / "provider_market_data_live_ingest_config.json"
+    _mutate_json(
+        ingest_config_path,
+        lambda payload: payload["capture_bundle"]["source_session"].update({"open_local": "09:30:00"}),
+    )
+
+    report = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "capture_bundle_metadata_matches_session" in failed
+    assert summary["capture_bundle_source_session_open_local"] == "09:30:00"
+    assert summary["source_session_open_local"] == "09:15:00"
+    assert not bool(summary["capture_bundle_metadata_matches_session"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_session_metadata"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 
 def test_provider_market_data_live_evidence_blocks_missing_source_env_template(tmp_path):
