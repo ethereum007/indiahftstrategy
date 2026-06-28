@@ -1601,10 +1601,11 @@
   proof, upstream proof lineage, and upstream vendor-market-data batch lineage
   in broker-dispatch summary/config/manifest artifacts. It also carries the
   route-enable-retained validated round-trip capture bundle/env-template/adapter
-  handoff paths, source credential env-template proof, `live_fetch_contract`,
-  and source/capture provenance-consistency flags through
-  summary/config/runbook artifacts plus manifest inputs/metadata before the
-  non-submitting send packet is prepared.
+  handoff paths, source credential env-template proof, round-trip
+  exchange/session metadata, capture-bundle session match proof, live-fetch
+  exchange/session identity, `live_fetch_contract`, and source/capture
+  provenance-consistency flags through summary/config/runbook artifacts plus
+  manifest inputs/metadata before the non-submitting send packet is prepared.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream
