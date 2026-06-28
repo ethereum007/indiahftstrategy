@@ -194,6 +194,7 @@ def write_provider_market_data_imbalance_cutover(
         checks,
         out,
         provider_summary,
+        provider_config,
     )
     action_queue = _action_queue(summary.iloc[0], checks, cutover)
     summary = _summary_with_actions(summary, action_queue)
@@ -568,10 +569,12 @@ def _summary(
     checks: pd.DataFrame,
     output_dir: Path,
     provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     ready = failed == 0
     cutover_summary = cutover.summary if cutover is not None else pd.DataFrame()
+    dispatch_roundtrip = _dispatch_roundtrip_provenance(provider_config)
     return pd.DataFrame(
         [
             {
@@ -670,226 +673,330 @@ def _summary(
                     provider_summary,
                     "source_live_fetch_contract_session_close_local",
                 ),
-                "dispatch_roundtrip_exchange": _first_text(provider_summary, "dispatch_roundtrip_exchange"),
+                "dispatch_roundtrip_exchange": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_exchange",
+                    "exchange",
+                ),
                 "dispatch_roundtrip_source_session_timezone": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_session_timezone",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "source_session", "timezone"),
                 "dispatch_roundtrip_source_session_open_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_session_open_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "source_session", "open_local"),
                 "dispatch_roundtrip_source_session_close_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_session_close_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "source_session", "close_local"),
                 "dispatch_roundtrip_market_session_timezone": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_market_session_timezone",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "market_session", "timezone"),
                 "dispatch_roundtrip_market_session_open_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_market_session_open_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "market_session", "open_local"),
                 "dispatch_roundtrip_market_session_close_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_market_session_close_local",
-                ),
-                "dispatch_roundtrip_exchange_matches_session": _first_bool(
+                )
+                or _nested_text(dispatch_roundtrip, "market_session", "close_local"),
+                "dispatch_roundtrip_exchange_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_exchange_matches_session",
+                    "exchange_matches_session",
                 ),
-                "dispatch_roundtrip_source_session_matches_session": _first_bool(
+                "dispatch_roundtrip_source_session_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_session_matches_session",
+                    "source_session_matches_session",
                 ),
-                "dispatch_roundtrip_market_session_matches_session": _first_bool(
+                "dispatch_roundtrip_market_session_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_market_session_matches_session",
+                    "market_session_matches_session",
                 ),
-                "dispatch_roundtrip_metadata_consistent": _first_bool(
+                "dispatch_roundtrip_metadata_consistent": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_metadata_consistent",
+                    "metadata_consistent_with_runtime_session",
                 ),
-                "dispatch_roundtrip_source_credential_env_template_path": _first_text(
+                "dispatch_roundtrip_source_credential_env_template_path": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_credential_env_template_path",
+                    "source_credential_env_template_path",
                 ),
-                "dispatch_roundtrip_source_credential_env_template_exists": _first_bool(
+                "dispatch_roundtrip_source_credential_env_template_exists": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_credential_env_template_exists",
+                    "source_credential_env_template_exists",
                 ),
-                "dispatch_roundtrip_source_credential_env_template_sha256": _first_text(
+                "dispatch_roundtrip_source_credential_env_template_sha256": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_credential_env_template_sha256",
+                    "source_credential_env_template_sha256",
                 ),
-                "dispatch_roundtrip_source_credential_env_template_matches_session": _first_bool(
+                "dispatch_roundtrip_source_credential_env_template_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_credential_env_template_matches_session",
+                    "source_credential_env_template_matches_session",
                 ),
-                "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": _first_bool(
+                "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_credential_env_template_sha256_matches_session",
+                    "source_credential_env_template_sha256_matches_session",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_available": _first_bool(
+                "dispatch_roundtrip_source_live_fetch_contract_available": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_available",
+                    "source_live_fetch_contract_available",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_next_gate": _first_text(
+                "dispatch_roundtrip_source_live_fetch_contract_next_gate": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_next_gate",
+                    "source_live_fetch_contract_next_gate",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_command_template": _first_text(
+                "dispatch_roundtrip_source_live_fetch_contract_command_template": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_command_template",
+                    "source_live_fetch_contract_command_template",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_exchange": _first_text(
+                "dispatch_roundtrip_source_live_fetch_contract_exchange": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_exchange",
+                    "source_live_fetch_contract_exchange",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_market": _first_text(
+                "dispatch_roundtrip_source_live_fetch_contract_market": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_market",
+                    "source_live_fetch_contract_market",
                 ),
                 "dispatch_roundtrip_source_live_fetch_contract_session_timezone": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_live_fetch_contract_session_timezone",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "source_live_fetch_contract_session", "timezone"),
                 "dispatch_roundtrip_source_live_fetch_contract_session_open_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_live_fetch_contract_session_open_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "source_live_fetch_contract_session", "open_local"),
                 "dispatch_roundtrip_source_live_fetch_contract_session_close_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_source_live_fetch_contract_session_close_local",
-                ),
-                "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": _first_bool(
+                )
+                or _nested_text(dispatch_roundtrip, "source_live_fetch_contract_session", "close_local"),
+                "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session",
+                    "source_live_fetch_contract_next_gate_matches_session",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": _first_bool(
-                    provider_summary,
-                    "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session",
+                "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session": (
+                    _dispatch_roundtrip_bool(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_source_live_fetch_contract_command_template_matches_session",
+                        "source_live_fetch_contract_command_template_matches_session",
+                    )
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session": _first_bool(
+                "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session",
+                    "source_live_fetch_contract_exchange_matches_session",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_market_matches_session": _first_bool(
+                "dispatch_roundtrip_source_live_fetch_contract_market_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_market_matches_session",
+                    "source_live_fetch_contract_market_matches_session",
                 ),
-                "dispatch_roundtrip_source_live_fetch_contract_session_matches_session": _first_bool(
+                "dispatch_roundtrip_source_live_fetch_contract_session_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_live_fetch_contract_session_matches_session",
+                    "source_live_fetch_contract_session_matches_session",
                 ),
-                "dispatch_roundtrip_source_provenance_consistent": _first_bool(
+                "dispatch_roundtrip_source_provenance_consistent": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_source_provenance_consistent",
+                    "source_provenance_consistent_with_runtime_session",
                 ),
-                "dispatch_roundtrip_capture_bundle_path": _first_text(
+                "dispatch_roundtrip_capture_bundle_path": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_path",
+                    "capture_bundle_path",
                 ),
-                "dispatch_roundtrip_capture_bundle_provided": _first_bool(
+                "dispatch_roundtrip_capture_bundle_provided": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_provided",
+                    "capture_bundle_provided",
                 ),
-                "dispatch_roundtrip_capture_bundle_exists": _first_bool(
+                "dispatch_roundtrip_capture_bundle_exists": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_exists",
+                    "capture_bundle_exists",
                 ),
-                "dispatch_roundtrip_capture_bundle_ready": _first_bool(
+                "dispatch_roundtrip_capture_bundle_ready": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_ready",
+                    "capture_bundle_ready",
                 ),
-                "dispatch_roundtrip_capture_bundle_exchange": _first_text(
+                "dispatch_roundtrip_capture_bundle_exchange": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_exchange",
+                    "capture_bundle_exchange",
                 ),
                 "dispatch_roundtrip_capture_bundle_source_session_timezone": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_source_session_timezone",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "capture_bundle_source_session", "timezone"),
                 "dispatch_roundtrip_capture_bundle_source_session_open_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_source_session_open_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "capture_bundle_source_session", "open_local"),
                 "dispatch_roundtrip_capture_bundle_source_session_close_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_source_session_close_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "capture_bundle_source_session", "close_local"),
                 "dispatch_roundtrip_capture_bundle_market_session_timezone": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_market_session_timezone",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "capture_bundle_market_session", "timezone"),
                 "dispatch_roundtrip_capture_bundle_market_session_open_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_market_session_open_local",
-                ),
+                )
+                or _nested_text(dispatch_roundtrip, "capture_bundle_market_session", "open_local"),
                 "dispatch_roundtrip_capture_bundle_market_session_close_local": _first_text(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_market_session_close_local",
-                ),
-                "dispatch_roundtrip_capture_bundle_metadata_matches_session": _first_bool(
+                )
+                or _nested_text(dispatch_roundtrip, "capture_bundle_market_session", "close_local"),
+                "dispatch_roundtrip_capture_bundle_metadata_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_metadata_matches_session",
+                    "capture_bundle_metadata_matches_session",
                 ),
-                "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session": _first_bool(
-                    provider_summary,
-                    "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session",
+                "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session": (
+                    _dispatch_roundtrip_bool(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session",
+                        "capture_bundle_live_fetch_contract_metadata_matches_session",
+                    )
                 ),
-                "dispatch_roundtrip_capture_bundle_matches_session": _first_bool(
+                "dispatch_roundtrip_capture_bundle_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_matches_session",
+                    "capture_bundle_matches_session",
                 ),
-                "dispatch_roundtrip_capture_bundle_exchange_matches_session": _first_bool(
+                "dispatch_roundtrip_capture_bundle_exchange_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_exchange_matches_session",
+                    "capture_bundle_exchange_matches_session",
                 ),
-                "dispatch_roundtrip_capture_bundle_source_session_matches_session": _first_bool(
+                "dispatch_roundtrip_capture_bundle_source_session_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_source_session_matches_session",
+                    "capture_bundle_source_session_matches_session",
                 ),
-                "dispatch_roundtrip_capture_bundle_market_session_matches_session": _first_bool(
+                "dispatch_roundtrip_capture_bundle_market_session_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_bundle_market_session_matches_session",
+                    "capture_bundle_market_session_matches_session",
                 ),
-                "dispatch_roundtrip_capture_env_template_path": _first_text(
+                "dispatch_roundtrip_capture_env_template_path": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_env_template_path",
+                    "capture_env_template_path",
                 ),
-                "dispatch_roundtrip_capture_env_template_provided": _first_bool(
+                "dispatch_roundtrip_capture_env_template_provided": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_env_template_provided",
+                    "capture_env_template_provided",
                 ),
-                "dispatch_roundtrip_capture_env_template_exists": _first_bool(
+                "dispatch_roundtrip_capture_env_template_exists": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_env_template_exists",
+                    "capture_env_template_exists",
                 ),
-                "dispatch_roundtrip_capture_env_template_matches_session": _first_bool(
+                "dispatch_roundtrip_capture_env_template_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_env_template_matches_session",
+                    "capture_env_template_matches_session",
                 ),
-                "dispatch_roundtrip_adapter_handoff_path": _first_text(
+                "dispatch_roundtrip_adapter_handoff_path": _dispatch_roundtrip_text(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_adapter_handoff_path",
+                    "adapter_handoff_path",
                 ),
-                "dispatch_roundtrip_adapter_handoff_provided": _first_bool(
+                "dispatch_roundtrip_adapter_handoff_provided": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_adapter_handoff_provided",
+                    "adapter_handoff_provided",
                 ),
-                "dispatch_roundtrip_adapter_handoff_exists": _first_bool(
+                "dispatch_roundtrip_adapter_handoff_exists": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_adapter_handoff_exists",
+                    "adapter_handoff_exists",
                 ),
-                "dispatch_roundtrip_adapter_handoff_matches_session": _first_bool(
+                "dispatch_roundtrip_adapter_handoff_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_adapter_handoff_matches_session",
+                    "adapter_handoff_matches_session",
                 ),
-                "dispatch_roundtrip_capture_provenance_consistent": _first_bool(
+                "dispatch_roundtrip_capture_provenance_consistent": _dispatch_roundtrip_bool(
                     provider_summary,
+                    dispatch_roundtrip,
                     "dispatch_roundtrip_capture_provenance_consistent",
+                    "consistent_with_runtime_session",
                 ),
                 "provider_dispatch_roundtrip_dir": _path_text(provider_dispatch_roundtrip_dir),
                 "dispatch_roundtrip_dir": _path_text(dispatch_roundtrip_dir),
@@ -970,6 +1077,40 @@ def _provider_broker_readiness_vendor_market_data_batch_config(
 ) -> dict[str, Any]:
     vendor = provider_config.get(key, {})
     return dict(vendor) if isinstance(vendor, dict) else {}
+
+
+def _dispatch_roundtrip_provenance(provider_config: dict[str, Any]) -> dict[str, Any]:
+    value = provider_config.get("dispatch_roundtrip_provenance", {})
+    return value if isinstance(value, dict) else {}
+
+
+def _nested_text(mapping: dict[str, Any], key: str, nested_key: str) -> str:
+    value = mapping.get(key, {})
+    if not isinstance(value, dict):
+        return ""
+    return _clean(value.get(nested_key))
+
+
+def _dispatch_roundtrip_text(
+    frame: pd.DataFrame | None,
+    provenance: dict[str, Any],
+    column: str,
+    fallback_key: str,
+) -> str:
+    if _first_value_present(frame, column):
+        return _first_text(frame, column)
+    return _clean(provenance.get(fallback_key))
+
+
+def _dispatch_roundtrip_bool(
+    frame: pd.DataFrame | None,
+    provenance: dict[str, Any],
+    column: str,
+    fallback_key: str,
+) -> bool:
+    if _first_value_present(frame, column):
+        return _first_bool(frame, column)
+    return _truthy(provenance.get(fallback_key))
 
 
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
@@ -1673,6 +1814,20 @@ def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
     if frame is None or frame.empty or column not in frame.columns:
         return False
     return _truthy(frame.iloc[0][column])
+
+
+def _first_value_present(frame: pd.DataFrame | None, column: str) -> bool:
+    if frame is None or frame.empty or column not in frame.columns:
+        return False
+    value = frame.iloc[0][column]
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0) -> float:

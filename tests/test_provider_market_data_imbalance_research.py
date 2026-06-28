@@ -3804,6 +3804,164 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
 
 
+def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_provenance(tmp_path):
+    bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
+    env_template_path = tmp_path / "provider_market_data_live_capture_env_template.env"
+    adapter_handoff_path = tmp_path / "provider_market_data_adapter_handoff.json"
+    source_env_template_path = tmp_path / "provider_source_credentials.env"
+    for path in (bundle_path, env_template_path, adapter_handoff_path, source_env_template_path):
+        path.write_text("{}", encoding="utf-8")
+
+    broker_readiness_dir = tmp_path / "provider_imbalance_broker_readiness_config_roundtrip_fallback"
+    broker_readiness_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": False,
+                "broker_readiness_dir": "",
+                "runtime_session_dir": "",
+                "scaleup_dir": "",
+                "dispatch_roundtrip_exchange": "",
+                "dispatch_roundtrip_capture_provenance_consistent": False,
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_summary.csv",
+        index=False,
+    )
+    (
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_config.json"
+    ).write_text(
+        json.dumps(
+            {
+                "provider_runtime_session": {"scaleup_dir": ""},
+                "dispatch_roundtrip_provenance": {
+                    "exchange": "NFO",
+                    "source_session": {
+                        "timezone": "Asia/Kolkata",
+                        "open_local": "09:15:00",
+                        "close_local": "15:30:00",
+                    },
+                    "market_session": {
+                        "timezone": "Asia/Kolkata",
+                        "open_local": "09:15",
+                        "close_local": "15:30",
+                    },
+                    "exchange_matches_session": True,
+                    "source_session_matches_session": True,
+                    "market_session_matches_session": True,
+                    "metadata_consistent_with_runtime_session": True,
+                    "capture_bundle_path": str(bundle_path),
+                    "capture_bundle_provided": True,
+                    "capture_bundle_exists": True,
+                    "capture_bundle_ready": True,
+                    "capture_bundle_exchange": "NFO",
+                    "capture_bundle_source_session": {
+                        "timezone": "Asia/Kolkata",
+                        "open_local": "09:15:00",
+                        "close_local": "15:30:00",
+                    },
+                    "capture_bundle_market_session": {
+                        "timezone": "Asia/Kolkata",
+                        "open_local": "09:15",
+                        "close_local": "15:30",
+                    },
+                    "capture_bundle_metadata_matches_session": True,
+                    "capture_bundle_live_fetch_contract_metadata_matches_session": True,
+                    "capture_bundle_matches_session": True,
+                    "capture_bundle_exchange_matches_session": True,
+                    "capture_bundle_source_session_matches_session": True,
+                    "capture_bundle_market_session_matches_session": True,
+                    "capture_env_template_path": str(env_template_path),
+                    "capture_env_template_provided": True,
+                    "capture_env_template_exists": True,
+                    "capture_env_template_matches_session": True,
+                    "adapter_handoff_path": str(adapter_handoff_path),
+                    "adapter_handoff_provided": True,
+                    "adapter_handoff_exists": True,
+                    "adapter_handoff_matches_session": True,
+                    "consistent_with_runtime_session": True,
+                    "source_credential_env_template_path": str(source_env_template_path),
+                    "source_credential_env_template_exists": True,
+                    "source_credential_env_template_sha256": "b" * 64,
+                    "source_credential_env_template_matches_session": True,
+                    "source_credential_env_template_sha256_matches_session": True,
+                    "source_live_fetch_contract_available": True,
+                    "source_live_fetch_contract_next_gate": "provider_fetcher",
+                    "source_live_fetch_contract_command_template": (
+                        "python -m hft_cli fetch-provider-live-data"
+                    ),
+                    "source_live_fetch_contract_exchange": "NFO",
+                    "source_live_fetch_contract_market": "india_nse_index_derivatives",
+                    "source_live_fetch_contract_session": {
+                        "timezone": "Asia/Kolkata",
+                        "open_local": "09:15:00",
+                        "close_local": "15:30:00",
+                    },
+                    "source_live_fetch_contract_next_gate_matches_session": True,
+                    "source_live_fetch_contract_command_template_matches_session": True,
+                    "source_live_fetch_contract_exchange_matches_session": True,
+                    "source_live_fetch_contract_market_matches_session": True,
+                    "source_live_fetch_contract_session_matches_session": True,
+                    "source_provenance_consistent_with_runtime_session": True,
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_cutover_config_roundtrip_fallback"
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_cutover_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert summary["dispatch_roundtrip_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_source_session_open_local"] == "09:15:00"
+    assert summary["dispatch_roundtrip_source_session_close_local"] == "15:30:00"
+    assert bool(summary["dispatch_roundtrip_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_metadata_consistent"])
+    assert Path(summary["dispatch_roundtrip_capture_bundle_path"]) == bundle_path
+    assert bool(summary["dispatch_roundtrip_capture_bundle_ready"])
+    assert summary["dispatch_roundtrip_capture_bundle_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_capture_bundle_market_session_open_local"] == "09:15"
+    assert bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
+    assert Path(summary["dispatch_roundtrip_capture_env_template_path"]) == env_template_path
+    assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
+    assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
+    assert not bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
+    assert Path(summary["dispatch_roundtrip_source_credential_env_template_path"]) == source_env_template_path
+    assert bool(summary["dispatch_roundtrip_source_credential_env_template_matches_session"])
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_exchange"] == "NFO"
+    assert summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"] == "09:15:00"
+    assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"])
+    assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
+    assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
+    assert config["dispatch_roundtrip_provenance"]["source_session"]["open_local"] == "09:15:00"
+    assert not config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
+    assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_session"]["close_local"] == "15:30:00"
+    assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert not manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["exchange"] == "NFO"
+    assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["session"]["open_local"] == "09:15:00"
+
+
 def test_provider_market_data_imbalance_cutover_carries_provider_dispatch_roundtrip_paths(tmp_path):
     provider_roundtrip_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
     nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"

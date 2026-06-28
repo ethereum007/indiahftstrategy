@@ -1584,7 +1584,11 @@
   `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
-  before live-data dry-runs.
+  before live-data dry-runs. Cutover now also hydrates missing or blank
+  `dispatch_roundtrip_*` summary fields from broker-readiness
+  `dispatch_roundtrip_provenance` config sidecars, while keeping explicit CSV
+  `False` values authoritative, so mixed-version broker-readiness outputs still
+  preserve the validated iRage/Arrow live-data handoff trail.
 - Provider-data imbalance route-enable now preserves the cutover-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch

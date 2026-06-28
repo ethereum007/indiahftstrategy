@@ -4896,7 +4896,11 @@ cutover also carries those `dispatch_roundtrip_*` provenance fields plus the
 validated round-trip source credential env-template, exchange/session metadata,
 capture-bundle session proof, live-fetch exchange/session identity, and
 `live_fetch_contract` snapshot, manifest inputs, and consistency flags forward
-for route-enable and dispatch reviewers. If provider
+for route-enable and dispatch reviewers. When a broker-readiness CSV is from an
+older or thinner wrapper but its config sidecar has
+`dispatch_roundtrip_provenance`, cutover hydrates missing or blank
+`dispatch_roundtrip_*` fields from that config while preserving explicit CSV
+`False` values as authoritative. If provider
 broker-readiness carried vendor-market-data batch evidence, cutover also
 retains the generic dispatch, broker-dispatch, and inherited upstream vendor
 batch readiness fields plus config snapshots, including
