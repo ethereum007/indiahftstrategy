@@ -172,7 +172,9 @@
   exchange/session metadata, capture-bundle session match proof, and
   `live_fetch_contract` in the launch wrapper summary/config/runbook artifacts
   plus manifest, and points ready packets to the full
-  `review-strategy-evidence --profile imbalance` gate.
+  `review-strategy-evidence --profile imbalance` gate. Launch summary/config
+  and manifest extras now also expose capture env-template and adapter handoff
+  SHA-256 values directly for broker handoff audit.
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture
