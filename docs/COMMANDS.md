@@ -5033,8 +5033,9 @@ adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, and `live_fetch_contract`
 inherited from the send packet. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
-`live_fetch_contract`, and source-provenance consistency flags beside the
-acknowledgement proof. The wrapper runs `reconcile-broker-dispatch` under a nested
+round-trip exchange/session metadata, capture-bundle session proof, live-fetch
+exchange/session identity, `live_fetch_contract`, and source-provenance
+consistency flags beside the acknowledgement proof. The wrapper runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. Clean
 acknowledgement proof emits a ready
@@ -5064,10 +5065,11 @@ fields, carries the acknowledgement-inherited capture bundle, blank credential
 env-template, adapter handoff paths, source credential env-template proof,
 exchange/session metadata, capture-bundle session match proof, and
 `live_fetch_contract`, plus the ack-retained validated dispatch round-trip
-source credential env-template, `live_fetch_contract`, and source-provenance
-consistency flags, into summary/config/runbook artifacts plus manifest
-inputs/extra metadata with live-fetch exchange/session identity, and writes
-provider checks/action artifacts.
+source credential env-template, round-trip exchange/session metadata,
+capture-bundle session proof, live-fetch exchange/session identity,
+`live_fetch_contract`, and source-provenance consistency flags, into
+summary/config/runbook artifacts plus manifest inputs/extra metadata, and
+writes provider checks/action artifacts.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own
 summary/config under both

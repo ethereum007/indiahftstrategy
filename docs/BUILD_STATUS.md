@@ -1623,10 +1623,11 @@
   vendor-market-data batch lineage in acknowledgement summary/config/runbook
   artifacts and manifests. It now also carries the send-retained validated
   round-trip capture bundle/env-template/adapter handoff paths, source
-  credential env-template proof, `live_fetch_contract`, and source/capture
-  provenance-consistency flags through acknowledgement summary/config/runbook
-  artifacts plus manifest inputs/metadata before the final provider round-trip
-  wrapper is trusted.
+  credential env-template proof, round-trip exchange/session metadata,
+  capture-bundle session match proof, live-fetch exchange/session identity,
+  `live_fetch_contract`, and source/capture provenance-consistency flags
+  through acknowledgement summary/config/runbook artifacts plus manifest
+  inputs/metadata before the final provider round-trip wrapper is trusted.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof and vendor-market-data batch
   proof as upstream lineage while also generating a fresh nested
