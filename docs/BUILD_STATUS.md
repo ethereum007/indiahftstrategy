@@ -1504,8 +1504,9 @@
   `review-provider-market-data-imbalance-route-enable` infers the nested generic
   cutover and broker upload/order-export inputs, reruns `review-route-enable`
   under a nested folder, carries capture bundle/env-template/adapter handoff
-  provenance, source env-template proof, and `live_fetch_contract` into
-  provider summary/config/runbook artifacts plus manifest, writes provider
+  provenance, source env-template proof, exchange/session metadata,
+  capture-bundle session match proof, and `live_fetch_contract` into provider
+  summary/config/runbook artifacts plus manifest, writes provider
   checks/summary/action/config/runbook artifacts, routes
   blockers back to the exact repair gate, and sends clean Arrow.money/iRage
   dry-run routes to `plan-broker-dispatch`.

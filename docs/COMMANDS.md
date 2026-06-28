@@ -4924,6 +4924,7 @@ upstream proof lineage. It also preserves inherited
 planners can see the full Arrow.money/iRage vendor-data chain from the
 route-enable artifact. It also preserves the capture bundle, blank credential
 env-template, adapter handoff paths, source credential env-template proof, and
+exchange/session metadata, capture-bundle session match proof, and
 `live_fetch_contract` inherited from cutover so dispatch planners can trace the
 live data source before packaging broker orders. If
 cutover retained broker-readiness validated round-trip capture

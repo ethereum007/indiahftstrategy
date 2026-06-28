@@ -4175,7 +4175,24 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["exchange"] == "NFO"
+    assert summary["source_session_timezone"] == "Asia/Kolkata"
+    assert summary["source_session_open_local"] == "09:15:00"
+    assert summary["source_session_close_local"] == "15:30:00"
+    assert summary["capture_bundle_exchange"] == "NFO"
+    assert summary["capture_bundle_source_session_open_local"] == "09:15:00"
+    assert summary["capture_bundle_market_session_open_local"] == "09:15"
+    assert bool(summary["capture_bundle_metadata_matches_session"])
+    assert bool(summary["capture_bundle_live_fetch_contract_metadata_matches_session"])
+    assert summary["source_live_fetch_contract_exchange"] == "NFO"
+    assert summary["source_live_fetch_contract_market"] == "india_nse_index_derivatives"
+    assert summary["source_live_fetch_contract_session_open_local"] == "09:15:00"
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
+    assert config["capture_bundle"]["exchange"] == "NFO"
+    assert config["capture_bundle"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert config["capture_bundle"]["market_session"]["open_local"] == "09:15"
+    assert config["capture_bundle"]["capture_bundle_metadata_matches_session"] is True
+    assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert (
@@ -4183,7 +4200,13 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
         == summary["source_credential_env_template_sha256"]
     )
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
+    assert config["capture_bundle"]["source_live_fetch_contract_exchange"] == "NFO"
+    assert config["capture_bundle"]["source_live_fetch_contract_session_open_local"] == "09:15:00"
+    assert config["exchange"] == "NFO"
+    assert config["source_session"]["close_local"] == "15:30:00"
     assert config["provider_cutover"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["provider_cutover"]["exchange"] == "NFO"
+    assert config["provider_cutover"]["capture_bundle_metadata_matches_session"] is True
     assert config["provider_cutover"]["source_credential_env_template_path"] == str(source_env_template_path)
     assert config["provider_cutover"]["source_live_fetch_contract_available"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
@@ -4193,8 +4216,16 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
     assert manifest["extra"]["adapter_handoff_exists"]
+    assert manifest["extra"]["exchange"] == "NFO"
+    assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
+    assert manifest["extra"]["capture_bundle"]["metadata_matches_session"] is True
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
+    assert manifest["extra"]["live_fetch_contract"]["session"]["close_local"] == "15:30:00"
+    assert "Exchange: NFO" in runbook
+    assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
 
