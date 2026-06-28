@@ -1648,6 +1648,11 @@
   `live_fetch_contract`, and source/capture provenance-consistency flags
   through acknowledgement summary/config/runbook artifacts plus manifest
   inputs/metadata before the final provider round-trip wrapper is trusted.
+  Acknowledgement now also hydrates missing or blank send-packet
+  `dispatch_roundtrip_*` summary fields from the send
+  `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
+  summary `False` values, so sparse send CSVs do not lose validated live-data
+  provenance before final round-trip review.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof and vendor-market-data batch
   proof as upstream lineage while also generating a fresh nested

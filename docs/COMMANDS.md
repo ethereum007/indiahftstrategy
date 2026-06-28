@@ -5051,7 +5051,11 @@ inherited from the send packet. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
 exchange/session identity, `live_fetch_contract`, and source-provenance
-consistency flags beside the acknowledgement proof. The wrapper runs `reconcile-broker-dispatch` under a nested
+consistency flags beside the acknowledgement proof. When a send-packet CSV is
+sparse but its config sidecar has `dispatch_roundtrip_provenance`,
+acknowledgement hydrates missing or blank `dispatch_roundtrip_*` fields from
+that config while keeping explicit summary `False` values authoritative. The
+wrapper runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. Clean
 acknowledgement proof emits a ready
