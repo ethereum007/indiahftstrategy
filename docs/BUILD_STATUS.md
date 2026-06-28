@@ -86,9 +86,9 @@
 - Provider market-data live preflight now checks the planned provider capture
   just before the market run: `preflight-provider-market-data-live-session`
   validates the session packet, runtime credential env-var presence, carried
-  blank env-template proof, carried `live_fetch_contract`, writable capture and
-  batch paths, capture/batch collision risk, and local clock timing without
-  persisting credential values.
+  blank env-template proof, carried `live_fetch_contract`, exchange/session
+  metadata consistency, writable capture and batch paths, capture/batch
+  collision risk, and local clock timing without persisting credential values.
 - Provider market-data live capture bundling now turns a ready preflight into
   a backend adapter handoff: `bundle-provider-market-data-live-capture` writes
   per-window capture commands, a credential-safe JSON bundle, a blank env-var

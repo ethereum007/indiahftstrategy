@@ -97,6 +97,12 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert report.ready
     assert summary["timing_status"] == "before_first_window"
+    assert summary["exchange"] == "NFO"
+    assert summary["source_session_timezone"] == "Asia/Kolkata"
+    assert summary["source_session_open_local"] == "09:15:00"
+    assert summary["source_session_close_local"] == "15:30:00"
+    assert summary["market_session_open_local"] == "09:15"
+    assert bool(summary["source_session_matches_market_session"])
     assert summary["expected_capture_count"] == 2
     assert summary["existing_capture_count"] == 0
     assert action_queue.loc[0, "queue_status"] == "ready"
@@ -110,6 +116,13 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
     assert config["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
     assert config["live_fetch_contract"]["available"] is True
+    assert config["exchange"] == "NFO"
+    assert config["source_session"]["timezone"] == "Asia/Kolkata"
+    assert config["market_session"]["open_local"] == "09:15"
+    assert config["session_packet"]["exchange"] == "NFO"
+    assert config["session_packet"]["source_session"]["close_local"] == "15:30:00"
+    assert manifest["extra"]["exchange"] == "NFO"
+    assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert "ARROW_MONEY_API_KEY" in config["session_packet"]["authentication"]["env_vars"]
     assert config["session_packet"]["authentication"]["env_template"]["sha256"] == summary["credential_env_template_sha256"]
     assert config["session_packet"]["live_fetch_contract"]["available"] is True
@@ -210,6 +223,49 @@ def test_provider_market_data_live_preflight_blocks_missing_live_fetch_contract(
     assert report.config["live_fetch_contract"]["available"] is False
     assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_source_live_fetch_contract"
     assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_preflight_blocks_missing_source_session_contract(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _mutate_live_packet(
+        _live_packet(plan),
+        lambda packet: (packet.pop("exchange", None), packet.pop("source_session", None)),
+    )
+
+    report = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {"source_exchange_carried", "source_session_contract_carried"} <= failed
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_market_session_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_preflight_blocks_source_session_mismatch(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _mutate_live_packet(
+        _live_packet(plan),
+        lambda packet: packet["source_session"].update({"open_local": "09:30:00"}),
+    )
+
+    report = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {
+        "source_session_matches_market_session",
+        "source_live_fetch_contract_metadata_matches_packet",
+    } <= failed
+    assert report.config["source_session"]["open_local"] == "09:30:00"
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_market_session_contract"
 
 
 def test_cli_provider_market_data_live_preflight_accepts_session_packet(tmp_path):

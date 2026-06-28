@@ -92,6 +92,9 @@ def write_provider_market_data_live_session_preflight(
             "timing_status": str(report.summary.iloc[0]["timing_status"]),
             "failed_checks": int(report.summary.iloc[0]["failed_checks"]),
             "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
+            "exchange": str(report.summary.iloc[0]["exchange"]),
+            "source_session": _mapping(report.config.get("source_session")),
+            "market_session": _mapping(report.config.get("market_session")),
             "credential_env_template": credential_env_template,
             "live_fetch_contract": _mapping(report.config.get("live_fetch_contract")),
         },
@@ -334,6 +337,8 @@ def _checks(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    source_session = _mapping(packet.get("source_session"))
+    market_session = _mapping(packet.get("market_session"))
     credential_runtime_ok = all(env_presence.values()) if config.require_env_present else True
     collision_ok = config.allow_existing_captures or existing_capture_count == 0
     batch_collision_ok = config.allow_existing_batch or not bool(batch["summary_exists"])
@@ -351,6 +356,11 @@ def _checks(
         _check("credential_env_vars_present_in_runtime", sum(env_presence.values()), "==", len(env_presence), credential_runtime_ok, "required credential environment variables are missing from runtime"),
         _check("credential_env_template_carried", _text(credential_env_template.get("path")), "exists", True, bool(credential_env_template.get("exists")) and bool(_text(credential_env_template.get("sha256"))), "live session packet must carry blank credential env-template proof"),
         _check("source_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher", "live session packet must carry the upstream live fetch-contract handoff"),
+        _check("source_exchange_carried", _text(packet.get("exchange")), "is_not", "", bool(_text(packet.get("exchange"))), "live session packet must carry source exchange/segment metadata"),
+        _check("source_session_contract_carried", _session_contract_text(source_session), "has", "timezone/open/close", _session_contract_carried(source_session), "live session packet must carry source session metadata"),
+        _check("market_session_contract_carried", _session_contract_text(market_session), "has", "timezone/open/close", _session_contract_carried(market_session), "live session packet must carry market session metadata"),
+        _check("source_session_matches_market_session", _session_contract_text(source_session), "==", _session_contract_text(market_session), _source_session_matches_market_session(source_session, market_session), "source session metadata must match the market session used for capture windows"),
+        _check("source_live_fetch_contract_metadata_matches_packet", _live_contract_metadata_text(live_fetch_contract), "==", "live session source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract), "live fetch contract exchange/session metadata must match the live session packet"),
         _check("capture_windows_present", capture_count, ">=", 1, capture_count >= 1, "live session packet must include capture windows"),
         _check("capture_window_times_parseable", int(clock["time_parse_error_count"]), "==", 0, int(clock["time_parse_error_count"]) == 0, str(clock["time_parse_errors"]) or "capture window times must parse"),
         _check("capture_output_dirs_writable", writable_count, "==", capture_count, capture_count >= 1 and writable_count == capture_count, "capture output directories must be creatable and writable"),
@@ -378,6 +388,8 @@ def _summary(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    source_session = _mapping(packet.get("source_session"))
+    market_session = _mapping(packet.get("market_session"))
     return pd.DataFrame(
         [
             {
@@ -387,7 +399,15 @@ def _summary(
                 "provider": _text(packet.get("provider")),
                 "transport": _text(packet.get("transport")),
                 "market": _text(packet.get("market")),
+                "exchange": _text(packet.get("exchange")),
                 "kind": _text(packet.get("kind")),
+                "source_session_timezone": _text(source_session.get("timezone")),
+                "source_session_open_local": _text(source_session.get("open_local")),
+                "source_session_close_local": _text(source_session.get("close_local")),
+                "market_session_timezone": _text(market_session.get("timezone")),
+                "market_session_open_local": _text(market_session.get("open_local")),
+                "market_session_close_local": _text(market_session.get("close_local")),
+                "source_session_matches_market_session": _source_session_matches_market_session(source_session, market_session),
                 "expected_capture_count": int(len(windows)),
                 "writable_capture_dir_count": int(windows["capture_parent_writable"].astype(bool).sum()) if not windows.empty else 0,
                 "existing_capture_count": int(windows["capture_exists"].astype(bool).sum()) if not windows.empty else 0,
@@ -474,6 +494,9 @@ def _config(
         "parameters": asdict(config),
         "live_session_packet_path": str(packet_path),
         "session_packet": _safe_packet_view(packet, env_presence),
+        "exchange": str(summary["exchange"]),
+        "source_session": _source_session_contract_from_summary(summary),
+        "market_session": _market_session_contract_from_summary(summary),
         "credential_env_template": _credential_env_template_contract(summary),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "clock": clock,
@@ -506,6 +529,9 @@ def _safe_packet_view(packet: dict[str, Any], env_presence: dict[str, bool]) -> 
         "transport": _text(packet.get("transport")),
         "template_kind": _text(packet.get("template_kind")),
         "market": _text(packet.get("market")),
+        "exchange": _text(packet.get("exchange")),
+        "source_session": _mapping(packet.get("source_session")),
+        "market_session": _mapping(packet.get("market_session")),
         "kind": _text(packet.get("kind")),
         "endpoint": _text(packet.get("endpoint")),
         "authentication": {
@@ -538,7 +564,15 @@ def _next_gate_for_check(check: str) -> str:
         return "plan-provider-market-data-live-session"
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
-    if check in {"credential_env_template_carried", "source_live_fetch_contract_carried"}:
+    if check in {
+        "credential_env_template_carried",
+        "source_live_fetch_contract_carried",
+        "source_exchange_carried",
+        "source_session_contract_carried",
+        "market_session_contract_carried",
+        "source_session_matches_market_session",
+        "source_live_fetch_contract_metadata_matches_packet",
+    }:
         return "plan-provider-market-data-live-session"
     if check.startswith("credential"):
         return "provider_credentials_runtime"
@@ -575,6 +609,14 @@ def _repair_action(check: str) -> str:
         return "regenerate_live_session_with_credential_env_template"
     if check == "source_live_fetch_contract_carried":
         return "regenerate_live_session_with_source_live_fetch_contract"
+    if check in {
+        "source_exchange_carried",
+        "source_session_contract_carried",
+        "market_session_contract_carried",
+        "source_session_matches_market_session",
+        "source_live_fetch_contract_metadata_matches_packet",
+    }:
+        return "regenerate_live_session_with_market_session_contract"
     if check.startswith("credential"):
         return "load_provider_credentials_into_runtime"
     if check == "capture_files_do_not_already_exist":
@@ -599,6 +641,8 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Ready: {'yes' if bool(summary['ready']) else 'no'}",
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
+        f"- Exchange: {summary['exchange'] or 'unspecified'}",
+        f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Timing: {summary['timing_status']} at {summary['now_local']}",
         f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         f"- Expected captures: {summary['expected_capture_count']}",
@@ -728,3 +772,81 @@ def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
         "exists": bool(summary["credential_env_template_exists"]),
         "sha256": str(summary["credential_env_template_sha256"]),
     }
+
+
+def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["source_session_timezone"]),
+        "open_local": str(summary["source_session_open_local"]),
+        "close_local": str(summary["source_session_close_local"]),
+    }
+
+
+def _market_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
+    return {
+        "timezone": str(summary["market_session_timezone"]),
+        "open_local": str(summary["market_session_open_local"]),
+        "close_local": str(summary["market_session_close_local"]),
+    }
+
+
+def _session_contract_carried(session: dict[str, Any]) -> bool:
+    return all(_text(session.get(key)) for key in ("timezone", "open_local", "close_local"))
+
+
+def _source_session_matches_market_session(
+    source_session: dict[str, Any],
+    market_session: dict[str, Any],
+) -> bool:
+    if not (_session_contract_carried(source_session) and _session_contract_carried(market_session)):
+        return False
+    return (
+        _text(source_session.get("timezone")) == _text(market_session.get("timezone"))
+        and _wall_clock_seconds(source_session.get("open_local")) == _wall_clock_seconds(market_session.get("open_local"))
+        and _wall_clock_seconds(source_session.get("close_local")) == _wall_clock_seconds(market_session.get("close_local"))
+    )
+
+
+def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_contract: dict[str, Any]) -> bool:
+    if not bool(live_fetch_contract.get("available")):
+        return True
+    source_session = _mapping(packet.get("source_session"))
+    contract_session = _mapping(live_fetch_contract.get("session"))
+    return (
+        _text(live_fetch_contract.get("exchange")) == _text(packet.get("exchange"))
+        and _text(live_fetch_contract.get("market")) == _text(packet.get("market"))
+        and _text(contract_session.get("timezone")) == _text(source_session.get("timezone"))
+        and _wall_clock_seconds(contract_session.get("open_local")) == _wall_clock_seconds(source_session.get("open_local"))
+        and _wall_clock_seconds(contract_session.get("close_local")) == _wall_clock_seconds(source_session.get("close_local"))
+    )
+
+
+def _session_contract_text(session: dict[str, Any]) -> str:
+    return (
+        f"{_text(session.get('timezone'))}|"
+        f"{_text(session.get('open_local'))}|"
+        f"{_text(session.get('close_local'))}"
+    )
+
+
+def _live_contract_metadata_text(live_fetch_contract: dict[str, Any]) -> str:
+    session = _mapping(live_fetch_contract.get("session"))
+    return (
+        f"{_text(live_fetch_contract.get('market'))}|"
+        f"{_text(live_fetch_contract.get('exchange'))}|"
+        f"{_session_contract_text(session)}"
+    )
+
+
+def _wall_clock_seconds(value: object) -> int | None:
+    parts = _text(value).split(":")
+    if len(parts) not in {2, 3}:
+        return None
+    try:
+        hour, minute = int(parts[0]), int(parts[1])
+        second = int(parts[2]) if len(parts) == 3 else 0
+    except ValueError:
+        return None
+    if not (0 <= hour <= 23 and 0 <= minute <= 59 and 0 <= second <= 59):
+        return None
+    return hour * 3600 + minute * 60 + second
