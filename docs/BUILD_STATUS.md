@@ -231,8 +231,9 @@
 - Provider market-data imbalance runtime telemetry now keeps that live adapter
   audit trail intact after scale-up: runtime telemetry summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
-  values directly, and the manifest fingerprints the same files before runtime
-  guard monitoring.
+  values directly, carry provider capture command counts/lists plus
+  capture-bundle command match proof from scale-up into runtime telemetry, and
+  the manifest fingerprints the same files before runtime guard monitoring.
 - Provider market-data imbalance runtime guard now preserves those adapter
   fingerprints through halt/continue monitoring: guard summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256

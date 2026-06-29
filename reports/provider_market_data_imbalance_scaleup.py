@@ -1233,6 +1233,11 @@ def _provider_capture_bundle(summary: pd.Series, scorecard_config: dict[str, Any
             "capture_bundle_provider_capture_commands_match_session",
             bool(summary["capture_bundle_provider_capture_commands_match_session"]),
         )
+        carried.setdefault("metadata_matches_session", bool(summary["capture_bundle_metadata_matches_session"]))
+        carried.setdefault(
+            "live_fetch_contract_metadata_matches_session",
+            bool(summary["capture_bundle_live_fetch_contract_metadata_matches_session"]),
+        )
         carried.setdefault("provider_capture_commands", commands)
         carried.setdefault("capture_bundle_provider_capture_commands", commands)
         return carried
