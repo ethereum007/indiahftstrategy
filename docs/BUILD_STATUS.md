@@ -144,7 +144,11 @@
   capture-bundle/env-template/adapter-handoff provenance, source env-template
   proof, exchange/session metadata, and `live_fetch_contract` when supplied, and
   credential-safe session packets while blocking `*.csv.rehearsal.json`
-  synthetic captures from being marked research-ready.
+  synthetic captures from being marked research-ready. Bundle-linked evidence
+  review also carries provider capture command counts/lists from ingest into
+  summary/config/manifest artifacts and blocks research handoff if the
+  capture-bundle command list is missing or no longer matches the live-session
+  packet.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds

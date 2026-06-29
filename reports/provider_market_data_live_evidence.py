@@ -99,10 +99,31 @@ def write_provider_market_data_live_evidence_review(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 report.summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(report.summary.iloc[0]["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(report.summary.iloc[0]["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(report.summary.iloc[0]["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                report.summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                report.summary.iloc[0]["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                report.summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(report.summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(report.summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(report.summary.iloc[0]),
+                "provider_capture_commands": _list(
+                    _mapping(report.config.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    report.summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    report.summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(report.summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     report.summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -132,6 +153,10 @@ def write_provider_market_data_live_evidence_review(
                 "market": str(report.summary.iloc[0]["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(report.summary.iloc[0]),
             },
+            "provider_capture_commands": _list(report.config.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                _mapping(report.config.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+            ),
         },
     )
     return ProviderMarketDataLiveEvidenceReport(
@@ -327,6 +352,19 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
     live_fetch_session = _mapping(live_fetch_contract.get("session"))
     source_session = _mapping(bundle.get("source_session")) or _mapping(manifest_extra_bundle.get("source_session"))
     market_session = _mapping(bundle.get("market_session")) or _mapping(manifest_extra_bundle.get("market_session"))
+    provider_capture_commands = _provider_capture_command_records(
+        ingest_config.get("provider_capture_commands")
+    ) or _provider_capture_command_records(manifest_extra.get("provider_capture_commands"))
+    bundle_provider_capture_commands = _provider_capture_command_records(
+        bundle.get("provider_capture_commands")
+    ) or _provider_capture_command_records(manifest_extra.get("capture_bundle_provider_capture_commands"))
+    reported_commands_match = _optional_bool(bundle.get("provider_capture_commands_match_session"))
+    if reported_commands_match is None:
+        reported_commands_match = _optional_bool(manifest_extra.get("capture_bundle_provider_capture_commands_match_session"))
+    computed_commands_match = _provider_capture_commands_match(provider_capture_commands, bundle_provider_capture_commands)
+    provider_commands_match = (
+        computed_commands_match if reported_commands_match is None else bool(reported_commands_match and computed_commands_match)
+    )
     bundle_path = _path_from_text(_text(bundle.get("path")) or _text(manifest_bundle.get("path")))
     env_template_path = _path_from_text(
         _text(bundle.get("env_template_path"))
@@ -378,6 +416,13 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
         "source_live_fetch_contract_session_timezone": _text(live_fetch_session.get("timezone")),
         "source_live_fetch_contract_session_open_local": _text(live_fetch_session.get("open_local")),
         "source_live_fetch_contract_session_close_local": _text(live_fetch_session.get("close_local")),
+        "provider_capture_commands": provider_capture_commands,
+        "provider_capture_command_count": int(len(provider_capture_commands)),
+        "provider_capture_command_providers": _unique_command_values(provider_capture_commands, "provider"),
+        "provider_capture_command_transports": _unique_command_values(provider_capture_commands, "transport"),
+        "capture_bundle_provider_capture_commands": bundle_provider_capture_commands,
+        "capture_bundle_provider_capture_command_count": int(len(bundle_provider_capture_commands)),
+        "capture_bundle_provider_capture_commands_match_session": provider_commands_match,
         "capture_bundle_exchange": _text(bundle.get("exchange")) or _text(manifest_extra_bundle.get("exchange")),
         "capture_bundle_source_session": source_session,
         "capture_bundle_market_session": market_session,
@@ -425,6 +470,21 @@ def _checks(
     packet_market_session = _mapping(live_packet.get("market_session"))
     bundle_metadata_matches_session = _capture_bundle_metadata_matches_packet(live_packet, capture_provenance)
     live_fetch_metadata_matches_session = _live_contract_metadata_matches_packet(live_packet, capture_provenance)
+    provider_capture_command_count = int(capture_provenance["provider_capture_command_count"])
+    bundle_provider_capture_command_count = int(capture_provenance["capture_bundle_provider_capture_command_count"])
+    bundle_provider_capture_command_missing_count = max(
+        provider_capture_command_count - bundle_provider_capture_command_count,
+        0,
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and bool(capture_provenance["capture_bundle_provider_capture_commands_match_session"])
+    )
     return [
         _check("live_ingest_dir_exists", str(ingest_dir), "exists", True, ingest_dir.exists(), "live ingest directory is required"),
         _check("live_ingest_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live ingest summary could not be read"),
@@ -439,6 +499,8 @@ def _checks(
         _check("adapter_handoff_fingerprinted", capture_provenance["adapter_handoff_sha256"], "has", "sha256", bool(capture_provenance["adapter_handoff_sha256"]) if bool(capture_provenance["adapter_handoff_provided"]) else True, "adapter handoff fingerprint is missing from ingest provenance"),
         _check("capture_bundle_source_credential_env_template_carried", capture_provenance["source_credential_env_template_path"], "exists", True, bool(capture_provenance["source_credential_env_template_exists"]) and bool(capture_provenance["source_credential_env_template_sha256"]) if bundle_provided else True, "source credential env-template referenced by ingest provenance is missing"),
         _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by ingest provenance is missing"),
+        _check("capture_bundle_provider_capture_commands_carried", bundle_provider_capture_command_count, "==", provider_capture_command_count, bundle_provider_capture_commands_carried if bundle_provided else True, "capture bundle provider capture command handoffs are missing from ingest provenance"),
+        _check("capture_bundle_provider_capture_commands_match_session", bundle_provider_capture_command_count, "matches", provider_capture_command_count, bundle_provider_capture_commands_match_session if bundle_provided else True, "capture bundle provider capture command handoffs must match the live session packet"),
         _check("capture_bundle_exchange_carried", capture_provenance["capture_bundle_exchange"], "is_not", "", bool(capture_provenance["capture_bundle_exchange"]) if bundle_provided else True, "capture bundle exchange metadata is missing from ingest provenance"),
         _check("capture_bundle_source_session_carried", _session_contract_text(bundle_source_session), "has", "timezone/open/close", _session_contract_carried(bundle_source_session) if bundle_provided else True, "capture bundle source-session metadata is missing from ingest provenance"),
         _check("capture_bundle_market_session_carried", _session_contract_text(bundle_market_session), "has", "timezone/open/close", _session_contract_carried(bundle_market_session) if bundle_provided else True, "capture bundle market-session metadata is missing from ingest provenance"),
@@ -479,6 +541,8 @@ def _summary(
     market_session = _mapping(live_packet.get("market_session"))
     bundle_source_session = _mapping(capture_provenance.get("capture_bundle_source_session"))
     bundle_market_session = _mapping(capture_provenance.get("capture_bundle_market_session"))
+    provider_capture_command_count = int(capture_provenance["provider_capture_command_count"])
+    bundle_provider_capture_command_count = int(capture_provenance["capture_bundle_provider_capture_command_count"])
     return pd.DataFrame(
         [
             {
@@ -508,6 +572,21 @@ def _summary(
                 "source_live_fetch_contract_session_timezone": str(capture_provenance["source_live_fetch_contract_session_timezone"]),
                 "source_live_fetch_contract_session_open_local": str(capture_provenance["source_live_fetch_contract_session_open_local"]),
                 "source_live_fetch_contract_session_close_local": str(capture_provenance["source_live_fetch_contract_session_close_local"]),
+                "provider_capture_command_count": provider_capture_command_count,
+                "provider_capture_command_providers": str(capture_provenance["provider_capture_command_providers"]),
+                "provider_capture_command_transports": str(capture_provenance["provider_capture_command_transports"]),
+                "capture_bundle_provider_capture_command_count": bundle_provider_capture_command_count,
+                "capture_bundle_provider_capture_command_missing_count": max(
+                    provider_capture_command_count - bundle_provider_capture_command_count,
+                    0,
+                )
+                if bool(capture_provenance["capture_bundle_provided"])
+                else 0,
+                "capture_bundle_provider_capture_commands_match_session": bool(
+                    capture_provenance["capture_bundle_provider_capture_commands_match_session"]
+                )
+                if bool(capture_provenance["capture_bundle_provided"])
+                else True,
                 "provider": _text(live_packet.get("provider"), _first_text(ingest_summary, "provider")),
                 "transport": _text(live_packet.get("transport"), _first_text(ingest_summary, "transport")),
                 "market": _text(live_packet.get("market"), _first_text(ingest_summary, "market")),
@@ -628,6 +707,10 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_capture_commands": _list(capture_provenance.get("provider_capture_commands")),
+        "capture_bundle_provider_capture_commands": _list(
+            capture_provenance.get("capture_bundle_provider_capture_commands")
+        ),
         "capture_bundle": capture_provenance,
         "live_session_packet": _safe_packet(live_packet),
         "captures": _records(captures),
@@ -716,6 +799,10 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_source_env_template"
     if check == "capture_bundle_live_fetch_contract_carried":
         return "regenerate_capture_bundle_with_live_fetch_contract"
+    if check == "capture_bundle_provider_capture_commands_carried":
+        return "regenerate_capture_bundle_with_provider_capture_commands"
+    if check == "capture_bundle_provider_capture_commands_match_session":
+        return "regenerate_capture_bundle_with_session_provider_capture_commands"
     if check in {
         "capture_bundle_exchange_carried",
         "capture_bundle_source_session_carried",
@@ -754,6 +841,7 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic captures: {summary['synthetic_capture_count']}",
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
         f"- Recommendation: {summary['recommendation']}",
@@ -859,6 +947,14 @@ def _coalesced_bool(*values: object) -> bool:
     return False
 
 
+def _optional_bool(value: object) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, str) and not value.strip():
+        return None
+    return _truthy(value)
+
+
 def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:
     return {
         "timezone": str(summary["source_session_timezone"]),
@@ -961,6 +1057,75 @@ def _live_contract_metadata_text(capture_provenance: dict[str, Any]) -> str:
         f"{_text(capture_provenance.get('source_live_fetch_contract_exchange'))}|"
         f"{_session_contract_text(session)}"
     )
+
+
+def _provider_capture_command_records(value: object) -> list[dict[str, str]]:
+    rows = _list(value)
+    commands: list[dict[str, str]] = []
+    for row in rows:
+        item = _mapping(row)
+        command_template = _text(
+            item.get("command_template")
+            or item.get("capture_command_template")
+            or item.get("capture_command_hint")
+            or item.get("provider_capture_command_template")
+        )
+        if not command_template:
+            continue
+        commands.append(
+            {
+                "label": _text(item.get("label")),
+                "provider": _text(item.get("provider") or item.get("capture_command_provider") or item.get("provider_capture_command_provider")),
+                "transport": _text(item.get("transport") or item.get("capture_command_transport") or item.get("provider_capture_command_transport")),
+                "endpoint": _text(item.get("endpoint") or item.get("capture_command_endpoint") or item.get("provider_capture_command_endpoint")),
+                "kind": _text(item.get("kind") or item.get("capture_command_kind") or item.get("provider_capture_command_kind")),
+                "exchange": _text(item.get("exchange") or item.get("capture_command_exchange") or item.get("provider_capture_command_exchange")),
+                "start_local": _text(item.get("start_local")),
+                "end_local": _text(item.get("end_local")),
+                "output": _text(item.get("output") or item.get("capture_path")),
+                "required_env_vars": _text(
+                    item.get("required_env_vars")
+                    or item.get("capture_command_env_vars")
+                    or item.get("provider_capture_command_env_vars")
+                ),
+                "command_base": _text(item.get("command_base") or item.get("capture_command_base") or item.get("provider_capture_command_base")),
+                "command_template": command_template,
+            }
+        )
+    return commands
+
+
+def _provider_capture_commands_match(left: list[dict[str, str]], right: list[dict[str, str]]) -> bool:
+    if not left or len(left) != len(right):
+        return False
+    return [_provider_capture_command_signature(item) for item in left] == [
+        _provider_capture_command_signature(item) for item in right
+    ]
+
+
+def _provider_capture_command_signature(item: dict[str, str]) -> tuple[str, ...]:
+    return tuple(
+        _text(item.get(key))
+        for key in (
+            "label",
+            "provider",
+            "transport",
+            "endpoint",
+            "kind",
+            "exchange",
+            "start_local",
+            "end_local",
+            "output",
+            "required_env_vars",
+            "command_base",
+            "command_template",
+        )
+    )
+
+
+def _unique_command_values(commands: list[dict[str, str]], key: str) -> str:
+    values = sorted({_text(item.get(key)) for item in commands if _text(item.get(key))})
+    return ";".join(values)
 
 
 def _wall_clock_seconds(value: object) -> int | None:

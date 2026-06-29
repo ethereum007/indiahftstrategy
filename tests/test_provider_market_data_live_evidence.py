@@ -220,6 +220,12 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["provider_capture_command_count"] == 2
+    assert summary["provider_capture_command_providers"] == "arrow_money"
+    assert summary["provider_capture_command_transports"] == "websocket"
+    assert summary["capture_bundle_provider_capture_command_count"] == 2
+    assert summary["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert summary["capture_bundle_provider_capture_commands_match_session"]
     assert summary["exchange"] == "NFO"
     assert summary["source_session_timezone"] == "Asia/Kolkata"
     assert summary["source_session_open_local"] == "09:15:00"
@@ -237,6 +243,13 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
+    assert config["capture_bundle"]["provider_capture_command_count"] == 2
+    assert config["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["capture_bundle_provider_capture_command_count"] == 2
+    assert config["capture_bundle"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle"]["capture_bundle_exchange"] == "NFO"
     assert config["capture_bundle"]["capture_bundle_source_session"]["timezone"] == "Asia/Kolkata"
     assert config["capture_bundle"]["capture_bundle_market_session"]["open_local"] == "09:15"
@@ -259,6 +272,17 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
     assert manifest["extra"]["live_fetch_contract"]["session"]["close_local"] == "15:30:00"
+    assert manifest["extra"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["provider_capture_command_providers"] == "arrow_money"
+    assert manifest["extra"]["provider_capture_command_transports"] == "websocket"
+    assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle_provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert manifest["extra"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
 
 
 def test_provider_market_data_live_evidence_blocks_capture_bundle_session_mismatch(tmp_path):
@@ -342,6 +366,30 @@ def test_provider_market_data_live_evidence_blocks_missing_live_fetch_contract(t
     assert "capture_bundle_live_fetch_contract_carried" in failed
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
+
+
+def test_provider_market_data_live_evidence_blocks_bundle_provider_capture_command_mismatch(tmp_path):
+    ingest, _ = _write_bundle_linked_real_ingest(tmp_path)
+    ingest_config_path = ingest.output_dir / "provider_market_data_live_ingest_config.json"
+    _mutate_json(
+        ingest_config_path,
+        lambda payload: payload["capture_bundle"]["provider_capture_commands"][0].update(
+            {"command_template": "provider-adapter capture --wrong"}
+        ),
+    )
+
+    report = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_provider_capture_commands_match_session" in failed
+    assert not bool(report.summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_session_provider_capture_commands"
     assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 
