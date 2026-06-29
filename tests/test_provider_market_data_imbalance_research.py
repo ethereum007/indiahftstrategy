@@ -1,3 +1,4 @@
+import hashlib
 import json
 from pathlib import Path
 
@@ -3722,6 +3723,8 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     nested_roundtrip_dir = provider_roundtrip_dir / "broker_dispatch_roundtrip"
     for path in (bundle_path, env_template_path, adapter_handoff_path, source_env_template_path):
         path.write_text("{}", encoding="utf-8")
+    env_template_sha256 = hashlib.sha256(env_template_path.read_bytes()).hexdigest()
+    adapter_handoff_sha256 = hashlib.sha256(adapter_handoff_path.read_bytes()).hexdigest()
     nested_roundtrip_dir.mkdir(parents=True)
     (nested_roundtrip_dir / "broker_dispatch_roundtrip_summary.csv").write_text(
         "ready,dispatch_roundtrip_provided,dispatch_roundtrip_ready,dispatch_roundtrip_failed_checks\n"
@@ -3805,10 +3808,12 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "dispatch_roundtrip_capture_env_template_path": str(env_template_path),
                 "dispatch_roundtrip_capture_env_template_provided": True,
                 "dispatch_roundtrip_capture_env_template_exists": True,
+                "dispatch_roundtrip_capture_env_template_sha256": env_template_sha256,
                 "dispatch_roundtrip_capture_env_template_matches_session": True,
                 "dispatch_roundtrip_adapter_handoff_path": str(adapter_handoff_path),
                 "dispatch_roundtrip_adapter_handoff_provided": True,
                 "dispatch_roundtrip_adapter_handoff_exists": True,
+                "dispatch_roundtrip_adapter_handoff_sha256": adapter_handoff_sha256,
                 "dispatch_roundtrip_adapter_handoff_matches_session": True,
                 "dispatch_roundtrip_capture_provenance_consistent": True,
                 "provider_dispatch_roundtrip_dir": str(provider_roundtrip_dir),
@@ -3841,7 +3846,9 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "dispatch_roundtrip_provenance": {
                     "capture_bundle_path": str(bundle_path),
                     "capture_env_template_path": str(env_template_path),
+                    "capture_env_template_sha256": env_template_sha256,
                     "adapter_handoff_path": str(adapter_handoff_path),
+                    "adapter_handoff_sha256": adapter_handoff_sha256,
                     "consistent_with_runtime_session": True,
                     "source_credential_env_template_path": str(source_env_template_path),
                     "source_credential_env_template_sha256": "a" * 64,
@@ -3880,8 +3887,12 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert bool(summary["dispatch_roundtrip_capture_bundle_ready"])
     assert bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
     assert Path(summary["dispatch_roundtrip_capture_env_template_path"]) == env_template_path
+    assert len(summary["dispatch_roundtrip_capture_env_template_sha256"]) == 64
+    assert summary["dispatch_roundtrip_capture_env_template_sha256"] == env_template_sha256
     assert bool(summary["dispatch_roundtrip_capture_env_template_matches_session"])
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
+    assert len(summary["dispatch_roundtrip_adapter_handoff_sha256"]) == 64
+    assert summary["dispatch_roundtrip_adapter_handoff_sha256"] == adapter_handoff_sha256
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
     assert summary["dispatch_roundtrip_exchange"] == "NFO"
@@ -3915,7 +3926,15 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_market_session"]["open_local"] == "09:15"
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_metadata_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
+    assert (
+        config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"]
+        == summary["dispatch_roundtrip_capture_env_template_sha256"]
+    )
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert (
+        config["dispatch_roundtrip_provenance"]["adapter_handoff_sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_path"] == str(
         source_env_template_path
@@ -3928,18 +3947,38 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert config["provider_broker_readiness"]["dispatch_roundtrip_adapter_handoff_path"] == str(
         adapter_handoff_path
     )
+    assert (
+        config["provider_broker_readiness"]["dispatch_roundtrip_adapter_handoff_sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert config["provider_broker_readiness"]["dispatch_roundtrip_source_credential_env_template_path"] == str(
         source_env_template_path
     )
     assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert (
+        manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["sha256"]
+        == summary["dispatch_roundtrip_capture_env_template_sha256"]
+    )
     assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert (
+        manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert manifest["inputs"]["dispatch_roundtrip_source_credential_env_template"]["path"] == str(
         source_env_template_path.resolve()
     )
     assert manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
+    assert (
+        manifest["extra"]["dispatch_roundtrip_capture_env_template"]["sha256"]
+        == summary["dispatch_roundtrip_capture_env_template_sha256"]
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip_adapter_handoff"]["sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_metadata_consistent"]
@@ -3962,6 +4001,8 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
     source_env_template_path = tmp_path / "provider_source_credentials.env"
     for path in (bundle_path, env_template_path, adapter_handoff_path, source_env_template_path):
         path.write_text("{}", encoding="utf-8")
+    env_template_sha256 = hashlib.sha256(env_template_path.read_bytes()).hexdigest()
+    adapter_handoff_sha256 = hashlib.sha256(adapter_handoff_path.read_bytes()).hexdigest()
 
     broker_readiness_dir = tmp_path / "provider_imbalance_broker_readiness_config_roundtrip_fallback"
     broker_readiness_dir.mkdir(parents=True)
@@ -4032,10 +4073,12 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
                     "capture_env_template_path": str(env_template_path),
                     "capture_env_template_provided": True,
                     "capture_env_template_exists": True,
+                    "capture_env_template_sha256": env_template_sha256,
                     "capture_env_template_matches_session": True,
                     "adapter_handoff_path": str(adapter_handoff_path),
                     "adapter_handoff_provided": True,
                     "adapter_handoff_exists": True,
+                    "adapter_handoff_sha256": adapter_handoff_sha256,
                     "adapter_handoff_matches_session": True,
                     "consistent_with_runtime_session": True,
                     "source_credential_env_template_path": str(source_env_template_path),
@@ -4091,7 +4134,9 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
     assert summary["dispatch_roundtrip_capture_bundle_market_session_open_local"] == "09:15"
     assert bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
     assert Path(summary["dispatch_roundtrip_capture_env_template_path"]) == env_template_path
+    assert summary["dispatch_roundtrip_capture_env_template_sha256"] == env_template_sha256
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
+    assert summary["dispatch_roundtrip_adapter_handoff_sha256"] == adapter_handoff_sha256
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert not bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
     assert Path(summary["dispatch_roundtrip_source_credential_env_template_path"]) == source_env_template_path
@@ -4104,11 +4149,18 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
     assert config["dispatch_roundtrip_provenance"]["source_session"]["open_local"] == "09:15:00"
     assert not config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
+    assert config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"] == env_template_sha256
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["dispatch_roundtrip_provenance"]["adapter_handoff_sha256"] == adapter_handoff_sha256
     assert config["dispatch_roundtrip_provenance"]["source_live_fetch_contract_session"]["close_local"] == "15:30:00"
     assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["sha256"] == env_template_sha256
     assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["sha256"] == adapter_handoff_sha256
     assert not manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip_capture_env_template"]["sha256"] == env_template_sha256
+    assert manifest["extra"]["dispatch_roundtrip_adapter_handoff"]["sha256"] == adapter_handoff_sha256
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["exchange"] == "NFO"
     assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["session"]["open_local"] == "09:15:00"
 

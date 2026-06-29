@@ -331,6 +331,18 @@ def write_provider_market_data_imbalance_cutover(
             "dispatch_roundtrip_adapter_handoff_matches_session": bool(
                 summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]
             ),
+            "dispatch_roundtrip_capture_env_template": {
+                "path": str(summary_row["dispatch_roundtrip_capture_env_template_path"]),
+                "exists": bool(summary_row["dispatch_roundtrip_capture_env_template_exists"]),
+                "sha256": str(summary_row["dispatch_roundtrip_capture_env_template_sha256"]),
+                "matches_session": bool(summary_row["dispatch_roundtrip_capture_env_template_matches_session"]),
+            },
+            "dispatch_roundtrip_adapter_handoff": {
+                "path": str(summary_row["dispatch_roundtrip_adapter_handoff_path"]),
+                "exists": bool(summary_row["dispatch_roundtrip_adapter_handoff_exists"]),
+                "sha256": str(summary_row["dispatch_roundtrip_adapter_handoff_sha256"]),
+                "matches_session": bool(summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]),
+            },
             "dispatch_roundtrip_source_provenance_consistent": bool(
                 summary_row["dispatch_roundtrip_source_provenance_consistent"]
             ),
@@ -974,6 +986,12 @@ def _summary(
                     "dispatch_roundtrip_capture_env_template_exists",
                     "capture_env_template_exists",
                 ),
+                "dispatch_roundtrip_capture_env_template_sha256": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_capture_env_template_sha256",
+                    "capture_env_template_sha256",
+                ),
                 "dispatch_roundtrip_capture_env_template_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
                     dispatch_roundtrip,
@@ -997,6 +1015,12 @@ def _summary(
                     dispatch_roundtrip,
                     "dispatch_roundtrip_adapter_handoff_exists",
                     "adapter_handoff_exists",
+                ),
+                "dispatch_roundtrip_adapter_handoff_sha256": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_handoff_sha256",
+                    "adapter_handoff_sha256",
                 ),
                 "dispatch_roundtrip_adapter_handoff_matches_session": _dispatch_roundtrip_bool(
                     provider_summary,
@@ -1308,12 +1332,14 @@ def _config(
             "capture_env_template_path": str(summary["dispatch_roundtrip_capture_env_template_path"]),
             "capture_env_template_provided": bool(summary["dispatch_roundtrip_capture_env_template_provided"]),
             "capture_env_template_exists": bool(summary["dispatch_roundtrip_capture_env_template_exists"]),
+            "capture_env_template_sha256": str(summary["dispatch_roundtrip_capture_env_template_sha256"]),
             "capture_env_template_matches_session": bool(
                 summary["dispatch_roundtrip_capture_env_template_matches_session"]
             ),
             "adapter_handoff_path": str(summary["dispatch_roundtrip_adapter_handoff_path"]),
             "adapter_handoff_provided": bool(summary["dispatch_roundtrip_adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["dispatch_roundtrip_adapter_handoff_exists"]),
+            "adapter_handoff_sha256": str(summary["dispatch_roundtrip_adapter_handoff_sha256"]),
             "adapter_handoff_matches_session": bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"]),
             "consistent_with_runtime_session": bool(summary["dispatch_roundtrip_capture_provenance_consistent"]),
             "source_credential_env_template_path": str(
