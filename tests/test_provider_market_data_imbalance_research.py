@@ -4529,6 +4529,12 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
         json.dumps(
             {
                 "provider_runtime_session": {"scaleup_dir": ""},
+                "provider_capture_commands": provider_capture_commands,
+                "capture_bundle_provider_capture_commands": provider_capture_commands,
+                "capture_bundle": {
+                    "provider_capture_commands": provider_capture_commands,
+                    "capture_bundle_provider_capture_commands": provider_capture_commands,
+                },
                 "dispatch_roundtrip_provenance": {
                     "exchange": "NFO",
                     "source_session": {
@@ -4551,8 +4557,6 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
                     "capture_bundle_provider_capture_command_count": 2,
                     "capture_bundle_provider_capture_command_missing_count": 0,
                     "capture_bundle_provider_capture_commands_match_session": True,
-                    "provider_capture_commands": provider_capture_commands,
-                    "capture_bundle_provider_capture_commands": provider_capture_commands,
                     "provider_capture_commands_match_runtime_session": True,
                     "capture_bundle_path": str(bundle_path),
                     "capture_bundle_provided": True,

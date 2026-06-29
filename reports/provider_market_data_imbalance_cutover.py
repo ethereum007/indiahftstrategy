@@ -1423,15 +1423,35 @@ def _dispatch_roundtrip_number(
     fallback_key: str,
     fallback: float = 0.0,
 ) -> float:
+    sidecar_fallback = _number_from_value(provenance.get(fallback_key), fallback)
     if _first_value_present(frame, column):
-        return _first_number(frame, column, fallback)
-    text = _clean(provenance.get(fallback_key))
+        value = _first_number(frame, column, fallback)
+        if value == 0 and sidecar_fallback > 0:
+            return sidecar_fallback
+        return value
+    return sidecar_fallback
+
+
+def _number_from_value(value: object, fallback: float = 0.0) -> float:
+    text = _clean(value)
     if not text:
         return fallback
     try:
         return float(text)
     except (TypeError, ValueError):
         return fallback
+
+
+def _dispatch_roundtrip_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
+    dispatch_roundtrip = _dispatch_roundtrip_provenance(provider_config)
+    return _list(dispatch_roundtrip.get("provider_capture_commands")) or _provider_capture_commands(provider_config)
+
+
+def _dispatch_roundtrip_bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
+    dispatch_roundtrip = _dispatch_roundtrip_provenance(provider_config)
+    return _list(
+        dispatch_roundtrip.get("capture_bundle_provider_capture_commands")
+    ) or _bundle_provider_capture_commands(provider_config)
 
 
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
@@ -1620,9 +1640,9 @@ def _config(
             "capture_bundle_provider_capture_commands_match_session": bool(
                 summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
             ),
-            "provider_capture_commands": _list(dispatch_roundtrip.get("provider_capture_commands")),
-            "capture_bundle_provider_capture_commands": _list(
-                dispatch_roundtrip.get("capture_bundle_provider_capture_commands")
+            "provider_capture_commands": _dispatch_roundtrip_provider_capture_commands(provider_config),
+            "capture_bundle_provider_capture_commands": _dispatch_roundtrip_bundle_provider_capture_commands(
+                provider_config
             ),
             "provider_capture_commands_match_runtime_session": bool(
                 summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
