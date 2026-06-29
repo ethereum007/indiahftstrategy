@@ -1808,10 +1808,14 @@
   env-template proof, and `live_fetch_contract`, plus the ack-retained
   validated round-trip capture bundle/env-template/adapter handoff paths,
   source credential env-template proof, round-trip exchange/session metadata,
-  capture-bundle session match proof, live-fetch exchange/session identity,
+  capture-bundle session match proof, round-trip provider capture-command
+  counts/arrays/match flags, live-fetch exchange/session identity,
   `live_fetch_contract`, and source/capture provenance-consistency flags, in
   provider summary/config/runbook artifacts plus manifest inputs/extra
-  metadata. The provider round-trip summary/config now also surfaces nested broker
+  metadata. It also hydrates sparse acknowledgement round-trip summary rows
+  from the acknowledgement `dispatch_roundtrip_provenance` sidecar without
+  dropping validated command bundle proof. The provider round-trip
+  summary/config now also surfaces nested broker
   vendor-market-data batch proof under both
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
   `broker_dispatch_roundtrip_vendor_market_data_batch_*` fields. The final
@@ -1819,7 +1823,8 @@
   `dispatch_roundtrip_*` summary fields from the acknowledgement
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse acknowledgement CSVs do not lose validated
-  live-data provenance before broker-readiness promotion.
+  live-data provenance or provider command proof before broker-readiness
+  promotion.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India
