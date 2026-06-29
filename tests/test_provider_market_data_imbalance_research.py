@@ -3045,6 +3045,12 @@ def test_provider_market_data_imbalance_broker_readiness_carries_capture_bundle_
     assert summary["capture_bundle_market_session_open_local"] == "09:15"
     assert bool(summary["capture_bundle_metadata_matches_session"])
     assert bool(summary["capture_bundle_live_fetch_contract_metadata_matches_session"])
+    assert summary["provider_capture_command_count"] == 2
+    assert summary["provider_capture_command_providers"] == "arrow_money"
+    assert summary["provider_capture_command_transports"] == "websocket"
+    assert summary["capture_bundle_provider_capture_command_count"] == 2
+    assert summary["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert bool(summary["capture_bundle_provider_capture_commands_match_session"])
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
@@ -3060,6 +3066,12 @@ def test_provider_market_data_imbalance_broker_readiness_carries_capture_bundle_
     assert config["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert config["capture_bundle"]["capture_bundle_metadata_matches_session"] is True
     assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
+    assert config["capture_bundle"]["provider_capture_command_count"] == 2
+    assert config["capture_bundle"]["capture_bundle_provider_capture_command_count"] == 2
+    assert config["capture_bundle"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["exchange"] == "NFO"
     assert config["source_session"]["close_local"] == "15:30:00"
     assert config["provider_runtime_session"]["adapter_handoff_path"] == str(adapter_handoff_path)
@@ -3069,6 +3081,8 @@ def test_provider_market_data_imbalance_broker_readiness_carries_capture_bundle_
     assert config["provider_runtime_session"]["source_live_fetch_contract_available"] is True
     assert config["provider_runtime_session"]["exchange"] == "NFO"
     assert config["provider_runtime_session"]["capture_bundle_metadata_matches_session"] is True
+    assert config["provider_runtime_session"]["provider_capture_command_count"] == 2
+    assert config["provider_runtime_session"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
@@ -3086,7 +3100,19 @@ def test_provider_market_data_imbalance_broker_readiness_carries_capture_bundle_
     assert manifest["extra"]["adapter_handoff_exists"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["provider_capture_command_providers"] == "arrow_money"
+    assert manifest["extra"]["provider_capture_command_transports"] == "websocket"
+    assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle_provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert manifest["extra"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Provider capture commands: 2 (bundle match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
 
