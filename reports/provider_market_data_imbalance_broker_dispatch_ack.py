@@ -1519,11 +1519,15 @@ def _dispatch_roundtrip_provenance(provider_config: dict[str, Any]) -> dict[str,
 
 
 def _dispatch_roundtrip_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
-    return _list(_dispatch_roundtrip_provenance(provider_config).get("provider_capture_commands"))
+    return _list(_dispatch_roundtrip_provenance(provider_config).get("provider_capture_commands")) or (
+        _provider_capture_commands(provider_config)
+    )
 
 
 def _dispatch_roundtrip_capture_bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
-    return _list(_dispatch_roundtrip_provenance(provider_config).get("capture_bundle_provider_capture_commands"))
+    return _list(
+        _dispatch_roundtrip_provenance(provider_config).get("capture_bundle_provider_capture_commands")
+    ) or _bundle_provider_capture_commands(provider_config)
 
 
 def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
