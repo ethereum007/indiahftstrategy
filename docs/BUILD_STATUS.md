@@ -237,7 +237,9 @@
 - Provider market-data imbalance runtime guard now preserves those adapter
   fingerprints through halt/continue monitoring: guard summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
-  values directly before runtime session review.
+  values directly, carry provider capture command counts/lists plus
+  capture-bundle command match proof from runtime telemetry into guard
+  monitoring, and keep that proof visible before runtime session review.
 - Provider market-data imbalance runtime session now carries the same adapter
   fingerprints into broker-readiness handoff: session summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
