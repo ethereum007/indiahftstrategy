@@ -1717,7 +1717,8 @@
   vendor-market-data batch lineage. It now also keeps the broker-readiness
   validated round-trip capture bundle/env-template/adapter handoff paths,
   source credential env-template proof, round-trip exchange/session metadata,
-  capture-bundle session match proof, live-fetch exchange/session identity,
+  capture-bundle session match proof, round-trip provider capture-command
+  counts/arrays/match flags, live-fetch exchange/session identity,
   `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
@@ -1725,7 +1726,8 @@
   `dispatch_roundtrip_*` summary fields from broker-readiness
   `dispatch_roundtrip_provenance` config sidecars, while keeping explicit CSV
   `False` values authoritative, so mixed-version broker-readiness outputs still
-  preserve the validated iRage/Arrow live-data handoff trail.
+  preserve the validated iRage/Arrow live-data handoff trail, including the
+  command bundle proof needed before provider route-enable.
 - Provider-data imbalance route-enable now preserves the cutover-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
