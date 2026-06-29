@@ -272,10 +272,31 @@ def write_provider_market_data_imbalance_runtime_session(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary_row["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary_row["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary_row["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary_row["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary_row["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary_row["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "provider_capture_commands": _list(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    summary_row["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    summary_row["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -294,6 +315,10 @@ def write_provider_market_data_imbalance_runtime_session(
                 "market": str(summary_row["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary_row),
             },
+            "provider_capture_commands": _list(payload.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                payload.get("capture_bundle_provider_capture_commands")
+            ),
         },
     )
     return ProviderMarketDataImbalanceRuntimeSessionReport(session, checks, summary, action_queue, payload, out)
@@ -410,6 +435,25 @@ def _checks(
     session_summary = session.summary if session is not None else pd.DataFrame()
     session_halted = _first_bool(session_summary, "halted")
     halt_response_ready = _first_bool(session_summary, "halt_response_ready")
+    bundle_provided = _first_bool(guard_summary, "capture_bundle_provided")
+    provider_capture_command_count = int(
+        _first_number(_first_text(guard_summary, "provider_capture_command_count")) or 0
+    )
+    bundle_provider_capture_command_count = int(
+        _first_number(_first_text(guard_summary, "capture_bundle_provider_capture_command_count")) or 0
+    )
+    bundle_provider_capture_command_missing_count = int(
+        _first_number(_first_text(guard_summary, "capture_bundle_provider_capture_command_missing_count")) or 0
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and _first_bool(guard_summary, "capture_bundle_provider_capture_commands_match_session")
+    )
     rows.append(
         _check(
             "runtime_session_runnable",
@@ -475,6 +519,26 @@ def _checks(
             bool(session_market)
             and (not expected_market or _identity_key(session_market) == _identity_key(expected_market)),
             "runtime session market identity does not match provider guard",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_runtime_guard_provider_capture_commands_carried",
+            bundle_provider_capture_command_count,
+            "==",
+            provider_capture_command_count,
+            bundle_provider_capture_commands_carried if bundle_provided else True,
+            "provider imbalance runtime guard is missing capture-bundle provider command proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_runtime_guard_provider_capture_commands_match_session",
+            bundle_provider_capture_command_count,
+            "matches",
+            provider_capture_command_count,
+            bundle_provider_capture_commands_match_session if bundle_provided else True,
+            "provider imbalance runtime guard command proof no longer matches the session packet",
         )
     )
     return pd.DataFrame(rows)
@@ -586,6 +650,29 @@ def _summary(
                 "source_live_fetch_contract_session_close_local": _first_text(
                     guard_summary, "source_live_fetch_contract_session_close_local"
                 ),
+                "provider_capture_command_count": int(
+                    _first_number(_first_text(guard_summary, "provider_capture_command_count")) or 0
+                ),
+                "provider_capture_command_providers": _first_text(
+                    guard_summary, "provider_capture_command_providers"
+                ),
+                "provider_capture_command_transports": _first_text(
+                    guard_summary, "provider_capture_command_transports"
+                ),
+                "capture_bundle_provider_capture_command_count": int(
+                    _first_number(_first_text(guard_summary, "capture_bundle_provider_capture_command_count")) or 0
+                ),
+                "capture_bundle_provider_capture_command_missing_count": int(
+                    _first_number(
+                        _first_text(guard_summary, "capture_bundle_provider_capture_command_missing_count")
+                    )
+                    or 0
+                ),
+                "capture_bundle_provider_capture_commands_match_session": _first_bool(
+                    guard_summary, "capture_bundle_provider_capture_commands_match_session"
+                )
+                if _first_bool(guard_summary, "capture_bundle_provided")
+                else True,
                 "runtime_session_dir": "" if session is None else str(session.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -772,53 +859,12 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
-        "capture_bundle": {
-            "capture_bundle_path": str(summary["capture_bundle_path"]),
-            "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
-            "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
-            "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
-            "exchange": str(summary["capture_bundle_exchange"]),
-            "source_session": _capture_bundle_source_session_contract_from_summary(summary),
-            "market_session": _capture_bundle_market_session_contract_from_summary(summary),
-            "capture_bundle_metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
-            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
-                summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
-            ),
-            "metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
-            "live_fetch_contract_metadata_matches_session": bool(
-                summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
-            ),
-            "capture_env_template_path": str(summary["capture_env_template_path"]),
-            "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
-            "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
-            "capture_env_template_sha256": str(summary["capture_env_template_sha256"]),
-            "adapter_handoff_path": str(summary["adapter_handoff_path"]),
-            "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
-            "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
-            "adapter_handoff_sha256": str(summary["adapter_handoff_sha256"]),
-            "source_credential_env_template_path": str(summary["source_credential_env_template_path"]),
-            "source_credential_env_template_exists": bool(summary["source_credential_env_template_exists"]),
-            "source_credential_env_template_sha256": str(summary["source_credential_env_template_sha256"]),
-            "source_live_fetch_contract_available": bool(summary["source_live_fetch_contract_available"]),
-            "source_live_fetch_contract_next_gate": str(summary["source_live_fetch_contract_next_gate"]),
-            "source_live_fetch_contract_command_template": str(
-                summary["source_live_fetch_contract_command_template"]
-            ),
-            "source_live_fetch_contract_exchange": str(summary["source_live_fetch_contract_exchange"]),
-            "source_live_fetch_contract_market": str(summary["source_live_fetch_contract_market"]),
-            "source_live_fetch_contract_session_timezone": str(
-                summary["source_live_fetch_contract_session_timezone"]
-            ),
-            "source_live_fetch_contract_session_open_local": str(
-                summary["source_live_fetch_contract_session_open_local"]
-            ),
-            "source_live_fetch_contract_session_close_local": str(
-                summary["source_live_fetch_contract_session_close_local"]
-            ),
-        },
+        "provider_capture_commands": _provider_capture_commands(guard_config),
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(guard_config),
+        "capture_bundle": _provider_capture_bundle(summary, guard_config),
         "provider_runtime_guard": _first_record(guard_summary),
-        "provider_runtime_guard_config": guard_config,
-        "provider_runtime_telemetry_config": telemetry_config,
+        "provider_runtime_guard_config": _jsonable(guard_config),
+        "provider_runtime_telemetry_config": _jsonable(telemetry_config),
         "runtime_session": {
             "evaluated": session is not None,
             "ready": False if session is None else bool(session.ready),
@@ -859,6 +905,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "",
         "## Checks",
         "",
@@ -1121,6 +1168,115 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
         "open_local": str(summary["source_live_fetch_contract_session_open_local"]),
         "close_local": str(summary["source_live_fetch_contract_session_close_local"]),
     }
+
+
+def _provider_capture_bundle(summary: pd.Series, guard_config: dict[str, Any]) -> dict[str, Any]:
+    commands = _bundle_provider_capture_commands(guard_config)
+    payload = _mapping(guard_config.get("capture_bundle"))
+    if payload:
+        carried = {str(key): _jsonable(value) for key, value in payload.items()}
+        carried.setdefault("provider_capture_command_count", int(summary["provider_capture_command_count"]))
+        carried.setdefault(
+            "provider_capture_command_providers",
+            str(summary["provider_capture_command_providers"]),
+        )
+        carried.setdefault(
+            "provider_capture_command_transports",
+            str(summary["provider_capture_command_transports"]),
+        )
+        carried.setdefault(
+            "capture_bundle_provider_capture_command_count",
+            int(summary["capture_bundle_provider_capture_command_count"]),
+        )
+        carried.setdefault(
+            "capture_bundle_provider_capture_command_missing_count",
+            int(summary["capture_bundle_provider_capture_command_missing_count"]),
+        )
+        carried.setdefault(
+            "capture_bundle_provider_capture_commands_match_session",
+            bool(summary["capture_bundle_provider_capture_commands_match_session"]),
+        )
+        carried.setdefault("metadata_matches_session", bool(summary["capture_bundle_metadata_matches_session"]))
+        carried.setdefault(
+            "live_fetch_contract_metadata_matches_session",
+            bool(summary["capture_bundle_live_fetch_contract_metadata_matches_session"]),
+        )
+        carried.setdefault("provider_capture_commands", commands)
+        carried.setdefault("capture_bundle_provider_capture_commands", commands)
+        return carried
+    return {
+        "capture_bundle_path": str(summary["capture_bundle_path"]),
+        "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
+        "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
+        "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+        "exchange": str(summary["capture_bundle_exchange"]),
+        "source_session": _capture_bundle_source_session_contract_from_summary(summary),
+        "market_session": _capture_bundle_market_session_contract_from_summary(summary),
+        "capture_bundle_metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
+        "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+            summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+        ),
+        "metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
+        "live_fetch_contract_metadata_matches_session": bool(
+            summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+        ),
+        "capture_env_template_path": str(summary["capture_env_template_path"]),
+        "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
+        "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+        "capture_env_template_sha256": str(summary["capture_env_template_sha256"]),
+        "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+        "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+        "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+        "adapter_handoff_sha256": str(summary["adapter_handoff_sha256"]),
+        "source_credential_env_template_path": str(summary["source_credential_env_template_path"]),
+        "source_credential_env_template_exists": bool(summary["source_credential_env_template_exists"]),
+        "source_credential_env_template_sha256": str(summary["source_credential_env_template_sha256"]),
+        "source_live_fetch_contract_available": bool(summary["source_live_fetch_contract_available"]),
+        "source_live_fetch_contract_next_gate": str(summary["source_live_fetch_contract_next_gate"]),
+        "source_live_fetch_contract_command_template": str(summary["source_live_fetch_contract_command_template"]),
+        "source_live_fetch_contract_exchange": str(summary["source_live_fetch_contract_exchange"]),
+        "source_live_fetch_contract_market": str(summary["source_live_fetch_contract_market"]),
+        "source_live_fetch_contract_session_timezone": str(summary["source_live_fetch_contract_session_timezone"]),
+        "source_live_fetch_contract_session_open_local": str(summary["source_live_fetch_contract_session_open_local"]),
+        "source_live_fetch_contract_session_close_local": str(
+            summary["source_live_fetch_contract_session_close_local"]
+        ),
+        "provider_capture_command_count": int(summary["provider_capture_command_count"]),
+        "provider_capture_command_providers": str(summary["provider_capture_command_providers"]),
+        "provider_capture_command_transports": str(summary["provider_capture_command_transports"]),
+        "capture_bundle_provider_capture_command_count": int(
+            summary["capture_bundle_provider_capture_command_count"]
+        ),
+        "capture_bundle_provider_capture_command_missing_count": int(
+            summary["capture_bundle_provider_capture_command_missing_count"]
+        ),
+        "capture_bundle_provider_capture_commands_match_session": bool(
+            summary["capture_bundle_provider_capture_commands_match_session"]
+        ),
+        "provider_capture_commands": commands,
+        "capture_bundle_provider_capture_commands": commands,
+    }
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _provider_capture_commands(guard_config: dict[str, Any]) -> list[Any]:
+    return _list(guard_config.get("provider_capture_commands"))
+
+
+def _bundle_provider_capture_commands(guard_config: dict[str, Any]) -> list[Any]:
+    bundle = _mapping(guard_config.get("capture_bundle"))
+    return (
+        _list(guard_config.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("provider_capture_commands"))
+    )
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
