@@ -6497,9 +6497,13 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_capture_bun
     assert bool(summary["capture_bundle_ready"])
     assert Path(summary["capture_env_template_path"]) == env_template_path
     assert bool(summary["capture_env_template_exists"])
+    assert len(summary["capture_env_template_sha256"]) == 64
+    assert summary["capture_env_template_sha256"] == bundle["capture_env_template_sha256"]
     assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["adapter_handoff_provided"])
     assert bool(summary["adapter_handoff_exists"])
+    assert len(summary["adapter_handoff_sha256"]) == 64
+    assert summary["adapter_handoff_sha256"] == bundle["adapter_handoff_sha256"]
     assert Path(summary["source_credential_env_template_path"]) == source_env_template_path
     assert bool(summary["source_credential_env_template_exists"])
     assert len(summary["source_credential_env_template_sha256"]) == 64
@@ -6524,7 +6528,9 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_capture_bun
     assert config["capture_bundle"]["capture_bundle_metadata_matches_session"] is True
     assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert (
         config["capture_bundle"]["source_credential_env_template_sha256"]
         == summary["source_credential_env_template_sha256"]
@@ -6535,17 +6541,26 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_capture_bun
     assert config["exchange"] == "NFO"
     assert config["source_session"]["close_local"] == "15:30:00"
     assert config["provider_broker_dispatch"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert (
+        config["provider_broker_dispatch"]["capture_env_template_sha256"]
+        == summary["capture_env_template_sha256"]
+    )
+    assert config["provider_broker_dispatch"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["provider_broker_dispatch"]["exchange"] == "NFO"
     assert config["provider_broker_dispatch"]["capture_bundle_metadata_matches_session"] is True
     assert config["provider_broker_dispatch"]["source_credential_env_template_path"] == str(source_env_template_path)
     assert config["provider_broker_dispatch"]["source_live_fetch_contract_available"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
     assert manifest["extra"]["adapter_handoff_exists"]
+    assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
+    assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
