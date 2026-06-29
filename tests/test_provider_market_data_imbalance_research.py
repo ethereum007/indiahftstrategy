@@ -2964,8 +2964,12 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert bool(summary["dispatch_roundtrip_capture_bundle_ready"])
     assert bool(summary["dispatch_roundtrip_capture_bundle_matches_session"])
     assert Path(summary["dispatch_roundtrip_capture_env_template_path"]) == env_template_path
+    assert len(summary["dispatch_roundtrip_capture_env_template_sha256"]) == 64
+    assert summary["dispatch_roundtrip_capture_env_template_sha256"] == bundle["capture_env_template_sha256"]
     assert bool(summary["dispatch_roundtrip_capture_env_template_matches_session"])
     assert Path(summary["dispatch_roundtrip_adapter_handoff_path"]) == adapter_handoff_path
+    assert len(summary["dispatch_roundtrip_adapter_handoff_sha256"]) == 64
+    assert summary["dispatch_roundtrip_adapter_handoff_sha256"] == bundle["adapter_handoff_sha256"]
     assert bool(summary["dispatch_roundtrip_adapter_handoff_matches_session"])
     assert bool(summary["dispatch_roundtrip_capture_provenance_consistent"])
     assert summary["dispatch_roundtrip_exchange"] == "NFO"
@@ -3022,7 +3026,15 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_metadata_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_exchange_matches_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
+    assert (
+        config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"]
+        == summary["dispatch_roundtrip_capture_env_template_sha256"]
+    )
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert (
+        config["dispatch_roundtrip_provenance"]["adapter_handoff_sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["source_credential_env_template_path"] == str(
         source_env_template_path
@@ -3034,7 +3046,15 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert config["dispatch_roundtrip_provenance"]["source_provenance_consistent_with_runtime_session"]
     assert manifest["inputs"]["dispatch_roundtrip_capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert (
+        manifest["inputs"]["dispatch_roundtrip_capture_env_template"]["sha256"]
+        == summary["dispatch_roundtrip_capture_env_template_sha256"]
+    )
     assert manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert (
+        manifest["inputs"]["dispatch_roundtrip_adapter_handoff"]["sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert manifest["inputs"]["dispatch_roundtrip_source_credential_env_template"]["path"] == str(
         source_env_template_path.resolve()
     )
@@ -3042,6 +3062,14 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_capture_env_template_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff_matches_session"]
+    assert (
+        manifest["extra"]["dispatch_roundtrip_capture_env_template"]["sha256"]
+        == summary["dispatch_roundtrip_capture_env_template_sha256"]
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip_adapter_handoff"]["sha256"]
+        == summary["dispatch_roundtrip_adapter_handoff_sha256"]
+    )
     assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_metadata_consistent"]
