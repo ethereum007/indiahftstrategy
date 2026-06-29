@@ -1642,7 +1642,10 @@
   cutover and broker upload/order-export inputs, reruns `review-route-enable`
   under a nested folder, carries capture bundle/env-template/adapter handoff
   provenance, source env-template proof, exchange/session metadata,
-  capture-bundle session match proof, provider capture-command proof, and
+  capture-bundle session match proof, provider capture-command proof,
+  round-trip provider command arrays from either
+  `dispatch_roundtrip_provenance` or older root/capture-bundle config fields,
+  plus
   `live_fetch_contract` into provider summary/config/runbook artifacts plus
   manifest, writes provider
   checks/summary/action/config/runbook artifacts, routes

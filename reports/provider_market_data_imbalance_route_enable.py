@@ -2022,7 +2022,9 @@ def _dispatch_roundtrip_provenance(config: dict[str, Any]) -> dict[str, Any]:
 
 def _dispatch_roundtrip_provider_capture_commands(*configs: dict[str, Any]) -> list[Any]:
     for config in configs:
-        commands = _list(_dispatch_roundtrip_provenance(config).get("provider_capture_commands"))
+        commands = _list(_dispatch_roundtrip_provenance(config).get("provider_capture_commands")) or (
+            _provider_capture_commands(config)
+        )
         if commands:
             return commands
     return []
@@ -2032,7 +2034,7 @@ def _dispatch_roundtrip_capture_bundle_provider_capture_commands(*configs: dict[
     for config in configs:
         commands = _list(
             _dispatch_roundtrip_provenance(config).get("capture_bundle_provider_capture_commands")
-        )
+        ) or _bundle_provider_capture_commands(config)
         if commands:
             return commands
     return []

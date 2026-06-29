@@ -5437,6 +5437,12 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
 
     cutover_config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
     cutover_config = json.loads(cutover_config_path.read_text(encoding="utf-8"))
+    cutover_config["provider_capture_commands"] = provider_capture_commands
+    capture_bundle_config = cutover_config.get("capture_bundle", {})
+    if not isinstance(capture_bundle_config, dict):
+        capture_bundle_config = {}
+    capture_bundle_config["capture_bundle_provider_capture_commands"] = provider_capture_commands
+    cutover_config["capture_bundle"] = capture_bundle_config
     cutover_config["dispatch_roundtrip_provenance"] = {
         "exchange": "NFO",
         "source_session": {
@@ -5459,8 +5465,6 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
         "capture_bundle_provider_capture_command_count": 2,
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
-        "provider_capture_commands": provider_capture_commands,
-        "capture_bundle_provider_capture_commands": provider_capture_commands,
         "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_exchange": "NFO",
@@ -5752,6 +5756,12 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
 
     cutover_config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
     cutover_config = json.loads(cutover_config_path.read_text(encoding="utf-8"))
+    cutover_config["provider_capture_commands"] = provider_capture_commands
+    capture_bundle_config = cutover_config.get("capture_bundle", {})
+    if not isinstance(capture_bundle_config, dict):
+        capture_bundle_config = {}
+    capture_bundle_config["capture_bundle_provider_capture_commands"] = provider_capture_commands
+    cutover_config["capture_bundle"] = capture_bundle_config
     cutover_config["dispatch_roundtrip_provenance"] = {
         "exchange": "NFO",
         "source_session": {
@@ -5774,8 +5784,6 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
         "capture_bundle_provider_capture_command_count": 2,
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
-        "provider_capture_commands": provider_capture_commands,
-        "capture_bundle_provider_capture_commands": provider_capture_commands,
         "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_provided": True,
