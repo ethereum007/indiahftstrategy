@@ -1780,7 +1780,9 @@
   round-trip capture bundle/env-template/adapter handoff paths, source
   credential env-template proof, round-trip exchange/session metadata,
   capture-bundle session match proof, round-trip provider capture-command
-  counts/arrays/match flags, live-fetch exchange/session identity,
+  counts/match flags, provider command arrays from either
+  `dispatch_roundtrip_provenance` or older root/capture-bundle config fields,
+  live-fetch exchange/session identity,
   `live_fetch_contract`, and source/capture provenance-consistency flags
   through send summary/config/runbook artifacts plus manifest inputs/metadata
   while still keeping `submission_enabled=false`. Broker-dispatch-send now also
