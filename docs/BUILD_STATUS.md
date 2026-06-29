@@ -224,8 +224,10 @@
 - Provider market-data imbalance scale-up planning now preserves the same live
   adapter audit trail from the provider scorecard: the scale-up summary/config
   and manifest extras carry capture env-template and adapter handoff SHA-256
-  values directly, while manifest inputs fingerprint those files for iRage/live
-  provider handoff review.
+  values directly, carry provider capture command counts/lists plus
+  capture-bundle command match proof from scorecard into scale-up planning, and
+  manifest inputs fingerprint those files for iRage/live provider handoff
+  review.
 - Provider market-data imbalance runtime telemetry now keeps that live adapter
   audit trail intact after scale-up: runtime telemetry summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
