@@ -208,7 +208,8 @@
   plus manifest, verifies the full launch-ready `imbalance` profile, and hands
   ready packets to `score-strategy-readiness`. Launch-evidence summary/config
   and manifest extras now also expose capture env-template and adapter handoff
-  SHA-256 values directly.
+  SHA-256 values directly, and carry provider capture command counts/lists plus
+  capture-bundle command match proof into the full launch-evidence package.
 - Provider market-data imbalance scorecard now makes the final readiness gate
   provider-specific: `score-provider-market-data-imbalance-readiness` consumes
   the launch-evidence review, scores only the full `imbalance` profile, carries
