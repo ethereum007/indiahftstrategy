@@ -205,6 +205,10 @@
   manifest extras expose capture env-template and adapter handoff SHA-256
   values directly, and the manifest fingerprints the same files before runtime
   guard monitoring.
+- Provider market-data imbalance runtime guard now preserves those adapter
+  fingerprints through halt/continue monitoring: guard summary/config and
+  manifest extras expose capture env-template and adapter handoff SHA-256
+  values directly before runtime session review.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
