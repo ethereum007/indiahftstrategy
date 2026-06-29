@@ -3610,9 +3610,13 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert bool(summary["capture_bundle_ready"])
     assert Path(summary["capture_env_template_path"]) == env_template_path
     assert bool(summary["capture_env_template_exists"])
+    assert len(summary["capture_env_template_sha256"]) == 64
+    assert summary["capture_env_template_sha256"] == bundle["capture_env_template_sha256"]
     assert Path(summary["adapter_handoff_path"]) == adapter_handoff_path
     assert bool(summary["adapter_handoff_provided"])
     assert bool(summary["adapter_handoff_exists"])
+    assert len(summary["adapter_handoff_sha256"]) == 64
+    assert summary["adapter_handoff_sha256"] == bundle["adapter_handoff_sha256"]
     assert Path(summary["source_credential_env_template_path"]) == source_env_template_path
     assert bool(summary["source_credential_env_template_exists"])
     assert len(summary["source_credential_env_template_sha256"]) == 64
@@ -3637,7 +3641,9 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert config["capture_bundle"]["capture_bundle_metadata_matches_session"] is True
     assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
+    assert config["capture_bundle"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
     assert config["capture_bundle"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert (
         config["capture_bundle"]["source_credential_env_template_sha256"]
         == summary["source_credential_env_template_sha256"]
@@ -3648,13 +3654,17 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert config["exchange"] == "NFO"
     assert config["source_session"]["close_local"] == "15:30:00"
     assert config["provider_broker_readiness"]["adapter_handoff_path"] == str(adapter_handoff_path)
+    assert config["provider_broker_readiness"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
+    assert config["provider_broker_readiness"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["provider_broker_readiness"]["exchange"] == "NFO"
     assert config["provider_broker_readiness"]["capture_bundle_metadata_matches_session"] is True
     assert config["provider_broker_readiness"]["source_credential_env_template_path"] == str(source_env_template_path)
     assert config["provider_broker_readiness"]["source_live_fetch_contract_available"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
+    assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
+    assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
@@ -3663,6 +3673,8 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert manifest["extra"]["capture_bundle"]["metadata_matches_session"] is True
+    assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
+    assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
