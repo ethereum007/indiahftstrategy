@@ -188,7 +188,15 @@ def write_provider_market_data_imbalance_route_enable(
     else:
         route_enable_error = "provider imbalance route-enable prerequisites are not ready"
 
-    checks = _checks(prechecks, route_enable, route_enable_error, provider_summary, config)
+    checks = _checks(
+        prechecks,
+        route_enable,
+        route_enable_error,
+        provider_summary,
+        provider_config,
+        provider_broker_config,
+        config,
+    )
     summary = _summary(
         provider_root,
         provider_broker_dir,
@@ -389,6 +397,35 @@ def write_provider_market_data_imbalance_route_enable(
             "dispatch_roundtrip_source_credential_env_template_sha256_matches_session": bool(
                 summary_row["dispatch_roundtrip_source_credential_env_template_sha256_matches_session"]
             ),
+            "dispatch_roundtrip_provider_capture_command_count": int(
+                summary_row["dispatch_roundtrip_provider_capture_command_count"]
+            ),
+            "dispatch_roundtrip_provider_capture_command_providers": str(
+                summary_row["dispatch_roundtrip_provider_capture_command_providers"]
+            ),
+            "dispatch_roundtrip_provider_capture_command_transports": str(
+                summary_row["dispatch_roundtrip_provider_capture_command_transports"]
+            ),
+            "dispatch_roundtrip_capture_bundle_provider_capture_command_count": int(
+                summary_row["dispatch_roundtrip_capture_bundle_provider_capture_command_count"]
+            ),
+            "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count": int(
+                summary_row["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session": bool(
+                summary_row["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
+            ),
+            "dispatch_roundtrip_provider_capture_commands_match_runtime_session": bool(
+                summary_row["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+            ),
+            "dispatch_roundtrip_provider_capture_commands": _list(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_capture_commands")
+            ),
+            "dispatch_roundtrip_capture_bundle_provider_capture_commands": _list(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get(
+                    "capture_bundle_provider_capture_commands"
+                )
+            ),
             "dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session": bool(
                 summary_row["dispatch_roundtrip_source_live_fetch_contract_next_gate_matches_session"]
             ),
@@ -435,6 +472,20 @@ def write_provider_market_data_imbalance_route_enable(
                     ),
                     "market_session": _dispatch_roundtrip_capture_bundle_market_session_contract_from_summary(
                         summary_row
+                    ),
+                    "provider_capture_commands": _list(
+                        _mapping(payload.get("dispatch_roundtrip_provenance")).get(
+                            "capture_bundle_provider_capture_commands"
+                        )
+                    ),
+                    "provider_capture_command_count": int(
+                        summary_row["dispatch_roundtrip_capture_bundle_provider_capture_command_count"]
+                    ),
+                    "provider_capture_commands_match_session": bool(
+                        summary_row["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
+                    ),
+                    "provider_capture_commands_match_runtime_session": bool(
+                        summary_row["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
                     ),
                     "metadata_matches_session": bool(
                         summary_row["dispatch_roundtrip_capture_bundle_metadata_matches_session"]
@@ -656,6 +707,8 @@ def _checks(
     route_enable: RouteEnableReport | None,
     route_enable_error: str,
     provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+    provider_broker_config: dict[str, Any],
     config: ProviderMarketDataImbalanceRouteEnableConfig,
 ) -> pd.DataFrame:
     rows = prechecks.to_dict(orient="records")
@@ -757,6 +810,64 @@ def _checks(
             provider_capture_command_count,
             bundle_provider_capture_commands_match_session if bundle_provided else True,
             "provider imbalance cutover command proof no longer matches the session packet",
+        )
+    )
+    dispatch_summary = _with_dispatch_roundtrip_config_fallback(
+        provider_summary,
+        provider_config,
+        provider_broker_config,
+    )
+    dispatch_bundle_provided = _first_bool(dispatch_summary, "dispatch_roundtrip_capture_bundle_provided")
+    dispatch_provider_capture_command_count = int(
+        _first_number(dispatch_summary, "dispatch_roundtrip_provider_capture_command_count")
+    )
+    dispatch_bundle_provider_capture_command_count = int(
+        _first_number(dispatch_summary, "dispatch_roundtrip_capture_bundle_provider_capture_command_count")
+    )
+    dispatch_bundle_provider_capture_command_missing_count = int(
+        _first_number(dispatch_summary, "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count")
+    )
+    dispatch_bundle_provider_capture_commands_carried = (
+        dispatch_provider_capture_command_count >= 1
+        and dispatch_bundle_provider_capture_command_count == dispatch_provider_capture_command_count
+        and dispatch_bundle_provider_capture_command_missing_count == 0
+    )
+    dispatch_bundle_provider_capture_commands_match_session = (
+        dispatch_bundle_provider_capture_commands_carried
+        and _first_bool(dispatch_summary, "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session")
+    )
+    dispatch_provider_capture_commands_match_runtime_session = _first_bool(
+        dispatch_summary,
+        "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_provider_capture_commands_carried",
+            dispatch_bundle_provider_capture_command_count,
+            "==",
+            dispatch_provider_capture_command_count,
+            dispatch_bundle_provider_capture_commands_carried if dispatch_bundle_provided else True,
+            "provider imbalance route-enable is missing cutover round-trip provider command proof",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_provider_capture_commands_match_session",
+            dispatch_bundle_provider_capture_command_count,
+            "matches",
+            dispatch_provider_capture_command_count,
+            dispatch_bundle_provider_capture_commands_match_session if dispatch_bundle_provided else True,
+            "provider imbalance route-enable round-trip command proof no longer matches the session packet",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+            dispatch_provider_capture_commands_match_runtime_session,
+            "is",
+            True,
+            dispatch_provider_capture_commands_match_runtime_session if dispatch_bundle_provided else True,
+            "provider imbalance route-enable round-trip command proof no longer matches runtime-session proof",
         )
     )
     return pd.DataFrame(rows)
@@ -1038,6 +1149,55 @@ def _summary(
                     provider_broker_summary,
                 )
                 else True,
+                "dispatch_roundtrip_provider_capture_command_count": int(
+                    _first_number_from_frames(
+                        "dispatch_roundtrip_provider_capture_command_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "dispatch_roundtrip_provider_capture_command_providers": _first_text_from_frames(
+                    "dispatch_roundtrip_provider_capture_command_providers",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_provider_capture_command_transports": _first_text_from_frames(
+                    "dispatch_roundtrip_provider_capture_command_transports",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_capture_bundle_provider_capture_command_count": int(
+                    _first_number_from_frames(
+                        "dispatch_roundtrip_capture_bundle_provider_capture_command_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count": int(
+                    _first_number_from_frames(
+                        "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session": (
+                    _first_bool_from_frames(
+                        "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                )
+                if _first_bool_from_frames(
+                    "dispatch_roundtrip_capture_bundle_provided",
+                    provider_summary,
+                    provider_broker_summary,
+                )
+                else True,
+                "dispatch_roundtrip_provider_capture_commands_match_runtime_session": _first_bool_from_frames(
+                    "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
                 "dispatch_roundtrip_exchange": _first_text_from_frames(
                     "dispatch_roundtrip_exchange",
                     provider_summary,
@@ -1561,6 +1721,48 @@ def _dispatch_roundtrip_config_summary(*configs: dict[str, Any]) -> pd.DataFrame
         )
         _set_config_text(
             record,
+            "dispatch_roundtrip_provider_capture_command_count",
+            provenance,
+            "provider_capture_command_count",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_provider_capture_command_providers",
+            provenance,
+            "provider_capture_command_providers",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_provider_capture_command_transports",
+            provenance,
+            "provider_capture_command_transports",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_provider_capture_command_count",
+            provenance,
+            "capture_bundle_provider_capture_command_count",
+        )
+        _set_config_text(
+            record,
+            "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count",
+            provenance,
+            "capture_bundle_provider_capture_command_missing_count",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
+            provenance,
+            "capture_bundle_provider_capture_commands_match_session",
+        )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+            provenance,
+            "provider_capture_commands_match_runtime_session",
+        )
+        _set_config_text(
+            record,
             "dispatch_roundtrip_source_credential_env_template_path",
             provenance,
             "source_credential_env_template_path",
@@ -1818,6 +2020,24 @@ def _dispatch_roundtrip_provenance(config: dict[str, Any]) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _dispatch_roundtrip_provider_capture_commands(*configs: dict[str, Any]) -> list[Any]:
+    for config in configs:
+        commands = _list(_dispatch_roundtrip_provenance(config).get("provider_capture_commands"))
+        if commands:
+            return commands
+    return []
+
+
+def _dispatch_roundtrip_capture_bundle_provider_capture_commands(*configs: dict[str, Any]) -> list[Any]:
+    for config in configs:
+        commands = _list(
+            _dispatch_roundtrip_provenance(config).get("capture_bundle_provider_capture_commands")
+        )
+        if commands:
+            return commands
+    return []
+
+
 def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
     if _value_present(record.get(column)) or key not in mapping:
         return
@@ -1945,6 +2165,16 @@ def _config(
     route_enable_inputs: dict[str, Any],
 ) -> dict[str, Any]:
     actions = _records(action_queue)
+    dispatch_roundtrip_provider_capture_commands = _dispatch_roundtrip_provider_capture_commands(
+        provider_config,
+        provider_broker_config,
+    )
+    dispatch_roundtrip_capture_bundle_provider_capture_commands = (
+        _dispatch_roundtrip_capture_bundle_provider_capture_commands(
+            provider_config,
+            provider_broker_config,
+        )
+    )
     return {
         "schema_version": 1,
         "ready": bool(summary["ready"]),
@@ -2022,6 +2252,27 @@ def _config(
             "source_session_matches_session": bool(summary["dispatch_roundtrip_source_session_matches_session"]),
             "market_session_matches_session": bool(summary["dispatch_roundtrip_market_session_matches_session"]),
             "metadata_consistent_with_runtime_session": bool(summary["dispatch_roundtrip_metadata_consistent"]),
+            "provider_capture_command_count": int(summary["dispatch_roundtrip_provider_capture_command_count"]),
+            "provider_capture_command_providers": str(
+                summary["dispatch_roundtrip_provider_capture_command_providers"]
+            ),
+            "provider_capture_command_transports": str(
+                summary["dispatch_roundtrip_provider_capture_command_transports"]
+            ),
+            "capture_bundle_provider_capture_command_count": int(
+                summary["dispatch_roundtrip_capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
+            ),
+            "provider_capture_commands": dispatch_roundtrip_provider_capture_commands,
+            "capture_bundle_provider_capture_commands": dispatch_roundtrip_capture_bundle_provider_capture_commands,
+            "provider_capture_commands_match_runtime_session": bool(
+                summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+            ),
             "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
             "capture_bundle_exists": bool(summary["dispatch_roundtrip_capture_bundle_exists"]),
@@ -2184,6 +2435,9 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "- Dispatch round-trip live fetch contract: "
         f"{'available' if bool(summary['dispatch_roundtrip_source_live_fetch_contract_available']) else 'missing'}",
+        "- Dispatch round-trip provider capture commands: "
+        f"{summary['dispatch_roundtrip_provider_capture_command_count']} "
+        f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_provider_capture_commands_match_runtime_session']) else 'no'})",
         f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
         "- Dispatch round-trip capture env template: "
         f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",

@@ -1735,7 +1735,8 @@
   in route-enable summary/config/manifest artifacts. It also carries the
   cutover-retained validated round-trip capture bundle/env-template/adapter
   handoff paths, source credential env-template proof, round-trip
-  exchange/session metadata, capture-bundle session match proof, live-fetch
+  exchange/session metadata, capture-bundle session match proof, round-trip
+  provider capture-command counts/arrays/match flags, live-fetch
   exchange/session identity, `live_fetch_contract`, and provenance-consistency
   flags into summary/config/runbook artifacts plus manifest inputs/metadata,
   keeping dry-run broker proof visible through the handoff to provider
@@ -1743,7 +1744,8 @@
   cutover `dispatch_roundtrip_*` summary fields from the cutover
   `dispatch_roundtrip_provenance` config block before falling back to the
   broker-readiness config block, while preserving explicit summary `False`
-  values, so sparse cutover CSVs do not lose the validated live-data handoff.
+  values, so sparse cutover CSVs do not lose the validated live-data handoff or
+  command bundle proof.
 - Provider-data imbalance broker-dispatch now preserves the route-enable-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
