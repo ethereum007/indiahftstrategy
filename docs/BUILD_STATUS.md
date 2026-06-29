@@ -134,7 +134,10 @@
   and `live_fetch_contract` for backend handoff provenance. Ingest and evidence
   summaries/configs now also carry the capture env-template and adapter handoff
   SHA-256 values directly, so provider credential-template and adapter-contract
-  provenance are visible without parsing the manifest input block.
+  provenance are visible without parsing the manifest input block. Bundle-linked
+  ingest now also verifies that provider capture command handoffs match the
+  live-session packet and carries the structured command list into the ingest
+  summary/config/manifest for downstream live-data audit.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
