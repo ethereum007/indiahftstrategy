@@ -267,6 +267,12 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["provider_capture_command_count"] == 2
+    assert summary["provider_capture_command_providers"] == "arrow_money"
+    assert summary["provider_capture_command_transports"] == "websocket"
+    assert summary["capture_bundle_provider_capture_command_count"] == 2
+    assert summary["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert bool(summary["capture_bundle_provider_capture_commands_match_session"])
     assert summary["exchange"] == "NFO"
     assert summary["source_session_timezone"] == "Asia/Kolkata"
     assert summary["source_session_open_local"] == "09:15:00"
@@ -284,6 +290,13 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
+    assert config["capture_bundle"]["provider_capture_command_count"] == 2
+    assert config["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["capture_bundle_provider_capture_command_count"] == 2
+    assert config["capture_bundle"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle"]["exchange"] == "NFO"
     assert config["capture_bundle"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["capture_bundle"]["market_session"]["open_local"] == "09:15"
@@ -304,8 +317,20 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["provider_capture_command_providers"] == "arrow_money"
+    assert manifest["extra"]["provider_capture_command_transports"] == "websocket"
+    assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle_provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert manifest["extra"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+    assert "Provider capture commands: 2 (bundle match: yes)" in runbook
 
 
 def test_provider_market_data_research_handoff_blocks_capture_bundle_session_mismatch(tmp_path):
@@ -413,6 +438,34 @@ def test_provider_market_data_research_handoff_blocks_missing_live_fetch_contrac
     assert "capture_bundle_live_fetch_contract_carried" in failed
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
+
+
+def test_provider_market_data_research_handoff_blocks_provider_capture_command_mismatch(tmp_path):
+    evidence, _ = _write_bundle_linked_real_evidence(tmp_path)
+    evidence_config_path = evidence.output_dir / "provider_market_data_live_evidence_config.json"
+    _mutate_json(
+        evidence_config_path,
+        lambda payload: payload["capture_bundle"]["capture_bundle_provider_capture_commands"][0].update(
+            {"command_template": "provider-adapter capture --wrong"}
+        ),
+    )
+
+    report = write_provider_market_data_research_handoff(
+        evidence.output_dir,
+        tmp_path / "handoff",
+        config=ProviderMarketDataResearchHandoffConfig(
+            output_root=str(tmp_path / "research"),
+            min_tick_folds=2,
+            tick_size=0.05,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_provider_capture_commands_match_session" in failed
+    assert not bool(report.summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_evidence_with_session_provider_capture_commands"
     assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 

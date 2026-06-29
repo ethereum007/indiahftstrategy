@@ -159,7 +159,9 @@
   upstream live-data contracts, metadata drift, or unsupported strategy lanes
   blocked until the needed real inputs exist. Research handoff summary/config and
   manifest extras now also expose the capture env-template and adapter handoff
-  SHA-256 values directly for downstream strategy audit.
+  SHA-256 values directly for downstream strategy audit. The handoff now carries
+  provider capture command counts/lists from live evidence and blocks strategy
+  research if the capture-bundle command handoff is missing or mismatched.
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real
