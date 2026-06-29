@@ -814,15 +814,31 @@ def _checks(
         )
     )
     dispatch_summary = _with_dispatch_roundtrip_config_fallback(provider_summary, provider_config)
-    dispatch_bundle_provided = _first_bool(dispatch_summary, "dispatch_roundtrip_capture_bundle_provided")
+    dispatch_bundle_provided = _first_bool_with_fallback(
+        dispatch_summary,
+        "dispatch_roundtrip_capture_bundle_provided",
+        "capture_bundle_provided",
+    )
     dispatch_provider_capture_command_count = int(
-        _first_number(dispatch_summary, "dispatch_roundtrip_provider_capture_command_count")
+        _first_number_with_fallback(
+            dispatch_summary,
+            "dispatch_roundtrip_provider_capture_command_count",
+            "provider_capture_command_count",
+        )
     )
     dispatch_bundle_provider_capture_command_count = int(
-        _first_number(dispatch_summary, "dispatch_roundtrip_capture_bundle_provider_capture_command_count")
+        _first_number_with_fallback(
+            dispatch_summary,
+            "dispatch_roundtrip_capture_bundle_provider_capture_command_count",
+            "capture_bundle_provider_capture_command_count",
+        )
     )
     dispatch_bundle_provider_capture_command_missing_count = int(
-        _first_number(dispatch_summary, "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count")
+        _first_number_with_fallback(
+            dispatch_summary,
+            "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count",
+            "capture_bundle_provider_capture_command_missing_count",
+        )
     )
     dispatch_bundle_provider_capture_commands_carried = (
         dispatch_provider_capture_command_count >= 1
@@ -831,12 +847,19 @@ def _checks(
     )
     dispatch_bundle_provider_capture_commands_match_session = (
         dispatch_bundle_provider_capture_commands_carried
-        and _first_bool(dispatch_summary, "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session")
+        and _first_bool_with_fallback(
+            dispatch_summary,
+            "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
+            "capture_bundle_provider_capture_commands_match_session",
+        )
     )
     dispatch_provider_capture_commands_match_runtime_session = _first_bool(
         dispatch_summary,
         "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
-    )
+    ) if _first_value_present(
+        dispatch_summary,
+        "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+    ) else dispatch_bundle_provider_capture_commands_match_session
     rows.append(
         _check(
             "dispatch_roundtrip_provider_capture_commands_carried",
@@ -1019,37 +1042,59 @@ def _summary(
                 if _first_bool(provider_summary, "capture_bundle_provided")
                 else True,
                 "dispatch_roundtrip_provider_capture_command_count": int(
-                    _first_number(provider_summary, "dispatch_roundtrip_provider_capture_command_count")
+                    _first_number_with_fallback(
+                        provider_summary,
+                        "dispatch_roundtrip_provider_capture_command_count",
+                        "provider_capture_command_count",
+                    )
                 ),
-                "dispatch_roundtrip_provider_capture_command_providers": _first_text(
+                "dispatch_roundtrip_provider_capture_command_providers": _first_text_with_fallback(
                     provider_summary,
                     "dispatch_roundtrip_provider_capture_command_providers",
+                    "provider_capture_command_providers",
                 ),
-                "dispatch_roundtrip_provider_capture_command_transports": _first_text(
+                "dispatch_roundtrip_provider_capture_command_transports": _first_text_with_fallback(
                     provider_summary,
                     "dispatch_roundtrip_provider_capture_command_transports",
+                    "provider_capture_command_transports",
                 ),
                 "dispatch_roundtrip_capture_bundle_provider_capture_command_count": int(
-                    _first_number(
+                    _first_number_with_fallback(
                         provider_summary,
                         "dispatch_roundtrip_capture_bundle_provider_capture_command_count",
+                        "capture_bundle_provider_capture_command_count",
                     )
                 ),
                 "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count": int(
-                    _first_number(
+                    _first_number_with_fallback(
                         provider_summary,
                         "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count",
+                        "capture_bundle_provider_capture_command_missing_count",
                     )
                 ),
-                "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session": _first_bool(
+                "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session": _first_bool_with_fallback(
                     provider_summary,
                     "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
+                    "capture_bundle_provider_capture_commands_match_session",
                 )
-                if _first_bool(provider_summary, "dispatch_roundtrip_capture_bundle_provided")
+                if _first_bool_with_fallback(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_provided",
+                    "capture_bundle_provided",
+                )
                 else True,
                 "dispatch_roundtrip_provider_capture_commands_match_runtime_session": _first_bool(
                     provider_summary,
                     "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+                )
+                if _first_value_present(
+                    provider_summary,
+                    "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+                )
+                else _first_bool_with_fallback(
+                    provider_summary,
+                    "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
+                    "capture_bundle_provider_capture_commands_match_session",
                 ),
                 "dispatch_roundtrip_exchange": _first_text(provider_summary, "dispatch_roundtrip_exchange"),
                 "dispatch_roundtrip_source_session_timezone": _first_text(
@@ -1582,11 +1627,15 @@ def _dispatch_roundtrip_provenance(provider_config: dict[str, Any]) -> dict[str,
 
 
 def _dispatch_roundtrip_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
-    return _list(_dispatch_roundtrip_provenance(provider_config).get("provider_capture_commands"))
+    return _list(_dispatch_roundtrip_provenance(provider_config).get("provider_capture_commands")) or (
+        _provider_capture_commands(provider_config)
+    )
 
 
 def _dispatch_roundtrip_capture_bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
-    return _list(_dispatch_roundtrip_provenance(provider_config).get("capture_bundle_provider_capture_commands"))
+    return _list(
+        _dispatch_roundtrip_provenance(provider_config).get("capture_bundle_provider_capture_commands")
+    ) or _bundle_provider_capture_commands(provider_config)
 
 
 def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
@@ -2502,6 +2551,28 @@ def _bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[A
         or _list(bundle.get("capture_bundle_provider_capture_commands"))
         or _list(bundle.get("provider_capture_commands"))
     )
+
+
+def _first_text_with_fallback(frame: pd.DataFrame | None, column: str, fallback_column: str) -> str:
+    if _first_value_present(frame, column):
+        return _first_text(frame, column)
+    return _first_text(frame, fallback_column)
+
+
+def _first_bool_with_fallback(frame: pd.DataFrame | None, column: str, fallback_column: str) -> bool:
+    if _first_value_present(frame, column):
+        return _first_bool(frame, column)
+    return _first_bool(frame, fallback_column)
+
+
+def _first_number_with_fallback(frame: pd.DataFrame | None, column: str, fallback_column: str) -> float:
+    fallback = _first_number(frame, fallback_column)
+    if not _first_value_present(frame, column):
+        return fallback
+    value = _first_number(frame, column)
+    if value == 0 and fallback > 0:
+        return fallback
+    return value
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:

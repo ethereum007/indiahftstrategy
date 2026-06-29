@@ -1705,8 +1705,10 @@ def _config(
             "capture_bundle_provider_capture_commands_match_session": bool(
                 summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
             ),
-            "provider_capture_commands": _provider_capture_commands(provider_roundtrip_config),
-            "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_roundtrip_config),
+            "provider_capture_commands": _roundtrip_provider_capture_commands(provider_roundtrip_config),
+            "capture_bundle_provider_capture_commands": _roundtrip_bundle_provider_capture_commands(
+                provider_roundtrip_config
+            ),
             "provider_capture_commands_match_runtime_session": bool(
                 summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
             ),
@@ -2327,6 +2329,20 @@ def _bundle_provider_capture_commands(session_config: dict[str, Any]) -> list[An
         _list(session_config.get("capture_bundle_provider_capture_commands"))
         or _list(bundle.get("capture_bundle_provider_capture_commands"))
         or _list(bundle.get("provider_capture_commands"))
+    )
+
+
+def _roundtrip_provider_capture_commands(provider_roundtrip_config: dict[str, Any]) -> list[Any]:
+    provenance = _mapping(provider_roundtrip_config.get("dispatch_roundtrip_provenance"))
+    return _list(provenance.get("provider_capture_commands")) or _provider_capture_commands(
+        provider_roundtrip_config
+    )
+
+
+def _roundtrip_bundle_provider_capture_commands(provider_roundtrip_config: dict[str, Any]) -> list[Any]:
+    provenance = _mapping(provider_roundtrip_config.get("dispatch_roundtrip_provenance"))
+    return _list(provenance.get("capture_bundle_provider_capture_commands")) or _bundle_provider_capture_commands(
+        provider_roundtrip_config
     )
 
 

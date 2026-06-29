@@ -3427,6 +3427,77 @@ def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispat
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
 
 
+def test_provider_market_data_imbalance_broker_readiness_reads_roundtrip_provenance_command_arrays(tmp_path):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    config_path = (
+        provider_roundtrip.output_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+    )
+    roundtrip_config = json.loads(config_path.read_text(encoding="utf-8"))
+    nested_provider_capture_commands = [
+        {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "command_template": "nested-only-provider-command",
+        },
+        {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "command_template": "nested-only-provider-verify-command",
+        },
+    ]
+    provenance = roundtrip_config.setdefault("dispatch_roundtrip_provenance", {})
+    provenance["provider_capture_commands"] = nested_provider_capture_commands
+    provenance["capture_bundle_provider_capture_commands"] = nested_provider_capture_commands
+    roundtrip_config.pop("provider_capture_commands", None)
+    roundtrip_config.pop("capture_bundle_provider_capture_commands", None)
+    capture_bundle = roundtrip_config.get("capture_bundle", {})
+    if isinstance(capture_bundle, dict):
+        capture_bundle.pop("provider_capture_commands", None)
+        capture_bundle.pop("capture_bundle_provider_capture_commands", None)
+    config_path.write_text(
+        json.dumps(roundtrip_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_roundtrip_command_array_fallback"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(require_dispatch_roundtrip=True),
+    )
+
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    checks = report.checks.set_index("check")
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_consistent", "passed"])
+    assert (
+        config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["command_template"]
+        == "nested-only-provider-command"
+    )
+    assert (
+        config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands"][1]["command_template"]
+        == "nested-only-provider-verify-command"
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip_provider_capture_commands"][0]["command_template"]
+        == "nested-only-provider-command"
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_commands"][1]["command_template"]
+        == "nested-only-provider-verify-command"
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_commands"][0][
+            "command_template"
+        ]
+        == "nested-only-provider-command"
+    )
+
+
 def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_capture_bundle_mismatch(tmp_path):
     runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
     provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path)

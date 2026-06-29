@@ -1619,9 +1619,10 @@
   reruns `review-broker-readiness` under a nested folder with dry-run friendly
   defaults, carries capture bundle/env-template/adapter handoff provenance,
   source env-template proof, exchange/session metadata, capture-bundle session
-  match proof, provider capture-command proof, and `live_fetch_contract` into
-  provider summary/config/runbook
-  artifacts plus manifest, writes provider
+  match proof, provider capture-command proof, round-trip provider
+  capture-command arrays from `dispatch_roundtrip_provenance`, and
+  `live_fetch_contract` into provider summary/config/runbook artifacts plus
+  manifest, writes provider
   checks/summary/action/config/runbook artifacts, and routes ready runs to
   `review-provider-market-data-imbalance-cutover`.
 - Provider-data imbalance now has a provider cutover wrapper after provider
