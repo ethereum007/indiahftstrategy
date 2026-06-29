@@ -1683,10 +1683,11 @@
   infers the nested generic dispatch, send, and ack folders, reruns
   `review-broker-dispatch-roundtrip` under a nested folder, carries the
   acknowledgement-inherited capture bundle/source credential proof,
-  exchange/session metadata, capture-bundle session match proof, and
-  `live_fetch_contract` into provider summary/config/runbook artifacts plus
-  manifest metadata, writes provider checks/summary/action/config/runbook
-  artifacts, indexes the run for catalog/scorecard discovery, and routes clean
+  exchange/session metadata, capture-bundle session match proof, provider
+  capture-command proof, and `live_fetch_contract` into provider
+  summary/config/runbook artifacts plus manifest metadata, writes provider
+  checks/summary/action/config/runbook artifacts, indexes the run for
+  catalog/scorecard discovery, and routes clean
   dry-run round-trip evidence to
   `review-provider-market-data-imbalance-broker-readiness --dispatch-roundtrip`
   before cutover promotion.
