@@ -1650,9 +1650,9 @@
   infers the nested generic `route_enable` and broker upload pack, reruns
   `plan-broker-dispatch` under a nested folder, carries capture
   bundle/env-template/adapter handoff provenance, source env-template proof,
-  exchange/session metadata, capture-bundle session match proof, and
-  `live_fetch_contract` into provider summary/config/runbook artifacts plus
-  manifest, writes provider
+  exchange/session metadata, capture-bundle session match proof, provider
+  capture-command proof, and `live_fetch_contract` into provider
+  summary/config/runbook artifacts plus manifest, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean non-submitting dry-run
   dispatch plans to `prepare-broker-dispatch-send`.
