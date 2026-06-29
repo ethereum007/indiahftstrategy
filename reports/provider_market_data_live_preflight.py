@@ -97,6 +97,7 @@ def write_provider_market_data_live_session_preflight(
             "market_session": _mapping(report.config.get("market_session")),
             "credential_env_template": credential_env_template,
             "live_fetch_contract": _mapping(report.config.get("live_fetch_contract")),
+            "provider_capture_commands": _provider_capture_commands(report.windows),
         },
     )
     return ProviderMarketDataLivePreflightReport(
@@ -161,6 +162,14 @@ def _windows(packet: dict[str, Any], config: ProviderMarketDataLivePreflightConf
                 "end_local": _text(row.get("end_local")),
                 "capture_path": capture_path_text,
                 "capture_parent": str(capture_path.parent) if capture_path_text else "",
+                "capture_command_provider": _text(row.get("capture_command_provider")),
+                "capture_command_transport": _text(row.get("capture_command_transport")),
+                "capture_command_endpoint": _text(row.get("capture_command_endpoint")),
+                "capture_command_kind": _text(row.get("capture_command_kind")),
+                "capture_command_exchange": _text(row.get("capture_command_exchange")),
+                "capture_command_env_vars": _text(row.get("capture_command_env_vars")),
+                "capture_command_base": _text(row.get("capture_command_base")),
+                "capture_command_template": _text(row.get("capture_command_template") or row.get("capture_command_hint")),
                 "capture_exists": capture_exists,
                 "capture_size_bytes": int(capture_size),
                 "capture_parent_writable": bool(parent_writable),
@@ -178,6 +187,14 @@ def _windows(packet: dict[str, Any], config: ProviderMarketDataLivePreflightConf
             "end_local",
             "capture_path",
             "capture_parent",
+            "capture_command_provider",
+            "capture_command_transport",
+            "capture_command_endpoint",
+            "capture_command_kind",
+            "capture_command_exchange",
+            "capture_command_env_vars",
+            "capture_command_base",
+            "capture_command_template",
             "capture_exists",
             "capture_size_bytes",
             "capture_parent_writable",
@@ -332,6 +349,7 @@ def _checks(
     capture_count = int(len(windows))
     writable_count = int(windows["capture_parent_writable"].astype(bool).sum()) if not windows.empty else 0
     existing_capture_count = int(windows["capture_exists"].astype(bool).sum()) if not windows.empty else 0
+    capture_command_count = _nonempty_count(windows, "capture_command_template")
     client_packet_text = _text(packet.get("client_packet_path"))
     client_packet_exists = bool(client_packet_text and Path(client_packet_text).exists() and Path(client_packet_text).is_file())
     authentication = _mapping(packet.get("authentication"))
@@ -362,6 +380,7 @@ def _checks(
         _check("source_session_matches_market_session", _session_contract_text(source_session), "==", _session_contract_text(market_session), _source_session_matches_market_session(source_session, market_session), "source session metadata must match the market session used for capture windows"),
         _check("source_live_fetch_contract_metadata_matches_packet", _live_contract_metadata_text(live_fetch_contract), "==", "live session source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract), "live fetch contract exchange/session metadata must match the live session packet"),
         _check("capture_windows_present", capture_count, ">=", 1, capture_count >= 1, "live session packet must include capture windows"),
+        _check("capture_command_templates_present", capture_command_count, "==", capture_count, capture_count >= 1 and capture_command_count == capture_count, "each live capture window must carry a provider capture command template"),
         _check("capture_window_times_parseable", int(clock["time_parse_error_count"]), "==", 0, int(clock["time_parse_error_count"]) == 0, str(clock["time_parse_errors"]) or "capture window times must parse"),
         _check("capture_output_dirs_writable", writable_count, "==", capture_count, capture_count >= 1 and writable_count == capture_count, "capture output directories must be creatable and writable"),
         _check("capture_files_do_not_already_exist", existing_capture_count, "==", 0 if not config.allow_existing_captures else "allowed", collision_ok, "expected capture files already exist; choose fresh capture paths or allow existing captures"),
@@ -385,6 +404,7 @@ def _summary(
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     next_action = action_queue.iloc[0] if not action_queue.empty else None
+    capture_command_count = _nonempty_count(windows, "capture_command_template")
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
@@ -409,6 +429,10 @@ def _summary(
                 "market_session_close_local": _text(market_session.get("close_local")),
                 "source_session_matches_market_session": _source_session_matches_market_session(source_session, market_session),
                 "expected_capture_count": int(len(windows)),
+                "capture_command_count": capture_command_count,
+                "capture_command_missing_count": max(int(len(windows)) - capture_command_count, 0),
+                "capture_command_providers": _unique_join(windows, "capture_command_provider"),
+                "capture_command_transports": _unique_join(windows, "capture_command_transport"),
                 "writable_capture_dir_count": int(windows["capture_parent_writable"].astype(bool).sum()) if not windows.empty else 0,
                 "existing_capture_count": int(windows["capture_exists"].astype(bool).sum()) if not windows.empty else 0,
                 "batch_output_dir": str(batch["output_dir"]),
@@ -499,6 +523,7 @@ def _config(
         "market_session": _market_session_contract_from_summary(summary),
         "credential_env_template": _credential_env_template_contract(summary),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
+        "provider_capture_commands": _provider_capture_commands(windows),
         "clock": clock,
         "environment": {
             "env_vars": [{"name": name, "present": bool(present)} for name, present in env_presence.items()],
@@ -549,6 +574,14 @@ def _safe_packet_view(packet: dict[str, Any], env_presence: dict[str, bool]) -> 
                 "start_local": _text(row.get("start_local")),
                 "end_local": _text(row.get("end_local")),
                 "capture_path": _text(row.get("capture_path")),
+                "capture_command_provider": _text(row.get("capture_command_provider")),
+                "capture_command_transport": _text(row.get("capture_command_transport")),
+                "capture_command_endpoint": _text(row.get("capture_command_endpoint")),
+                "capture_command_kind": _text(row.get("capture_command_kind")),
+                "capture_command_exchange": _text(row.get("capture_command_exchange")),
+                "capture_command_env_vars": _text(row.get("capture_command_env_vars")),
+                "capture_command_base": _text(row.get("capture_command_base")),
+                "capture_command_template": _text(row.get("capture_command_template") or row.get("capture_command_hint")),
             }
             for row in _list(packet.get("capture_windows"))
             if isinstance(row, dict)
@@ -721,6 +754,46 @@ def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:
     if frame is None or frame.empty:
         return []
     return [{str(key): _jsonable(value) for key, value in row.items()} for row in frame.to_dict(orient="records")]
+
+
+def _provider_capture_commands(windows: Any) -> list[dict[str, str]]:
+    rows = _records(windows) if isinstance(windows, pd.DataFrame) else _list(windows)
+    commands: list[dict[str, str]] = []
+    for row in rows:
+        item = _mapping(row)
+        command_template = _text(item.get("capture_command_template") or item.get("capture_command_hint"))
+        if not command_template:
+            continue
+        commands.append(
+            {
+                "label": _text(item.get("label")),
+                "provider": _text(item.get("capture_command_provider")),
+                "transport": _text(item.get("capture_command_transport")),
+                "endpoint": _text(item.get("capture_command_endpoint")),
+                "kind": _text(item.get("capture_command_kind")),
+                "exchange": _text(item.get("capture_command_exchange")),
+                "start_local": _text(item.get("start_local")),
+                "end_local": _text(item.get("end_local")),
+                "output": _text(item.get("capture_path")),
+                "required_env_vars": _text(item.get("capture_command_env_vars")),
+                "command_base": _text(item.get("capture_command_base")),
+                "command_template": command_template,
+            }
+        )
+    return commands
+
+
+def _nonempty_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty or column not in frame.columns:
+        return 0
+    return int(sum(1 for value in frame[column].tolist() if _text(value)))
+
+
+def _unique_join(frame: pd.DataFrame, column: str) -> str:
+    if frame.empty or column not in frame.columns:
+        return ""
+    values = sorted({_text(value) for value in frame[column].tolist() if _text(value)})
+    return ";".join(values)
 
 
 def _mapping(value: object) -> dict[str, Any]:

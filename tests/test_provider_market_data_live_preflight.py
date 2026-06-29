@@ -114,13 +114,23 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert len(summary["credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["capture_command_count"] == 2
+    assert summary["capture_command_missing_count"] == 0
+    assert summary["capture_command_providers"] == "arrow_money"
+    assert summary["capture_command_transports"] == "websocket"
     assert config["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
     assert config["live_fetch_contract"]["available"] is True
+    assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["provider_capture_commands"][0]["transport"] == "websocket"
+    assert config["provider_capture_commands"][0]["required_env_vars"] == "ARROW_MONEY_API_KEY;ARROW_MONEY_API_SECRET"
+    assert config["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
+    assert "provider-adapter capture" in config["provider_capture_commands"][0]["command_template"]
     assert config["exchange"] == "NFO"
     assert config["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["market_session"]["open_local"] == "09:15"
     assert config["session_packet"]["exchange"] == "NFO"
     assert config["session_packet"]["source_session"]["close_local"] == "15:30:00"
+    assert config["session_packet"]["capture_windows"][0]["capture_command_provider"] == "arrow_money"
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert "ARROW_MONEY_API_KEY" in config["session_packet"]["authentication"]["env_vars"]
@@ -137,6 +147,7 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert manifest["inputs"]["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
 
 
 def test_provider_market_data_live_preflight_blocks_existing_capture_collision(tmp_path):
@@ -179,6 +190,29 @@ def test_provider_market_data_live_preflight_blocks_missing_runtime_env_when_req
     assert not report.ready
     assert "credential_env_vars_present_in_runtime" in failed
     assert report.action_queue.loc[0, "next_gate"] == "provider_credentials_runtime"
+
+
+def test_provider_market_data_live_preflight_blocks_missing_capture_command_contract(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _mutate_live_packet(
+        _live_packet(plan),
+        lambda packet: (
+            packet["capture_windows"][0].pop("capture_command_template", None),
+            packet["capture_windows"][0].pop("capture_command_hint", None),
+        ),
+    )
+
+    report = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_command_templates_present" in failed
+    assert report.summary.iloc[0]["capture_command_missing_count"] == 1
+    assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
 
 
 def test_provider_market_data_live_preflight_blocks_missing_env_template_provenance(tmp_path):

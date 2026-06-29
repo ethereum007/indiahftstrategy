@@ -93,6 +93,7 @@ def write_provider_market_data_live_session_plan(
             "provider": str(report.summary.iloc[0]["provider"]),
             "credential_env_template": credential_env_template,
             "live_fetch_contract": report.packet["live_fetch_contract"],
+            "provider_capture_commands": _provider_capture_commands(report.packet.get("capture_windows")),
             "post_capture_batch_command": str(report.summary.iloc[0]["post_capture_batch_command"]),
         },
     )
@@ -183,7 +184,7 @@ def _windows(
                 "within_market_session": bool(within_session),
                 "capture_path": str(capture_path),
                 "pipeline_label": label,
-                "capture_command_hint": _capture_command_hint(packet, capture_path, start_local, end_local),
+                **_capture_command_fields(packet, capture_path, start_local, end_local),
             }
         )
     return pd.DataFrame(
@@ -199,6 +200,14 @@ def _windows(
             "within_market_session",
             "capture_path",
             "pipeline_label",
+            "capture_command_provider",
+            "capture_command_transport",
+            "capture_command_endpoint",
+            "capture_command_kind",
+            "capture_command_exchange",
+            "capture_command_env_vars",
+            "capture_command_base",
+            "capture_command_template",
             "capture_command_hint",
         ],
     ), errors
@@ -261,6 +270,8 @@ def _summary(
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
     source_session = _mapping(packet.get("session"))
+    capture_command_count = _nonempty_count(windows, "capture_command_template")
+    capture_command_missing_count = max(int(len(windows)) - capture_command_count, 0)
     return pd.DataFrame(
         [
             {
@@ -293,6 +304,10 @@ def _summary(
                 "source_live_fetch_contract_command_template": _text(
                     live_fetch_contract.get("command_template")
                 ),
+                "capture_command_count": capture_command_count,
+                "capture_command_missing_count": capture_command_missing_count,
+                "capture_command_providers": _unique_join(windows, "capture_command_provider"),
+                "capture_command_transports": _unique_join(windows, "capture_command_transport"),
                 "require_env_present": bool(config.require_env_present),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()) if not checks.empty else "",
@@ -429,6 +444,7 @@ def _config(
         "source_session": _source_session_contract_from_summary(summary),
         "credential_env_template": _credential_env_template_contract(summary),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
+        "provider_capture_commands": _provider_capture_commands(packet.get("capture_windows")),
         "packet": packet,
         "failed_check_count": len(failed_checks),
         "failed_checks": failed_checks,
@@ -496,12 +512,78 @@ def _batch_command(
     return " ".join(_shell_quote(part) for part in parts)
 
 
-def _capture_command_hint(packet: dict[str, Any], capture_path: Path, start_local: datetime, end_local: datetime) -> str:
-    return (
-        f"provider adapter capture {packet.get('transport', '')} "
-        f"--start {start_local.isoformat()} --end {end_local.isoformat()} "
-        f"--output {capture_path}"
-    )
+def _capture_command_fields(
+    packet: dict[str, Any],
+    capture_path: Path,
+    start_local: datetime,
+    end_local: datetime,
+) -> dict[str, str]:
+    provider = _text(packet.get("provider"), "provider")
+    transport = _text(packet.get("transport"))
+    endpoint = _text(packet.get("endpoint"))
+    kind = _text(packet.get("kind"))
+    exchange = _text(packet.get("exchange"))
+    env_vars = _string_list(_mapping(packet.get("authentication")).get("env_vars"))
+    base = "provider-adapter capture"
+    args = [
+        "--provider",
+        provider,
+        "--transport",
+        transport,
+        "--endpoint",
+        endpoint,
+        "--kind",
+        kind,
+        "--exchange",
+        exchange,
+        "--start",
+        start_local.isoformat(),
+        "--end",
+        end_local.isoformat(),
+        "--output",
+        str(capture_path),
+    ]
+    for env_var in env_vars:
+        args.extend(["--require-env", env_var])
+    command_template = " ".join([base, *(_shell_quote(part) for part in args)])
+    return {
+        "capture_command_provider": provider,
+        "capture_command_transport": transport,
+        "capture_command_endpoint": endpoint,
+        "capture_command_kind": kind,
+        "capture_command_exchange": exchange,
+        "capture_command_env_vars": ";".join(env_vars),
+        "capture_command_base": base,
+        "capture_command_template": command_template,
+        "capture_command_hint": command_template,
+    }
+
+
+def _provider_capture_commands(windows: Any) -> list[dict[str, str]]:
+    rows = _records(windows) if isinstance(windows, pd.DataFrame) else _list(windows)
+    commands: list[dict[str, str]] = []
+    for row in rows:
+        item = _mapping(row)
+        command_template = _text(item.get("capture_command_template"))
+        if not command_template:
+            continue
+        commands.append(
+            {
+                "label": _text(item.get("label")),
+                "provider": _text(item.get("capture_command_provider")),
+                "transport": _text(item.get("capture_command_transport")),
+                "endpoint": _text(item.get("capture_command_endpoint")),
+                "kind": _text(item.get("capture_command_kind")),
+                "exchange": _text(item.get("capture_command_exchange")),
+                "start_local": _text(item.get("start_local")),
+                "end_local": _text(item.get("end_local")),
+                "output": _text(item.get("capture_path")),
+                "required_env_vars": _text(item.get("capture_command_env_vars")),
+                "command_base": _text(item.get("capture_command_base")),
+                "command_template": command_template,
+            }
+        )
+    return commands
 
 
 def _default_batch_output(packet: dict[str, Any], trade_date: str) -> str:
@@ -683,6 +765,19 @@ def _actions_with_status(action_queue: pd.DataFrame, status: str) -> pd.DataFram
     return action_queue.loc[action_queue["queue_status"].astype(str) == status].copy()
 
 
+def _nonempty_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty or column not in frame.columns:
+        return 0
+    return int(sum(1 for value in frame[column].tolist() if _text(value)))
+
+
+def _unique_join(frame: pd.DataFrame, column: str) -> str:
+    if frame.empty or column not in frame.columns:
+        return ""
+    values = sorted({_text(value) for value in frame[column].tolist() if _text(value)})
+    return ";".join(values)
+
+
 def _credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
     return {
         "path": str(summary["credential_env_template_path"]),
@@ -777,6 +872,10 @@ def _validate_config(config: ProviderMarketDataLiveSessionConfig) -> None:
 
 def _mapping(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def _string_list(value: object) -> list[str]:

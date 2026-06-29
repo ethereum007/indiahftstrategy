@@ -88,11 +88,22 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert len(summary["credential_env_template_sha256"]) == 64
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["capture_command_count"] == 2
+    assert summary["capture_command_missing_count"] == 0
+    assert summary["capture_command_providers"] == "arrow_money"
+    assert summary["capture_command_transports"] == "websocket"
     assert "--capture" in summary["post_capture_batch_command"]
     assert "pipeline-provider-market-data-batch" in summary["post_capture_batch_command"]
     assert "--min-unique-source-files 2" in summary["post_capture_batch_command"]
     assert windows["label"].tolist() == ["open", "close"]
     assert windows["within_market_session"].astype(bool).all()
+    assert windows.loc[0, "capture_command_provider"] == "arrow_money"
+    assert windows.loc[0, "capture_command_transport"] == "websocket"
+    assert windows.loc[0, "capture_command_endpoint"] == "wss://feed.arrow.money/market-data/nse"
+    assert "provider-adapter capture" in windows.loc[0, "capture_command_template"]
+    assert "--provider arrow_money" in windows.loc[0, "capture_command_template"]
+    assert "--require-env ARROW_MONEY_API_KEY" in windows.loc[0, "capture_command_template"]
+    assert "API_SECRET=" not in windows.loc[0, "capture_command_template"]
     assert packet["authentication"]["values_stored"] is False
     assert packet["authentication"]["env_template"]["exists"] is True
     assert packet["exchange"] == "NFO"
@@ -104,17 +115,25 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert packet["market_session"]["open_local"] == "09:15"
     assert packet["live_fetch_contract"]["available"] is True
     assert packet["capture_windows"][0]["label"] == "open"
+    assert packet["capture_windows"][0]["capture_command_provider"] == "arrow_money"
+    assert packet["capture_windows"][0]["capture_command_transport"] == "websocket"
+    assert "--output" in packet["capture_windows"][0]["capture_command_template"]
     assert config["ready"]
     assert config["exchange"] == "NFO"
     assert config["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["credential_env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
     assert config["live_fetch_contract"]["available"] is True
+    assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["provider_capture_commands"][0]["transport"] == "websocket"
+    assert config["provider_capture_commands"][0]["required_env_vars"] == "ARROW_MONEY_API_KEY;ARROW_MONEY_API_SECRET"
+    assert config["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
     assert config["primary_action"]["action"] == "run_provider_live_capture_windows"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert manifest["run_type"] == "provider_market_data_live_session_plan"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credential_env_template"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
 
 
 def test_provider_market_data_live_session_plan_blocks_missing_runtime_env_when_required(tmp_path, monkeypatch):
@@ -283,3 +302,5 @@ def test_cli_provider_market_data_live_session_accepts_rest_packet(tmp_path):
     assert bool(summary.loc[0, "ready"])
     assert summary.loc[0, "transport"] == "rest"
     assert packet["template_kind"] == "rest_backfill_request"
+    assert packet["capture_windows"][0]["capture_command_transport"] == "rest"
+    assert packet["capture_windows"][0]["capture_command_endpoint"].startswith("https://")
