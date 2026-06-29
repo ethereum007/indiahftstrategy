@@ -309,10 +309,31 @@ def write_provider_market_data_imbalance_route_enable(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary_row["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary_row["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary_row["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary_row["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary_row["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary_row["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "provider_capture_commands": _list(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    summary_row["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    summary_row["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -331,6 +352,10 @@ def write_provider_market_data_imbalance_route_enable(
                 "market": str(summary_row["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary_row),
             },
+            "provider_capture_commands": _list(payload.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                payload.get("capture_bundle_provider_capture_commands")
+            ),
             "dispatch_roundtrip_capture_provenance_consistent": bool(
                 summary_row["dispatch_roundtrip_capture_provenance_consistent"]
             ),
@@ -697,6 +722,43 @@ def _checks(
             "route-enable adapter identity does not match provider cutover",
         )
     )
+    bundle_provided = _first_bool(provider_summary, "capture_bundle_provided")
+    provider_capture_command_count = int(_first_number(provider_summary, "provider_capture_command_count"))
+    bundle_provider_capture_command_count = int(
+        _first_number(provider_summary, "capture_bundle_provider_capture_command_count")
+    )
+    bundle_provider_capture_command_missing_count = int(
+        _first_number(provider_summary, "capture_bundle_provider_capture_command_missing_count")
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and _first_bool(provider_summary, "capture_bundle_provider_capture_commands_match_session")
+    )
+    rows.append(
+        _check(
+            "provider_cutover_provider_capture_commands_carried",
+            bundle_provider_capture_command_count,
+            "==",
+            provider_capture_command_count,
+            bundle_provider_capture_commands_carried if bundle_provided else True,
+            "provider imbalance cutover is missing capture-bundle provider command proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_cutover_provider_capture_commands_match_session",
+            bundle_provider_capture_command_count,
+            "matches",
+            provider_capture_command_count,
+            bundle_provider_capture_commands_match_session if bundle_provided else True,
+            "provider imbalance cutover command proof no longer matches the session packet",
+        )
+    )
     return pd.DataFrame(rows)
 
 
@@ -934,6 +996,48 @@ def _summary(
                     provider_summary,
                     provider_broker_summary,
                 ),
+                "provider_capture_command_count": int(
+                    _first_number_from_frames(
+                        "provider_capture_command_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "provider_capture_command_providers": _first_text_from_frames(
+                    "provider_capture_command_providers",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "provider_capture_command_transports": _first_text_from_frames(
+                    "provider_capture_command_transports",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "capture_bundle_provider_capture_command_count": int(
+                    _first_number_from_frames(
+                        "capture_bundle_provider_capture_command_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "capture_bundle_provider_capture_command_missing_count": int(
+                    _first_number_from_frames(
+                        "capture_bundle_provider_capture_command_missing_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "capture_bundle_provider_capture_commands_match_session": _first_bool_from_frames(
+                    "capture_bundle_provider_capture_commands_match_session",
+                    provider_summary,
+                    provider_broker_summary,
+                )
+                if _first_bool_from_frames(
+                    "capture_bundle_provided",
+                    provider_summary,
+                    provider_broker_summary,
+                )
+                else True,
                 "dispatch_roundtrip_exchange": _first_text_from_frames(
                     "dispatch_roundtrip_exchange",
                     provider_summary,
@@ -1850,6 +1954,8 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_capture_commands": _provider_capture_commands(provider_config),
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
         "capture_bundle": {
             "capture_bundle_path": str(summary["capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
@@ -1862,6 +1968,20 @@ def _config(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary["capture_bundle_provider_capture_commands_match_session"]
+            ),
+            "provider_capture_commands": _bundle_provider_capture_commands(provider_config),
+            "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
             "metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
             "live_fetch_contract_metadata_matches_session": bool(
                 summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -2061,6 +2181,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         "- Live fetch contract: "
         f"{'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "- Dispatch round-trip live fetch contract: "
         f"{'available' if bool(summary['dispatch_roundtrip_source_live_fetch_contract_available']) else 'missing'}",
         f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
@@ -2522,6 +2643,27 @@ def _dispatch_roundtrip_source_live_fetch_contract_session_from_summary(
         "open_local": str(summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"]),
         "close_local": str(summary["dispatch_roundtrip_source_live_fetch_contract_session_close_local"]),
     }
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
+    return _list(provider_config.get("provider_capture_commands"))
+
+
+def _bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
+    bundle = _mapping(provider_config.get("capture_bundle"))
+    return (
+        _list(provider_config.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("provider_capture_commands"))
+    )
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
