@@ -1788,7 +1788,8 @@
   artifacts and manifests. It now also carries the send-retained validated
   round-trip capture bundle/env-template/adapter handoff paths, source
   credential env-template proof, round-trip exchange/session metadata,
-  capture-bundle session match proof, live-fetch exchange/session identity,
+  capture-bundle session match proof, round-trip provider capture-command
+  counts/arrays/match flags, live-fetch exchange/session identity,
   `live_fetch_contract`, and source/capture provenance-consistency flags
   through acknowledgement summary/config/runbook artifacts plus manifest
   inputs/metadata before the final provider round-trip wrapper is trusted.
@@ -1796,7 +1797,7 @@
   `dispatch_roundtrip_*` summary fields from the send
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse send CSVs do not lose validated live-data
-  provenance before final round-trip review.
+  provenance or command bundle proof before final round-trip review.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof and vendor-market-data batch
   proof as upstream lineage while also generating a fresh nested

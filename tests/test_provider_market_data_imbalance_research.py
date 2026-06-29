@@ -8699,6 +8699,18 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
         path.write_text("{}", encoding="utf-8")
     env_template_sha256 = hashlib.sha256(env_template_path.read_bytes()).hexdigest()
     adapter_handoff_sha256 = hashlib.sha256(adapter_handoff_path.read_bytes()).hexdigest()
+    provider_capture_commands = [
+        {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "command": "python -m hft_cli fetch-provider-live-data --provider arrow_money",
+        },
+        {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "command": "python -m hft_cli capture-provider-market-data --provider arrow_money",
+        },
+    ]
 
     send_summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
     send_summary = pd.read_csv(send_summary_path)
@@ -8767,6 +8779,13 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     send_summary["dispatch_roundtrip_capture_bundle_exchange_matches_session"] = True
     send_summary["dispatch_roundtrip_capture_bundle_source_session_matches_session"] = True
     send_summary["dispatch_roundtrip_capture_bundle_market_session_matches_session"] = True
+    send_summary["dispatch_roundtrip_provider_capture_command_count"] = 2
+    send_summary["dispatch_roundtrip_provider_capture_command_providers"] = "arrow_money"
+    send_summary["dispatch_roundtrip_provider_capture_command_transports"] = "websocket"
+    send_summary["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] = 2
+    send_summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] = 0
+    send_summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"] = True
+    send_summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"] = True
     send_summary["dispatch_roundtrip_source_provenance_consistent"] = True
     send_summary.to_csv(send_summary_path, index=False)
 
@@ -8788,6 +8807,15 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
         "source_session_matches_session": True,
         "market_session_matches_session": True,
         "metadata_consistent_with_runtime_session": True,
+        "provider_capture_command_count": 2,
+        "provider_capture_command_providers": "arrow_money",
+        "provider_capture_command_transports": "websocket",
+        "capture_bundle_provider_capture_command_count": 2,
+        "capture_bundle_provider_capture_command_missing_count": 0,
+        "capture_bundle_provider_capture_commands_match_session": True,
+        "provider_capture_commands": provider_capture_commands,
+        "capture_bundle_provider_capture_commands": provider_capture_commands,
+        "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_env_template_path": str(env_template_path),
         "capture_env_template_sha256": env_template_sha256,
@@ -8894,11 +8922,34 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_market_matches_session"])
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"])
+    assert summary["dispatch_roundtrip_provider_capture_command_count"] == 2
+    assert summary["dispatch_roundtrip_provider_capture_command_providers"] == "arrow_money"
+    assert summary["dispatch_roundtrip_provider_capture_command_transports"] == "websocket"
+    assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 2
+    assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
+    assert bool(summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"])
+    assert bool(summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
+    checks = report.checks.set_index("check")
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_carried", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_session", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_runtime_session", "passed"])
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
     assert config["dispatch_roundtrip_provenance"]["market_session"]["open_local"] == "09:15"
     assert config["dispatch_roundtrip_provenance"]["metadata_consistent_with_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_command_count"] == 2
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_command_providers"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_command_transports"] == "websocket"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_command_count"] == 2
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_command_missing_count"] == 0
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands_match_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_commands_match_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert (
+        config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands"][0]["provider"]
+        == "arrow_money"
+    )
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_path"] == str(env_template_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"] == env_template_sha256
@@ -8946,14 +8997,36 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     assert manifest["extra"]["dispatch_roundtrip_source_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_source_credential_env_template_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_metadata_consistent"]
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_command_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_command_providers"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_command_transports"] == "websocket"
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
+    assert (
+        manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_commands"][0]["provider"]
+        == "arrow_money"
+    )
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["exchange"] == "NFO"
     assert manifest["extra"]["dispatch_roundtrip"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_command_count"] == 2
+    assert (
+        manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_commands"][0]["provider"]
+        == "arrow_money"
+    )
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_commands_match_session"]
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"][
+        "provider_capture_commands_match_runtime_session"
+    ]
     assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
     assert str(adapter_handoff_path) in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert "Dispatch round-trip exchange: NFO" in runbook
     assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
 
@@ -8968,6 +9041,18 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
         path.write_text("{}", encoding="utf-8")
     env_template_sha256 = hashlib.sha256(env_template_path.read_bytes()).hexdigest()
     adapter_handoff_sha256 = hashlib.sha256(adapter_handoff_path.read_bytes()).hexdigest()
+    provider_capture_commands = [
+        {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "command": "python -m hft_cli fetch-provider-live-data --provider arrow_money",
+        },
+        {
+            "provider": "arrow_money",
+            "transport": "websocket",
+            "command": "python -m hft_cli capture-provider-market-data --provider arrow_money",
+        },
+    ]
 
     send_summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
     send_summary = pd.read_csv(send_summary_path)
@@ -8983,6 +9068,13 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
         "dispatch_roundtrip_source_session_matches_session",
         "dispatch_roundtrip_market_session_matches_session",
         "dispatch_roundtrip_metadata_consistent",
+        "dispatch_roundtrip_provider_capture_command_count",
+        "dispatch_roundtrip_provider_capture_command_providers",
+        "dispatch_roundtrip_provider_capture_command_transports",
+        "dispatch_roundtrip_capture_bundle_provider_capture_command_count",
+        "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count",
+        "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
+        "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
         "dispatch_roundtrip_capture_bundle_path",
         "dispatch_roundtrip_capture_bundle_ready",
         "dispatch_roundtrip_capture_bundle_exchange",
@@ -9027,6 +9119,15 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
         "source_session_matches_session": True,
         "market_session_matches_session": True,
         "metadata_consistent_with_runtime_session": True,
+        "provider_capture_command_count": 2,
+        "provider_capture_command_providers": "arrow_money",
+        "provider_capture_command_transports": "websocket",
+        "capture_bundle_provider_capture_command_count": 2,
+        "capture_bundle_provider_capture_command_missing_count": 0,
+        "capture_bundle_provider_capture_commands_match_session": True,
+        "provider_capture_commands": provider_capture_commands,
+        "capture_bundle_provider_capture_commands": provider_capture_commands,
+        "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_provided": True,
         "capture_bundle_exists": True,
@@ -9125,10 +9226,27 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
     assert summary["dispatch_roundtrip_source_live_fetch_contract_exchange"] == "NFO"
     assert summary["dispatch_roundtrip_source_live_fetch_contract_session_open_local"] == "09:15:00"
     assert bool(summary["dispatch_roundtrip_source_live_fetch_contract_exchange_matches_session"])
+    assert summary["dispatch_roundtrip_provider_capture_command_count"] == 2
+    assert summary["dispatch_roundtrip_provider_capture_command_providers"] == "arrow_money"
+    assert summary["dispatch_roundtrip_provider_capture_command_transports"] == "websocket"
+    assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 2
+    assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
+    assert bool(summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"])
+    assert bool(summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
+    checks = report.checks.set_index("check")
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_carried", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_session", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_runtime_session", "passed"])
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
     assert not config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_command_count"] == 2
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands"][0][
+        "provider"
+    ] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_commands_match_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"] == env_template_sha256
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
@@ -9142,8 +9260,19 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
     assert not manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_capture_env_template"]["sha256"] == env_template_sha256
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff"]["sha256"] == adapter_handoff_sha256
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_command_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_command_count"] == 2
+    assert (
+        manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_commands"][0]["provider"]
+        == "arrow_money"
+    )
     assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
     assert "Dispatch round-trip exchange: NFO" in runbook
+    assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
     assert "- Dispatch round-trip provenance consistent: no" in runbook
 
 
