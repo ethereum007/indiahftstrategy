@@ -6565,6 +6565,12 @@ def test_provider_market_data_imbalance_broker_dispatch_carries_roundtrip_captur
 
     route_config_path = provider_route_enable.output_dir / "provider_market_data_imbalance_route_enable_config.json"
     route_config = json.loads(route_config_path.read_text(encoding="utf-8"))
+    route_config["provider_capture_commands"] = provider_capture_commands
+    capture_bundle_config = route_config.get("capture_bundle", {})
+    if not isinstance(capture_bundle_config, dict):
+        capture_bundle_config = {}
+    capture_bundle_config["capture_bundle_provider_capture_commands"] = provider_capture_commands
+    route_config["capture_bundle"] = capture_bundle_config
     route_config["dispatch_roundtrip_provenance"] = {
         "exchange": "NFO",
         "source_session": {
@@ -6587,8 +6593,6 @@ def test_provider_market_data_imbalance_broker_dispatch_carries_roundtrip_captur
         "capture_bundle_provider_capture_command_count": 2,
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
-        "provider_capture_commands": provider_capture_commands,
-        "capture_bundle_provider_capture_commands": provider_capture_commands,
         "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_exchange": "NFO",
@@ -6882,6 +6886,12 @@ def test_provider_market_data_imbalance_broker_dispatch_falls_back_to_roundtrip_
 
     route_config_path = provider_route_enable.output_dir / "provider_market_data_imbalance_route_enable_config.json"
     route_config = json.loads(route_config_path.read_text(encoding="utf-8"))
+    route_config["provider_capture_commands"] = provider_capture_commands
+    capture_bundle_config = route_config.get("capture_bundle", {})
+    if not isinstance(capture_bundle_config, dict):
+        capture_bundle_config = {}
+    capture_bundle_config["capture_bundle_provider_capture_commands"] = provider_capture_commands
+    route_config["capture_bundle"] = capture_bundle_config
     route_config["dispatch_roundtrip_provenance"] = {
         "exchange": "NFO",
         "source_session": {
@@ -6904,8 +6914,6 @@ def test_provider_market_data_imbalance_broker_dispatch_falls_back_to_roundtrip_
         "capture_bundle_provider_capture_command_count": 2,
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
-        "provider_capture_commands": provider_capture_commands,
-        "capture_bundle_provider_capture_commands": provider_capture_commands,
         "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_provided": True,
