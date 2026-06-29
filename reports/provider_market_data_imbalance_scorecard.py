@@ -52,6 +52,9 @@ def write_provider_market_data_imbalance_scorecard(
     evidence_summary, evidence_summary_error = _read_csv(
         evidence_dir / "provider_market_data_imbalance_launch_evidence_summary.csv"
     )
+    evidence_config, evidence_config_error = _read_json(
+        evidence_dir / "provider_market_data_imbalance_launch_evidence_config.json"
+    )
     catalog_path = evidence_dir / "catalog" / "experiment_catalog.csv"
     scorecard = None
     scorecard_error = ""
@@ -74,6 +77,8 @@ def write_provider_market_data_imbalance_scorecard(
         evidence_dir,
         evidence_summary,
         evidence_summary_error,
+        evidence_config,
+        evidence_config_error,
         catalog_path,
         scorecard,
         scorecard_error,
@@ -81,7 +86,7 @@ def write_provider_market_data_imbalance_scorecard(
     )
     summary = _summary(evidence_dir, evidence_summary, catalog_path, scorecard, checks, out, config)
     action_queue = _action_queue(summary.iloc[0], checks, scorecard)
-    payload = _config(summary.iloc[0], evidence_summary, scorecard, checks, action_queue, config)
+    payload = _config(summary.iloc[0], evidence_summary, evidence_config, scorecard, checks, action_queue, config)
 
     checks.to_csv(out / "provider_market_data_imbalance_scorecard_checks.csv", index=False)
     summary.to_csv(out / "provider_market_data_imbalance_scorecard_summary.csv", index=False)
@@ -142,10 +147,31 @@ def write_provider_market_data_imbalance_scorecard(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary_row["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary_row["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary_row["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary_row["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary_row["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary_row["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "provider_capture_commands": _list(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    summary_row["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    summary_row["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -164,6 +190,10 @@ def write_provider_market_data_imbalance_scorecard(
                 "market": str(summary_row["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary_row),
             },
+            "provider_capture_commands": _list(payload.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                payload.get("capture_bundle_provider_capture_commands")
+            ),
         },
     )
     return ProviderMarketDataImbalanceScorecardReport(scorecard, checks, summary, action_queue, payload, out)
@@ -178,10 +208,26 @@ def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
         return pd.DataFrame(), f"{path.name} is not readable: {exc}"
 
 
+def _read_json(path: Path) -> tuple[dict[str, Any], str]:
+    if not path.exists():
+        return {}, f"{path.name} does not exist"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {}, f"{path.name} is not readable: {exc}"
+    except json.JSONDecodeError as exc:
+        return {}, f"{path.name} JSON is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return {}, f"{path.name} JSON must be an object"
+    return payload, ""
+
+
 def _checks(
     evidence_dir: Path,
     evidence_summary: pd.DataFrame,
     evidence_summary_error: str,
+    evidence_config: dict[str, Any],
+    evidence_config_error: str,
     catalog_path: Path,
     scorecard: StrategyScorecardReport | None,
     scorecard_error: str,
@@ -190,6 +236,23 @@ def _checks(
     scorecard_summary = scorecard.summary if scorecard is not None else pd.DataFrame()
     scorecard_ready = bool(scorecard.ready) if scorecard is not None else False
     best_profile = _first_text(scorecard_summary, "best_profile")
+    bundle_provided = _first_bool(evidence_summary, "capture_bundle_provided")
+    provider_capture_command_count = int(_first_number(evidence_summary, "provider_capture_command_count"))
+    bundle_provider_capture_command_count = int(
+        _first_number(evidence_summary, "capture_bundle_provider_capture_command_count")
+    )
+    bundle_provider_capture_command_missing_count = int(
+        _first_number(evidence_summary, "capture_bundle_provider_capture_command_missing_count")
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and _first_bool(evidence_summary, "capture_bundle_provider_capture_commands_match_session")
+    )
     return pd.DataFrame(
         [
             _check(
@@ -209,12 +272,36 @@ def _checks(
                 evidence_summary_error or "provider imbalance launch evidence summary could not be read",
             ),
             _check(
+                "launch_evidence_config_readable",
+                evidence_config_error or "ok",
+                "is",
+                "ok",
+                not evidence_config_error,
+                evidence_config_error or "provider imbalance launch evidence config could not be read",
+            ),
+            _check(
                 "provider_imbalance_launch_evidence_ready",
                 _first_bool(evidence_summary, "ready"),
                 "is",
                 True,
                 _first_bool(evidence_summary, "ready") or not config.require_launch_evidence_ready,
                 "provider imbalance launch evidence is not ready",
+            ),
+            _check(
+                "launch_evidence_provider_capture_commands_carried",
+                bundle_provider_capture_command_count,
+                "==",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_carried if bundle_provided else True,
+                "provider imbalance launch evidence is missing capture-bundle provider command proof",
+            ),
+            _check(
+                "launch_evidence_provider_capture_commands_match_session",
+                bundle_provider_capture_command_count,
+                "matches",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_match_session if bundle_provided else True,
+                "provider imbalance launch evidence command proof no longer matches the session packet",
             ),
             _check(
                 "launch_evidence_catalog_exists",
@@ -359,6 +446,26 @@ def _summary(
                 "source_live_fetch_contract_session_close_local": _first_text(
                     evidence_summary, "source_live_fetch_contract_session_close_local"
                 ),
+                "provider_capture_command_count": int(
+                    _first_number(evidence_summary, "provider_capture_command_count")
+                ),
+                "provider_capture_command_providers": _first_text(
+                    evidence_summary, "provider_capture_command_providers"
+                ),
+                "provider_capture_command_transports": _first_text(
+                    evidence_summary, "provider_capture_command_transports"
+                ),
+                "capture_bundle_provider_capture_command_count": int(
+                    _first_number(evidence_summary, "capture_bundle_provider_capture_command_count")
+                ),
+                "capture_bundle_provider_capture_command_missing_count": int(
+                    _first_number(evidence_summary, "capture_bundle_provider_capture_command_missing_count")
+                ),
+                "capture_bundle_provider_capture_commands_match_session": _first_bool(
+                    evidence_summary, "capture_bundle_provider_capture_commands_match_session"
+                )
+                if _first_bool(evidence_summary, "capture_bundle_provided")
+                else True,
                 "catalog": str(catalog_path if catalog_path.exists() else ""),
                 "scorecard_dir": "" if scorecard is None else str(scorecard.output_dir or ""),
                 "output_dir": str(output_dir),
@@ -439,6 +546,7 @@ def _action_queue(
 def _config(
     summary: pd.Series,
     evidence_summary: pd.DataFrame,
+    evidence_config: dict[str, Any],
     scorecard: StrategyScorecardReport | None,
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
@@ -453,51 +561,11 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
-        "capture_bundle": {
-            "capture_bundle_path": str(summary["capture_bundle_path"]),
-            "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
-            "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
-            "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
-            "exchange": str(summary["capture_bundle_exchange"]),
-            "source_session": _capture_bundle_source_session_contract_from_summary(summary),
-            "market_session": _capture_bundle_market_session_contract_from_summary(summary),
-            "capture_bundle_metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
-            "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
-                summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
-            ),
-            "metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
-            "live_fetch_contract_metadata_matches_session": bool(
-                summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
-            ),
-            "capture_env_template_path": str(summary["capture_env_template_path"]),
-            "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
-            "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
-            "capture_env_template_sha256": str(summary["capture_env_template_sha256"]),
-            "adapter_handoff_path": str(summary["adapter_handoff_path"]),
-            "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
-            "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
-            "adapter_handoff_sha256": str(summary["adapter_handoff_sha256"]),
-            "source_credential_env_template_path": str(summary["source_credential_env_template_path"]),
-            "source_credential_env_template_exists": bool(summary["source_credential_env_template_exists"]),
-            "source_credential_env_template_sha256": str(summary["source_credential_env_template_sha256"]),
-            "source_live_fetch_contract_available": bool(summary["source_live_fetch_contract_available"]),
-            "source_live_fetch_contract_next_gate": str(summary["source_live_fetch_contract_next_gate"]),
-            "source_live_fetch_contract_command_template": str(
-                summary["source_live_fetch_contract_command_template"]
-            ),
-            "source_live_fetch_contract_exchange": str(summary["source_live_fetch_contract_exchange"]),
-            "source_live_fetch_contract_market": str(summary["source_live_fetch_contract_market"]),
-            "source_live_fetch_contract_session_timezone": str(
-                summary["source_live_fetch_contract_session_timezone"]
-            ),
-            "source_live_fetch_contract_session_open_local": str(
-                summary["source_live_fetch_contract_session_open_local"]
-            ),
-            "source_live_fetch_contract_session_close_local": str(
-                summary["source_live_fetch_contract_session_close_local"]
-            ),
-        },
+        "provider_capture_commands": _provider_capture_commands(evidence_config),
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(evidence_config),
+        "capture_bundle": _provider_capture_bundle(summary, evidence_config),
         "provider_launch_evidence": _first_record(evidence_summary),
+        "provider_launch_evidence_config": _jsonable(evidence_config),
         "scorecard": {
             "ready": False if scorecard is None else bool(scorecard.ready),
             "output_dir": "" if scorecard is None else str(scorecard.output_dir or ""),
@@ -578,6 +646,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "",
         "## Checks",
         "",
@@ -697,6 +766,86 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
         "open_local": str(summary["source_live_fetch_contract_session_open_local"]),
         "close_local": str(summary["source_live_fetch_contract_session_close_local"]),
     }
+
+
+def _provider_capture_bundle(summary: pd.Series, evidence_config: dict[str, Any]) -> dict[str, Any]:
+    payload = _mapping(evidence_config.get("capture_bundle"))
+    if payload:
+        return {str(key): _jsonable(value) for key, value in payload.items()}
+    return {
+        "capture_bundle_path": str(summary["capture_bundle_path"]),
+        "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
+        "capture_bundle_exists": bool(summary["capture_bundle_exists"]),
+        "capture_bundle_ready": bool(summary["capture_bundle_ready"]),
+        "exchange": str(summary["capture_bundle_exchange"]),
+        "source_session": _capture_bundle_source_session_contract_from_summary(summary),
+        "market_session": _capture_bundle_market_session_contract_from_summary(summary),
+        "capture_bundle_metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
+        "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
+            summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+        ),
+        "metadata_matches_session": bool(summary["capture_bundle_metadata_matches_session"]),
+        "live_fetch_contract_metadata_matches_session": bool(
+            summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+        ),
+        "capture_env_template_path": str(summary["capture_env_template_path"]),
+        "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
+        "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+        "capture_env_template_sha256": str(summary["capture_env_template_sha256"]),
+        "adapter_handoff_path": str(summary["adapter_handoff_path"]),
+        "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
+        "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+        "adapter_handoff_sha256": str(summary["adapter_handoff_sha256"]),
+        "source_credential_env_template_path": str(summary["source_credential_env_template_path"]),
+        "source_credential_env_template_exists": bool(summary["source_credential_env_template_exists"]),
+        "source_credential_env_template_sha256": str(summary["source_credential_env_template_sha256"]),
+        "source_live_fetch_contract_available": bool(summary["source_live_fetch_contract_available"]),
+        "source_live_fetch_contract_next_gate": str(summary["source_live_fetch_contract_next_gate"]),
+        "source_live_fetch_contract_command_template": str(summary["source_live_fetch_contract_command_template"]),
+        "source_live_fetch_contract_exchange": str(summary["source_live_fetch_contract_exchange"]),
+        "source_live_fetch_contract_market": str(summary["source_live_fetch_contract_market"]),
+        "source_live_fetch_contract_session_timezone": str(summary["source_live_fetch_contract_session_timezone"]),
+        "source_live_fetch_contract_session_open_local": str(
+            summary["source_live_fetch_contract_session_open_local"]
+        ),
+        "source_live_fetch_contract_session_close_local": str(
+            summary["source_live_fetch_contract_session_close_local"]
+        ),
+        "provider_capture_command_count": int(summary["provider_capture_command_count"]),
+        "provider_capture_command_providers": str(summary["provider_capture_command_providers"]),
+        "provider_capture_command_transports": str(summary["provider_capture_command_transports"]),
+        "capture_bundle_provider_capture_command_count": int(
+            summary["capture_bundle_provider_capture_command_count"]
+        ),
+        "capture_bundle_provider_capture_command_missing_count": int(
+            summary["capture_bundle_provider_capture_command_missing_count"]
+        ),
+        "capture_bundle_provider_capture_commands_match_session": bool(
+            summary["capture_bundle_provider_capture_commands_match_session"]
+        ),
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(evidence_config),
+    }
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _provider_capture_commands(evidence_config: dict[str, Any]) -> list[Any]:
+    return _list(evidence_config.get("provider_capture_commands"))
+
+
+def _bundle_provider_capture_commands(evidence_config: dict[str, Any]) -> list[Any]:
+    bundle = _mapping(evidence_config.get("capture_bundle"))
+    return (
+        _list(evidence_config.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("provider_capture_commands"))
+    )
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
