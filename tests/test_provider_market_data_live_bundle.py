@@ -132,6 +132,16 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert len(summary["adapter_handoff_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["provider_capture_command_count"] == 2
+    assert summary["preflight_provider_capture_command_count"] == 2
+    assert summary["provider_capture_command_missing_count"] == 0
+    assert summary["preflight_provider_capture_command_missing_count"] == 0
+    assert bool(summary["provider_capture_commands_match_preflight"])
+    assert summary["provider_capture_command_providers"] == "arrow_money"
+    assert summary["provider_capture_command_transports"] == "websocket"
+    assert commands.loc[0, "provider_capture_command_provider"] == "arrow_money"
+    assert commands.loc[0, "provider_capture_command_transport"] == "websocket"
+    assert "provider-adapter capture" in commands.loc[0, "provider_capture_command_template"]
     assert "provider-adapter capture" in commands.loc[0, "adapter_command"]
     assert "--handoff provider_market_data_adapter_handoff.json" in commands.loc[0, "adapter_command"]
     assert "--env-template provider_market_data_live_capture_env_template.env" in commands.loc[0, "adapter_command"]
@@ -148,6 +158,9 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["source_session"]["timezone"] == "Asia/Kolkata"
     assert bundle["market_session"]["open_local"] == "09:15"
     assert bundle["preflight"]["exchange"] == "NFO"
+    assert bundle["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert bundle["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
+    assert bundle["preflight"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert bundle["live_fetch_contract"]["available"] is True
     assert bundle["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert "ARROW_MONEY_API_KEY=\n" in env_template
@@ -166,6 +179,9 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert handoff["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
     assert handoff["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
     assert handoff["live_fetch_contract"]["available"] is True
+    assert handoff["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert handoff["provider_capture_commands"][0]["required_env_vars"] == "ARROW_MONEY_API_KEY;ARROW_MONEY_API_SECRET"
+    assert handoff["preflight_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert handoff["output"]["schema_columns"] == ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
     assert len(handoff["capture_windows"]) == 2
     assert "provider-adapter capture" in handoff["capture_windows"][0]["adapter_command"]
@@ -188,6 +204,8 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert manifest["inputs"]["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["preflight_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert "provider_market_data_live_capture_env_template.env" in {
         artifact["path"] for artifact in manifest["artifacts"]
     }
@@ -284,6 +302,62 @@ def test_provider_market_data_live_capture_bundle_blocks_missing_preflight_live_
     assert "preflight_live_fetch_contract_carried" in failed
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.action_queue.loc[0, "action"] == "rerun_preflight_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_capture_bundle_blocks_missing_session_provider_capture_commands(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _live_packet(plan)
+    preflight = _write_preflight(tmp_path, live_packet)
+    _mutate_json(
+        live_packet,
+        lambda payload: (
+            payload.pop("provider_capture_commands", None),
+            [
+                (
+                    row.pop("capture_command_template", None),
+                    row.pop("capture_command_hint", None),
+                )
+                for row in payload["capture_windows"]
+            ],
+        ),
+    )
+
+    report = write_provider_market_data_live_capture_bundle(
+        live_packet,
+        tmp_path / "capture_bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(
+            preflight_config_path=str(preflight.output_dir / "provider_market_data_live_preflight_config.json")
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "session_provider_capture_commands_carried" in failed
+    assert report.summary.iloc[0]["provider_capture_command_missing_count"] == 2
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_provider_capture_commands"
+
+
+def test_provider_market_data_live_capture_bundle_blocks_preflight_provider_capture_command_mismatch(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _live_packet(plan)
+    preflight = _write_preflight(tmp_path, live_packet)
+    preflight_config = _mutate_json(
+        preflight.output_dir / "provider_market_data_live_preflight_config.json",
+        lambda payload: payload["provider_capture_commands"][0].update({"command_template": "provider-adapter capture --wrong"}),
+    )
+
+    report = write_provider_market_data_live_capture_bundle(
+        live_packet,
+        tmp_path / "capture_bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(preflight_config_path=str(preflight_config)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "preflight_provider_capture_commands_match_session" in failed
+    assert not bool(report.summary.iloc[0]["provider_capture_commands_match_preflight"])
+    assert report.action_queue.loc[0, "action"] == "rerun_preflight_with_session_provider_capture_commands"
     assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
 
 

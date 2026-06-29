@@ -129,6 +129,8 @@ def write_provider_market_data_live_capture_bundle(
             "market_session": _market_session_contract_from_summary(summary_row),
             "source_credential_env_template": source_env_template,
             "live_fetch_contract": _mapping(bundle.get("live_fetch_contract")),
+            "provider_capture_commands": _list(bundle.get("provider_capture_commands")),
+            "preflight_provider_capture_commands": _list(_mapping(bundle.get("preflight")).get("provider_capture_commands")),
         },
     )
     return ProviderMarketDataLiveCaptureBundleReport(
@@ -251,6 +253,14 @@ def _commands(
                 "start_local": _text(window.get("start_local")),
                 "end_local": _text(window.get("end_local")),
                 "capture_path": capture_path,
+                "provider_capture_command_provider": _text(window.get("capture_command_provider")),
+                "provider_capture_command_transport": _text(window.get("capture_command_transport")),
+                "provider_capture_command_endpoint": _text(window.get("capture_command_endpoint")),
+                "provider_capture_command_kind": _text(window.get("capture_command_kind")),
+                "provider_capture_command_exchange": _text(window.get("capture_command_exchange")),
+                "provider_capture_command_env_vars": _text(window.get("capture_command_env_vars")),
+                "provider_capture_command_base": _text(window.get("capture_command_base")),
+                "provider_capture_command_template": _text(window.get("capture_command_template") or window.get("capture_command_hint")),
                 "capture_exists": capture_exists,
                 "credential_env_vars": ";".join(env_vars),
                 "adapter_command": command,
@@ -275,6 +285,14 @@ def _commands(
             "start_local",
             "end_local",
             "capture_path",
+            "provider_capture_command_provider",
+            "provider_capture_command_transport",
+            "provider_capture_command_endpoint",
+            "provider_capture_command_kind",
+            "provider_capture_command_exchange",
+            "provider_capture_command_env_vars",
+            "provider_capture_command_base",
+            "provider_capture_command_template",
             "capture_exists",
             "credential_env_vars",
             "adapter_command",
@@ -306,6 +324,27 @@ def _checks(
     preflight_required = bool(preflight_provided or config.require_preflight_ready)
     source_env_template = _preflight_credential_env_template(preflight)
     live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    session_provider_capture_commands = _session_provider_capture_commands(packet)
+    preflight_provider_capture_commands = _preflight_provider_capture_commands(preflight)
+    session_provider_capture_command_count = len(session_provider_capture_commands)
+    preflight_provider_capture_command_count = len(preflight_provider_capture_commands)
+    session_provider_capture_commands_ok = command_count >= 1 and session_provider_capture_command_count == command_count
+    preflight_provider_capture_commands_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and preflight_provider_capture_command_count == command_count
+            and command_count >= 1
+        )
+    )
+    preflight_provider_capture_commands_match_ok = (
+        not preflight_required
+        or (
+            preflight_provider_capture_commands_ok
+            and _provider_capture_commands_match(session_provider_capture_commands, preflight_provider_capture_commands)
+        )
+    )
     preflight_exchange = _preflight_exchange(preflight)
     preflight_source_session = _preflight_source_session(preflight)
     preflight_market_session = _preflight_market_session(preflight)
@@ -366,6 +405,9 @@ def _checks(
         _check("preflight_packet_matches_session", preflight_packet_match, "is", True, preflight_packet_match if preflight_provided else not config.require_preflight_ready, "preflight config must reference the same live session packet"),
         _check("preflight_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, source_env_template_ok, "preflight config must carry blank source credential env-template proof"),
         _check("preflight_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, live_fetch_contract_ok, "preflight config must carry the upstream live fetch-contract handoff"),
+        _check("session_provider_capture_commands_carried", session_provider_capture_command_count, "==", command_count, session_provider_capture_commands_ok, "live session packet must carry per-window provider capture command handoffs"),
+        _check("preflight_provider_capture_commands_carried", preflight_provider_capture_command_count, "==", command_count, preflight_provider_capture_commands_ok, "preflight config must carry per-window provider capture command handoffs"),
+        _check("preflight_provider_capture_commands_match_session", preflight_provider_capture_command_count, "matches", session_provider_capture_command_count, preflight_provider_capture_commands_match_ok, "preflight provider capture command handoffs must match the live session packet"),
         _check("source_exchange_carried", _text(packet.get("exchange")), "is_not", "", bool(_text(packet.get("exchange"))), "live session packet must carry source exchange/segment metadata"),
         _check("source_session_contract_carried", _session_contract_text(packet_source_session), "has", "timezone/open/close", _session_contract_carried(packet_source_session), "live session packet must carry source session metadata"),
         _check("market_session_contract_carried", _session_contract_text(packet_market_session), "has", "timezone/open/close", _session_contract_carried(packet_market_session), "live session packet must carry market session metadata"),
@@ -402,6 +444,8 @@ def _summary(
     next_action = action_queue.iloc[0] if not action_queue.empty else None
     source_env_template = _preflight_credential_env_template(preflight)
     live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    session_provider_capture_commands = _session_provider_capture_commands(packet)
+    preflight_provider_capture_commands = _preflight_provider_capture_commands(preflight)
     source_session = _mapping(packet.get("source_session"))
     market_session = _mapping(packet.get("market_session"))
     return pd.DataFrame(
@@ -434,6 +478,16 @@ def _summary(
                 "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
                 "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
                 "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
+                "provider_capture_command_count": int(len(session_provider_capture_commands)),
+                "provider_capture_command_missing_count": max(int(len(commands)) - int(len(session_provider_capture_commands)), 0),
+                "preflight_provider_capture_command_count": int(len(preflight_provider_capture_commands)),
+                "preflight_provider_capture_command_missing_count": max(int(len(commands)) - int(len(preflight_provider_capture_commands)), 0),
+                "provider_capture_commands_match_preflight": _provider_capture_commands_match(
+                    session_provider_capture_commands,
+                    preflight_provider_capture_commands,
+                ),
+                "provider_capture_command_providers": _unique_command_values(session_provider_capture_commands, "provider"),
+                "provider_capture_command_transports": _unique_command_values(session_provider_capture_commands, "transport"),
                 "require_env_present": bool(config.require_env_present or bool(_mapping(preflight.get("parameters")).get("require_env_present", False))),
                 "adapter_template_default": not bool(config.adapter_command_template),
                 "ingest_output_dir": _ingest_output_dir(packet, config),
@@ -520,12 +574,14 @@ def _bundle(
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
+        "provider_capture_commands": _session_provider_capture_commands(packet),
         "preflight": {
             "ready": bool(preflight.get("ready")) if config.preflight_config_path else False,
             "next_gate": _text(preflight.get("next_gate")),
             "primary_action_status": _text(preflight.get("primary_action_status")),
             "credential_env_template": _credential_env_template_contract(summary),
             "live_fetch_contract": _preflight_live_fetch_contract(preflight),
+            "provider_capture_commands": _preflight_provider_capture_commands(preflight),
             "exchange": _preflight_exchange(preflight),
             "source_session": _preflight_source_session(preflight),
             "market_session": _preflight_market_session(preflight),
@@ -583,6 +639,8 @@ def _adapter_handoff(
         "source_credential_env_template": _credential_env_template_contract(summary),
         "capture_env_template": ENV_TEMPLATE_NAME,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
+        "provider_capture_commands": _session_provider_capture_commands(packet),
+        "preflight_provider_capture_commands": _preflight_provider_capture_commands(preflight),
         "output": {
             "format": _text(output.get("format")),
             "filename": _text(output.get("filename")),
@@ -642,6 +700,84 @@ def _preflight_live_fetch_contract(preflight: dict[str, Any]) -> dict[str, Any]:
     if not contract:
         contract = _mapping(_mapping(preflight.get("session_packet")).get("live_fetch_contract"))
     return contract.copy()
+
+
+def _session_provider_capture_commands(packet: dict[str, Any]) -> list[dict[str, str]]:
+    commands = _provider_capture_command_records(packet.get("provider_capture_commands"))
+    if commands:
+        return commands
+    return _provider_capture_command_records(packet.get("capture_windows"))
+
+
+def _preflight_provider_capture_commands(preflight: dict[str, Any]) -> list[dict[str, str]]:
+    commands = _provider_capture_command_records(preflight.get("provider_capture_commands"))
+    if commands:
+        return commands
+    session_packet = _mapping(preflight.get("session_packet"))
+    commands = _provider_capture_command_records(session_packet.get("provider_capture_commands"))
+    if commands:
+        return commands
+    return _provider_capture_command_records(session_packet.get("capture_windows"))
+
+
+def _provider_capture_command_records(value: object) -> list[dict[str, str]]:
+    rows = _list(value)
+    commands: list[dict[str, str]] = []
+    for row in rows:
+        item = _mapping(row)
+        command_template = _text(item.get("command_template") or item.get("capture_command_template") or item.get("capture_command_hint"))
+        if not command_template:
+            continue
+        commands.append(
+            {
+                "label": _text(item.get("label")),
+                "provider": _text(item.get("provider") or item.get("capture_command_provider")),
+                "transport": _text(item.get("transport") or item.get("capture_command_transport")),
+                "endpoint": _text(item.get("endpoint") or item.get("capture_command_endpoint")),
+                "kind": _text(item.get("kind") or item.get("capture_command_kind")),
+                "exchange": _text(item.get("exchange") or item.get("capture_command_exchange")),
+                "start_local": _text(item.get("start_local")),
+                "end_local": _text(item.get("end_local")),
+                "output": _text(item.get("output") or item.get("capture_path")),
+                "required_env_vars": _text(item.get("required_env_vars") or item.get("capture_command_env_vars")),
+                "command_base": _text(item.get("command_base") or item.get("capture_command_base")),
+                "command_template": command_template,
+            }
+        )
+    return commands
+
+
+def _provider_capture_commands_match(left: list[dict[str, str]], right: list[dict[str, str]]) -> bool:
+    if not left or len(left) != len(right):
+        return False
+    return [_provider_capture_command_signature(item) for item in left] == [
+        _provider_capture_command_signature(item) for item in right
+    ]
+
+
+def _provider_capture_command_signature(item: dict[str, str]) -> tuple[str, ...]:
+    return tuple(
+        _text(item.get(key))
+        for key in (
+            "label",
+            "provider",
+            "transport",
+            "endpoint",
+            "kind",
+            "exchange",
+            "start_local",
+            "end_local",
+            "output",
+            "required_env_vars",
+            "command_base",
+            "command_template",
+        )
+    )
+
+
+def _unique_command_values(commands: list[dict[str, str]], key: str) -> str:
+    values = sorted({_text(item.get(key)) for item in commands if _text(item.get(key))})
+    return ";".join(values)
 
 
 def _preflight_exchange(preflight: dict[str, Any]) -> str:
@@ -830,6 +966,12 @@ def _repair_action(check: str) -> str:
         return "rerun_preflight_with_credential_env_template"
     if check == "preflight_live_fetch_contract_carried":
         return "rerun_preflight_with_live_fetch_contract"
+    if check == "session_provider_capture_commands_carried":
+        return "regenerate_live_session_with_provider_capture_commands"
+    if check == "preflight_provider_capture_commands_carried":
+        return "rerun_preflight_with_provider_capture_commands"
+    if check == "preflight_provider_capture_commands_match_session":
+        return "rerun_preflight_with_session_provider_capture_commands"
     if check in {
         "preflight_exchange_matches_session",
         "preflight_source_session_matches_session",
@@ -860,6 +1002,7 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Commands: {summary['command_count']}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (preflight match: {'yes' if bool(summary['provider_capture_commands_match_preflight']) else 'no'})",
         f"- Capture env template: `{ENV_TEMPLATE_NAME}`",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'missing'}",
         f"- Adapter handoff: `{ADAPTER_HANDOFF_NAME}`",

@@ -108,6 +108,10 @@
   `live_fetch_contract` provenance, inherited exchange/session metadata for the
   approved source, and the exact post-capture ingest command while blocking
   missing preflight evidence, metadata drift, and capture overwrite risk.
+  Capture bundling now also requires the structured provider capture command
+  handoff from both the live-session packet and preflight config to match,
+  then carries that command list into the bundle, adapter handoff, and manifest
+  for Arrow.money/iRage adapter execution audit.
   Default adapter commands now explicitly pass the handoff JSON and blank
   capture env-template file, so Arrow.money/iRage adapter processes receive
   the same contract artifacts the bundle manifests. Bundle summary/JSON,
