@@ -221,6 +221,10 @@
   fingerprints in the final pre-dispatch gate: cutover summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
   values directly.
+- Provider market-data imbalance route enable now preserves those adapter
+  fingerprints into broker-dispatch authorization: route-enable summary/config
+  and manifest extras expose capture env-template and adapter handoff SHA-256
+  values directly.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,

@@ -295,6 +295,16 @@ def write_provider_market_data_imbalance_route_enable(
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_provided": bool(summary_row["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
+            "capture_env_template": {
+                "path": str(summary_row["capture_env_template_path"]),
+                "exists": bool(summary_row["capture_env_template_exists"]),
+                "sha256": str(summary_row["capture_env_template_sha256"]),
+            },
+            "adapter_handoff": {
+                "path": str(summary_row["adapter_handoff_path"]),
+                "exists": bool(summary_row["adapter_handoff_exists"]),
+                "sha256": str(summary_row["adapter_handoff_sha256"]),
+            },
             "capture_bundle_metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -832,6 +842,11 @@ def _summary(
                     provider_summary,
                     provider_broker_summary,
                 ),
+                "capture_env_template_sha256": _first_text_from_frames(
+                    "capture_env_template_sha256",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
                 "adapter_handoff_path": _first_text_from_frames(
                     "adapter_handoff_path",
                     provider_summary,
@@ -844,6 +859,11 @@ def _summary(
                 ),
                 "adapter_handoff_exists": _first_bool_from_frames(
                     "adapter_handoff_exists",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "adapter_handoff_sha256": _first_text_from_frames(
+                    "adapter_handoff_sha256",
                     provider_summary,
                     provider_broker_summary,
                 ),
@@ -1820,9 +1840,11 @@ def _config(
             "capture_env_template_path": str(summary["capture_env_template_path"]),
             "capture_env_template_provided": bool(summary["capture_env_template_provided"]),
             "capture_env_template_exists": bool(summary["capture_env_template_exists"]),
+            "capture_env_template_sha256": str(summary["capture_env_template_sha256"]),
             "adapter_handoff_path": str(summary["adapter_handoff_path"]),
             "adapter_handoff_provided": bool(summary["adapter_handoff_provided"]),
             "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
+            "adapter_handoff_sha256": str(summary["adapter_handoff_sha256"]),
             "source_credential_env_template_path": str(summary["source_credential_env_template_path"]),
             "source_credential_env_template_exists": bool(summary["source_credential_env_template_exists"]),
             "source_credential_env_template_sha256": str(summary["source_credential_env_template_sha256"]),
