@@ -197,10 +197,31 @@ def write_provider_market_data_imbalance_research(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary.iloc[0]["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary.iloc[0]["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary.iloc[0]["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary.iloc[0]["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary.iloc[0]),
+                "provider_capture_commands": _list(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -219,6 +240,10 @@ def write_provider_market_data_imbalance_research(
                 "market": str(summary.iloc[0]["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary.iloc[0]),
             },
+            "provider_capture_commands": _list(payload.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                payload.get("capture_bundle_provider_capture_commands")
+            ),
         },
     )
     return ProviderMarketDataImbalanceResearchReport(
@@ -330,6 +355,23 @@ def _checks(
     pipeline_row = pipeline.summary.iloc[0] if pipeline is not None and not pipeline.summary.empty else pd.Series(dtype=object)
     candidate_ready = bool(pipeline.candidate_config.get("ready", False)) if pipeline is not None else False
     pipeline_ready = bool(pipeline.ready) if pipeline is not None else False
+    bundle_provided = _truthy(handoff_row.get("capture_bundle_provided"))
+    provider_capture_command_count = int(handoff_row.get("provider_capture_command_count", 0) or 0)
+    bundle_provider_capture_command_count = int(
+        handoff_row.get("capture_bundle_provider_capture_command_count", 0) or 0
+    )
+    bundle_provider_capture_command_missing_count = int(
+        handoff_row.get("capture_bundle_provider_capture_command_missing_count", 0) or 0
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and _truthy(handoff_row.get("capture_bundle_provider_capture_commands_match_session"))
+    )
     return pd.DataFrame(
         [
             _check(
@@ -355,6 +397,22 @@ def _checks(
                 config.min_tick_folds,
                 int(handoff_row.get("dataset_count", 0) or 0) >= config.min_tick_folds,
                 "not enough provider tick folds for imbalance research",
+            ),
+            _check(
+                "provider_research_handoff_provider_capture_commands_carried",
+                bundle_provider_capture_command_count,
+                "==",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_carried if bundle_provided else True,
+                "provider research handoff is missing capture-bundle provider command proof",
+            ),
+            _check(
+                "provider_research_handoff_provider_capture_commands_match_session",
+                bundle_provider_capture_command_count,
+                "matches",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_match_session if bundle_provided else True,
+                "provider research handoff command proof no longer matches the session packet",
             ),
             _check(
                 "imbalance_research_pipeline_ready",
@@ -483,6 +541,24 @@ def _summary(
                 "source_live_fetch_contract_session_close_local": str(
                     handoff_row.get("source_live_fetch_contract_session_close_local", "") or ""
                 ),
+                "provider_capture_command_count": int(handoff_row.get("provider_capture_command_count", 0) or 0),
+                "provider_capture_command_providers": str(
+                    handoff_row.get("provider_capture_command_providers", "") or ""
+                ),
+                "provider_capture_command_transports": str(
+                    handoff_row.get("provider_capture_command_transports", "") or ""
+                ),
+                "capture_bundle_provider_capture_command_count": int(
+                    handoff_row.get("capture_bundle_provider_capture_command_count", 0) or 0
+                ),
+                "capture_bundle_provider_capture_command_missing_count": int(
+                    handoff_row.get("capture_bundle_provider_capture_command_missing_count", 0) or 0
+                ),
+                "capture_bundle_provider_capture_commands_match_session": _truthy(
+                    handoff_row.get("capture_bundle_provider_capture_commands_match_session")
+                )
+                if _truthy(handoff_row.get("capture_bundle_provided"))
+                else True,
                 "capture_bundle_exchange": str(handoff_row.get("capture_bundle_exchange", "") or ""),
                 "capture_bundle_source_session_timezone": str(
                     handoff_row.get("capture_bundle_source_session_timezone", "") or ""
@@ -608,6 +684,12 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_capture_commands": _list(
+            handoff.config.get("provider_capture_commands") if isinstance(handoff.config, dict) else []
+        ),
+        "capture_bundle_provider_capture_commands": _list(
+            handoff.config.get("capture_bundle_provider_capture_commands") if isinstance(handoff.config, dict) else []
+        ),
         "capture_bundle": _handoff_capture_bundle(handoff),
         "research_handoff": {
             "ready": bool(handoff.ready),
@@ -690,6 +772,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
         f"- Replay passed: {'yes' if bool(summary['replay_passed']) else 'no'}",
@@ -926,6 +1009,23 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         "source_live_fetch_contract_session_close_local": str(
             row.get("source_live_fetch_contract_session_close_local", "") or ""
         ),
+        "provider_capture_command_count": int(row.get("provider_capture_command_count", 0) or 0),
+        "provider_capture_command_providers": str(row.get("provider_capture_command_providers", "") or ""),
+        "provider_capture_command_transports": str(row.get("provider_capture_command_transports", "") or ""),
+        "capture_bundle_provider_capture_command_count": int(
+            row.get("capture_bundle_provider_capture_command_count", 0) or 0
+        ),
+        "capture_bundle_provider_capture_command_missing_count": int(
+            row.get("capture_bundle_provider_capture_command_missing_count", 0) or 0
+        ),
+        "capture_bundle_provider_capture_commands_match_session": _truthy(
+            row.get("capture_bundle_provider_capture_commands_match_session")
+        )
+        if _truthy(row.get("capture_bundle_provided"))
+        else True,
+        "capture_bundle_provider_capture_commands": _list(
+            handoff.config.get("capture_bundle_provider_capture_commands") if isinstance(handoff.config, dict) else []
+        ),
         "exchange": str(row.get("capture_bundle_exchange", "") or ""),
         "source_session": {
             "timezone": str(row.get("capture_bundle_source_session_timezone", "") or ""),
@@ -947,6 +1047,14 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
 def _path_from_text(value: str) -> Path | None:
     text = _text(value)
     return Path(text) if text else None
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:

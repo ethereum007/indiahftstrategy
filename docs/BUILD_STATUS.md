@@ -171,7 +171,8 @@
   blocks before strategy math when evidence is synthetic smoke or not
   research-ready. The wrapper summary/config and manifest extras also expose
   capture env-template and adapter handoff SHA-256 values directly for
-  strategy-layer audit.
+  strategy-layer audit, and now carry provider capture command counts/lists plus
+  capture-bundle command match proof into the imbalance research layer.
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider
