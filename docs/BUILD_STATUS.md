@@ -233,6 +233,10 @@
   adapter fingerprints into the non-submitting sender packet: send
   summary/config and manifest extras expose capture env-template and adapter
   handoff SHA-256 values directly.
+- Provider market-data imbalance broker dispatch acknowledgement now carries
+  those adapter fingerprints into ack reconciliation: acknowledgement
+  summary/config and manifest extras expose capture env-template and adapter
+  handoff SHA-256 values directly.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
