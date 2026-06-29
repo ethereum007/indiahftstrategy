@@ -82,6 +82,9 @@ def write_provider_market_data_imbalance_launch_packet(
     evidence_summary, evidence_summary_error = _read_csv(
         evidence_dir / "provider_market_data_imbalance_evidence_summary.csv"
     )
+    evidence_config, evidence_config_error = _read_json(
+        evidence_dir / "provider_market_data_imbalance_evidence_config.json"
+    )
     promotion_dir = _promotion_dir(evidence_summary)
     launch_dir = out / "imbalance_launch_pipeline"
     launch = None
@@ -99,6 +102,8 @@ def write_provider_market_data_imbalance_launch_packet(
         evidence_dir,
         evidence_summary,
         evidence_summary_error,
+        evidence_config,
+        evidence_config_error,
         promotion_dir,
         launch,
         launch_error,
@@ -107,7 +112,16 @@ def write_provider_market_data_imbalance_launch_packet(
     components = _components(evidence_dir, evidence_summary, promotion_dir, launch_dir, launch)
     summary = _summary(evidence_dir, evidence_summary, promotion_dir, launch_dir, launch, checks, out, config)
     action_queue = _action_queue(summary.iloc[0], checks)
-    payload = _config(summary.iloc[0], evidence_summary, launch, components, checks, action_queue, config)
+    payload = _config(
+        summary.iloc[0],
+        evidence_summary,
+        evidence_config,
+        launch,
+        components,
+        checks,
+        action_queue,
+        config,
+    )
 
     components.to_csv(out / "provider_market_data_imbalance_launch_components.csv", index=False)
     checks.to_csv(out / "provider_market_data_imbalance_launch_checks.csv", index=False)
@@ -170,10 +184,31 @@ def write_provider_market_data_imbalance_launch_packet(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary.iloc[0]["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary.iloc[0]["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary.iloc[0]["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary.iloc[0]["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary.iloc[0]),
+                "provider_capture_commands": _list(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -192,6 +227,10 @@ def write_provider_market_data_imbalance_launch_packet(
                 "market": str(summary.iloc[0]["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary.iloc[0]),
             },
+            "provider_capture_commands": _list(payload.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                payload.get("capture_bundle_provider_capture_commands")
+            ),
         },
     )
     return ProviderMarketDataImbalanceLaunchReport(launch, components, checks, summary, action_queue, payload, out)
@@ -204,6 +243,20 @@ def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
         return pd.read_csv(path), ""
     except (OSError, pd.errors.ParserError) as exc:
         return pd.DataFrame(), f"{path.name} is not readable: {exc}"
+
+
+def _read_json(path: Path) -> tuple[dict[str, Any], str]:
+    if not path.exists():
+        return {}, f"{path.name} does not exist"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {}, f"{path.name} is not readable: {exc}"
+    except json.JSONDecodeError as exc:
+        return {}, f"{path.name} JSON is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return {}, f"{path.name} JSON must be an object"
+    return payload, ""
 
 
 def _promotion_dir(evidence_summary: pd.DataFrame) -> Path:
@@ -267,6 +320,8 @@ def _checks(
     evidence_dir: Path,
     evidence_summary: pd.DataFrame,
     evidence_summary_error: str,
+    evidence_config: dict[str, Any],
+    evidence_config_error: str,
     promotion_dir: Path,
     launch: ImbalanceLaunchPipelineReport | None,
     launch_error: str,
@@ -274,6 +329,23 @@ def _checks(
 ) -> pd.DataFrame:
     launch_ready = bool(launch.ready) if launch is not None else False
     launch_summary = launch.summary if launch is not None else pd.DataFrame()
+    bundle_provided = _first_bool(evidence_summary, "capture_bundle_provided")
+    provider_capture_command_count = int(_first_number(evidence_summary, "provider_capture_command_count"))
+    bundle_provider_capture_command_count = int(
+        _first_number(evidence_summary, "capture_bundle_provider_capture_command_count")
+    )
+    bundle_provider_capture_command_missing_count = int(
+        _first_number(evidence_summary, "capture_bundle_provider_capture_command_missing_count")
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and _first_bool(evidence_summary, "capture_bundle_provider_capture_commands_match_session")
+    )
     return pd.DataFrame(
         [
             _check(
@@ -293,12 +365,36 @@ def _checks(
                 evidence_summary_error or "provider imbalance evidence summary could not be read",
             ),
             _check(
+                "provider_evidence_config_readable",
+                evidence_config_error or "ok",
+                "is",
+                "ok",
+                not evidence_config_error,
+                evidence_config_error or "provider imbalance evidence config could not be read",
+            ),
+            _check(
                 "provider_imbalance_evidence_ready",
                 _first_bool(evidence_summary, "ready"),
                 "is",
                 True,
                 _first_bool(evidence_summary, "ready") or not config.require_provider_evidence_ready,
                 "provider imbalance evidence review is not ready",
+            ),
+            _check(
+                "provider_evidence_provider_capture_commands_carried",
+                bundle_provider_capture_command_count,
+                "==",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_carried if bundle_provided else True,
+                "provider imbalance evidence is missing capture-bundle provider command proof",
+            ),
+            _check(
+                "provider_evidence_provider_capture_commands_match_session",
+                bundle_provider_capture_command_count,
+                "matches",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_match_session if bundle_provided else True,
+                "provider imbalance evidence command proof no longer matches the session packet",
             ),
             _check(
                 "promotion_summary_exists",
@@ -497,6 +593,26 @@ def _summary(
                 "source_live_fetch_contract_session_close_local": _first_text(
                     evidence_summary, "source_live_fetch_contract_session_close_local"
                 ),
+                "provider_capture_command_count": int(
+                    _first_number(evidence_summary, "provider_capture_command_count")
+                ),
+                "provider_capture_command_providers": _first_text(
+                    evidence_summary, "provider_capture_command_providers"
+                ),
+                "provider_capture_command_transports": _first_text(
+                    evidence_summary, "provider_capture_command_transports"
+                ),
+                "capture_bundle_provider_capture_command_count": int(
+                    _first_number(evidence_summary, "capture_bundle_provider_capture_command_count")
+                ),
+                "capture_bundle_provider_capture_command_missing_count": int(
+                    _first_number(evidence_summary, "capture_bundle_provider_capture_command_missing_count")
+                ),
+                "capture_bundle_provider_capture_commands_match_session": _first_bool(
+                    evidence_summary, "capture_bundle_provider_capture_commands_match_session"
+                )
+                if _first_bool(evidence_summary, "capture_bundle_provided")
+                else True,
                 "market": _first_text(launch_summary, "market") or _first_text(evidence_summary, "market"),
                 "strategy": _first_text(launch_summary, "strategy") or _first_text(evidence_summary, "strategy"),
                 "adapter": config.adapter,
@@ -560,6 +676,7 @@ def _action_queue(summary: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
 def _config(
     summary: pd.Series,
     evidence_summary: pd.DataFrame,
+    evidence_config: dict[str, Any],
     launch: ImbalanceLaunchPipelineReport | None,
     components: pd.DataFrame,
     checks: pd.DataFrame,
@@ -573,10 +690,13 @@ def _config(
         "parameters": asdict(config),
         "summary": _series_record(summary),
         "provider_evidence": _first_record(evidence_summary),
+        "provider_evidence_config": _jsonable(evidence_config),
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
-        "capture_bundle": _provider_capture_bundle(evidence_summary),
+        "provider_capture_commands": _provider_capture_commands(evidence_config),
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(evidence_config),
+        "capture_bundle": _provider_capture_bundle(evidence_summary, evidence_config),
         "launch_pipeline": {
             "ready": False if launch is None else bool(launch.ready),
             "output_dir": "" if launch is None else str(launch.output_dir or ""),
@@ -668,6 +788,7 @@ def _runbook_markdown(
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "",
         "## Components",
         "",
@@ -808,7 +929,10 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
     }
 
 
-def _provider_capture_bundle(evidence_summary: pd.DataFrame) -> dict[str, Any]:
+def _provider_capture_bundle(evidence_summary: pd.DataFrame, evidence_config: dict[str, Any]) -> dict[str, Any]:
+    payload = _mapping(evidence_config.get("capture_bundle"))
+    if payload:
+        return {str(key): _jsonable(value) for key, value in payload.items()}
     return {
         "capture_bundle_path": _first_text(evidence_summary, "capture_bundle_path"),
         "capture_bundle_provided": _first_bool(evidence_summary, "capture_bundle_provided"),
@@ -876,12 +1000,48 @@ def _provider_capture_bundle(evidence_summary: pd.DataFrame) -> dict[str, Any]:
         "source_live_fetch_contract_session_close_local": _first_text(
             evidence_summary, "source_live_fetch_contract_session_close_local"
         ),
+        "provider_capture_command_count": int(_first_number(evidence_summary, "provider_capture_command_count")),
+        "provider_capture_command_providers": _first_text(evidence_summary, "provider_capture_command_providers"),
+        "provider_capture_command_transports": _first_text(evidence_summary, "provider_capture_command_transports"),
+        "capture_bundle_provider_capture_command_count": int(
+            _first_number(evidence_summary, "capture_bundle_provider_capture_command_count")
+        ),
+        "capture_bundle_provider_capture_command_missing_count": int(
+            _first_number(evidence_summary, "capture_bundle_provider_capture_command_missing_count")
+        ),
+        "capture_bundle_provider_capture_commands_match_session": _first_bool(
+            evidence_summary, "capture_bundle_provider_capture_commands_match_session"
+        )
+        if _first_bool(evidence_summary, "capture_bundle_provided")
+        else True,
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(evidence_config),
     }
 
 
 def _path_from_text(value: str) -> Path | None:
     text = _text(value)
     return Path(text) if text else None
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _provider_capture_commands(evidence_config: dict[str, Any]) -> list[Any]:
+    return _list(evidence_config.get("provider_capture_commands"))
+
+
+def _bundle_provider_capture_commands(evidence_config: dict[str, Any]) -> list[Any]:
+    bundle = _mapping(evidence_config.get("capture_bundle"))
+    return (
+        _list(evidence_config.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("provider_capture_commands"))
+    )
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
@@ -894,6 +1054,12 @@ def _first_bool(frame: pd.DataFrame | None, column: str) -> bool:
     if frame is None or frame.empty or column not in frame.columns:
         return False
     return _truthy(frame.iloc[0][column])
+
+
+def _first_number(frame: pd.DataFrame | None, column: str) -> float:
+    if frame is None or frame.empty or column not in frame.columns:
+        return 0.0
+    return _number(frame.iloc[0][column])
 
 
 def _text(value: object, fallback: str = "") -> str:
@@ -912,6 +1078,18 @@ def _truthy(value: object) -> bool:
     if isinstance(value, (int, float)) and not pd.isna(value):
         return bool(value)
     return _text(value).lower() in {"1", "true", "yes", "ready", "pass"}
+
+
+def _number(value: object) -> float:
+    try:
+        if pd.isna(value):
+            return 0.0
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _jsonable(value: object) -> object:

@@ -196,7 +196,9 @@
   plus manifest, and points ready packets to the full
   `review-strategy-evidence --profile imbalance` gate. Launch summary/config
   and manifest extras now also expose capture env-template and adapter handoff
-  SHA-256 values directly for broker handoff audit.
+  SHA-256 values directly for broker handoff audit, and carry provider capture
+  command counts/lists plus capture-bundle command match proof into the launch
+  packet.
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture
