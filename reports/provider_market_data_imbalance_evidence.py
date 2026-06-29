@@ -63,6 +63,9 @@ def write_provider_market_data_imbalance_evidence_review(
     provider_summary, provider_summary_error = _read_csv(
         provider_dir / "provider_market_data_imbalance_research_summary.csv"
     )
+    provider_config, provider_config_error = _read_json(
+        provider_dir / "provider_market_data_imbalance_research_config.json"
+    )
     catalog = None
     evidence = None
     catalog_error = ""
@@ -97,15 +100,28 @@ def write_provider_market_data_imbalance_evidence_review(
         provider_dir,
         provider_summary,
         provider_summary_error,
+        provider_config,
+        provider_config_error,
         catalog,
         catalog_error,
         evidence,
         evidence_error,
         config,
     )
-    summary = _summary(provider_dir, provider_summary, catalog, evidence, checks, out, catalog_dir, evidence_dir, config)
+    summary = _summary(
+        provider_dir,
+        provider_summary,
+        provider_config,
+        catalog,
+        evidence,
+        checks,
+        out,
+        catalog_dir,
+        evidence_dir,
+        config,
+    )
     action_queue = _action_queue(summary.iloc[0], provider_dir, catalog, evidence)
-    payload = _config(summary.iloc[0], provider_summary, catalog, evidence, checks, action_queue, config)
+    payload = _config(summary.iloc[0], provider_summary, provider_config, catalog, evidence, checks, action_queue, config)
 
     checks.to_csv(out / "provider_market_data_imbalance_evidence_checks.csv", index=False)
     summary.to_csv(out / "provider_market_data_imbalance_evidence_summary.csv", index=False)
@@ -166,10 +182,31 @@ def write_provider_market_data_imbalance_evidence_review(
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "provider_capture_command_count": int(summary.iloc[0]["provider_capture_command_count"]),
+            "provider_capture_command_providers": str(summary.iloc[0]["provider_capture_command_providers"]),
+            "provider_capture_command_transports": str(summary.iloc[0]["provider_capture_command_transports"]),
+            "capture_bundle_provider_capture_command_count": int(
+                summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+            ),
+            "capture_bundle_provider_capture_command_missing_count": int(
+                summary.iloc[0]["capture_bundle_provider_capture_command_missing_count"]
+            ),
+            "capture_bundle_provider_capture_commands_match_session": bool(
+                summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary.iloc[0]),
+                "provider_capture_commands": _list(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
+                ),
+                "provider_capture_command_count": int(
+                    summary.iloc[0]["capture_bundle_provider_capture_command_count"]
+                ),
+                "provider_capture_commands_match_session": bool(
+                    summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+                ),
                 "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -188,6 +225,10 @@ def write_provider_market_data_imbalance_evidence_review(
                 "market": str(summary.iloc[0]["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary.iloc[0]),
             },
+            "provider_capture_commands": _list(payload.get("provider_capture_commands")),
+            "capture_bundle_provider_capture_commands": _list(
+                payload.get("capture_bundle_provider_capture_commands")
+            ),
         },
     )
     return ProviderMarketDataImbalanceEvidenceReport(catalog, evidence, checks, summary, action_queue, payload, out)
@@ -202,10 +243,26 @@ def _read_csv(path: Path) -> tuple[pd.DataFrame, str]:
         return pd.DataFrame(), f"{path.name} is not readable: {exc}"
 
 
+def _read_json(path: Path) -> tuple[dict[str, Any], str]:
+    if not path.exists():
+        return {}, f"{path.name} does not exist"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        return {}, f"{path.name} is not readable: {exc}"
+    except json.JSONDecodeError as exc:
+        return {}, f"{path.name} JSON is invalid: {exc}"
+    if not isinstance(payload, dict):
+        return {}, f"{path.name} JSON must be an object"
+    return payload, ""
+
+
 def _checks(
     provider_dir: Path,
     provider_summary: pd.DataFrame,
     provider_summary_error: str,
+    provider_config: dict[str, Any],
+    provider_config_error: str,
     catalog: ExperimentCatalog | None,
     catalog_error: str,
     evidence: StrategyEvidenceReview | None,
@@ -218,6 +275,23 @@ def _checks(
     evidence_summary = evidence.summary if evidence is not None else pd.DataFrame()
     passed_required = int(_first_number(evidence_summary, "passed_required_run_types"))
     required_count = int(_first_number(evidence_summary, "required_run_type_count"))
+    bundle_provided = _first_bool(provider_summary, "capture_bundle_provided")
+    provider_capture_command_count = int(_first_number(provider_summary, "provider_capture_command_count"))
+    bundle_provider_capture_command_count = int(
+        _first_number(provider_summary, "capture_bundle_provider_capture_command_count")
+    )
+    bundle_provider_capture_command_missing_count = int(
+        _first_number(provider_summary, "capture_bundle_provider_capture_command_missing_count")
+    )
+    bundle_provider_capture_commands_carried = (
+        provider_capture_command_count >= 1
+        and bundle_provider_capture_command_count == provider_capture_command_count
+        and bundle_provider_capture_command_missing_count == 0
+    )
+    bundle_provider_capture_commands_match_session = (
+        bundle_provider_capture_commands_carried
+        and _first_bool(provider_summary, "capture_bundle_provider_capture_commands_match_session")
+    )
     return pd.DataFrame(
         [
             _check(
@@ -237,12 +311,36 @@ def _checks(
                 provider_summary_error or "provider imbalance research summary could not be read",
             ),
             _check(
+                "provider_research_config_readable",
+                provider_config_error or "ok",
+                "is",
+                "ok",
+                not provider_config_error,
+                provider_config_error or "provider imbalance research config could not be read",
+            ),
+            _check(
                 "provider_imbalance_research_ready",
                 provider_ready,
                 "is",
                 True,
                 provider_ready or not config.require_provider_research_ready,
                 "provider imbalance research is not ready",
+            ),
+            _check(
+                "provider_research_provider_capture_commands_carried",
+                bundle_provider_capture_command_count,
+                "==",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_carried if bundle_provided else True,
+                "provider imbalance research is missing capture-bundle provider command proof",
+            ),
+            _check(
+                "provider_research_provider_capture_commands_match_session",
+                bundle_provider_capture_command_count,
+                "matches",
+                provider_capture_command_count,
+                bundle_provider_capture_commands_match_session if bundle_provided else True,
+                "provider imbalance research command proof no longer matches the session packet",
             ),
             _check(
                 "experiment_catalog_ready",
@@ -291,6 +389,7 @@ def _checks(
 def _summary(
     provider_dir: Path,
     provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
     catalog: ExperimentCatalog | None,
     evidence: StrategyEvidenceReview | None,
     checks: pd.DataFrame,
@@ -394,6 +493,26 @@ def _summary(
                 "source_live_fetch_contract_session_close_local": _first_text(
                     provider_summary, "source_live_fetch_contract_session_close_local"
                 ),
+                "provider_capture_command_count": int(
+                    _first_number(provider_summary, "provider_capture_command_count")
+                ),
+                "provider_capture_command_providers": _first_text(
+                    provider_summary, "provider_capture_command_providers"
+                ),
+                "provider_capture_command_transports": _first_text(
+                    provider_summary, "provider_capture_command_transports"
+                ),
+                "capture_bundle_provider_capture_command_count": int(
+                    _first_number(provider_summary, "capture_bundle_provider_capture_command_count")
+                ),
+                "capture_bundle_provider_capture_command_missing_count": int(
+                    _first_number(provider_summary, "capture_bundle_provider_capture_command_missing_count")
+                ),
+                "capture_bundle_provider_capture_commands_match_session": _first_bool(
+                    provider_summary, "capture_bundle_provider_capture_commands_match_session"
+                )
+                if _first_bool(provider_summary, "capture_bundle_provided")
+                else True,
                 "market": _first_text(evidence_summary, "market") or _first_text(provider_summary, "market"),
                 "strategy": _first_text(evidence_summary, "strategy") or "imbalance",
                 "catalog_run_count": 0 if catalog is None else catalog.run_count,
@@ -464,6 +583,7 @@ def _action_queue(
 def _config(
     summary: pd.Series,
     provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
     catalog: ExperimentCatalog | None,
     evidence: StrategyEvidenceReview | None,
     checks: pd.DataFrame,
@@ -477,10 +597,13 @@ def _config(
         "parameters": asdict(config),
         "summary": _series_record(summary),
         "provider_research": _first_record(provider_summary),
+        "provider_research_config": _jsonable(provider_config),
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
-        "capture_bundle": _provider_capture_bundle(provider_summary),
+        "provider_capture_commands": _provider_capture_commands(provider_config),
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
+        "capture_bundle": _provider_capture_bundle(provider_summary, provider_config),
         "catalog": {
             "run_count": 0 if catalog is None else catalog.run_count,
             "output_dir": "" if catalog is None else str(catalog.output_dir or ""),
@@ -585,6 +708,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Catalog runs: {summary['catalog_run_count']}",
         f"- Required run types: {summary['passed_required_run_types']}/{summary['required_run_type_count']}",
         "",
@@ -708,7 +832,10 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
     }
 
 
-def _provider_capture_bundle(provider_summary: pd.DataFrame) -> dict[str, Any]:
+def _provider_capture_bundle(provider_summary: pd.DataFrame, provider_config: dict[str, Any]) -> dict[str, Any]:
+    payload = _mapping(provider_config.get("capture_bundle"))
+    if payload:
+        return {str(key): _jsonable(value) for key, value in payload.items()}
     return {
         "capture_bundle_path": _first_text(provider_summary, "capture_bundle_path"),
         "capture_bundle_provided": _first_bool(provider_summary, "capture_bundle_provided"),
@@ -776,12 +903,48 @@ def _provider_capture_bundle(provider_summary: pd.DataFrame) -> dict[str, Any]:
         "source_live_fetch_contract_session_close_local": _first_text(
             provider_summary, "source_live_fetch_contract_session_close_local"
         ),
+        "provider_capture_command_count": int(_first_number(provider_summary, "provider_capture_command_count")),
+        "provider_capture_command_providers": _first_text(provider_summary, "provider_capture_command_providers"),
+        "provider_capture_command_transports": _first_text(provider_summary, "provider_capture_command_transports"),
+        "capture_bundle_provider_capture_command_count": int(
+            _first_number(provider_summary, "capture_bundle_provider_capture_command_count")
+        ),
+        "capture_bundle_provider_capture_command_missing_count": int(
+            _first_number(provider_summary, "capture_bundle_provider_capture_command_missing_count")
+        ),
+        "capture_bundle_provider_capture_commands_match_session": _first_bool(
+            provider_summary, "capture_bundle_provider_capture_commands_match_session"
+        )
+        if _first_bool(provider_summary, "capture_bundle_provided")
+        else True,
+        "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
     }
 
 
 def _path_from_text(value: str) -> Path | None:
     text = _text(value)
     return Path(text) if text else None
+
+
+def _mapping(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _list(value: object) -> list[Any]:
+    return value if isinstance(value, list) else []
+
+
+def _provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
+    return _list(provider_config.get("provider_capture_commands"))
+
+
+def _bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[Any]:
+    bundle = _mapping(provider_config.get("capture_bundle"))
+    return (
+        _list(provider_config.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("capture_bundle_provider_capture_commands"))
+        or _list(bundle.get("provider_capture_commands"))
+    )
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:

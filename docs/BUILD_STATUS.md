@@ -183,7 +183,9 @@
   manifest, and points ready candidates to
   `pipeline-imbalance-launch` without weakening the full launch-ready
   `imbalance` profile. Evidence summary/config and manifest extras now also
-  expose capture env-template and adapter handoff SHA-256 values directly.
+  expose capture env-template and adapter handoff SHA-256 values directly, and
+  carry provider capture command counts/lists plus capture-bundle command match
+  proof into the research-evidence package.
 - Provider market-data imbalance launch packaging now bridges ready provider
   research evidence into broker handoff artifacts:
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
