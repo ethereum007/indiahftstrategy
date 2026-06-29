@@ -200,6 +200,11 @@
   and manifest extras carry capture env-template and adapter handoff SHA-256
   values directly, while manifest inputs fingerprint those files for iRage/live
   provider handoff review.
+- Provider market-data imbalance runtime telemetry now keeps that live adapter
+  audit trail intact after scale-up: runtime telemetry summary/config and
+  manifest extras expose capture env-template and adapter handoff SHA-256
+  values directly, and the manifest fingerprints the same files before runtime
+  guard monitoring.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
