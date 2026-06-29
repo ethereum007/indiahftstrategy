@@ -209,6 +209,10 @@
   fingerprints through halt/continue monitoring: guard summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
   values directly before runtime session review.
+- Provider market-data imbalance runtime session now carries the same adapter
+  fingerprints into broker-readiness handoff: session summary/config and
+  manifest extras expose capture env-template and adapter handoff SHA-256
+  values directly.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
