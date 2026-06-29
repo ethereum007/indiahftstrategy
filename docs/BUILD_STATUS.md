@@ -1673,8 +1673,8 @@
   `broker_dispatch` plan, reruns `reconcile-broker-dispatch` under a nested
   folder, carries capture bundle/env-template/adapter handoff provenance,
   source env-template proof, exchange/session metadata, capture-bundle session
-  match proof, and `live_fetch_contract` into provider summary/config/runbook
-  artifacts plus manifest, writes provider
+  match proof, provider capture-command proof, and `live_fetch_contract` into
+  provider summary/config/runbook artifacts plus manifest, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean ack proof to
   `review-provider-market-data-imbalance-broker-dispatch-roundtrip`.
