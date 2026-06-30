@@ -4351,7 +4351,10 @@ call the provider; it validates the ready fetch plan, live transport,
 credential env-var names, the carried source-plan env-template proof, the
 upstream `live_fetch_contract`, optional runtime env-var presence, symbol
 coverage, and runtime budgets. The request template carries only the blank
-env-template path/hash and env-var names, never credential values. Use
+env-template path/hash and env-var names, never credential values. It also
+writes an `adapter_execution_contract` with provider/adapter/transport/mode,
+endpoint, output filename, dry-run status, env-var names, and API-contract
+approval requirements for the future Arrow.money/iRage backend adapter. Use
 `--require-env-present` only in the deployment shell where Arrow.money/iRage
 credentials are already configured, since the artifacts store presence booleans
 but never credential values.
@@ -4375,8 +4378,11 @@ This writes `provider_market_data_client_packet.json`,
 manifest. The packet is still dry-run only: it stores request details,
 normalized output schema, runtime budgets, credential env-var names/presence
 booleans, the blank env-template path/hash, and the upstream
-`live_fetch_contract`, but never credential values. Its ready action is the
-explicit live-run approval gate for the provider client.
+`live_fetch_contract`, but never credential values. It preserves the
+`adapter_execution_contract` with the session label, output schema columns,
+clock-skew budget, and local buffer budget so a backend runner can bind the
+exact dry-run contract. Its ready action is the explicit live-run approval gate
+for the provider client.
 
 Plan the live capture windows before running a credentialed provider client:
 

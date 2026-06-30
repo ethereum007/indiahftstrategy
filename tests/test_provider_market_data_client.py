@@ -105,9 +105,24 @@ def test_provider_market_data_client_writes_websocket_packet_and_schema(tmp_path
     assert packet["authentication"]["env_template"]["exists"] is True
     assert len(packet["authentication"]["env_template"]["sha256"]) == 64
     assert packet["authentication"]["values_stored"] is False
+    assert packet["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert packet["adapter_execution_contract"]["transport"] == "websocket"
+    assert packet["adapter_execution_contract"]["client_packet_ready"] is True
+    assert packet["adapter_execution_contract"]["session_label"] == "arrow_ws_day1"
+    assert packet["adapter_execution_contract"]["output_schema_columns"] == [
+        "ts",
+        "bid",
+        "ask",
+        "bid_qty",
+        "ask_qty",
+        "last",
+        "last_qty",
+    ]
+    assert packet["adapter_execution_contract"]["values_stored"] is False
     assert packet["output"]["schema_columns"] == ["ts", "bid", "ask", "bid_qty", "ask_qty", "last", "last_qty"]
     assert schema["column"].tolist() == packet["output"]["schema_columns"]
     assert config["credentials"]["values_stored"] is False
+    assert config["adapter_execution_contract"]["client_packet_ready"] is True
     assert config["credentials"]["env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
     assert config["fetcher_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert config["fetcher_plan"]["live_fetch_contract"]["available"] is True
@@ -116,6 +131,7 @@ def test_provider_market_data_client_writes_websocket_packet_and_schema(tmp_path
     assert manifest["run_type"] == "provider_market_data_client_dry_run"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
 
 
 def test_provider_market_data_client_can_require_env_presence(tmp_path, monkeypatch):
@@ -197,6 +213,32 @@ def test_provider_market_data_client_blocks_missing_live_contract(tmp_path):
     assert config["blocked_actions"][0]["action"] == "regenerate_provider_fetcher_with_source_live_fetch_contract"
 
 
+def test_provider_market_data_client_builds_adapter_contract_for_legacy_fetcher_plan(tmp_path):
+    fetcher_report = _write_fetcher_plan(tmp_path)
+    fetcher_config_path = fetcher_report.output_dir / "provider_market_data_fetcher_config.json"
+    payload = json.loads(fetcher_config_path.read_text(encoding="utf-8"))
+    payload["request_template"].pop("adapter_execution_contract", None)
+    fetcher_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_client_plan(
+        fetcher_config_path,
+        tmp_path / "legacy_client",
+        config=ProviderMarketDataClientConfig(session_label="legacy_arrow_ws"),
+    )
+
+    packet = json.loads((report.output_dir / "provider_market_data_client_packet.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert packet["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert packet["adapter_execution_contract"]["adapter"] == "arrow_money"
+    assert packet["adapter_execution_contract"]["transport"] == "websocket"
+    assert packet["adapter_execution_contract"]["credential_env_vars"] == [
+        "ARROW_MONEY_API_KEY",
+        "ARROW_MONEY_API_SECRET",
+    ]
+    assert packet["adapter_execution_contract"]["session_label"] == "legacy_arrow_ws"
+    assert packet["adapter_execution_contract"]["values_stored"] is False
+
+
 def test_provider_market_data_client_blocks_unready_fetcher_plan(tmp_path):
     fetcher_report = _write_fetcher_plan(tmp_path, transport="file")
 
@@ -240,3 +282,5 @@ def test_cli_provider_market_data_client_accepts_rest_fetcher_plan(tmp_path):
     assert summary.loc[0, "template_kind"] == "rest_backfill_request"
     assert packet["request"]["method"] == "GET"
     assert packet["request"]["query"]["window_start"] == "2026-06-10 09:15:00"
+    assert packet["adapter_execution_contract"]["transport"] == "rest"
+    assert packet["adapter_execution_contract"]["mode"] == "provider_rest_backfill"

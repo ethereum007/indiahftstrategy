@@ -93,8 +93,21 @@ def test_provider_market_data_fetcher_writes_websocket_template(tmp_path):
     assert template["authentication"]["values_stored"] is False
     assert template["subscriptions"][0]["symbol"] == "NIFTY-I"
     assert template["subscriptions"][0]["exchange"] == "NFO"
+    assert template["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert template["adapter_execution_contract"]["adapter"] == "arrow_money"
+    assert template["adapter_execution_contract"]["transport"] == "websocket"
+    assert template["adapter_execution_contract"]["credential_env_vars"] == [
+        "ARROW_MONEY_API_KEY",
+        "ARROW_MONEY_API_SECRET",
+    ]
+    assert template["adapter_execution_contract"]["credential_env_template"]["sha256"] == (
+        template["authentication"]["env_template"]["sha256"]
+    )
+    assert template["adapter_execution_contract"]["output_filename"] == "provider_market_data.csv"
+    assert template["adapter_execution_contract"]["values_stored"] is False
     assert config["credentials"]["values_stored"] is False
     assert config["credentials"]["env_template"]["sha256"] == template["authentication"]["env_template"]["sha256"]
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["fetch_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert config["fetch_plan"]["live_fetch_contract"]["available"] is True
     assert config["primary_action"]["action"] == "review_provider_fetcher_request_template"
@@ -102,6 +115,7 @@ def test_provider_market_data_fetcher_writes_websocket_template(tmp_path):
     assert manifest["run_type"] == "provider_market_data_fetcher_plan"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
 
 
 def test_provider_market_data_fetcher_can_require_env_presence(tmp_path, monkeypatch):
@@ -225,3 +239,5 @@ def test_cli_provider_market_data_fetcher_accepts_rest_fetch_plan(tmp_path):
     assert summary.loc[0, "template_kind"] == "rest_backfill_request"
     assert template["method"] == "GET"
     assert template["query"]["window_start"] == "2026-06-10 09:15:00"
+    assert template["adapter_execution_contract"]["transport"] == "rest"
+    assert template["adapter_execution_contract"]["mode"] == "provider_rest_backfill"

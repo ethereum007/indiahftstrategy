@@ -108,6 +108,7 @@ def write_provider_market_data_fetcher_plan(
             "provider_fetcher": report.config["provider_fetcher"],
             "request_template": report.request_template,
             "credential_env_template": credential_env_template,
+            "adapter_execution_contract": report.request_template.get("adapter_execution_contract", {}),
         },
     )
     return ProviderMarketDataFetcherReport(
@@ -510,6 +511,7 @@ def _config(
             "values_stored": False,
         },
         "request_template": request_template,
+        "adapter_execution_contract": _mapping(request_template.get("adapter_execution_contract")),
         "failed_check_count": len(failed_checks),
         "failed_checks": failed_checks,
         "ready_action_count": len(ready_actions),
@@ -564,6 +566,24 @@ def _request_template(
             "heartbeat_timeout_ms": int(config.heartbeat_timeout_ms),
             "max_reconnects": int(config.max_reconnects),
             "batch_size": int(config.batch_size),
+        },
+        "adapter_execution_contract": {
+            "schema_version": 1,
+            "provider": _text(source_plan.get("provider")),
+            "adapter": _text(source_plan.get("adapter")),
+            "kind": _text(source_plan.get("kind")),
+            "market": _text(source_plan.get("market")),
+            "exchange": _text(source_plan.get("exchange")),
+            "transport": transport,
+            "mode": _text(fetch.get("mode")),
+            "endpoint": _text(_mapping(source_plan.get("source")).get("uri")),
+            "credential_env_vars": _string_list(credentials.get("env_vars")),
+            "credential_env_template": _mapping(credentials.get("env_template")),
+            "output_filename": _text(fetch.get("output_filename")),
+            "dry_run": bool(config.dry_run),
+            "requires_credentials": bool(_string_list(credentials.get("env_vars"))),
+            "requires_api_contract_approval": True,
+            "values_stored": False,
         },
     }
     if transport == "rest":

@@ -73,13 +73,20 @@
   runtime budgets, carried source-plan env-template proof, carried
   `live_fetch_contract`, and optional env-var presence while writing only
   env-var names, blank env-template path/hash references, and presence booleans,
-  not secret values.
+  not secret values. Request templates now also carry a credential-safe
+  `adapter_execution_contract` with provider/adapter/transport/mode, endpoint,
+  output filename, blank env-template proof, env-var names, dry-run status, and
+  explicit API-contract approval requirements for the future Arrow.money/iRage
+  backend adapter.
 - Provider market-data client dry-run packets now close the backend data-source
   handoff before live credentials: `prepare-provider-market-data-client`
   validates ready request templates, env-var contracts, normalized CSV output
   schema, runtime budgets, carried blank env-template proof, and carried
   `live_fetch_contract`, then emits a manifest-backed execution packet for the
-  eventual Arrow.money/iRage client without making external API calls.
+  eventual Arrow.money/iRage client without making external API calls. Client
+  packets now preserve that `adapter_execution_contract` plus session label,
+  output schema columns, clock-skew budget, and local buffer budget so a backend
+  runner can bind the exact dry-run contract without reading secrets.
 - Provider market-data live session planning now creates credential-safe capture
   packets before the market opens: `plan-provider-market-data-live-session`
   validates the dry-run client packet, NSE session windows, weekday, optional

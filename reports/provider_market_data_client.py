@@ -111,6 +111,7 @@ def write_provider_market_data_client_plan(
             "client": report.config["client"],
             "packet": report.packet,
             "credential_env_template": credential_env_template,
+            "adapter_execution_contract": report.packet.get("adapter_execution_contract", {}),
             "output_schema_columns": report.output_schema["column"].astype(str).tolist(),
         },
     )
@@ -554,6 +555,7 @@ def _config(
             "env_template": _credential_env_template_contract(summary),
             "values_stored": False,
         },
+        "adapter_execution_contract": _mapping(packet.get("adapter_execution_contract")),
         "output_schema": _records(output_schema),
         "packet": packet,
         "failed_check_count": len(failed_checks),
@@ -581,6 +583,37 @@ def _client_packet(
     output = _mapping(template.get("output"))
     runtime = _mapping(template.get("runtime"))
     env_vars = _string_list(authentication.get("env_vars"))
+    adapter_execution_contract = {
+        "schema_version": 1,
+        "provider": _text(template.get("provider")),
+        "adapter": _text(template.get("adapter")),
+        "kind": _text(template.get("kind")),
+        "market": _text(template.get("market")),
+        "exchange": _text(template.get("exchange")),
+        "transport": _text(template.get("transport")),
+        "mode": _text(template.get("mode")),
+        "endpoint": _text(template.get("endpoint")),
+        "credential_env_vars": env_vars,
+        "credential_env_template": _mapping(authentication.get("env_template")),
+        "output_filename": _text(output.get("filename")),
+        "dry_run": True,
+        "requires_credentials": bool(env_vars),
+        "requires_api_contract_approval": True,
+        "values_stored": False,
+    }
+    adapter_execution_contract.update(_mapping(template.get("adapter_execution_contract")))
+    adapter_execution_contract.update(
+        {
+            "client_packet_ready": bool(ready),
+            "session_label": config.session_label,
+            "output_schema_columns": output_schema["column"].astype(str).tolist()
+            if not output_schema.empty
+            else [],
+            "max_clock_skew_ms": int(config.max_clock_skew_ms),
+            "max_local_buffer_rows": int(config.max_local_buffer_rows),
+            "values_stored": False,
+        }
+    )
     return {
         "schema_version": 1,
         "ready": bool(ready),
@@ -618,6 +651,7 @@ def _client_packet(
             "format": _text(output.get("format")),
             "schema_columns": output_schema["column"].astype(str).tolist() if not output_schema.empty else [],
         },
+        "adapter_execution_contract": adapter_execution_contract,
         "live_execution_gate": {
             "requires_api_contract_approval": True,
             "requires_credentials": True,
