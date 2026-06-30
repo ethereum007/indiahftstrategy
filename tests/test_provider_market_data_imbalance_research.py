@@ -1057,6 +1057,12 @@ def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenan
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["adapter_contract_provider"] == "arrow_money"
+    assert summary["adapter_contract_transport"] == "websocket"
+    assert summary["adapter_contract_market"] == "india_nse_index_derivatives"
+    assert summary["adapter_contract_exchange"] == "NFO"
+    assert bool(summary["adapter_contract_metadata_matches_evidence"])
+    assert not bool(summary["adapter_contract_values_stored"])
     assert summary["provider_capture_command_count"] == 2
     assert summary["provider_capture_command_providers"] == "arrow_money"
     assert summary["provider_capture_command_transports"] == "websocket"
@@ -1079,12 +1085,16 @@ def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenan
     assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
+    assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["adapter_execution_contract"]["values_stored"] is False
     assert config["capture_bundle"]["provider_capture_command_count"] == 2
     assert config["capture_bundle"]["capture_bundle_provider_capture_command_count"] == 2
     assert config["capture_bundle"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["capture_bundle"]["exchange"] == "NFO"
     assert config["capture_bundle"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["capture_bundle"]["market_session"]["open_local"] == "09:15"
@@ -1097,6 +1107,8 @@ def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenan
     assert config["provider_research"]["source_live_fetch_contract_available"] is True
     assert config["provider_research"]["exchange"] == "NFO"
     assert config["provider_research"]["capture_bundle_metadata_matches_session"] is True
+    assert config["provider_research"]["adapter_contract_provider"] == "arrow_money"
+    assert config["provider_research"]["adapter_contract_metadata_matches_evidence"] is True
     assert config["provider_research"]["provider_capture_command_count"] == 2
     assert config["provider_research"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
@@ -1113,6 +1125,8 @@ def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenan
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert manifest["extra"]["provider_capture_command_count"] == 2
     assert manifest["extra"]["provider_capture_command_providers"] == "arrow_money"
     assert manifest["extra"]["provider_capture_command_transports"] == "websocket"
@@ -1123,11 +1137,57 @@ def test_provider_market_data_imbalance_evidence_carries_capture_bundle_provenan
     assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_command_count"] == 2
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+    assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
+
+
+def test_provider_market_data_imbalance_evidence_blocks_missing_adapter_execution_contract(tmp_path):
+    evidence, _ = _write_bundle_linked_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    summary_path = research.output_dir / "provider_market_data_imbalance_research_summary.csv"
+    research_summary = pd.read_csv(summary_path)
+    for column in (
+        "adapter_contract_provider",
+        "adapter_contract_transport",
+        "adapter_contract_market",
+        "adapter_contract_exchange",
+    ):
+        research_summary.loc[0, column] = ""
+    research_summary.loc[0, "adapter_contract_values_stored"] = True
+    research_summary.loc[0, "adapter_contract_metadata_matches_evidence"] = False
+    research_summary.to_csv(summary_path, index=False)
+    config_path = research.output_dir / "provider_market_data_imbalance_research_config.json"
+    _mutate_json(
+        config_path,
+        lambda payload: (
+            payload.pop("adapter_execution_contract", None),
+            payload["capture_bundle"].pop("adapter_execution_contract", None),
+        ),
+    )
+
+    report = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "provider_research_adapter_execution_contract_carried" in failed
+    assert summary["adapter_contract_provider"] == ""
+    assert bool(summary["adapter_contract_values_stored"])
+    assert report.action_queue.loc[0, "action"] == "rerun_provider_imbalance_research"
+    assert report.action_queue.loc[0, "next_gate"] == "run-provider-market-data-imbalance-research"
 
 
 def test_provider_market_data_imbalance_evidence_blocks_unready_research(tmp_path):
