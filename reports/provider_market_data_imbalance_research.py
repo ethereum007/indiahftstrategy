@@ -209,6 +209,7 @@ def write_provider_market_data_imbalance_research(
             "capture_bundle_provider_capture_commands_match_session": bool(
                 summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
             ),
+            "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
             "capture_bundle": {
                 "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
@@ -221,6 +222,9 @@ def write_provider_market_data_imbalance_research(
                 ),
                 "provider_capture_commands_match_session": bool(
                     summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
+                ),
+                "adapter_execution_contract": _mapping(
+                    _mapping(payload.get("capture_bundle")).get("adapter_execution_contract")
                 ),
                 "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -372,6 +376,13 @@ def _checks(
         bundle_provider_capture_commands_carried
         and _truthy(handoff_row.get("capture_bundle_provider_capture_commands_match_session"))
     )
+    adapter_contract_carried = (
+        bool(_text(handoff_row.get("adapter_contract_provider")))
+        and bool(_text(handoff_row.get("adapter_contract_transport")))
+        and bool(_text(handoff_row.get("adapter_contract_market")))
+        and bool(_text(handoff_row.get("adapter_contract_exchange")))
+        and not _truthy(handoff_row.get("adapter_contract_values_stored"))
+    )
     return pd.DataFrame(
         [
             _check(
@@ -413,6 +424,22 @@ def _checks(
                 provider_capture_command_count,
                 bundle_provider_capture_commands_match_session if bundle_provided else True,
                 "provider research handoff command proof no longer matches the session packet",
+            ),
+            _check(
+                "provider_research_handoff_adapter_execution_contract_carried",
+                _adapter_contract_metadata_text(handoff_row),
+                "is_not",
+                "",
+                adapter_contract_carried if bundle_provided else True,
+                "provider research handoff is missing credential-safe adapter execution contract proof",
+            ),
+            _check(
+                "provider_research_handoff_adapter_execution_contract_matches_evidence",
+                _adapter_contract_metadata_text(handoff_row),
+                "matches",
+                "live evidence",
+                _truthy(handoff_row.get("adapter_contract_metadata_matches_evidence")) if bundle_provided else True,
+                "provider research handoff adapter execution contract no longer matches live evidence",
             ),
             _check(
                 "imbalance_research_pipeline_ready",
@@ -540,6 +567,14 @@ def _summary(
                 ),
                 "source_live_fetch_contract_session_close_local": str(
                     handoff_row.get("source_live_fetch_contract_session_close_local", "") or ""
+                ),
+                "adapter_contract_provider": str(handoff_row.get("adapter_contract_provider", "") or ""),
+                "adapter_contract_transport": str(handoff_row.get("adapter_contract_transport", "") or ""),
+                "adapter_contract_market": str(handoff_row.get("adapter_contract_market", "") or ""),
+                "adapter_contract_exchange": str(handoff_row.get("adapter_contract_exchange", "") or ""),
+                "adapter_contract_values_stored": _truthy(handoff_row.get("adapter_contract_values_stored")),
+                "adapter_contract_metadata_matches_evidence": _truthy(
+                    handoff_row.get("adapter_contract_metadata_matches_evidence")
                 ),
                 "provider_capture_command_count": int(handoff_row.get("provider_capture_command_count", 0) or 0),
                 "provider_capture_command_providers": str(
@@ -690,6 +725,9 @@ def _config(
         "capture_bundle_provider_capture_commands": _list(
             handoff.config.get("capture_bundle_provider_capture_commands") if isinstance(handoff.config, dict) else []
         ),
+        "adapter_execution_contract": _mapping(
+            handoff.config.get("adapter_execution_contract") if isinstance(handoff.config, dict) else {}
+        ),
         "capture_bundle": _handoff_capture_bundle(handoff),
         "research_handoff": {
             "ready": bool(handoff.ready),
@@ -772,6 +810,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
@@ -971,6 +1010,15 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
     }
 
 
+def _adapter_contract_metadata_text(row: pd.Series) -> str:
+    return (
+        f"{_text(row.get('adapter_contract_provider'))}|"
+        f"{_text(row.get('adapter_contract_transport'))}|"
+        f"{_text(row.get('adapter_contract_market'))}|"
+        f"{_text(row.get('adapter_contract_exchange'))}"
+    )
+
+
 def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) -> dict[str, Any]:
     payload = handoff.config.get("capture_bundle") if isinstance(handoff.config, dict) else {}
     if isinstance(payload, dict) and payload:
@@ -1008,6 +1056,17 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         ),
         "source_live_fetch_contract_session_close_local": str(
             row.get("source_live_fetch_contract_session_close_local", "") or ""
+        ),
+        "adapter_execution_contract": _mapping(
+            handoff.config.get("adapter_execution_contract") if isinstance(handoff.config, dict) else {}
+        ),
+        "adapter_contract_provider": str(row.get("adapter_contract_provider", "") or ""),
+        "adapter_contract_transport": str(row.get("adapter_contract_transport", "") or ""),
+        "adapter_contract_market": str(row.get("adapter_contract_market", "") or ""),
+        "adapter_contract_exchange": str(row.get("adapter_contract_exchange", "") or ""),
+        "adapter_contract_values_stored": _truthy(row.get("adapter_contract_values_stored")),
+        "adapter_contract_metadata_matches_evidence": _truthy(
+            row.get("adapter_contract_metadata_matches_evidence")
         ),
         "provider_capture_command_count": int(row.get("provider_capture_command_count", 0) or 0),
         "provider_capture_command_providers": str(row.get("provider_capture_command_providers", "") or ""),
