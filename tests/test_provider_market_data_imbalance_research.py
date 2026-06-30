@@ -6046,12 +6046,21 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert summary["source_live_fetch_contract_exchange"] == "NFO"
     assert summary["source_live_fetch_contract_market"] == "india_nse_index_derivatives"
     assert summary["source_live_fetch_contract_session_open_local"] == "09:15:00"
+    assert summary["adapter_contract_provider"] == "arrow_money"
+    assert summary["adapter_contract_transport"] == "websocket"
+    assert summary["adapter_contract_market"] == "india_nse_index_derivatives"
+    assert summary["adapter_contract_exchange"] == "NFO"
+    assert not bool(summary["adapter_contract_values_stored"])
+    assert bool(summary["adapter_contract_metadata_matches_evidence"])
     assert summary["provider_capture_command_count"] == 2
     assert summary["provider_capture_command_providers"] == "arrow_money"
     assert summary["provider_capture_command_transports"] == "websocket"
     assert summary["capture_bundle_provider_capture_command_count"] == 2
     assert summary["capture_bundle_provider_capture_command_missing_count"] == 0
     assert bool(summary["capture_bundle_provider_capture_commands_match_session"])
+    assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["transport"] == "websocket"
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["exchange"] == "NFO"
     assert config["capture_bundle"]["source_session"]["timezone"] == "Asia/Kolkata"
@@ -6069,6 +6078,9 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
     assert config["capture_bundle"]["source_live_fetch_contract_exchange"] == "NFO"
     assert config["capture_bundle"]["source_live_fetch_contract_session_open_local"] == "09:15:00"
+    assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["adapter_contract_provider"] == "arrow_money"
+    assert config["capture_bundle"]["adapter_contract_metadata_matches_evidence"] is True
     assert config["capture_bundle"]["provider_capture_command_count"] == 2
     assert config["capture_bundle"]["capture_bundle_provider_capture_command_count"] == 2
     assert config["capture_bundle"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
@@ -6084,6 +6096,8 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert config["provider_cutover"]["capture_bundle_metadata_matches_session"] is True
     assert config["provider_cutover"]["source_credential_env_template_path"] == str(source_env_template_path)
     assert config["provider_cutover"]["source_live_fetch_contract_available"] is True
+    assert config["provider_cutover"]["adapter_contract_provider"] == "arrow_money"
+    assert config["provider_cutover"]["adapter_contract_metadata_matches_evidence"] is True
     assert config["provider_cutover"]["provider_capture_command_count"] == 2
     assert config["provider_cutover"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
@@ -6105,6 +6119,9 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
     assert manifest["extra"]["live_fetch_contract"]["session"]["close_local"] == "15:30:00"
+    assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
+    assert manifest["extra"]["adapter_contract_metadata_matches_evidence"] is True
     assert manifest["extra"]["provider_capture_command_count"] == 2
     assert manifest["extra"]["provider_capture_command_providers"] == "arrow_money"
     assert manifest["extra"]["provider_capture_command_transports"] == "websocket"
@@ -6116,11 +6133,54 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert manifest["extra"]["capture_bundle"]["provider_capture_command_count"] == 2
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
+    assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert "Exchange: NFO" in runbook
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+
+
+def test_provider_market_data_imbalance_route_enable_blocks_missing_adapter_execution_contract(tmp_path):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
+    cutover_summary = pd.read_csv(summary_path)
+    cutover_summary.loc[0, "capture_bundle_provided"] = True
+    for column in (
+        "adapter_contract_provider",
+        "adapter_contract_transport",
+        "adapter_contract_market",
+        "adapter_contract_exchange",
+    ):
+        cutover_summary.loc[0, column] = ""
+    cutover_summary.loc[0, "adapter_contract_values_stored"] = True
+    cutover_summary.loc[0, "adapter_contract_metadata_matches_evidence"] = False
+    cutover_summary.to_csv(summary_path, index=False)
+    config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
+    _mutate_json(
+        config_path,
+        lambda payload: (
+            payload.pop("adapter_execution_contract", None),
+            payload["capture_bundle"].pop("adapter_execution_contract", None),
+        ),
+    )
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "provider_cutover_adapter_execution_contract_carried" in failed
+    assert "provider_cutover_adapter_execution_contract_matches_evidence" in failed
+    assert summary["adapter_contract_provider"] == ""
+    assert bool(summary["adapter_contract_values_stored"])
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_cutover"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
 
 
 def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_bundle_provenance(tmp_path):
