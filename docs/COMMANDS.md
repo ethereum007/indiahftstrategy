@@ -4694,9 +4694,11 @@ research pipeline, order plan, and launch pipeline evidence all share the same
 imbalance/market identity. The launch-evidence summary/config/runbook and
 manifest retain the upstream capture bundle, blank credential env-template,
 adapter handoff paths, source credential env-template proof, exchange/session
-metadata, capture-bundle session match proof, and `live_fetch_contract`, so
-scorecards and later broker handoffs can trace the provider-data source
-contract. Its next gate is
+metadata, capture-bundle session match proof, `live_fetch_contract`, and the
+credential-safe `adapter_execution_contract` from the provider launch packet.
+If that adapter contract is missing, unsafe, or no longer matched to live
+evidence, scorecard readiness is blocked before later broker handoffs can drift
+from the provider-data source contract. Its next gate is
 `score-strategy-readiness --profile imbalance`.
 
 Score the provider-data imbalance launch evidence for shadow scale-up planning:
