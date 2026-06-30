@@ -352,7 +352,10 @@
 - Provider market-data imbalance cutover now carries those dispatch-roundtrip
   fingerprints forward from broker readiness: cutover summary/config and
   manifest extras expose the dispatch-roundtrip capture env-template and
-  adapter handoff SHA-256 values directly.
+  adapter handoff SHA-256 values directly. Cutover also preserves the final
+  round-trip `adapter_execution_contract` and blocks route-enable review when
+  that broker-readiness handoff is missing, unsafe, or no longer matched to the
+  runtime-session adapter contract.
 - Provider market-data imbalance route enable now carries those
   dispatch-roundtrip fingerprints forward from cutover: route-enable
   summary/config and manifest extras expose the dispatch-roundtrip capture

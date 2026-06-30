@@ -5079,6 +5079,12 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "capture_bundle_provider_capture_command_count": 2,
                 "capture_bundle_provider_capture_command_missing_count": 0,
                 "capture_bundle_provider_capture_commands_match_session": True,
+                "adapter_contract_provider": "arrow_money",
+                "adapter_contract_transport": "websocket",
+                "adapter_contract_market": "india_nse_index_derivatives",
+                "adapter_contract_exchange": "NFO",
+                "adapter_contract_values_stored": False,
+                "adapter_contract_metadata_matches_evidence": True,
                 "dispatch_roundtrip_exchange": "NFO",
                 "dispatch_roundtrip_source_session_timezone": "Asia/Kolkata",
                 "dispatch_roundtrip_source_session_open_local": "09:15:00",
@@ -5135,6 +5141,13 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count": 0,
                 "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session": True,
                 "dispatch_roundtrip_provider_capture_commands_match_runtime_session": True,
+                "dispatch_roundtrip_adapter_contract_provider": "arrow_money",
+                "dispatch_roundtrip_adapter_contract_transport": "websocket",
+                "dispatch_roundtrip_adapter_contract_market": "india_nse_index_derivatives",
+                "dispatch_roundtrip_adapter_contract_exchange": "NFO",
+                "dispatch_roundtrip_adapter_contract_values_stored": False,
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence": True,
+                "dispatch_roundtrip_adapter_contract_matches_runtime_session": True,
                 "dispatch_roundtrip_capture_env_template_path": str(env_template_path),
                 "dispatch_roundtrip_capture_env_template_provided": True,
                 "dispatch_roundtrip_capture_env_template_exists": True,
@@ -5175,9 +5188,23 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                 "provider_runtime_session": {"scaleup_dir": ""},
                 "provider_capture_commands": provider_capture_commands,
                 "capture_bundle_provider_capture_commands": provider_capture_commands,
+                "adapter_execution_contract": {
+                    "provider": "arrow_money",
+                    "transport": "websocket",
+                    "market": "india_nse_index_derivatives",
+                    "exchange": "NFO",
+                    "values_stored": False,
+                },
                 "capture_bundle": {
                     "provider_capture_commands": provider_capture_commands,
                     "capture_bundle_provider_capture_commands": provider_capture_commands,
+                    "adapter_execution_contract": {
+                        "provider": "arrow_money",
+                        "transport": "websocket",
+                        "market": "india_nse_index_derivatives",
+                        "exchange": "NFO",
+                        "values_stored": False,
+                    },
                 },
                 "dispatch_roundtrip_provenance": {
                     "provider_capture_command_count": 2,
@@ -5189,6 +5216,20 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
                     "provider_capture_commands": provider_capture_commands,
                     "capture_bundle_provider_capture_commands": provider_capture_commands,
                     "provider_capture_commands_match_runtime_session": True,
+                    "adapter_execution_contract": {
+                        "provider": "arrow_money",
+                        "transport": "websocket",
+                        "market": "india_nse_index_derivatives",
+                        "exchange": "NFO",
+                        "values_stored": False,
+                    },
+                    "adapter_contract_provider": "arrow_money",
+                    "adapter_contract_transport": "websocket",
+                    "adapter_contract_market": "india_nse_index_derivatives",
+                    "adapter_contract_exchange": "NFO",
+                    "adapter_contract_values_stored": False,
+                    "adapter_contract_metadata_matches_evidence": True,
+                    "adapter_contract_matches_runtime_session": True,
                     "capture_bundle_path": str(bundle_path),
                     "capture_env_template_path": str(env_template_path),
                     "capture_env_template_sha256": env_template_sha256,
@@ -5269,10 +5310,20 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
     assert bool(summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"])
     assert bool(summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"])
+    assert summary["dispatch_roundtrip_adapter_contract_provider"] == "arrow_money"
+    assert summary["dispatch_roundtrip_adapter_contract_transport"] == "websocket"
+    assert summary["dispatch_roundtrip_adapter_contract_market"] == "india_nse_index_derivatives"
+    assert summary["dispatch_roundtrip_adapter_contract_exchange"] == "NFO"
+    assert not bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_carried", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_session", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_runtime_session", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_adapter_execution_contract_carried", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_adapter_execution_contract_matches_evidence", "passed"])
+    assert bool(checks.loc["dispatch_roundtrip_adapter_execution_contract_matches_runtime_session", "passed"])
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
     assert config["dispatch_roundtrip_provenance"]["metadata_consistent_with_runtime_session"]
@@ -5283,6 +5334,10 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_command_missing_count"] == 0
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands_match_session"]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands_match_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_transport"] == "websocket"
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_matches_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert (
         config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands"][0]["provider"]
@@ -5362,6 +5417,10 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
         == "arrow_money"
     )
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_transport"] == "websocket"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["exchange"] == "NFO"
     assert manifest["extra"]["dispatch_roundtrip"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
@@ -5374,14 +5433,127 @@ def test_provider_market_data_imbalance_cutover_carries_roundtrip_capture_bundle
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"][
         "provider_capture_commands_match_runtime_session"
     ]
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
     assert str(adapter_handoff_path) in runbook
     assert "Dispatch round-trip exchange: NFO" in runbook
     assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
+    assert "Dispatch round-trip adapter execution contract: arrow_money / websocket" in runbook
     assert str(source_env_template_path) in runbook
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
+
+
+def test_provider_market_data_imbalance_cutover_blocks_missing_roundtrip_adapter_contract(tmp_path):
+    broker_readiness_dir = tmp_path / "provider_imbalance_broker_readiness_missing_roundtrip_adapter"
+    broker_readiness_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "broker_readiness_dir": "",
+                "runtime_session_dir": "",
+                "scaleup_dir": "",
+                "capture_bundle_provided": True,
+                "provider_capture_command_count": 2,
+                "provider_capture_command_providers": "arrow_money",
+                "provider_capture_command_transports": "websocket",
+                "capture_bundle_provider_capture_command_count": 2,
+                "capture_bundle_provider_capture_command_missing_count": 0,
+                "capture_bundle_provider_capture_commands_match_session": True,
+                "adapter_contract_provider": "arrow_money",
+                "adapter_contract_transport": "websocket",
+                "adapter_contract_market": "india_nse_index_derivatives",
+                "adapter_contract_exchange": "NFO",
+                "adapter_contract_values_stored": False,
+                "adapter_contract_metadata_matches_evidence": True,
+                "dispatch_roundtrip_capture_bundle_provided": True,
+                "dispatch_roundtrip_provider_capture_command_count": 2,
+                "dispatch_roundtrip_provider_capture_command_providers": "arrow_money",
+                "dispatch_roundtrip_provider_capture_command_transports": "websocket",
+                "dispatch_roundtrip_capture_bundle_provider_capture_command_count": 2,
+                "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count": 0,
+                "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session": True,
+                "dispatch_roundtrip_provider_capture_commands_match_runtime_session": True,
+                "dispatch_roundtrip_adapter_contract_provider": "",
+                "dispatch_roundtrip_adapter_contract_transport": "",
+                "dispatch_roundtrip_adapter_contract_market": "",
+                "dispatch_roundtrip_adapter_contract_exchange": "",
+                "dispatch_roundtrip_adapter_contract_values_stored": True,
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence": False,
+                "dispatch_roundtrip_adapter_contract_matches_runtime_session": False,
+                "provider": "arrow_money",
+                "transport": "websocket",
+                "strategy": "imbalance",
+                "market": "india_nse_index_derivatives",
+                "target_mode": "shadow",
+                "adapter": "arrow_money",
+            }
+        ]
+    ).to_csv(
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_summary.csv",
+        index=False,
+    )
+    (
+        broker_readiness_dir / "provider_market_data_imbalance_broker_readiness_config.json"
+    ).write_text(
+        json.dumps(
+            {
+                "provider_runtime_session": {"scaleup_dir": ""},
+                "adapter_execution_contract": {
+                    "provider": "arrow_money",
+                    "transport": "websocket",
+                    "market": "india_nse_index_derivatives",
+                    "exchange": "NFO",
+                    "values_stored": False,
+                },
+                "capture_bundle": {
+                    "adapter_execution_contract": {
+                        "provider": "arrow_money",
+                        "transport": "websocket",
+                        "market": "india_nse_index_derivatives",
+                        "exchange": "NFO",
+                        "values_stored": False,
+                    },
+                },
+                "dispatch_roundtrip_provenance": {
+                    "capture_bundle_provided": True,
+                    "provider_capture_command_count": 2,
+                    "provider_capture_command_providers": "arrow_money",
+                    "provider_capture_command_transports": "websocket",
+                    "capture_bundle_provider_capture_command_count": 2,
+                    "capture_bundle_provider_capture_command_missing_count": 0,
+                    "capture_bundle_provider_capture_commands_match_session": True,
+                    "provider_capture_commands_match_runtime_session": True,
+                    "adapter_contract_values_stored": True,
+                    "adapter_contract_metadata_matches_evidence": False,
+                    "adapter_contract_matches_runtime_session": False,
+                },
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness_dir,
+        tmp_path / "provider_imbalance_cutover",
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "dispatch_roundtrip_adapter_execution_contract_carried" in failed
+    assert "dispatch_roundtrip_adapter_execution_contract_matches_evidence" in failed
+    assert "dispatch_roundtrip_adapter_execution_contract_matches_runtime_session" in failed
+    assert summary["dispatch_roundtrip_adapter_contract_provider"] == ""
+    assert bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
 
 
 def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_provenance(tmp_path):
@@ -5417,6 +5589,12 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
                 "scaleup_dir": "",
                 "dispatch_roundtrip_exchange": "",
                 "dispatch_roundtrip_capture_provenance_consistent": False,
+                "adapter_contract_provider": "arrow_money",
+                "adapter_contract_transport": "websocket",
+                "adapter_contract_market": "india_nse_index_derivatives",
+                "adapter_contract_exchange": "NFO",
+                "adapter_contract_values_stored": False,
+                "adapter_contract_metadata_matches_evidence": True,
                 "provider": "arrow_money",
                 "transport": "websocket",
                 "strategy": "imbalance",
@@ -5437,9 +5615,23 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
                 "provider_runtime_session": {"scaleup_dir": ""},
                 "provider_capture_commands": provider_capture_commands,
                 "capture_bundle_provider_capture_commands": provider_capture_commands,
+                "adapter_execution_contract": {
+                    "provider": "arrow_money",
+                    "transport": "websocket",
+                    "market": "india_nse_index_derivatives",
+                    "exchange": "NFO",
+                    "values_stored": False,
+                },
                 "capture_bundle": {
                     "provider_capture_commands": provider_capture_commands,
                     "capture_bundle_provider_capture_commands": provider_capture_commands,
+                    "adapter_execution_contract": {
+                        "provider": "arrow_money",
+                        "transport": "websocket",
+                        "market": "india_nse_index_derivatives",
+                        "exchange": "NFO",
+                        "values_stored": False,
+                    },
                 },
                 "dispatch_roundtrip_provenance": {
                     "exchange": "NFO",
@@ -5464,6 +5656,20 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
                     "capture_bundle_provider_capture_command_missing_count": 0,
                     "capture_bundle_provider_capture_commands_match_session": True,
                     "provider_capture_commands_match_runtime_session": True,
+                    "adapter_execution_contract": {
+                        "provider": "arrow_money",
+                        "transport": "websocket",
+                        "market": "india_nse_index_derivatives",
+                        "exchange": "NFO",
+                        "values_stored": False,
+                    },
+                    "adapter_contract_provider": "arrow_money",
+                    "adapter_contract_transport": "websocket",
+                    "adapter_contract_market": "india_nse_index_derivatives",
+                    "adapter_contract_exchange": "NFO",
+                    "adapter_contract_values_stored": False,
+                    "adapter_contract_metadata_matches_evidence": True,
+                    "adapter_contract_matches_runtime_session": True,
                     "capture_bundle_path": str(bundle_path),
                     "capture_bundle_provided": True,
                     "capture_bundle_exists": True,
@@ -5566,12 +5772,18 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
     assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
     assert bool(summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"])
     assert bool(summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"])
+    assert summary["dispatch_roundtrip_adapter_contract_provider"] == "arrow_money"
+    assert summary["dispatch_roundtrip_adapter_contract_transport"] == "websocket"
+    assert bool(summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["open_local"] == "09:15:00"
     assert not config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_command_count"] == 2
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_matches_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"] == env_template_sha256
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
@@ -5587,6 +5799,8 @@ def test_provider_market_data_imbalance_cutover_falls_back_to_roundtrip_config_p
     assert manifest["extra"]["dispatch_roundtrip_adapter_handoff"]["sha256"] == adapter_handoff_sha256
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_command_count"] == 2
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 2
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["exchange"] == "NFO"

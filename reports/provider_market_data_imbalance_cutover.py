@@ -410,6 +410,30 @@ def write_provider_market_data_imbalance_cutover(
             "dispatch_roundtrip_provider_capture_commands_match_runtime_session": bool(
                 summary_row["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
             ),
+            "dispatch_roundtrip_adapter_execution_contract": _mapping(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get("adapter_execution_contract")
+            ),
+            "dispatch_roundtrip_adapter_contract_provider": str(
+                summary_row["dispatch_roundtrip_adapter_contract_provider"]
+            ),
+            "dispatch_roundtrip_adapter_contract_transport": str(
+                summary_row["dispatch_roundtrip_adapter_contract_transport"]
+            ),
+            "dispatch_roundtrip_adapter_contract_market": str(
+                summary_row["dispatch_roundtrip_adapter_contract_market"]
+            ),
+            "dispatch_roundtrip_adapter_contract_exchange": str(
+                summary_row["dispatch_roundtrip_adapter_contract_exchange"]
+            ),
+            "dispatch_roundtrip_adapter_contract_values_stored": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_values_stored"]
+            ),
+            "dispatch_roundtrip_adapter_contract_metadata_matches_evidence": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"]
+            ),
+            "dispatch_roundtrip_adapter_contract_matches_runtime_session": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+            ),
             "dispatch_roundtrip_provider_capture_commands": _list(
                 _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_capture_commands")
             ),
@@ -486,6 +510,22 @@ def write_provider_market_data_imbalance_cutover(
                         summary_row["dispatch_roundtrip_capture_bundle_live_fetch_contract_metadata_matches_session"]
                     ),
                 },
+                "adapter_execution_contract": _mapping(
+                    _mapping(payload.get("dispatch_roundtrip_provenance")).get("adapter_execution_contract")
+                ),
+                "adapter_contract_provider": str(summary_row["dispatch_roundtrip_adapter_contract_provider"]),
+                "adapter_contract_transport": str(summary_row["dispatch_roundtrip_adapter_contract_transport"]),
+                "adapter_contract_market": str(summary_row["dispatch_roundtrip_adapter_contract_market"]),
+                "adapter_contract_exchange": str(summary_row["dispatch_roundtrip_adapter_contract_exchange"]),
+                "adapter_contract_values_stored": bool(
+                    summary_row["dispatch_roundtrip_adapter_contract_values_stored"]
+                ),
+                "adapter_contract_metadata_matches_evidence": bool(
+                    summary_row["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"]
+                ),
+                "adapter_contract_matches_runtime_session": bool(
+                    summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+                ),
                 "live_fetch_contract": {
                     "exchange": str(summary_row["dispatch_roundtrip_source_live_fetch_contract_exchange"]),
                     "market": str(summary_row["dispatch_roundtrip_source_live_fetch_contract_market"]),
@@ -764,6 +804,16 @@ def _checks(
         "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
         "provider_capture_commands_match_runtime_session",
     )
+    dispatch_adapter_contract_carried = _dispatch_roundtrip_adapter_contract_carried(
+        provider_summary,
+        dispatch_roundtrip,
+    )
+    dispatch_adapter_contract_matches_runtime_session = _dispatch_roundtrip_bool(
+        provider_summary,
+        dispatch_roundtrip,
+        "dispatch_roundtrip_adapter_contract_matches_runtime_session",
+        "adapter_contract_matches_runtime_session",
+    )
     rows.append(
         _check(
             "dispatch_roundtrip_provider_capture_commands_carried",
@@ -792,6 +842,43 @@ def _checks(
             True,
             dispatch_provider_capture_commands_match_runtime_session if dispatch_bundle_provided else True,
             "provider imbalance cutover round-trip command proof no longer matches runtime-session proof",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_adapter_execution_contract_carried",
+            _dispatch_roundtrip_adapter_contract_metadata_text(provider_summary, dispatch_roundtrip),
+            "is_not",
+            "",
+            dispatch_adapter_contract_carried if dispatch_bundle_provided else True,
+            "provider imbalance cutover is missing broker-readiness round-trip adapter execution contract proof",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_adapter_execution_contract_matches_evidence",
+            _dispatch_roundtrip_adapter_contract_metadata_text(provider_summary, dispatch_roundtrip),
+            "matches",
+            "live evidence",
+            _dispatch_roundtrip_bool(
+                provider_summary,
+                dispatch_roundtrip,
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+                "adapter_contract_metadata_matches_evidence",
+            )
+            if dispatch_bundle_provided
+            else True,
+            "provider imbalance cutover round-trip adapter execution contract no longer matches live evidence",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_adapter_execution_contract_matches_runtime_session",
+            _dispatch_roundtrip_adapter_contract_metadata_text(provider_summary, dispatch_roundtrip),
+            "matches",
+            _adapter_contract_metadata_text(provider_summary),
+            dispatch_adapter_contract_matches_runtime_session if dispatch_bundle_provided else True,
+            "provider imbalance cutover round-trip adapter execution contract no longer matches runtime-session proof",
         )
     )
     return pd.DataFrame(rows)
@@ -1006,6 +1093,55 @@ def _summary(
                     "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
                     "provider_capture_commands_match_runtime_session",
                 ),
+                "dispatch_roundtrip_adapter_contract_provider": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_provider",
+                    "adapter_contract_provider",
+                ),
+                "dispatch_roundtrip_adapter_contract_transport": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_transport",
+                    "adapter_contract_transport",
+                ),
+                "dispatch_roundtrip_adapter_contract_market": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_market",
+                    "adapter_contract_market",
+                ),
+                "dispatch_roundtrip_adapter_contract_exchange": _dispatch_roundtrip_text(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_exchange",
+                    "adapter_contract_exchange",
+                ),
+                "dispatch_roundtrip_adapter_contract_values_stored": _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_values_stored",
+                    "adapter_contract_values_stored",
+                ),
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence": _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+                    "adapter_contract_metadata_matches_evidence",
+                ),
+                "dispatch_roundtrip_adapter_contract_matches_runtime_session": _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_adapter_contract_matches_runtime_session",
+                    "adapter_contract_matches_runtime_session",
+                )
+                if _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_capture_bundle_provided",
+                    "capture_bundle_provided",
+                )
+                else True,
                 "dispatch_roundtrip_exchange": _dispatch_roundtrip_text(
                     provider_summary,
                     dispatch_roundtrip,
@@ -1496,6 +1632,13 @@ def _dispatch_roundtrip_bundle_provider_capture_commands(provider_config: dict[s
     ) or _bundle_provider_capture_commands(provider_config)
 
 
+def _dispatch_roundtrip_adapter_execution_contract(provider_config: dict[str, Any]) -> dict[str, Any]:
+    dispatch_roundtrip = _dispatch_roundtrip_provenance(provider_config)
+    return _mapping(dispatch_roundtrip.get("adapter_execution_contract")) or _adapter_execution_contract(
+        provider_config
+    )
+
+
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
     out = summary.copy()
     statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
@@ -1582,7 +1725,11 @@ def _action_queue(
 
 
 def _action_priority(check: str) -> int:
-    if check.startswith("provider_broker_readiness") or check.startswith("nested_broker_readiness"):
+    if (
+        check.startswith("provider_broker_readiness")
+        or check.startswith("nested_broker_readiness")
+        or _is_dispatch_roundtrip_adapter_contract_check(check)
+    ):
         return 0
     if check.startswith("nested_scaleup"):
         return 1
@@ -1718,6 +1865,18 @@ def _config(
             ),
             "provider_capture_commands_match_runtime_session": bool(
                 summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+            ),
+            "adapter_execution_contract": _dispatch_roundtrip_adapter_execution_contract(provider_config),
+            "adapter_contract_provider": str(summary["dispatch_roundtrip_adapter_contract_provider"]),
+            "adapter_contract_transport": str(summary["dispatch_roundtrip_adapter_contract_transport"]),
+            "adapter_contract_market": str(summary["dispatch_roundtrip_adapter_contract_market"]),
+            "adapter_contract_exchange": str(summary["dispatch_roundtrip_adapter_contract_exchange"]),
+            "adapter_contract_values_stored": bool(summary["dispatch_roundtrip_adapter_contract_values_stored"]),
+            "adapter_contract_metadata_matches_evidence": bool(
+                summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"]
+            ),
+            "adapter_contract_matches_runtime_session": bool(
+                summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
             ),
             "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
@@ -1887,6 +2046,11 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         "- Dispatch round-trip provider capture commands: "
         f"{summary['dispatch_roundtrip_provider_capture_command_count']} "
         f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_provider_capture_commands_match_runtime_session']) else 'no'})",
+        "- Dispatch round-trip adapter execution contract: "
+        f"{summary['dispatch_roundtrip_adapter_contract_provider'] or 'missing'} / "
+        f"{summary['dispatch_roundtrip_adapter_contract_transport'] or 'missing'} "
+        f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_adapter_contract_matches_runtime_session']) else 'no'}, "
+        f"evidence match: {'yes' if bool(summary['dispatch_roundtrip_adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
         "- Dispatch round-trip capture env template: "
         f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",
@@ -1960,7 +2124,11 @@ def _blocked_next_gate(checks: pd.DataFrame, cutover: CutoverGateReport | None) 
 
 
 def _next_gate_for_check(check: str, cutover: CutoverGateReport | None) -> str:
-    if check.startswith("provider_broker_readiness") or check.startswith("nested_broker_readiness"):
+    if (
+        check.startswith("provider_broker_readiness")
+        or check.startswith("nested_broker_readiness")
+        or _is_dispatch_roundtrip_adapter_contract_check(check)
+    ):
         return "review-provider-market-data-imbalance-broker-readiness"
     if check.startswith("nested_scaleup"):
         return "plan-provider-market-data-imbalance-scaleup"
@@ -1993,7 +2161,11 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
-    if check.startswith("provider_broker_readiness") or check.startswith("nested_broker_readiness"):
+    if (
+        check.startswith("provider_broker_readiness")
+        or check.startswith("nested_broker_readiness")
+        or _is_dispatch_roundtrip_adapter_contract_check(check)
+    ):
         return "provider_broker_readiness"
     if check.startswith("nested_scaleup"):
         return "scaleup"
@@ -2007,7 +2179,11 @@ def _component_for_check(check: str) -> str:
 
 
 def _action_for_check(check: str) -> str:
-    if check.startswith("provider_broker_readiness") or check.startswith("nested_broker_readiness"):
+    if (
+        check.startswith("provider_broker_readiness")
+        or check.startswith("nested_broker_readiness")
+        or _is_dispatch_roundtrip_adapter_contract_check(check)
+    ):
         return "repair_provider_imbalance_broker_readiness"
     if check.startswith("nested_scaleup"):
         return "repair_provider_imbalance_scaleup"
@@ -2019,7 +2195,11 @@ def _action_for_check(check: str) -> str:
 
 
 def _recommendation_for_check(check: str) -> str:
-    if check.startswith("provider_broker_readiness") or check.startswith("nested_broker_readiness"):
+    if (
+        check.startswith("provider_broker_readiness")
+        or check.startswith("nested_broker_readiness")
+        or _is_dispatch_roundtrip_adapter_contract_check(check)
+    ):
         return "rerun_provider_broker_readiness_before_cutover"
     if check.startswith("nested_scaleup"):
         return "rerun_provider_scaleup_before_cutover"
@@ -2028,6 +2208,10 @@ def _recommendation_for_check(check: str) -> str:
     if check.startswith("cutover"):
         return "rerun_generic_cutover_gate_with_required_artifacts"
     return "repair_provider_cutover_inputs"
+
+
+def _is_dispatch_roundtrip_adapter_contract_check(check: str) -> bool:
+    return check.startswith("dispatch_roundtrip_adapter_execution_contract")
 
 
 def _inferred_scaleup_dir(provider_summary: pd.DataFrame, provider_config: dict[str, Any]) -> Path | None:
@@ -2267,6 +2451,64 @@ def _adapter_contract_metadata_text(provider_summary: pd.DataFrame) -> str:
         f"{_first_text(provider_summary, 'adapter_contract_transport')}|"
         f"{_first_text(provider_summary, 'adapter_contract_market')}|"
         f"{_first_text(provider_summary, 'adapter_contract_exchange')}"
+    )
+
+
+def _dispatch_roundtrip_adapter_contract_carried(
+    provider_summary: pd.DataFrame,
+    dispatch_roundtrip: dict[str, Any],
+) -> bool:
+    return (
+        bool(
+            _dispatch_roundtrip_text(
+                provider_summary,
+                dispatch_roundtrip,
+                "dispatch_roundtrip_adapter_contract_provider",
+                "adapter_contract_provider",
+            )
+        )
+        and bool(
+            _dispatch_roundtrip_text(
+                provider_summary,
+                dispatch_roundtrip,
+                "dispatch_roundtrip_adapter_contract_transport",
+                "adapter_contract_transport",
+            )
+        )
+        and bool(
+            _dispatch_roundtrip_text(
+                provider_summary,
+                dispatch_roundtrip,
+                "dispatch_roundtrip_adapter_contract_market",
+                "adapter_contract_market",
+            )
+        )
+        and bool(
+            _dispatch_roundtrip_text(
+                provider_summary,
+                dispatch_roundtrip,
+                "dispatch_roundtrip_adapter_contract_exchange",
+                "adapter_contract_exchange",
+            )
+        )
+        and not _dispatch_roundtrip_bool(
+            provider_summary,
+            dispatch_roundtrip,
+            "dispatch_roundtrip_adapter_contract_values_stored",
+            "adapter_contract_values_stored",
+        )
+    )
+
+
+def _dispatch_roundtrip_adapter_contract_metadata_text(
+    provider_summary: pd.DataFrame,
+    dispatch_roundtrip: dict[str, Any],
+) -> str:
+    return (
+        f"{_dispatch_roundtrip_text(provider_summary, dispatch_roundtrip, 'dispatch_roundtrip_adapter_contract_provider', 'adapter_contract_provider')}|"
+        f"{_dispatch_roundtrip_text(provider_summary, dispatch_roundtrip, 'dispatch_roundtrip_adapter_contract_transport', 'adapter_contract_transport')}|"
+        f"{_dispatch_roundtrip_text(provider_summary, dispatch_roundtrip, 'dispatch_roundtrip_adapter_contract_market', 'adapter_contract_market')}|"
+        f"{_dispatch_roundtrip_text(provider_summary, dispatch_roundtrip, 'dispatch_roundtrip_adapter_contract_exchange', 'adapter_contract_exchange')}"
     )
 
 

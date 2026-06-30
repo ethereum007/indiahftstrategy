@@ -4945,8 +4945,12 @@ broker-readiness validated round-trip capture bundle/env-template/adapter
 handoff provenance, cutover also carries those `dispatch_roundtrip_*`
 provenance fields plus the validated round-trip source credential env-template,
 exchange/session metadata, capture-bundle session proof, live-fetch
-exchange/session identity, and `live_fetch_contract` snapshot, manifest inputs,
-and consistency flags forward for route-enable and dispatch reviewers. When a
+exchange/session identity, `live_fetch_contract` snapshot, and credential-safe
+round-trip `adapter_execution_contract` forward for route-enable and dispatch
+reviewers. If that final dry-run adapter proof is missing, unsafe, or no longer
+matched to the runtime-session adapter contract, cutover blocks route-enable
+and routes back to `review-provider-market-data-imbalance-broker-readiness`.
+When a
 broker-readiness CSV is from an
 older or thinner wrapper but its config sidecar has
 `dispatch_roundtrip_provenance`, cutover hydrates missing or blank
