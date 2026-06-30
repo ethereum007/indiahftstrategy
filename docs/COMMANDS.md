@@ -5154,7 +5154,13 @@ vendor-market-data batch evidence under `upstream_*_vendor_market_data_batch_*`
 fields, carries the acknowledgement-inherited capture bundle, blank credential
 env-template, adapter handoff paths, source credential env-template proof,
 exchange/session metadata, capture-bundle session match proof, and
-`live_fetch_contract`, plus the ack-retained validated dispatch round-trip
+`live_fetch_contract`, plus the credential-safe `adapter_execution_contract`
+from acknowledgement reconciliation, so broker-readiness feed can trace the
+live data adapter without exposing credential values. If that adapter contract
+is missing, unsafe, or no longer matched to live evidence, round-trip review
+blocks broker-readiness feed and routes back to
+`reconcile-provider-market-data-imbalance-broker-dispatch`. It also carries the
+ack-retained validated dispatch round-trip
 source credential env-template, round-trip exchange/session metadata,
 capture-bundle session proof, live-fetch exchange/session identity,
 `live_fetch_contract`, and source-provenance consistency flags, into
