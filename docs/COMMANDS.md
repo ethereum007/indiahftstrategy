@@ -4887,9 +4887,12 @@ wrapper, preserves inherited upstream vendor-market-data batch evidence under
 checks/summary/action/config/runbook artifacts. It also retains the upstream
 capture bundle, blank credential env-template, adapter handoff paths, source
 credential env-template proof, exchange/session metadata, capture-bundle session
-match proof, and `live_fetch_contract` in the provider summary/config/runbook
-plus manifest, so broker integration reviewers can trace
-the live data source without opening nested runtime-session folders.
+match proof, `live_fetch_contract`, and credential-safe
+`adapter_execution_contract` in the provider summary/config/runbook plus
+manifest, so broker integration reviewers can trace the live data source without
+opening nested runtime-session folders. Missing, unsafe, or mismatched
+adapter-contract proof blocks cutover review and sends the packet back through
+provider runtime session.
 When a provider round-trip proof carries its own `dispatch_roundtrip_*` capture
 bundle/env-template, adapter handoff path, source credential env-template
 proof, or `live_fetch_contract`, plus exchange/session metadata and
