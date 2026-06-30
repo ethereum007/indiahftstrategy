@@ -10082,6 +10082,12 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_roundt
 
     ack_config_path = provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json"
     ack_config = json.loads(ack_config_path.read_text(encoding="utf-8"))
+    ack_config["provider_capture_commands"] = provider_capture_commands
+    capture_bundle_config = ack_config.get("capture_bundle", {})
+    if not isinstance(capture_bundle_config, dict):
+        capture_bundle_config = {}
+    capture_bundle_config["capture_bundle_provider_capture_commands"] = provider_capture_commands
+    ack_config["capture_bundle"] = capture_bundle_config
     ack_config["dispatch_roundtrip_provenance"] = {
         "exchange": "NFO",
         "source_session": {
@@ -10104,8 +10110,6 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_roundt
         "capture_bundle_provider_capture_command_count": 2,
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
-        "provider_capture_commands": provider_capture_commands,
-        "capture_bundle_provider_capture_commands": provider_capture_commands,
         "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_env_template_path": str(env_template_path),
@@ -10390,6 +10394,12 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_falls_back_to_
 
     ack_config_path = provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json"
     ack_config = json.loads(ack_config_path.read_text(encoding="utf-8"))
+    ack_config["provider_capture_commands"] = provider_capture_commands
+    capture_bundle_config = ack_config.get("capture_bundle", {})
+    if not isinstance(capture_bundle_config, dict):
+        capture_bundle_config = {}
+    capture_bundle_config["capture_bundle_provider_capture_commands"] = provider_capture_commands
+    ack_config["capture_bundle"] = capture_bundle_config
     ack_config["dispatch_roundtrip_provenance"] = {
         "exchange": "NFO",
         "source_session": {
@@ -10412,8 +10422,6 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_falls_back_to_
         "capture_bundle_provider_capture_command_count": 2,
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
-        "provider_capture_commands": provider_capture_commands,
-        "capture_bundle_provider_capture_commands": provider_capture_commands,
         "provider_capture_commands_match_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_provided": True,

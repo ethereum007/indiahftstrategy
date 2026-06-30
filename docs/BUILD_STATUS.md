@@ -1724,7 +1724,9 @@
   validated round-trip capture bundle/env-template/adapter handoff paths,
   source credential env-template proof, round-trip exchange/session metadata,
   capture-bundle session match proof, round-trip provider capture-command
-  counts/arrays/match flags, live-fetch exchange/session identity,
+  counts/match flags, provider command arrays from either
+  `dispatch_roundtrip_provenance` or older root/capture-bundle config fields,
+  live-fetch exchange/session identity,
   `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
@@ -1821,7 +1823,9 @@
   validated round-trip capture bundle/env-template/adapter handoff paths,
   source credential env-template proof, round-trip exchange/session metadata,
   capture-bundle session match proof, round-trip provider capture-command
-  counts/arrays/match flags, live-fetch exchange/session identity,
+  counts/match flags, provider command arrays from either
+  `dispatch_roundtrip_provenance` or older root/capture-bundle config fields,
+  live-fetch exchange/session identity,
   `live_fetch_contract`, and source/capture provenance-consistency flags, in
   provider summary/config/runbook artifacts plus manifest inputs/extra
   metadata. It also hydrates sparse acknowledgement round-trip summary rows
