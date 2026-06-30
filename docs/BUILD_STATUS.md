@@ -322,7 +322,10 @@
 - Provider market-data imbalance broker dispatch send now preserves those
   adapter fingerprints into the non-submitting sender packet: send
   summary/config and manifest extras expose capture env-template and adapter
-  handoff SHA-256 values directly.
+  handoff SHA-256 values directly. Broker dispatch send also carries the
+  credential-safe `adapter_execution_contract` from broker dispatch and blocks
+  acknowledgement reconciliation when that contract is missing, unsafe, or no
+  longer matched to live evidence.
 - Provider market-data imbalance broker dispatch acknowledgement now carries
   those adapter fingerprints into ack reconciliation: acknowledgement
   summary/config and manifest extras expose capture env-template and adapter
