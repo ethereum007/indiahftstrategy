@@ -5112,7 +5112,12 @@ upstream proof lineage, and inherited
 It also preserves the capture bundle, blank credential env-template, and
 adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, and `live_fetch_contract`
-inherited from the send packet. It also carries the
+inherited from the send packet. It also carries the credential-safe
+`adapter_execution_contract` from the send packet so round-trip review can
+trace the live data adapter without exposing credential values. If that adapter
+contract is missing, unsafe, or no longer matched to live evidence,
+acknowledgement reconciliation blocks round-trip review and routes back to
+`prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
 exchange/session identity, `live_fetch_contract`, and source-provenance
