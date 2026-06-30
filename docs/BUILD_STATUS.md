@@ -302,7 +302,10 @@
 - Provider market-data imbalance cutover now keeps the same adapter
   fingerprints in the final pre-dispatch gate: cutover summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
-  values directly.
+  values directly. Cutover also carries the credential-safe
+  `adapter_execution_contract` from broker readiness and blocks route-enable
+  review when that contract is missing, unsafe, or no longer matched to live
+  evidence.
 - Provider market-data imbalance route enable now preserves those adapter
   fingerprints into broker-dispatch authorization: route-enable summary/config
   and manifest extras expose capture env-template and adapter handoff SHA-256
