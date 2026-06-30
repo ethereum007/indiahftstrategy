@@ -4895,15 +4895,15 @@ adapter-contract proof blocks cutover review and sends the packet back through
 provider runtime session.
 When a provider round-trip proof carries its own `dispatch_roundtrip_*` capture
 bundle/env-template, adapter handoff path, source credential env-template
-proof, or `live_fetch_contract`, plus exchange/session metadata and
-capture-bundle session proof, broker-readiness records those exact fields as
-`dispatch_roundtrip_*` provenance, falls back to older top-level wrapper fields
-for legacy artifacts, adds manifest inputs/metadata for every proof root
-including the round-trip source credential env-template, and fails
-closed back to
-`review-provider-market-data-imbalance-broker-dispatch-roundtrip` if they
-conflict with the runtime-session provenance or exchange/session/live-fetch
-identity.
+proof, `live_fetch_contract`, or credential-safe `adapter_execution_contract`,
+plus exchange/session metadata and capture-bundle session proof,
+broker-readiness records those exact fields as `dispatch_roundtrip_*`
+provenance, falls back to older top-level wrapper fields for legacy artifacts,
+adds manifest inputs/metadata for every proof root including the round-trip
+source credential env-template, and fails closed back to
+`review-provider-market-data-imbalance-broker-dispatch-roundtrip` if they are
+missing, unsafe, stale, or conflict with the runtime-session provenance,
+exchange/session/live-fetch identity, or runtime-session adapter contract.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
 batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields
