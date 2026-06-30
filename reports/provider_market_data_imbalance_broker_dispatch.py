@@ -322,6 +322,9 @@ def write_provider_market_data_imbalance_broker_dispatch(
                 "live_fetch_contract_metadata_matches_session": bool(
                     summary_row["capture_bundle_live_fetch_contract_metadata_matches_session"]
                 ),
+                "adapter_execution_contract": _mapping(
+                    _mapping(payload.get("capture_bundle")).get("adapter_execution_contract")
+                ),
             },
             "source_credential_env_template": {
                 "path": str(summary_row["source_credential_env_template_path"]),
@@ -336,6 +339,15 @@ def write_provider_market_data_imbalance_broker_dispatch(
                 "market": str(summary_row["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary_row),
             },
+            "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
+            "adapter_contract_provider": str(summary_row["adapter_contract_provider"]),
+            "adapter_contract_transport": str(summary_row["adapter_contract_transport"]),
+            "adapter_contract_market": str(summary_row["adapter_contract_market"]),
+            "adapter_contract_exchange": str(summary_row["adapter_contract_exchange"]),
+            "adapter_contract_values_stored": bool(summary_row["adapter_contract_values_stored"]),
+            "adapter_contract_metadata_matches_evidence": bool(
+                summary_row["adapter_contract_metadata_matches_evidence"]
+            ),
             "provider_capture_commands": _list(payload.get("provider_capture_commands")),
             "capture_bundle_provider_capture_commands": _list(
                 payload.get("capture_bundle_provider_capture_commands")
@@ -712,6 +724,7 @@ def _checks(
         bundle_provider_capture_commands_carried
         and _first_bool(provider_summary, "capture_bundle_provider_capture_commands_match_session")
     )
+    adapter_contract_carried = _adapter_contract_carried(provider_summary)
     rows.append(
         _check(
             "provider_route_enable_provider_capture_commands_carried",
@@ -730,6 +743,28 @@ def _checks(
             provider_capture_command_count,
             bundle_provider_capture_commands_match_session if bundle_provided else True,
             "provider imbalance route-enable command proof no longer matches the session packet",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_route_enable_adapter_execution_contract_carried",
+            _adapter_contract_metadata_text(provider_summary),
+            "is_not",
+            "",
+            adapter_contract_carried if bundle_provided else True,
+            "provider imbalance route-enable is missing credential-safe adapter execution contract metadata",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_route_enable_adapter_execution_contract_matches_evidence",
+            _adapter_contract_metadata_text(provider_summary),
+            "matches",
+            "live evidence",
+            _first_bool(provider_summary, "adapter_contract_metadata_matches_evidence")
+            if bundle_provided
+            else True,
+            "provider imbalance route-enable adapter execution contract no longer matches live evidence",
         )
     )
     dispatch_summary = _with_dispatch_roundtrip_config_fallback(provider_summary, provider_config)
@@ -908,6 +943,15 @@ def _summary(
                 "source_live_fetch_contract_session_close_local": _first_text(
                     provider_summary,
                     "source_live_fetch_contract_session_close_local",
+                ),
+                "adapter_contract_provider": _first_text(provider_summary, "adapter_contract_provider"),
+                "adapter_contract_transport": _first_text(provider_summary, "adapter_contract_transport"),
+                "adapter_contract_market": _first_text(provider_summary, "adapter_contract_market"),
+                "adapter_contract_exchange": _first_text(provider_summary, "adapter_contract_exchange"),
+                "adapter_contract_values_stored": _first_bool(provider_summary, "adapter_contract_values_stored"),
+                "adapter_contract_metadata_matches_evidence": _first_bool(
+                    provider_summary,
+                    "adapter_contract_metadata_matches_evidence",
                 ),
                 "provider_capture_command_count": int(
                     _first_number(provider_summary, "provider_capture_command_count")
@@ -1747,6 +1791,7 @@ def _config(
         "market_session": _market_session_contract_from_summary(summary),
         "provider_capture_commands": _provider_capture_commands(provider_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
+        "adapter_execution_contract": _adapter_execution_contract(provider_config),
         "capture_bundle": {
             "capture_bundle_path": str(summary["capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
@@ -1803,6 +1848,15 @@ def _config(
             ),
             "source_live_fetch_contract_session_close_local": str(
                 summary["source_live_fetch_contract_session_close_local"]
+            ),
+            "adapter_execution_contract": _adapter_execution_contract(provider_config),
+            "adapter_contract_provider": str(summary["adapter_contract_provider"]),
+            "adapter_contract_transport": str(summary["adapter_contract_transport"]),
+            "adapter_contract_market": str(summary["adapter_contract_market"]),
+            "adapter_contract_exchange": str(summary["adapter_contract_exchange"]),
+            "adapter_contract_values_stored": bool(summary["adapter_contract_values_stored"]),
+            "adapter_contract_metadata_matches_evidence": bool(
+                summary["adapter_contract_metadata_matches_evidence"]
             ),
         },
         "dispatch_roundtrip_provenance": {
@@ -1987,6 +2041,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         "- Live fetch contract: "
         f"{'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        "- Adapter execution contract: "
+        f"{summary['adapter_contract_provider'] or 'missing'} / "
+        f"{summary['adapter_contract_transport'] or 'missing'} "
+        f"(evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "- Dispatch round-trip live fetch contract: "
         f"{'available' if bool(summary['dispatch_roundtrip_source_live_fetch_contract_available']) else 'missing'}",
@@ -2431,6 +2489,36 @@ def _bundle_provider_capture_commands(provider_config: dict[str, Any]) -> list[A
         _list(provider_config.get("capture_bundle_provider_capture_commands"))
         or _list(bundle.get("capture_bundle_provider_capture_commands"))
         or _list(bundle.get("provider_capture_commands"))
+    )
+
+
+def _adapter_execution_contract(*configs: dict[str, Any]) -> dict[str, Any]:
+    for config in configs:
+        bundle = _mapping(config.get("capture_bundle"))
+        contract = _mapping(config.get("adapter_execution_contract")) or _mapping(
+            bundle.get("adapter_execution_contract")
+        )
+        if contract:
+            return contract
+    return {}
+
+
+def _adapter_contract_carried(provider_summary: pd.DataFrame) -> bool:
+    return (
+        bool(_first_text(provider_summary, "adapter_contract_provider"))
+        and bool(_first_text(provider_summary, "adapter_contract_transport"))
+        and bool(_first_text(provider_summary, "adapter_contract_market"))
+        and bool(_first_text(provider_summary, "adapter_contract_exchange"))
+        and not _first_bool(provider_summary, "adapter_contract_values_stored")
+    )
+
+
+def _adapter_contract_metadata_text(provider_summary: pd.DataFrame) -> str:
+    return (
+        f"{_first_text(provider_summary, 'adapter_contract_provider')}|"
+        f"{_first_text(provider_summary, 'adapter_contract_transport')}|"
+        f"{_first_text(provider_summary, 'adapter_contract_market')}|"
+        f"{_first_text(provider_summary, 'adapter_contract_exchange')}"
     )
 
 

@@ -315,7 +315,10 @@
 - Provider market-data imbalance broker dispatch now keeps those adapter
   fingerprints in the dry-run dispatch planner: broker-dispatch summary/config
   and manifest extras expose capture env-template and adapter handoff SHA-256
-  values directly.
+  values directly. Broker dispatch also carries the credential-safe
+  `adapter_execution_contract` from route enable and blocks broker-dispatch-send
+  preparation when that contract is missing, unsafe, or no longer matched to
+  live evidence.
 - Provider market-data imbalance broker dispatch send now preserves those
   adapter fingerprints into the non-submitting sender packet: send
   summary/config and manifest extras expose capture env-template and adapter
