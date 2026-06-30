@@ -125,6 +125,7 @@ def write_provider_market_data_research_handoff(
             "capture_bundle_provider_capture_commands_match_session": bool(
                 summary_row["capture_bundle_provider_capture_commands_match_session"]
             ),
+            "adapter_execution_contract": _mapping(report.config.get("adapter_execution_contract")),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
@@ -135,6 +136,9 @@ def write_provider_market_data_research_handoff(
                 "provider_capture_command_count": int(summary_row["capture_bundle_provider_capture_command_count"]),
                 "provider_capture_commands_match_session": bool(
                     summary_row["capture_bundle_provider_capture_commands_match_session"]
+                ),
+                "adapter_execution_contract": _mapping(
+                    _mapping(report.config.get("capture_bundle")).get("adapter_execution_contract")
                 ),
                 "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -287,6 +291,25 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
+    evidence_adapter_execution_contract = _mapping(evidence_config.get("adapter_execution_contract")) or _mapping(
+        manifest_extra.get("adapter_execution_contract")
+    )
+    session_adapter_execution_contract = _mapping(
+        _mapping(evidence_config.get("live_session_packet")).get("adapter_execution_contract")
+    )
+    bundle_adapter_execution_contract = (
+        _mapping(bundle.get("adapter_execution_contract"))
+        or _mapping(manifest_extra_bundle.get("adapter_execution_contract"))
+    )
+    adapter_execution_contract = (
+        bundle_adapter_execution_contract
+        or evidence_adapter_execution_contract
+    )
+    adapter_contract_matches_evidence = _adapter_contract_matches_evidence(
+        adapter_execution_contract,
+        evidence_adapter_execution_contract,
+        session_adapter_execution_contract,
+    )
     live_fetch_session = _mapping(live_fetch_contract.get("session"))
     evidence_source_session = _mapping(evidence_config.get("source_session")) or _mapping(manifest_extra.get("source_session"))
     evidence_market_session = _mapping(evidence_config.get("market_session")) or _mapping(manifest_extra.get("market_session"))
@@ -399,6 +422,13 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         or _text(live_fetch_session.get("open_local")),
         "source_live_fetch_contract_session_close_local": _text(bundle.get("source_live_fetch_contract_session_close_local"))
         or _text(live_fetch_session.get("close_local")),
+        "adapter_execution_contract": adapter_execution_contract,
+        "adapter_contract_provider": _text(adapter_execution_contract.get("provider")),
+        "adapter_contract_transport": _text(adapter_execution_contract.get("transport")),
+        "adapter_contract_market": _text(adapter_execution_contract.get("market")),
+        "adapter_contract_exchange": _text(adapter_execution_contract.get("exchange")),
+        "adapter_contract_values_stored": bool(adapter_execution_contract.get("values_stored", True)),
+        "adapter_contract_metadata_matches_evidence": adapter_contract_matches_evidence,
         "provider_capture_commands": provider_capture_commands,
         "provider_capture_command_count": int(len(provider_capture_commands)),
         "provider_capture_command_providers": _unique_command_values(provider_capture_commands, "provider"),
@@ -636,6 +666,14 @@ def _checks(
         bundle_provider_capture_commands_carried
         and bool(capture_provenance["capture_bundle_provider_capture_commands_match_session"])
     )
+    adapter_execution_contract = _mapping(capture_provenance.get("adapter_execution_contract"))
+    adapter_execution_contract_carried = (
+        bool(capture_provenance["adapter_contract_provider"])
+        and bool(capture_provenance["adapter_contract_transport"])
+        and bool(capture_provenance["adapter_contract_market"])
+        and bool(capture_provenance["adapter_contract_exchange"])
+        and bool(capture_provenance["adapter_contract_values_stored"]) is False
+    )
     return [
         _check("live_evidence_dir_exists", str(evidence_dir), "exists", True, evidence_dir.exists(), "live evidence directory is required"),
         _check("live_evidence_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live evidence summary could not be read"),
@@ -650,6 +688,8 @@ def _checks(
         _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by live evidence is missing"),
         _check("capture_bundle_provider_capture_commands_carried", bundle_provider_capture_command_count, "==", provider_capture_command_count, bundle_provider_capture_commands_carried if bundle_provided else True, "live evidence provider capture command handoffs are missing"),
         _check("capture_bundle_provider_capture_commands_match_session", bundle_provider_capture_command_count, "matches", provider_capture_command_count, bundle_provider_capture_commands_match_session if bundle_provided else True, "live evidence provider capture command handoffs must match the live session packet"),
+        _check("capture_bundle_adapter_execution_contract_carried", _adapter_contract_metadata_text(adapter_execution_contract), "is_not", "", adapter_execution_contract_carried if bundle_provided else True, "adapter execution contract referenced by live evidence is missing or stores credential values"),
+        _check("capture_bundle_adapter_execution_contract_matches_evidence", _adapter_contract_metadata_text(adapter_execution_contract), "==", "live evidence adapter contract", bool(capture_provenance["adapter_contract_metadata_matches_evidence"]) if bundle_provided else True, "adapter execution contract must match the live evidence session contract"),
         _check("live_evidence_exchange_carried", capture_provenance["exchange"], "is_not", "", bool(capture_provenance["exchange"]) if bundle_provided else True, "live evidence exchange metadata is missing"),
         _check("live_evidence_source_session_carried", _session_contract_text(source_session), "has", "timezone/open/close", _session_contract_carried(source_session) if bundle_provided else True, "live evidence source-session metadata is missing"),
         _check("live_evidence_market_session_carried", _session_contract_text(market_session), "has", "timezone/open/close", _session_contract_carried(market_session) if bundle_provided else True, "live evidence market-session metadata is missing"),
@@ -734,6 +774,14 @@ def _summary(
                 "source_live_fetch_contract_session_timezone": str(capture_provenance["source_live_fetch_contract_session_timezone"]),
                 "source_live_fetch_contract_session_open_local": str(capture_provenance["source_live_fetch_contract_session_open_local"]),
                 "source_live_fetch_contract_session_close_local": str(capture_provenance["source_live_fetch_contract_session_close_local"]),
+                "adapter_contract_provider": str(capture_provenance["adapter_contract_provider"]),
+                "adapter_contract_transport": str(capture_provenance["adapter_contract_transport"]),
+                "adapter_contract_market": str(capture_provenance["adapter_contract_market"]),
+                "adapter_contract_exchange": str(capture_provenance["adapter_contract_exchange"]),
+                "adapter_contract_values_stored": bool(capture_provenance["adapter_contract_values_stored"]),
+                "adapter_contract_metadata_matches_evidence": bool(
+                    capture_provenance["adapter_contract_metadata_matches_evidence"]
+                ),
                 "provider_capture_command_count": provider_capture_command_count,
                 "provider_capture_command_providers": str(capture_provenance["provider_capture_command_providers"]),
                 "provider_capture_command_transports": str(capture_provenance["provider_capture_command_transports"]),
@@ -841,6 +889,7 @@ def _config(
         "capture_bundle_provider_capture_commands": _list(
             capture_provenance.get("capture_bundle_provider_capture_commands")
         ),
+        "adapter_execution_contract": _mapping(capture_provenance.get("adapter_execution_contract")),
         "capture_bundle": capture_provenance,
         "datasets": _records(datasets),
         "commands": _records(commands),
@@ -856,6 +905,11 @@ def _config(
 
 
 def _next_gate_for_check(check: str) -> str:
+    if check in {
+        "capture_bundle_adapter_execution_contract_carried",
+        "capture_bundle_adapter_execution_contract_matches_evidence",
+    }:
+        return "review-provider-market-data-live-evidence"
     if (
         check.startswith("capture_bundle")
         or check.startswith("capture_env_template")
@@ -896,6 +950,10 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_provider_capture_commands"
     if check == "capture_bundle_provider_capture_commands_match_session":
         return "regenerate_live_evidence_with_session_provider_capture_commands"
+    if check == "capture_bundle_adapter_execution_contract_carried":
+        return "regenerate_live_evidence_with_adapter_execution_contract"
+    if check == "capture_bundle_adapter_execution_contract_matches_evidence":
+        return "regenerate_live_evidence_with_session_adapter_execution_contract"
     if check in {
         "live_evidence_exchange_carried",
         "live_evidence_source_session_carried",
@@ -963,6 +1021,7 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Ready commands: {summary['ready_command_count']}",
@@ -1158,6 +1217,46 @@ def _session_contract_text(session: dict[str, Any]) -> str:
         f"{_text(session.get('timezone'))}|"
         f"{_text(session.get('open_local'))}|"
         f"{_text(session.get('close_local'))}"
+    )
+
+
+def _adapter_contract_matches_evidence(
+    contract: dict[str, Any],
+    evidence_contract: dict[str, Any],
+    session_contract: dict[str, Any],
+) -> bool:
+    reference = evidence_contract or session_contract
+    if not (contract and reference):
+        return False
+    return (
+        _adapter_contract_signature(contract) == _adapter_contract_signature(reference)
+        and bool(contract.get("values_stored", True)) is False
+        and bool(reference.get("values_stored", True)) is False
+    )
+
+
+def _adapter_contract_signature(contract: dict[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        _text(contract.get(key))
+        for key in (
+            "provider",
+            "transport",
+            "market",
+            "exchange",
+            "kind",
+            "endpoint",
+        )
+    )
+
+
+def _adapter_contract_metadata_text(contract: dict[str, Any]) -> str:
+    return (
+        f"{_text(contract.get('provider'))}|"
+        f"{_text(contract.get('transport'))}|"
+        f"{_text(contract.get('market'))}|"
+        f"{_text(contract.get('exchange'))}|"
+        f"{_text(contract.get('kind'))}|"
+        f"{_text(contract.get('endpoint'))}"
     )
 
 

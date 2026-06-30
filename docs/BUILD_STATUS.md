@@ -177,7 +177,11 @@
   manifest extras now also expose the capture env-template and adapter handoff
   SHA-256 values directly for downstream strategy audit. The handoff now carries
   provider capture command counts/lists from live evidence and blocks strategy
-  research if the capture-bundle command handoff is missing or mismatched.
+  research if the capture-bundle command handoff is missing or mismatched. It
+  also carries the credential-safe `adapter_execution_contract` into
+  summary/config/runbook and manifest artifacts, and blocks research when that
+  contract is missing, stores credential values, or no longer matches live
+  evidence.
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real
