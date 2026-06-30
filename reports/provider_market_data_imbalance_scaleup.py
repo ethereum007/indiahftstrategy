@@ -272,6 +272,7 @@ def write_provider_market_data_imbalance_scaleup_plan(
             "capture_bundle_provider_capture_commands_match_session": bool(
                 summary_row["capture_bundle_provider_capture_commands_match_session"]
             ),
+            "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
@@ -284,6 +285,9 @@ def write_provider_market_data_imbalance_scaleup_plan(
                 ),
                 "provider_capture_commands_match_session": bool(
                     summary_row["capture_bundle_provider_capture_commands_match_session"]
+                ),
+                "adapter_execution_contract": _mapping(
+                    _mapping(payload.get("capture_bundle")).get("adapter_execution_contract")
                 ),
                 "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -474,6 +478,7 @@ def _checks(
         bundle_provider_capture_commands_carried
         and _first_bool(scorecard_summary, "capture_bundle_provider_capture_commands_match_session")
     )
+    adapter_contract_carried = _adapter_contract_carried(scorecard_summary)
     rows.append(
         _check(
             "scaleup_plan_runnable",
@@ -535,6 +540,26 @@ def _checks(
             provider_capture_command_count,
             bundle_provider_capture_commands_match_session if bundle_provided else True,
             "provider imbalance scorecard command proof no longer matches the session packet",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_adapter_execution_contract_carried",
+            _adapter_contract_metadata_text(scorecard_summary),
+            "is_not",
+            "",
+            adapter_contract_carried if bundle_provided else True,
+            "provider imbalance scorecard is missing credential-safe adapter execution contract proof",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_adapter_execution_contract_matches_evidence",
+            _adapter_contract_metadata_text(scorecard_summary),
+            "matches",
+            "live evidence",
+            _first_bool(scorecard_summary, "adapter_contract_metadata_matches_evidence") if bundle_provided else True,
+            "provider imbalance scorecard adapter execution contract no longer matches live evidence",
         )
     )
     return pd.DataFrame(rows)
@@ -726,6 +751,14 @@ def _summary(
                 )
                 or _first_text(launch_evidence_summary, "source_live_fetch_contract_session_close_local")
                 or _first_text(provider_launch_summary, "source_live_fetch_contract_session_close_local"),
+                "adapter_contract_provider": _first_text(scorecard_summary, "adapter_contract_provider"),
+                "adapter_contract_transport": _first_text(scorecard_summary, "adapter_contract_transport"),
+                "adapter_contract_market": _first_text(scorecard_summary, "adapter_contract_market"),
+                "adapter_contract_exchange": _first_text(scorecard_summary, "adapter_contract_exchange"),
+                "adapter_contract_values_stored": _first_bool(scorecard_summary, "adapter_contract_values_stored"),
+                "adapter_contract_metadata_matches_evidence": _first_bool(
+                    scorecard_summary, "adapter_contract_metadata_matches_evidence"
+                ),
                 "provider_capture_command_count": int(
                     _first_number(scorecard_summary, "provider_capture_command_count")
                     or _first_number(launch_evidence_summary, "provider_capture_command_count")
@@ -888,6 +921,7 @@ def _config(
         "market_session": _market_session_contract_from_summary(summary),
         "provider_capture_commands": _provider_capture_commands(scorecard_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(scorecard_config),
+        "adapter_execution_contract": _mapping(scorecard_config.get("adapter_execution_contract")),
         "capture_bundle": _provider_capture_bundle(summary, scorecard_config),
         "scorecard": _first_record(scorecard_summary),
         "provider_scorecard_config": _jsonable(scorecard_config),
@@ -956,6 +990,7 @@ def _next_gate_for_check(check: str) -> str:
         check.startswith("provider_scorecard")
         or check.startswith("provider_imbalance_scorecard")
         or check.startswith("scorecard_provider_capture")
+        or check.startswith("scorecard_adapter_execution_contract")
     ):
         return "score-provider-market-data-imbalance-readiness"
     if check.startswith("provider_launch_evidence") or check.startswith("launch_evidence"):
@@ -994,6 +1029,7 @@ def _repair_action(check: str) -> str:
         check.startswith("provider_scorecard")
         or check.startswith("provider_imbalance_scorecard")
         or check.startswith("scorecard_provider_capture")
+        or check.startswith("scorecard_adapter_execution_contract")
     ):
         return "score_provider_imbalance_readiness"
     if check.startswith("provider_launch_evidence") or check.startswith("launch_evidence"):
@@ -1029,6 +1065,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
+        f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "",
         "## Checks",
@@ -1207,11 +1244,40 @@ def _source_live_fetch_contract_session_from_summary(summary: pd.Series) -> dict
     }
 
 
+def _adapter_contract_carried(scorecard_summary: pd.DataFrame) -> bool:
+    return (
+        bool(_first_text(scorecard_summary, "adapter_contract_provider"))
+        and bool(_first_text(scorecard_summary, "adapter_contract_transport"))
+        and bool(_first_text(scorecard_summary, "adapter_contract_market"))
+        and bool(_first_text(scorecard_summary, "adapter_contract_exchange"))
+        and not _first_bool(scorecard_summary, "adapter_contract_values_stored")
+    )
+
+
+def _adapter_contract_metadata_text(scorecard_summary: pd.DataFrame) -> str:
+    return (
+        f"{_first_text(scorecard_summary, 'adapter_contract_provider')}|"
+        f"{_first_text(scorecard_summary, 'adapter_contract_transport')}|"
+        f"{_first_text(scorecard_summary, 'adapter_contract_market')}|"
+        f"{_first_text(scorecard_summary, 'adapter_contract_exchange')}"
+    )
+
+
 def _provider_capture_bundle(summary: pd.Series, scorecard_config: dict[str, Any]) -> dict[str, Any]:
     commands = _bundle_provider_capture_commands(scorecard_config)
     payload = _mapping(scorecard_config.get("capture_bundle"))
     if payload:
         carried = {str(key): _jsonable(value) for key, value in payload.items()}
+        carried.setdefault("adapter_execution_contract", _mapping(scorecard_config.get("adapter_execution_contract")))
+        carried.setdefault("adapter_contract_provider", str(summary["adapter_contract_provider"]))
+        carried.setdefault("adapter_contract_transport", str(summary["adapter_contract_transport"]))
+        carried.setdefault("adapter_contract_market", str(summary["adapter_contract_market"]))
+        carried.setdefault("adapter_contract_exchange", str(summary["adapter_contract_exchange"]))
+        carried.setdefault("adapter_contract_values_stored", bool(summary["adapter_contract_values_stored"]))
+        carried.setdefault(
+            "adapter_contract_metadata_matches_evidence",
+            bool(summary["adapter_contract_metadata_matches_evidence"]),
+        )
         carried.setdefault("provider_capture_command_count", int(summary["provider_capture_command_count"]))
         carried.setdefault(
             "provider_capture_command_providers",
@@ -1279,6 +1345,15 @@ def _provider_capture_bundle(summary: pd.Series, scorecard_config: dict[str, Any
         ),
         "source_live_fetch_contract_session_close_local": str(
             summary["source_live_fetch_contract_session_close_local"]
+        ),
+        "adapter_execution_contract": _mapping(scorecard_config.get("adapter_execution_contract")),
+        "adapter_contract_provider": str(summary["adapter_contract_provider"]),
+        "adapter_contract_transport": str(summary["adapter_contract_transport"]),
+        "adapter_contract_market": str(summary["adapter_contract_market"]),
+        "adapter_contract_exchange": str(summary["adapter_contract_exchange"]),
+        "adapter_contract_values_stored": bool(summary["adapter_contract_values_stored"]),
+        "adapter_contract_metadata_matches_evidence": bool(
+            summary["adapter_contract_metadata_matches_evidence"]
         ),
         "provider_capture_command_count": int(summary["provider_capture_command_count"]),
         "provider_capture_command_providers": str(summary["provider_capture_command_providers"]),
