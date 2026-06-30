@@ -289,7 +289,10 @@
 - Provider market-data imbalance runtime session now carries the same adapter
   fingerprints into broker-readiness handoff: session summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
-  values directly.
+  values directly. Runtime session also carries the credential-safe
+  `adapter_execution_contract` from runtime guard and blocks broker-readiness
+  review when that contract is missing, unsafe, or no longer matched to live
+  evidence.
 - Provider market-data imbalance broker readiness now preserves those adapter
   fingerprints into broker handoff review: broker-readiness summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256

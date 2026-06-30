@@ -4855,8 +4855,11 @@ available, writes provider session checks/summary/action/config/runbook
 artifacts plus a nested generic `runtime_session`, and retains the upstream
 capture bundle, blank credential env-template, adapter handoff paths, source
 credential env-template proof, exchange/session metadata, capture-bundle session
-match proof, and `live_fetch_contract` in its provider wrapper
-summary/config/runbook and manifest. Clean sessions route to
+match proof, `live_fetch_contract`, and credential-safe
+`adapter_execution_contract` in its provider wrapper summary/config/runbook and
+manifest. Missing, unsafe, or mismatched adapter-contract proof blocks broker
+readiness review and sends the packet back through provider runtime guard.
+Clean sessions route to
 `review-provider-market-data-imbalance-broker-readiness`. If the session guard
 halts and a halt response is ready, it emits a ready `export-halt-response`
 action.
