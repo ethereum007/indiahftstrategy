@@ -388,6 +388,30 @@ def write_provider_market_data_imbalance_route_enable(
             "dispatch_roundtrip_adapter_handoff_matches_session": bool(
                 summary_row["dispatch_roundtrip_adapter_handoff_matches_session"]
             ),
+            "dispatch_roundtrip_adapter_execution_contract": _mapping(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get("adapter_execution_contract")
+            ),
+            "dispatch_roundtrip_adapter_contract_provider": str(
+                summary_row["dispatch_roundtrip_adapter_contract_provider"]
+            ),
+            "dispatch_roundtrip_adapter_contract_transport": str(
+                summary_row["dispatch_roundtrip_adapter_contract_transport"]
+            ),
+            "dispatch_roundtrip_adapter_contract_market": str(
+                summary_row["dispatch_roundtrip_adapter_contract_market"]
+            ),
+            "dispatch_roundtrip_adapter_contract_exchange": str(
+                summary_row["dispatch_roundtrip_adapter_contract_exchange"]
+            ),
+            "dispatch_roundtrip_adapter_contract_values_stored": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_values_stored"]
+            ),
+            "dispatch_roundtrip_adapter_contract_metadata_matches_evidence": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"]
+            ),
+            "dispatch_roundtrip_adapter_contract_matches_runtime_session": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+            ),
             "dispatch_roundtrip_capture_env_template": {
                 "path": str(summary_row["dispatch_roundtrip_capture_env_template_path"]),
                 "exists": bool(summary_row["dispatch_roundtrip_capture_env_template_exists"]),
@@ -477,6 +501,22 @@ def write_provider_market_data_imbalance_route_enable(
                 "source_session": _dispatch_roundtrip_source_session_contract_from_summary(summary_row),
                 "market_session": _dispatch_roundtrip_market_session_contract_from_summary(summary_row),
                 "metadata_consistent": bool(summary_row["dispatch_roundtrip_metadata_consistent"]),
+                "adapter_execution_contract": _mapping(
+                    _mapping(payload.get("dispatch_roundtrip_provenance")).get("adapter_execution_contract")
+                ),
+                "adapter_contract_provider": str(summary_row["dispatch_roundtrip_adapter_contract_provider"]),
+                "adapter_contract_transport": str(summary_row["dispatch_roundtrip_adapter_contract_transport"]),
+                "adapter_contract_market": str(summary_row["dispatch_roundtrip_adapter_contract_market"]),
+                "adapter_contract_exchange": str(summary_row["dispatch_roundtrip_adapter_contract_exchange"]),
+                "adapter_contract_values_stored": bool(
+                    summary_row["dispatch_roundtrip_adapter_contract_values_stored"]
+                ),
+                "adapter_contract_metadata_matches_evidence": bool(
+                    summary_row["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"]
+                ),
+                "adapter_contract_matches_runtime_session": bool(
+                    summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+                ),
                 "capture_bundle": {
                     "exchange": str(summary_row["dispatch_roundtrip_capture_bundle_exchange"]),
                     "source_session": _dispatch_roundtrip_capture_bundle_source_session_contract_from_summary(
@@ -873,6 +913,12 @@ def _checks(
         dispatch_summary,
         "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
     )
+    dispatch_adapter_contract_carried = _dispatch_roundtrip_adapter_contract_carried(dispatch_summary)
+    dispatch_adapter_contract_metadata = _dispatch_roundtrip_adapter_contract_metadata_text(dispatch_summary)
+    dispatch_adapter_contract_matches_runtime_session = _first_bool(
+        dispatch_summary,
+        "dispatch_roundtrip_adapter_contract_matches_runtime_session",
+    )
     rows.append(
         _check(
             "dispatch_roundtrip_provider_capture_commands_carried",
@@ -901,6 +947,41 @@ def _checks(
             True,
             dispatch_provider_capture_commands_match_runtime_session if dispatch_bundle_provided else True,
             "provider imbalance route-enable round-trip command proof no longer matches runtime-session proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_cutover_dispatch_roundtrip_adapter_execution_contract_carried",
+            dispatch_adapter_contract_metadata,
+            "is_not",
+            "",
+            dispatch_adapter_contract_carried if dispatch_bundle_provided else True,
+            "provider imbalance route-enable is missing cutover round-trip adapter execution contract proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_cutover_dispatch_roundtrip_adapter_execution_contract_matches_evidence",
+            dispatch_adapter_contract_metadata,
+            "matches",
+            "live evidence",
+            _first_bool(
+                dispatch_summary,
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+            )
+            if dispatch_bundle_provided
+            else True,
+            "provider imbalance route-enable round-trip adapter execution contract no longer matches live evidence",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_cutover_dispatch_roundtrip_adapter_execution_contract_matches_runtime_session",
+            dispatch_adapter_contract_metadata,
+            "matches",
+            _adapter_contract_metadata_text(provider_summary),
+            dispatch_adapter_contract_matches_runtime_session if dispatch_bundle_provided else True,
+            "provider imbalance route-enable round-trip adapter execution contract no longer matches runtime-session proof",
         )
     )
     return pd.DataFrame(rows)
@@ -1240,6 +1321,47 @@ def _summary(
                     provider_summary,
                     provider_broker_summary,
                 ),
+                "dispatch_roundtrip_adapter_contract_provider": _first_text_from_frames(
+                    "dispatch_roundtrip_adapter_contract_provider",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_adapter_contract_transport": _first_text_from_frames(
+                    "dispatch_roundtrip_adapter_contract_transport",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_adapter_contract_market": _first_text_from_frames(
+                    "dispatch_roundtrip_adapter_contract_market",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_adapter_contract_exchange": _first_text_from_frames(
+                    "dispatch_roundtrip_adapter_contract_exchange",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_adapter_contract_values_stored": _first_bool_from_frames(
+                    "dispatch_roundtrip_adapter_contract_values_stored",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence": _first_bool_from_frames(
+                    "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "dispatch_roundtrip_adapter_contract_matches_runtime_session": _first_bool_from_frames(
+                    "dispatch_roundtrip_adapter_contract_matches_runtime_session",
+                    provider_summary,
+                    provider_broker_summary,
+                )
+                if _first_bool_from_frames(
+                    "dispatch_roundtrip_capture_bundle_provided",
+                    provider_summary,
+                    provider_broker_summary,
+                )
+                else True,
                 "dispatch_roundtrip_exchange": _first_text_from_frames(
                     "dispatch_roundtrip_exchange",
                     provider_summary,
@@ -1803,6 +1925,25 @@ def _dispatch_roundtrip_config_summary(*configs: dict[str, Any]) -> pd.DataFrame
             provenance,
             "provider_capture_commands_match_runtime_session",
         )
+        contract = _mapping(provenance.get("adapter_execution_contract"))
+        if contract:
+            _set_config_text(record, "dispatch_roundtrip_adapter_contract_provider", contract, "provider")
+            _set_config_text(record, "dispatch_roundtrip_adapter_contract_transport", contract, "transport")
+            _set_config_text(record, "dispatch_roundtrip_adapter_contract_market", contract, "market")
+            _set_config_text(record, "dispatch_roundtrip_adapter_contract_exchange", contract, "exchange")
+            _set_config_bool(record, "dispatch_roundtrip_adapter_contract_values_stored", contract, "values_stored")
+            _set_config_bool(
+                record,
+                "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+                contract,
+                "metadata_matches_evidence",
+            )
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_adapter_contract_matches_runtime_session",
+            provenance,
+            "adapter_contract_matches_runtime_session",
+        )
         _set_config_text(
             record,
             "dispatch_roundtrip_source_credential_env_template_path",
@@ -2082,6 +2223,17 @@ def _dispatch_roundtrip_capture_bundle_provider_capture_commands(*configs: dict[
     return []
 
 
+def _dispatch_roundtrip_adapter_execution_contract(*configs: dict[str, Any]) -> dict[str, Any]:
+    for config in configs:
+        dispatch_roundtrip = _dispatch_roundtrip_provenance(config)
+        contract = _mapping(dispatch_roundtrip.get("adapter_execution_contract")) or _adapter_execution_contract(
+            config
+        )
+        if contract:
+            return contract
+    return {}
+
+
 def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
     if _value_present(record.get(column)) or key not in mapping:
         return
@@ -2351,6 +2503,21 @@ def _config(
             "provider_capture_commands_match_runtime_session": bool(
                 summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
             ),
+            "adapter_execution_contract": _dispatch_roundtrip_adapter_execution_contract(
+                provider_config,
+                provider_broker_config,
+            ),
+            "adapter_contract_provider": str(summary["dispatch_roundtrip_adapter_contract_provider"]),
+            "adapter_contract_transport": str(summary["dispatch_roundtrip_adapter_contract_transport"]),
+            "adapter_contract_market": str(summary["dispatch_roundtrip_adapter_contract_market"]),
+            "adapter_contract_exchange": str(summary["dispatch_roundtrip_adapter_contract_exchange"]),
+            "adapter_contract_values_stored": bool(summary["dispatch_roundtrip_adapter_contract_values_stored"]),
+            "adapter_contract_metadata_matches_evidence": bool(
+                summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"]
+            ),
+            "adapter_contract_matches_runtime_session": bool(
+                summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+            ),
             "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
             "capture_bundle_exists": bool(summary["dispatch_roundtrip_capture_bundle_exists"]),
@@ -2520,6 +2687,11 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         "- Dispatch round-trip provider capture commands: "
         f"{summary['dispatch_roundtrip_provider_capture_command_count']} "
         f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_provider_capture_commands_match_runtime_session']) else 'no'})",
+        "- Dispatch round-trip adapter execution contract: "
+        f"{summary['dispatch_roundtrip_adapter_contract_provider'] or 'missing'} / "
+        f"{summary['dispatch_roundtrip_adapter_contract_transport'] or 'missing'} "
+        f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_adapter_contract_matches_runtime_session']) else 'no'}, "
+        f"evidence match: {'yes' if bool(summary['dispatch_roundtrip_adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
         "- Dispatch round-trip capture env template: "
         f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",
@@ -3029,6 +3201,25 @@ def _adapter_contract_metadata_text(provider_summary: pd.DataFrame) -> str:
         f"{_first_text(provider_summary, 'adapter_contract_transport')}|"
         f"{_first_text(provider_summary, 'adapter_contract_market')}|"
         f"{_first_text(provider_summary, 'adapter_contract_exchange')}"
+    )
+
+
+def _dispatch_roundtrip_adapter_contract_carried(dispatch_summary: pd.DataFrame) -> bool:
+    return (
+        bool(_first_text(dispatch_summary, "dispatch_roundtrip_adapter_contract_provider"))
+        and bool(_first_text(dispatch_summary, "dispatch_roundtrip_adapter_contract_transport"))
+        and bool(_first_text(dispatch_summary, "dispatch_roundtrip_adapter_contract_market"))
+        and bool(_first_text(dispatch_summary, "dispatch_roundtrip_adapter_contract_exchange"))
+        and not _first_bool(dispatch_summary, "dispatch_roundtrip_adapter_contract_values_stored")
+    )
+
+
+def _dispatch_roundtrip_adapter_contract_metadata_text(dispatch_summary: pd.DataFrame) -> str:
+    return (
+        f"{_first_text(dispatch_summary, 'dispatch_roundtrip_adapter_contract_provider')}|"
+        f"{_first_text(dispatch_summary, 'dispatch_roundtrip_adapter_contract_transport')}|"
+        f"{_first_text(dispatch_summary, 'dispatch_roundtrip_adapter_contract_market')}|"
+        f"{_first_text(dispatch_summary, 'dispatch_roundtrip_adapter_contract_exchange')}"
     )
 
 
