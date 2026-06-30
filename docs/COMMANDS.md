@@ -4800,10 +4800,13 @@ plus a nested `runtime_telemetry` folder with `runtime_telemetry.csv`,
 `runtime_telemetry_summary.csv`. The provider wrapper also retains the upstream
 capture bundle, blank credential env-template, adapter handoff paths, source
 credential env-template proof, exchange/session metadata, capture-bundle session
-match proof, and `live_fetch_contract` in its summary/config/runbook and
-manifest. Supply live PnL, open-order, and position CSVs when they are available
-from Arrow.money/iRage; omit them for a dry guard-input snapshot based on
-scale-up and launch-pipeline metadata. A ready wrapper points to
+match proof, `live_fetch_contract`, and credential-safe
+`adapter_execution_contract` from scale-up in its summary/config/runbook and
+manifest. Missing, unsafe, or mismatched adapter-contract proof blocks guard
+monitoring and sends the packet back through provider scale-up planning. Supply
+live PnL, open-order, and position CSVs when they are available from
+Arrow.money/iRage; omit them for a dry guard-input snapshot based on scale-up
+and launch-pipeline metadata. A ready wrapper points to
 `monitor-provider-market-data-imbalance-runtime-guard`.
 
 Run the provider-specific runtime guard wrapper:
