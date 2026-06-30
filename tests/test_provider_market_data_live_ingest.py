@@ -178,6 +178,13 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["adapter_contract_provider"] == "arrow_money"
+    assert summary["adapter_contract_transport"] == "websocket"
+    assert summary["adapter_contract_exchange"] == "NFO"
+    assert summary["adapter_contract_capture_bundle_ready"]
+    assert summary["adapter_contract_command_count"] == 2
+    assert summary["adapter_contract_metadata_matches_session"]
+    assert not bool(summary["adapter_contract_values_stored"])
     assert summary["provider_capture_command_count"] == 2
     assert summary["provider_capture_command_providers"] == "arrow_money"
     assert summary["provider_capture_command_transports"] == "websocket"
@@ -202,6 +209,9 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["capture_bundle"]["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["live_fetch_contract"]["available"] is True
+    assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert config["capture_bundle"]["adapter_execution_contract"]["values_stored"] is False
     assert config["capture_bundle"]["provider_capture_command_count"] == 2
     assert config["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle"]["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
@@ -212,6 +222,8 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert config["capture_bundle"]["metadata_matches_session"] is True
     assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["windows"][0]["provider_capture_command_provider"] == "arrow_money"
     assert config["exchange"] == "NFO"
     assert config["source_session"]["close_local"] == "15:30:00"
@@ -230,8 +242,36 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+
+
+def test_provider_market_data_live_ingest_blocks_missing_bundle_adapter_contract(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _mutate_bundle(
+        _write_capture_bundle(tmp_path, live_packet),
+        lambda bundle: (
+            bundle.pop("adapter_execution_contract", None),
+            bundle["preflight"].pop("adapter_execution_contract", None),
+        ),
+    )
+    _write_expected_captures(live_packet)
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_adapter_execution_contract_carried" in failed
+    assert report.summary.iloc[0]["adapter_contract_provider"] == ""
+    assert report.batch is None
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_adapter_execution_contract"
 
 
 def test_provider_market_data_live_ingest_blocks_capture_bundle_session_mismatch(tmp_path):

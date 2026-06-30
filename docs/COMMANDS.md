@@ -4497,10 +4497,11 @@ data, `provider_market_data_live_rehearsal_*` artifacts, and optionally runs
 `ingest-provider-market-data-live-session` against those synthetic captures.
 The rehearsal manifest also fingerprints the bundle's credential env-template
 and adapter handoff artifacts when present, plus the bundle-carried source
-env-template proof and upstream `live_fetch_contract`, without storing
-credential values. Treat the result only as a backend smoke test; real research
-evidence still requires replacing the synthetic captures with Arrow.money/iRage
-provider captures from the approved bundle.
+env-template proof, upstream `live_fetch_contract`, and
+`adapter_execution_contract`, without storing credential values. Treat the
+result only as a backend smoke test; real research evidence still requires
+replacing the synthetic captures with Arrow.money/iRage provider captures from
+the approved bundle.
 
 After those live capture files land, ingest the whole planned session from the
 session packet:
@@ -4523,7 +4524,9 @@ and a manifest that fingerprints the session packet, client packet, captures,
 batch output manifest, and optionally the approved capture bundle plus its
 credential env-template, adapter handoff artifacts, source env-template proof,
 exchange/session metadata matching the live session packet, and upstream
-`live_fetch_contract`.
+`live_fetch_contract`. Bundle-linked ingest also requires the carried
+`adapter_execution_contract` to be present, credential-safe, and matched to the
+live-session packet before batch ingestion can become ready.
 
 Review the live ingest output before treating it as research evidence:
 
@@ -4541,10 +4544,11 @@ This writes `provider_market_data_live_evidence_summary.csv`,
 artifacts, and a manifest. If the live ingest carried a capture bundle, the
 evidence manifest also fingerprints that bundle, its credential env-template,
 the adapter handoff contract, source env-template proof, exchange/session
-metadata, and upstream `live_fetch_contract` before research handoff. It blocks
-captures that still have rehearsal sidecars (`*.csv.rehearsal.json`) from being
-marked research-ready, even if the ingest and batch pipelines passed, and fails
-closed if capture-bundle source metadata drifts from the live session packet.
+metadata, upstream `live_fetch_contract`, and `adapter_execution_contract`
+before research handoff. It blocks captures that still have rehearsal sidecars
+(`*.csv.rehearsal.json`) from being marked research-ready, even if the ingest
+and batch pipelines passed, and fails closed if capture-bundle source metadata
+or adapter-contract metadata drifts from the live session packet.
 Use `--allow-synthetic-rehearsal` only to classify a smoke test; the
 recommendation remains to replace synthetic captures with real Arrow.money/iRage
 provider captures before feeding walk-forward research.

@@ -133,6 +133,9 @@ def write_provider_market_data_live_session_ingest(
                 "sha256": str(report.summary.iloc[0]["source_credential_env_template_sha256"]),
             },
             "live_fetch_contract": _mapping(report.config.get("capture_bundle", {}).get("live_fetch_contract")),
+            "adapter_execution_contract": _mapping(
+                _mapping(report.config.get("capture_bundle")).get("adapter_execution_contract")
+            ),
             "provider_capture_commands": _list(report.config.get("provider_capture_commands")),
             "capture_bundle_provider_capture_commands": _list(
                 _mapping(report.config.get("capture_bundle")).get("provider_capture_commands")
@@ -282,6 +285,7 @@ def _checks(
     env_template_path = _env_template_path(bundle_path, bundle) if bundle_provided and not bundle_error else None
     source_env_template = _source_credential_env_template(bundle_path, bundle) if bundle_provided and not bundle_error else {}
     live_fetch_contract = _live_fetch_contract(bundle) if bundle_provided and not bundle_error else {}
+    adapter_execution_contract = _adapter_execution_contract(bundle) if bundle_provided and not bundle_error else {}
     session_provider_capture_commands = _session_provider_capture_commands(packet)
     bundle_provider_capture_commands = _bundle_provider_capture_commands(bundle) if bundle_provided and not bundle_error else []
     bundle_provider_capture_command_count = len(bundle_provider_capture_commands)
@@ -310,6 +314,8 @@ def _checks(
         _check("capture_env_template_exists", _path_text(env_template_path), "exists", True, bool(env_template_path is not None and env_template_path.exists()) if bundle_provided and not bundle_error else True, "capture bundle credential env template is required for bundle-linked ingest provenance"),
         _check("capture_bundle_source_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, bool(source_env_template.get("exists")) and bool(_text(source_env_template.get("sha256"))) if bundle_provided and not bundle_error else True, "capture bundle must carry source credential env-template proof"),
         _check("capture_bundle_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher" if bundle_provided and not bundle_error else True, "capture bundle must carry the upstream live fetch-contract handoff"),
+        _check("capture_bundle_adapter_execution_contract_carried", _text(adapter_execution_contract.get("provider")), "is_not", "", bool(_text(adapter_execution_contract.get("provider"))) and bool(adapter_execution_contract.get("values_stored", True)) is False if bundle_provided and not bundle_error else True, "capture bundle must carry the credential-safe adapter execution contract"),
+        _check("capture_bundle_adapter_execution_contract_matches_session", _adapter_contract_metadata_text(adapter_execution_contract), "==", "live session source metadata", _adapter_contract_matches_packet(packet, adapter_execution_contract) if bundle_provided and not bundle_error else True, "capture bundle adapter execution contract must match the live session packet"),
         _check("capture_bundle_provider_capture_commands_carried", bundle_provider_capture_command_count, "==", len(windows), bundle_provider_capture_commands_ok, "capture bundle must carry per-window provider capture command handoffs"),
         _check("capture_bundle_provider_capture_commands_match_session", bundle_provider_capture_command_count, "matches", len(session_provider_capture_commands), bundle_provider_capture_commands_match_ok, "capture bundle provider capture command handoffs must match the live session packet"),
         _check("capture_bundle_exchange_matches_session", _bundle_exchange(bundle), "==", _text(packet.get("exchange")), _bundle_exchange(bundle) == _text(packet.get("exchange")) if bundle_provided and not bundle_error else True, "capture bundle exchange metadata must match the live session packet"),
@@ -368,6 +374,7 @@ def _summary(
     adapter_handoff_path = _adapter_handoff_path(bundle_path, bundle) if config.capture_bundle_path else None
     source_env_template = _source_credential_env_template(bundle_path, bundle) if config.capture_bundle_path else {}
     live_fetch_contract = _live_fetch_contract(bundle) if config.capture_bundle_path else {}
+    adapter_execution_contract = _adapter_execution_contract(bundle) if config.capture_bundle_path else {}
     session_provider_capture_commands = _session_provider_capture_commands(packet)
     bundle_provider_capture_commands = _bundle_provider_capture_commands(bundle) if config.capture_bundle_path else []
     source_session = _mapping(packet.get("source_session"))
@@ -403,6 +410,19 @@ def _summary(
                 "source_live_fetch_contract_session_timezone": _text(live_fetch_session.get("timezone")),
                 "source_live_fetch_contract_session_open_local": _text(live_fetch_session.get("open_local")),
                 "source_live_fetch_contract_session_close_local": _text(live_fetch_session.get("close_local")),
+                "adapter_contract_provider": _text(adapter_execution_contract.get("provider")),
+                "adapter_contract_transport": _text(adapter_execution_contract.get("transport")),
+                "adapter_contract_market": _text(adapter_execution_contract.get("market")),
+                "adapter_contract_exchange": _text(adapter_execution_contract.get("exchange")),
+                "adapter_contract_capture_bundle_ready": bool(adapter_execution_contract.get("capture_bundle_ready")),
+                "adapter_contract_command_count": int(_number(adapter_execution_contract.get("command_count"), fallback=0)),
+                "adapter_contract_values_stored": bool(adapter_execution_contract.get("values_stored", True)),
+                "adapter_contract_metadata_matches_session": _adapter_contract_matches_packet(
+                    packet,
+                    adapter_execution_contract,
+                )
+                if config.capture_bundle_path
+                else True,
                 "provider_capture_command_count": int(len(session_provider_capture_commands)),
                 "provider_capture_command_providers": _unique_command_values(session_provider_capture_commands, "provider"),
                 "provider_capture_command_transports": _unique_command_values(session_provider_capture_commands, "transport"),
@@ -551,6 +571,7 @@ def _config(
                 "market": str(summary["source_live_fetch_contract_market"]),
                 "session": _source_live_fetch_contract_session_from_summary(summary),
             },
+            "adapter_execution_contract": _adapter_execution_contract(bundle) if config.capture_bundle_path else _mapping(packet.get("adapter_execution_contract")),
             "provider_capture_commands": _bundle_provider_capture_commands(bundle) if config.capture_bundle_path else [],
             "provider_capture_command_count": int(summary["capture_bundle_provider_capture_command_count"]),
             "provider_capture_commands_match_session": bool(
@@ -567,6 +588,7 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "adapter_execution_contract": _adapter_execution_contract(bundle) if config.capture_bundle_path else _mapping(packet.get("adapter_execution_contract")),
         "provider_capture_commands": _session_provider_capture_commands(packet),
         "windows": _records(windows),
         "checks": _records(checks),
@@ -712,6 +734,10 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_source_env_template"
     if check == "capture_bundle_live_fetch_contract_carried":
         return "regenerate_capture_bundle_with_live_fetch_contract"
+    if check == "capture_bundle_adapter_execution_contract_carried":
+        return "regenerate_capture_bundle_with_adapter_execution_contract"
+    if check == "capture_bundle_adapter_execution_contract_matches_session":
+        return "regenerate_capture_bundle_with_session_adapter_execution_contract"
     if check == "capture_bundle_provider_capture_commands_carried":
         return "regenerate_capture_bundle_with_provider_capture_commands"
     if check == "capture_bundle_provider_capture_commands_match_session":
@@ -796,6 +822,13 @@ def _live_fetch_contract(bundle: dict[str, Any]) -> dict[str, Any]:
     contract = _mapping(bundle.get("live_fetch_contract"))
     if not contract:
         contract = _mapping(_mapping(bundle.get("preflight")).get("live_fetch_contract"))
+    return contract.copy()
+
+
+def _adapter_execution_contract(bundle: dict[str, Any]) -> dict[str, Any]:
+    contract = _mapping(bundle.get("adapter_execution_contract"))
+    if not contract:
+        contract = _mapping(_mapping(bundle.get("preflight")).get("adapter_execution_contract"))
     return contract.copy()
 
 
@@ -964,6 +997,20 @@ def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_co
     )
 
 
+def _adapter_contract_matches_packet(packet: dict[str, Any], contract: dict[str, Any]) -> bool:
+    if not contract:
+        return False
+    return (
+        _text(contract.get("provider")) == _text(packet.get("provider"))
+        and _text(contract.get("transport")) == _text(packet.get("transport"))
+        and _text(contract.get("market")) == _text(packet.get("market"))
+        and _text(contract.get("exchange")) == _text(packet.get("exchange"))
+        and _text(contract.get("kind")) == _text(packet.get("kind"))
+        and _text(contract.get("endpoint")) == _text(packet.get("endpoint"))
+        and bool(contract.get("values_stored", True)) is False
+    )
+
+
 def _session_contracts_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
     if not (_session_contract_carried(left) and _session_contract_carried(right)):
         return False
@@ -992,6 +1039,17 @@ def _live_contract_metadata_text(live_fetch_contract: dict[str, Any]) -> str:
         f"{_text(live_fetch_contract.get('market'))}|"
         f"{_text(live_fetch_contract.get('exchange'))}|"
         f"{_session_contract_text(session)}"
+    )
+
+
+def _adapter_contract_metadata_text(contract: dict[str, Any]) -> str:
+    return (
+        f"{_text(contract.get('provider'))}|"
+        f"{_text(contract.get('transport'))}|"
+        f"{_text(contract.get('market'))}|"
+        f"{_text(contract.get('exchange'))}|"
+        f"{_text(contract.get('kind'))}|"
+        f"{_text(contract.get('endpoint'))}"
     )
 
 

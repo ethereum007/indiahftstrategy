@@ -142,6 +142,10 @@ def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_
     assert len(summary["source_credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert summary["adapter_contract_provider"] == "arrow_money"
+    assert summary["adapter_contract_transport"] == "websocket"
+    assert summary["adapter_contract_command_count"] == 2
+    assert not bool(summary["adapter_contract_values_stored"])
     assert captures["synthetic_rows_written"].tolist() == [3, 3]
     assert all(Path(path).exists() for path in captures["capture_path"])
     assert all(Path(path).exists() for path in captures["sidecar_path"])
@@ -152,6 +156,9 @@ def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_
     assert config["adapter_handoff_exists"] is True
     assert config["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert config["live_fetch_contract"]["available"] is True
+    assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["ingest"]["ready"] is True
     assert manifest["run_type"] == "provider_market_data_live_rehearsal"
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
@@ -159,6 +166,8 @@ def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert "synthetic_captures" in manifest["inputs"]
 
 

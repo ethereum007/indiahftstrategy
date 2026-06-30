@@ -133,9 +133,10 @@
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally
   runs live-session ingest, fingerprints the bundle credential env-template and
-  adapter handoff contract when present, carries the source env-template proof
-  and `live_fetch_contract`, and reports that the result is smoke-test evidence
-  only until replaced by real Arrow.money/iRage captures.
+  adapter handoff contract when present, carries the source env-template proof,
+  `live_fetch_contract`, and `adapter_execution_contract`, and reports that the
+  result is smoke-test evidence only until replaced by real Arrow.money/iRage
+  captures.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured
@@ -143,24 +144,27 @@
   approved capture bundle is supplied, ingest also fingerprints the bundle and
   its blank credential env-template plus adapter handoff contract artifacts,
   source env-template proof, exchange/session metadata matching the live packet,
-  and `live_fetch_contract` for backend handoff provenance. Ingest and evidence
-  summaries/configs now also carry the capture env-template and adapter handoff
-  SHA-256 values directly, so provider credential-template and adapter-contract
-  provenance are visible without parsing the manifest input block. Bundle-linked
-  ingest now also verifies that provider capture command handoffs match the
-  live-session packet and carries the structured command list into the ingest
-  summary/config/manifest for downstream live-data audit.
+  `live_fetch_contract`, and `adapter_execution_contract` for backend handoff
+  provenance. Ingest and evidence summaries/configs now also carry the capture
+  env-template and adapter handoff SHA-256 values directly, so provider
+  credential-template and adapter-contract provenance are visible without
+  parsing the manifest input block. Bundle-linked ingest now also verifies that
+  both provider capture command handoffs and the adapter execution contract
+  match the live-session packet, then carries the structured command list and
+  adapter contract into the ingest summary/config/manifest for downstream
+  live-data audit.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
   capture-bundle/env-template/adapter-handoff provenance, source env-template
-  proof, exchange/session metadata, and `live_fetch_contract` when supplied, and
-  credential-safe session packets while blocking `*.csv.rehearsal.json`
-  synthetic captures from being marked research-ready. Bundle-linked evidence
-  review also carries provider capture command counts/lists from ingest into
-  summary/config/manifest artifacts and blocks research handoff if the
-  capture-bundle command list is missing or no longer matches the live-session
-  packet.
+  proof, exchange/session metadata, `live_fetch_contract`, and
+  `adapter_execution_contract` when supplied, and credential-safe session
+  packets while blocking `*.csv.rehearsal.json` synthetic captures from being
+  marked research-ready. Bundle-linked evidence review also carries provider
+  capture command counts/lists and the adapter execution contract from ingest
+  into summary/config/manifest artifacts and blocks research handoff if the
+  capture-bundle command list or adapter contract is missing or no longer
+  matches the live-session packet.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds

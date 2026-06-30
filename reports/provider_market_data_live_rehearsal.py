@@ -111,6 +111,7 @@ def write_provider_market_data_live_rehearsal(
                 "sha256": str(report.summary.iloc[0]["source_credential_env_template_sha256"]),
             },
             "live_fetch_contract": _mapping(report.config.get("live_fetch_contract")),
+            "adapter_execution_contract": _mapping(report.config.get("adapter_execution_contract")),
         },
     )
     return ProviderMarketDataLiveRehearsalReport(
@@ -214,12 +215,14 @@ def _pre_checks(
     ) if not captures.empty else False
     source_env_template = _source_credential_env_template(bundle_path, bundle)
     live_fetch_contract = _live_fetch_contract(bundle)
+    adapter_execution_contract = _adapter_execution_contract(bundle)
     return [
         _check("capture_bundle_path_exists", str(bundle_path), "exists", True, bundle_path.exists(), "capture bundle is required"),
         _check("capture_bundle_json_readable", bundle_error or "ok", "is", "ok", not bundle_error, bundle_error or "capture bundle could not be read"),
         _check("capture_bundle_ready", bool(bundle.get("ready")), "is", True, bool(bundle.get("ready")), "capture bundle must be ready before rehearsal"),
         _check("bundle_source_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, bool(source_env_template.get("exists")) and bool(_text(source_env_template.get("sha256"))), "capture bundle must carry source credential env-template proof"),
         _check("bundle_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher", "capture bundle must carry the upstream live fetch-contract handoff"),
+        _check("bundle_adapter_execution_contract_carried", _text(adapter_execution_contract.get("provider")), "is_not", "", bool(_text(adapter_execution_contract.get("provider"))) and bool(adapter_execution_contract.get("values_stored", True)) is False, "capture bundle must carry the credential-safe adapter execution contract"),
         _check("synthetic_only_marker", True, "is", True, True, ""),
         _check("rows_per_window_positive", config.rows_per_window, ">", 0, config.rows_per_window > 0, "rows per window must be positive"),
         _check("tick_size_positive", config.tick_size, ">", 0, config.tick_size > 0, "tick size must be positive"),
@@ -356,6 +359,7 @@ def _summary(
     adapter_handoff_path = _adapter_handoff_path(bundle_path, bundle)
     source_env_template = _source_credential_env_template(bundle_path, bundle)
     live_fetch_contract = _live_fetch_contract(bundle)
+    adapter_execution_contract = _adapter_execution_contract(bundle)
     return pd.DataFrame(
         [
             {
@@ -376,6 +380,10 @@ def _summary(
                 "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
                 "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
                 "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
+                "adapter_contract_provider": _text(adapter_execution_contract.get("provider")),
+                "adapter_contract_transport": _text(adapter_execution_contract.get("transport")),
+                "adapter_contract_command_count": int(_number(adapter_execution_contract.get("command_count"), fallback=0)),
+                "adapter_contract_values_stored": bool(adapter_execution_contract.get("values_stored", True)),
                 "live_session_packet_path": _text(bundle.get("live_session_packet_path")),
                 "provider": _text(bundle.get("provider")),
                 "transport": _text(bundle.get("transport")),
@@ -459,6 +467,7 @@ def _config(
         "adapter_handoff_exists": bool(summary["adapter_handoff_exists"]),
         "source_credential_env_template": _source_credential_env_template_contract(summary),
         "live_fetch_contract": _live_fetch_contract(bundle),
+        "adapter_execution_contract": _adapter_execution_contract(bundle),
         "live_session_packet_path": _text(bundle.get("live_session_packet_path")),
         "captures": _records(captures),
         "checks": _records(checks),
@@ -487,7 +496,11 @@ def _ingest_config(ingest: ProviderMarketDataLiveIngestReport | None) -> dict[st
 def _next_gate_for_check(check: str) -> str:
     if check.startswith("capture_bundle"):
         return "bundle-provider-market-data-live-capture"
-    if check in {"bundle_source_credential_env_template_carried", "bundle_live_fetch_contract_carried"}:
+    if check in {
+        "bundle_source_credential_env_template_carried",
+        "bundle_live_fetch_contract_carried",
+        "bundle_adapter_execution_contract_carried",
+    }:
         return "bundle-provider-market-data-live-capture"
     if check.startswith("capture_") or check in {"rows_per_window_positive", "tick_size_positive"}:
         return "rehearse-provider-market-data-live-capture"
@@ -515,6 +528,8 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_source_env_template"
     if check == "bundle_live_fetch_contract_carried":
         return "regenerate_capture_bundle_with_live_fetch_contract"
+    if check == "bundle_adapter_execution_contract_carried":
+        return "regenerate_capture_bundle_with_adapter_execution_contract"
     if check == "capture_files_do_not_already_exist":
         return "choose_rehearsal_sandbox_or_allow_overwrite"
     if check.startswith("capture_"):
@@ -640,6 +655,13 @@ def _live_fetch_contract(bundle: dict[str, Any]) -> dict[str, Any]:
     return contract.copy()
 
 
+def _adapter_execution_contract(bundle: dict[str, Any]) -> dict[str, Any]:
+    contract = _mapping(bundle.get("adapter_execution_contract"))
+    if not contract:
+        contract = _mapping(_mapping(bundle.get("preflight")).get("adapter_execution_contract"))
+    return contract.copy()
+
+
 def _source_credential_env_template_contract(summary: pd.Series) -> dict[str, Any]:
     return {
         "path": str(summary["source_credential_env_template_path"]),
@@ -675,6 +697,13 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(64 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _number(value: object, *, fallback: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _check(check: str, value: object, operator: str, threshold: object, passed: bool, reason: str) -> dict[str, Any]:
