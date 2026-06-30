@@ -114,6 +114,18 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     }
     assert packet["market_session"]["open_local"] == "09:15"
     assert packet["live_fetch_contract"]["available"] is True
+    assert packet["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert packet["adapter_execution_contract"]["adapter"] == "arrow_money"
+    assert packet["adapter_execution_contract"]["transport"] == "websocket"
+    assert packet["adapter_execution_contract"]["exchange"] == "NFO"
+    assert packet["adapter_execution_contract"]["live_session_ready"] is True
+    assert packet["adapter_execution_contract"]["capture_window_count"] == 2
+    assert packet["adapter_execution_contract"]["capture_command_count"] == 2
+    assert packet["adapter_execution_contract"]["credential_env_vars"] == [
+        "ARROW_MONEY_API_KEY",
+        "ARROW_MONEY_API_SECRET",
+    ]
+    assert packet["adapter_execution_contract"]["values_stored"] is False
     assert packet["capture_windows"][0]["label"] == "open"
     assert packet["capture_windows"][0]["capture_command_provider"] == "arrow_money"
     assert packet["capture_windows"][0]["capture_command_transport"] == "websocket"
@@ -122,6 +134,8 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert config["exchange"] == "NFO"
     assert config["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["credential_env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
+    assert config["adapter_execution_contract"]["post_capture_batch_command"] == packet["post_capture_batch_command"]
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["live_fetch_contract"]["available"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["provider_capture_commands"][0]["transport"] == "websocket"
@@ -132,6 +146,8 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert manifest["run_type"] == "provider_market_data_live_session_plan"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credential_env_template"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["live_session_ready"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
 

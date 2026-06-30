@@ -4412,8 +4412,10 @@ names, runtime presence booleans, the blank env-template path/hash, and the
 upstream `live_fetch_contract`. It also verifies that the provider client
 packet still carries exchange/segment plus source-session metadata matching the
 selected market profile, then preserves that proof in the session packet. The
-session packet includes per-window capture paths and the exact post-capture
-`pipeline-provider-market-data-batch` command.
+session packet preserves the upstream `adapter_execution_contract` with
+live-session readiness, trade date, capture-window count, command count, and
+the exact post-capture `pipeline-provider-market-data-batch` command, plus
+per-window capture paths.
 
 Run a pre-market preflight against that session packet before starting the
 credentialed provider client:
@@ -4439,7 +4441,10 @@ not passed the final capture window. It writes
 `provider_market_data_live_preflight_checks.csv`,
 `provider_market_data_live_preflight_action_queue.csv`, config/runbook
 artifacts, and a manifest that fingerprints the blank env-template without
-storing credential values.
+storing credential values. The preflight config and manifest also preserve the
+`adapter_execution_contract`, adding live-preflight readiness, timing status,
+capture counts, existing-capture count, and credential env-var names for the
+backend runner.
 
 Bundle the preflighted session into a per-window provider adapter handoff:
 
@@ -4467,7 +4472,9 @@ command is approved. The adapter handoff contract carries provider, transport,
 exchange, endpoint, source/market session metadata, output schema columns,
 per-window capture commands, credential env-var names, source and capture blank
 env-template references, runtime presence booleans, the live-fetch contract, and
-the exact post-capture
+the carried `adapter_execution_contract` with capture-bundle readiness, rendered
+capture commands, handoff/env-template file names, command count, and the exact
+post-capture
 `ingest-provider-market-data-live-session` command without storing credential
 values.
 

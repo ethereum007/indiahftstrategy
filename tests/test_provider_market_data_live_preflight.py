@@ -119,6 +119,18 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert summary["capture_command_providers"] == "arrow_money"
     assert summary["capture_command_transports"] == "websocket"
     assert config["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
+    assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["transport"] == "websocket"
+    assert config["adapter_execution_contract"]["live_session_ready"] is True
+    assert config["adapter_execution_contract"]["live_preflight_ready"] is True
+    assert config["adapter_execution_contract"]["timing_status"] == "before_first_window"
+    assert config["adapter_execution_contract"]["expected_capture_count"] == 2
+    assert config["adapter_execution_contract"]["existing_capture_count"] == 0
+    assert config["adapter_execution_contract"]["credential_env_vars"] == [
+        "ARROW_MONEY_API_KEY",
+        "ARROW_MONEY_API_SECRET",
+    ]
+    assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["live_fetch_contract"]["available"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["provider_capture_commands"][0]["transport"] == "websocket"
@@ -130,6 +142,8 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert config["market_session"]["open_local"] == "09:15"
     assert config["session_packet"]["exchange"] == "NFO"
     assert config["session_packet"]["source_session"]["close_local"] == "15:30:00"
+    assert config["session_packet"]["adapter_execution_contract"]["live_session_ready"] is True
+    assert config["session_packet"]["adapter_execution_contract"]["values_stored"] is False
     assert config["session_packet"]["capture_windows"][0]["capture_command_provider"] == "arrow_money"
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
@@ -146,6 +160,8 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert manifest["run_type"] == "provider_market_data_live_preflight"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == summary["credential_env_template_sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["live_preflight_ready"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
 

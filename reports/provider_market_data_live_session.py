@@ -93,6 +93,7 @@ def write_provider_market_data_live_session_plan(
             "provider": str(report.summary.iloc[0]["provider"]),
             "credential_env_template": credential_env_template,
             "live_fetch_contract": report.packet["live_fetch_contract"],
+            "adapter_execution_contract": report.packet["adapter_execution_contract"],
             "provider_capture_commands": _provider_capture_commands(report.packet.get("capture_windows")),
             "post_capture_batch_command": str(report.summary.iloc[0]["post_capture_batch_command"]),
         },
@@ -373,6 +374,7 @@ def _session_packet(
 ) -> dict[str, Any]:
     auth = _mapping(packet.get("authentication"))
     batch_output_dir = config.batch_output_dir.strip() or _default_batch_output(packet, config.trade_date)
+    adapter_execution_contract = _adapter_execution_contract(packet, summary, env_presence)
     return {
         "schema_version": 1,
         "ready": bool(summary["ready"]),
@@ -398,6 +400,7 @@ def _session_packet(
             "values_stored": False,
             "injection": _text(auth.get("injection")),
         },
+        "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "runtime": _mapping(packet.get("runtime")),
         "output": _mapping(packet.get("output")),
@@ -443,6 +446,7 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "credential_env_template": _credential_env_template_contract(summary),
+        "adapter_execution_contract": _mapping(packet.get("adapter_execution_contract")),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "provider_capture_commands": _provider_capture_commands(packet.get("capture_windows")),
         "packet": packet,
@@ -459,6 +463,48 @@ def _config(
         "primary_action": {} if next_action is None else next_action,
         "post_capture_batch_command": str(summary["post_capture_batch_command"]),
     }
+
+
+def _adapter_execution_contract(
+    packet: dict[str, Any],
+    summary: pd.Series,
+    env_presence: dict[str, bool],
+) -> dict[str, Any]:
+    auth = _mapping(packet.get("authentication"))
+    output = _mapping(packet.get("output"))
+    contract = _mapping(packet.get("adapter_execution_contract"))
+    out = {
+        "schema_version": 1,
+        "provider": _text(packet.get("provider")),
+        "adapter": _text(packet.get("provider")),
+        "kind": _text(packet.get("kind")),
+        "market": _text(packet.get("market")),
+        "exchange": str(summary["exchange"]),
+        "transport": _text(packet.get("transport")),
+        "mode": _text(packet.get("template_kind")),
+        "endpoint": _text(packet.get("endpoint")),
+        "credential_env_vars": list(env_presence.keys()),
+        "credential_env_template": _mapping(auth.get("env_template")),
+        "output_filename": _text(output.get("filename")),
+        "dry_run": True,
+        "requires_credentials": bool(env_presence),
+        "requires_api_contract_approval": True,
+        "values_stored": False,
+    }
+    out.update(contract)
+    out.update(
+        {
+            "live_session_ready": bool(summary["ready"]),
+            "trade_date": str(summary["trade_date"]),
+            "capture_window_count": int(summary["window_count"]),
+            "capture_command_count": int(summary["capture_command_count"]),
+            "post_capture_batch_command": str(summary["post_capture_batch_command"]),
+            "credential_env_vars": list(env_presence.keys()) or _string_list(out.get("credential_env_vars")),
+            "credential_env_template": _mapping(out.get("credential_env_template")) or _mapping(auth.get("env_template")),
+            "values_stored": False,
+        }
+    )
+    return out
 
 
 def _batch_command(

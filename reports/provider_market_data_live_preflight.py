@@ -96,6 +96,7 @@ def write_provider_market_data_live_session_preflight(
             "source_session": _mapping(report.config.get("source_session")),
             "market_session": _mapping(report.config.get("market_session")),
             "credential_env_template": credential_env_template,
+            "adapter_execution_contract": _mapping(report.config.get("adapter_execution_contract")),
             "live_fetch_contract": _mapping(report.config.get("live_fetch_contract")),
             "provider_capture_commands": _provider_capture_commands(report.windows),
         },
@@ -522,6 +523,7 @@ def _config(
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
         "credential_env_template": _credential_env_template_contract(summary),
+        "adapter_execution_contract": _adapter_execution_contract(summary, packet, env_presence),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "provider_capture_commands": _provider_capture_commands(windows),
         "clock": clock,
@@ -566,6 +568,7 @@ def _safe_packet_view(packet: dict[str, Any], env_presence: dict[str, bool]) -> 
             "values_stored": bool(auth.get("values_stored", True)),
             "injection": _text(auth.get("injection")),
         },
+        "adapter_execution_contract": _mapping(packet.get("adapter_execution_contract")),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "capture_windows": [
             {
@@ -590,6 +593,36 @@ def _safe_packet_view(packet: dict[str, Any], env_presence: dict[str, bool]) -> 
         "post_capture_batch_command": _text(packet.get("post_capture_batch_command")),
         "live_execution_gate": _mapping(packet.get("live_execution_gate")),
     }
+
+
+def _adapter_execution_contract(
+    summary: pd.Series,
+    packet: dict[str, Any],
+    env_presence: dict[str, bool],
+) -> dict[str, Any]:
+    contract = _mapping(packet.get("adapter_execution_contract"))
+    out = contract.copy()
+    out.update(
+        {
+            "schema_version": int(out.get("schema_version") or 1),
+            "provider": _text(out.get("provider") or packet.get("provider")),
+            "adapter": _text(out.get("adapter") or out.get("provider") or packet.get("provider")),
+            "kind": _text(out.get("kind") or packet.get("kind")),
+            "market": _text(out.get("market") or packet.get("market")),
+            "exchange": _text(out.get("exchange") or packet.get("exchange")),
+            "transport": _text(out.get("transport") or packet.get("transport")),
+            "endpoint": _text(out.get("endpoint") or packet.get("endpoint")),
+            "credential_env_vars": list(env_presence.keys()) or _string_list(out.get("credential_env_vars")),
+            "live_session_ready": bool(out.get("live_session_ready", packet.get("ready", False))),
+            "live_preflight_ready": bool(summary["ready"]),
+            "timing_status": str(summary["timing_status"]),
+            "expected_capture_count": int(summary["expected_capture_count"]),
+            "existing_capture_count": int(summary["existing_capture_count"]),
+            "capture_command_count": int(summary["capture_command_count"]),
+            "values_stored": False,
+        }
+    )
+    return out
 
 
 def _next_gate_for_check(check: str) -> str:

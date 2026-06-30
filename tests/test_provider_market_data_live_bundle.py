@@ -162,6 +162,19 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
     assert bundle["preflight"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert bundle["live_fetch_contract"]["available"] is True
+    assert bundle["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert bundle["adapter_execution_contract"]["transport"] == "websocket"
+    assert bundle["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert bundle["adapter_execution_contract"]["command_count"] == 2
+    assert bundle["adapter_execution_contract"]["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
+    assert bundle["adapter_execution_contract"]["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
+    assert bundle["adapter_execution_contract"]["credential_env_vars"] == [
+        "ARROW_MONEY_API_KEY",
+        "ARROW_MONEY_API_SECRET",
+    ]
+    assert bundle["adapter_execution_contract"]["capture_commands"][0]["queue_status"] == "ready"
+    assert bundle["adapter_execution_contract"]["values_stored"] is False
+    assert bundle["preflight"]["adapter_execution_contract"]["live_preflight_ready"] is True
     assert bundle["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert "ARROW_MONEY_API_KEY=\n" in env_template
     assert "ARROW_MONEY_API_SECRET=\n" in env_template
@@ -178,6 +191,11 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert handoff["source_credential_env_template"]["exists"] is True
     assert handoff["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
     assert handoff["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
+    assert handoff["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert handoff["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert handoff["adapter_execution_contract"]["command_count"] == 2
+    assert handoff["adapter_execution_contract"]["capture_commands"][0]["adapter_command"] == handoff["capture_windows"][0]["adapter_command"]
+    assert handoff["adapter_execution_contract"]["values_stored"] is False
     assert handoff["live_fetch_contract"]["available"] is True
     assert handoff["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert handoff["provider_capture_commands"][0]["required_env_vars"] == "ARROW_MONEY_API_KEY;ARROW_MONEY_API_SECRET"
@@ -203,6 +221,8 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert manifest["extra"]["market_session"]["open_local"] == "09:15"
     assert manifest["inputs"]["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["preflight_provider_capture_commands"][0]["provider"] == "arrow_money"

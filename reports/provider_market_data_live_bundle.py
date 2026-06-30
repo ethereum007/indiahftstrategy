@@ -128,6 +128,7 @@ def write_provider_market_data_live_capture_bundle(
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
             "source_credential_env_template": source_env_template,
+            "adapter_execution_contract": _mapping(bundle.get("adapter_execution_contract")),
             "live_fetch_contract": _mapping(bundle.get("live_fetch_contract")),
             "provider_capture_commands": _list(bundle.get("provider_capture_commands")),
             "preflight_provider_capture_commands": _list(_mapping(bundle.get("preflight")).get("provider_capture_commands")),
@@ -552,6 +553,7 @@ def _bundle(
 ) -> dict[str, Any]:
     command_records = _records(_commands_with_status(commands, "ready" if bool(summary["ready"]) else "blocked"))
     actions = _records(action_queue)
+    adapter_execution_contract = _adapter_execution_contract(summary, packet, preflight, env_presence, commands, config)
     return {
         "schema_version": 1,
         "ready": bool(summary["ready"]),
@@ -573,6 +575,7 @@ def _bundle(
             "values_stored": False,
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
+        "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "provider_capture_commands": _session_provider_capture_commands(packet),
         "preflight": {
@@ -580,6 +583,7 @@ def _bundle(
             "next_gate": _text(preflight.get("next_gate")),
             "primary_action_status": _text(preflight.get("primary_action_status")),
             "credential_env_template": _credential_env_template_contract(summary),
+            "adapter_execution_contract": _preflight_adapter_execution_contract(preflight),
             "live_fetch_contract": _preflight_live_fetch_contract(preflight),
             "provider_capture_commands": _preflight_provider_capture_commands(preflight),
             "exchange": _preflight_exchange(preflight),
@@ -612,6 +616,7 @@ def _adapter_handoff(
 ) -> dict[str, Any]:
     output = _mapping(packet.get("output"))
     auth = _mapping(packet.get("authentication"))
+    adapter_execution_contract = _adapter_execution_contract(summary, packet, preflight, env_presence, commands, config)
     return {
         "schema_version": 1,
         "ready": bool(summary["ready"]),
@@ -638,6 +643,7 @@ def _adapter_handoff(
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
         "capture_env_template": ENV_TEMPLATE_NAME,
+        "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "provider_capture_commands": _session_provider_capture_commands(packet),
         "preflight_provider_capture_commands": _preflight_provider_capture_commands(preflight),
@@ -660,6 +666,47 @@ def _adapter_handoff(
             "run_post_capture_ingest_after_all_windows": True,
         },
     }
+
+
+def _adapter_execution_contract(
+    summary: pd.Series,
+    packet: dict[str, Any],
+    preflight: dict[str, Any],
+    env_presence: dict[str, bool],
+    commands: pd.DataFrame,
+    config: ProviderMarketDataLiveCaptureBundleConfig,
+) -> dict[str, Any]:
+    contract = _mapping(packet.get("adapter_execution_contract"))
+    if not contract:
+        contract = _preflight_adapter_execution_contract(preflight)
+    out = contract.copy()
+    ready_commands = _records(_commands_with_status(commands, "ready" if bool(summary["ready"]) else "blocked"))
+    out.update(
+        {
+            "schema_version": int(out.get("schema_version") or 1),
+            "provider": _text(out.get("provider") or packet.get("provider")),
+            "adapter": _text(out.get("adapter") or out.get("provider") or packet.get("provider")),
+            "kind": _text(out.get("kind") or packet.get("kind")),
+            "market": _text(out.get("market") or packet.get("market")),
+            "exchange": _text(out.get("exchange") or packet.get("exchange")),
+            "transport": _text(out.get("transport") or packet.get("transport")),
+            "endpoint": _text(out.get("endpoint") or packet.get("endpoint")),
+            "credential_env_vars": list(env_presence.keys()) or _string_list(out.get("credential_env_vars")),
+            "credential_env_template": {
+                "path": ENV_TEMPLATE_NAME,
+                "source": _credential_env_template_contract(summary),
+            },
+            "capture_bundle_ready": bool(summary["ready"]),
+            "adapter_handoff": ADAPTER_HANDOFF_NAME,
+            "capture_env_template": ENV_TEMPLATE_NAME,
+            "command_count": int(summary["command_count"]),
+            "capture_commands": ready_commands,
+            "post_capture_ingest_command": str(summary["post_capture_ingest_command"]),
+            "adapter_command_template": config.adapter_command_template or DEFAULT_ADAPTER_TEMPLATE,
+            "values_stored": False,
+        }
+    )
+    return out
 
 
 def _commands_with_status(commands: pd.DataFrame, status: str) -> pd.DataFrame:
@@ -699,6 +746,13 @@ def _preflight_live_fetch_contract(preflight: dict[str, Any]) -> dict[str, Any]:
     contract = _mapping(preflight.get("live_fetch_contract"))
     if not contract:
         contract = _mapping(_mapping(preflight.get("session_packet")).get("live_fetch_contract"))
+    return contract.copy()
+
+
+def _preflight_adapter_execution_contract(preflight: dict[str, Any]) -> dict[str, Any]:
+    contract = _mapping(preflight.get("adapter_execution_contract"))
+    if not contract:
+        contract = _mapping(_mapping(preflight.get("session_packet")).get("adapter_execution_contract"))
     return contract.copy()
 
 

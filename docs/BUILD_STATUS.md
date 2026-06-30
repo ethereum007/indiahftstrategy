@@ -94,9 +94,11 @@
   `live_fetch_contract`, carried exchange/segment plus source-session metadata
   matching the market profile, per-window capture paths, and emits the exact
   post-capture `pipeline-provider-market-data-batch` command. Live-session
-  packets now also carry structured, non-secret provider capture command
-  handoffs for each window: provider, transport, endpoint, env-var names,
-  start/end, output path, and command template.
+  packets now also carry the upstream `adapter_execution_contract` plus
+  live-session readiness, trade date, capture-window count, capture-command
+  count, and post-capture batch command, along with structured, non-secret
+  provider capture command handoffs for each window: provider, transport,
+  endpoint, env-var names, start/end, output path, and command template.
 - Provider market-data live preflight now checks the planned provider capture
   just before the market run: `preflight-provider-market-data-live-session`
   validates the session packet, runtime credential env-var presence, carried
@@ -104,8 +106,10 @@
   metadata consistency, writable capture and batch paths, capture/batch
   collision risk, per-window provider capture command templates, and local
   clock timing without persisting credential values. The preflight config and
-  manifest surface the provider capture command list for Arrow.money/iRage
-  adapter execution, and fail closed if any capture window is missing it.
+  manifest surface the provider capture command list and carried
+  `adapter_execution_contract` with live-preflight readiness, timing status,
+  capture counts, and credential env-var names for Arrow.money/iRage adapter
+  execution, and fail closed if any capture window is missing it.
 - Provider market-data live capture bundling now turns a ready preflight into
   a backend adapter handoff: `bundle-provider-market-data-live-capture` writes
   per-window capture commands, a credential-safe JSON bundle, a blank env-var
@@ -117,8 +121,9 @@
   missing preflight evidence, metadata drift, and capture overwrite risk.
   Capture bundling now also requires the structured provider capture command
   handoff from both the live-session packet and preflight config to match,
-  then carries that command list into the bundle, adapter handoff, and manifest
-  for Arrow.money/iRage adapter execution audit.
+  then carries that command list and `adapter_execution_contract` into the
+  bundle, adapter handoff, and manifest for Arrow.money/iRage adapter execution
+  audit.
   Default adapter commands now explicitly pass the handoff JSON and blank
   capture env-template file, so Arrow.money/iRage adapter processes receive
   the same contract artifacts the bundle manifests. Bundle summary/JSON,
