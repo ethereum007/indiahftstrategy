@@ -5089,12 +5089,17 @@ broker-dispatch-send blocks acknowledgement reconciliation and routes back to
 `plan-provider-market-data-imbalance-broker-dispatch`. It also carries the
 broker-dispatch-retained validated dispatch round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
-proof, live-fetch exchange/session identity, `live_fetch_contract`, and
-source-provenance consistency flags, so operators can trace the exact live data
-source beside the dry-run request envelopes. When a broker-dispatch CSV is
-sparse but its config sidecar has `dispatch_roundtrip_provenance`,
-broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields
-from that config while keeping explicit summary `False` values authoritative.
+proof, live-fetch exchange/session identity, `live_fetch_contract`, final
+round-trip `adapter_execution_contract`, and source-provenance consistency
+flags, so operators can trace the exact live data source beside the dry-run
+request envelopes. If the broker-dispatch-retained round-trip adapter contract
+is missing, unsafe, stale, or mismatched against the runtime-session contract,
+broker-dispatch-send blocks acknowledgement reconciliation and routes back to
+`plan-provider-market-data-imbalance-broker-dispatch`. When a broker-dispatch
+CSV is sparse but its config sidecar has `dispatch_roundtrip_provenance`,
+broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields,
+including the round-trip adapter contract, from that config while keeping
+explicit summary `False` values authoritative.
 The wrapper runs
 `prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
 and writes provider checks, summary, action, config, and runbook artifacts. It
