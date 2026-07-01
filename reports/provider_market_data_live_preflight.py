@@ -95,6 +95,7 @@ def write_provider_market_data_live_session_preflight(
             "exchange": str(report.summary.iloc[0]["exchange"]),
             "source_session": _mapping(report.config.get("source_session")),
             "market_session": _mapping(report.config.get("market_session")),
+            "provider_profile": _mapping(report.config.get("provider_profile")),
             "credential_env_template": credential_env_template,
             "adapter_execution_contract": _mapping(report.config.get("adapter_execution_contract")),
             "live_fetch_contract": _mapping(report.config.get("live_fetch_contract")),
@@ -356,6 +357,7 @@ def _checks(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    provider_profile = _mapping(packet.get("provider_profile"))
     source_session = _mapping(packet.get("source_session"))
     market_session = _mapping(packet.get("market_session"))
     credential_runtime_ok = all(env_presence.values()) if config.require_env_present else True
@@ -374,6 +376,7 @@ def _checks(
         _check("credential_env_vars_present", len(env_presence), ">=", 1, len(env_presence) >= 1, "credential env-var names are required"),
         _check("credential_env_vars_present_in_runtime", sum(env_presence.values()), "==", len(env_presence), credential_runtime_ok, "required credential environment variables are missing from runtime"),
         _check("credential_env_template_carried", _text(credential_env_template.get("path")), "exists", True, bool(credential_env_template.get("exists")) and bool(_text(credential_env_template.get("sha256"))), "live session packet must carry blank credential env-template proof"),
+        _check("provider_profile_carried", _text(provider_profile.get("sha256")), "matches", "live session provider/adapter/transport", _provider_profile_matches_packet(provider_profile, packet), "live session packet must carry the provider-profile contract"),
         _check("source_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher", "live session packet must carry the upstream live fetch-contract handoff"),
         _check("source_exchange_carried", _text(packet.get("exchange")), "is_not", "", bool(_text(packet.get("exchange"))), "live session packet must carry source exchange/segment metadata"),
         _check("source_session_contract_carried", _session_contract_text(source_session), "has", "timezone/open/close", _session_contract_carried(source_session), "live session packet must carry source session metadata"),
@@ -409,6 +412,7 @@ def _summary(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    provider_profile = _mapping(packet.get("provider_profile"))
     source_session = _mapping(packet.get("source_session"))
     market_session = _mapping(packet.get("market_session"))
     return pd.DataFrame(
@@ -447,6 +451,11 @@ def _summary(
                 "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
                 "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
                 "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
+                "provider_profile_sha256": _text(provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(provider_profile.get("capabilities"))),
                 "require_env_present": bool(config.require_env_present),
                 "now_local": str(clock["now_local"]),
                 "timing_status": str(clock["timing_status"]),
@@ -522,6 +531,7 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_profile": _mapping(packet.get("provider_profile")),
         "credential_env_template": _credential_env_template_contract(summary),
         "adapter_execution_contract": _adapter_execution_contract(summary, packet, env_presence),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
@@ -568,6 +578,7 @@ def _safe_packet_view(packet: dict[str, Any], env_presence: dict[str, bool]) -> 
             "values_stored": bool(auth.get("values_stored", True)),
             "injection": _text(auth.get("injection")),
         },
+        "provider_profile": _mapping(packet.get("provider_profile")),
         "adapter_execution_contract": _mapping(packet.get("adapter_execution_contract")),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "capture_windows": [
@@ -601,6 +612,7 @@ def _adapter_execution_contract(
     env_presence: dict[str, bool],
 ) -> dict[str, Any]:
     contract = _mapping(packet.get("adapter_execution_contract"))
+    provider_profile = _mapping(packet.get("provider_profile"))
     out = contract.copy()
     out.update(
         {
@@ -619,6 +631,8 @@ def _adapter_execution_contract(
             "expected_capture_count": int(summary["expected_capture_count"]),
             "existing_capture_count": int(summary["existing_capture_count"]),
             "capture_command_count": int(summary["capture_command_count"]),
+            "provider_profile_sha256": _text(provider_profile.get("sha256")),
+            "provider_capabilities": _string_list(provider_profile.get("capabilities")),
             "values_stored": False,
         }
     )
@@ -632,6 +646,7 @@ def _next_gate_for_check(check: str) -> str:
         return "prepare-provider-market-data-client"
     if check in {
         "credential_env_template_carried",
+        "provider_profile_carried",
         "source_live_fetch_contract_carried",
         "source_exchange_carried",
         "source_session_contract_carried",
@@ -673,6 +688,8 @@ def _repair_action(check: str) -> str:
         return "repair_provider_client_packet"
     if check == "credential_env_template_carried":
         return "regenerate_live_session_with_credential_env_template"
+    if check == "provider_profile_carried":
+        return "regenerate_live_session_with_provider_profile"
     if check == "source_live_fetch_contract_carried":
         return "regenerate_live_session_with_source_live_fetch_contract"
     if check in {
@@ -710,6 +727,7 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Timing: {summary['timing_status']} at {summary['now_local']}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         f"- Expected captures: {summary['expected_capture_count']}",
         f"- Existing captures: {summary['existing_capture_count']}",
@@ -924,6 +942,21 @@ def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_co
         and _text(contract_session.get("timezone")) == _text(source_session.get("timezone"))
         and _wall_clock_seconds(contract_session.get("open_local")) == _wall_clock_seconds(source_session.get("open_local"))
         and _wall_clock_seconds(contract_session.get("close_local")) == _wall_clock_seconds(source_session.get("close_local"))
+    )
+
+
+def _provider_profile_matches_packet(profile: dict[str, Any], packet: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    adapter_contract = _mapping(packet.get("adapter_execution_contract"))
+    adapter = _text(adapter_contract.get("adapter") or packet.get("adapter") or packet.get("provider"))
+    transport = _text(packet.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(packet.get("provider"))
+        and _text(profile.get("adapter")) == adapter
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
     )
 
 

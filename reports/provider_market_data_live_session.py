@@ -91,6 +91,7 @@ def write_provider_market_data_live_session_plan(
         extra={
             "ready": bool(report.summary.iloc[0]["ready"]),
             "provider": str(report.summary.iloc[0]["provider"]),
+            "provider_profile": report.packet.get("provider_profile", {}),
             "credential_env_template": credential_env_template,
             "live_fetch_contract": report.packet["live_fetch_contract"],
             "adapter_execution_contract": report.packet["adapter_execution_contract"],
@@ -230,12 +231,14 @@ def _checks(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    provider_profile = _mapping(packet.get("provider_profile"))
     source_session = _mapping(packet.get("session"))
     return [
         _check("client_packet_path_exists", str(packet_path), "exists", True, packet_path.exists(), "provider client packet is required"),
         _check("client_packet_json_readable", packet_error or "ok", "is", "ok", not packet_error, packet_error or "provider client packet JSON could not be read"),
         _check("client_packet_ready", bool(packet.get("ready")), "is", True, bool(packet.get("ready")), "provider client packet must be ready"),
         _check("client_packet_dry_run", _text(packet.get("execution_mode")), "is", "dry_run", _text(packet.get("execution_mode")) == "dry_run", "planner expects dry-run packet as the approved contract"),
+        _check("provider_profile_carried", _text(provider_profile.get("sha256")), "matches", "client packet provider/adapter/transport", _provider_profile_matches_packet(provider_profile, packet), "provider client packet must carry the provider-profile contract"),
         _check("transport_live_supported", transport, "in", "rest/websocket", transport in {"rest", "websocket"}, "live planner supports REST or websocket provider captures"),
         _check("endpoint_present", endpoint, "is_not", "", bool(endpoint), "provider endpoint is required"),
         _check("credential_values_not_stored", bool(authentication.get("values_stored", True)), "is", False, bool(authentication.get("values_stored", True)) is False, "provider packet must not contain credential values"),
@@ -270,6 +273,7 @@ def _summary(
     authentication = _mapping(packet.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(packet.get("live_fetch_contract"))
+    provider_profile = _mapping(packet.get("provider_profile"))
     source_session = _mapping(packet.get("session"))
     capture_command_count = _nonempty_count(windows, "capture_command_template")
     capture_command_missing_count = max(int(len(windows)) - capture_command_count, 0)
@@ -305,6 +309,11 @@ def _summary(
                 "source_live_fetch_contract_command_template": _text(
                     live_fetch_contract.get("command_template")
                 ),
+                "provider_profile_sha256": _text(provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(provider_profile.get("capabilities"))),
                 "capture_command_count": capture_command_count,
                 "capture_command_missing_count": capture_command_missing_count,
                 "capture_command_providers": _unique_join(windows, "capture_command_provider"),
@@ -400,6 +409,7 @@ def _session_packet(
             "values_stored": False,
             "injection": _text(auth.get("injection")),
         },
+        "provider_profile": _mapping(packet.get("provider_profile")),
         "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
         "runtime": _mapping(packet.get("runtime")),
@@ -445,6 +455,7 @@ def _config(
         },
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
+        "provider_profile": _mapping(packet.get("provider_profile")),
         "credential_env_template": _credential_env_template_contract(summary),
         "adapter_execution_contract": _mapping(packet.get("adapter_execution_contract")),
         "live_fetch_contract": _mapping(packet.get("live_fetch_contract")),
@@ -473,6 +484,7 @@ def _adapter_execution_contract(
     auth = _mapping(packet.get("authentication"))
     output = _mapping(packet.get("output"))
     contract = _mapping(packet.get("adapter_execution_contract"))
+    provider_profile = _mapping(packet.get("provider_profile"))
     out = {
         "schema_version": 1,
         "provider": _text(packet.get("provider")),
@@ -501,6 +513,8 @@ def _adapter_execution_contract(
             "post_capture_batch_command": str(summary["post_capture_batch_command"]),
             "credential_env_vars": list(env_presence.keys()) or _string_list(out.get("credential_env_vars")),
             "credential_env_template": _mapping(out.get("credential_env_template")) or _mapping(auth.get("env_template")),
+            "provider_profile_sha256": _text(provider_profile.get("sha256")),
+            "provider_capabilities": _string_list(provider_profile.get("capabilities")),
             "values_stored": False,
         }
     )
@@ -676,6 +690,7 @@ def _next_gate_for_check(check: str) -> str:
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
     if check in {
+        "provider_profile_carried",
         "credential_env_template_carried",
         "source_live_fetch_contract_carried",
         "source_exchange_carried",
@@ -706,6 +721,8 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("client_packet"):
         return "repair_provider_client_packet"
+    if check == "provider_profile_carried":
+        return "regenerate_provider_client_with_provider_profile"
     if check == "credential_env_template_carried":
         return "regenerate_provider_client_with_credential_env_template"
     if check == "source_live_fetch_contract_carried":
@@ -735,6 +752,7 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Trade date: {summary['trade_date']}",
         f"- Session: {summary['session_open_local']} - {summary['session_close_local']} {summary['timezone']}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Credential env template: {summary['credential_env_template_path'] or 'missing'}",
         f"- Post-capture batch command: `{summary['post_capture_batch_command']}`",
         "",
@@ -875,6 +893,21 @@ def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_co
         and _text(contract_session.get("timezone")) == _text(packet_session.get("timezone"))
         and _wall_clock_seconds(contract_session.get("open_local")) == _wall_clock_seconds(packet_session.get("open_local"))
         and _wall_clock_seconds(contract_session.get("close_local")) == _wall_clock_seconds(packet_session.get("close_local"))
+    )
+
+
+def _provider_profile_matches_packet(profile: dict[str, Any], packet: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    adapter_contract = _mapping(packet.get("adapter_execution_contract"))
+    adapter = _text(adapter_contract.get("adapter") or packet.get("adapter") or packet.get("provider"))
+    transport = _text(packet.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(packet.get("provider"))
+        and _text(profile.get("adapter")) == adapter
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
     )
 
 

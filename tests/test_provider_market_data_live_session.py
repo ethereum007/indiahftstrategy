@@ -88,6 +88,10 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert len(summary["credential_env_template_sha256"]) == 64
     assert bool(summary["source_live_fetch_contract_available"])
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert len(summary["provider_profile_sha256"]) == 64
+    assert summary["provider_profile_adapter"] == "arrow_money"
+    assert summary["provider_profile_transports"] == "file;rest;websocket"
+    assert "live_ticks" in summary["provider_profile_capabilities"]
     assert summary["capture_command_count"] == 2
     assert summary["capture_command_missing_count"] == 0
     assert summary["capture_command_providers"] == "arrow_money"
@@ -114,10 +118,16 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     }
     assert packet["market_session"]["open_local"] == "09:15"
     assert packet["live_fetch_contract"]["available"] is True
+    assert packet["provider_profile"]["provider"] == "arrow_money"
+    assert packet["provider_profile"]["adapter"] == "arrow_money"
+    assert packet["provider_profile"]["transports"] == ["file", "rest", "websocket"]
+    assert len(packet["provider_profile"]["sha256"]) == 64
     assert packet["adapter_execution_contract"]["provider"] == "arrow_money"
     assert packet["adapter_execution_contract"]["adapter"] == "arrow_money"
     assert packet["adapter_execution_contract"]["transport"] == "websocket"
     assert packet["adapter_execution_contract"]["exchange"] == "NFO"
+    assert packet["adapter_execution_contract"]["provider_profile_sha256"] == packet["provider_profile"]["sha256"]
+    assert "live_ticks" in packet["adapter_execution_contract"]["provider_capabilities"]
     assert packet["adapter_execution_contract"]["live_session_ready"] is True
     assert packet["adapter_execution_contract"]["capture_window_count"] == 2
     assert packet["adapter_execution_contract"]["capture_command_count"] == 2
@@ -133,6 +143,7 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert config["ready"]
     assert config["exchange"] == "NFO"
     assert config["source_session"]["timezone"] == "Asia/Kolkata"
+    assert config["provider_profile"]["sha256"] == packet["provider_profile"]["sha256"]
     assert config["credential_env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
     assert config["adapter_execution_contract"]["post_capture_batch_command"] == packet["post_capture_batch_command"]
     assert config["adapter_execution_contract"]["values_stored"] is False
@@ -145,6 +156,7 @@ def test_provider_market_data_live_session_plan_writes_ready_windows_and_batch_c
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert manifest["run_type"] == "provider_market_data_live_session_plan"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credential_env_template"]["sha256"]
+    assert manifest["extra"]["provider_profile"]["sha256"] == packet["provider_profile"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
     assert manifest["extra"]["adapter_execution_contract"]["live_session_ready"] is True
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
@@ -217,6 +229,29 @@ def test_provider_market_data_live_session_blocks_missing_live_contract(tmp_path
     assert report.config["live_fetch_contract"]["available"] is False
     assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-client"
     assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_source_live_fetch_contract"
+
+
+def test_provider_market_data_live_session_blocks_missing_provider_profile(tmp_path):
+    client_packet = _write_client_packet(tmp_path)
+    payload = json.loads(client_packet.read_text(encoding="utf-8"))
+    payload.pop("provider_profile", None)
+    client_packet.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_live_session_plan(
+        client_packet,
+        tmp_path / "live_session",
+        config=ProviderMarketDataLiveSessionConfig(
+            trade_date="2026-06-23",
+            windows=("open=09:15-09:30",),
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_profile_carried" in failed
+    assert report.config["provider_profile"] == {}
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-client"
+    assert report.action_queue.loc[0, "action"] == "regenerate_provider_client_with_provider_profile"
 
 
 def test_provider_market_data_live_session_blocks_missing_source_session_contract(tmp_path):

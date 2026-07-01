@@ -114,6 +114,10 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert len(summary["credential_env_template_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert len(summary["provider_profile_sha256"]) == 64
+    assert summary["provider_profile_adapter"] == "arrow_money"
+    assert summary["provider_profile_transports"] == "file;rest;websocket"
+    assert "live_ticks" in summary["provider_profile_capabilities"]
     assert summary["capture_command_count"] == 2
     assert summary["capture_command_missing_count"] == 0
     assert summary["capture_command_providers"] == "arrow_money"
@@ -123,6 +127,8 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert config["adapter_execution_contract"]["transport"] == "websocket"
     assert config["adapter_execution_contract"]["live_session_ready"] is True
     assert config["adapter_execution_contract"]["live_preflight_ready"] is True
+    assert config["adapter_execution_contract"]["provider_profile_sha256"] == config["provider_profile"]["sha256"]
+    assert "live_ticks" in config["adapter_execution_contract"]["provider_capabilities"]
     assert config["adapter_execution_contract"]["timing_status"] == "before_first_window"
     assert config["adapter_execution_contract"]["expected_capture_count"] == 2
     assert config["adapter_execution_contract"]["existing_capture_count"] == 0
@@ -132,6 +138,9 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     ]
     assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["live_fetch_contract"]["available"] is True
+    assert config["provider_profile"]["provider"] == "arrow_money"
+    assert config["provider_profile"]["adapter"] == "arrow_money"
+    assert len(config["provider_profile"]["sha256"]) == 64
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["provider_capture_commands"][0]["transport"] == "websocket"
     assert config["provider_capture_commands"][0]["required_env_vars"] == "ARROW_MONEY_API_KEY;ARROW_MONEY_API_SECRET"
@@ -141,12 +150,14 @@ def test_provider_market_data_live_preflight_accepts_ready_future_session(tmp_pa
     assert config["source_session"]["timezone"] == "Asia/Kolkata"
     assert config["market_session"]["open_local"] == "09:15"
     assert config["session_packet"]["exchange"] == "NFO"
+    assert config["session_packet"]["provider_profile"]["sha256"] == config["provider_profile"]["sha256"]
     assert config["session_packet"]["source_session"]["close_local"] == "15:30:00"
     assert config["session_packet"]["adapter_execution_contract"]["live_session_ready"] is True
     assert config["session_packet"]["adapter_execution_contract"]["values_stored"] is False
     assert config["session_packet"]["capture_windows"][0]["capture_command_provider"] == "arrow_money"
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["provider_profile"]["sha256"] == config["provider_profile"]["sha256"]
     assert "ARROW_MONEY_API_KEY" in config["session_packet"]["authentication"]["env_vars"]
     assert config["session_packet"]["authentication"]["env_template"]["sha256"] == summary["credential_env_template_sha256"]
     assert config["session_packet"]["live_fetch_contract"]["available"] is True
@@ -272,6 +283,27 @@ def test_provider_market_data_live_preflight_blocks_missing_live_fetch_contract(
     assert "source_live_fetch_contract_carried" in failed
     assert report.config["live_fetch_contract"]["available"] is False
     assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_source_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_preflight_blocks_missing_provider_profile(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _mutate_live_packet(
+        _live_packet(plan),
+        lambda packet: packet.pop("provider_profile", None),
+    )
+
+    report = write_provider_market_data_live_session_preflight(
+        live_packet,
+        tmp_path / "preflight",
+        config=ProviderMarketDataLivePreflightConfig(now_iso="2026-06-23T08:45:00+05:30"),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_profile_carried" in failed
+    assert report.config["provider_profile"] == {}
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_session_with_provider_profile"
     assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-live-session"
 
 
