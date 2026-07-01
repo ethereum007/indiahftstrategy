@@ -152,7 +152,11 @@
   adapter handoff contract when present, carries the source env-template proof,
   `live_fetch_contract`, and `adapter_execution_contract`, and reports that the
   result is smoke-test evidence only until replaced by real Arrow.money/iRage
-  captures.
+  captures. Synthetic capture sidecars now also retain the rendered adapter
+  command hash, capture env-template hash, adapter handoff hash, source
+  env-template proof, live-fetch contract summary, and credential-safe adapter
+  execution summary, with manifest fingerprints for those sidecars before real
+  provider credentials are used.
 - Provider market-data live session ingest now closes the post-market loop:
   `ingest-provider-market-data-live-session` reads the session packet, verifies
   all expected capture files exist and are non-empty, then runs the structured
@@ -1999,11 +2003,12 @@ pytest
 
 Current passing suite: 1110 tests.
 
-Latest focused gate: provider route-readiness plus scale-up targeted tests pass
+Latest focused gate: provider live bundle plus live rehearsal tests pass
+(`15 passed`), provider route-readiness plus scale-up targeted tests pass
 (`10 passed`), and the generic route-readiness suite passes (`8 passed`). A
 single-file run of `tests/test_provider_market_data_imbalance_research.py`
-exceeded the local timeout after this provider path work, so the full-suite
-count above is left at the last completed full run.
+exceeded the local timeout after provider path work, so the full-suite count
+above is left at the last completed full run.
 
 ## Next Build Targets
 

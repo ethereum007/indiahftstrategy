@@ -91,6 +91,10 @@ def write_provider_market_data_live_rehearsal(
     existing_captures = [path for path in captures if path.exists()]
     if existing_captures:
         inputs["synthetic_captures"] = existing_captures
+    sidecars = [Path(str(path)) for path in report.captures["sidecar_path"].astype(str).tolist()] if not report.captures.empty else []
+    existing_sidecars = [path for path in sidecars if path.exists()]
+    if existing_sidecars:
+        inputs["synthetic_capture_sidecars"] = existing_sidecars
     ingest_manifest = Path(str(report.summary.iloc[0]["ingest_output_dir"])) / "manifest.json"
     if ingest_manifest.exists():
         inputs["ingest_manifest"] = ingest_manifest
@@ -137,7 +141,7 @@ def evaluate_provider_market_data_live_rehearsal(
     pre_checks = pd.DataFrame(_pre_checks(bundle_path, bundle, bundle_error, captures, config))
     pre_ready = bool(not pre_checks.empty and pre_checks["passed"].astype(bool).all())
     if pre_ready:
-        captures = _write_synthetic_captures(captures, config)
+        captures = _write_synthetic_captures(captures, bundle_path, bundle, config)
     ingest = _run_ingest(bundle, captures, config) if pre_ready and config.run_ingest else None
     checks = pd.DataFrame(_checks(pre_checks, ingest, config))
     ready = bool(not checks.empty and checks["passed"].astype(bool).all())
@@ -172,13 +176,18 @@ def _captures_from_bundle(bundle: dict[str, Any]) -> pd.DataFrame:
                 "priority": index,
                 "label": _text(command.get("label"), f"window_{index}"),
                 "pipeline_label": _text(command.get("pipeline_label"), _text(command.get("label"), f"window_{index}")),
+                "provider": _text(command.get("provider")),
+                "transport": _text(command.get("transport")),
                 "start_local": _text(command.get("start_local")),
                 "end_local": _text(command.get("end_local")),
                 "capture_path": capture_path,
+                "adapter_command": _text(command.get("adapter_command")),
+                "adapter_command_sha256": _sha256_text(_text(command.get("adapter_command"))),
                 "preexisting_capture": exists,
                 "synthetic_rows_written": 0,
                 "synthetic_capture_sha256": "",
                 "sidecar_path": "",
+                "sidecar_sha256": "",
             }
         )
     return pd.DataFrame(
@@ -187,13 +196,18 @@ def _captures_from_bundle(bundle: dict[str, Any]) -> pd.DataFrame:
             "priority",
             "label",
             "pipeline_label",
+            "provider",
+            "transport",
             "start_local",
             "end_local",
             "capture_path",
+            "adapter_command",
+            "adapter_command_sha256",
             "preexisting_capture",
             "synthetic_rows_written",
             "synthetic_capture_sha256",
             "sidecar_path",
+            "sidecar_sha256",
         ],
     )
 
@@ -236,6 +250,8 @@ def _pre_checks(
 
 def _write_synthetic_captures(
     captures: pd.DataFrame,
+    bundle_path: Path,
+    bundle: dict[str, Any],
     config: ProviderMarketDataLiveRehearsalConfig,
 ) -> pd.DataFrame:
     out = captures.copy()
@@ -246,25 +262,72 @@ def _write_synthetic_captures(
         frame.to_csv(capture_path, index=False)
         sidecar = capture_path.with_suffix(capture_path.suffix + ".rehearsal.json")
         sidecar.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "synthetic_only": True,
-                    "source": "provider_market_data_live_rehearsal",
-                    "rows": int(len(frame)),
-                    "capture_path": str(capture_path),
-                    "label": str(row["label"]),
-                },
-                indent=2,
-                sort_keys=True,
-            )
+            json.dumps(_synthetic_sidecar(bundle_path, bundle, row, capture_path, len(frame)), indent=2, sort_keys=True)
             + "\n",
             encoding="utf-8",
         )
         out.at[index, "synthetic_rows_written"] = int(len(frame))
         out.at[index, "synthetic_capture_sha256"] = _file_sha256(capture_path)
         out.at[index, "sidecar_path"] = str(sidecar)
+        out.at[index, "sidecar_sha256"] = _file_sha256(sidecar)
     return out
+
+
+def _synthetic_sidecar(
+    bundle_path: Path,
+    bundle: dict[str, Any],
+    row: pd.Series,
+    capture_path: Path,
+    rows_written: int,
+) -> dict[str, Any]:
+    env_template_path = _env_template_path(bundle_path, bundle)
+    adapter_handoff_path = _adapter_handoff_path(bundle_path, bundle)
+    source_env_template = _source_credential_env_template(bundle_path, bundle)
+    adapter_contract = _adapter_execution_contract(bundle)
+    live_fetch_contract = _live_fetch_contract(bundle)
+    adapter_command = _text(row.get("adapter_command"))
+    return {
+        "schema_version": 1,
+        "synthetic_only": True,
+        "source": "provider_market_data_live_rehearsal",
+        "rows": int(rows_written),
+        "capture_path": str(capture_path),
+        "label": _text(row.get("label")),
+        "provider": _text(row.get("provider")) or _text(bundle.get("provider")),
+        "transport": _text(row.get("transport")) or _text(bundle.get("transport")),
+        "market": _text(bundle.get("market")),
+        "exchange": _text(bundle.get("exchange")),
+        "kind": _text(bundle.get("kind")),
+        "adapter_command": adapter_command,
+        "adapter_command_sha256": _sha256_text(adapter_command),
+        "capture_env_template": {
+            "path": _path_text(env_template_path),
+            "sha256": _text(bundle.get("capture_env_template_sha256"))
+            or _text(_mapping(bundle.get("authentication")).get("env_template_sha256")),
+        },
+        "adapter_handoff": {
+            "path": _path_text(adapter_handoff_path),
+            "sha256": _text(bundle.get("adapter_handoff_sha256")),
+        },
+        "source_credential_env_template": source_env_template,
+        "live_fetch_contract": {
+            "available": bool(live_fetch_contract.get("available")),
+            "next_gate": _text(live_fetch_contract.get("next_gate")),
+            "command_template": _text(live_fetch_contract.get("command_template")),
+        },
+        "adapter_execution_contract": {
+            "provider": _text(adapter_contract.get("provider")),
+            "transport": _text(adapter_contract.get("transport")),
+            "command_count": int(_number(adapter_contract.get("command_count"), fallback=0)),
+            "provider_profile_sha256": _text(adapter_contract.get("provider_profile_sha256")),
+            "values_stored": bool(adapter_contract.get("values_stored", True)),
+        },
+        "invariants": {
+            "credential_values_stored": False,
+            "synthetic_capture_not_market_evidence": True,
+            "adapter_must_write_exact_capture_path": True,
+        },
+    }
 
 
 def _synthetic_frame(row: pd.Series, window_index: int, config: ProviderMarketDataLiveRehearsalConfig) -> pd.DataFrame:
@@ -697,6 +760,10 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(64 * 1024), b""):
             hasher.update(chunk)
     return hasher.hexdigest()
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest() if value else ""
 
 
 def _number(value: object, *, fallback: float = 0.0) -> float:

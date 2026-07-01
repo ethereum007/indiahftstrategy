@@ -149,6 +149,23 @@ def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_
     assert captures["synthetic_rows_written"].tolist() == [3, 3]
     assert all(Path(path).exists() for path in captures["capture_path"])
     assert all(Path(path).exists() for path in captures["sidecar_path"])
+    assert captures["adapter_command_sha256"].str.len().tolist() == [64, 64]
+    assert captures["sidecar_sha256"].str.len().tolist() == [64, 64]
+    sidecar = json.loads(Path(captures.loc[0, "sidecar_path"]).read_text(encoding="utf-8"))
+    assert sidecar["synthetic_only"]
+    assert sidecar["provider"] == "arrow_money"
+    assert sidecar["transport"] == "websocket"
+    assert sidecar["adapter_command"] == captures.loc[0, "adapter_command"]
+    assert sidecar["adapter_command_sha256"] == captures.loc[0, "adapter_command_sha256"]
+    assert sidecar["capture_env_template"]["path"] == str(env_template_path)
+    assert sidecar["capture_env_template"]["sha256"] == bundle["capture_env_template_sha256"]
+    assert sidecar["adapter_handoff"]["path"] == str(adapter_handoff_path)
+    assert sidecar["adapter_handoff"]["sha256"] == bundle["adapter_handoff_sha256"]
+    assert sidecar["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
+    assert sidecar["live_fetch_contract"]["next_gate"] == "provider_fetcher"
+    assert sidecar["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert sidecar["adapter_execution_contract"]["values_stored"] is False
+    assert sidecar["invariants"]["synthetic_capture_not_market_evidence"] is True
     assert config["synthetic_only"] is True
     assert config["env_template_path"] == str(env_template_path)
     assert config["env_template_exists"] is True
@@ -169,6 +186,7 @@ def test_provider_market_data_live_rehearsal_writes_synthetic_captures_and_runs_
     assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert "synthetic_captures" in manifest["inputs"]
+    assert "synthetic_capture_sidecars" in manifest["inputs"]
 
 
 def test_provider_market_data_live_rehearsal_blocks_existing_capture_without_overwrite(tmp_path):
