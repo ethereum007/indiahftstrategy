@@ -91,6 +91,10 @@ def test_provider_market_data_fetcher_writes_websocket_template(tmp_path):
     assert template["authentication"]["env_template"]["exists"] is True
     assert len(template["authentication"]["env_template"]["sha256"]) == 64
     assert template["authentication"]["values_stored"] is False
+    assert template["provider_profile"]["provider"] == "arrow_money"
+    assert template["provider_profile"]["adapter"] == "arrow_money"
+    assert template["provider_profile"]["transports"] == ["file", "rest", "websocket"]
+    assert len(template["provider_profile"]["sha256"]) == 64
     assert template["subscriptions"][0]["symbol"] == "NIFTY-I"
     assert template["subscriptions"][0]["exchange"] == "NFO"
     assert template["adapter_execution_contract"]["provider"] == "arrow_money"
@@ -104,17 +108,21 @@ def test_provider_market_data_fetcher_writes_websocket_template(tmp_path):
         template["authentication"]["env_template"]["sha256"]
     )
     assert template["adapter_execution_contract"]["output_filename"] == "provider_market_data.csv"
+    assert template["adapter_execution_contract"]["provider_profile_sha256"] == template["provider_profile"]["sha256"]
+    assert "live_ticks" in template["adapter_execution_contract"]["provider_capabilities"]
     assert template["adapter_execution_contract"]["values_stored"] is False
     assert config["credentials"]["values_stored"] is False
     assert config["credentials"]["env_template"]["sha256"] == template["authentication"]["env_template"]["sha256"]
     assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["fetch_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert config["fetch_plan"]["live_fetch_contract"]["available"] is True
+    assert config["request_template"]["provider_profile"]["sha256"] == template["provider_profile"]["sha256"]
     assert config["primary_action"]["action"] == "review_provider_fetcher_request_template"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert manifest["run_type"] == "provider_market_data_fetcher_plan"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["provider_profile"]["sha256"] == template["provider_profile"]["sha256"]
     assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
 
 
@@ -194,6 +202,27 @@ def test_provider_market_data_fetcher_blocks_missing_source_live_contract(tmp_pa
     assert config["fetch_plan"]["live_fetch_contract"]["available"] is False
     assert config["blocked_actions"][0]["next_gate"] == "plan-market-data-fetch"
     assert config["blocked_actions"][0]["action"] == "regenerate_fetch_plan_with_source_live_fetch_contract"
+
+
+def test_provider_market_data_fetcher_blocks_missing_provider_profile_contract(tmp_path):
+    fetch_report = _write_source_and_fetch_plan(tmp_path)
+    fetch_config_path = fetch_report.output_dir / "market_data_fetch_config.json"
+    payload = json.loads(fetch_config_path.read_text(encoding="utf-8"))
+    payload["source_plan"].pop("provider_profile", None)
+    fetch_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_fetcher_plan(
+        fetch_config_path,
+        tmp_path / "provider_fetcher_missing_provider_profile",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads(
+        (report.output_dir / "provider_market_data_fetcher_config.json").read_text(encoding="utf-8")
+    )
+    assert not report.ready
+    assert "provider_profile_carried" in failed
+    assert config["blocked_actions"][0]["next_gate"] == "plan-market-data-fetch"
 
 
 def test_provider_market_data_fetcher_blocks_file_fetch_plan(tmp_path):

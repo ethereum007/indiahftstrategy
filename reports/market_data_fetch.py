@@ -100,6 +100,7 @@ def write_market_data_fetch_plan(
         extra={
             "fetch": report.config["fetch"],
             "source_plan": report.config["source_plan"],
+            "provider_profile": report.config["source_plan"]["provider_profile"],
             "credential_env_template": report.config["credentials"]["env_template"],
         },
     )
@@ -148,6 +149,7 @@ def _checks(
     credentials = _mapping(source_config.get("credentials"))
     normalized_pipeline = _mapping(source_config.get("normalized_pipeline"))
     live_fetch_contract = _mapping(source_config.get("live_fetch_contract"))
+    provider_profile = _mapping(source_config.get("provider_profile"))
     credential_env_template_path = _credential_env_template_path(source_plan_path, source_config)
     provider_spec = PROVIDER_SPECS.get(provider)
     auth_required = bool(provider_spec.get("auth_required", False)) if provider_spec else False
@@ -192,6 +194,14 @@ def _checks(
             sorted(PROVIDER_SPECS),
             provider in PROVIDER_SPECS,
             "source plan provider is not registered",
+        ),
+        _check(
+            "provider_profile_carried",
+            _text(provider_profile.get("sha256")),
+            "has",
+            "provider profile sha256",
+            _provider_profile_matches_source(provider_profile, source_config),
+            "source plan must carry the provider profile contract used for adapter wiring",
         ),
         _check(
             "kind_supported",
@@ -369,6 +379,7 @@ def _summary(
     session = _mapping(source_config.get("session"))
     credentials = _mapping(source_config.get("credentials"))
     live_fetch_contract = _mapping(source_config.get("live_fetch_contract"))
+    provider_profile = _mapping(source_config.get("provider_profile"))
     credential_env_template_path = _credential_env_template_path(source_plan_path, source_config)
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     transport = _text(source_config.get("transport"))
@@ -389,6 +400,11 @@ def _summary(
                 "session_close_local": _text(session.get("close_local")),
                 "source_uri": _text(source.get("uri")),
                 "source_uri_kind": _text(source.get("uri_kind")),
+                "provider_profile_sha256": _text(provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(provider_profile.get("capabilities"))),
                 "symbols": ";".join(config.symbols),
                 "symbol_count": int(len(config.symbols)),
                 "window_start": config.window_start,
@@ -576,6 +592,7 @@ def _source_plan_contract(summary: pd.Series, source_config: dict[str, Any]) -> 
             "file_exists": bool(source.get("file_exists", False)),
             "file_sha256": _text(source.get("file_sha256")),
         },
+        "provider_profile": _mapping(source_config.get("provider_profile")),
         "credential_env_template": _credential_env_template_contract(summary),
         "normalized_pipeline": _mapping(source_config.get("normalized_pipeline")),
         "live_fetch_contract": _mapping(source_config.get("live_fetch_contract")),
@@ -605,6 +622,7 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Session: {summary['session_open_local'] or '?'} - {summary['session_close_local'] or '?'} {summary['session_timezone'] or ''}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Symbols: {summary['symbols'] or 'none'}",
         f"- Window: {summary['window_start'] or 'open'} to {summary['window_end'] or 'open'}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",
@@ -655,6 +673,7 @@ def _fetch_mode(transport: str) -> str:
 def _blocked_next_gate(check: str) -> str:
     if check.startswith("source_plan") or check in {
         "provider_known",
+        "provider_profile_carried",
         "kind_supported",
         "transport_supported",
         "credentials_values_not_stored",
@@ -687,7 +706,13 @@ def _next_gate_help_command(next_gate: str, source_config: dict[str, Any]) -> st
 def _repair_action(check: str) -> str:
     if check.startswith("source_plan"):
         return "repair_or_regenerate_market_data_source_plan"
-    if check in {"provider_known", "kind_supported", "transport_supported", "market_matches_expected"}:
+    if check in {
+        "provider_known",
+        "provider_profile_carried",
+        "kind_supported",
+        "transport_supported",
+        "market_matches_expected",
+    }:
         return "select_matching_market_data_source_plan"
     if check == "credential_env_template_available":
         return "regenerate_source_plan_with_credential_env_template"
@@ -765,6 +790,19 @@ def _credential_env_template_path(source_plan_path: Path, payload: dict[str, Any
     if path.is_absolute():
         return path
     return source_plan_path.parent / path
+
+
+def _provider_profile_matches_source(profile: dict[str, Any], source_config: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    transport = _text(source_config.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(source_config.get("provider"))
+        and _text(profile.get("adapter")) == _text(source_config.get("adapter"))
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
+    )
 
 
 def _mapping(value: object) -> dict[str, Any]:

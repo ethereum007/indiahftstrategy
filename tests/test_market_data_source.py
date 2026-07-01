@@ -50,6 +50,8 @@ def test_market_data_source_plan_accepts_arrow_file_source(tmp_path):
     assert manifest["run_type"] == "market_data_source_plan"
     assert manifest["inputs"]["source_file"]["sha256"] == summary["source_file_sha256"]
     assert manifest["extra"]["credential_env_template_file"] == "market_data_source_env_template.env"
+    assert manifest["extra"]["provider_profile"]["provider"] == "arrow_money"
+    assert len(manifest["extra"]["provider_profile"]["sha256"]) == 64
     assert "market_data_source_env_template.env" in {artifact["path"] for artifact in manifest["artifacts"]}
 
 
@@ -84,6 +86,14 @@ def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
     assert "plan-market-data-fetch" in summary["live_fetch_contract_command"]
     assert config["normalized_pipeline"]["available"] is False
     assert config["exchange"] == "NFO"
+    assert config["provider_profile"]["provider"] == "arrow_money"
+    assert config["provider_profile"]["adapter"] == "arrow_money"
+    assert config["provider_profile"]["transports"] == ["file", "rest", "websocket"]
+    assert config["provider_profile"]["credential_env_vars"] == [
+        "ARROW_MONEY_API_KEY",
+        "ARROW_MONEY_API_SECRET",
+    ]
+    assert len(config["provider_profile"]["sha256"]) == 64
     assert config["session"] == {
         "timezone": "Asia/Kolkata",
         "open_local": "09:15:00",
@@ -93,6 +103,7 @@ def test_market_data_source_plan_accepts_arrow_websocket_env_contract(tmp_path):
     assert config["live_fetch_contract"]["next_gate"] == "provider_fetcher"
     assert config["live_fetch_contract"]["required_inputs"] == ["symbol"]
     assert config["live_fetch_contract"]["exchange"] == "NFO"
+    assert config["live_fetch_contract"]["provider_profile_sha256"] == config["provider_profile"]["sha256"]
     assert config["live_fetch_contract"]["session"]["timezone"] == "Asia/Kolkata"
     assert "market_data_source_config.json" in config["live_fetch_contract"]["command_template"]
     assert "ARROW_MONEY_API_KEY=\n" in env_template
@@ -131,8 +142,14 @@ def test_market_data_source_plan_defaults_irage_live_env_contract(tmp_path):
     assert config["credentials"]["env_vars"] == ["IRAGE_API_KEY", "IRAGE_API_SECRET"]
     assert config["credentials"]["env_template_entry_count"] == 2
     assert config["credentials"]["values_stored"] is False
+    assert config["provider_profile"]["provider"] == "irage"
+    assert config["provider_profile"]["adapter"] == "irage"
+    assert config["provider_profile"]["credential_env_vars"] == ["IRAGE_API_KEY", "IRAGE_API_SECRET"]
+    assert "live_ticks" in config["provider_profile"]["capabilities"]
+    assert len(config["provider_profile"]["sha256"]) == 64
     assert config["next_gate"] == "provider_fetcher"
     assert config["live_fetch_contract"]["required_inputs"] == ["symbol", "window_start", "window_end"]
+    assert config["live_fetch_contract"]["provider_profile_sha256"] == config["provider_profile"]["sha256"]
     assert "IRAGE_API_KEY=\n" in env_template
     assert "IRAGE_API_SECRET=\n" in env_template
 

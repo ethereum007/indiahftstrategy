@@ -108,6 +108,7 @@ def write_provider_market_data_fetcher_plan(
             "provider_fetcher": report.config["provider_fetcher"],
             "request_template": report.request_template,
             "credential_env_template": credential_env_template,
+            "provider_profile": report.request_template.get("provider_profile", {}),
             "adapter_execution_contract": report.request_template.get("adapter_execution_contract", {}),
         },
     )
@@ -163,6 +164,7 @@ def _checks(
     mode = _text(fetch.get("mode"))
     source = _mapping(source_plan.get("source"))
     live_fetch_contract = _mapping(source_plan.get("live_fetch_contract"))
+    provider_profile = _mapping(source_plan.get("provider_profile"))
     source_uri = _text(source.get("uri"))
     symbols = _string_list(fetch.get("symbols"))
     env_presence = _env_presence(env_vars)
@@ -198,6 +200,14 @@ def _checks(
             sorted(SUPPORTED_PROVIDERS),
             provider in SUPPORTED_PROVIDERS,
             "provider fetcher supports Arrow.money and iRage live plans only",
+        ),
+        _check(
+            "provider_profile_carried",
+            _text(provider_profile.get("sha256")),
+            "has",
+            "provider profile sha256",
+            _provider_profile_matches_fetch_plan(provider_profile, source_plan),
+            "fetch plan must carry the source provider profile contract",
         ),
         _check(
             "transport_is_live",
@@ -351,6 +361,7 @@ def _summary(
     credentials = _mapping(fetch_config.get("credentials"))
     credential_env_template = _mapping(credentials.get("env_template"))
     live_fetch_contract = _mapping(source_plan.get("live_fetch_contract"))
+    provider_profile = _mapping(source_plan.get("provider_profile"))
     session = _mapping(source_plan.get("session"))
     env_vars = _string_list(credentials.get("env_vars"))
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -370,6 +381,11 @@ def _summary(
                 "session_open_local": _text(session.get("open_local")),
                 "session_close_local": _text(session.get("close_local")),
                 "source_uri": _text(_mapping(source_plan.get("source")).get("uri")),
+                "provider_profile_sha256": _text(provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(provider_profile.get("capabilities"))),
                 "symbols": ";".join(_string_list(fetch.get("symbols"))),
                 "symbol_count": int(len(_string_list(fetch.get("symbols")))),
                 "window_start": _text(_mapping(fetch.get("window")).get("start")),
@@ -534,6 +550,7 @@ def _request_template(
     source_plan = _mapping(fetch_config.get("source_plan"))
     fetch = _mapping(fetch_config.get("fetch"))
     credentials = _mapping(fetch_config.get("credentials"))
+    provider_profile = _mapping(source_plan.get("provider_profile"))
     transport = _text(source_plan.get("transport"))
     symbols = _string_list(fetch.get("symbols"))
     window = _mapping(fetch.get("window"))
@@ -550,6 +567,7 @@ def _request_template(
         "transport": transport,
         "mode": _text(fetch.get("mode")),
         "endpoint": _text(_mapping(source_plan.get("source")).get("uri")),
+        "provider_profile": provider_profile,
         "authentication": {
             "env_vars": _string_list(credentials.get("env_vars")),
             "env_template": _mapping(credentials.get("env_template")),
@@ -583,6 +601,8 @@ def _request_template(
             "dry_run": bool(config.dry_run),
             "requires_credentials": bool(_string_list(credentials.get("env_vars"))),
             "requires_api_contract_approval": True,
+            "provider_profile_sha256": _text(provider_profile.get("sha256")),
+            "provider_capabilities": _string_list(provider_profile.get("capabilities")),
             "values_stored": False,
         },
     }
@@ -633,6 +653,7 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Session: {summary['session_open_local'] or '?'} - {summary['session_close_local'] or '?'} {summary['session_timezone'] or ''}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Symbols: {summary['symbols'] or 'none'}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",
         f"- Credential env vars present: {summary['credential_env_vars_present']}",
@@ -704,9 +725,23 @@ def _credential_env_template_from_fetch_config(fetch_config: dict[str, Any]) -> 
     }
 
 
+def _provider_profile_matches_fetch_plan(profile: dict[str, Any], source_plan: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    transport = _text(source_plan.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(source_plan.get("provider"))
+        and _text(profile.get("adapter")) == _text(source_plan.get("adapter"))
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
+    )
+
+
 def _blocked_next_gate(check: str) -> str:
     if check.startswith("fetch_plan") or check in {
         "provider_supported_for_live_fetch",
+        "provider_profile_carried",
         "transport_is_live",
         "mode_matches_transport",
         "source_uri_present",
@@ -733,7 +768,12 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("fetch_plan"):
         return "repair_or_regenerate_market_data_fetch_plan"
-    if check in {"provider_supported_for_live_fetch", "transport_is_live", "mode_matches_transport"}:
+    if check in {
+        "provider_supported_for_live_fetch",
+        "provider_profile_carried",
+        "transport_is_live",
+        "mode_matches_transport",
+    }:
         return "select_live_provider_fetch_plan"
     if check.startswith("source_uri"):
         return "repair_live_source_uri_contract"

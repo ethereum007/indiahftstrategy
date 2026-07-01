@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -44,6 +45,7 @@ SECRET_QUERY_KEYS = {"api_key", "apikey", "key", "secret", "token", "access_toke
 ENV_NAME_RE = re.compile(r"^[A-Z_][A-Z0-9_]*$")
 ENV_TEMPLATE_NAME = "market_data_source_env_template.env"
 DEFAULT_EXCHANGE = "NFO"
+PROVIDER_PROFILE_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -126,6 +128,7 @@ def write_market_data_source_plan(
         inputs=inputs,
         extra={
             "source": report.config["source"],
+            "provider_profile": report.config["provider_profile"],
             "credential_env_template_file": ENV_TEMPLATE_NAME,
             "live_fetch_contract": report.config["live_fetch_contract"],
         },
@@ -319,6 +322,7 @@ def _checks(config: MarketDataSourceConfig) -> list[dict[str, Any]]:
 def _summary(config: MarketDataSourceConfig, checks: pd.DataFrame, ready: bool) -> pd.DataFrame:
     source_kind = _source_kind(config)
     source_path = _source_path(config)
+    provider_profile = _provider_profile_contract(config.provider)
     failed_checks = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     return pd.DataFrame(
         [
@@ -340,6 +344,12 @@ def _summary(config: MarketDataSourceConfig, checks: pd.DataFrame, ready: bool) 
                 "source_file_sha256": file_sha256(source_path)
                 if source_path is not None and source_path.exists() and source_path.is_file()
                 else "",
+                "provider_profile_sha256": provider_profile["sha256"],
+                "provider_profile_adapter": provider_profile["adapter"],
+                "provider_profile_auth_required": bool(provider_profile["auth_required"]),
+                "provider_profile_transports": ";".join(provider_profile["transports"]),
+                "provider_profile_capabilities": ";".join(provider_profile["capabilities"]),
+                "provider_profile_credential_env_vars": ";".join(provider_profile["credential_env_vars"]),
                 "auth_env_var_count": int(len(config.auth_env_vars)),
                 "auth_env_vars": ";".join(config.auth_env_vars),
                 "credential_env_template_file": ENV_TEMPLATE_NAME,
@@ -467,6 +477,7 @@ def _config(
             "env_template_entry_count": int(len(config.auth_env_vars)),
             "values_stored": False,
         },
+        "provider_profile": _provider_profile_contract(config.provider),
         "capabilities": list(PROVIDER_SPECS.get(config.provider, {}).get("capabilities", ())),
         "normalized_pipeline": _normalized_pipeline(summary),
         "live_fetch_contract": _live_fetch_contract(summary),
@@ -515,6 +526,7 @@ def _live_fetch_contract(summary: pd.Series) -> dict[str, Any]:
             "command_template": "",
             "required_inputs": [],
             "credential_env_template_file": ENV_TEMPLATE_NAME,
+            "provider_profile_sha256": str(summary.get("provider_profile_sha256", "")),
             "exchange": str(summary.get("exchange", "")),
             "market": str(summary.get("market", "")),
             "session": {
@@ -532,6 +544,7 @@ def _live_fetch_contract(summary: pd.Series) -> dict[str, Any]:
         "command_template": str(summary["live_fetch_contract_command"]),
         "required_inputs": required_inputs,
         "credential_env_template_file": ENV_TEMPLATE_NAME,
+        "provider_profile_sha256": str(summary["provider_profile_sha256"]),
         "exchange": str(summary["exchange"]),
         "market": str(summary["market"]),
         "session": {
@@ -578,6 +591,7 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Exchange: {summary['exchange']}",
         f"- Session: {summary['session_open_local']} - {summary['session_close_local']} {summary['session_timezone']}",
         f"- Source: {summary['source_uri']}",
+        f"- Provider profile: {summary['provider_profile_sha256']}",
         f"- Credential env vars: {summary['auth_env_vars'] or 'none'}",
     ]
     lines.append(f"- Credential env template: {summary['credential_env_template_file']}")
@@ -622,6 +636,28 @@ def _provider_adapter_matches(
     if provider_spec is None:
         return False
     return config.adapter == str(provider_spec.get("adapter", config.provider))
+
+
+def _provider_profile_contract(provider: str) -> dict[str, Any]:
+    provider_key = _identity_key(provider) or "file_replay"
+    spec = PROVIDER_SPECS.get(provider_key, {})
+    profile = {
+        "schema_version": PROVIDER_PROFILE_SCHEMA_VERSION,
+        "provider": provider_key,
+        "adapter": str(spec.get("adapter", provider_key)),
+        "transports": [str(value) for value in spec.get("transports", ())],
+        "auth_required": bool(spec.get("auth_required", False)),
+        "credential_env_vars": [str(value) for value in spec.get("credential_env_vars", ())],
+        "capabilities": [str(value) for value in spec.get("capabilities", ())],
+        "source": "reports.market_data_source.PROVIDER_SPECS",
+        "values_stored": False,
+    }
+    return {**profile, "sha256": _sha256_json(profile)}
+
+
+def _sha256_json(payload: dict[str, Any]) -> str:
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _adapter_known(adapter: str) -> bool:

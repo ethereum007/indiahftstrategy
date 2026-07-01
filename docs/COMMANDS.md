@@ -4297,10 +4297,13 @@ and point `--source-uri` at the raw CSV. The generated
 market, exchange/segment, session timezone/window, sanitized source URI,
 credential environment variable names, and the next gate. It also writes a
 blank `market_data_source_env_template.env` sidecar
-and records a `live_fetch_contract` command template for REST/websocket sources,
-so Arrow.money/iRage credentials can be staged by environment variable name
-before any provider API call is attempted. It never stores credential values and
-fails closed if secrets appear in query parameters or `--auth-env` values. File
+and records a `live_fetch_contract` command template for REST/websocket sources.
+The source plan also includes a hashable `provider_profile` contract with the
+built-in provider adapter, supported transports, capabilities, default
+credential env-var names, auth requirement, and `values_stored=false`, so
+Arrow.money/iRage credentials can be staged by environment variable name before
+any provider API call is attempted. It never stores credential values and fails
+closed if secrets appear in query parameters or `--auth-env` values. File
 sources emit a ready action for `pipeline-vendor-market-data`; REST/websocket
 sources emit a ready action for the provider fetcher implementation that will
 consume the same config.
@@ -4325,8 +4328,8 @@ does not call external APIs; it validates the source plan, market identity,
 credential env-var references, the source-plan env-template sidecar, symbols,
 timing budget, output file contract, and next gate. The fetch manifest
 fingerprints `market_data_source_env_template.env` for live REST/websocket
-plans, and `market_data_fetch_config.json` carries both the credential template
-hash and the upstream `live_fetch_contract`. File sources route to the existing
+plans, and `market_data_fetch_config.json` carries the provider profile hash,
+the credential template hash, and the upstream `live_fetch_contract`. File sources route to the existing
 `pipeline-vendor-market-data` command, while REST/websocket sources route to
 the provider fetcher with `market_data_fetch_config.json`.
 
@@ -4354,7 +4357,10 @@ coverage, and runtime budgets. The request template carries only the blank
 env-template path/hash and env-var names, never credential values. It also
 writes an `adapter_execution_contract` with provider/adapter/transport/mode,
 endpoint, output filename, dry-run status, env-var names, and API-contract
-approval requirements for the future Arrow.money/iRage backend adapter. Use
+approval requirements for the future Arrow.money/iRage backend adapter. The
+request template and adapter contract both retain the provider-profile SHA so
+real adapter code can prove it is satisfying the same reviewed provider
+capabilities and transport profile. Use
 `--require-env-present` only in the deployment shell where Arrow.money/iRage
 credentials are already configured, since the artifacts store presence booleans
 but never credential values.
@@ -4380,9 +4386,9 @@ normalized output schema, runtime budgets, credential env-var names/presence
 booleans, the blank env-template path/hash, and the upstream
 `live_fetch_contract`, but never credential values. It preserves the
 `adapter_execution_contract` with the session label, output schema columns,
-clock-skew budget, and local buffer budget so a backend runner can bind the
-exact dry-run contract. Its ready action is the explicit live-run approval gate
-for the provider client.
+clock-skew budget, local buffer budget, and provider-profile SHA so a backend
+runner can bind the exact dry-run contract. Its ready action is the explicit
+live-run approval gate for the provider client.
 
 Plan the live capture windows before running a credentialed provider client:
 

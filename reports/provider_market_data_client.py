@@ -111,6 +111,7 @@ def write_provider_market_data_client_plan(
             "client": report.config["client"],
             "packet": report.packet,
             "credential_env_template": credential_env_template,
+            "provider_profile": report.packet.get("provider_profile", {}),
             "adapter_execution_contract": report.packet.get("adapter_execution_contract", {}),
             "output_schema_columns": report.output_schema["column"].astype(str).tolist(),
         },
@@ -162,6 +163,7 @@ def _checks(
     authentication = _mapping(template.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(fetch_plan.get("live_fetch_contract"))
+    provider_profile = _mapping(template.get("provider_profile"))
     output = _mapping(template.get("output"))
     runtime = _mapping(template.get("runtime"))
     env_vars = _string_list(authentication.get("env_vars"))
@@ -209,6 +211,14 @@ def _checks(
             sorted(SUPPORTED_PROVIDERS),
             _text(template.get("provider")) in SUPPORTED_PROVIDERS,
             "provider client dry-run supports Arrow.money and iRage plans only",
+        ),
+        _check(
+            "provider_profile_carried",
+            _text(provider_profile.get("sha256")),
+            "has",
+            "provider profile sha256",
+            _provider_profile_matches_template(provider_profile, template),
+            "request template must carry the provider profile contract",
         ),
         _check(
             "transport_is_live",
@@ -395,6 +405,7 @@ def _summary(
     authentication = _mapping(template.get("authentication"))
     credential_env_template = _mapping(authentication.get("env_template"))
     live_fetch_contract = _mapping(fetch_plan.get("live_fetch_contract"))
+    provider_profile = _mapping(template.get("provider_profile"))
     output = _mapping(template.get("output"))
     session = _mapping(template.get("session"))
     env_vars = _string_list(authentication.get("env_vars"))
@@ -416,6 +427,11 @@ def _summary(
                 "session_open_local": _text(session.get("open_local")),
                 "session_close_local": _text(session.get("close_local")),
                 "endpoint": _text(template.get("endpoint")),
+                "provider_profile_sha256": _text(provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(provider_profile.get("capabilities"))),
                 "output_filename": _text(output.get("filename")),
                 "output_schema_columns": ";".join(output_schema["column"].astype(str).tolist())
                 if not output_schema.empty
@@ -582,6 +598,7 @@ def _client_packet(
     authentication = _mapping(template.get("authentication"))
     output = _mapping(template.get("output"))
     runtime = _mapping(template.get("runtime"))
+    provider_profile = _mapping(template.get("provider_profile"))
     env_vars = _string_list(authentication.get("env_vars"))
     adapter_execution_contract = {
         "schema_version": 1,
@@ -599,6 +616,8 @@ def _client_packet(
         "dry_run": True,
         "requires_credentials": bool(env_vars),
         "requires_api_contract_approval": True,
+        "provider_profile_sha256": _text(provider_profile.get("sha256")),
+        "provider_capabilities": _string_list(provider_profile.get("capabilities")),
         "values_stored": False,
     }
     adapter_execution_contract.update(_mapping(template.get("adapter_execution_contract")))
@@ -611,6 +630,8 @@ def _client_packet(
             else [],
             "max_clock_skew_ms": int(config.max_clock_skew_ms),
             "max_local_buffer_rows": int(config.max_local_buffer_rows),
+            "provider_profile_sha256": _text(provider_profile.get("sha256")),
+            "provider_capabilities": _string_list(provider_profile.get("capabilities")),
             "values_stored": False,
         }
     )
@@ -628,6 +649,7 @@ def _client_packet(
         "transport": _text(template.get("transport")),
         "template_kind": _text(template.get("template_kind")),
         "endpoint": _text(template.get("endpoint")),
+        "provider_profile": provider_profile,
         "request": _request_payload(template),
         "live_fetch_contract": _mapping(_mapping(fetcher_config.get("fetch_plan")).get("live_fetch_contract")),
         "authentication": {
@@ -712,6 +734,7 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Session: {summary['session_open_local'] or '?'} - {summary['session_close_local'] or '?'} {summary['session_timezone'] or ''}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Output: {summary['output_filename']}",
         f"- Output schema columns: {summary['output_schema_columns']}",
         f"- Credential env vars: {summary['credential_env_vars'] or 'none'}",
@@ -757,10 +780,24 @@ def _template_kind_matches_transport(template_kind: str, transport: str) -> bool
     return False
 
 
+def _provider_profile_matches_template(profile: dict[str, Any], template: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    transport = _text(template.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(template.get("provider"))
+        and _text(profile.get("adapter")) == _text(template.get("adapter"))
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
+    )
+
+
 def _blocked_next_gate(check: str) -> str:
     if check.startswith("fetcher_plan") or check in {
         "request_template_ready",
         "provider_supported",
+        "provider_profile_carried",
         "transport_is_live",
         "template_kind_matches_transport",
         "endpoint_present",
@@ -791,7 +828,12 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("fetcher_plan") or check.startswith("request_template"):
         return "repair_or_regenerate_provider_fetcher_plan"
-    if check in {"provider_supported", "transport_is_live", "template_kind_matches_transport"}:
+    if check in {
+        "provider_supported",
+        "provider_profile_carried",
+        "transport_is_live",
+        "template_kind_matches_transport",
+    }:
         return "select_supported_live_provider_fetcher_plan"
     if check.startswith("endpoint"):
         return "repair_provider_endpoint_contract"

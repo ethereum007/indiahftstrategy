@@ -57,6 +57,12 @@
   exchange/segment plus the market-session timezone/open/close window, giving
   iRage/Arrow adapter wiring an explicit NSE/NFO session contract instead of
   relying on implicit defaults.
+  Source plans now also write a hashable `provider_profile` contract covering
+  the built-in provider adapter, supported transports, capabilities, default
+  credential env-var names, auth requirement, and `values_stored=false`; fetch
+  plans, provider request templates, client packets, adapter execution
+  contracts, and manifests preserve the same profile SHA and block stale
+  artifacts that lose it before real iRage/Arrow backend adapters are wired.
 - Market-data fetch planning now consumes those source contracts:
   `plan-market-data-fetch` validates provider/file handoff, symbols, REST
   backfill windows, latency budgets, credential env-var references, and output
@@ -77,7 +83,8 @@
   `adapter_execution_contract` with provider/adapter/transport/mode, endpoint,
   output filename, blank env-template proof, env-var names, dry-run status, and
   explicit API-contract approval requirements for the future Arrow.money/iRage
-  backend adapter.
+  backend adapter. The adapter contract also carries the provider-profile SHA
+  and capabilities expected by the future backend runner.
 - Provider market-data client dry-run packets now close the backend data-source
   handoff before live credentials: `prepare-provider-market-data-client`
   validates ready request templates, env-var contracts, normalized CSV output
@@ -86,7 +93,8 @@
   eventual Arrow.money/iRage client without making external API calls. Client
   packets now preserve that `adapter_execution_contract` plus session label,
   output schema columns, clock-skew budget, and local buffer budget so a backend
-  runner can bind the exact dry-run contract without reading secrets.
+  runner can bind the exact dry-run contract without reading secrets. Client
+  packets and manifests now also preserve the provider-profile contract and SHA.
 - Provider market-data live session planning now creates credential-safe capture
   packets before the market opens: `plan-provider-market-data-live-session`
   validates the dry-run client packet, NSE session windows, weekday, optional

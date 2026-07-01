@@ -101,6 +101,10 @@ def test_provider_market_data_client_writes_websocket_packet_and_schema(tmp_path
     assert packet["live_fetch_contract"]["available"] is True
     assert packet["live_fetch_contract"]["next_gate"] == "provider_fetcher"
     assert packet["request"]["subscriptions"][0]["symbol"] == "NIFTY-I"
+    assert packet["provider_profile"]["provider"] == "arrow_money"
+    assert packet["provider_profile"]["adapter"] == "arrow_money"
+    assert packet["provider_profile"]["transports"] == ["file", "rest", "websocket"]
+    assert len(packet["provider_profile"]["sha256"]) == 64
     assert packet["authentication"]["env_vars"] == ["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"]
     assert packet["authentication"]["env_template"]["exists"] is True
     assert len(packet["authentication"]["env_template"]["sha256"]) == 64
@@ -108,6 +112,8 @@ def test_provider_market_data_client_writes_websocket_packet_and_schema(tmp_path
     assert packet["adapter_execution_contract"]["provider"] == "arrow_money"
     assert packet["adapter_execution_contract"]["transport"] == "websocket"
     assert packet["adapter_execution_contract"]["client_packet_ready"] is True
+    assert packet["adapter_execution_contract"]["provider_profile_sha256"] == packet["provider_profile"]["sha256"]
+    assert "live_ticks" in packet["adapter_execution_contract"]["provider_capabilities"]
     assert packet["adapter_execution_contract"]["session_label"] == "arrow_ws_day1"
     assert packet["adapter_execution_contract"]["output_schema_columns"] == [
         "ts",
@@ -125,12 +131,14 @@ def test_provider_market_data_client_writes_websocket_packet_and_schema(tmp_path
     assert config["adapter_execution_contract"]["client_packet_ready"] is True
     assert config["credentials"]["env_template"]["sha256"] == packet["authentication"]["env_template"]["sha256"]
     assert config["fetcher_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
+    assert config["packet"]["provider_profile"]["sha256"] == packet["provider_profile"]["sha256"]
     assert config["fetcher_plan"]["live_fetch_contract"]["available"] is True
     assert config["primary_action"]["action"] == "approve_provider_market_data_live_run"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert manifest["run_type"] == "provider_market_data_client_dry_run"
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
+    assert manifest["extra"]["provider_profile"]["sha256"] == packet["provider_profile"]["sha256"]
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
 
 
@@ -211,6 +219,25 @@ def test_provider_market_data_client_blocks_missing_live_contract(tmp_path):
     assert config["fetcher_plan"]["live_fetch_contract"]["available"] is False
     assert config["blocked_actions"][0]["next_gate"] == "plan-provider-market-data-fetcher"
     assert config["blocked_actions"][0]["action"] == "regenerate_provider_fetcher_with_source_live_fetch_contract"
+
+
+def test_provider_market_data_client_blocks_missing_provider_profile_contract(tmp_path):
+    fetcher_report = _write_fetcher_plan(tmp_path)
+    fetcher_config_path = fetcher_report.output_dir / "provider_market_data_fetcher_config.json"
+    payload = json.loads(fetcher_config_path.read_text(encoding="utf-8"))
+    payload["request_template"].pop("provider_profile", None)
+    fetcher_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_provider_market_data_client_plan(
+        fetcher_config_path,
+        tmp_path / "client_missing_provider_profile",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads((report.output_dir / "provider_market_data_client_config.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert "provider_profile_carried" in failed
+    assert config["blocked_actions"][0]["next_gate"] == "plan-provider-market-data-fetcher"
 
 
 def test_provider_market_data_client_builds_adapter_contract_for_legacy_fetcher_plan(tmp_path):

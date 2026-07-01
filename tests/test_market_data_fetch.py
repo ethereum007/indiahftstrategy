@@ -82,8 +82,15 @@ def test_market_data_fetch_plan_accepts_arrow_websocket_source(tmp_path):
     assert config["credentials"]["values_stored"] is False
     assert config["credentials"]["env_template"]["exists"] is True
     assert len(config["credentials"]["env_template"]["sha256"]) == 64
+    assert config["source_plan"]["provider_profile"]["provider"] == "arrow_money"
+    assert config["source_plan"]["provider_profile"]["adapter"] == "arrow_money"
+    assert config["source_plan"]["provider_profile"]["transports"] == ["file", "rest", "websocket"]
+    assert len(config["source_plan"]["provider_profile"]["sha256"]) == 64
     assert config["source_plan"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
     assert config["source_plan"]["live_fetch_contract"]["available"] is True
+    assert config["source_plan"]["live_fetch_contract"]["provider_profile_sha256"] == (
+        config["source_plan"]["provider_profile"]["sha256"]
+    )
     assert "plan-market-data-fetch" in config["source_plan"]["live_fetch_contract"]["command_template"]
     assert config["primary_action"]["action"] == "execute_provider_websocket_capture"
     assert action_queue.loc[0, "queue_status"] == "ready"
@@ -91,6 +98,7 @@ def test_market_data_fetch_plan_accepts_arrow_websocket_source(tmp_path):
     assert manifest["run_type"] == "market_data_fetch_plan"
     assert manifest["inputs"]["source_plan"]["sha256"]
     assert manifest["inputs"]["credential_env_template"]["sha256"] == config["credentials"]["env_template"]["sha256"]
+    assert manifest["extra"]["provider_profile"]["sha256"] == config["source_plan"]["provider_profile"]["sha256"]
     assert manifest["extra"]["credential_env_template"]["exists"] is True
 
 
@@ -129,6 +137,25 @@ def test_market_data_fetch_plan_blocks_missing_live_source_env_template(tmp_path
     assert config["credentials"]["env_template"]["exists"] is False
     assert config["blocked_actions"][0]["next_gate"] == "plan-market-data-source"
     assert config["blocked_actions"][0]["action"] == "regenerate_source_plan_with_credential_env_template"
+
+
+def test_market_data_fetch_plan_blocks_missing_provider_profile_contract(tmp_path):
+    source_report = _write_source_plan(tmp_path)
+    source_config_path = source_report.output_dir / "market_data_source_config.json"
+    payload = json.loads(source_config_path.read_text(encoding="utf-8"))
+    payload.pop("provider_profile", None)
+    source_config_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    report = write_market_data_fetch_plan(
+        source_config_path,
+        tmp_path / "fetch_missing_provider_profile",
+        config=MarketDataFetchConfig(symbols=("NIFTY-I",)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "provider_profile_carried" in failed
+    assert report.config["blocked_actions"][0]["next_gate"] == "plan-market-data-source"
 
 
 def test_market_data_fetch_plan_blocks_market_mismatch(tmp_path):
