@@ -362,11 +362,11 @@
   dry-run bridge fingerprints when dispatch round-trip proof is supplied:
   broker-readiness summary/config and manifest extras expose the
   dispatch-roundtrip capture env-template and adapter handoff SHA-256 values
-  directly. Broker readiness also carries the round-trip
-  `adapter_execution_contract` and fails closed back to
-  `review-provider-market-data-imbalance-broker-dispatch-roundtrip` when the
-  final dry-run adapter proof is missing, unsafe, stale, or mismatched against
-  the runtime-session contract.
+  directly. Broker readiness also carries the round-trip provider-profile
+  proof plus the credential-safe `adapter_execution_contract` and fails closed
+  back to `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
+  when either final dry-run contract is missing, unsafe, stale, or mismatched
+  against runtime-session evidence.
 - Provider market-data imbalance cutover now carries those dispatch-roundtrip
   fingerprints forward from broker readiness: cutover summary/config and
   manifest extras expose the dispatch-roundtrip capture env-template and

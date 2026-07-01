@@ -460,6 +460,30 @@ def write_provider_market_data_imbalance_broker_readiness(
             "dispatch_roundtrip_adapter_contract_matches_runtime_session": bool(
                 summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
             ),
+            "dispatch_roundtrip_provider_profile": _mapping(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_profile")
+            ),
+            "dispatch_roundtrip_capture_bundle_provider_profile": _mapping(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get("capture_bundle_provider_profile")
+            ),
+            "dispatch_roundtrip_provider_profile_sha256": str(
+                summary_row["dispatch_roundtrip_provider_profile_sha256"]
+            ),
+            "dispatch_roundtrip_provider_profile_matches_session": bool(
+                summary_row["dispatch_roundtrip_provider_profile_matches_session"]
+            ),
+            "dispatch_roundtrip_provider_profile_matches_bundle": bool(
+                summary_row["dispatch_roundtrip_provider_profile_matches_bundle"]
+            ),
+            "dispatch_roundtrip_provider_profile_matches_runtime_session": bool(
+                summary_row["dispatch_roundtrip_provider_profile_matches_runtime_session"]
+            ),
+            "dispatch_roundtrip_adapter_contract_provider_profile_sha256": str(
+                summary_row["dispatch_roundtrip_adapter_contract_provider_profile_sha256"]
+            ),
+            "dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence": bool(
+                summary_row["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"]
+            ),
             "dispatch_roundtrip_provider_capture_commands": _list(
                 _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_capture_commands")
             ),
@@ -551,6 +575,18 @@ def write_provider_market_data_imbalance_broker_readiness(
                 ),
                 "adapter_contract_matches_runtime_session": bool(
                     summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+                ),
+                "provider_profile": _mapping(
+                    _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_profile")
+                ),
+                "provider_profile_matches_session": bool(
+                    summary_row["dispatch_roundtrip_provider_profile_matches_session"]
+                ),
+                "provider_profile_matches_bundle": bool(
+                    summary_row["dispatch_roundtrip_provider_profile_matches_bundle"]
+                ),
+                "provider_profile_matches_runtime_session": bool(
+                    summary_row["dispatch_roundtrip_provider_profile_matches_runtime_session"]
                 ),
                 "live_fetch_contract": {
                     "exchange": str(summary_row["dispatch_roundtrip_source_live_fetch_contract_exchange"]),
@@ -832,6 +868,7 @@ def _dispatch_roundtrip_provenance_checks(
 ) -> list[dict[str, Any]]:
     roundtrip_bundle_provided = _roundtrip_bool(provider_roundtrip_summary, "capture_bundle_provided")
     roundtrip_adapter_contract_carried = _roundtrip_adapter_contract_carried(provider_roundtrip_summary)
+    roundtrip_provider_profile_carried = _roundtrip_provider_profile_carried(provider_roundtrip_summary)
     return [
         _provenance_check(
             "dispatch_roundtrip_capture_bundle_consistent",
@@ -920,6 +957,54 @@ def _dispatch_roundtrip_provenance_checks(
             if roundtrip_bundle_provided
             else True,
             "dispatch round-trip adapter execution contract does not match provider runtime session",
+        ),
+        _check(
+            "dispatch_roundtrip_provider_profile_carried",
+            _roundtrip_text(provider_roundtrip_summary, "provider_profile_sha256"),
+            "has",
+            "provider profile",
+            roundtrip_provider_profile_carried if roundtrip_bundle_provided else True,
+            "dispatch round-trip is missing provider-profile proof",
+        ),
+        _check(
+            "dispatch_roundtrip_provider_profile_matches_session",
+            _roundtrip_text(provider_roundtrip_summary, "provider_profile_sha256"),
+            "matches",
+            "live session",
+            _roundtrip_bool(provider_roundtrip_summary, "provider_profile_matches_session")
+            if roundtrip_bundle_provided
+            else True,
+            "dispatch round-trip provider-profile proof no longer matches the live session packet",
+        ),
+        _check(
+            "dispatch_roundtrip_provider_profile_matches_bundle",
+            _roundtrip_text(provider_roundtrip_summary, "capture_bundle_provider_profile_sha256"),
+            "matches",
+            _roundtrip_text(provider_roundtrip_summary, "provider_profile_sha256"),
+            _roundtrip_bool(provider_roundtrip_summary, "provider_profile_matches_bundle")
+            if roundtrip_bundle_provided
+            else True,
+            "dispatch round-trip provider-profile proof no longer matches the capture bundle",
+        ),
+        _check(
+            "dispatch_roundtrip_adapter_provider_profile_matches_evidence",
+            _roundtrip_text(provider_roundtrip_summary, "adapter_contract_provider_profile_sha256"),
+            "==",
+            _roundtrip_text(provider_roundtrip_summary, "provider_profile_sha256"),
+            _roundtrip_bool(provider_roundtrip_summary, "adapter_contract_provider_profile_matches_evidence")
+            if roundtrip_bundle_provided
+            else True,
+            "dispatch round-trip adapter contract provider-profile SHA no longer matches live evidence",
+        ),
+        _check(
+            "dispatch_roundtrip_provider_profile_matches_runtime_session",
+            _roundtrip_provider_profile_metadata_text(provider_roundtrip_summary),
+            "matches",
+            _provider_profile_metadata_text(session_summary),
+            _roundtrip_provider_profile_matches_session(session_summary, provider_roundtrip_summary)
+            if roundtrip_bundle_provided
+            else True,
+            "dispatch round-trip provider-profile proof does not match provider runtime session",
         ),
         _provenance_check(
             "dispatch_roundtrip_source_credential_env_template_consistent",
@@ -1285,6 +1370,55 @@ def _summary(
                 ),
                 "dispatch_roundtrip_adapter_contract_matches_runtime_session": (
                     _roundtrip_adapter_contract_matches_session(session_summary, provider_roundtrip_summary)
+                )
+                if _roundtrip_bool(provider_roundtrip_summary, "capture_bundle_provided")
+                else True,
+                "dispatch_roundtrip_provider_profile_sha256": _roundtrip_text(
+                    provider_roundtrip_summary,
+                    "provider_profile_sha256",
+                ),
+                "dispatch_roundtrip_provider_profile_adapter": _roundtrip_text(
+                    provider_roundtrip_summary,
+                    "provider_profile_adapter",
+                ),
+                "dispatch_roundtrip_provider_profile_auth_required": _roundtrip_bool(
+                    provider_roundtrip_summary,
+                    "provider_profile_auth_required",
+                ),
+                "dispatch_roundtrip_provider_profile_transports": _roundtrip_text(
+                    provider_roundtrip_summary,
+                    "provider_profile_transports",
+                ),
+                "dispatch_roundtrip_provider_profile_capabilities": _roundtrip_text(
+                    provider_roundtrip_summary,
+                    "provider_profile_capabilities",
+                ),
+                "dispatch_roundtrip_capture_bundle_provider_profile_sha256": _roundtrip_text(
+                    provider_roundtrip_summary,
+                    "capture_bundle_provider_profile_sha256",
+                ),
+                "dispatch_roundtrip_provider_profile_matches_session": _roundtrip_bool(
+                    provider_roundtrip_summary,
+                    "provider_profile_matches_session",
+                )
+                if _roundtrip_bool(provider_roundtrip_summary, "capture_bundle_provided")
+                else True,
+                "dispatch_roundtrip_provider_profile_matches_bundle": _roundtrip_bool(
+                    provider_roundtrip_summary,
+                    "provider_profile_matches_bundle",
+                )
+                if _roundtrip_bool(provider_roundtrip_summary, "capture_bundle_provided")
+                else True,
+                "dispatch_roundtrip_adapter_contract_provider_profile_sha256": _roundtrip_text(
+                    provider_roundtrip_summary,
+                    "adapter_contract_provider_profile_sha256",
+                ),
+                "dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence": _roundtrip_bool(
+                    provider_roundtrip_summary,
+                    "adapter_contract_provider_profile_matches_evidence",
+                ),
+                "dispatch_roundtrip_provider_profile_matches_runtime_session": (
+                    _roundtrip_provider_profile_matches_session(session_summary, provider_roundtrip_summary)
                 )
                 if _roundtrip_bool(provider_roundtrip_summary, "capture_bundle_provided")
                 else True,
@@ -1961,6 +2095,21 @@ def _config(
             "adapter_contract_matches_runtime_session": bool(
                 summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
             ),
+            "provider_profile": _roundtrip_provider_profile(provider_roundtrip_config),
+            "live_session_provider_profile": _roundtrip_live_session_provider_profile(provider_roundtrip_config),
+            "capture_bundle_provider_profile": _roundtrip_capture_bundle_provider_profile(provider_roundtrip_config),
+            "provider_profile_sha256": str(summary["dispatch_roundtrip_provider_profile_sha256"]),
+            "provider_profile_matches_session": bool(summary["dispatch_roundtrip_provider_profile_matches_session"]),
+            "provider_profile_matches_bundle": bool(summary["dispatch_roundtrip_provider_profile_matches_bundle"]),
+            "provider_profile_matches_runtime_session": bool(
+                summary["dispatch_roundtrip_provider_profile_matches_runtime_session"]
+            ),
+            "adapter_contract_provider_profile_sha256": str(
+                summary["dispatch_roundtrip_adapter_contract_provider_profile_sha256"]
+            ),
+            "adapter_contract_provider_profile_matches_evidence": bool(
+                summary["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"]
+            ),
             "capture_bundle_path": str(summary["dispatch_roundtrip_capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["dispatch_roundtrip_capture_bundle_provided"]),
             "capture_bundle_exists": bool(summary["dispatch_roundtrip_capture_bundle_exists"]),
@@ -2136,6 +2285,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"{summary['dispatch_roundtrip_adapter_contract_transport'] or 'missing'} "
         f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_adapter_contract_matches_runtime_session']) else 'no'}, "
         f"evidence match: {'yes' if bool(summary['dispatch_roundtrip_adapter_contract_metadata_matches_evidence']) else 'no'})",
+        "- Dispatch round-trip provider profile: "
+        f"{summary['dispatch_roundtrip_provider_profile_sha256'] or 'missing'} "
+        f"(runtime match: {'yes' if bool(summary['dispatch_roundtrip_provider_profile_matches_runtime_session']) else 'no'}, "
+        f"bundle match: {'yes' if bool(summary['dispatch_roundtrip_provider_profile_matches_bundle']) else 'no'})",
         f"- Dispatch round-trip capture bundle: {summary['dispatch_roundtrip_capture_bundle_path'] or 'not provided'}",
         "- Dispatch round-trip capture env template: "
         f"{summary['dispatch_roundtrip_capture_env_template_path'] or 'not provided'}",
@@ -2225,6 +2378,8 @@ def _next_gate_for_check(check: str, broker: BrokerReadinessReport | None) -> st
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
+        or check.startswith("dispatch_roundtrip_provider_profile")
+        or check.startswith("dispatch_roundtrip_adapter_provider_profile")
     ):
         return "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     if check.startswith("broker_readiness"):
@@ -2280,6 +2435,8 @@ def _component_for_check(check: str) -> str:
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
+        or check.startswith("dispatch_roundtrip_provider_profile")
+        or check.startswith("dispatch_roundtrip_adapter_provider_profile")
     ):
         return "provider_broker_dispatch_roundtrip"
     if check.startswith("broker_readiness"):
@@ -2297,6 +2454,8 @@ def _action_for_check(check: str) -> str:
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
+        or check.startswith("dispatch_roundtrip_provider_profile")
+        or check.startswith("dispatch_roundtrip_adapter_provider_profile")
     ):
         return "repair_provider_imbalance_broker_dispatch_roundtrip"
     if check.startswith("broker_readiness"):
@@ -2312,6 +2471,8 @@ def _recommendation_for_check(check: str) -> str:
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
+        or check.startswith("dispatch_roundtrip_provider_profile")
+        or check.startswith("dispatch_roundtrip_adapter_provider_profile")
     ):
         return "rerun_provider_broker_dispatch_roundtrip_from_same_runtime_and_live_source_provenance"
     if check.startswith("broker_readiness"):
@@ -2551,6 +2712,42 @@ def _provider_profile_carried(session_summary: pd.DataFrame) -> bool:
     )
 
 
+def _roundtrip_provider_profile_carried(provider_roundtrip_summary: pd.DataFrame) -> bool:
+    return (
+        bool(_roundtrip_text(provider_roundtrip_summary, "provider_profile_sha256"))
+        and bool(_roundtrip_text(provider_roundtrip_summary, "provider_profile_adapter"))
+        and bool(_roundtrip_text(provider_roundtrip_summary, "provider_profile_transports"))
+    )
+
+
+def _provider_profile_metadata_text(session_summary: pd.DataFrame) -> str:
+    return (
+        f"{_first_text(session_summary, 'provider_profile_sha256')}|"
+        f"{_first_text(session_summary, 'provider_profile_adapter')}|"
+        f"{_first_text(session_summary, 'provider_profile_transports')}"
+    )
+
+
+def _roundtrip_provider_profile_metadata_text(provider_roundtrip_summary: pd.DataFrame) -> str:
+    return (
+        f"{_roundtrip_text(provider_roundtrip_summary, 'provider_profile_sha256')}|"
+        f"{_roundtrip_text(provider_roundtrip_summary, 'provider_profile_adapter')}|"
+        f"{_roundtrip_text(provider_roundtrip_summary, 'provider_profile_transports')}"
+    )
+
+
+def _roundtrip_provider_profile_matches_session(
+    session_summary: pd.DataFrame,
+    provider_roundtrip_summary: pd.DataFrame,
+) -> bool:
+    return (
+        _provider_profile_carried(session_summary)
+        and _roundtrip_provider_profile_carried(provider_roundtrip_summary)
+        and _provider_profile_metadata_text(session_summary)
+        == _roundtrip_provider_profile_metadata_text(provider_roundtrip_summary)
+    )
+
+
 def _adapter_contract_metadata_text(session_summary: pd.DataFrame) -> str:
     return (
         f"{_first_text(session_summary, 'adapter_contract_provider')}|"
@@ -2679,6 +2876,30 @@ def _roundtrip_adapter_execution_contract(provider_roundtrip_config: dict[str, A
         _mapping(provider_roundtrip_config.get("adapter_execution_contract"))
         or _mapping(bundle.get("adapter_execution_contract"))
         or _mapping(provenance.get("adapter_execution_contract"))
+    )
+
+
+def _roundtrip_provider_profile(provider_roundtrip_config: dict[str, Any]) -> dict[str, Any]:
+    provenance = _mapping(provider_roundtrip_config.get("dispatch_roundtrip_provenance"))
+    return _mapping(provenance.get("provider_profile")) or _mapping(
+        provider_roundtrip_config.get("provider_profile")
+    )
+
+
+def _roundtrip_live_session_provider_profile(provider_roundtrip_config: dict[str, Any]) -> dict[str, Any]:
+    provenance = _mapping(provider_roundtrip_config.get("dispatch_roundtrip_provenance"))
+    return _mapping(provenance.get("live_session_provider_profile")) or _mapping(
+        provider_roundtrip_config.get("live_session_provider_profile")
+    )
+
+
+def _roundtrip_capture_bundle_provider_profile(provider_roundtrip_config: dict[str, Any]) -> dict[str, Any]:
+    provenance = _mapping(provider_roundtrip_config.get("dispatch_roundtrip_provenance"))
+    bundle = _mapping(provider_roundtrip_config.get("capture_bundle"))
+    return (
+        _mapping(provenance.get("capture_bundle_provider_profile"))
+        or _mapping(bundle.get("capture_bundle_provider_profile"))
+        or _mapping(bundle.get("provider_profile"))
     )
 
 
