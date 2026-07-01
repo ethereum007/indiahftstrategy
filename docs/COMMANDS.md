@@ -5106,10 +5106,11 @@ wrapper. It also preserves the capture bundle, blank credential env-template,
 adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, and `live_fetch_contract`
 inherited from dispatch. It also carries the credential-safe
-`adapter_execution_contract` from broker-dispatch so ack reconciliation can
-trace the live data adapter without exposing credential values. If that adapter
-contract is missing, unsafe, or no longer matched to live evidence,
-broker-dispatch-send blocks acknowledgement reconciliation and routes back to
+`adapter_execution_contract` from broker-dispatch plus the provider-profile
+contract/SHA so ack reconciliation can trace the live data adapter without
+exposing credential values. If that provider profile or adapter contract is
+missing, unsafe, or no longer matched to live evidence, broker-dispatch-send
+blocks acknowledgement reconciliation and routes back to
 `plan-provider-market-data-imbalance-broker-dispatch`. It also carries the
 broker-dispatch-retained validated dispatch round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
