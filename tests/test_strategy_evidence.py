@@ -455,6 +455,118 @@ def ops_launch_catalog_rows(*, commit="abc123", strategy="lead_lag_taker", marke
     return pd.DataFrame(rows)
 
 
+def provider_imbalance_ops_launch_catalog_rows(
+    *,
+    commit="abc123",
+    strategy="imbalance",
+    market="india_nse_index_derivatives",
+):
+    parameters = json.dumps({"strategy": strategy, "market": market})
+    run_types = [
+        (
+            "provider_market_data_imbalance_scorecard",
+            "runs/provider_imbalance_scorecard",
+            "provider_market_data_imbalance_scorecard_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_route_readiness",
+            "runs/provider_imbalance_route_readiness",
+            "provider_market_data_imbalance_route_readiness_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_scaleup_plan",
+            "runs/provider_imbalance_scaleup",
+            "provider_market_data_imbalance_scaleup_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_runtime_telemetry_snapshot",
+            "runs/provider_imbalance_runtime_telemetry",
+            "provider_market_data_imbalance_runtime_telemetry_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_runtime_guard",
+            "runs/provider_imbalance_runtime_guard",
+            "provider_market_data_imbalance_runtime_guard_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_runtime_session",
+            "runs/provider_imbalance_runtime_session",
+            "provider_market_data_imbalance_runtime_session_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_readiness",
+            "runs/provider_imbalance_broker_readiness",
+            "provider_market_data_imbalance_broker_readiness_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_cutover",
+            "runs/provider_imbalance_cutover",
+            "provider_market_data_imbalance_cutover_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_route_enable",
+            "runs/provider_imbalance_route_enable",
+            "provider_market_data_imbalance_route_enable_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch",
+            "runs/provider_imbalance_broker_dispatch",
+            "provider_market_data_imbalance_broker_dispatch_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch_send",
+            "runs/provider_imbalance_broker_dispatch_send",
+            "provider_market_data_imbalance_broker_dispatch_send_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch_ack",
+            "runs/provider_imbalance_broker_dispatch_ack",
+            "provider_market_data_imbalance_broker_dispatch_ack_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch_roundtrip",
+            "runs/provider_imbalance_broker_dispatch_roundtrip",
+            "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
+        ),
+    ]
+    rows = []
+    for index, (run_type, run_dir, summary_file) in enumerate(run_types):
+        row = {
+            "run_dir": run_dir,
+            "run_type": run_type,
+            "generated_at_utc": f"2026-06-10T11:{index:02d}:00Z",
+            "git_commit": commit,
+            "git_dirty": False,
+            "summary_status": True,
+            "summary_file": summary_file,
+            "summary_strategy": strategy,
+            "summary_market": market,
+            "parameters_json": parameters,
+        }
+        if run_type == "provider_market_data_imbalance_broker_dispatch_roundtrip":
+            row["summary_dispatch_total_notional"] = 1500.0
+            row["summary_strategy_portfolio_provided"] = True
+            row["summary_strategy_portfolio_ready"] = True
+            row["summary_strategy_portfolio_selected_allocation_notional"] = 2000.0
+            row["summary_strategy_portfolio_min_strategy_count"] = 2
+            row["summary_strategy_portfolio_min_market_count"] = 1
+            row["summary_strategy_portfolio_max_strategy_weight"] = 0.60
+            row["summary_strategy_portfolio_max_market_weight"] = 0.90
+            row["summary_strategy_portfolio_allocated_strategy_count"] = 2
+            row["summary_strategy_portfolio_allocated_market_count"] = 1
+            row["summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.45
+            row["summary_strategy_portfolio_max_market_allocation_weight"] = 0.80
+            row.update(_resume_route_columns("summary_route_broker_resume_broker_route_readiness"))
+            row.update(
+                _resume_route_columns(
+                    "summary_route_broker_resume_incident_broker_route_readiness",
+                    route_ready_pairs=2,
+                )
+            )
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def _resume_route_columns(prefix, *, ready=True, route_ready_pairs=1, gap_pairs=0, controls_ready=True):
     return {
         f"{prefix}_required": True,
@@ -911,6 +1023,70 @@ def test_ops_launch_evidence_profile_requires_dryrun_chain_identity():
     assert broker_item["latest_market"] == "india_nse_index_derivatives"
 
 
+def test_provider_imbalance_ops_launch_profile_requires_provider_chain_identity():
+    review = evaluate_strategy_evidence(
+        provider_imbalance_ops_launch_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("provider_market_data_imbalance_ops_launch"),
+            require_same_strategy=True,
+            require_same_market=True,
+            expected_strategy="microprice_imbalance",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+
+    assert review.ready
+    assert set(review.evidence["required_run_type"]) == set(
+        EVIDENCE_PROFILE_RUN_TYPES["provider_imbalance_ops_launch"]
+    )
+    assert set(review.evidence["latest_strategy"]) == {"imbalance"}
+    assert set(review.evidence["latest_market"]) == {"india_nse_index_derivatives"}
+    assert review.summary.iloc[0]["evidence_profile"] == "provider_imbalance_ops_launch"
+    assert review.summary.iloc[0]["recommendation"] == "eligible_for_live_dryrun_route_review"
+
+
+def test_provider_imbalance_ops_launch_profile_fails_without_provider_roundtrip():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    catalog = catalog.loc[
+        catalog["run_type"] != "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    ].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("provider_imbalance_live_dryrun"),
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:provider_market_data_imbalance_broker_dispatch_roundtrip" in failed
+    assert review.summary.iloc[0]["evidence_profile"] == "provider_imbalance_ops_launch"
+
+
+def test_provider_imbalance_ops_launch_uses_provider_roundtrip_safety_controls():
+    review = evaluate_strategy_evidence(
+        provider_imbalance_ops_launch_catalog_rows(),
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("provider_imbalance_ops_launch"),
+            require_broker_roundtrip_portfolio_safe=True,
+            fail_on_broker_roundtrip_portfolio_breach=True,
+            require_broker_roundtrip_portfolio_concentration_ok=True,
+            fail_on_broker_roundtrip_portfolio_concentration_breach=True,
+            require_broker_roundtrip_resume_route_ready=True,
+            fail_on_broker_roundtrip_resume_route_breach=True,
+        ),
+    )
+
+    assert review.ready
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_breach_runs"]) == 0
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
+    assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_concentration_breach_runs"]) == 0
+    assert int(review.summary.iloc[0]["broker_roundtrip_resume_route_ready_runs"]) == 1
+    assert int(review.summary.iloc[0]["broker_roundtrip_resume_route_breach_runs"]) == 0
+
+
 def test_ops_launch_evidence_profile_fails_without_cutover_gate():
     catalog = ops_launch_catalog_rows()
     catalog = catalog.loc[catalog["run_type"] != "cutover_gate"].copy()
@@ -1350,6 +1526,44 @@ def test_cli_strategy_evidence_ops_launch_profile(tmp_path):
     assert int(summary.loc[0, "broker_roundtrip_portfolio_concentration_ok_runs"]) == 1
     assert int(summary.loc[0, "broker_roundtrip_resume_route_ready_runs"]) == 1
     assert int(summary.loc[0, "broker_roundtrip_resume_route_breach_runs"]) == 0
+
+
+def test_cli_strategy_evidence_provider_ops_launch_profile(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "provider_ops_launch_evidence"
+    provider_imbalance_ops_launch_catalog_rows().to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "provider_market_data_imbalance_ops_launch",
+            "--require-same-strategy",
+            "--expected-strategy",
+            "microprice_imbalance",
+            "--require-same-market",
+            "--expected-market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    items = pd.read_csv(out_dir / "strategy_evidence_items.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    assert code == 0
+    assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["provider_imbalance_ops_launch"])
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "evidence_profile"] == "provider_imbalance_ops_launch"
+    assert bool(summary.loc[0, "require_file_inputs"])
+    assert bool(summary.loc[0, "require_no_blocked_placeholder_schema"])
+    assert bool(summary.loc[0, "require_broker_roundtrip_portfolio_safe"])
+    assert bool(summary.loc[0, "fail_on_broker_roundtrip_resume_route_breach"])
+    assert int(summary.loc[0, "broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert int(summary.loc[0, "broker_roundtrip_resume_route_ready_runs"]) == 1
 
 
 def test_cli_strategy_evidence_ops_launch_profile_requires_file_inputs(tmp_path):

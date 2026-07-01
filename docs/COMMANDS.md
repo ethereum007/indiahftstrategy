@@ -276,6 +276,23 @@ python -m hft_cli review-strategy-evidence `
   --fail-on-breach
 ```
 
+For the provider-data imbalance wrapper chain, use the provider ops-launch
+profile after the provider scorecard, route-readiness, runtime, broker
+readiness, cutover, route-enable, dispatch-send, acknowledgement, and final
+round-trip wrappers are cataloged:
+
+```powershell
+python -m hft_cli review-strategy-evidence `
+  --catalog runs\catalog\latest `
+  --out runs\evidence\provider_imbalance_ops_launch `
+  --profile provider_market_data_imbalance_ops_launch `
+  --require-same-strategy `
+  --expected-strategy microprice_imbalance `
+  --require-same-market `
+  --expected-market india_nse_index_derivatives `
+  --fail-on-breach
+```
+
 The `leadlag` profile expands to `leadlag_edge_audit`,
 `leadlag_replay_walkforward`, `stress_report`, `promotion_report`, and
 `leadlag_order_plan`, and `leadlag_launch_pipeline`. The `surface_mm` profile
@@ -296,8 +313,13 @@ profile expands to `scaleup_plan`, `runtime_telemetry_snapshot`,
 `route_enable_packet`, `broker_dispatch_plan`,
 `broker_dispatch_send_packet`, `broker_dispatch_ack_reconciliation`, and
 `broker_dispatch_roundtrip`; aliases include `broker_dryrun`, `launch_ops`,
-and `live_dryrun`. Explicit `--required-run-type` flags still override the
-profile for custom launch reviews.
+and `live_dryrun`. The `provider_imbalance_ops_launch` profile expands to the
+provider-data imbalance scorecard, route-readiness, scale-up, runtime,
+broker-readiness, cutover, route-enable, dispatch, send, acknowledgement, and
+final round-trip run types; aliases include
+`provider_market_data_imbalance_ops_launch` and
+`provider_imbalance_live_dryrun`. Explicit `--required-run-type` flags still
+override the profile for custom launch reviews.
 If the broker-vendor wrapper proof is missing, the scorecard next gate points
 to `pipeline-broker-vendor-readiness --help` so Arrow.money/iRage data-readiness
 proof is generated before broker-readiness and dispatch evidence are trusted.
@@ -327,8 +349,9 @@ Custom evidence sets can opt into the same launch controls with
 `--fail-on-broker-roundtrip-resume-route-breach`.
 
 `strategy_evidence_summary.csv` records the inferred `evidence_profile`. Ready
-strategy profiles recommend `eligible_for_shadow_scaleup_review`, while a ready
-`ops_launch` profile recommends `eligible_for_live_dryrun_route_review`.
+strategy profiles recommend `eligible_for_shadow_scaleup_review`, while ready
+`ops_launch` and `provider_imbalance_ops_launch` profiles recommend
+`eligible_for_live_dryrun_route_review`.
 It also records passed-required input provenance totals, placeholder-schema
 counts, broker round-trip portfolio-safe/breach counts, and broker round-trip
 portfolio concentration OK/breach counts, plus broker resume-route ready and
@@ -375,7 +398,9 @@ python -m hft_cli score-strategy-readiness `
 ```
 
 By default the scorecard reviews `leadlag`, `imbalance`, `parity`,
-`settlement`, and `surface_mm`. It filters the catalog by each profile's
+`settlement`, and `surface_mm`. It also accepts
+`provider_market_data_imbalance_ops_launch` when the provider wrapper chain is
+ready for live-dry-run review. It filters the catalog by each profile's
 expected strategy identity before scoring, so shared run types such as
 `promotion_report` cannot be borrowed from another strategy lane. Use repeated
 `--profile` flags for a narrower review, `--require-file-inputs` to require
@@ -412,6 +437,9 @@ breaches. It also requires clean final broker round-trip resume-route proof for
 both primary and incident branches. Blocked scorecard actions include the
 failed evidence-check names in
 `strategy_scorecard_action_queue.csv` and `strategy_scorecard_next_actions.json`.
+For provider-data imbalance, `--profile provider_market_data_imbalance_ops_launch`
+uses the provider wrapper run types and applies those same launch controls to
+the provider final broker-dispatch roundtrip.
 
 Outputs:
 
@@ -432,8 +460,8 @@ least one strategy is ready for shadow scale-up review.
 The scorecard and gap rows also include `next_required_run_type`/`next_gate`
 or per-gap `next_gate` hints, so a blocked imbalance profile can point directly
 to `walkforward-imbalance-replay`, a missing broker dry-run packet can point to
-`plan-broker-dispatch`, and a ready `ops_launch` profile can point to
-`review-route-readiness`.
+`plan-broker-dispatch`, and ready `ops_launch` or
+`provider_imbalance_ops_launch` profiles can point to `review-route-readiness`.
 `strategy_scorecard_next_actions.json` mirrors the ranked next actions and
 open gaps in a machine-readable sidecar for schedulers or follow-up runbooks.
 It includes `schema_version`, root `next_gate`/`next_gate_help_command` aliases

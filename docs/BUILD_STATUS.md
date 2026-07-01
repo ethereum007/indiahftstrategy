@@ -25,6 +25,11 @@
 - Parity/box launch pipeline runs promoted candidates through order planning,
   staging, launch bundle creation, broker export, upload pack, and broker
   readiness review for Arrow.money/iRage-style paper or shadow handoff.
+- Strategy evidence and scorecards now include a
+  `provider_imbalance_ops_launch` profile that requires the provider-data
+  imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
+  route-enable, dispatch/send/ack, and final round-trip wrappers before
+  live-dry-run review.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`

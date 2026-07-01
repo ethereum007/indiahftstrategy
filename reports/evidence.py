@@ -69,12 +69,28 @@ OPS_LAUNCH_REQUIRED_RUN_TYPES = (
     "broker_dispatch_ack_reconciliation",
     "broker_dispatch_roundtrip",
 )
+PROVIDER_IMBALANCE_OPS_LAUNCH_REQUIRED_RUN_TYPES = (
+    "provider_market_data_imbalance_scorecard",
+    "provider_market_data_imbalance_route_readiness",
+    "provider_market_data_imbalance_scaleup_plan",
+    "provider_market_data_imbalance_runtime_telemetry_snapshot",
+    "provider_market_data_imbalance_runtime_guard",
+    "provider_market_data_imbalance_runtime_session",
+    "provider_market_data_imbalance_broker_readiness",
+    "provider_market_data_imbalance_cutover",
+    "provider_market_data_imbalance_route_enable",
+    "provider_market_data_imbalance_broker_dispatch",
+    "provider_market_data_imbalance_broker_dispatch_send",
+    "provider_market_data_imbalance_broker_dispatch_ack",
+    "provider_market_data_imbalance_broker_dispatch_roundtrip",
+)
 PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
     "leadlag": LEADLAG_REQUIRED_RUN_TYPES,
     "imbalance": IMBALANCE_REQUIRED_RUN_TYPES,
     "provider_imbalance_research": PROVIDER_IMBALANCE_RESEARCH_REQUIRED_RUN_TYPES,
+    "provider_imbalance_ops_launch": PROVIDER_IMBALANCE_OPS_LAUNCH_REQUIRED_RUN_TYPES,
     "settlement": SETTLEMENT_REQUIRED_RUN_TYPES,
     "parity": PARITY_REQUIRED_RUN_TYPES,
     "surface_mm": SURFACE_MM_REQUIRED_RUN_TYPES,
@@ -89,6 +105,10 @@ EVIDENCE_PROFILE_ALIASES = {
     "microprice_imbalance_research": "provider_imbalance_research",
     "provider_market_data_imbalance": "provider_imbalance_research",
     "provider_market_data_imbalance_research": "provider_imbalance_research",
+    "provider_imbalance_live_dryrun": "provider_imbalance_ops_launch",
+    "provider_market_data_imbalance_live_dryrun": "provider_imbalance_ops_launch",
+    "provider_market_data_imbalance_ops_launch": "provider_imbalance_ops_launch",
+    "provider_microprice_imbalance_ops_launch": "provider_imbalance_ops_launch",
     "settlement_convergence": "settlement",
     "parity_box": "parity",
     "surface_market_making": "surface_mm",
@@ -526,7 +546,7 @@ def _profile_identity(required_run_types: tuple[str, ...]) -> str:
 
 
 def _recommendation(profile: str, ready: bool) -> str:
-    if profile == "ops_launch":
+    if profile in {"ops_launch", "provider_imbalance_ops_launch"}:
         return "eligible_for_live_dryrun_route_review" if ready else "ops_launch_evidence_incomplete"
     return "eligible_for_shadow_scaleup_review" if ready else "evidence_incomplete"
 
@@ -838,7 +858,12 @@ def _resume_route_branch_state(frame: pd.DataFrame, prefix: str) -> dict[str, pd
 def _broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:
     if catalog.empty or "run_type" not in catalog.columns:
         return catalog.iloc[0:0].copy()
-    return catalog.loc[catalog["run_type"].astype(str) == "broker_dispatch_roundtrip"].copy()
+    run_types = catalog["run_type"].astype(str)
+    generic = run_types == "broker_dispatch_roundtrip"
+    if generic.any():
+        return catalog.loc[generic].copy()
+    provider = run_types == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    return catalog.loc[provider].copy()
 
 
 def _bool_column(frame: pd.DataFrame, column: str) -> pd.Series:

@@ -110,6 +110,81 @@ def complete_ops_launch_rows(
     return rows
 
 
+def complete_provider_imbalance_ops_launch_rows(strategy="imbalance", *, market="india_nse_index_derivatives"):
+    run_types = [
+        ("provider_market_data_imbalance_scorecard", "provider_market_data_imbalance_scorecard_summary.csv"),
+        (
+            "provider_market_data_imbalance_route_readiness",
+            "provider_market_data_imbalance_route_readiness_summary.csv",
+        ),
+        ("provider_market_data_imbalance_scaleup_plan", "provider_market_data_imbalance_scaleup_summary.csv"),
+        (
+            "provider_market_data_imbalance_runtime_telemetry_snapshot",
+            "provider_market_data_imbalance_runtime_telemetry_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_runtime_guard",
+            "provider_market_data_imbalance_runtime_guard_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_runtime_session",
+            "provider_market_data_imbalance_runtime_session_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_readiness",
+            "provider_market_data_imbalance_broker_readiness_summary.csv",
+        ),
+        ("provider_market_data_imbalance_cutover", "provider_market_data_imbalance_cutover_summary.csv"),
+        (
+            "provider_market_data_imbalance_route_enable",
+            "provider_market_data_imbalance_route_enable_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch",
+            "provider_market_data_imbalance_broker_dispatch_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch_send",
+            "provider_market_data_imbalance_broker_dispatch_send_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch_ack",
+            "provider_market_data_imbalance_broker_dispatch_ack_summary.csv",
+        ),
+        (
+            "provider_market_data_imbalance_broker_dispatch_roundtrip",
+            "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
+        ),
+    ]
+    rows = [
+        row(run_type, summary_file, strategy, market=market, minute=10 + index)
+        for index, (run_type, summary_file) in enumerate(run_types)
+    ]
+    for item in rows:
+        if item["run_type"] != "provider_market_data_imbalance_broker_dispatch_roundtrip":
+            continue
+        item["summary_dispatch_total_notional"] = 1500.0
+        item["summary_strategy_portfolio_provided"] = True
+        item["summary_strategy_portfolio_ready"] = True
+        item["summary_strategy_portfolio_selected_allocation_notional"] = 2000.0
+        item["summary_strategy_portfolio_min_strategy_count"] = 2
+        item["summary_strategy_portfolio_min_market_count"] = 1
+        item["summary_strategy_portfolio_max_strategy_weight"] = 0.60
+        item["summary_strategy_portfolio_max_market_weight"] = 0.90
+        item["summary_strategy_portfolio_allocated_strategy_count"] = 2
+        item["summary_strategy_portfolio_allocated_market_count"] = 1
+        item["summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.45
+        item["summary_strategy_portfolio_max_market_allocation_weight"] = 0.80
+        item.update(resume_route_columns("summary_route_broker_resume_broker_route_readiness"))
+        item.update(
+            resume_route_columns(
+                "summary_route_broker_resume_incident_broker_route_readiness",
+                route_ready_pairs=2,
+            )
+        )
+    return rows
+
+
 def resume_route_columns(prefix, *, ready=True, route_ready_pairs=1, gap_pairs=0, controls_ready=True):
     return {
         f"{prefix}_required": True,
@@ -434,6 +509,36 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
         "python -m hft_cli review-route-readiness --help"
     )
     assert set(report.gaps["total_runs"]) == {1}
+
+
+def test_strategy_scorecard_scores_provider_imbalance_ops_launch_profile():
+    catalog = pd.DataFrame(
+        complete_provider_imbalance_ops_launch_rows("imbalance")
+        + complete_ops_launch_rows("lead_lag_taker")
+    )
+
+    report = evaluate_strategy_scorecard(
+        catalog,
+        thresholds=StrategyScorecardThresholds(
+            profiles=("provider_market_data_imbalance_ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    assert report.ready
+    assert score["profile"] == "provider_imbalance_ops_launch"
+    assert score["strategy"] == "imbalance"
+    assert score["recommendation"] == "ready_for_live_dryrun_route_review"
+    assert score["next_gate"] == "review-route-readiness"
+    assert score["next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
+    assert int(score["broker_roundtrip_portfolio_safe_runs"]) == 1
+    assert int(score["broker_roundtrip_resume_route_ready_runs"]) == 1
+    assert score["evidence_failed_checks"] == ""
+    assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
+    assert report.config["ready_actions"][0]["profile"] == "provider_imbalance_ops_launch"
+    assert report.config["ready_actions"][0]["next_gate"] == "review-route-readiness"
 
 
 def test_strategy_scorecard_ops_launch_blocks_portfolio_concentration_breach():

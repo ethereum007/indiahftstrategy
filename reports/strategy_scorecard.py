@@ -26,12 +26,14 @@ PROFILE_STRATEGY_HINTS = {
     "leadlag": "lead_lag_taker",
     "imbalance": "imbalance",
     "provider_imbalance_research": "imbalance",
+    "provider_imbalance_ops_launch": "imbalance",
     "parity": "parity_box",
     "settlement": "settlement_convergence",
     "surface_mm": "surface_mm",
 }
 READY_NEXT_GATES = {
     "ops_launch": "review-route-readiness",
+    "provider_imbalance_ops_launch": "review-route-readiness",
     "provider_imbalance_research": "pipeline-imbalance-launch",
 }
 PROMOTION_NEXT_GATES = {
@@ -154,18 +156,18 @@ def evaluate_strategy_scorecard(
             thresholds=EvidenceThresholds(
                 required_run_types=required_run_types,
                 allow_dirty_git=thresholds.allow_dirty_git,
-                require_same_strategy=bool(expected_strategy) or profile_key == "ops_launch",
+                require_same_strategy=bool(expected_strategy) or _is_ops_launch_profile(profile_key),
                 require_same_market=bool(expected_market),
                 expected_strategy=expected_strategy or None,
                 expected_market=expected_market or None,
                 require_file_inputs=thresholds.require_file_inputs,
-                require_no_blocked_placeholder_schema=profile_key == "ops_launch",
-                require_broker_roundtrip_portfolio_safe=profile_key == "ops_launch",
-                fail_on_broker_roundtrip_portfolio_breach=profile_key == "ops_launch",
-                require_broker_roundtrip_portfolio_concentration_ok=profile_key == "ops_launch",
-                fail_on_broker_roundtrip_portfolio_concentration_breach=profile_key == "ops_launch",
-                require_broker_roundtrip_resume_route_ready=profile_key == "ops_launch",
-                fail_on_broker_roundtrip_resume_route_breach=profile_key == "ops_launch",
+                require_no_blocked_placeholder_schema=_is_ops_launch_profile(profile_key),
+                require_broker_roundtrip_portfolio_safe=_is_ops_launch_profile(profile_key),
+                fail_on_broker_roundtrip_portfolio_breach=_is_ops_launch_profile(profile_key),
+                require_broker_roundtrip_portfolio_concentration_ok=_is_ops_launch_profile(profile_key),
+                fail_on_broker_roundtrip_portfolio_concentration_breach=_is_ops_launch_profile(profile_key),
+                require_broker_roundtrip_resume_route_ready=_is_ops_launch_profile(profile_key),
+                fail_on_broker_roundtrip_resume_route_breach=_is_ops_launch_profile(profile_key),
             ),
         )
         rows.append(_scorecard_row(profile_key, expected_strategy, expected_market, evidence))
@@ -842,9 +844,15 @@ def _profile_key(profile: str) -> str:
 
 
 def _expected_strategy(profile: str, thresholds: StrategyScorecardThresholds) -> str:
-    if profile == "ops_launch":
-        return _normalize_strategy(thresholds.expected_ops_strategy)
+    if _is_ops_launch_profile(profile):
+        return _normalize_strategy(thresholds.expected_ops_strategy) or _normalize_strategy(
+            PROFILE_STRATEGY_HINTS.get(profile, "")
+        )
     return _normalize_strategy(PROFILE_STRATEGY_HINTS.get(profile, ""))
+
+
+def _is_ops_launch_profile(profile: str) -> bool:
+    return profile in {"ops_launch", "provider_imbalance_ops_launch"}
 
 
 def _latest_generated_at(items: pd.DataFrame) -> str:
@@ -895,18 +903,18 @@ def _next_gate_help_command(next_gate: str) -> str:
 
 def _score_recommendation(profile: str, ready: bool, score: float) -> str:
     if ready:
-        if profile == "ops_launch":
+        if _is_ops_launch_profile(profile):
             return "ready_for_live_dryrun_route_review"
         return "ready_for_shadow_scaleup_review"
     if score <= 0:
-        if profile == "ops_launch":
+        if _is_ops_launch_profile(profile):
             return "start_ops_launch_evidence"
         return "start_profile_research_evidence"
     if score < 1:
-        if profile == "ops_launch":
+        if _is_ops_launch_profile(profile):
             return "complete_ops_launch_evidence_gaps"
         return "complete_profile_evidence_gaps"
-    if profile == "ops_launch":
+    if _is_ops_launch_profile(profile):
         return "review_ops_launch_checks"
     return "review_profile_checks"
 
@@ -914,7 +922,7 @@ def _score_recommendation(profile: str, ready: bool, score: float) -> str:
 def _summary_recommendation(best_profile: str, has_ready: bool) -> str:
     if not has_ready:
         return "complete_missing_research_evidence"
-    if best_profile == "ops_launch":
+    if _is_ops_launch_profile(best_profile):
         return "promote_ready_route_to_live_dryrun_review"
     return "promote_ready_strategy_to_shadow_scaleup_review"
 

@@ -5535,7 +5535,10 @@ def main(argv: list[str] | None = None) -> int:
         required_run_types = (
             tuple(args.required_run_types) if args.required_run_types else evidence_profile_run_types(args.profile)
         )
-        is_ops_launch_profile = tuple(required_run_types) == evidence_profile_run_types("ops_launch")
+        is_ops_launch_profile = tuple(required_run_types) in {
+            evidence_profile_run_types("ops_launch"),
+            evidence_profile_run_types("provider_imbalance_ops_launch"),
+        }
         result = write_strategy_evidence_review(
             args.catalog,
             output_dir=args.out,
