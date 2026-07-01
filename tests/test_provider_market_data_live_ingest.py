@@ -185,6 +185,12 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert summary["adapter_contract_command_count"] == 2
     assert summary["adapter_contract_metadata_matches_session"]
     assert not bool(summary["adapter_contract_values_stored"])
+    assert len(summary["provider_profile_sha256"]) == 64
+    assert summary["provider_profile_adapter"] == "arrow_money"
+    assert summary["provider_profile_transports"] == "file;rest;websocket"
+    assert "live_ticks" in summary["provider_profile_capabilities"]
+    assert summary["capture_bundle_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert summary["provider_profile_matches_bundle"]
     assert summary["provider_capture_command_count"] == 2
     assert summary["provider_capture_command_providers"] == "arrow_money"
     assert summary["provider_capture_command_transports"] == "websocket"
@@ -211,7 +217,9 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert config["capture_bundle"]["live_fetch_contract"]["available"] is True
     assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert config["capture_bundle"]["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert config["capture_bundle"]["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["adapter_execution_contract"]["values_stored"] is False
+    assert config["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["provider_capture_command_count"] == 2
     assert config["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle"]["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
@@ -222,7 +230,9 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert config["capture_bundle"]["metadata_matches_session"] is True
     assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["windows"][0]["provider_capture_command_provider"] == "arrow_money"
     assert config["exchange"] == "NFO"
@@ -235,8 +245,10 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["capture_bundle_metadata_matches_session"] is True
     assert manifest["extra"]["capture_bundle"]["exchange"] == "NFO"
+    assert manifest["extra"]["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["capture_bundle"]["source_session"]["open_local"] == "09:15:00"
     assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
@@ -352,6 +364,34 @@ def test_provider_market_data_live_ingest_blocks_missing_live_fetch_contract(tmp
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.batch is None
     assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
+
+
+def test_provider_market_data_live_ingest_blocks_missing_bundle_provider_profile(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _mutate_bundle(
+        _write_capture_bundle(tmp_path, live_packet),
+        lambda bundle: (
+            bundle.pop("provider_profile", None),
+            bundle["preflight"].pop("provider_profile", None),
+        ),
+    )
+    _write_expected_captures(live_packet)
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_provider_profile_carried" in failed
+    assert report.summary.iloc[0]["capture_bundle_provider_profile_sha256"] == ""
+    assert not bool(report.summary.iloc[0]["provider_profile_matches_bundle"])
+    assert report.batch is None
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_provider_profile"
     assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 

@@ -103,6 +103,7 @@ def write_provider_market_data_live_session_ingest(
             "exchange": str(report.summary.iloc[0]["exchange"]),
             "source_session": _source_session_contract_from_summary(report.summary.iloc[0]),
             "market_session": _market_session_contract_from_summary(report.summary.iloc[0]),
+            "provider_profile": _mapping(report.config.get("provider_profile")),
             "capture_bundle_metadata_matches_session": bool(report.summary.iloc[0]["capture_bundle_metadata_matches_session"]),
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 report.summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -111,6 +112,7 @@ def write_provider_market_data_live_session_ingest(
                 "exchange": str(report.summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(report.summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(report.summary.iloc[0]),
+                "provider_profile": _mapping(_mapping(report.config.get("capture_bundle")).get("provider_profile")),
                 "metadata_matches_session": bool(report.summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
                     report.summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -286,6 +288,8 @@ def _checks(
     source_env_template = _source_credential_env_template(bundle_path, bundle) if bundle_provided and not bundle_error else {}
     live_fetch_contract = _live_fetch_contract(bundle) if bundle_provided and not bundle_error else {}
     adapter_execution_contract = _adapter_execution_contract(bundle) if bundle_provided and not bundle_error else {}
+    session_provider_profile = _session_provider_profile(packet)
+    bundle_provider_profile = _bundle_provider_profile(bundle) if bundle_provided and not bundle_error else {}
     session_provider_capture_commands = _session_provider_capture_commands(packet)
     bundle_provider_capture_commands = _bundle_provider_capture_commands(bundle) if bundle_provided and not bundle_error else []
     bundle_provider_capture_command_count = len(bundle_provider_capture_commands)
@@ -302,6 +306,20 @@ def _checks(
             and _provider_capture_commands_match(session_provider_capture_commands, bundle_provider_capture_commands)
         )
     )
+    session_provider_profile_ok = _provider_profile_matches_packet(session_provider_profile, packet)
+    bundle_provider_profile_ok = (
+        not bundle_provided
+        or bool(bundle_error)
+        or _provider_profile_matches_packet(bundle_provider_profile, packet)
+    )
+    bundle_provider_profile_match_ok = (
+        not bundle_provided
+        or bool(bundle_error)
+        or (
+            bundle_provider_profile_ok
+            and _provider_profiles_match(session_provider_profile, bundle_provider_profile)
+        )
+    )
     packet_source_session = _mapping(packet.get("source_session"))
     packet_market_session = _mapping(packet.get("market_session"))
     bundle_source_session = _bundle_source_session(bundle)
@@ -316,6 +334,9 @@ def _checks(
         _check("capture_bundle_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, bool(live_fetch_contract.get("available")) and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher" if bundle_provided and not bundle_error else True, "capture bundle must carry the upstream live fetch-contract handoff"),
         _check("capture_bundle_adapter_execution_contract_carried", _text(adapter_execution_contract.get("provider")), "is_not", "", bool(_text(adapter_execution_contract.get("provider"))) and bool(adapter_execution_contract.get("values_stored", True)) is False if bundle_provided and not bundle_error else True, "capture bundle must carry the credential-safe adapter execution contract"),
         _check("capture_bundle_adapter_execution_contract_matches_session", _adapter_contract_metadata_text(adapter_execution_contract), "==", "live session source metadata", _adapter_contract_matches_packet(packet, adapter_execution_contract) if bundle_provided and not bundle_error else True, "capture bundle adapter execution contract must match the live session packet"),
+        _check("live_session_provider_profile_carried", _text(session_provider_profile.get("sha256")), "matches", "live session provider/adapter/transport", session_provider_profile_ok, "live session packet must carry the provider-profile contract"),
+        _check("capture_bundle_provider_profile_carried", _text(bundle_provider_profile.get("sha256")), "matches", "bundle provider/adapter/transport", bundle_provider_profile_ok, "capture bundle must carry the provider-profile contract"),
+        _check("capture_bundle_provider_profile_matches_session", _text(bundle_provider_profile.get("sha256")), "==", _text(session_provider_profile.get("sha256")), bundle_provider_profile_match_ok, "capture bundle provider-profile contract must match the live session packet"),
         _check("capture_bundle_provider_capture_commands_carried", bundle_provider_capture_command_count, "==", len(windows), bundle_provider_capture_commands_ok, "capture bundle must carry per-window provider capture command handoffs"),
         _check("capture_bundle_provider_capture_commands_match_session", bundle_provider_capture_command_count, "matches", len(session_provider_capture_commands), bundle_provider_capture_commands_match_ok, "capture bundle provider capture command handoffs must match the live session packet"),
         _check("capture_bundle_exchange_matches_session", _bundle_exchange(bundle), "==", _text(packet.get("exchange")), _bundle_exchange(bundle) == _text(packet.get("exchange")) if bundle_provided and not bundle_error else True, "capture bundle exchange metadata must match the live session packet"),
@@ -375,6 +396,8 @@ def _summary(
     source_env_template = _source_credential_env_template(bundle_path, bundle) if config.capture_bundle_path else {}
     live_fetch_contract = _live_fetch_contract(bundle) if config.capture_bundle_path else {}
     adapter_execution_contract = _adapter_execution_contract(bundle) if config.capture_bundle_path else {}
+    session_provider_profile = _session_provider_profile(packet)
+    bundle_provider_profile = _bundle_provider_profile(bundle) if config.capture_bundle_path else {}
     session_provider_capture_commands = _session_provider_capture_commands(packet)
     bundle_provider_capture_commands = _bundle_provider_capture_commands(bundle) if config.capture_bundle_path else []
     source_session = _mapping(packet.get("source_session"))
@@ -420,6 +443,18 @@ def _summary(
                 "adapter_contract_metadata_matches_session": _adapter_contract_matches_packet(
                     packet,
                     adapter_execution_contract,
+                )
+                if config.capture_bundle_path
+                else True,
+                "provider_profile_sha256": _text(session_provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(session_provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(session_provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(session_provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(session_provider_profile.get("capabilities"))),
+                "capture_bundle_provider_profile_sha256": _text(bundle_provider_profile.get("sha256")),
+                "provider_profile_matches_bundle": _provider_profiles_match(
+                    session_provider_profile,
+                    bundle_provider_profile,
                 )
                 if config.capture_bundle_path
                 else True,
@@ -572,6 +607,7 @@ def _config(
                 "session": _source_live_fetch_contract_session_from_summary(summary),
             },
             "adapter_execution_contract": _adapter_execution_contract(bundle) if config.capture_bundle_path else _mapping(packet.get("adapter_execution_contract")),
+            "provider_profile": _bundle_provider_profile(bundle) if config.capture_bundle_path else {},
             "provider_capture_commands": _bundle_provider_capture_commands(bundle) if config.capture_bundle_path else [],
             "provider_capture_command_count": int(summary["capture_bundle_provider_capture_command_count"]),
             "provider_capture_commands_match_session": bool(
@@ -588,6 +624,7 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_profile": _session_provider_profile(packet),
         "adapter_execution_contract": _adapter_execution_contract(bundle) if config.capture_bundle_path else _mapping(packet.get("adapter_execution_contract")),
         "provider_capture_commands": _session_provider_capture_commands(packet),
         "windows": _records(windows),
@@ -625,6 +662,7 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Adapter handoff: {summary['adapter_handoff_path']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Expected captures: {summary['expected_capture_count']}",
         f"- Present captures: {summary['present_capture_count']}",
@@ -699,6 +737,8 @@ def _check(check: str, value: object, operator: str, threshold: object, passed: 
 def _next_gate_for_check(check: str) -> str:
     if check.startswith("live_session_packet"):
         return "plan-provider-market-data-live-session"
+    if check == "live_session_provider_profile_carried":
+        return "plan-provider-market-data-live-session"
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
     if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
@@ -738,6 +778,12 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_adapter_execution_contract"
     if check == "capture_bundle_adapter_execution_contract_matches_session":
         return "regenerate_capture_bundle_with_session_adapter_execution_contract"
+    if check == "live_session_provider_profile_carried":
+        return "regenerate_live_session_with_provider_profile"
+    if check == "capture_bundle_provider_profile_carried":
+        return "regenerate_capture_bundle_with_provider_profile"
+    if check == "capture_bundle_provider_profile_matches_session":
+        return "regenerate_capture_bundle_with_session_provider_profile"
     if check == "capture_bundle_provider_capture_commands_carried":
         return "regenerate_capture_bundle_with_provider_capture_commands"
     if check == "capture_bundle_provider_capture_commands_match_session":
@@ -830,6 +876,17 @@ def _adapter_execution_contract(bundle: dict[str, Any]) -> dict[str, Any]:
     if not contract:
         contract = _mapping(_mapping(bundle.get("preflight")).get("adapter_execution_contract"))
     return contract.copy()
+
+
+def _session_provider_profile(packet: dict[str, Any]) -> dict[str, Any]:
+    return _mapping(packet.get("provider_profile")).copy()
+
+
+def _bundle_provider_profile(bundle: dict[str, Any]) -> dict[str, Any]:
+    profile = _mapping(bundle.get("provider_profile"))
+    if not profile:
+        profile = _mapping(_mapping(bundle.get("preflight")).get("provider_profile"))
+    return profile.copy()
 
 
 def _session_provider_capture_commands(packet: dict[str, Any]) -> list[dict[str, str]]:
@@ -1011,6 +1068,32 @@ def _adapter_contract_matches_packet(packet: dict[str, Any], contract: dict[str,
     )
 
 
+def _provider_profile_matches_packet(profile: dict[str, Any], packet: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    adapter_contract = _mapping(packet.get("adapter_execution_contract"))
+    adapter = _text(adapter_contract.get("adapter") or packet.get("adapter") or packet.get("provider"))
+    transport = _text(packet.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(packet.get("provider"))
+        and _text(profile.get("adapter")) == adapter
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
+    )
+
+
+def _provider_profiles_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if not left or not right:
+        return False
+    return (
+        _text(left.get("sha256")) == _text(right.get("sha256"))
+        and _text(left.get("provider")) == _text(right.get("provider"))
+        and _text(left.get("adapter")) == _text(right.get("adapter"))
+        and _string_list(left.get("transports")) == _string_list(right.get("transports"))
+    )
+
+
 def _session_contracts_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
     if not (_session_contract_carried(left) and _session_contract_carried(right)):
         return False
@@ -1097,6 +1180,14 @@ def _mapping(value: object) -> dict[str, Any]:
 
 def _list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(";") if item.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
 
 
 def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:

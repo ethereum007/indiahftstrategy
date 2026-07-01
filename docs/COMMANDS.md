@@ -4535,8 +4535,10 @@ batch output manifest, and optionally the approved capture bundle plus its
 credential env-template, adapter handoff artifacts, source env-template proof,
 exchange/session metadata matching the live session packet, and upstream
 `live_fetch_contract`. Bundle-linked ingest also requires the carried
-`adapter_execution_contract` to be present, credential-safe, and matched to the
-live-session packet before batch ingestion can become ready.
+provider-profile contract plus `adapter_execution_contract` to be present,
+credential-safe, and matched to the live-session packet before batch ingestion
+can become ready; the provider-profile SHA/capabilities are carried into the
+ingest summary/config/manifest for downstream audit.
 
 Review the live ingest output before treating it as research evidence:
 
@@ -4554,11 +4556,12 @@ This writes `provider_market_data_live_evidence_summary.csv`,
 artifacts, and a manifest. If the live ingest carried a capture bundle, the
 evidence manifest also fingerprints that bundle, its credential env-template,
 the adapter handoff contract, source env-template proof, exchange/session
-metadata, upstream `live_fetch_contract`, and `adapter_execution_contract`
-before research handoff. It blocks captures that still have rehearsal sidecars
-(`*.csv.rehearsal.json`) from being marked research-ready, even if the ingest
-and batch pipelines passed, and fails closed if capture-bundle source metadata
-or adapter-contract metadata drifts from the live session packet.
+metadata, upstream `live_fetch_contract`, provider-profile contract/SHA, and
+`adapter_execution_contract` before research handoff. It blocks captures that
+still have rehearsal sidecars (`*.csv.rehearsal.json`) from being marked
+research-ready, even if the ingest and batch pipelines passed, and fails closed
+if capture-bundle source metadata, provider-profile metadata, or
+adapter-contract metadata drifts from the live session packet.
 Use `--allow-synthetic-rehearsal` only to classify a smoke test; the
 recommendation remains to replace synthetic captures with real Arrow.money/iRage
 provider captures before feeding walk-forward research.

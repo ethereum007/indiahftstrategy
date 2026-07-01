@@ -160,10 +160,10 @@
   env-template and adapter handoff SHA-256 values directly, so provider
   credential-template and adapter-contract provenance are visible without
   parsing the manifest input block. Bundle-linked ingest now also verifies that
-  both provider capture command handoffs and the adapter execution contract
-  match the live-session packet, then carries the structured command list and
-  adapter contract into the ingest summary/config/manifest for downstream
-  live-data audit.
+  provider capture command handoffs, the provider-profile contract/SHA, and the
+  adapter execution contract match the live-session packet, then carries the
+  structured command list, provider profile, and adapter contract into the
+  ingest summary/config/manifest for downstream live-data audit.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
@@ -172,10 +172,10 @@
   `adapter_execution_contract` when supplied, and credential-safe session
   packets while blocking `*.csv.rehearsal.json` synthetic captures from being
   marked research-ready. Bundle-linked evidence review also carries provider
-  capture command counts/lists and the adapter execution contract from ingest
-  into summary/config/manifest artifacts and blocks research handoff if the
-  capture-bundle command list or adapter contract is missing or no longer
-  matches the live-session packet.
+  capture command counts/lists, provider-profile proof, and the adapter
+  execution contract from ingest into summary/config/manifest artifacts and
+  blocks research handoff if the capture-bundle command list, provider profile,
+  or adapter contract is missing or no longer matches the live-session packet.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds

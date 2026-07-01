@@ -225,6 +225,14 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert summary["adapter_contract_exchange"] == "NFO"
     assert summary["adapter_contract_metadata_matches_session"]
     assert not bool(summary["adapter_contract_values_stored"])
+    assert len(summary["provider_profile_sha256"]) == 64
+    assert summary["provider_profile_adapter"] == "arrow_money"
+    assert summary["provider_profile_transports"] == "file;rest;websocket"
+    assert "live_ticks" in summary["provider_profile_capabilities"]
+    assert summary["ingest_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert summary["capture_bundle_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert summary["provider_profile_matches_ingest"]
+    assert summary["provider_profile_matches_bundle"]
     assert summary["provider_capture_command_count"] == 2
     assert summary["provider_capture_command_providers"] == "arrow_money"
     assert summary["provider_capture_command_transports"] == "websocket"
@@ -248,8 +256,10 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert config["capture_bundle"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
+    assert config["capture_bundle"]["capture_bundle_provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert config["capture_bundle"]["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert config["capture_bundle"]["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["adapter_execution_contract"]["values_stored"] is False
     assert config["capture_bundle"]["provider_capture_command_count"] == 2
     assert config["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
@@ -258,8 +268,11 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert config["capture_bundle"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["values_stored"] is False
+    assert config["live_session_packet"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["capture_bundle_exchange"] == "NFO"
     assert config["capture_bundle"]["capture_bundle_source_session"]["timezone"] == "Asia/Kolkata"
     assert config["capture_bundle"]["capture_bundle_market_session"]["open_local"] == "09:15"
@@ -274,8 +287,10 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["capture_bundle_metadata_matches_session"] is True
     assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
+    assert manifest["extra"]["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
@@ -379,6 +394,34 @@ def test_provider_market_data_live_evidence_blocks_missing_live_fetch_contract(t
     assert "capture_bundle_live_fetch_contract_carried" in failed
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
+
+
+def test_provider_market_data_live_evidence_blocks_missing_bundle_provider_profile(tmp_path):
+    ingest, _ = _write_bundle_linked_real_ingest(tmp_path)
+    ingest_config_path = ingest.output_dir / "provider_market_data_live_ingest_config.json"
+    manifest_path = ingest.output_dir / "manifest.json"
+    _mutate_json(
+        ingest_config_path,
+        lambda payload: payload["capture_bundle"].pop("provider_profile", None),
+    )
+    _mutate_json(
+        manifest_path,
+        lambda payload: payload["extra"]["capture_bundle"].pop("provider_profile", None),
+    )
+
+    report = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "capture_bundle_provider_profile_carried" in failed
+    assert report.summary.iloc[0]["capture_bundle_provider_profile_sha256"] == ""
+    assert not bool(report.summary.iloc[0]["provider_profile_matches_bundle"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_capture_bundle_with_provider_profile"
     assert report.action_queue.loc[0, "next_gate"] == "bundle-provider-market-data-live-capture"
 
 
