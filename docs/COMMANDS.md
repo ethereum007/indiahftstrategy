@@ -4734,10 +4734,11 @@ paper/shadow capital and runtime sizing. The provider scorecard
 summary/config/runbook and manifest also retain the upstream capture bundle,
 blank credential env-template, adapter handoff paths, source credential
 env-template proof, exchange/session metadata, capture-bundle session match
-proof, `live_fetch_contract`, and credential-safe `adapter_execution_contract`
-before scale-up planning begins. If that adapter contract is missing, unsafe,
-or no longer matched to live evidence, the scorecard blocks scale-up readiness
-and sends the packet back through launch-evidence review.
+proof, `live_fetch_contract`, provider-profile contract/SHA, and credential-safe
+`adapter_execution_contract` before scale-up planning begins. If the provider
+profile or adapter contract is missing, unsafe, or no longer matched to live
+evidence, the scorecard blocks scale-up readiness and sends the packet back
+through launch-evidence review.
 
 Build provider route-readiness proof from the same launch evidence:
 
