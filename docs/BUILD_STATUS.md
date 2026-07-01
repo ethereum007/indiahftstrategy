@@ -288,9 +288,10 @@
   values directly, carry provider capture command counts/lists plus
   capture-bundle command match proof from scale-up into runtime telemetry, and
   the manifest fingerprints the same files before runtime guard monitoring.
-  Runtime telemetry also carries the credential-safe
-  `adapter_execution_contract` from scale-up and blocks guard monitoring when
-  that contract is missing, unsafe, or no longer matched to live evidence.
+  Runtime telemetry also carries provider-profile proof plus the
+  credential-safe `adapter_execution_contract` from scale-up and blocks guard
+  monitoring when either contract is missing, unsafe, or no longer matched to
+  live evidence.
 - Provider market-data imbalance runtime guard now preserves those adapter
   fingerprints through halt/continue monitoring: guard summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
