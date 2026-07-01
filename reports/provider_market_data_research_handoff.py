@@ -96,6 +96,9 @@ def write_provider_market_data_research_handoff(
             "exchange": str(summary_row["exchange"]),
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
+            "provider_profile": _mapping(report.config.get("provider_profile")),
+            "provider_profile_matches_session": bool(summary_row["provider_profile_matches_session"]),
+            "provider_profile_matches_bundle": bool(summary_row["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
@@ -126,10 +129,17 @@ def write_provider_market_data_research_handoff(
                 summary_row["capture_bundle_provider_capture_commands_match_session"]
             ),
             "adapter_execution_contract": _mapping(report.config.get("adapter_execution_contract")),
+            "adapter_contract_provider_profile_sha256": str(summary_row["adapter_contract_provider_profile_sha256"]),
+            "adapter_contract_provider_profile_matches_evidence": bool(
+                summary_row["adapter_contract_provider_profile_matches_evidence"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "provider_profile": _mapping(
+                    _mapping(report.config.get("capture_bundle")).get("capture_bundle_provider_profile")
+                ),
                 "provider_capture_commands": _list(
                     _mapping(report.config.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
                 ),
@@ -310,6 +320,29 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         evidence_adapter_execution_contract,
         session_adapter_execution_contract,
     )
+    evidence_provider_profile = _mapping(evidence_config.get("provider_profile")) or _mapping(
+        manifest_extra.get("provider_profile")
+    )
+    session_provider_profile = _mapping(_mapping(evidence_config.get("live_session_packet")).get("provider_profile"))
+    bundle_provider_profile = (
+        _mapping(bundle.get("capture_bundle_provider_profile"))
+        or _mapping(bundle.get("provider_profile"))
+        or _mapping(manifest_extra_bundle.get("provider_profile"))
+        or _mapping(manifest_extra.get("capture_bundle_provider_profile"))
+    )
+    adapter_contract_provider_profile_sha256 = _text(adapter_execution_contract.get("provider_profile_sha256"))
+    provider_profile_matches_session = _provider_profiles_match(
+        evidence_provider_profile,
+        session_provider_profile,
+    )
+    provider_profile_matches_bundle = _provider_profiles_match(
+        evidence_provider_profile,
+        bundle_provider_profile,
+    )
+    adapter_contract_provider_profile_matches_evidence = bool(
+        adapter_contract_provider_profile_sha256
+        and adapter_contract_provider_profile_sha256 == _text(evidence_provider_profile.get("sha256"))
+    )
     live_fetch_session = _mapping(live_fetch_contract.get("session"))
     evidence_source_session = _mapping(evidence_config.get("source_session")) or _mapping(manifest_extra.get("source_session"))
     evidence_market_session = _mapping(evidence_config.get("market_session")) or _mapping(manifest_extra.get("market_session"))
@@ -429,6 +462,19 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         "adapter_contract_exchange": _text(adapter_execution_contract.get("exchange")),
         "adapter_contract_values_stored": bool(adapter_execution_contract.get("values_stored", True)),
         "adapter_contract_metadata_matches_evidence": adapter_contract_matches_evidence,
+        "provider_profile": evidence_provider_profile,
+        "live_session_provider_profile": session_provider_profile,
+        "capture_bundle_provider_profile": bundle_provider_profile,
+        "provider_profile_sha256": _text(evidence_provider_profile.get("sha256")),
+        "provider_profile_adapter": _text(evidence_provider_profile.get("adapter")),
+        "provider_profile_auth_required": bool(evidence_provider_profile.get("auth_required", False)),
+        "provider_profile_transports": ";".join(_string_list(evidence_provider_profile.get("transports"))),
+        "provider_profile_capabilities": ";".join(_string_list(evidence_provider_profile.get("capabilities"))),
+        "capture_bundle_provider_profile_sha256": _text(bundle_provider_profile.get("sha256")),
+        "provider_profile_matches_session": provider_profile_matches_session,
+        "provider_profile_matches_bundle": provider_profile_matches_bundle,
+        "adapter_contract_provider_profile_sha256": adapter_contract_provider_profile_sha256,
+        "adapter_contract_provider_profile_matches_evidence": adapter_contract_provider_profile_matches_evidence,
         "provider_capture_commands": provider_capture_commands,
         "provider_capture_command_count": int(len(provider_capture_commands)),
         "provider_capture_command_providers": _unique_command_values(provider_capture_commands, "provider"),
@@ -674,6 +720,10 @@ def _checks(
         and bool(capture_provenance["adapter_contract_exchange"])
         and bool(capture_provenance["adapter_contract_values_stored"]) is False
     )
+    evidence_provider_profile = _mapping(capture_provenance.get("provider_profile"))
+    bundle_provider_profile = _mapping(capture_provenance.get("capture_bundle_provider_profile"))
+    evidence_provider_profile_carried = _provider_profile_carried(evidence_provider_profile)
+    bundle_provider_profile_carried = _provider_profile_carried(bundle_provider_profile)
     return [
         _check("live_evidence_dir_exists", str(evidence_dir), "exists", True, evidence_dir.exists(), "live evidence directory is required"),
         _check("live_evidence_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live evidence summary could not be read"),
@@ -690,6 +740,11 @@ def _checks(
         _check("capture_bundle_provider_capture_commands_match_session", bundle_provider_capture_command_count, "matches", provider_capture_command_count, bundle_provider_capture_commands_match_session if bundle_provided else True, "live evidence provider capture command handoffs must match the live session packet"),
         _check("capture_bundle_adapter_execution_contract_carried", _adapter_contract_metadata_text(adapter_execution_contract), "is_not", "", adapter_execution_contract_carried if bundle_provided else True, "adapter execution contract referenced by live evidence is missing or stores credential values"),
         _check("capture_bundle_adapter_execution_contract_matches_evidence", _adapter_contract_metadata_text(adapter_execution_contract), "==", "live evidence adapter contract", bool(capture_provenance["adapter_contract_metadata_matches_evidence"]) if bundle_provided else True, "adapter execution contract must match the live evidence session contract"),
+        _check("live_evidence_provider_profile_carried", _text(evidence_provider_profile.get("sha256")), "has", "provider profile", evidence_provider_profile_carried, "live evidence provider-profile contract is missing or unsafe"),
+        _check("live_evidence_provider_profile_matches_session", _text(evidence_provider_profile.get("sha256")), "==", "live session provider profile", bool(capture_provenance["provider_profile_matches_session"]), "live evidence provider-profile contract must match the live session packet"),
+        _check("capture_bundle_provider_profile_carried", _text(bundle_provider_profile.get("sha256")), "has", "provider profile", bundle_provider_profile_carried if bundle_provided else True, "capture-bundle provider-profile proof is missing from live evidence"),
+        _check("capture_bundle_provider_profile_matches_evidence", _text(bundle_provider_profile.get("sha256")), "==", _text(evidence_provider_profile.get("sha256")), bool(capture_provenance["provider_profile_matches_bundle"]) if bundle_provided else True, "capture-bundle provider-profile contract must match live evidence"),
+        _check("adapter_execution_contract_provider_profile_matches_evidence", capture_provenance["adapter_contract_provider_profile_sha256"], "==", _text(evidence_provider_profile.get("sha256")), bool(capture_provenance["adapter_contract_provider_profile_matches_evidence"]) if bundle_provided else True, "adapter execution contract provider-profile SHA must match live evidence"),
         _check("live_evidence_exchange_carried", capture_provenance["exchange"], "is_not", "", bool(capture_provenance["exchange"]) if bundle_provided else True, "live evidence exchange metadata is missing"),
         _check("live_evidence_source_session_carried", _session_contract_text(source_session), "has", "timezone/open/close", _session_contract_carried(source_session) if bundle_provided else True, "live evidence source-session metadata is missing"),
         _check("live_evidence_market_session_carried", _session_contract_text(market_session), "has", "timezone/open/close", _session_contract_carried(market_session) if bundle_provided else True, "live evidence market-session metadata is missing"),
@@ -782,6 +837,26 @@ def _summary(
                 "adapter_contract_metadata_matches_evidence": bool(
                     capture_provenance["adapter_contract_metadata_matches_evidence"]
                 ),
+                "provider_profile_sha256": str(capture_provenance["provider_profile_sha256"]),
+                "provider_profile_adapter": str(capture_provenance["provider_profile_adapter"]),
+                "provider_profile_auth_required": bool(capture_provenance["provider_profile_auth_required"]),
+                "provider_profile_transports": str(capture_provenance["provider_profile_transports"]),
+                "provider_profile_capabilities": str(capture_provenance["provider_profile_capabilities"]),
+                "capture_bundle_provider_profile_sha256": str(
+                    capture_provenance["capture_bundle_provider_profile_sha256"]
+                ),
+                "provider_profile_matches_session": bool(capture_provenance["provider_profile_matches_session"]),
+                "provider_profile_matches_bundle": bool(capture_provenance["provider_profile_matches_bundle"])
+                if bool(capture_provenance["capture_bundle_provided"])
+                else True,
+                "adapter_contract_provider_profile_sha256": str(
+                    capture_provenance["adapter_contract_provider_profile_sha256"]
+                ),
+                "adapter_contract_provider_profile_matches_evidence": bool(
+                    capture_provenance["adapter_contract_provider_profile_matches_evidence"]
+                )
+                if bool(capture_provenance["capture_bundle_provided"])
+                else True,
                 "provider_capture_command_count": provider_capture_command_count,
                 "provider_capture_command_providers": str(capture_provenance["provider_capture_command_providers"]),
                 "provider_capture_command_transports": str(capture_provenance["provider_capture_command_transports"]),
@@ -885,6 +960,8 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_profile": _mapping(capture_provenance.get("provider_profile")),
+        "live_session_provider_profile": _mapping(capture_provenance.get("live_session_provider_profile")),
         "provider_capture_commands": _list(capture_provenance.get("provider_capture_commands")),
         "capture_bundle_provider_capture_commands": _list(
             capture_provenance.get("capture_bundle_provider_capture_commands")
@@ -908,6 +985,11 @@ def _next_gate_for_check(check: str) -> str:
     if check in {
         "capture_bundle_adapter_execution_contract_carried",
         "capture_bundle_adapter_execution_contract_matches_evidence",
+        "adapter_execution_contract_provider_profile_matches_evidence",
+        "live_evidence_provider_profile_carried",
+        "live_evidence_provider_profile_matches_session",
+        "capture_bundle_provider_profile_carried",
+        "capture_bundle_provider_profile_matches_evidence",
     }:
         return "review-provider-market-data-live-evidence"
     if (
@@ -954,6 +1036,12 @@ def _repair_action(check: str) -> str:
         return "regenerate_live_evidence_with_adapter_execution_contract"
     if check == "capture_bundle_adapter_execution_contract_matches_evidence":
         return "regenerate_live_evidence_with_session_adapter_execution_contract"
+    if check == "adapter_execution_contract_provider_profile_matches_evidence":
+        return "regenerate_live_evidence_with_adapter_provider_profile_sha"
+    if check.startswith("live_evidence_provider_profile"):
+        return "regenerate_live_evidence_with_provider_profile"
+    if check.startswith("capture_bundle_provider_profile"):
+        return "regenerate_live_evidence_with_capture_bundle_provider_profile"
     if check in {
         "live_evidence_exchange_carried",
         "live_evidence_source_session_carried",
@@ -1022,6 +1110,7 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Ready commands: {summary['ready_command_count']}",
@@ -1260,6 +1349,27 @@ def _adapter_contract_metadata_text(contract: dict[str, Any]) -> str:
     )
 
 
+def _provider_profile_carried(profile: dict[str, Any]) -> bool:
+    return (
+        bool(_text(profile.get("sha256")))
+        and bool(_text(profile.get("provider")))
+        and bool(_text(profile.get("adapter")))
+        and bool(_string_list(profile.get("transports")))
+        and bool(profile.get("values_stored", True)) is False
+    )
+
+
+def _provider_profiles_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if not left or not right:
+        return False
+    return (
+        _text(left.get("sha256")) == _text(right.get("sha256"))
+        and _text(left.get("provider")) == _text(right.get("provider"))
+        and _text(left.get("adapter")) == _text(right.get("adapter"))
+        and _string_list(left.get("transports")) == _string_list(right.get("transports"))
+    )
+
+
 def _provider_capture_command_records(value: object) -> list[dict[str, str]]:
     rows = _list(value)
     commands: list[dict[str, str]] = []
@@ -1382,6 +1492,14 @@ def _mapping(value: object) -> dict[str, Any]:
 
 def _list(value: object) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in value.split(";") if item.strip()]
+    if isinstance(value, (list, tuple)):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return []
 
 
 def _text(value: object, fallback: str = "") -> str:

@@ -4590,12 +4590,13 @@ bundle, the handoff summary/config/runbook and manifest retain the capture
 bundle, blank credential env-template, adapter handoff contract paths, upstream
 source credential env-template proof, exchange/session metadata, and
 `live_fetch_contract` before strategy research starts. They also retain the
-credential-safe `adapter_execution_contract` and block if it is missing, stores
-credential values, or no longer matches live evidence. Synthetic smoke evidence,
-source-metadata drift, and unsupported strategy lanes stay blocked: lead-lag
-needs explicit leader/laggard groups, while settlement, parity, and surface
-market-making need option-chain or surface inputs in addition to top-of-book
-ticks.
+provider-profile contract/SHA plus credential-safe
+`adapter_execution_contract` and block if either is missing, stores credential
+values, or no longer matches live evidence. Synthetic smoke evidence,
+source-metadata drift, provider-profile drift, and unsupported strategy lanes
+stay blocked: lead-lag needs explicit leader/laggard groups, while settlement,
+parity, and surface market-making need option-chain or surface inputs in
+addition to top-of-book ticks.
 
 Run the first full provider-data imbalance research pilot directly from
 research-ready live evidence:

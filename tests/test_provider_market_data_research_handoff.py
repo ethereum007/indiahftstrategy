@@ -273,6 +273,15 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert summary["adapter_contract_exchange"] == "NFO"
     assert bool(summary["adapter_contract_metadata_matches_evidence"])
     assert not bool(summary["adapter_contract_values_stored"])
+    assert len(summary["provider_profile_sha256"]) == 64
+    assert summary["provider_profile_adapter"] == "arrow_money"
+    assert summary["provider_profile_transports"] == "file;rest;websocket"
+    assert "live_ticks" in summary["provider_profile_capabilities"]
+    assert summary["capture_bundle_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert bool(summary["provider_profile_matches_session"])
+    assert bool(summary["provider_profile_matches_bundle"])
+    assert summary["adapter_contract_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert bool(summary["adapter_contract_provider_profile_matches_evidence"])
     assert summary["provider_capture_command_count"] == 2
     assert summary["provider_capture_command_providers"] == "arrow_money"
     assert summary["provider_capture_command_transports"] == "websocket"
@@ -297,7 +306,9 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert config["capture_bundle"]["source_credential_env_template_sha256"] == summary["source_credential_env_template_sha256"]
     assert config["capture_bundle"]["source_live_fetch_contract_available"] is True
     assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["adapter_execution_contract"]["values_stored"] is False
+    assert config["capture_bundle"]["capture_bundle_provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["provider_capture_command_count"] == 2
     assert config["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle"]["capture_bundle_provider_capture_command_count"] == 2
@@ -305,7 +316,10 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert config["capture_bundle"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert config["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
+    assert config["live_session_provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["capture_bundle"]["exchange"] == "NFO"
     assert config["capture_bundle"]["source_session"]["timezone"] == "Asia/Kolkata"
@@ -321,6 +335,9 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
+    assert manifest["extra"]["provider_profile_matches_session"] is True
+    assert manifest["extra"]["provider_profile_matches_bundle"] is True
     assert manifest["extra"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["extra"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["extra"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
@@ -328,7 +345,10 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
+    assert manifest["extra"]["adapter_contract_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert manifest["extra"]["adapter_contract_provider_profile_matches_evidence"] is True
     assert manifest["extra"]["provider_capture_command_count"] == 2
     assert manifest["extra"]["provider_capture_command_providers"] == "arrow_money"
     assert manifest["extra"]["provider_capture_command_transports"] == "websocket"
@@ -338,12 +358,14 @@ def test_provider_market_data_research_handoff_carries_capture_bundle_provenance
     assert manifest["extra"]["capture_bundle_provider_capture_commands_match_session"] is True
     assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_command_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
     assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
+    assert f"Provider profile: {summary['provider_profile_sha256']} (bundle match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
 
 
@@ -519,6 +541,41 @@ def test_provider_market_data_research_handoff_blocks_missing_adapter_execution_
     assert summary["adapter_contract_provider"] == ""
     assert bool(summary["adapter_contract_values_stored"])
     assert report.action_queue.loc[0, "action"] == "regenerate_live_evidence_with_adapter_execution_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-live-evidence"
+
+
+def test_provider_market_data_research_handoff_blocks_missing_provider_profile(tmp_path):
+    evidence, _ = _write_bundle_linked_real_evidence(tmp_path)
+    evidence_config_path = evidence.output_dir / "provider_market_data_live_evidence_config.json"
+    manifest_path = evidence.output_dir / "manifest.json"
+    _mutate_json(
+        evidence_config_path,
+        lambda payload: payload.pop("provider_profile", None),
+    )
+    _mutate_json(
+        manifest_path,
+        lambda payload: payload["extra"].pop("provider_profile", None),
+    )
+
+    report = write_provider_market_data_research_handoff(
+        evidence.output_dir,
+        tmp_path / "handoff",
+        config=ProviderMarketDataResearchHandoffConfig(
+            output_root=str(tmp_path / "research"),
+            min_tick_folds=2,
+            tick_size=0.05,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "live_evidence_provider_profile_carried" in failed
+    assert "live_evidence_provider_profile_matches_session" in failed
+    assert "adapter_execution_contract_provider_profile_matches_evidence" in failed
+    assert summary["provider_profile_sha256"] == ""
+    assert not bool(summary["provider_profile_matches_session"])
+    assert report.action_queue.loc[0, "action"] == "regenerate_live_evidence_with_provider_profile"
     assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-live-evidence"
 
 
