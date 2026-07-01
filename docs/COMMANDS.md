@@ -4686,11 +4686,11 @@ launch-ready profile rather than only the provider-data research profile. The
 provider launch summary/config/runbook and manifest retain the upstream capture
 bundle, blank credential env-template, adapter handoff paths, source credential
 env-template proof, exchange/session metadata, capture-bundle session match
-proof, `live_fetch_contract`, and credential-safe `adapter_execution_contract`
-when present in the provider evidence review. If the adapter contract is
-missing, unsafe, or no longer matched to live evidence, the downstream launch
-pipeline is not run, keeping broker-facing artifacts tied to the live data
-source contract.
+proof, `live_fetch_contract`, provider-profile contract/SHA, and credential-safe
+`adapter_execution_contract` when present in the provider evidence review. If
+the provider profile or adapter contract is missing, unsafe, or no longer
+matched to live evidence, the downstream launch pipeline is not run, keeping
+broker-facing artifacts tied to the live data source contract.
 
 Review the full launch-ready imbalance profile from the provider launch packet:
 

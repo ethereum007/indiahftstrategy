@@ -238,10 +238,10 @@
   and manifest extras now also expose capture env-template and adapter handoff
   SHA-256 values directly for broker handoff audit, and carry provider capture
   command counts/lists plus capture-bundle command match proof into the launch
-  packet. Launch packaging now also carries the credential-safe
-  `adapter_execution_contract` from provider imbalance evidence and blocks the
-  downstream launch pipeline from running when that contract is missing, unsafe,
-  or no longer matched to live evidence.
+  packet. Launch packaging now also carries provider-profile proof plus the
+  credential-safe `adapter_execution_contract` from provider imbalance evidence
+  and blocks the downstream launch pipeline from running when either contract
+  is missing, unsafe, or no longer matched to live evidence.
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture

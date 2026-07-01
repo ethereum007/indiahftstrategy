@@ -167,6 +167,9 @@ def write_provider_market_data_imbalance_launch_packet(
             "exchange": str(summary.iloc[0]["exchange"]),
             "source_session": _source_session_contract_from_summary(summary.iloc[0]),
             "market_session": _market_session_contract_from_summary(summary.iloc[0]),
+            "provider_profile": _mapping(payload.get("provider_profile")),
+            "provider_profile_matches_session": bool(summary.iloc[0]["provider_profile_matches_session"]),
+            "provider_profile_matches_bundle": bool(summary.iloc[0]["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
@@ -197,10 +200,19 @@ def write_provider_market_data_imbalance_launch_packet(
                 summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
             ),
             "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
+            "adapter_contract_provider_profile_sha256": str(
+                summary.iloc[0]["adapter_contract_provider_profile_sha256"]
+            ),
+            "adapter_contract_provider_profile_matches_evidence": bool(
+                summary.iloc[0]["adapter_contract_provider_profile_matches_evidence"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary.iloc[0]),
+                "provider_profile": _mapping(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_profile")
+                ),
                 "provider_capture_commands": _list(
                     _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
                 ),
@@ -277,9 +289,16 @@ def _should_run_launch(
 ) -> bool:
     if config.require_provider_evidence_ready and not _first_bool(evidence_summary, "ready"):
         return False
+    if not (
+        _provider_profile_carried(evidence_summary)
+        and _first_bool(evidence_summary, "provider_profile_matches_session")
+    ):
+        return False
     if _first_bool(evidence_summary, "capture_bundle_provided") and not (
         _adapter_contract_carried(evidence_summary)
         and _first_bool(evidence_summary, "adapter_contract_metadata_matches_evidence")
+        and _first_bool(evidence_summary, "provider_profile_matches_bundle")
+        and _first_bool(evidence_summary, "adapter_contract_provider_profile_matches_evidence")
     ):
         return False
     return bool(
@@ -296,6 +315,14 @@ def _adapter_contract_carried(evidence_summary: pd.DataFrame) -> bool:
         and bool(_first_text(evidence_summary, "adapter_contract_market"))
         and bool(_first_text(evidence_summary, "adapter_contract_exchange"))
         and not _first_bool(evidence_summary, "adapter_contract_values_stored")
+    )
+
+
+def _provider_profile_carried(evidence_summary: pd.DataFrame) -> bool:
+    return (
+        bool(_first_text(evidence_summary, "provider_profile_sha256"))
+        and bool(_first_text(evidence_summary, "provider_profile_adapter"))
+        and bool(_first_text(evidence_summary, "provider_profile_transports"))
     )
 
 
@@ -366,6 +393,7 @@ def _checks(
         and _first_bool(evidence_summary, "capture_bundle_provider_capture_commands_match_session")
     )
     adapter_contract_carried = _adapter_contract_carried(evidence_summary)
+    provider_profile_carried = _provider_profile_carried(evidence_summary)
     return pd.DataFrame(
         [
             _check(
@@ -431,6 +459,40 @@ def _checks(
                 "live evidence",
                 _first_bool(evidence_summary, "adapter_contract_metadata_matches_evidence") if bundle_provided else True,
                 "provider imbalance evidence adapter execution contract no longer matches live evidence",
+            ),
+            _check(
+                "provider_evidence_provider_profile_carried",
+                _first_text(evidence_summary, "provider_profile_sha256"),
+                "has",
+                "provider profile",
+                provider_profile_carried,
+                "provider imbalance evidence is missing provider-profile proof",
+            ),
+            _check(
+                "provider_evidence_provider_profile_matches_session",
+                _first_text(evidence_summary, "provider_profile_sha256"),
+                "matches",
+                "live session",
+                _first_bool(evidence_summary, "provider_profile_matches_session"),
+                "provider imbalance evidence provider-profile proof no longer matches the live session packet",
+            ),
+            _check(
+                "provider_evidence_provider_profile_matches_bundle",
+                _first_text(evidence_summary, "capture_bundle_provider_profile_sha256"),
+                "matches",
+                _first_text(evidence_summary, "provider_profile_sha256"),
+                _first_bool(evidence_summary, "provider_profile_matches_bundle") if bundle_provided else True,
+                "provider imbalance evidence provider-profile proof no longer matches the capture bundle",
+            ),
+            _check(
+                "provider_evidence_adapter_provider_profile_matches_evidence",
+                _first_text(evidence_summary, "adapter_contract_provider_profile_sha256"),
+                "==",
+                _first_text(evidence_summary, "provider_profile_sha256"),
+                _first_bool(evidence_summary, "adapter_contract_provider_profile_matches_evidence")
+                if bundle_provided
+                else True,
+                "provider imbalance evidence adapter contract provider-profile SHA no longer matches live evidence",
             ),
             _check(
                 "promotion_summary_exists",
@@ -637,6 +699,26 @@ def _summary(
                 "adapter_contract_metadata_matches_evidence": _first_bool(
                     evidence_summary, "adapter_contract_metadata_matches_evidence"
                 ),
+                "provider_profile_sha256": _first_text(evidence_summary, "provider_profile_sha256"),
+                "provider_profile_adapter": _first_text(evidence_summary, "provider_profile_adapter"),
+                "provider_profile_auth_required": _first_bool(evidence_summary, "provider_profile_auth_required"),
+                "provider_profile_transports": _first_text(evidence_summary, "provider_profile_transports"),
+                "provider_profile_capabilities": _first_text(evidence_summary, "provider_profile_capabilities"),
+                "capture_bundle_provider_profile_sha256": _first_text(
+                    evidence_summary, "capture_bundle_provider_profile_sha256"
+                ),
+                "provider_profile_matches_session": _first_bool(evidence_summary, "provider_profile_matches_session"),
+                "provider_profile_matches_bundle": _first_bool(evidence_summary, "provider_profile_matches_bundle")
+                if _first_bool(evidence_summary, "capture_bundle_provided")
+                else True,
+                "adapter_contract_provider_profile_sha256": _first_text(
+                    evidence_summary, "adapter_contract_provider_profile_sha256"
+                ),
+                "adapter_contract_provider_profile_matches_evidence": _first_bool(
+                    evidence_summary, "adapter_contract_provider_profile_matches_evidence"
+                )
+                if _first_bool(evidence_summary, "capture_bundle_provided")
+                else True,
                 "provider_capture_command_count": int(
                     _first_number(evidence_summary, "provider_capture_command_count")
                 ),
@@ -738,6 +820,8 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_profile": _mapping(evidence_config.get("provider_profile")),
+        "live_session_provider_profile": _mapping(evidence_config.get("live_session_provider_profile")),
         "provider_capture_commands": _provider_capture_commands(evidence_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(evidence_config),
         "adapter_execution_contract": _mapping(evidence_config.get("adapter_execution_contract")),
@@ -834,6 +918,7 @@ def _runbook_markdown(
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "",
         "## Components",
@@ -1064,6 +1149,24 @@ def _provider_capture_bundle(evidence_summary: pd.DataFrame, evidence_config: di
         "adapter_contract_metadata_matches_evidence": _first_bool(
             evidence_summary, "adapter_contract_metadata_matches_evidence"
         ),
+        "provider_profile": _mapping(evidence_config.get("provider_profile")),
+        "live_session_provider_profile": _mapping(evidence_config.get("live_session_provider_profile")),
+        "capture_bundle_provider_profile": _mapping(
+            _mapping(evidence_config.get("capture_bundle")).get("capture_bundle_provider_profile")
+        ),
+        "provider_profile_sha256": _first_text(evidence_summary, "provider_profile_sha256"),
+        "provider_profile_matches_session": _first_bool(evidence_summary, "provider_profile_matches_session"),
+        "provider_profile_matches_bundle": _first_bool(evidence_summary, "provider_profile_matches_bundle")
+        if _first_bool(evidence_summary, "capture_bundle_provided")
+        else True,
+        "adapter_contract_provider_profile_sha256": _first_text(
+            evidence_summary, "adapter_contract_provider_profile_sha256"
+        ),
+        "adapter_contract_provider_profile_matches_evidence": _first_bool(
+            evidence_summary, "adapter_contract_provider_profile_matches_evidence"
+        )
+        if _first_bool(evidence_summary, "capture_bundle_provided")
+        else True,
         "provider_capture_command_count": int(_first_number(evidence_summary, "provider_capture_command_count")),
         "provider_capture_command_providers": _first_text(evidence_summary, "provider_capture_command_providers"),
         "provider_capture_command_transports": _first_text(evidence_summary, "provider_capture_command_transports"),
