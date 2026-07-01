@@ -4652,12 +4652,13 @@ manifest. The evidence summary/config/runbook and manifest also retain the
 approved capture bundle, blank credential env-template, adapter handoff paths,
 upstream source credential env-template proof, exchange/session metadata,
 capture-bundle session match proof, `live_fetch_contract`, and the
-credential-safe `adapter_execution_contract` when they were present in the
-upstream provider research wrapper. If that adapter contract is missing, unsafe,
-or no longer matched to live evidence, the review blocks launch packaging. A
-ready review points to `pipeline-imbalance-launch`; it does not weaken the full
-`imbalance` profile, which still requires order-plan and launch pipeline proof
-before shadow scale-up.
+provider-profile contract/SHA plus credential-safe
+`adapter_execution_contract` when they were present in the upstream provider
+research wrapper. If the provider profile or adapter contract is missing,
+unsafe, or no longer matched to live evidence, the review blocks launch
+packaging. A ready review points to `pipeline-imbalance-launch`; it does not
+weaken the full `imbalance` profile, which still requires order-plan and launch
+pipeline proof before shadow scale-up.
 
 Build the provider imbalance launch packet directly from the ready evidence
 review:

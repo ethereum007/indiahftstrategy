@@ -222,10 +222,10 @@
   expose capture env-template and adapter handoff SHA-256 values directly, and
   carry provider capture command counts/lists plus capture-bundle command match
   proof into the research-evidence package. The evidence review now also carries
-  the credential-safe `adapter_execution_contract` from provider imbalance
-  research into summary/config/runbook and manifest artifacts, and blocks launch
-  packaging when that contract is missing, unsafe, or no longer matched to live
-  evidence.
+  provider-profile proof and the credential-safe `adapter_execution_contract`
+  from provider imbalance research into summary/config/runbook and manifest
+  artifacts, and blocks launch packaging when either contract is missing,
+  unsafe, or no longer matched to live evidence.
 - Provider market-data imbalance launch packaging now bridges ready provider
   research evidence into broker handoff artifacts:
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
