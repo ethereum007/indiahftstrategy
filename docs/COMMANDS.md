@@ -4473,13 +4473,14 @@ This writes `provider_market_data_live_capture_commands.csv`,
 `provider_market_data_adapter_handoff.json`, summary/check/action artifacts, a
 runbook, and a manifest. It fails closed when the ready preflight does not carry
 the source blank env-template proof, upstream `live_fetch_contract`, or
-exchange/session metadata inherited from preflight, then fingerprints that
-source env-template in the bundle manifest. The command queue is adapter-neutral
-by default (`provider-adapter capture ... --exchange NFO ...`) and can be
-replaced with `--adapter-command-template` once the Arrow.money or iRage client
-command is approved. The adapter handoff contract carries provider, transport,
-exchange, endpoint, source/market session metadata, output schema columns,
-per-window capture commands, credential env-var names, source and capture blank
+the provider-profile contract/SHA or exchange/session metadata inherited from
+preflight, then fingerprints that source env-template in the bundle manifest.
+The command queue is adapter-neutral by default (`provider-adapter capture ...
+--exchange NFO ...`) and can be replaced with `--adapter-command-template` once
+the Arrow.money or iRage client command is approved. The adapter handoff
+contract carries provider, transport, exchange, endpoint, source/market session
+metadata, provider-profile SHA/capabilities, output schema columns, per-window
+capture commands, credential env-var names, source and capture blank
 env-template references, runtime presence booleans, the live-fetch contract, and
 the carried `adapter_execution_contract` with capture-bundle readiness, rendered
 capture commands, handoff/env-template file names, command count, and the exact

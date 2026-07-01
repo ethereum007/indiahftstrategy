@@ -132,6 +132,12 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert len(summary["adapter_handoff_sha256"]) == 64
     assert summary["source_live_fetch_contract_available"]
     assert summary["source_live_fetch_contract_next_gate"] == "provider_fetcher"
+    assert len(summary["provider_profile_sha256"]) == 64
+    assert summary["provider_profile_adapter"] == "arrow_money"
+    assert summary["provider_profile_transports"] == "file;rest;websocket"
+    assert "live_ticks" in summary["provider_profile_capabilities"]
+    assert summary["preflight_provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert bool(summary["provider_profile_matches_preflight"])
     assert summary["provider_capture_command_count"] == 2
     assert summary["preflight_provider_capture_command_count"] == 2
     assert summary["provider_capture_command_missing_count"] == 0
@@ -158,6 +164,10 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["source_session"]["timezone"] == "Asia/Kolkata"
     assert bundle["market_session"]["open_local"] == "09:15"
     assert bundle["preflight"]["exchange"] == "NFO"
+    assert bundle["provider_profile"]["provider"] == "arrow_money"
+    assert bundle["provider_profile"]["adapter"] == "arrow_money"
+    assert bundle["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
+    assert bundle["preflight"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert bundle["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert bundle["provider_capture_commands"][0]["command_base"] == "provider-adapter capture"
     assert bundle["preflight"]["provider_capture_commands"][0]["provider"] == "arrow_money"
@@ -168,6 +178,8 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["adapter_execution_contract"]["command_count"] == 2
     assert bundle["adapter_execution_contract"]["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert bundle["adapter_execution_contract"]["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
+    assert bundle["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert "live_ticks" in bundle["adapter_execution_contract"]["provider_capabilities"]
     assert bundle["adapter_execution_contract"]["credential_env_vars"] == [
         "ARROW_MONEY_API_KEY",
         "ARROW_MONEY_API_SECRET",
@@ -191,8 +203,10 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert handoff["source_credential_env_template"]["exists"] is True
     assert handoff["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
     assert handoff["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
+    assert handoff["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert handoff["adapter_execution_contract"]["provider"] == "arrow_money"
     assert handoff["adapter_execution_contract"]["capture_bundle_ready"] is True
+    assert handoff["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert handoff["adapter_execution_contract"]["command_count"] == 2
     assert handoff["adapter_execution_contract"]["capture_commands"][0]["adapter_command"] == handoff["capture_windows"][0]["adapter_command"]
     assert handoff["adapter_execution_contract"]["values_stored"] is False
@@ -219,6 +233,7 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["market_session"]["open_local"] == "09:15"
+    assert manifest["extra"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert manifest["inputs"]["source_credential_env_template"]["sha256"] == summary["source_credential_env_template_sha256"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["adapter_execution_contract"]["capture_bundle_ready"] is True
@@ -322,6 +337,33 @@ def test_provider_market_data_live_capture_bundle_blocks_missing_preflight_live_
     assert "preflight_live_fetch_contract_carried" in failed
     assert not bool(report.summary.iloc[0]["source_live_fetch_contract_available"])
     assert report.action_queue.loc[0, "action"] == "rerun_preflight_with_live_fetch_contract"
+    assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
+
+
+def test_provider_market_data_live_capture_bundle_blocks_missing_preflight_provider_profile(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = _live_packet(plan)
+    preflight = _write_preflight(tmp_path, live_packet)
+    preflight_config = _mutate_json(
+        preflight.output_dir / "provider_market_data_live_preflight_config.json",
+        lambda payload: (
+            payload.pop("provider_profile", None),
+            payload["session_packet"].pop("provider_profile", None),
+        ),
+    )
+
+    report = write_provider_market_data_live_capture_bundle(
+        live_packet,
+        tmp_path / "capture_bundle",
+        config=ProviderMarketDataLiveCaptureBundleConfig(preflight_config_path=str(preflight_config)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "preflight_provider_profile_carried" in failed
+    assert report.summary.iloc[0]["preflight_provider_profile_sha256"] == ""
+    assert not bool(report.summary.iloc[0]["provider_profile_matches_preflight"])
+    assert report.action_queue.loc[0, "action"] == "rerun_preflight_with_provider_profile"
     assert report.action_queue.loc[0, "next_gate"] == "preflight-provider-market-data-live-session"
 
 

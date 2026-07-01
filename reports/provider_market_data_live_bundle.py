@@ -128,6 +128,7 @@ def write_provider_market_data_live_capture_bundle(
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
             "source_credential_env_template": source_env_template,
+            "provider_profile": _mapping(bundle.get("provider_profile")),
             "adapter_execution_contract": _mapping(bundle.get("adapter_execution_contract")),
             "live_fetch_contract": _mapping(bundle.get("live_fetch_contract")),
             "provider_capture_commands": _list(bundle.get("provider_capture_commands")),
@@ -325,6 +326,8 @@ def _checks(
     preflight_required = bool(preflight_provided or config.require_preflight_ready)
     source_env_template = _preflight_credential_env_template(preflight)
     live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    session_provider_profile = _session_provider_profile(packet)
+    preflight_provider_profile = _preflight_provider_profile(preflight)
     session_provider_capture_commands = _session_provider_capture_commands(packet)
     preflight_provider_capture_commands = _preflight_provider_capture_commands(preflight)
     session_provider_capture_command_count = len(session_provider_capture_commands)
@@ -369,6 +372,22 @@ def _checks(
             and _text(live_fetch_contract.get("next_gate")) == "provider_fetcher"
         )
     )
+    session_provider_profile_ok = _provider_profile_matches_packet(session_provider_profile, packet)
+    preflight_provider_profile_ok = (
+        not preflight_required
+        or (
+            preflight_provided
+            and not preflight_error
+            and _provider_profile_matches_packet(preflight_provider_profile, packet)
+        )
+    )
+    preflight_provider_profile_match_ok = (
+        not preflight_required
+        or (
+            preflight_provider_profile_ok
+            and _provider_profiles_match(session_provider_profile, preflight_provider_profile)
+        )
+    )
     preflight_exchange_ok = (
         not preflight_required
         or (
@@ -406,6 +425,9 @@ def _checks(
         _check("preflight_packet_matches_session", preflight_packet_match, "is", True, preflight_packet_match if preflight_provided else not config.require_preflight_ready, "preflight config must reference the same live session packet"),
         _check("preflight_credential_env_template_carried", _text(source_env_template.get("path")), "exists", True, source_env_template_ok, "preflight config must carry blank source credential env-template proof"),
         _check("preflight_live_fetch_contract_carried", bool(live_fetch_contract.get("available")), "is", True, live_fetch_contract_ok, "preflight config must carry the upstream live fetch-contract handoff"),
+        _check("session_provider_profile_carried", _text(session_provider_profile.get("sha256")), "matches", "live session provider/adapter/transport", session_provider_profile_ok, "live session packet must carry the provider-profile contract"),
+        _check("preflight_provider_profile_carried", _text(preflight_provider_profile.get("sha256")), "matches", "preflight provider/adapter/transport", preflight_provider_profile_ok, "preflight config must carry the provider-profile contract"),
+        _check("preflight_provider_profile_matches_session", _text(preflight_provider_profile.get("sha256")), "==", _text(session_provider_profile.get("sha256")), preflight_provider_profile_match_ok, "preflight provider-profile contract must match the live session packet"),
         _check("session_provider_capture_commands_carried", session_provider_capture_command_count, "==", command_count, session_provider_capture_commands_ok, "live session packet must carry per-window provider capture command handoffs"),
         _check("preflight_provider_capture_commands_carried", preflight_provider_capture_command_count, "==", command_count, preflight_provider_capture_commands_ok, "preflight config must carry per-window provider capture command handoffs"),
         _check("preflight_provider_capture_commands_match_session", preflight_provider_capture_command_count, "matches", session_provider_capture_command_count, preflight_provider_capture_commands_match_ok, "preflight provider capture command handoffs must match the live session packet"),
@@ -445,6 +467,8 @@ def _summary(
     next_action = action_queue.iloc[0] if not action_queue.empty else None
     source_env_template = _preflight_credential_env_template(preflight)
     live_fetch_contract = _preflight_live_fetch_contract(preflight)
+    session_provider_profile = _session_provider_profile(packet)
+    preflight_provider_profile = _preflight_provider_profile(preflight)
     session_provider_capture_commands = _session_provider_capture_commands(packet)
     preflight_provider_capture_commands = _preflight_provider_capture_commands(preflight)
     source_session = _mapping(packet.get("source_session"))
@@ -479,6 +503,16 @@ def _summary(
                 "source_live_fetch_contract_available": bool(live_fetch_contract.get("available")),
                 "source_live_fetch_contract_next_gate": _text(live_fetch_contract.get("next_gate")),
                 "source_live_fetch_contract_command_template": _text(live_fetch_contract.get("command_template")),
+                "provider_profile_sha256": _text(session_provider_profile.get("sha256")),
+                "provider_profile_adapter": _text(session_provider_profile.get("adapter")),
+                "provider_profile_auth_required": bool(session_provider_profile.get("auth_required", False)),
+                "provider_profile_transports": ";".join(_string_list(session_provider_profile.get("transports"))),
+                "provider_profile_capabilities": ";".join(_string_list(session_provider_profile.get("capabilities"))),
+                "preflight_provider_profile_sha256": _text(preflight_provider_profile.get("sha256")),
+                "provider_profile_matches_preflight": _provider_profiles_match(
+                    session_provider_profile,
+                    preflight_provider_profile,
+                ),
                 "provider_capture_command_count": int(len(session_provider_capture_commands)),
                 "provider_capture_command_missing_count": max(int(len(commands)) - int(len(session_provider_capture_commands)), 0),
                 "preflight_provider_capture_command_count": int(len(preflight_provider_capture_commands)),
@@ -575,6 +609,7 @@ def _bundle(
             "values_stored": False,
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
+        "provider_profile": _session_provider_profile(packet),
         "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "provider_capture_commands": _session_provider_capture_commands(packet),
@@ -583,6 +618,7 @@ def _bundle(
             "next_gate": _text(preflight.get("next_gate")),
             "primary_action_status": _text(preflight.get("primary_action_status")),
             "credential_env_template": _credential_env_template_contract(summary),
+            "provider_profile": _preflight_provider_profile(preflight),
             "adapter_execution_contract": _preflight_adapter_execution_contract(preflight),
             "live_fetch_contract": _preflight_live_fetch_contract(preflight),
             "provider_capture_commands": _preflight_provider_capture_commands(preflight),
@@ -643,6 +679,7 @@ def _adapter_handoff(
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
         "capture_env_template": ENV_TEMPLATE_NAME,
+        "provider_profile": _session_provider_profile(packet),
         "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
         "provider_capture_commands": _session_provider_capture_commands(packet),
@@ -679,6 +716,7 @@ def _adapter_execution_contract(
     contract = _mapping(packet.get("adapter_execution_contract"))
     if not contract:
         contract = _preflight_adapter_execution_contract(preflight)
+    provider_profile = _session_provider_profile(packet) or _preflight_provider_profile(preflight)
     out = contract.copy()
     ready_commands = _records(_commands_with_status(commands, "ready" if bool(summary["ready"]) else "blocked"))
     out.update(
@@ -703,6 +741,8 @@ def _adapter_execution_contract(
             "capture_commands": ready_commands,
             "post_capture_ingest_command": str(summary["post_capture_ingest_command"]),
             "adapter_command_template": config.adapter_command_template or DEFAULT_ADAPTER_TEMPLATE,
+            "provider_profile_sha256": _text(provider_profile.get("sha256")),
+            "provider_capabilities": _string_list(provider_profile.get("capabilities")),
             "values_stored": False,
         }
     )
@@ -754,6 +794,17 @@ def _preflight_adapter_execution_contract(preflight: dict[str, Any]) -> dict[str
     if not contract:
         contract = _mapping(_mapping(preflight.get("session_packet")).get("adapter_execution_contract"))
     return contract.copy()
+
+
+def _session_provider_profile(packet: dict[str, Any]) -> dict[str, Any]:
+    return _mapping(packet.get("provider_profile")).copy()
+
+
+def _preflight_provider_profile(preflight: dict[str, Any]) -> dict[str, Any]:
+    profile = _mapping(preflight.get("provider_profile"))
+    if not profile:
+        profile = _mapping(_mapping(preflight.get("session_packet")).get("provider_profile"))
+    return profile.copy()
 
 
 def _session_provider_capture_commands(packet: dict[str, Any]) -> list[dict[str, str]]:
@@ -904,6 +955,32 @@ def _live_contract_metadata_matches_packet(packet: dict[str, Any], live_fetch_co
     )
 
 
+def _provider_profile_matches_packet(profile: dict[str, Any], packet: dict[str, Any]) -> bool:
+    if not profile:
+        return False
+    adapter_contract = _mapping(packet.get("adapter_execution_contract"))
+    adapter = _text(adapter_contract.get("adapter") or packet.get("adapter") or packet.get("provider"))
+    transport = _text(packet.get("transport"))
+    return (
+        _text(profile.get("provider")) == _text(packet.get("provider"))
+        and _text(profile.get("adapter")) == adapter
+        and transport in _string_list(profile.get("transports"))
+        and bool(_text(profile.get("sha256")))
+        and bool(profile.get("values_stored", True)) is False
+    )
+
+
+def _provider_profiles_match(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    if not left or not right:
+        return False
+    return (
+        _text(left.get("sha256")) == _text(right.get("sha256"))
+        and _text(left.get("provider")) == _text(right.get("provider"))
+        and _text(left.get("adapter")) == _text(right.get("adapter"))
+        and _string_list(left.get("transports")) == _string_list(right.get("transports"))
+    )
+
+
 def _session_contract_text(session: dict[str, Any]) -> str:
     return (
         f"{_text(session.get('timezone'))}|"
@@ -980,6 +1057,7 @@ def _next_gate_for_check(check: str) -> str:
         "source_session_contract_carried",
         "market_session_contract_carried",
         "source_session_matches_market_session",
+        "session_provider_profile_carried",
     }:
         return "plan-provider-market-data-live-session"
     if check.startswith("preflight"):
@@ -1020,6 +1098,12 @@ def _repair_action(check: str) -> str:
         return "rerun_preflight_with_credential_env_template"
     if check == "preflight_live_fetch_contract_carried":
         return "rerun_preflight_with_live_fetch_contract"
+    if check == "session_provider_profile_carried":
+        return "regenerate_live_session_with_provider_profile"
+    if check == "preflight_provider_profile_carried":
+        return "rerun_preflight_with_provider_profile"
+    if check == "preflight_provider_profile_matches_session":
+        return "rerun_preflight_with_session_provider_profile"
     if check == "session_provider_capture_commands_carried":
         return "regenerate_live_session_with_provider_capture_commands"
     if check == "preflight_provider_capture_commands_carried":
@@ -1055,6 +1139,7 @@ def _runbook_markdown(summary: pd.Series, commands: pd.DataFrame, action_queue: 
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Commands: {summary['command_count']}",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (preflight match: {'yes' if bool(summary['provider_capture_commands_match_preflight']) else 'no'})",
         f"- Capture env template: `{ENV_TEMPLATE_NAME}`",
