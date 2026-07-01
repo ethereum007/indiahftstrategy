@@ -204,10 +204,11 @@
   capture env-template and adapter handoff SHA-256 values directly for
   strategy-layer audit, and now carry provider capture command counts/lists plus
   capture-bundle command match proof into the imbalance research layer. The
-  wrapper now also carries the credential-safe `adapter_execution_contract` from
-  the nested research handoff into summary/config/runbook and manifest artifacts,
-  and blocks strategy research when that contract is missing, unsafe, or no
-  longer matched to live evidence.
+  wrapper now also carries provider-profile proof and the credential-safe
+  `adapter_execution_contract` from the nested research handoff into
+  summary/config/runbook and manifest artifacts, and blocks strategy research
+  when either contract is missing, unsafe, or no longer matched to live
+  evidence.
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider

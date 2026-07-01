@@ -4625,13 +4625,13 @@ tick folds, then writes
 artifacts, and a manifest. When available, those wrapper artifacts also retain
 the approved capture bundle, blank credential env-template, adapter handoff
 paths, upstream source credential env-template proof, exchange/session metadata,
-`live_fetch_contract`, and credential-safe `adapter_execution_contract` carried
-by the nested research handoff. If the adapter contract is missing, stores
-credential values, or no longer matches live evidence, the strategy pipeline is
-blocked before imbalance research runs. If the live evidence is synthetic smoke
-evidence, not research-ready, or too thin, the strategy pipeline is not run and
-the action queue points back to the provider evidence or imbalance research
-gate.
+`live_fetch_contract`, provider-profile contract/SHA, and credential-safe
+`adapter_execution_contract` carried by the nested research handoff. If the
+provider profile or adapter contract is missing, stores credential values, or no
+longer matches live evidence, the strategy pipeline is blocked before imbalance
+research runs. If the live evidence is synthetic smoke evidence, not
+research-ready, or too thin, the strategy pipeline is not run and the action
+queue points back to the provider evidence or imbalance research gate.
 
 Review the provider imbalance research evidence before building broker launch
 artifacts:

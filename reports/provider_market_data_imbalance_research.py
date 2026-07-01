@@ -180,6 +180,9 @@ def write_provider_market_data_imbalance_research(
             "exchange": str(summary.iloc[0]["exchange"]),
             "source_session": _source_session_contract_from_summary(summary.iloc[0]),
             "market_session": _market_session_contract_from_summary(summary.iloc[0]),
+            "provider_profile": _mapping(payload.get("provider_profile")),
+            "provider_profile_matches_session": bool(summary.iloc[0]["provider_profile_matches_session"]),
+            "provider_profile_matches_bundle": bool(summary.iloc[0]["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
@@ -210,10 +213,19 @@ def write_provider_market_data_imbalance_research(
                 summary.iloc[0]["capture_bundle_provider_capture_commands_match_session"]
             ),
             "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
+            "adapter_contract_provider_profile_sha256": str(
+                summary.iloc[0]["adapter_contract_provider_profile_sha256"]
+            ),
+            "adapter_contract_provider_profile_matches_evidence": bool(
+                summary.iloc[0]["adapter_contract_provider_profile_matches_evidence"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary.iloc[0]["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary.iloc[0]),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary.iloc[0]),
+                "provider_profile": _mapping(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_profile")
+                ),
                 "provider_capture_commands": _list(
                     _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
                 ),
@@ -383,6 +395,11 @@ def _checks(
         and bool(_text(handoff_row.get("adapter_contract_exchange")))
         and not _truthy(handoff_row.get("adapter_contract_values_stored"))
     )
+    provider_profile_carried = (
+        bool(_text(handoff_row.get("provider_profile_sha256")))
+        and bool(_text(handoff_row.get("provider_profile_adapter")))
+        and bool(_text(handoff_row.get("provider_profile_transports")))
+    )
     return pd.DataFrame(
         [
             _check(
@@ -440,6 +457,40 @@ def _checks(
                 "live evidence",
                 _truthy(handoff_row.get("adapter_contract_metadata_matches_evidence")) if bundle_provided else True,
                 "provider research handoff adapter execution contract no longer matches live evidence",
+            ),
+            _check(
+                "provider_research_handoff_provider_profile_carried",
+                _text(handoff_row.get("provider_profile_sha256")),
+                "has",
+                "provider profile",
+                provider_profile_carried,
+                "provider research handoff is missing provider-profile proof",
+            ),
+            _check(
+                "provider_research_handoff_provider_profile_matches_session",
+                _text(handoff_row.get("provider_profile_sha256")),
+                "matches",
+                "live session",
+                _truthy(handoff_row.get("provider_profile_matches_session")),
+                "provider research handoff provider-profile proof no longer matches the live session packet",
+            ),
+            _check(
+                "provider_research_handoff_provider_profile_matches_bundle",
+                _text(handoff_row.get("capture_bundle_provider_profile_sha256")),
+                "matches",
+                _text(handoff_row.get("provider_profile_sha256")),
+                _truthy(handoff_row.get("provider_profile_matches_bundle")) if bundle_provided else True,
+                "provider research handoff provider-profile proof no longer matches the capture bundle",
+            ),
+            _check(
+                "provider_research_handoff_adapter_provider_profile_matches_evidence",
+                _text(handoff_row.get("adapter_contract_provider_profile_sha256")),
+                "==",
+                _text(handoff_row.get("provider_profile_sha256")),
+                _truthy(handoff_row.get("adapter_contract_provider_profile_matches_evidence"))
+                if bundle_provided
+                else True,
+                "provider research handoff adapter contract provider-profile SHA no longer matches live evidence",
             ),
             _check(
                 "imbalance_research_pipeline_ready",
@@ -576,6 +627,26 @@ def _summary(
                 "adapter_contract_metadata_matches_evidence": _truthy(
                     handoff_row.get("adapter_contract_metadata_matches_evidence")
                 ),
+                "provider_profile_sha256": str(handoff_row.get("provider_profile_sha256", "") or ""),
+                "provider_profile_adapter": str(handoff_row.get("provider_profile_adapter", "") or ""),
+                "provider_profile_auth_required": _truthy(handoff_row.get("provider_profile_auth_required")),
+                "provider_profile_transports": str(handoff_row.get("provider_profile_transports", "") or ""),
+                "provider_profile_capabilities": str(handoff_row.get("provider_profile_capabilities", "") or ""),
+                "capture_bundle_provider_profile_sha256": str(
+                    handoff_row.get("capture_bundle_provider_profile_sha256", "") or ""
+                ),
+                "provider_profile_matches_session": _truthy(handoff_row.get("provider_profile_matches_session")),
+                "provider_profile_matches_bundle": _truthy(handoff_row.get("provider_profile_matches_bundle"))
+                if _truthy(handoff_row.get("capture_bundle_provided"))
+                else True,
+                "adapter_contract_provider_profile_sha256": str(
+                    handoff_row.get("adapter_contract_provider_profile_sha256", "") or ""
+                ),
+                "adapter_contract_provider_profile_matches_evidence": _truthy(
+                    handoff_row.get("adapter_contract_provider_profile_matches_evidence")
+                )
+                if _truthy(handoff_row.get("capture_bundle_provided"))
+                else True,
                 "provider_capture_command_count": int(handoff_row.get("provider_capture_command_count", 0) or 0),
                 "provider_capture_command_providers": str(
                     handoff_row.get("provider_capture_command_providers", "") or ""
@@ -719,6 +790,12 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_profile": _mapping(
+            handoff.config.get("provider_profile") if isinstance(handoff.config, dict) else {}
+        ),
+        "live_session_provider_profile": _mapping(
+            handoff.config.get("live_session_provider_profile") if isinstance(handoff.config, dict) else {}
+        ),
         "provider_capture_commands": _list(
             handoff.config.get("provider_capture_commands") if isinstance(handoff.config, dict) else []
         ),
@@ -811,6 +888,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
@@ -1068,6 +1146,30 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         "adapter_contract_metadata_matches_evidence": _truthy(
             row.get("adapter_contract_metadata_matches_evidence")
         ),
+        "provider_profile": _mapping(
+            handoff.config.get("provider_profile") if isinstance(handoff.config, dict) else {}
+        ),
+        "live_session_provider_profile": _mapping(
+            handoff.config.get("live_session_provider_profile") if isinstance(handoff.config, dict) else {}
+        ),
+        "capture_bundle_provider_profile": _mapping(
+            _mapping(handoff.config.get("capture_bundle") if isinstance(handoff.config, dict) else {}).get(
+                "capture_bundle_provider_profile"
+            )
+        ),
+        "provider_profile_sha256": str(row.get("provider_profile_sha256", "") or ""),
+        "provider_profile_matches_session": _truthy(row.get("provider_profile_matches_session")),
+        "provider_profile_matches_bundle": _truthy(row.get("provider_profile_matches_bundle"))
+        if _truthy(row.get("capture_bundle_provided"))
+        else True,
+        "adapter_contract_provider_profile_sha256": str(
+            row.get("adapter_contract_provider_profile_sha256", "") or ""
+        ),
+        "adapter_contract_provider_profile_matches_evidence": _truthy(
+            row.get("adapter_contract_provider_profile_matches_evidence")
+        )
+        if _truthy(row.get("capture_bundle_provided"))
+        else True,
         "provider_capture_command_count": int(row.get("provider_capture_command_count", 0) or 0),
         "provider_capture_command_providers": str(row.get("provider_capture_command_providers", "") or ""),
         "provider_capture_command_transports": str(row.get("provider_capture_command_transports", "") or ""),
