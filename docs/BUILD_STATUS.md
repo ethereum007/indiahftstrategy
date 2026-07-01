@@ -387,9 +387,10 @@
   dispatch-roundtrip fingerprints forward from route enable: broker-dispatch
   summary/config and manifest extras expose the dispatch-roundtrip capture
   env-template and adapter handoff SHA-256 values directly. Broker dispatch also
-  preserves the final round-trip `adapter_execution_contract` and blocks send
-  preparation when the route-enable handoff is missing, unsafe, stale, or no
-  longer matched to the runtime-session adapter contract.
+  preserves the final round-trip provider-profile proof plus the
+  credential-safe `adapter_execution_contract` and blocks send preparation when
+  either route-enable handoff is missing, unsafe, stale, or no longer matched
+  to runtime-session evidence.
 - Provider market-data imbalance broker dispatch send now carries those
   dispatch-roundtrip fingerprints forward from broker dispatch:
   broker-dispatch-send summary/config and manifest extras expose the
