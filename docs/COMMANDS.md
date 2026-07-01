@@ -5061,11 +5061,12 @@ preserves the capture bundle, blank credential env-template, and adapter
 handoff paths, source credential env-template proof, exchange/session metadata,
 capture-bundle session match proof, and `live_fetch_contract` inherited from
 route-enable. It also carries the credential-safe `adapter_execution_contract`
-from route-enable so send preparation can trace the live data adapter without
-exposing credential values. If that adapter contract is missing, unsafe, or no
-longer matched to live evidence, broker-dispatch blocks send preparation and
-routes back to `review-provider-market-data-imbalance-route-enable`. It also
-carries the route-enable-retained
+from route-enable plus the provider-profile contract/SHA so send preparation can
+trace the live data adapter without exposing credential values. If that
+provider profile or adapter contract is missing, unsafe, or no longer matched
+to live evidence, broker-dispatch blocks send preparation and routes back to
+`review-provider-market-data-imbalance-route-enable`. It also carries the
+route-enable-retained
 validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
 exchange/session identity, `live_fetch_contract`, final round-trip
