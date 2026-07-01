@@ -278,10 +278,10 @@
   values directly, carry provider capture command counts/lists plus
   capture-bundle command match proof from scorecard into scale-up planning, and
   manifest inputs fingerprint those files for iRage/live provider handoff
-  review. Scale-up planning also carries the credential-safe
-  `adapter_execution_contract` from the provider scorecard and blocks runtime
-  telemetry readiness when that contract is missing, unsafe, or no longer
-  matched to live evidence.
+  review. Scale-up planning also carries provider-profile proof plus the
+  credential-safe `adapter_execution_contract` from the provider scorecard and
+  blocks runtime telemetry readiness when either contract is missing, unsafe,
+  or no longer matched to live evidence.
 - Provider market-data imbalance runtime telemetry now keeps that live adapter
   audit trail intact after scale-up: runtime telemetry summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256

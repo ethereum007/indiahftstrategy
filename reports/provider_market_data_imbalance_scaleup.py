@@ -243,6 +243,9 @@ def write_provider_market_data_imbalance_scaleup_plan(
             "exchange": str(summary_row["exchange"]),
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
+            "provider_profile": _mapping(payload.get("provider_profile")),
+            "provider_profile_matches_session": bool(summary_row["provider_profile_matches_session"]),
+            "provider_profile_matches_bundle": bool(summary_row["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary_row["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary_row["adapter_handoff_exists"]),
@@ -273,10 +276,17 @@ def write_provider_market_data_imbalance_scaleup_plan(
                 summary_row["capture_bundle_provider_capture_commands_match_session"]
             ),
             "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
+            "adapter_contract_provider_profile_sha256": str(summary_row["adapter_contract_provider_profile_sha256"]),
+            "adapter_contract_provider_profile_matches_evidence": bool(
+                summary_row["adapter_contract_provider_profile_matches_evidence"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
                 "market_session": _capture_bundle_market_session_contract_from_summary(summary_row),
+                "provider_profile": _mapping(
+                    _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_profile")
+                ),
                 "provider_capture_commands": _list(
                     _mapping(payload.get("capture_bundle")).get("capture_bundle_provider_capture_commands")
                 ),
@@ -479,6 +489,7 @@ def _checks(
         and _first_bool(scorecard_summary, "capture_bundle_provider_capture_commands_match_session")
     )
     adapter_contract_carried = _adapter_contract_carried(scorecard_summary)
+    provider_profile_carried = _provider_profile_carried(scorecard_summary)
     rows.append(
         _check(
             "scaleup_plan_runnable",
@@ -560,6 +571,48 @@ def _checks(
             "live evidence",
             _first_bool(scorecard_summary, "adapter_contract_metadata_matches_evidence") if bundle_provided else True,
             "provider imbalance scorecard adapter execution contract no longer matches live evidence",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_provider_profile_carried",
+            _first_text(scorecard_summary, "provider_profile_sha256"),
+            "has",
+            "provider profile",
+            provider_profile_carried,
+            "provider imbalance scorecard is missing provider-profile proof",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_provider_profile_matches_session",
+            _first_text(scorecard_summary, "provider_profile_sha256"),
+            "matches",
+            "live session",
+            _first_bool(scorecard_summary, "provider_profile_matches_session"),
+            "provider imbalance scorecard provider-profile proof no longer matches the live session packet",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_provider_profile_matches_bundle",
+            _first_text(scorecard_summary, "capture_bundle_provider_profile_sha256"),
+            "matches",
+            _first_text(scorecard_summary, "provider_profile_sha256"),
+            _first_bool(scorecard_summary, "provider_profile_matches_bundle") if bundle_provided else True,
+            "provider imbalance scorecard provider-profile proof no longer matches the capture bundle",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_adapter_provider_profile_matches_evidence",
+            _first_text(scorecard_summary, "adapter_contract_provider_profile_sha256"),
+            "==",
+            _first_text(scorecard_summary, "provider_profile_sha256"),
+            _first_bool(scorecard_summary, "adapter_contract_provider_profile_matches_evidence")
+            if bundle_provided
+            else True,
+            "provider imbalance scorecard adapter contract provider-profile SHA no longer matches live evidence",
         )
     )
     return pd.DataFrame(rows)
@@ -759,6 +812,24 @@ def _summary(
                 "adapter_contract_metadata_matches_evidence": _first_bool(
                     scorecard_summary, "adapter_contract_metadata_matches_evidence"
                 ),
+                "provider_profile_sha256": _first_text(scorecard_summary, "provider_profile_sha256"),
+                "provider_profile_adapter": _first_text(scorecard_summary, "provider_profile_adapter"),
+                "provider_profile_auth_required": _first_bool(scorecard_summary, "provider_profile_auth_required"),
+                "provider_profile_transports": _first_text(scorecard_summary, "provider_profile_transports"),
+                "provider_profile_capabilities": _first_text(scorecard_summary, "provider_profile_capabilities"),
+                "capture_bundle_provider_profile_sha256": _first_text(
+                    scorecard_summary, "capture_bundle_provider_profile_sha256"
+                ),
+                "provider_profile_matches_session": _first_bool(scorecard_summary, "provider_profile_matches_session"),
+                "provider_profile_matches_bundle": _first_bool(scorecard_summary, "provider_profile_matches_bundle")
+                if _first_bool(scorecard_summary, "capture_bundle_provided")
+                else True,
+                "adapter_contract_provider_profile_sha256": _first_text(
+                    scorecard_summary, "adapter_contract_provider_profile_sha256"
+                ),
+                "adapter_contract_provider_profile_matches_evidence": _first_bool(
+                    scorecard_summary, "adapter_contract_provider_profile_matches_evidence"
+                ),
                 "provider_capture_command_count": int(
                     _first_number(scorecard_summary, "provider_capture_command_count")
                     or _first_number(launch_evidence_summary, "provider_capture_command_count")
@@ -919,6 +990,8 @@ def _config(
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
+        "provider_profile": _mapping(scorecard_config.get("provider_profile")),
+        "live_session_provider_profile": _mapping(scorecard_config.get("live_session_provider_profile")),
         "provider_capture_commands": _provider_capture_commands(scorecard_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(scorecard_config),
         "adapter_execution_contract": _mapping(scorecard_config.get("adapter_execution_contract")),
@@ -991,6 +1064,8 @@ def _next_gate_for_check(check: str) -> str:
         or check.startswith("provider_imbalance_scorecard")
         or check.startswith("scorecard_provider_capture")
         or check.startswith("scorecard_adapter_execution_contract")
+        or check.startswith("scorecard_provider_profile")
+        or check.startswith("scorecard_adapter_provider_profile")
     ):
         return "score-provider-market-data-imbalance-readiness"
     if check.startswith("provider_launch_evidence") or check.startswith("launch_evidence"):
@@ -1030,6 +1105,8 @@ def _repair_action(check: str) -> str:
         or check.startswith("provider_imbalance_scorecard")
         or check.startswith("scorecard_provider_capture")
         or check.startswith("scorecard_adapter_execution_contract")
+        or check.startswith("scorecard_provider_profile")
+        or check.startswith("scorecard_adapter_provider_profile")
     ):
         return "score_provider_imbalance_readiness"
     if check.startswith("provider_launch_evidence") or check.startswith("launch_evidence"):
@@ -1066,6 +1143,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Source credential env template: {summary['source_credential_env_template_path'] or 'not provided'}",
         f"- Live fetch contract: {'available' if bool(summary['source_live_fetch_contract_available']) else 'missing'}",
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
+        f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         "",
         "## Checks",
@@ -1254,6 +1332,14 @@ def _adapter_contract_carried(scorecard_summary: pd.DataFrame) -> bool:
     )
 
 
+def _provider_profile_carried(scorecard_summary: pd.DataFrame) -> bool:
+    return (
+        bool(_first_text(scorecard_summary, "provider_profile_sha256"))
+        and bool(_first_text(scorecard_summary, "provider_profile_adapter"))
+        and bool(_first_text(scorecard_summary, "provider_profile_transports"))
+    )
+
+
 def _adapter_contract_metadata_text(scorecard_summary: pd.DataFrame) -> str:
     return (
         f"{_first_text(scorecard_summary, 'adapter_contract_provider')}|"
@@ -1269,6 +1355,9 @@ def _provider_capture_bundle(summary: pd.Series, scorecard_config: dict[str, Any
     if payload:
         carried = {str(key): _jsonable(value) for key, value in payload.items()}
         carried.setdefault("adapter_execution_contract", _mapping(scorecard_config.get("adapter_execution_contract")))
+        carried.setdefault("provider_profile", _mapping(scorecard_config.get("provider_profile")))
+        carried.setdefault("live_session_provider_profile", _mapping(scorecard_config.get("live_session_provider_profile")))
+        carried.setdefault("capture_bundle_provider_profile", _mapping(payload.get("capture_bundle_provider_profile")))
         carried.setdefault("adapter_contract_provider", str(summary["adapter_contract_provider"]))
         carried.setdefault("adapter_contract_transport", str(summary["adapter_contract_transport"]))
         carried.setdefault("adapter_contract_market", str(summary["adapter_contract_market"]))
@@ -1277,6 +1366,17 @@ def _provider_capture_bundle(summary: pd.Series, scorecard_config: dict[str, Any
         carried.setdefault(
             "adapter_contract_metadata_matches_evidence",
             bool(summary["adapter_contract_metadata_matches_evidence"]),
+        )
+        carried.setdefault("provider_profile_sha256", str(summary["provider_profile_sha256"]))
+        carried.setdefault("provider_profile_matches_session", bool(summary["provider_profile_matches_session"]))
+        carried.setdefault("provider_profile_matches_bundle", bool(summary["provider_profile_matches_bundle"]))
+        carried.setdefault(
+            "adapter_contract_provider_profile_sha256",
+            str(summary["adapter_contract_provider_profile_sha256"]),
+        )
+        carried.setdefault(
+            "adapter_contract_provider_profile_matches_evidence",
+            bool(summary["adapter_contract_provider_profile_matches_evidence"]),
         )
         carried.setdefault("provider_capture_command_count", int(summary["provider_capture_command_count"]))
         carried.setdefault(
@@ -1354,6 +1454,18 @@ def _provider_capture_bundle(summary: pd.Series, scorecard_config: dict[str, Any
         "adapter_contract_values_stored": bool(summary["adapter_contract_values_stored"]),
         "adapter_contract_metadata_matches_evidence": bool(
             summary["adapter_contract_metadata_matches_evidence"]
+        ),
+        "provider_profile": _mapping(scorecard_config.get("provider_profile")),
+        "live_session_provider_profile": _mapping(scorecard_config.get("live_session_provider_profile")),
+        "capture_bundle_provider_profile": _mapping(
+            _mapping(scorecard_config.get("capture_bundle")).get("capture_bundle_provider_profile")
+        ),
+        "provider_profile_sha256": str(summary["provider_profile_sha256"]),
+        "provider_profile_matches_session": bool(summary["provider_profile_matches_session"]),
+        "provider_profile_matches_bundle": bool(summary["provider_profile_matches_bundle"]),
+        "adapter_contract_provider_profile_sha256": str(summary["adapter_contract_provider_profile_sha256"]),
+        "adapter_contract_provider_profile_matches_evidence": bool(
+            summary["adapter_contract_provider_profile_matches_evidence"]
         ),
         "provider_capture_command_count": int(summary["provider_capture_command_count"]),
         "provider_capture_command_providers": str(summary["provider_capture_command_providers"]),

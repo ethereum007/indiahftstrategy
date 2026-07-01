@@ -4788,10 +4788,11 @@ artifacts plus a nested generic `scaleup` folder with `scaleup_plan.csv`,
 retaining the upstream capture bundle, blank credential env-template, and
 adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, `live_fetch_contract`, and the
-credential-safe `adapter_execution_contract` from the provider scorecard in the
-provider wrapper summary/config/runbook and manifest. Missing, unsafe, or
-mismatched adapter-contract proof keeps scale-up blocked at provider scorecard
-readiness before runtime telemetry begins. A ready wrapper points to
+provider-profile contract/SHA plus credential-safe `adapter_execution_contract`
+from the provider scorecard in the provider wrapper summary/config/runbook and
+manifest. Missing, unsafe, or mismatched provider-profile or adapter-contract
+proof keeps scale-up blocked at provider scorecard readiness before runtime
+telemetry begins. A ready wrapper points to
 `build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
 shadow evidence stays blocked at `compare-shadow-sessions`.
 
