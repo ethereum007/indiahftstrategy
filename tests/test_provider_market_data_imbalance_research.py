@@ -10595,6 +10595,72 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_missing_adapt
     assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
 
 
+def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_missing_roundtrip_adapter_contract(tmp_path):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    send_summary = pd.read_csv(summary_path)
+    send_summary.loc[0, "dispatch_roundtrip_capture_bundle_provided"] = True
+    send_summary.loc[0, "dispatch_roundtrip_provider_capture_command_count"] = 2
+    send_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_command_count"] = 2
+    send_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] = 0
+    send_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"] = True
+    send_summary.loc[0, "dispatch_roundtrip_provider_capture_commands_match_runtime_session"] = True
+    for column in (
+        "dispatch_roundtrip_adapter_contract_provider",
+        "dispatch_roundtrip_adapter_contract_transport",
+        "dispatch_roundtrip_adapter_contract_market",
+        "dispatch_roundtrip_adapter_contract_exchange",
+    ):
+        if column in send_summary.columns:
+            send_summary[column] = send_summary[column].astype("object")
+        send_summary.loc[0, column] = ""
+    send_summary.loc[0, "dispatch_roundtrip_adapter_contract_values_stored"] = True
+    send_summary.loc[0, "dispatch_roundtrip_adapter_contract_metadata_matches_evidence"] = False
+    send_summary.loc[0, "dispatch_roundtrip_adapter_contract_matches_runtime_session"] = False
+    send_summary.to_csv(summary_path, index=False)
+
+    config_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json"
+
+    def _drop_roundtrip_adapter_contract(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        provenance.pop("adapter_execution_contract", None)
+        for key in (
+            "adapter_contract_provider",
+            "adapter_contract_transport",
+            "adapter_contract_market",
+            "adapter_contract_exchange",
+            "adapter_contract_values_stored",
+            "adapter_contract_metadata_matches_evidence",
+        ):
+            provenance.pop(key, None)
+        provenance["adapter_contract_matches_runtime_session"] = False
+
+    _mutate_json(config_path, _drop_roundtrip_adapter_contract)
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_missing_roundtrip_adapter_contract_acks.csv",
+    )
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        tmp_path / "provider_imbalance_broker_dispatch_ack_missing_roundtrip_adapter_contract",
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.passed
+    assert "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_carried" in failed
+    assert "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_matches_evidence" in failed
+    assert "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_matches_runtime_session" in failed
+    assert summary["dispatch_roundtrip_adapter_contract_provider"] == ""
+    assert bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
+    assert report.action_queue.loc[0, "component"] == "provider_broker_dispatch_send"
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_dispatch_send"
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
+
+
 def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_capture_bundle_provenance(tmp_path):
     provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
     bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
@@ -10617,6 +10683,15 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
             "command": "python -m hft_cli capture-provider-market-data --provider arrow_money",
         },
     ]
+    adapter_execution_contract = {
+        "provider": "arrow_money",
+        "transport": "websocket",
+        "market": "india_nse_index_derivatives",
+        "exchange": "NFO",
+        "credential_env_template": {"ARROW_API_KEY": "${ARROW_API_KEY}"},
+        "values_stored": False,
+        "metadata_matches_evidence": True,
+    }
 
     send_summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
     send_summary = pd.read_csv(send_summary_path)
@@ -10692,6 +10767,13 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     send_summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] = 0
     send_summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"] = True
     send_summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"] = True
+    send_summary["dispatch_roundtrip_adapter_contract_provider"] = "arrow_money"
+    send_summary["dispatch_roundtrip_adapter_contract_transport"] = "websocket"
+    send_summary["dispatch_roundtrip_adapter_contract_market"] = "india_nse_index_derivatives"
+    send_summary["dispatch_roundtrip_adapter_contract_exchange"] = "NFO"
+    send_summary["dispatch_roundtrip_adapter_contract_values_stored"] = False
+    send_summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"] = True
+    send_summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"] = True
     send_summary["dispatch_roundtrip_source_provenance_consistent"] = True
     send_summary.to_csv(send_summary_path, index=False)
 
@@ -10726,6 +10808,8 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
         "provider_capture_commands_match_runtime_session": True,
+        "adapter_execution_contract": adapter_execution_contract,
+        "adapter_contract_matches_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_env_template_path": str(env_template_path),
         "capture_env_template_sha256": env_template_sha256,
@@ -10839,11 +10923,36 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
     assert bool(summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"])
     assert bool(summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"])
+    assert summary["dispatch_roundtrip_adapter_contract_provider"] == "arrow_money"
+    assert summary["dispatch_roundtrip_adapter_contract_transport"] == "websocket"
+    assert summary["dispatch_roundtrip_adapter_contract_market"] == "india_nse_index_derivatives"
+    assert summary["dispatch_roundtrip_adapter_contract_exchange"] == "NFO"
+    assert not bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     checks = report.checks.set_index("check")
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_carried", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_session", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_runtime_session", "passed"])
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_carried",
+            "passed",
+        ]
+    )
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_matches_evidence",
+            "passed",
+        ]
+    )
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_matches_runtime_session",
+            "passed",
+        ]
+    )
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
     assert config["dispatch_roundtrip_provenance"]["market_session"]["open_local"] == "09:15"
@@ -10855,6 +10964,9 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_command_missing_count"] == 0
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands_match_session"]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands_match_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["values_stored"] is False
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_matches_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert (
         config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands"][0]["provider"]
@@ -10919,8 +11031,12 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
         == "arrow_money"
     )
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["exchange"] == "NFO"
     assert manifest["extra"]["dispatch_roundtrip"]["source_session"]["timezone"] == "Asia/Kolkata"
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_command_count"] == 2
     assert (
@@ -10936,6 +11052,7 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_ca
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert "Dispatch round-trip exchange: NFO" in runbook
     assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Dispatch round-trip adapter execution contract: arrow_money / websocket" in runbook
     assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
@@ -10963,6 +11080,15 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
             "command": "python -m hft_cli capture-provider-market-data --provider arrow_money",
         },
     ]
+    adapter_execution_contract = {
+        "provider": "arrow_money",
+        "transport": "websocket",
+        "market": "india_nse_index_derivatives",
+        "exchange": "NFO",
+        "credential_env_template": {"ARROW_API_KEY": "${ARROW_API_KEY}"},
+        "values_stored": False,
+        "metadata_matches_evidence": True,
+    }
 
     send_summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
     send_summary = pd.read_csv(send_summary_path)
@@ -10985,6 +11111,13 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
         "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count",
         "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session",
         "dispatch_roundtrip_provider_capture_commands_match_runtime_session",
+        "dispatch_roundtrip_adapter_contract_provider",
+        "dispatch_roundtrip_adapter_contract_transport",
+        "dispatch_roundtrip_adapter_contract_market",
+        "dispatch_roundtrip_adapter_contract_exchange",
+        "dispatch_roundtrip_adapter_contract_values_stored",
+        "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+        "dispatch_roundtrip_adapter_contract_matches_runtime_session",
         "dispatch_roundtrip_capture_bundle_path",
         "dispatch_roundtrip_capture_bundle_ready",
         "dispatch_roundtrip_capture_bundle_exchange",
@@ -11042,6 +11175,8 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
         "capture_bundle_provider_capture_command_missing_count": 0,
         "capture_bundle_provider_capture_commands_match_session": True,
         "provider_capture_commands_match_runtime_session": True,
+        "adapter_execution_contract": adapter_execution_contract,
+        "adapter_contract_matches_runtime_session": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_provided": True,
         "capture_bundle_exists": True,
@@ -11147,11 +11282,36 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
     assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 0
     assert bool(summary["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"])
     assert bool(summary["dispatch_roundtrip_provider_capture_commands_match_runtime_session"])
+    assert summary["dispatch_roundtrip_adapter_contract_provider"] == "arrow_money"
+    assert summary["dispatch_roundtrip_adapter_contract_transport"] == "websocket"
+    assert summary["dispatch_roundtrip_adapter_contract_market"] == "india_nse_index_derivatives"
+    assert summary["dispatch_roundtrip_adapter_contract_exchange"] == "NFO"
+    assert not bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"])
+    assert bool(summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     checks = report.checks.set_index("check")
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_carried", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_session", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_runtime_session", "passed"])
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_carried",
+            "passed",
+        ]
+    )
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_matches_evidence",
+            "passed",
+        ]
+    )
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_adapter_execution_contract_matches_runtime_session",
+            "passed",
+        ]
+    )
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
     assert not config["dispatch_roundtrip_provenance"]["consistent_with_runtime_session"]
@@ -11161,6 +11321,9 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
         "provider"
     ] == "arrow_money"
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands_match_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["values_stored"] is False
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_matches_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"] == env_template_sha256
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
@@ -11179,14 +11342,19 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_falls_back_to_roundt
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 2
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"]
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_command_count"] == 2
     assert (
         manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_commands"][0]["provider"]
         == "arrow_money"
     )
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_contract_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
     assert "Dispatch round-trip exchange: NFO" in runbook
     assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
+    assert "Dispatch round-trip adapter execution contract: arrow_money / websocket" in runbook
     assert "- Dispatch round-trip provenance consistent: no" in runbook
 
 
