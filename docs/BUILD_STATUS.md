@@ -348,9 +348,9 @@
   those adapter fingerprints into ack reconciliation: acknowledgement
   summary/config and manifest extras expose capture env-template and adapter
   handoff SHA-256 values directly. Acknowledgement reconciliation also carries
-  the credential-safe `adapter_execution_contract` from broker dispatch send
-  and blocks broker-dispatch round-trip review when that contract is missing,
-  unsafe, or no longer matched to live evidence.
+  provider-profile proof plus the credential-safe `adapter_execution_contract`
+  from broker dispatch send and blocks broker-dispatch round-trip review when
+  either contract is missing, unsafe, or no longer matched to live evidence.
 - Provider market-data imbalance broker dispatch round-trip now preserves those
   adapter fingerprints into the final dry-run bridge proof: round-trip
   summary/config and manifest extras expose capture env-template and adapter
