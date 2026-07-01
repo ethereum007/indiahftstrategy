@@ -4956,12 +4956,13 @@ round-trip wrapper root, nested generic `broker_dispatch_roundtrip` folder, and
 any upstream proof lineage in the cutover summary/config/manifest. It also
 preserves the capture bundle, blank credential env-template, adapter handoff
 paths, source credential env-template proof, exchange/session metadata,
-capture-bundle session match proof, `live_fetch_contract`, and credential-safe
-`adapter_execution_contract` inherited from broker-readiness, so route-enable
-reviewers can trace the live data source from the cutover artifact set without
-exposing credential values. If that adapter contract is missing, unsafe, or no
-longer matched to live evidence, cutover blocks route-enable and routes the
-packet back to `review-provider-market-data-imbalance-broker-readiness`. If
+capture-bundle session match proof, `live_fetch_contract`, provider-profile
+contract/SHA, and credential-safe `adapter_execution_contract` inherited from
+broker-readiness, so route-enable reviewers can trace the live data source from
+the cutover artifact set without exposing credential values. If the
+provider-profile or adapter contract is missing, unsafe, or no longer matched
+to live evidence, cutover blocks route-enable and routes the packet back to
+`review-provider-market-data-imbalance-broker-readiness`. If
 broker-readiness validated round-trip capture bundle/env-template/adapter
 handoff provenance, cutover also carries those `dispatch_roundtrip_*`
 provenance fields plus the validated round-trip source credential env-template,
