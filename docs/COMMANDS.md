@@ -4847,10 +4847,11 @@ checks/summary/action/config/runbook artifacts plus nested generic
 `runtime_guard` outputs, and retains the upstream capture bundle, blank
 credential env-template, adapter handoff paths, source credential env-template
 proof, exchange/session metadata, capture-bundle session match proof, and
-`live_fetch_contract` plus credential-safe `adapter_execution_contract` in its
-provider wrapper summary/config/runbook and manifest. Missing, unsafe, or
-mismatched adapter-contract proof blocks runtime-session monitoring and sends
-the packet back through provider runtime telemetry. It converts guard halts into a ready
+`live_fetch_contract` plus provider-profile contract/SHA and credential-safe
+`adapter_execution_contract` in its provider wrapper summary/config/runbook and
+manifest. Missing, unsafe, or mismatched provider-profile or adapter-contract
+proof blocks runtime-session monitoring and sends the packet back through
+provider runtime telemetry. It converts guard halts into a ready
 `plan-halt-response` action. A clean guard points to
 `monitor-provider-market-data-imbalance-runtime-session`.
 

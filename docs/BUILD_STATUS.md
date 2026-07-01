@@ -298,9 +298,10 @@
   values directly, carry provider capture command counts/lists plus
   capture-bundle command match proof from runtime telemetry into guard
   monitoring, and keep that proof visible before runtime session review.
-  Runtime guard also carries the credential-safe `adapter_execution_contract`
-  from runtime telemetry and blocks runtime-session monitoring when that
-  contract is missing, unsafe, or no longer matched to live evidence.
+  Runtime guard also carries provider-profile proof plus the credential-safe
+  `adapter_execution_contract` from runtime telemetry and blocks
+  runtime-session monitoring when either contract is missing, unsafe, or no
+  longer matched to live evidence.
 - Provider market-data imbalance runtime session now carries the same adapter
   fingerprints into broker-readiness handoff: session summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
