@@ -5171,16 +5171,18 @@ reconciliation blocks round-trip review and routes back to
 `prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
-exchange/session identity, `live_fetch_contract`, final round-trip
-`adapter_execution_contract`, and source-provenance consistency flags beside
-the acknowledgement proof. If the send-retained round-trip adapter contract is
-missing, unsafe, stale, or mismatched against the runtime-session contract,
-acknowledgement reconciliation blocks round-trip review and routes back to
+exchange/session identity, `live_fetch_contract`, final round-trip provider
+profile, round-trip `adapter_execution_contract`, and source-provenance
+consistency flags beside the acknowledgement proof. If the send-retained
+round-trip provider profile or adapter contract is missing, unsafe, stale, or
+mismatched against the runtime-session proof, acknowledgement reconciliation
+blocks round-trip review and routes back to
 `prepare-provider-market-data-imbalance-broker-dispatch-send`. When a
 send-packet CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, acknowledgement hydrates missing or blank
-`dispatch_roundtrip_*` fields, including the round-trip adapter contract, from
-that config while keeping explicit summary `False` values authoritative. The
+`dispatch_roundtrip_*` fields, including the round-trip provider profile and
+adapter contract, from that config while keeping explicit summary `False`
+values authoritative. The
 wrapper runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. Clean

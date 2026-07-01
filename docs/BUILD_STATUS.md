@@ -404,10 +404,11 @@
   dispatch-roundtrip fingerprints forward from broker dispatch send:
   broker-dispatch-ack summary/config and manifest extras expose the
   dispatch-roundtrip capture env-template and adapter handoff SHA-256 values
-  directly. Broker dispatch ack also preserves the final round-trip
-  `adapter_execution_contract` and blocks round-trip review when the
-  broker-dispatch-send handoff is missing, unsafe, stale, or no longer matched
-  to the runtime-session adapter contract.
+  directly. Broker dispatch ack also preserves the final round-trip provider
+  profile plus credential-safe `adapter_execution_contract` and blocks
+  round-trip review when the broker-dispatch-send handoff is missing, unsafe,
+  stale, or no longer matched to the runtime-session provider profile or
+  adapter contract.
 - Provider market-data imbalance broker dispatch round-trip now carries those
   dispatch-roundtrip fingerprints forward from broker dispatch ack:
   broker-dispatch-roundtrip summary/config and manifest extras expose the
@@ -1919,15 +1920,19 @@
   capture-bundle session match proof, round-trip provider capture-command
   counts/match flags, provider command arrays from either
   `dispatch_roundtrip_provenance` or older root/capture-bundle config fields,
-  live-fetch exchange/session identity,
+  round-trip provider profile proof, live-fetch exchange/session identity,
   `live_fetch_contract`, and source/capture provenance-consistency flags
   through acknowledgement summary/config/runbook artifacts plus manifest
   inputs/metadata before the final provider round-trip wrapper is trusted.
-  Acknowledgement now also hydrates missing or blank send-packet
+  Acknowledgement blocks round-trip review when the send-retained round-trip
+  provider profile or adapter contract is missing, unsafe, stale, or no longer
+  matched to runtime-session evidence. Acknowledgement now also hydrates
+  missing or blank send-packet
   `dispatch_roundtrip_*` summary fields from the send
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse send CSVs do not lose validated live-data
-  provenance or command bundle proof before final round-trip review.
+  provenance, provider profile proof, or command bundle proof before final
+  round-trip review.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof and vendor-market-data batch
   proof as upstream lineage while also generating a fresh nested
