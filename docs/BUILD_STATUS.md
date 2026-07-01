@@ -312,9 +312,10 @@
 - Provider market-data imbalance broker readiness now preserves those adapter
   fingerprints into broker handoff review: broker-readiness summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
-  values directly. Broker readiness also carries the credential-safe
-  `adapter_execution_contract` from runtime session and blocks cutover review
-  when that contract is missing, unsafe, or no longer matched to live evidence.
+  values directly. Broker readiness also carries provider-profile proof plus
+  the credential-safe `adapter_execution_contract` from runtime session and
+  blocks cutover review when either contract is missing, unsafe, or no longer
+  matched to live evidence.
 - Provider market-data imbalance cutover now keeps the same adapter
   fingerprints in the final pre-dispatch gate: cutover summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
