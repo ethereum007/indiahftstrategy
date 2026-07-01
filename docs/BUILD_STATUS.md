@@ -390,7 +390,10 @@
   dispatch-roundtrip fingerprints forward from broker dispatch ack:
   broker-dispatch-roundtrip summary/config and manifest extras expose the
   dispatch-roundtrip capture env-template and adapter handoff SHA-256 values
-  directly.
+  directly. Broker dispatch round-trip also preserves the final round-trip
+  `adapter_execution_contract` and blocks the broker-readiness feed when the
+  acknowledgement handoff is missing, unsafe, stale, or no longer matched to
+  the runtime-session adapter contract.
 - Provider market-data capture review now validates a credentialed provider
   client CSV against the dry-run packet before research ingestion:
   `review-provider-market-data-capture` checks normalized schema, row counts,
