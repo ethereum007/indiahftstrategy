@@ -410,8 +410,8 @@ def _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence, *, ac
     return out_dir
 
 
-def _write_ready_ops_launch_evidence(tmp_path):
-    out_dir = tmp_path / "ops_launch_evidence"
+def _write_ready_ops_launch_evidence(tmp_path, *, evidence_profile="provider_imbalance_ops_launch"):
+    out_dir = tmp_path / f"{evidence_profile}_evidence"
     out_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
         [
@@ -419,7 +419,7 @@ def _write_ready_ops_launch_evidence(tmp_path):
                 "ready": True,
                 "failed_checks": 0,
                 "recommendation": "eligible_for_live_dryrun_route_review",
-                "evidence_profile": "ops_launch",
+                "evidence_profile": evidence_profile,
                 "strategy": "imbalance",
                 "market": "india_nse_index_derivatives",
                 "require_file_inputs": True,
@@ -2565,20 +2565,33 @@ def test_provider_market_data_imbalance_route_readiness_blocks_missing_ops_evide
     summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
     action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_action_queue.csv")
     route_summary = pd.read_csv(out_dir / "route_readiness" / "route_readiness_summary.csv")
+    route_pairs = pd.read_csv(out_dir / "route_readiness" / "route_readiness_pairs.csv")
+    provider_portability_config = json.loads(
+        (out_dir / "provider_market_data_imbalance_market_portability_config.json").read_text(encoding="utf-8")
+    )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    provider_ops_gate = (
+        "review-strategy-evidence --profile provider_market_data_imbalance_ops_launch --require-file-inputs"
+    )
     assert not report.ready
     assert "route_readiness_ready" in failed
     assert bool(summary.loc[0, "provider_launch_evidence_ready"])
     assert not bool(summary.loc[0, "route_readiness_ready"])
-    assert summary.loc[0, "next_gate"] == "review-strategy-evidence --profile ops_launch --require-file-inputs"
+    assert summary.loc[0, "next_gate"] == provider_ops_gate
     assert action_queue.loc[0, "queue_status"] == "blocked"
-    assert action_queue.loc[0, "next_gate"] == (
-        "review-strategy-evidence --profile ops_launch --require-file-inputs"
-    )
+    assert action_queue.loc[0, "next_gate"] == provider_ops_gate
     assert not bool(route_summary.loc[0, "ready"])
+    assert route_summary.loc[0, "next_gate"] == provider_ops_gate
+    assert route_pairs.loc[0, "ops_evidence_profile"] == "provider_imbalance_ops_launch"
+    assert route_pairs.loc[0, "next_gate"] == provider_ops_gate
+    assert provider_portability_config["ready_pairs"][0]["ops_evidence_profile"] == "provider_imbalance_ops_launch"
+    assert provider_portability_config["ready_pairs"][0]["ops_evidence_gate"] == provider_ops_gate
     assert manifest["run_type"] == "provider_market_data_imbalance_route_readiness"
     assert "market_portability" in manifest["inputs"]
+    assert manifest["inputs"]["market_portability_config"]["path"].endswith(
+        "provider_market_data_imbalance_market_portability_config.json"
+    )
     assert "route_readiness" in manifest["inputs"]
 
 

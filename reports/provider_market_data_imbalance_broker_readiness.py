@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -2983,12 +2984,24 @@ def _truthy(value: object) -> bool:
 def _clean(value: object) -> str:
     if value is None:
         return ""
+    if isinstance(value, (list, tuple, set)):
+        items = sorted(value) if isinstance(value, set) else value
+        parts = [_clean(item) for item in items]
+        return ";".join(part for part in parts if part)
     try:
         if pd.isna(value):
             return ""
     except (TypeError, ValueError):
         pass
-    return str(value).strip()
+    text = str(value).strip()
+    if text.startswith("[") and text.endswith("]"):
+        try:
+            parsed = ast.literal_eval(text)
+        except (SyntaxError, ValueError):
+            return text
+        if isinstance(parsed, (list, tuple, set)):
+            return _clean(parsed)
+    return text
 
 
 def _records(frame: pd.DataFrame | None) -> list[dict[str, Any]]:

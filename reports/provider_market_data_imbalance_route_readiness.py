@@ -20,6 +20,11 @@ PROFILE = "imbalance"
 DEFAULT_MARKET = "india_nse_index_derivatives"
 DEFAULT_PORTABILITY_STRATEGY = "microprice_imbalance"
 RUN_TYPE = "provider_market_data_imbalance_route_readiness"
+PROVIDER_OPS_EVIDENCE_PROFILE = "provider_imbalance_ops_launch"
+PROVIDER_OPS_EVIDENCE_GATE_PROFILE = "provider_market_data_imbalance_ops_launch"
+PROVIDER_OPS_EVIDENCE_GATE = (
+    f"review-strategy-evidence --profile {PROVIDER_OPS_EVIDENCE_GATE_PROFILE} --require-file-inputs"
+)
 
 
 @dataclass(frozen=True)
@@ -87,6 +92,7 @@ def write_provider_market_data_imbalance_route_readiness(
     market_portability: MarketPortabilityReport | None = None
     market_portability_error = ""
     market_portability_config_path: Path | None = None
+    market_portability_config_payload: dict[str, Any] = {}
     resolved_market_portability_dir: Path | None = None
     if market_portability_dir is not None:
         resolved_market_portability_dir = Path(market_portability_dir)
@@ -109,6 +115,19 @@ def write_provider_market_data_imbalance_route_readiness(
             market_portability_error = str(exc)
     else:
         market_portability_error = "market portability input is required when auto-build is disabled"
+
+    if market_portability_config_path is not None and market_portability_config_path.exists():
+        try:
+            market_portability_config_path, market_portability_config_payload = (
+                _provider_ops_market_portability_config(
+                    market_portability_config_path,
+                    out,
+                    market=market,
+                    strategy=strategy,
+                )
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            market_portability_error = str(exc)
 
     strategy_summary_path = _strategy_evidence_summary_path(inferred_strategy_evidence_dir)
     route_readiness: RouteReadinessReview | None = None
@@ -159,6 +178,7 @@ def write_provider_market_data_imbalance_route_readiness(
         summary.iloc[0],
         launch_evidence_summary,
         market_portability,
+        market_portability_config_payload,
         route_readiness,
         checks,
         action_queue,
@@ -476,6 +496,7 @@ def _config(
     summary: pd.Series,
     launch_evidence_summary: pd.DataFrame,
     market_portability: MarketPortabilityReport | None,
+    market_portability_config_payload: dict[str, Any],
     route_readiness: RouteReadinessReview | None,
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
@@ -492,7 +513,8 @@ def _config(
             "ready": False if market_portability is None else bool(market_portability.ready),
             "output_dir": "" if market_portability is None else str(market_portability.output_dir or ""),
             "summary": _first_record(None if market_portability is None else market_portability.summary),
-            "config": {} if market_portability is None else market_portability.config,
+            "config": market_portability_config_payload
+            or ({} if market_portability is None else market_portability.config),
         },
         "route_readiness": {
             "ready": False if route_readiness is None else bool(route_readiness.ready),
@@ -679,6 +701,53 @@ def _check(check: str, value: object, operator: str, threshold: object, passed: 
 
 def _market_portability_config_path(path: Path) -> Path:
     return path / "market_portability_config.json" if path.is_dir() else path
+
+
+def _provider_ops_market_portability_config(
+    source_path: Path,
+    output_dir: Path,
+    *,
+    market: str,
+    strategy: str,
+) -> tuple[Path, dict[str, Any]]:
+    payload = json.loads(source_path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("market portability config must be a JSON object")
+    patched_payload = _jsonable(payload)
+    if not isinstance(patched_payload, dict):
+        raise ValueError("market portability config must be a JSON object")
+    _apply_provider_ops_evidence_gate(patched_payload, market=market, strategy=strategy)
+    target = output_dir / "provider_market_data_imbalance_market_portability_config.json"
+    target.write_text(
+        json.dumps(patched_payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return target, patched_payload
+
+
+def _apply_provider_ops_evidence_gate(value: Any, *, market: str, strategy: str) -> None:
+    if isinstance(value, dict):
+        if _provider_ops_row_matches(value, market=market, strategy=strategy):
+            if "ops_evidence_profile" in value:
+                value["ops_evidence_profile"] = PROVIDER_OPS_EVIDENCE_PROFILE
+            if "ops_evidence_gate" in value:
+                value["ops_evidence_gate"] = PROVIDER_OPS_EVIDENCE_GATE
+        for item in value.values():
+            _apply_provider_ops_evidence_gate(item, market=market, strategy=strategy)
+    elif isinstance(value, list):
+        for item in value:
+            _apply_provider_ops_evidence_gate(item, market=market, strategy=strategy)
+
+
+def _provider_ops_row_matches(row: dict[str, Any], *, market: str, strategy: str) -> bool:
+    if "ops_evidence_profile" not in row and "ops_evidence_gate" not in row:
+        return False
+    row_market = _identity_key(row.get("market"))
+    row_strategy = _identity_key(row.get("strategy"))
+    strategy_keys = {_identity_key(strategy), "imbalance", "microprice_imbalance"}
+    return (not row_market or row_market == _identity_key(market)) and (
+        not row_strategy or row_strategy in strategy_keys
+    )
 
 
 def _strategy_evidence_summary_path(path: Path | None) -> Path | None:

@@ -4782,10 +4782,11 @@ python -m hft_cli review-provider-market-data-imbalance-route-readiness `
 When no market-portability packet is supplied, the provider wrapper builds an
 India `microprice_imbalance` portability packet and joins it with the full
 imbalance strategy evidence plus ops-launch evidence. Missing ops-launch
-controls stay blocked at `review-strategy-evidence --profile ops_launch
---require-file-inputs`; a ready wrapper writes nested `route_readiness` outputs
-and can be passed to `plan-provider-market-data-imbalance-scaleup
---route-readiness`.
+controls stay blocked at `review-strategy-evidence --profile
+provider_market_data_imbalance_ops_launch --require-file-inputs`, using a
+provider-specific portability config copy for the nested generic route review;
+a ready wrapper writes nested `route_readiness` outputs and can be passed to
+`plan-provider-market-data-imbalance-scaleup --route-readiness`.
 
 Create the provider-data imbalance scale-up plan from that ready scorecard and
 an accepted shadow-session comparison:
