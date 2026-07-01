@@ -5010,11 +5010,12 @@ planners can see the full Arrow.money/iRage vendor-data chain from the
 route-enable artifact. It also preserves the capture bundle, blank credential
 env-template, adapter handoff paths, source credential env-template proof, and
 exchange/session metadata, capture-bundle session match proof, and
-`live_fetch_contract`, plus the credential-safe `adapter_execution_contract`
-inherited from cutover so dispatch planners can trace the live data source
-before packaging broker orders without exposing credential values. If that
-adapter contract is missing, unsafe, or no longer matched to live evidence,
-route-enable blocks broker-dispatch planning and routes the packet back to
+`live_fetch_contract`, the provider-profile contract/SHA, plus the
+credential-safe `adapter_execution_contract` inherited from cutover so dispatch
+planners can trace the live data source before packaging broker orders without
+exposing credential values. If that provider profile or adapter contract is
+missing, unsafe, or no longer matched to live evidence, route-enable blocks
+broker-dispatch planning and routes the packet back to
 `review-provider-market-data-imbalance-cutover`. If cutover retained
 broker-readiness validated round-trip capture
 bundle/env-template/adapter handoff provenance, route-enable carries those
