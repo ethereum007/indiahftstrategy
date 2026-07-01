@@ -5025,11 +5025,12 @@ bundle/env-template/adapter handoff provenance, route-enable carries those
 `dispatch_roundtrip_*` fields plus the validated round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
 proof, live-fetch exchange/session identity, `live_fetch_contract` snapshot,
-credential-safe round-trip `adapter_execution_contract`, manifest inputs, and
-consistency flags forward for broker-dispatch planning. If that final dry-run
-adapter proof is missing, unsafe, stale, or no longer matched to the
-runtime-session adapter contract, route-enable blocks broker-dispatch planning
-and routes the packet back to
+round-trip provider-profile proof, credential-safe round-trip
+`adapter_execution_contract`, manifest inputs, and consistency flags forward
+for broker-dispatch planning. If that final dry-run provider profile or adapter
+proof is missing, unsafe, stale, or no longer matched to runtime-session
+evidence, route-enable blocks broker-dispatch planning and routes the packet
+back to
 `review-provider-market-data-imbalance-cutover`. When a cutover CSV is sparse
 but its config sidecar has
 `dispatch_roundtrip_provenance`, route-enable hydrates missing or blank

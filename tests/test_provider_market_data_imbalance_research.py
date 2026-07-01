@@ -8144,6 +8144,96 @@ def test_provider_market_data_imbalance_route_enable_blocks_missing_roundtrip_ad
     assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
 
 
+def test_provider_market_data_imbalance_route_enable_blocks_missing_roundtrip_provider_profile(tmp_path):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
+    cutover_summary = pd.read_csv(summary_path)
+    cutover_summary.loc[0, "dispatch_roundtrip_capture_bundle_provided"] = True
+    cutover_summary.loc[0, "dispatch_roundtrip_provider_capture_command_count"] = 2
+    cutover_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_command_count"] = 2
+    cutover_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] = 0
+    cutover_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"] = True
+    cutover_summary.loc[0, "dispatch_roundtrip_provider_capture_commands_match_runtime_session"] = True
+    for column in (
+        "dispatch_roundtrip_adapter_contract_provider",
+        "dispatch_roundtrip_adapter_contract_transport",
+        "dispatch_roundtrip_adapter_contract_market",
+        "dispatch_roundtrip_adapter_contract_exchange",
+    ):
+        if column in cutover_summary.columns:
+            cutover_summary[column] = cutover_summary[column].astype("object")
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_provider"] = "arrow_money"
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_transport"] = "websocket"
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_market"] = "india_nse_index_derivatives"
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_exchange"] = "NFO"
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_values_stored"] = False
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_metadata_matches_evidence"] = True
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_matches_runtime_session"] = True
+    for column in (
+        "dispatch_roundtrip_provider_profile_sha256",
+        "dispatch_roundtrip_provider_profile_adapter",
+        "dispatch_roundtrip_provider_profile_transports",
+        "dispatch_roundtrip_provider_profile_capabilities",
+        "dispatch_roundtrip_capture_bundle_provider_profile_sha256",
+        "dispatch_roundtrip_adapter_contract_provider_profile_sha256",
+    ):
+        if column in cutover_summary.columns:
+            cutover_summary[column] = cutover_summary[column].astype("object")
+        cutover_summary.loc[0, column] = ""
+    cutover_summary.loc[0, "dispatch_roundtrip_provider_profile_auth_required"] = False
+    cutover_summary.loc[0, "dispatch_roundtrip_provider_profile_matches_session"] = False
+    cutover_summary.loc[0, "dispatch_roundtrip_provider_profile_matches_bundle"] = False
+    cutover_summary.loc[0, "dispatch_roundtrip_provider_profile_matches_runtime_session"] = False
+    cutover_summary.loc[0, "dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"] = False
+    cutover_summary.to_csv(summary_path, index=False)
+
+    config_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json"
+
+    def _drop_roundtrip_provider_profile(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        for key in (
+            "provider_profile",
+            "live_session_provider_profile",
+            "capture_bundle_provider_profile",
+            "provider_profile_sha256",
+            "provider_profile_matches_session",
+            "provider_profile_matches_bundle",
+            "provider_profile_matches_runtime_session",
+            "adapter_contract_provider_profile_sha256",
+            "adapter_contract_provider_profile_matches_evidence",
+        ):
+            provenance.pop(key, None)
+        contract = provenance.get("adapter_execution_contract")
+        if isinstance(contract, dict):
+            contract.pop("provider_profile_sha256", None)
+        provenance["provider_profile_matches_session"] = False
+        provenance["provider_profile_matches_bundle"] = False
+        provenance["provider_profile_matches_runtime_session"] = False
+        provenance["adapter_contract_provider_profile_matches_evidence"] = False
+
+    _mutate_json(config_path, _drop_roundtrip_provider_profile)
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable_missing_roundtrip_provider_profile",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "provider_cutover_dispatch_roundtrip_provider_profile_carried" in failed
+    assert "provider_cutover_dispatch_roundtrip_provider_profile_matches_session" in failed
+    assert "provider_cutover_dispatch_roundtrip_provider_profile_matches_bundle" in failed
+    assert "provider_cutover_dispatch_roundtrip_adapter_provider_profile_matches_evidence" in failed
+    assert "provider_cutover_dispatch_roundtrip_provider_profile_matches_runtime_session" in failed
+    assert summary["dispatch_roundtrip_provider_profile_sha256"] == ""
+    assert not bool(summary["dispatch_roundtrip_provider_profile_matches_runtime_session"])
+    assert report.action_queue.loc[0, "component"] == "provider_cutover"
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_cutover"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
+
+
 def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_bundle_provenance(tmp_path):
     provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
     bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
@@ -8178,6 +8268,15 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
 
     cutover_summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
     cutover_summary = pd.read_csv(cutover_summary_path)
+    provider_profile_sha256 = str(cutover_summary.loc[0, "provider_profile_sha256"])
+    provider_profile = {
+        "sha256": provider_profile_sha256,
+        "adapter": "arrow_money",
+        "auth_required": True,
+        "transports": "file;rest;websocket",
+        "capabilities": "live_ticks;market_depth",
+    }
+    adapter_execution_contract["provider_profile_sha256"] = provider_profile_sha256
     cutover_summary["dispatch_roundtrip_capture_bundle_path"] = str(bundle_path)
     cutover_summary["dispatch_roundtrip_capture_bundle_provided"] = True
     cutover_summary["dispatch_roundtrip_capture_bundle_exists"] = True
@@ -8255,8 +8354,19 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     cutover_summary["dispatch_roundtrip_adapter_contract_market"] = "india_nse_index_derivatives"
     cutover_summary["dispatch_roundtrip_adapter_contract_exchange"] = "NFO"
     cutover_summary["dispatch_roundtrip_adapter_contract_values_stored"] = False
+    cutover_summary["dispatch_roundtrip_adapter_contract_provider_profile_sha256"] = provider_profile_sha256
     cutover_summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"] = True
+    cutover_summary["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"] = True
     cutover_summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"] = True
+    cutover_summary["dispatch_roundtrip_provider_profile_sha256"] = provider_profile_sha256
+    cutover_summary["dispatch_roundtrip_provider_profile_adapter"] = provider_profile["adapter"]
+    cutover_summary["dispatch_roundtrip_provider_profile_auth_required"] = provider_profile["auth_required"]
+    cutover_summary["dispatch_roundtrip_provider_profile_transports"] = provider_profile["transports"]
+    cutover_summary["dispatch_roundtrip_provider_profile_capabilities"] = provider_profile["capabilities"]
+    cutover_summary["dispatch_roundtrip_capture_bundle_provider_profile_sha256"] = provider_profile_sha256
+    cutover_summary["dispatch_roundtrip_provider_profile_matches_session"] = True
+    cutover_summary["dispatch_roundtrip_provider_profile_matches_bundle"] = True
+    cutover_summary["dispatch_roundtrip_provider_profile_matches_runtime_session"] = True
     cutover_summary["dispatch_roundtrip_source_provenance_consistent"] = True
     cutover_summary.to_csv(cutover_summary_path, index=False)
 
@@ -8293,6 +8403,15 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
         "provider_capture_commands_match_runtime_session": True,
         "adapter_execution_contract": adapter_execution_contract,
         "adapter_contract_matches_runtime_session": True,
+        "provider_profile": provider_profile,
+        "live_session_provider_profile": provider_profile,
+        "capture_bundle_provider_profile": provider_profile,
+        "provider_profile_sha256": provider_profile_sha256,
+        "provider_profile_matches_session": True,
+        "provider_profile_matches_bundle": True,
+        "provider_profile_matches_runtime_session": True,
+        "adapter_contract_provider_profile_sha256": provider_profile_sha256,
+        "adapter_contract_provider_profile_matches_evidence": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_exchange": "NFO",
         "capture_bundle_source_session": {
@@ -8404,6 +8523,17 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     assert not bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
     assert bool(summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"])
     assert bool(summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"])
+    assert summary["dispatch_roundtrip_provider_profile_sha256"] == provider_profile_sha256
+    assert summary["dispatch_roundtrip_provider_profile_adapter"] == provider_profile["adapter"]
+    assert bool(summary["dispatch_roundtrip_provider_profile_auth_required"])
+    assert summary["dispatch_roundtrip_provider_profile_transports"] == provider_profile["transports"]
+    assert "live_ticks" in summary["dispatch_roundtrip_provider_profile_capabilities"]
+    assert summary["dispatch_roundtrip_capture_bundle_provider_profile_sha256"] == provider_profile_sha256
+    assert bool(summary["dispatch_roundtrip_provider_profile_matches_session"])
+    assert bool(summary["dispatch_roundtrip_provider_profile_matches_bundle"])
+    assert summary["dispatch_roundtrip_adapter_contract_provider_profile_sha256"] == provider_profile_sha256
+    assert bool(summary["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"])
+    assert bool(summary["dispatch_roundtrip_provider_profile_matches_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_carried", "passed"])
     assert bool(checks.loc["dispatch_roundtrip_provider_capture_commands_match_session", "passed"])
@@ -8415,6 +8545,18 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     assert bool(
         checks.loc[
             "provider_cutover_dispatch_roundtrip_adapter_execution_contract_matches_runtime_session",
+            "passed",
+        ]
+    )
+    assert bool(checks.loc["provider_cutover_dispatch_roundtrip_provider_profile_carried", "passed"])
+    assert bool(checks.loc["provider_cutover_dispatch_roundtrip_provider_profile_matches_session", "passed"])
+    assert bool(checks.loc["provider_cutover_dispatch_roundtrip_provider_profile_matches_bundle", "passed"])
+    assert bool(
+        checks.loc["provider_cutover_dispatch_roundtrip_adapter_provider_profile_matches_evidence", "passed"]
+    )
+    assert bool(
+        checks.loc[
+            "provider_cutover_dispatch_roundtrip_provider_profile_matches_runtime_session",
             "passed",
         ]
     )
@@ -8430,7 +8572,22 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands_match_runtime_session"]
     assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["values_stored"] is False
+    assert (
+        config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider_profile_sha256"]
+        == provider_profile_sha256
+    )
     assert config["dispatch_roundtrip_provenance"]["adapter_contract_matches_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_profile"]["sha256"] == provider_profile_sha256
+    assert (
+        config["dispatch_roundtrip_provenance"]["live_session_provider_profile"]["sha256"]
+        == provider_profile_sha256
+    )
+    assert (
+        config["dispatch_roundtrip_provenance"]["capture_bundle_provider_profile"]["sha256"]
+        == provider_profile_sha256
+    )
+    assert config["dispatch_roundtrip_provenance"]["provider_profile_matches_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_provider_profile_matches_evidence"]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert (
         config["dispatch_roundtrip_provenance"]["capture_bundle_provider_capture_commands"][0]["provider"]
@@ -8511,10 +8668,22 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip_adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile"]["sha256"] == provider_profile_sha256
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile_sha256"] == provider_profile_sha256
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile_matches_session"]
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile_matches_bundle"]
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile_matches_runtime_session"]
+    assert (
+        manifest["extra"]["dispatch_roundtrip_adapter_contract_provider_profile_sha256"]
+        == provider_profile_sha256
+    )
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"]
     assert manifest["extra"]["dispatch_roundtrip"]["exchange"] == "NFO"
     assert manifest["extra"]["dispatch_roundtrip"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["dispatch_roundtrip"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["dispatch_roundtrip"]["adapter_contract_matches_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip"]["provider_profile"]["sha256"] == provider_profile_sha256
+    assert manifest["extra"]["dispatch_roundtrip"]["provider_profile_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_command_count"] == 2
     assert (
@@ -8530,6 +8699,7 @@ def test_provider_market_data_imbalance_route_enable_carries_roundtrip_capture_b
     assert "Dispatch round-trip exchange: NFO" in runbook
     assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert "Dispatch round-trip adapter execution contract: arrow_money / websocket" in runbook
+    assert f"Dispatch round-trip provider profile: {provider_profile_sha256}" in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
     assert str(source_env_template_path) in runbook
@@ -8570,6 +8740,15 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
 
     cutover_summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
     cutover_summary = pd.read_csv(cutover_summary_path)
+    provider_profile_sha256 = str(cutover_summary.loc[0, "provider_profile_sha256"])
+    provider_profile = {
+        "sha256": provider_profile_sha256,
+        "adapter": "arrow_money",
+        "auth_required": True,
+        "transports": "file;rest;websocket",
+        "capabilities": "live_ticks;market_depth",
+    }
+    adapter_execution_contract["provider_profile_sha256"] = provider_profile_sha256
     blank_columns = [
         "dispatch_roundtrip_exchange",
         "dispatch_roundtrip_source_session_timezone",
@@ -8594,8 +8773,19 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
         "dispatch_roundtrip_adapter_contract_market",
         "dispatch_roundtrip_adapter_contract_exchange",
         "dispatch_roundtrip_adapter_contract_values_stored",
+        "dispatch_roundtrip_adapter_contract_provider_profile_sha256",
         "dispatch_roundtrip_adapter_contract_metadata_matches_evidence",
+        "dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence",
         "dispatch_roundtrip_adapter_contract_matches_runtime_session",
+        "dispatch_roundtrip_provider_profile_sha256",
+        "dispatch_roundtrip_provider_profile_adapter",
+        "dispatch_roundtrip_provider_profile_auth_required",
+        "dispatch_roundtrip_provider_profile_transports",
+        "dispatch_roundtrip_provider_profile_capabilities",
+        "dispatch_roundtrip_capture_bundle_provider_profile_sha256",
+        "dispatch_roundtrip_provider_profile_matches_session",
+        "dispatch_roundtrip_provider_profile_matches_bundle",
+        "dispatch_roundtrip_provider_profile_matches_runtime_session",
         "dispatch_roundtrip_capture_bundle_path",
         "dispatch_roundtrip_capture_bundle_ready",
         "dispatch_roundtrip_capture_bundle_exchange",
@@ -8655,6 +8845,15 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
         "provider_capture_commands_match_runtime_session": True,
         "adapter_execution_contract": adapter_execution_contract,
         "adapter_contract_matches_runtime_session": True,
+        "provider_profile": provider_profile,
+        "live_session_provider_profile": provider_profile,
+        "capture_bundle_provider_profile": provider_profile,
+        "provider_profile_sha256": provider_profile_sha256,
+        "provider_profile_matches_session": True,
+        "provider_profile_matches_bundle": True,
+        "provider_profile_matches_runtime_session": True,
+        "adapter_contract_provider_profile_sha256": provider_profile_sha256,
+        "adapter_contract_provider_profile_matches_evidence": True,
         "capture_bundle_path": str(bundle_path),
         "capture_bundle_provided": True,
         "capture_bundle_exists": True,
@@ -8757,6 +8956,14 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
     assert not bool(summary["dispatch_roundtrip_adapter_contract_values_stored"])
     assert bool(summary["dispatch_roundtrip_adapter_contract_metadata_matches_evidence"])
     assert bool(summary["dispatch_roundtrip_adapter_contract_matches_runtime_session"])
+    assert summary["dispatch_roundtrip_provider_profile_sha256"] == provider_profile_sha256
+    assert summary["dispatch_roundtrip_provider_profile_adapter"] == provider_profile["adapter"]
+    assert summary["dispatch_roundtrip_provider_profile_transports"] == provider_profile["transports"]
+    assert bool(summary["dispatch_roundtrip_provider_profile_matches_session"])
+    assert bool(summary["dispatch_roundtrip_provider_profile_matches_bundle"])
+    assert summary["dispatch_roundtrip_adapter_contract_provider_profile_sha256"] == provider_profile_sha256
+    assert bool(summary["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"])
+    assert bool(summary["dispatch_roundtrip_provider_profile_matches_runtime_session"])
     assert bool(summary["dispatch_roundtrip_source_provenance_consistent"])
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
@@ -8764,7 +8971,17 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
     assert config["dispatch_roundtrip_provenance"]["provider_capture_command_count"] == 2
     assert config["dispatch_roundtrip_provenance"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert (
+        config["dispatch_roundtrip_provenance"]["adapter_execution_contract"]["provider_profile_sha256"]
+        == provider_profile_sha256
+    )
     assert config["dispatch_roundtrip_provenance"]["adapter_contract_matches_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_profile"]["sha256"] == provider_profile_sha256
+    assert config["dispatch_roundtrip_provenance"]["capture_bundle_provider_profile"]["sha256"] == (
+        provider_profile_sha256
+    )
+    assert config["dispatch_roundtrip_provenance"]["provider_profile_matches_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["adapter_contract_provider_profile_matches_evidence"]
     assert config["dispatch_roundtrip_provenance"]["capture_bundle_path"] == str(bundle_path)
     assert config["dispatch_roundtrip_provenance"]["capture_env_template_sha256"] == env_template_sha256
     assert config["dispatch_roundtrip_provenance"]["adapter_handoff_path"] == str(adapter_handoff_path)
@@ -8784,9 +9001,18 @@ def test_provider_market_data_imbalance_route_enable_falls_back_to_roundtrip_con
     assert manifest["extra"]["dispatch_roundtrip_provider_capture_commands_match_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip_adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile"]["sha256"] == provider_profile_sha256
+    assert manifest["extra"]["dispatch_roundtrip_provider_profile_matches_runtime_session"]
+    assert (
+        manifest["extra"]["dispatch_roundtrip_adapter_contract_provider_profile_sha256"]
+        == provider_profile_sha256
+    )
+    assert manifest["extra"]["dispatch_roundtrip_adapter_contract_provider_profile_matches_evidence"]
     assert manifest["extra"]["dispatch_roundtrip"]["capture_bundle"]["provider_capture_command_count"] == 2
     assert manifest["extra"]["dispatch_roundtrip"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["dispatch_roundtrip"]["adapter_contract_matches_runtime_session"]
+    assert manifest["extra"]["dispatch_roundtrip"]["provider_profile"]["sha256"] == provider_profile_sha256
+    assert manifest["extra"]["dispatch_roundtrip"]["provider_profile_matches_runtime_session"]
     assert manifest["extra"]["dispatch_roundtrip"]["live_fetch_contract"]["exchange"] == "NFO"
 
 
