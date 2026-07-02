@@ -177,6 +177,7 @@ def write_provider_market_data_imbalance_research(
             "pipeline_ready": bool(summary.iloc[0]["pipeline_ready"]),
             "handoff_ready": bool(summary.iloc[0]["handoff_ready"]),
             "candidate_ready": bool(summary.iloc[0]["candidate_ready"]),
+            "synthetic_sidecar_proof": _mapping(payload.get("synthetic_sidecar_proof")),
             "exchange": str(summary.iloc[0]["exchange"]),
             "source_session": _source_session_contract_from_summary(summary.iloc[0]),
             "market_session": _market_session_contract_from_summary(summary.iloc[0]),
@@ -400,6 +401,11 @@ def _checks(
         and bool(_text(handoff_row.get("provider_profile_adapter")))
         and bool(_text(handoff_row.get("provider_profile_transports")))
     )
+    synthetic_dataset_count = int(handoff_row.get("synthetic_dataset_count", 0) or 0)
+    sidecar_proof_count = int(handoff_row.get("synthetic_sidecar_count", 0) or 0)
+    sidecar_proof_required = synthetic_dataset_count > 0
+    sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
+    sidecar_proof_ready = _truthy(handoff_row.get("synthetic_sidecar_proof_ready"))
     return pd.DataFrame(
         [
             _check(
@@ -491,6 +497,22 @@ def _checks(
                 if bundle_provided
                 else True,
                 "provider research handoff adapter contract provider-profile SHA no longer matches live evidence",
+            ),
+            _check(
+                "provider_research_handoff_synthetic_sidecar_proof_carried",
+                sidecar_proof_count,
+                "==",
+                synthetic_dataset_count,
+                sidecar_proof_count_matches if sidecar_proof_required else True,
+                "provider research handoff is missing rehearsal sidecar proof for every synthetic fold",
+            ),
+            _check(
+                "provider_research_handoff_synthetic_sidecar_proof_ready",
+                sidecar_proof_ready,
+                "is",
+                True,
+                sidecar_proof_ready if sidecar_proof_required else True,
+                "provider research handoff rehearsal sidecar proof is not ready",
             ),
             _check(
                 "imbalance_research_pipeline_ready",
@@ -693,6 +715,31 @@ def _summary(
                 "dataset_count": int(handoff_row.get("dataset_count", 0) or 0),
                 "ready_command_count": int(handoff_row.get("ready_command_count", 0) or 0),
                 "synthetic_dataset_count": int(handoff_row.get("synthetic_dataset_count", 0) or 0),
+                "synthetic_sidecar_proof_ready": _truthy(handoff_row.get("synthetic_sidecar_proof_ready")),
+                "synthetic_sidecar_count": int(handoff_row.get("synthetic_sidecar_count", 0) or 0),
+                "synthetic_sidecar_readable_count": int(
+                    handoff_row.get("synthetic_sidecar_readable_count", 0) or 0
+                ),
+                "synthetic_sidecar_source_count": int(handoff_row.get("synthetic_sidecar_source_count", 0) or 0),
+                "synthetic_sidecar_adapter_command_hash_count": int(
+                    handoff_row.get("synthetic_sidecar_adapter_command_hash_count", 0) or 0
+                ),
+                "synthetic_sidecar_capture_env_template_match_count": int(
+                    handoff_row.get("synthetic_sidecar_capture_env_template_match_count", 0) or 0
+                ),
+                "synthetic_sidecar_adapter_handoff_match_count": int(
+                    handoff_row.get("synthetic_sidecar_adapter_handoff_match_count", 0) or 0
+                ),
+                "synthetic_sidecar_source_env_template_match_count": int(
+                    handoff_row.get("synthetic_sidecar_source_env_template_match_count", 0) or 0
+                ),
+                "synthetic_sidecar_live_fetch_contract_count": int(
+                    handoff_row.get("synthetic_sidecar_live_fetch_contract_count", 0) or 0
+                ),
+                "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    handoff_row.get("synthetic_sidecar_adapter_execution_contract_safe_count", 0) or 0
+                ),
+                "synthetic_sidecar_invariant_count": int(handoff_row.get("synthetic_sidecar_invariant_count", 0) or 0),
                 "edge_passed": bool(pipeline_row.get("edge_passed", False)),
                 "replay_passed": bool(pipeline_row.get("replay_passed", False)),
                 "promotion_ready": bool(pipeline_row.get("promotion_ready", False)),
@@ -805,6 +852,9 @@ def _config(
         "adapter_execution_contract": _mapping(
             handoff.config.get("adapter_execution_contract") if isinstance(handoff.config, dict) else {}
         ),
+        "synthetic_sidecar_proof": _mapping(
+            handoff.config.get("synthetic_sidecar_proof") if isinstance(handoff.config, dict) else {}
+        ),
         "capture_bundle": _handoff_capture_bundle(handoff),
         "research_handoff": {
             "ready": bool(handoff.ready),
@@ -890,6 +940,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
         f"- Replay passed: {'yes' if bool(summary['replay_passed']) else 'no'}",

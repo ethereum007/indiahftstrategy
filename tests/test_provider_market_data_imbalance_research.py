@@ -976,13 +976,76 @@ def test_provider_market_data_imbalance_research_blocks_synthetic_smoke_evidence
     )
 
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_research_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_research_runbook.md").read_text(encoding="utf-8")
     assert evidence.ready
     assert not bool(evidence.summary.iloc[0]["research_ready"])
     assert not report.ready
     assert report.pipeline is None
+    assert bool(summary["synthetic_sidecar_proof_ready"])
+    assert summary["synthetic_sidecar_count"] == 2
+    assert summary["synthetic_sidecar_readable_count"] == 2
+    assert summary["synthetic_sidecar_adapter_command_hash_count"] == 2
+    assert summary["synthetic_sidecar_capture_env_template_match_count"] == 2
+    assert summary["synthetic_sidecar_adapter_handoff_match_count"] == 2
+    assert summary["synthetic_sidecar_source_env_template_match_count"] == 2
+    assert summary["synthetic_sidecar_live_fetch_contract_count"] == 2
+    assert summary["synthetic_sidecar_adapter_execution_contract_safe_count"] == 2
+    assert summary["synthetic_sidecar_invariant_count"] == 2
+    assert config["synthetic_sidecar_proof"]["ready"] is True
+    assert config["synthetic_sidecar_proof"]["synthetic_sidecar_count"] == 2
+    assert config["research_handoff"]["summary"]["synthetic_sidecar_proof_ready"] is True
+    assert manifest["extra"]["synthetic_sidecar_proof"]["ready"] is True
+    assert "Synthetic sidecar proof: yes" in runbook
     assert "provider_research_handoff_ready" in failed
     assert "provider_research_handoff_research_ready" in failed
+    assert "provider_research_handoff_synthetic_sidecar_proof_ready" not in failed
     assert report.action_queue.loc[0, "queue_status"] == "blocked"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-live-evidence"
+    assert not (out_dir / "imbalance_research" / "imbalance_pipeline_summary.csv").exists()
+
+
+def test_provider_market_data_imbalance_research_blocks_missing_synthetic_sidecar_proof(tmp_path):
+    evidence = _write_synthetic_smoke_evidence(tmp_path)
+    _mutate_json(
+        evidence.output_dir / "provider_market_data_live_evidence_config.json",
+        lambda payload: payload.pop("synthetic_sidecar_proof", None),
+    )
+    _mutate_json(
+        evidence.output_dir / "manifest.json",
+        lambda payload: payload["extra"].pop("synthetic_sidecar_proof", None),
+    )
+    out_dir = tmp_path / "provider_imbalance_research"
+
+    config = _passing_config()
+    config = ProviderMarketDataImbalanceResearchConfig(
+        **{
+            **config.__dict__,
+            "require_research_ready": False,
+            "allow_synthetic_smoke": True,
+        }
+    )
+    report = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        out_dir,
+        config=config,
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert report.pipeline is None
+    assert not bool(summary["synthetic_sidecar_proof_ready"])
+    assert summary["synthetic_sidecar_count"] == 0
+    assert "provider_research_handoff_ready" in failed
+    assert "provider_research_handoff_synthetic_sidecar_proof_carried" in failed
+    assert "provider_research_handoff_synthetic_sidecar_proof_ready" in failed
+    assert "provider_research_handoff_research_ready" not in failed
+    assert report.action_queue.loc[0, "action"] == (
+        "provider_handoff_regenerate_live_evidence_with_synthetic_sidecar_proof"
+    )
     assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-live-evidence"
     assert not (out_dir / "imbalance_research" / "imbalance_pipeline_summary.csv").exists()
 

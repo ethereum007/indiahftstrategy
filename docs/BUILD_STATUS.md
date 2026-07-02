@@ -229,7 +229,9 @@
   `adapter_execution_contract` from the nested research handoff into
   summary/config/runbook and manifest artifacts, and blocks strategy research
   when either contract is missing, unsafe, or no longer matched to live
-  evidence.
+  evidence. It now also carries nested `synthetic_sidecar_proof` and blocks
+  explicit synthetic-smoke research when the rehearsal sidecar proof is missing,
+  stale, or does not cover every synthetic fold.
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider
