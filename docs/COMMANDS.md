@@ -4589,9 +4589,16 @@ the adapter handoff contract, source env-template proof, exchange/session
 metadata, upstream `live_fetch_contract`, provider-profile contract/SHA, and
 `adapter_execution_contract` before research handoff. It blocks captures that
 still have rehearsal sidecars (`*.csv.rehearsal.json`) from being marked
-research-ready, even if the ingest and batch pipelines passed, and fails closed
-if capture-bundle source metadata, provider-profile metadata, or
-adapter-contract metadata drifts from the live session packet.
+research-ready, even if the ingest and batch pipelines passed. When synthetic
+rehearsal is explicitly allowed for a smoke run, the review also verifies each
+sidecar's adapter command hash, capture env-template hash, adapter handoff hash,
+source env-template proof, provider-fetcher handoff, credential-safe adapter
+contract, and rehearsal-only invariants against the live ingest provenance
+when carried, or against the referenced files when the rehearsal ingest did not
+carry the bundle block, before classifying it as backend smoke evidence. It
+fails closed if capture-bundle source metadata, provider-profile metadata,
+adapter-contract metadata, or rehearsal sidecar proof drifts from the live
+session packet.
 Use `--allow-synthetic-rehearsal` only to classify a smoke test; the
 recommendation remains to replace synthetic captures with real Arrow.money/iRage
 provider captures before feeding walk-forward research.

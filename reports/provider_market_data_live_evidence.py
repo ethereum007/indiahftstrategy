@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -79,6 +80,14 @@ def write_provider_market_data_live_evidence_review(
     capture_paths = [Path(str(path)) for path in report.captures["capture_path"].astype(str).tolist()] if not report.captures.empty else []
     if capture_paths:
         inputs["captures"] = [path for path in capture_paths if path.exists()]
+    sidecar_paths = (
+        [Path(str(path)) for path in report.captures["rehearsal_sidecar_path"].astype(str).tolist()]
+        if not report.captures.empty
+        else []
+    )
+    existing_sidecars = [path for path in sidecar_paths if path.exists()]
+    if existing_sidecars:
+        inputs["synthetic_capture_sidecars"] = existing_sidecars
     batch_manifest = Path(str(report.summary.iloc[0]["batch_output_dir"])) / "manifest.json"
     if batch_manifest.exists():
         inputs["batch_manifest"] = batch_manifest
@@ -91,6 +100,7 @@ def write_provider_market_data_live_evidence_review(
             "ready": bool(report.summary.iloc[0]["ready"]),
             "research_ready": bool(report.summary.iloc[0]["research_ready"]),
             "synthetic_capture_count": int(report.summary.iloc[0]["synthetic_capture_count"]),
+            "synthetic_sidecar_proof": _mapping(report.config.get("synthetic_sidecar_proof")),
             "blocked_action_count": int(report.summary.iloc[0]["blocked_action_count"]),
             "exchange": str(report.summary.iloc[0]["exchange"]),
             "source_session": _source_session_contract_from_summary(report.summary.iloc[0]),
@@ -281,6 +291,12 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
         capture_exists = bool(str(capture_path) and capture_path.exists() and capture_path.is_file())
         capture_rows = _capture_rows(capture_path) if capture_exists else 0
         synthetic = bool(sidecar_path.exists() and _truthy(sidecar.get("synthetic_only", True)))
+        sidecar_capture_env = _mapping(sidecar.get("capture_env_template"))
+        sidecar_handoff = _mapping(sidecar.get("adapter_handoff"))
+        sidecar_source_env = _mapping(sidecar.get("source_credential_env_template"))
+        sidecar_live_fetch = _mapping(sidecar.get("live_fetch_contract"))
+        sidecar_adapter_contract = _mapping(sidecar.get("adapter_execution_contract"))
+        sidecar_invariants = _mapping(sidecar.get("invariants"))
         rows.append(
             {
                 "priority": index,
@@ -297,6 +313,30 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
                 "synthetic_rehearsal": synthetic,
                 "sidecar_source": _text(sidecar.get("source")),
                 "sidecar_error": sidecar_error,
+                "sidecar_adapter_command_sha256": _text(sidecar.get("adapter_command_sha256")),
+                "sidecar_capture_env_template_path": _text(sidecar_capture_env.get("path")),
+                "sidecar_capture_env_template_sha256": _text(sidecar_capture_env.get("sha256")),
+                "sidecar_adapter_handoff_path": _text(sidecar_handoff.get("path")),
+                "sidecar_adapter_handoff_sha256": _text(sidecar_handoff.get("sha256")),
+                "sidecar_source_credential_env_template_path": _text(sidecar_source_env.get("path")),
+                "sidecar_source_credential_env_template_sha256": _text(sidecar_source_env.get("sha256")),
+                "sidecar_live_fetch_contract_available": bool(sidecar_live_fetch.get("available", False)),
+                "sidecar_live_fetch_contract_next_gate": _text(sidecar_live_fetch.get("next_gate")),
+                "sidecar_adapter_contract_provider": _text(sidecar_adapter_contract.get("provider")),
+                "sidecar_adapter_contract_transport": _text(sidecar_adapter_contract.get("transport")),
+                "sidecar_adapter_contract_provider_profile_sha256": _text(
+                    sidecar_adapter_contract.get("provider_profile_sha256")
+                ),
+                "sidecar_adapter_contract_values_stored": bool(sidecar_adapter_contract.get("values_stored", True)),
+                "sidecar_invariant_credential_values_stored": bool(
+                    sidecar_invariants.get("credential_values_stored", True)
+                ),
+                "sidecar_invariant_synthetic_not_market_evidence": bool(
+                    sidecar_invariants.get("synthetic_capture_not_market_evidence", False)
+                ),
+                "sidecar_invariant_adapter_writes_exact_capture_path": bool(
+                    sidecar_invariants.get("adapter_must_write_exact_capture_path", False)
+                ),
             }
         )
     return pd.DataFrame(
@@ -316,6 +356,22 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
             "synthetic_rehearsal",
             "sidecar_source",
             "sidecar_error",
+            "sidecar_adapter_command_sha256",
+            "sidecar_capture_env_template_path",
+            "sidecar_capture_env_template_sha256",
+            "sidecar_adapter_handoff_path",
+            "sidecar_adapter_handoff_sha256",
+            "sidecar_source_credential_env_template_path",
+            "sidecar_source_credential_env_template_sha256",
+            "sidecar_live_fetch_contract_available",
+            "sidecar_live_fetch_contract_next_gate",
+            "sidecar_adapter_contract_provider",
+            "sidecar_adapter_contract_transport",
+            "sidecar_adapter_contract_provider_profile_sha256",
+            "sidecar_adapter_contract_values_stored",
+            "sidecar_invariant_credential_values_stored",
+            "sidecar_invariant_synthetic_not_market_evidence",
+            "sidecar_invariant_adapter_writes_exact_capture_path",
         ],
     )
 
@@ -472,6 +528,111 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
     }
 
 
+def _synthetic_sidecar_proof(captures: pd.DataFrame, capture_provenance: dict[str, Any]) -> dict[str, Any]:
+    synthetic = captures[captures["synthetic_rehearsal"].astype(bool)] if not captures.empty else pd.DataFrame()
+    records = synthetic.to_dict(orient="records") if not synthetic.empty else []
+    count = int(len(records))
+    expected_capture_env_sha = _text(capture_provenance.get("capture_env_template_sha256"))
+    expected_handoff_sha = _text(capture_provenance.get("adapter_handoff_sha256"))
+    expected_source_env_sha = _text(capture_provenance.get("source_credential_env_template_sha256"))
+    expected_provider_profile_sha = _text(capture_provenance.get("provider_profile_sha256"))
+
+    def matching(predicate) -> int:
+        return sum(1 for row in records if predicate(row))
+
+    sidecar_readable_count = matching(
+        lambda row: _truthy(row.get("rehearsal_sidecar_exists")) and not _text(row.get("sidecar_error"))
+    )
+    source_count = matching(lambda row: _text(row.get("sidecar_source")) == "provider_market_data_live_rehearsal")
+    adapter_command_hash_count = matching(lambda row: _sha256_ready(row.get("sidecar_adapter_command_sha256")))
+    capture_env_match_count = matching(
+        lambda row: _sidecar_hash_matches(
+            row,
+            "sidecar_capture_env_template_sha256",
+            "sidecar_capture_env_template_path",
+            expected_capture_env_sha,
+        )
+    )
+    handoff_match_count = matching(
+        lambda row: _sidecar_hash_matches(
+            row,
+            "sidecar_adapter_handoff_sha256",
+            "sidecar_adapter_handoff_path",
+            expected_handoff_sha,
+        )
+    )
+    source_env_match_count = matching(
+        lambda row: _sidecar_hash_matches(
+            row,
+            "sidecar_source_credential_env_template_sha256",
+            "sidecar_source_credential_env_template_path",
+            expected_source_env_sha,
+        )
+    )
+    live_fetch_contract_count = matching(
+        lambda row: _truthy(row.get("sidecar_live_fetch_contract_available"))
+        and _text(row.get("sidecar_live_fetch_contract_next_gate")) == "provider_fetcher"
+    )
+    adapter_contract_safe_count = matching(
+        lambda row: bool(_text(row.get("sidecar_adapter_contract_provider")))
+        and bool(_text(row.get("sidecar_adapter_contract_transport")))
+        and bool(expected_provider_profile_sha)
+        and _text(row.get("sidecar_adapter_contract_provider_profile_sha256")) == expected_provider_profile_sha
+        and not _truthy(row.get("sidecar_adapter_contract_values_stored"))
+    )
+    invariant_count = matching(
+        lambda row: not _truthy(row.get("sidecar_invariant_credential_values_stored"))
+        and _truthy(row.get("sidecar_invariant_synthetic_not_market_evidence"))
+        and _truthy(row.get("sidecar_invariant_adapter_writes_exact_capture_path"))
+    )
+    ready = all(
+        value == count
+        for value in (
+            sidecar_readable_count,
+            source_count,
+            adapter_command_hash_count,
+            capture_env_match_count,
+            handoff_match_count,
+            source_env_match_count,
+            live_fetch_contract_count,
+            adapter_contract_safe_count,
+            invariant_count,
+        )
+    )
+    return {
+        "synthetic_sidecar_count": count,
+        "ready": bool(ready),
+        "sidecar_readable_count": sidecar_readable_count,
+        "sidecar_source_count": source_count,
+        "adapter_command_hash_count": adapter_command_hash_count,
+        "capture_env_template_match_count": capture_env_match_count,
+        "adapter_handoff_match_count": handoff_match_count,
+        "source_credential_env_template_match_count": source_env_match_count,
+        "live_fetch_contract_count": live_fetch_contract_count,
+        "adapter_execution_contract_safe_count": adapter_contract_safe_count,
+        "invariant_count": invariant_count,
+        "expected_capture_env_template_sha256": expected_capture_env_sha,
+        "expected_adapter_handoff_sha256": expected_handoff_sha,
+        "expected_source_credential_env_template_sha256": expected_source_env_sha,
+        "expected_provider_profile_sha256": expected_provider_profile_sha,
+    }
+
+
+def _sidecar_hash_matches(row: dict[str, Any], hash_key: str, path_key: str, expected_sha: str) -> bool:
+    sidecar_sha = _text(row.get(hash_key))
+    if not _sha256_ready(sidecar_sha):
+        return False
+    if expected_sha:
+        return sidecar_sha == expected_sha
+    proof_path = _path_from_text(_text(row.get(path_key)))
+    return proof_path is not None and proof_path.exists() and _file_sha256_or_empty(proof_path) == sidecar_sha
+
+
+def _sidecar_proof_passes(proof: dict[str, Any], count_key: str) -> bool:
+    expected = int(proof["synthetic_sidecar_count"])
+    return int(proof[count_key]) == expected
+
+
 def _checks(
     ingest_dir: Path,
     ingest_summary: pd.DataFrame,
@@ -492,6 +653,7 @@ def _checks(
 ) -> list[dict[str, Any]]:
     capture_count = int(len(captures))
     synthetic_count = int(captures["synthetic_rehearsal"].astype(bool).sum()) if not captures.empty else 0
+    sidecar_proof = _synthetic_sidecar_proof(captures, capture_provenance)
     captures_exist = bool(captures["capture_exists"].astype(bool).all()) if not captures.empty else False
     row_counts_ok = bool(captures["row_count_ok"].astype(bool).all()) if not captures.empty else False
     ingest_ready = _first_bool(ingest_summary, "ready")
@@ -569,6 +731,15 @@ def _checks(
         _check("capture_windows_present", capture_count, ">=", 1, capture_count >= 1, "live evidence requires at least one capture window"),
         _check("capture_files_exist", int(captures["capture_exists"].astype(bool).sum()) if not captures.empty else 0, "==", capture_count, captures_exist, "all expected capture files must exist"),
         _check("capture_rows_meet_minimum", int(captures["row_count_ok"].astype(bool).sum()) if not captures.empty else 0, "==", capture_count, row_counts_ok, "all captures must meet minimum row count"),
+        _check("synthetic_sidecar_files_readable", sidecar_proof["sidecar_readable_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "sidecar_readable_count"), "synthetic rehearsal captures must carry readable rehearsal sidecars"),
+        _check("synthetic_sidecar_source_identified", sidecar_proof["sidecar_source_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "sidecar_source_count"), "synthetic rehearsal sidecars must identify the rehearsal writer"),
+        _check("synthetic_sidecar_adapter_command_fingerprinted", sidecar_proof["adapter_command_hash_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "adapter_command_hash_count"), "synthetic rehearsal sidecars must fingerprint the rendered adapter command"),
+        _check("synthetic_sidecar_capture_env_template_matches_ingest", sidecar_proof["capture_env_template_match_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "capture_env_template_match_count"), "synthetic rehearsal sidecars must match the ingest capture env-template fingerprint"),
+        _check("synthetic_sidecar_adapter_handoff_matches_ingest", sidecar_proof["adapter_handoff_match_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "adapter_handoff_match_count"), "synthetic rehearsal sidecars must match the ingest adapter-handoff fingerprint"),
+        _check("synthetic_sidecar_source_env_template_matches_ingest", sidecar_proof["source_credential_env_template_match_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "source_credential_env_template_match_count"), "synthetic rehearsal sidecars must match the source credential env-template fingerprint"),
+        _check("synthetic_sidecar_live_fetch_contract_carried", sidecar_proof["live_fetch_contract_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "live_fetch_contract_count"), "synthetic rehearsal sidecars must carry the provider-fetcher live handoff"),
+        _check("synthetic_sidecar_adapter_execution_contract_safe", sidecar_proof["adapter_execution_contract_safe_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "adapter_execution_contract_safe_count"), "synthetic rehearsal sidecars must carry the credential-safe adapter execution contract"),
+        _check("synthetic_sidecar_invariants_carried", sidecar_proof["invariant_count"], "==", synthetic_count, _sidecar_proof_passes(sidecar_proof, "invariant_count"), "synthetic rehearsal sidecars must carry rehearsal-only safety invariants"),
         _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_rehearsal else "allowed", synthetic_count == 0 or config.allow_synthetic_rehearsal, "synthetic rehearsal captures cannot be treated as live provider evidence"),
         _check("batch_summary_exists", bool(batch["batch_summary_exists"]), "is", True, bool(batch["batch_summary_exists"]), "provider batch summary is required"),
         _check("batch_ready", bool(batch["batch_ready"]), "is", True, bool(batch["batch_ready"]) or not config.require_batch_ready, "provider batch summary is not ready"),
@@ -590,6 +761,7 @@ def _summary(
     research_ready: bool,
 ) -> pd.DataFrame:
     synthetic_count = int(captures["synthetic_rehearsal"].astype(bool).sum()) if not captures.empty else 0
+    sidecar_proof = _synthetic_sidecar_proof(captures, capture_provenance)
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     blocked = int((action_queue["queue_status"].astype(str) == "blocked").sum()) if not action_queue.empty else 0
     next_action = action_queue.iloc[0] if not action_queue.empty else None
@@ -704,6 +876,23 @@ def _summary(
                 else True,
                 "capture_count": int(len(captures)),
                 "synthetic_capture_count": synthetic_count,
+                "synthetic_sidecar_proof_ready": bool(sidecar_proof["ready"]),
+                "synthetic_sidecar_count": int(sidecar_proof["synthetic_sidecar_count"]),
+                "synthetic_sidecar_readable_count": int(sidecar_proof["sidecar_readable_count"]),
+                "synthetic_sidecar_source_count": int(sidecar_proof["sidecar_source_count"]),
+                "synthetic_sidecar_adapter_command_hash_count": int(sidecar_proof["adapter_command_hash_count"]),
+                "synthetic_sidecar_capture_env_template_match_count": int(
+                    sidecar_proof["capture_env_template_match_count"]
+                ),
+                "synthetic_sidecar_adapter_handoff_match_count": int(sidecar_proof["adapter_handoff_match_count"]),
+                "synthetic_sidecar_source_env_template_match_count": int(
+                    sidecar_proof["source_credential_env_template_match_count"]
+                ),
+                "synthetic_sidecar_live_fetch_contract_count": int(sidecar_proof["live_fetch_contract_count"]),
+                "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    sidecar_proof["adapter_execution_contract_safe_count"]
+                ),
+                "synthetic_sidecar_invariant_count": int(sidecar_proof["invariant_count"]),
                 "min_capture_rows": int(config.min_capture_rows),
                 "batch_output_dir": str(batch["batch_output_dir"]),
                 "batch_ready": bool(batch["batch_ready"]),
@@ -801,6 +990,7 @@ def _config(
         ),
         "adapter_execution_contract": _mapping(capture_provenance.get("adapter_execution_contract")),
         "capture_bundle": capture_provenance,
+        "synthetic_sidecar_proof": _synthetic_sidecar_proof(captures, capture_provenance),
         "live_session_packet": _safe_packet(live_packet),
         "captures": _records(captures),
         "batch": batch,
@@ -858,6 +1048,8 @@ def _next_gate_for_check(check: str) -> str:
         or check.startswith("adapter_handoff")
     ):
         return "bundle-provider-market-data-live-capture"
+    if check.startswith("synthetic_sidecar"):
+        return "rehearse-provider-market-data-live-capture"
     if check == "live_session_provider_profile_carried":
         return "plan-provider-market-data-live-session"
     if check.startswith("live_session_packet") or check.startswith("credential"):
@@ -878,6 +1070,7 @@ def _next_gate_help_command(next_gate: str) -> str:
         "plan-provider-market-data-live-session",
         "pipeline-provider-market-data-batch",
         "review-provider-market-data-live-evidence",
+        "rehearse-provider-market-data-live-capture",
     }:
         return f"python -m hft_cli {next_gate} --help"
     if next_gate == "provider_fetcher_live_run":
@@ -919,6 +1112,8 @@ def _repair_action(check: str) -> str:
         return "regenerate_capture_bundle_with_session_metadata"
     if check == "capture_bundle_live_fetch_contract_metadata_matches_session":
         return "regenerate_capture_bundle_with_live_fetch_contract_metadata"
+    if check.startswith("synthetic_sidecar"):
+        return "regenerate_synthetic_rehearsal_sidecars"
     if (
         check.startswith("capture_bundle")
         or check.startswith("capture_env_template")
@@ -951,6 +1146,7 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic captures: {summary['synthetic_capture_count']}",
+        f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'}",
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
         f"- Recommendation: {summary['recommendation']}",
         "",
@@ -1061,6 +1257,22 @@ def _optional_bool(value: object) -> bool | None:
     if isinstance(value, str) and not value.strip():
         return None
     return _truthy(value)
+
+
+def _sha256_ready(value: object) -> bool:
+    text = _text(value)
+    return len(text) == 64 and all(char in "0123456789abcdefABCDEF" for char in text)
+
+
+def _file_sha256_or_empty(path: Path) -> str:
+    try:
+        hasher = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                hasher.update(chunk)
+        return hasher.hexdigest()
+    except OSError:
+        return ""
 
 
 def _source_session_contract_from_summary(summary: pd.Series) -> dict[str, str]:

@@ -180,11 +180,19 @@
   proof, exchange/session metadata, `live_fetch_contract`, and
   `adapter_execution_contract` when supplied, and credential-safe session
   packets while blocking `*.csv.rehearsal.json` synthetic captures from being
-  marked research-ready. Bundle-linked evidence review also carries provider
-  capture command counts/lists, provider-profile proof, and the adapter
-  execution contract from ingest into summary/config/manifest artifacts and
-  blocks research handoff if the capture-bundle command list, provider profile,
-  or adapter contract is missing or no longer matches the live-session packet.
+  marked research-ready. Synthetic smoke evidence now has to prove each
+  rehearsal sidecar still matches the ingest lineage: adapter command hash,
+  capture env-template hash, adapter handoff hash, source env-template proof,
+  provider-fetcher handoff, credential-safe adapter contract, and rehearsal-only
+  invariants are all validated against ingest provenance when present or the
+  referenced files when rehearsal ingest did not carry the bundle block before
+  `--allow-synthetic-rehearsal` can pass as smoke. Bundle-linked evidence review
+  also carries provider capture command
+  counts/lists, provider-profile proof, and the adapter execution contract from
+  ingest into summary/config/manifest artifacts and blocks research handoff if
+  the capture-bundle command list, provider profile, adapter contract, or
+  rehearsal sidecar proof is missing or no longer matches the live-session
+  packet.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds
