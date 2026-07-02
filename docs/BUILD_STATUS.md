@@ -209,7 +209,11 @@
   also carries provider-profile proof and the credential-safe
   `adapter_execution_contract` into summary/config/runbook and manifest
   artifacts, and blocks research when either contract is missing, stores
-  credential values, or no longer matches live evidence.
+  credential values, or no longer matches live evidence. Synthetic smoke
+  handoff now also carries `synthetic_sidecar_proof` from live evidence into
+  summary/config/runbook and manifest artifacts, and even explicit smoke mode
+  blocks if the proof is missing, stale, or no longer covers every synthetic
+  fold.
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real

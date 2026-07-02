@@ -4629,11 +4629,15 @@ source credential env-template proof, exchange/session metadata, and
 `live_fetch_contract` before strategy research starts. They also retain the
 provider-profile contract/SHA plus credential-safe
 `adapter_execution_contract` and block if either is missing, stores credential
-values, or no longer matches live evidence. Synthetic smoke evidence,
-source-metadata drift, provider-profile drift, and unsupported strategy lanes
-stay blocked: lead-lag needs explicit leader/laggard groups, while settlement,
-parity, and surface market-making need option-chain or surface inputs in
-addition to top-of-book ticks.
+values, or no longer matches live evidence. Synthetic smoke evidence remains
+blocked by default, but the handoff still carries the live-evidence
+`synthetic_sidecar_proof` into summary/config/runbook and manifest artifacts;
+if smoke mode is explicitly enabled, missing or stale sidecar proof routes back
+to `review-provider-market-data-live-evidence` before any strategy handoff can
+be treated as ready. Source-metadata drift, provider-profile drift, and
+unsupported strategy lanes stay blocked: lead-lag needs explicit
+leader/laggard groups, while settlement, parity, and surface market-making need
+option-chain or surface inputs in addition to top-of-book ticks.
 
 Run the first full provider-data imbalance research pilot directly from
 research-ready live evidence:

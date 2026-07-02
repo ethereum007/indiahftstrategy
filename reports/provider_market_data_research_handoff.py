@@ -93,6 +93,7 @@ def write_provider_market_data_research_handoff(
             "research_ready": bool(summary_row["research_ready"]),
             "ready_command_count": int(summary_row["ready_command_count"]),
             "blocked_action_count": int(summary_row["blocked_action_count"]),
+            "synthetic_sidecar_proof": _mapping(report.config.get("synthetic_sidecar_proof")),
             "exchange": str(summary_row["exchange"]),
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
@@ -299,6 +300,9 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
     manifest_extra_env = _mapping(manifest_extra.get("capture_env_template"))
     manifest_extra_handoff = _mapping(manifest_extra.get("adapter_handoff"))
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
+    synthetic_sidecar_proof = _mapping(evidence_config.get("synthetic_sidecar_proof")) or _mapping(
+        manifest_extra.get("synthetic_sidecar_proof")
+    )
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
     evidence_adapter_execution_contract = _mapping(evidence_config.get("adapter_execution_contract")) or _mapping(
@@ -499,6 +503,30 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
             manifest_extra_bundle.get("live_fetch_contract_metadata_matches_session"),
             manifest_extra.get("capture_bundle_live_fetch_contract_metadata_matches_session"),
         ),
+        "synthetic_sidecar_proof": synthetic_sidecar_proof,
+        "synthetic_sidecar_proof_ready": _truthy(synthetic_sidecar_proof.get("ready")),
+        "synthetic_sidecar_count": int(_number(synthetic_sidecar_proof.get("synthetic_sidecar_count"))),
+        "synthetic_sidecar_readable_count": int(_number(synthetic_sidecar_proof.get("sidecar_readable_count"))),
+        "synthetic_sidecar_source_count": int(_number(synthetic_sidecar_proof.get("sidecar_source_count"))),
+        "synthetic_sidecar_adapter_command_hash_count": int(
+            _number(synthetic_sidecar_proof.get("adapter_command_hash_count"))
+        ),
+        "synthetic_sidecar_capture_env_template_match_count": int(
+            _number(synthetic_sidecar_proof.get("capture_env_template_match_count"))
+        ),
+        "synthetic_sidecar_adapter_handoff_match_count": int(
+            _number(synthetic_sidecar_proof.get("adapter_handoff_match_count"))
+        ),
+        "synthetic_sidecar_source_env_template_match_count": int(
+            _number(synthetic_sidecar_proof.get("source_credential_env_template_match_count"))
+        ),
+        "synthetic_sidecar_live_fetch_contract_count": int(
+            _number(synthetic_sidecar_proof.get("live_fetch_contract_count"))
+        ),
+        "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+            _number(synthetic_sidecar_proof.get("adapter_execution_contract_safe_count"))
+        ),
+        "synthetic_sidecar_invariant_count": int(_number(synthetic_sidecar_proof.get("invariant_count"))),
     }
 
 
@@ -724,6 +752,10 @@ def _checks(
     bundle_provider_profile = _mapping(capture_provenance.get("capture_bundle_provider_profile"))
     evidence_provider_profile_carried = _provider_profile_carried(evidence_provider_profile)
     bundle_provider_profile_carried = _provider_profile_carried(bundle_provider_profile)
+    sidecar_proof_required = synthetic_count > 0
+    sidecar_proof_count = int(capture_provenance["synthetic_sidecar_count"])
+    sidecar_proof_count_matches = sidecar_proof_count == synthetic_count
+    sidecar_proof_ready = bool(capture_provenance["synthetic_sidecar_proof_ready"])
     return [
         _check("live_evidence_dir_exists", str(evidence_dir), "exists", True, evidence_dir.exists(), "live evidence directory is required"),
         _check("live_evidence_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live evidence summary could not be read"),
@@ -755,6 +787,8 @@ def _checks(
         _check("capture_bundle_live_fetch_contract_metadata_matches_session", bool(capture_provenance["capture_bundle_live_fetch_contract_metadata_matches_session"]), "is", True, bool(capture_provenance["capture_bundle_live_fetch_contract_metadata_matches_session"]) if bundle_provided else True, "live evidence must mark live fetch-contract exchange/session metadata as matching"),
         _check("live_evidence_ready", _first_bool(evidence_summary, "ready"), "is", True, _first_bool(evidence_summary, "ready"), "live evidence review is not ready"),
         _check("live_evidence_research_ready", _first_bool(evidence_summary, "research_ready"), "is", True, _first_bool(evidence_summary, "research_ready") or not config.require_research_ready, "live evidence is not research-ready"),
+        _check("synthetic_sidecar_proof_carried", sidecar_proof_count, "==", synthetic_count, sidecar_proof_count_matches if sidecar_proof_required else True, "synthetic smoke handoff requires live-evidence rehearsal sidecar proof for every synthetic fold"),
+        _check("synthetic_sidecar_proof_ready", sidecar_proof_ready, "is", True, sidecar_proof_ready if sidecar_proof_required else True, "synthetic smoke handoff requires ready rehearsal sidecar proof"),
         _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_smoke else "allowed", synthetic_count == 0 or config.allow_synthetic_smoke, "synthetic rehearsal captures cannot be handed to strategy research"),
         _check("tick_folds_present", dataset_count, ">=", config.min_tick_folds, dataset_count >= config.min_tick_folds, "not enough tick folds for walk-forward research"),
         _check("tick_fold_files_exist", int(datasets["capture_exists"].astype(bool).sum()) if not datasets.empty else 0, "==", dataset_count, bool(dataset_count and datasets["capture_exists"].astype(bool).all()), "all tick fold files must exist"),
@@ -884,6 +918,29 @@ def _summary(
                     capture_provenance["capture_bundle_live_fetch_contract_metadata_matches_session"]
                 ),
                 "dataset_count": int(len(datasets)),
+                "synthetic_sidecar_proof_ready": bool(capture_provenance["synthetic_sidecar_proof_ready"]),
+                "synthetic_sidecar_count": int(capture_provenance["synthetic_sidecar_count"]),
+                "synthetic_sidecar_readable_count": int(capture_provenance["synthetic_sidecar_readable_count"]),
+                "synthetic_sidecar_source_count": int(capture_provenance["synthetic_sidecar_source_count"]),
+                "synthetic_sidecar_adapter_command_hash_count": int(
+                    capture_provenance["synthetic_sidecar_adapter_command_hash_count"]
+                ),
+                "synthetic_sidecar_capture_env_template_match_count": int(
+                    capture_provenance["synthetic_sidecar_capture_env_template_match_count"]
+                ),
+                "synthetic_sidecar_adapter_handoff_match_count": int(
+                    capture_provenance["synthetic_sidecar_adapter_handoff_match_count"]
+                ),
+                "synthetic_sidecar_source_env_template_match_count": int(
+                    capture_provenance["synthetic_sidecar_source_env_template_match_count"]
+                ),
+                "synthetic_sidecar_live_fetch_contract_count": int(
+                    capture_provenance["synthetic_sidecar_live_fetch_contract_count"]
+                ),
+                "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    capture_provenance["synthetic_sidecar_adapter_execution_contract_safe_count"]
+                ),
+                "synthetic_sidecar_invariant_count": int(capture_provenance["synthetic_sidecar_invariant_count"]),
                 "ready_command_count": int((commands["queue_status"].astype(str) == "ready").sum()) if not commands.empty else 0,
                 "blocked_command_count": int((commands["queue_status"].astype(str) == "blocked").sum()) if not commands.empty else 0,
                 "synthetic_dataset_count": int(datasets["synthetic_rehearsal"].astype(bool).sum()) if not datasets.empty else 0,
@@ -968,6 +1025,7 @@ def _config(
         ),
         "adapter_execution_contract": _mapping(capture_provenance.get("adapter_execution_contract")),
         "capture_bundle": capture_provenance,
+        "synthetic_sidecar_proof": _mapping(capture_provenance.get("synthetic_sidecar_proof")),
         "datasets": _records(datasets),
         "commands": _records(commands),
         "checks": _records(checks),
@@ -991,6 +1049,8 @@ def _next_gate_for_check(check: str) -> str:
         "capture_bundle_provider_profile_carried",
         "capture_bundle_provider_profile_matches_evidence",
     }:
+        return "review-provider-market-data-live-evidence"
+    if check.startswith("synthetic_sidecar"):
         return "review-provider-market-data-live-evidence"
     if (
         check.startswith("capture_bundle")
@@ -1054,6 +1114,8 @@ def _repair_action(check: str) -> str:
         return "regenerate_live_evidence_with_session_metadata"
     if check == "capture_bundle_live_fetch_contract_metadata_matches_session":
         return "regenerate_live_evidence_with_live_fetch_contract_metadata"
+    if check.startswith("synthetic_sidecar"):
+        return "regenerate_live_evidence_with_synthetic_sidecar_proof"
     if (
         check.startswith("capture_bundle")
         or check.startswith("capture_env_template")
@@ -1112,6 +1174,7 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Ready commands: {summary['ready_command_count']}",
         "",
