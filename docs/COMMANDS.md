@@ -4698,11 +4698,15 @@ upstream source credential env-template proof, exchange/session metadata,
 capture-bundle session match proof, `live_fetch_contract`, and the
 provider-profile contract/SHA plus credential-safe
 `adapter_execution_contract` when they were present in the upstream provider
-research wrapper. If the provider profile or adapter contract is missing,
-unsafe, or no longer matched to live evidence, the review blocks launch
-packaging. A ready review points to `pipeline-imbalance-launch`; it does not
-weaken the full `imbalance` profile, which still requires order-plan and launch
-pipeline proof before shadow scale-up.
+research wrapper. It also carries nested `synthetic_sidecar_proof` and flattened
+sidecar counts from provider imbalance research, so synthetic provider folds
+remain blocked from launch packaging if rehearsal sidecar proof is missing or no
+longer covers every synthetic fold. If the provider profile, adapter contract,
+or synthetic sidecar proof is missing, unsafe, or no longer matched to live
+evidence, the review blocks launch packaging. A ready review points to
+`pipeline-imbalance-launch`; it does not weaken the full `imbalance` profile,
+which still requires order-plan and launch pipeline proof before shadow
+scale-up.
 
 Build the provider imbalance launch packet directly from the ready evidence
 review:

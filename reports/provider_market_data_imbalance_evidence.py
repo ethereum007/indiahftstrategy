@@ -168,6 +168,11 @@ def write_provider_market_data_imbalance_evidence_review(
             "provider_profile": _mapping(payload.get("provider_profile")),
             "provider_profile_matches_session": bool(summary.iloc[0]["provider_profile_matches_session"]),
             "provider_profile_matches_bundle": bool(summary.iloc[0]["provider_profile_matches_bundle"]),
+            "synthetic_sidecar_proof": _mapping(payload.get("synthetic_sidecar_proof")),
+            "synthetic_dataset_count": int(summary.iloc[0]["synthetic_dataset_count"]),
+            "synthetic_sidecar_proof_ready": bool(summary.iloc[0]["synthetic_sidecar_proof_ready"]),
+            "synthetic_sidecar_count": int(summary.iloc[0]["synthetic_sidecar_count"]),
+            "synthetic_sidecar_readable_count": int(summary.iloc[0]["synthetic_sidecar_readable_count"]),
             "capture_bundle_provided": bool(summary.iloc[0]["capture_bundle_provided"]),
             "capture_env_template_exists": bool(summary.iloc[0]["capture_env_template_exists"]),
             "adapter_handoff_exists": bool(summary.iloc[0]["adapter_handoff_exists"]),
@@ -320,6 +325,11 @@ def _checks(
         and bool(_first_text(provider_summary, "provider_profile_adapter"))
         and bool(_first_text(provider_summary, "provider_profile_transports"))
     )
+    synthetic_dataset_count = int(_first_number(provider_summary, "synthetic_dataset_count"))
+    sidecar_proof_count = int(_first_number(provider_summary, "synthetic_sidecar_count"))
+    sidecar_proof_required = synthetic_dataset_count > 0
+    sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
+    sidecar_proof_ready = _first_bool(provider_summary, "synthetic_sidecar_proof_ready")
     return pd.DataFrame(
         [
             _check(
@@ -419,6 +429,22 @@ def _checks(
                 if bundle_provided
                 else True,
                 "provider imbalance research adapter contract provider-profile SHA no longer matches live evidence",
+            ),
+            _check(
+                "provider_research_synthetic_sidecar_proof_carried",
+                sidecar_proof_count,
+                "==",
+                synthetic_dataset_count,
+                sidecar_proof_count_matches if sidecar_proof_required else True,
+                "provider imbalance research synthetic folds are missing rehearsal sidecar proof",
+            ),
+            _check(
+                "provider_research_synthetic_sidecar_proof_ready",
+                sidecar_proof_ready,
+                "is",
+                True,
+                sidecar_proof_ready if sidecar_proof_required else True,
+                "provider imbalance research synthetic folds require ready rehearsal sidecar proof",
             ),
             _check(
                 "experiment_catalog_ready",
@@ -619,6 +645,34 @@ def _summary(
                 )
                 if _first_bool(provider_summary, "capture_bundle_provided")
                 else True,
+                "synthetic_dataset_count": int(_first_number(provider_summary, "synthetic_dataset_count")),
+                "synthetic_sidecar_proof_ready": _first_bool(provider_summary, "synthetic_sidecar_proof_ready"),
+                "synthetic_sidecar_count": int(_first_number(provider_summary, "synthetic_sidecar_count")),
+                "synthetic_sidecar_readable_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_readable_count")
+                ),
+                "synthetic_sidecar_source_count": int(_first_number(provider_summary, "synthetic_sidecar_source_count")),
+                "synthetic_sidecar_adapter_command_hash_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_adapter_command_hash_count")
+                ),
+                "synthetic_sidecar_capture_env_template_match_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_capture_env_template_match_count")
+                ),
+                "synthetic_sidecar_adapter_handoff_match_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_adapter_handoff_match_count")
+                ),
+                "synthetic_sidecar_source_env_template_match_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_source_env_template_match_count")
+                ),
+                "synthetic_sidecar_live_fetch_contract_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_live_fetch_contract_count")
+                ),
+                "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_adapter_execution_contract_safe_count")
+                ),
+                "synthetic_sidecar_invariant_count": int(
+                    _first_number(provider_summary, "synthetic_sidecar_invariant_count")
+                ),
                 "market": _first_text(evidence_summary, "market") or _first_text(provider_summary, "market"),
                 "strategy": _first_text(evidence_summary, "strategy") or "imbalance",
                 "catalog_run_count": 0 if catalog is None else catalog.run_count,
@@ -712,6 +766,7 @@ def _config(
         "provider_capture_commands": _provider_capture_commands(provider_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
         "adapter_execution_contract": _mapping(provider_config.get("adapter_execution_contract")),
+        "synthetic_sidecar_proof": _mapping(provider_config.get("synthetic_sidecar_proof")),
         "capture_bundle": _provider_capture_bundle(provider_summary, provider_config),
         "catalog": {
             "run_count": 0 if catalog is None else catalog.run_count,
@@ -820,6 +875,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         f"- Catalog runs: {summary['catalog_run_count']}",
         f"- Required run types: {summary['passed_required_run_types']}/{summary['required_run_type_count']}",
         "",

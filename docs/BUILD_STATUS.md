@@ -248,7 +248,10 @@
   provider-profile proof and the credential-safe `adapter_execution_contract`
   from provider imbalance research into summary/config/runbook and manifest
   artifacts, and blocks launch packaging when either contract is missing,
-  unsafe, or no longer matched to live evidence.
+  unsafe, or no longer matched to live evidence. It now also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from provider
+  imbalance research, and blocks launch packaging when synthetic provider folds
+  are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance launch packaging now bridges ready provider
   research evidence into broker handoff artifacts:
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
