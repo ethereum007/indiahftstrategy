@@ -267,7 +267,10 @@
   packet. Launch packaging now also carries provider-profile proof plus the
   credential-safe `adapter_execution_contract` from provider imbalance evidence
   and blocks the downstream launch pipeline from running when either contract
-  is missing, unsafe, or no longer matched to live evidence.
+  is missing, unsafe, or no longer matched to live evidence. It now also carries
+  nested `synthetic_sidecar_proof` plus flattened sidecar counts from provider
+  imbalance evidence, and blocks the downstream launch pipeline when synthetic
+  provider folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture

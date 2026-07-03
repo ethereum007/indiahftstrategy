@@ -4735,10 +4735,13 @@ provider launch summary/config/runbook and manifest retain the upstream capture
 bundle, blank credential env-template, adapter handoff paths, source credential
 env-template proof, exchange/session metadata, capture-bundle session match
 proof, `live_fetch_contract`, provider-profile contract/SHA, and credential-safe
-`adapter_execution_contract` when present in the provider evidence review. If
-the provider profile or adapter contract is missing, unsafe, or no longer
-matched to live evidence, the downstream launch pipeline is not run, keeping
-broker-facing artifacts tied to the live data source contract.
+`adapter_execution_contract` when present in the provider evidence review. They
+also retain nested `synthetic_sidecar_proof` plus flattened sidecar counts, and
+block the downstream launch pipeline when synthetic provider folds are missing
+ready rehearsal sidecar proof. If the provider profile, adapter contract, or
+synthetic sidecar proof is missing, unsafe, or no longer matched to live
+evidence, the downstream launch pipeline is not run, keeping broker-facing
+artifacts tied to the live data source contract.
 
 Review the full launch-ready imbalance profile from the provider launch packet:
 

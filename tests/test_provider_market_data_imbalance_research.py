@@ -1564,6 +1564,98 @@ def test_provider_market_data_imbalance_launch_builds_from_ready_evidence(tmp_pa
     assert "imbalance_launch_pipeline" in manifest["inputs"]
 
 
+def test_provider_market_data_imbalance_launch_carries_synthetic_sidecar_proof(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    proof = {
+        "ready": True,
+        "synthetic_sidecar_count": 2,
+        "sidecar_readable_count": 2,
+        "sidecar_source_count": 2,
+        "adapter_command_hash_count": 2,
+        "capture_env_template_match_count": 2,
+        "adapter_handoff_match_count": 2,
+        "source_credential_env_template_match_count": 2,
+        "live_fetch_contract_count": 2,
+        "adapter_execution_contract_safe_count": 2,
+        "invariant_count": 2,
+    }
+    summary_path = review.output_dir / "provider_market_data_imbalance_evidence_summary.csv"
+    evidence_summary = pd.read_csv(summary_path)
+    evidence_summary.loc[0, "synthetic_dataset_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_proof_ready"] = True
+    evidence_summary.loc[0, "synthetic_sidecar_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_readable_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_source_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_adapter_command_hash_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_capture_env_template_match_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_adapter_handoff_match_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_source_env_template_match_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_live_fetch_contract_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_adapter_execution_contract_safe_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_invariant_count"] = 2
+    evidence_summary.to_csv(summary_path, index=False)
+    _mutate_json(
+        review.output_dir / "provider_market_data_imbalance_evidence_config.json",
+        lambda payload: payload.update({"synthetic_sidecar_proof": proof}),
+    )
+    _mutate_json(
+        review.output_dir / "manifest.json",
+        lambda payload: payload["extra"].update({"synthetic_sidecar_proof": proof}),
+    )
+    out_dir = tmp_path / "provider_imbalance_launch"
+
+    report = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceLaunchConfig(
+            require_reviewed_schema=False,
+            adapter="arrow_money",
+            route_tag="imbalance_shadow",
+            instrument_id="NIFTY-I",
+            reference_price=100.0,
+            max_order_qty=75,
+            max_notional=10_000.0,
+            max_orders=2,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_launch_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_launch_runbook.md").read_text(encoding="utf-8")
+    assert report.ready
+    assert bool(summary["synthetic_sidecar_proof_ready"])
+    assert summary["synthetic_dataset_count"] == 2
+    assert summary["synthetic_sidecar_count"] == 2
+    assert summary["synthetic_sidecar_readable_count"] == 2
+    assert summary["synthetic_sidecar_adapter_command_hash_count"] == 2
+    assert summary["synthetic_sidecar_capture_env_template_match_count"] == 2
+    assert summary["synthetic_sidecar_adapter_handoff_match_count"] == 2
+    assert summary["synthetic_sidecar_source_env_template_match_count"] == 2
+    assert summary["synthetic_sidecar_live_fetch_contract_count"] == 2
+    assert summary["synthetic_sidecar_adapter_execution_contract_safe_count"] == 2
+    assert summary["synthetic_sidecar_invariant_count"] == 2
+    assert config["synthetic_sidecar_proof"]["ready"] is True
+    assert config["synthetic_sidecar_proof"]["synthetic_sidecar_count"] == 2
+    assert config["provider_evidence"]["synthetic_sidecar_proof_ready"] is True
+    assert manifest["extra"]["synthetic_sidecar_proof"]["ready"] is True
+    assert manifest["extra"]["synthetic_sidecar_count"] == 2
+    assert "Synthetic sidecar proof: yes (2/2)" in runbook
+    assert "provider_evidence_synthetic_sidecar_proof_carried" not in failed
+    assert "provider_evidence_synthetic_sidecar_proof_ready" not in failed
+
+
 def test_provider_market_data_imbalance_launch_carries_capture_bundle_provenance(tmp_path):
     evidence, bundle_path = _write_bundle_linked_real_evidence(tmp_path)
     bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
@@ -1839,6 +1931,71 @@ def test_provider_market_data_imbalance_launch_blocks_missing_provider_profile(t
     assert "provider_evidence_adapter_provider_profile_matches_evidence" in failed
     assert summary["provider_profile_sha256"] == ""
     assert not bool(summary["provider_profile_matches_session"])
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_evidence"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-evidence"
+    assert not (out_dir / "imbalance_launch_pipeline" / "imbalance_launch_pipeline_summary.csv").exists()
+
+
+def test_provider_market_data_imbalance_launch_blocks_missing_synthetic_sidecar_proof(tmp_path):
+    evidence = _write_real_evidence(tmp_path)
+    research = write_provider_market_data_imbalance_research(
+        evidence.output_dir,
+        tmp_path / "provider_imbalance_research",
+        config=_passing_config(),
+    )
+    review = write_provider_market_data_imbalance_evidence_review(
+        research.output_dir,
+        tmp_path / "provider_imbalance_evidence",
+        config=ProviderMarketDataImbalanceEvidenceConfig(allow_dirty_git=True),
+    )
+    summary_path = review.output_dir / "provider_market_data_imbalance_evidence_summary.csv"
+    evidence_summary = pd.read_csv(summary_path)
+    evidence_summary.loc[0, "synthetic_dataset_count"] = 2
+    evidence_summary.loc[0, "synthetic_sidecar_proof_ready"] = False
+    for column in (
+        "synthetic_sidecar_count",
+        "synthetic_sidecar_readable_count",
+        "synthetic_sidecar_source_count",
+        "synthetic_sidecar_adapter_command_hash_count",
+        "synthetic_sidecar_capture_env_template_match_count",
+        "synthetic_sidecar_adapter_handoff_match_count",
+        "synthetic_sidecar_source_env_template_match_count",
+        "synthetic_sidecar_live_fetch_contract_count",
+        "synthetic_sidecar_adapter_execution_contract_safe_count",
+        "synthetic_sidecar_invariant_count",
+    ):
+        evidence_summary.loc[0, column] = 0
+    evidence_summary.to_csv(summary_path, index=False)
+    _mutate_json(
+        review.output_dir / "provider_market_data_imbalance_evidence_config.json",
+        lambda payload: payload.pop("synthetic_sidecar_proof", None),
+    )
+    _mutate_json(
+        review.output_dir / "manifest.json",
+        lambda payload: payload["extra"].pop("synthetic_sidecar_proof", None),
+    )
+    out_dir = tmp_path / "provider_imbalance_launch"
+
+    report = write_provider_market_data_imbalance_launch_packet(
+        review.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceLaunchConfig(require_reviewed_schema=False, reference_price=100.0),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_launch_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.ready
+    assert report.launch is None
+    assert bool(summary["provider_evidence_ready"])
+    assert summary["synthetic_dataset_count"] == 2
+    assert not bool(summary["synthetic_sidecar_proof_ready"])
+    assert summary["synthetic_sidecar_count"] == 0
+    assert config["synthetic_sidecar_proof"] == {}
+    assert manifest["extra"]["synthetic_sidecar_proof"] == {}
+    assert "provider_evidence_synthetic_sidecar_proof_carried" in failed
+    assert "provider_evidence_synthetic_sidecar_proof_ready" in failed
     assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_evidence"
     assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-evidence"
     assert not (out_dir / "imbalance_launch_pipeline" / "imbalance_launch_pipeline_summary.csv").exists()
