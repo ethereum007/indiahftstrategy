@@ -340,7 +340,10 @@
   Runtime guard also carries provider-profile proof plus the credential-safe
   `adapter_execution_contract` from runtime telemetry and blocks
   runtime-session monitoring when either contract is missing, unsafe, or no
-  longer matched to live evidence.
+  longer matched to live evidence. It also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from runtime
+  telemetry and blocks runtime-session monitoring when synthetic provider
+  folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance runtime session now carries the same adapter
   fingerprints into broker-readiness handoff: session summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
