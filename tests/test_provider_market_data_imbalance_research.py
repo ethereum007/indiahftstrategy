@@ -14886,6 +14886,149 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_capture_bund
     assert str(adapter_handoff_path) in runbook
 
 
+def test_provider_market_data_imbalance_broker_dispatch_ack_carries_synthetic_sidecar_proof(tmp_path):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    proof = {
+        "ready": True,
+        "synthetic_sidecar_count": 2,
+        "sidecar_readable_count": 2,
+        "sidecar_source_count": 2,
+        "adapter_command_hash_count": 2,
+        "capture_env_template_match_count": 2,
+        "adapter_handoff_match_count": 2,
+        "source_credential_env_template_match_count": 2,
+        "live_fetch_contract_count": 2,
+        "adapter_execution_contract_safe_count": 2,
+        "invariant_count": 2,
+    }
+    summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    send_summary = pd.read_csv(summary_path)
+    send_summary.loc[0, "synthetic_dataset_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_proof_ready"] = True
+    send_summary.loc[0, "synthetic_sidecar_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_readable_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_source_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_adapter_command_hash_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_capture_env_template_match_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_adapter_handoff_match_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_source_env_template_match_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_live_fetch_contract_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_adapter_execution_contract_safe_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_invariant_count"] = 2
+    send_summary.to_csv(summary_path, index=False)
+    _mutate_json(
+        provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json",
+        lambda payload: payload.update({"synthetic_sidecar_proof": proof}),
+    )
+    _mutate_json(
+        provider_send.output_dir / "manifest.json",
+        lambda payload: payload["extra"].update({"synthetic_sidecar_proof": proof}),
+    )
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_acks.csv",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_ack"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert report.passed
+    assert bool(summary["synthetic_sidecar_proof_ready"])
+    assert summary["synthetic_dataset_count"] == 2
+    assert summary["synthetic_sidecar_count"] == 2
+    assert summary["synthetic_sidecar_readable_count"] == 2
+    assert summary["synthetic_sidecar_adapter_command_hash_count"] == 2
+    assert summary["synthetic_sidecar_capture_env_template_match_count"] == 2
+    assert summary["synthetic_sidecar_adapter_handoff_match_count"] == 2
+    assert summary["synthetic_sidecar_source_env_template_match_count"] == 2
+    assert summary["synthetic_sidecar_live_fetch_contract_count"] == 2
+    assert summary["synthetic_sidecar_adapter_execution_contract_safe_count"] == 2
+    assert summary["synthetic_sidecar_invariant_count"] == 2
+    assert config["synthetic_sidecar_proof"]["ready"] is True
+    assert config["synthetic_sidecar_proof"]["synthetic_sidecar_count"] == 2
+    assert config["provider_broker_dispatch_send"]["synthetic_sidecar_proof_ready"] is True
+    assert manifest["extra"]["synthetic_sidecar_proof"]["ready"] is True
+    assert manifest["extra"]["synthetic_sidecar_count"] == 2
+    assert "Synthetic sidecar proof: yes (2/2)" in runbook
+    assert "provider_broker_dispatch_send_synthetic_sidecar_proof_carried" not in failed
+    assert "provider_broker_dispatch_send_synthetic_sidecar_proof_ready" not in failed
+
+
+def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_missing_synthetic_sidecar_proof(tmp_path):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    send_summary = pd.read_csv(summary_path)
+    send_summary.loc[0, "synthetic_dataset_count"] = 2
+    send_summary.loc[0, "synthetic_sidecar_proof_ready"] = False
+    for column in (
+        "synthetic_sidecar_count",
+        "synthetic_sidecar_readable_count",
+        "synthetic_sidecar_source_count",
+        "synthetic_sidecar_adapter_command_hash_count",
+        "synthetic_sidecar_capture_env_template_match_count",
+        "synthetic_sidecar_adapter_handoff_match_count",
+        "synthetic_sidecar_source_env_template_match_count",
+        "synthetic_sidecar_live_fetch_contract_count",
+        "synthetic_sidecar_adapter_execution_contract_safe_count",
+        "synthetic_sidecar_invariant_count",
+    ):
+        send_summary.loc[0, column] = 0
+    send_summary.to_csv(summary_path, index=False)
+    _mutate_json(
+        provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json",
+        lambda payload: payload.pop("synthetic_sidecar_proof", None),
+    )
+    _mutate_json(
+        provider_send.output_dir / "manifest.json",
+        lambda payload: payload["extra"].pop("synthetic_sidecar_proof", None),
+    )
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_acks.csv",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_ack"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert not report.passed
+    assert bool(summary["provider_broker_dispatch_send_ready"])
+    assert bool(summary["broker_dispatch_ack_passed"])
+    assert summary["synthetic_dataset_count"] == 2
+    assert not bool(summary["synthetic_sidecar_proof_ready"])
+    assert summary["synthetic_sidecar_count"] == 0
+    assert config["synthetic_sidecar_proof"] == {}
+    assert manifest["extra"]["synthetic_sidecar_proof"] == {}
+    assert "provider_broker_dispatch_send_synthetic_sidecar_proof_carried" in failed
+    assert "provider_broker_dispatch_send_synthetic_sidecar_proof_ready" in failed
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_dispatch_send"
+    assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
+
+
 def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_missing_adapter_execution_contract(tmp_path):
     provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
     summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"

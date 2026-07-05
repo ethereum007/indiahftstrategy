@@ -410,6 +410,9 @@
   provider-profile proof plus the credential-safe `adapter_execution_contract`
   from broker dispatch send and blocks broker-dispatch round-trip review when
   either contract is missing, unsafe, or no longer matched to live evidence.
+  It also carries nested `synthetic_sidecar_proof` plus flattened sidecar
+  counts from broker dispatch send and blocks broker-dispatch round-trip review
+  when synthetic provider folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance broker dispatch round-trip now preserves those
   adapter fingerprints into the final dry-run bridge proof: round-trip
   summary/config and manifest extras expose capture env-template and adapter
@@ -1991,7 +1994,10 @@
   inputs/metadata before the final provider round-trip wrapper is trusted.
   Acknowledgement blocks round-trip review when the send-retained round-trip
   provider profile or adapter contract is missing, unsafe, stale, or no longer
-  matched to runtime-session evidence. Acknowledgement now also hydrates
+  matched to runtime-session evidence. It also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from broker dispatch
+  send and blocks round-trip review when synthetic provider folds are missing
+  ready rehearsal sidecar proof. Acknowledgement now also hydrates
   missing or blank send-packet
   `dispatch_roundtrip_*` summary fields from the send
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit

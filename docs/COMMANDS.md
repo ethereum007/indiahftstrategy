@@ -5248,6 +5248,10 @@ contract/SHA so round-trip review can trace the live data adapter without
 exposing credential values. If that provider profile or adapter contract is
 missing, unsafe, or no longer matched to live evidence, acknowledgement
 reconciliation blocks round-trip review and routes back to
+`prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries
+nested `synthetic_sidecar_proof` plus flattened sidecar counts from the send
+packet. If the required synthetic sidecar proof is missing or unready,
+acknowledgement reconciliation blocks round-trip review and routes back to
 `prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
