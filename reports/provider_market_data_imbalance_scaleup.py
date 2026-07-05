@@ -275,6 +275,11 @@ def write_provider_market_data_imbalance_scaleup_plan(
             "capture_bundle_provider_capture_commands_match_session": bool(
                 summary_row["capture_bundle_provider_capture_commands_match_session"]
             ),
+            "synthetic_sidecar_proof": _mapping(payload.get("synthetic_sidecar_proof")),
+            "synthetic_dataset_count": int(summary_row["synthetic_dataset_count"]),
+            "synthetic_sidecar_proof_ready": bool(summary_row["synthetic_sidecar_proof_ready"]),
+            "synthetic_sidecar_count": int(summary_row["synthetic_sidecar_count"]),
+            "synthetic_sidecar_readable_count": int(summary_row["synthetic_sidecar_readable_count"]),
             "adapter_execution_contract": _mapping(payload.get("adapter_execution_contract")),
             "adapter_contract_provider_profile_sha256": str(summary_row["adapter_contract_provider_profile_sha256"]),
             "adapter_contract_provider_profile_matches_evidence": bool(
@@ -490,6 +495,11 @@ def _checks(
     )
     adapter_contract_carried = _adapter_contract_carried(scorecard_summary)
     provider_profile_carried = _provider_profile_carried(scorecard_summary)
+    synthetic_dataset_count = int(_first_number(scorecard_summary, "synthetic_dataset_count"))
+    sidecar_proof_count = int(_first_number(scorecard_summary, "synthetic_sidecar_count"))
+    sidecar_proof_required = synthetic_dataset_count > 0
+    sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
+    sidecar_proof_ready = _first_bool(scorecard_summary, "synthetic_sidecar_proof_ready")
     rows.append(
         _check(
             "scaleup_plan_runnable",
@@ -613,6 +623,26 @@ def _checks(
             if bundle_provided
             else True,
             "provider imbalance scorecard adapter contract provider-profile SHA no longer matches live evidence",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_synthetic_sidecar_proof_carried",
+            sidecar_proof_count,
+            "==",
+            synthetic_dataset_count,
+            sidecar_proof_count_matches if sidecar_proof_required else True,
+            "provider imbalance scorecard synthetic folds are missing rehearsal sidecar proof",
+        )
+    )
+    rows.append(
+        _check(
+            "scorecard_synthetic_sidecar_proof_ready",
+            sidecar_proof_ready,
+            "is",
+            True,
+            sidecar_proof_ready if sidecar_proof_required else True,
+            "provider imbalance scorecard synthetic folds require ready rehearsal sidecar proof",
         )
     )
     return pd.DataFrame(rows)
@@ -866,6 +896,38 @@ def _summary(
                     or _first_bool(provider_launch_summary, "capture_bundle_provided")
                 )
                 else True,
+                "synthetic_dataset_count": int(_first_number(scorecard_summary, "synthetic_dataset_count")),
+                "synthetic_sidecar_proof_ready": _first_bool(
+                    scorecard_summary, "synthetic_sidecar_proof_ready"
+                ),
+                "synthetic_sidecar_count": int(_first_number(scorecard_summary, "synthetic_sidecar_count")),
+                "synthetic_sidecar_readable_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_readable_count")
+                ),
+                "synthetic_sidecar_source_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_source_count")
+                ),
+                "synthetic_sidecar_adapter_command_hash_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_adapter_command_hash_count")
+                ),
+                "synthetic_sidecar_capture_env_template_match_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_capture_env_template_match_count")
+                ),
+                "synthetic_sidecar_adapter_handoff_match_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_adapter_handoff_match_count")
+                ),
+                "synthetic_sidecar_source_env_template_match_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_source_env_template_match_count")
+                ),
+                "synthetic_sidecar_live_fetch_contract_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_live_fetch_contract_count")
+                ),
+                "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_adapter_execution_contract_safe_count")
+                ),
+                "synthetic_sidecar_invariant_count": int(
+                    _first_number(scorecard_summary, "synthetic_sidecar_invariant_count")
+                ),
                 "shadow_comparison_dir": str(shadow_dir),
                 "route_readiness_dir": _path_text(route_readiness_dir),
                 "provider_route_readiness_wrapper_dir": _path_text(provider_route_readiness_wrapper_dir),
@@ -995,6 +1057,7 @@ def _config(
         "provider_capture_commands": _provider_capture_commands(scorecard_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(scorecard_config),
         "adapter_execution_contract": _mapping(scorecard_config.get("adapter_execution_contract")),
+        "synthetic_sidecar_proof": _mapping(scorecard_config.get("synthetic_sidecar_proof")),
         "capture_bundle": _provider_capture_bundle(summary, scorecard_config),
         "scorecard": _first_record(scorecard_summary),
         "provider_scorecard_config": _jsonable(scorecard_config),
@@ -1066,6 +1129,7 @@ def _next_gate_for_check(check: str) -> str:
         or check.startswith("scorecard_adapter_execution_contract")
         or check.startswith("scorecard_provider_profile")
         or check.startswith("scorecard_adapter_provider_profile")
+        or check.startswith("scorecard_synthetic_sidecar")
     ):
         return "score-provider-market-data-imbalance-readiness"
     if check.startswith("provider_launch_evidence") or check.startswith("launch_evidence"):
@@ -1107,6 +1171,7 @@ def _repair_action(check: str) -> str:
         or check.startswith("scorecard_adapter_execution_contract")
         or check.startswith("scorecard_provider_profile")
         or check.startswith("scorecard_adapter_provider_profile")
+        or check.startswith("scorecard_synthetic_sidecar")
     ):
         return "score_provider_imbalance_readiness"
     if check.startswith("provider_launch_evidence") or check.startswith("launch_evidence"):
@@ -1145,6 +1210,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         "",
         "## Checks",
         "",

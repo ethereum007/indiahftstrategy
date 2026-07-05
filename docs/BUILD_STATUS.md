@@ -315,7 +315,10 @@
   review. Scale-up planning also carries provider-profile proof plus the
   credential-safe `adapter_execution_contract` from the provider scorecard and
   blocks runtime telemetry readiness when either contract is missing, unsafe,
-  or no longer matched to live evidence.
+  or no longer matched to live evidence. It also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from the provider
+  scorecard and blocks runtime telemetry readiness when synthetic provider
+  folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance runtime telemetry now keeps that live adapter
   audit trail intact after scale-up: runtime telemetry summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256

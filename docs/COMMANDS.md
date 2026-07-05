@@ -4848,7 +4848,10 @@ adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, `live_fetch_contract`, and the
 provider-profile contract/SHA plus credential-safe `adapter_execution_contract`
 from the provider scorecard in the provider wrapper summary/config/runbook and
-manifest. Missing, unsafe, or mismatched provider-profile or adapter-contract
+manifest. It also retains nested `synthetic_sidecar_proof` plus flattened
+sidecar counts from the provider scorecard and blocks runtime telemetry when
+synthetic provider folds are missing ready rehearsal sidecar proof. Missing,
+unsafe, or mismatched provider-profile, adapter-contract, or synthetic sidecar
 proof keeps scale-up blocked at provider scorecard readiness before runtime
 telemetry begins. A ready wrapper points to
 `build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
