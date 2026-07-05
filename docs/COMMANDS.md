@@ -5114,12 +5114,17 @@ for broker-dispatch planning. If that final dry-run provider profile or adapter
 proof is missing, unsafe, stale, or no longer matched to runtime-session
 evidence, route-enable blocks broker-dispatch planning and routes the packet
 back to
-`review-provider-market-data-imbalance-cutover`. When a cutover CSV is sparse
+`review-provider-market-data-imbalance-cutover`. Route-enable also carries the
+cutover-retained final round-trip `synthetic_sidecar_proof` plus flattened
+`dispatch_roundtrip_synthetic_*` counters; if synthetic final dry-run folds are
+present without ready rehearsal sidecars, broker-dispatch planning is blocked
+and routed back to `review-provider-market-data-imbalance-cutover`. When a
+cutover CSV is sparse
 but its config sidecar has
 `dispatch_roundtrip_provenance`, route-enable hydrates missing or blank
-`dispatch_roundtrip_*` fields from that config before falling back to the
-broker-readiness config sidecar, while keeping explicit summary `False` values
-authoritative. The
+`dispatch_roundtrip_*` fields, including the final round-trip sidecar counters,
+from that config before falling back to the broker-readiness config sidecar,
+while keeping explicit summary `False` values authoritative. The
 wrapper runs `review-route-enable` under a nested
 `route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready

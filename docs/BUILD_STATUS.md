@@ -453,7 +453,10 @@
   preserves the final round-trip provider-profile proof plus the
   credential-safe `adapter_execution_contract` and blocks broker-dispatch
   planning when either cutover handoff is missing, unsafe, stale, or no longer
-  matched to runtime-session evidence.
+  matched to runtime-session evidence. It also carries the cutover-retained
+  `dispatch_roundtrip_synthetic_*` sidecar proof and routes back to cutover
+  when synthetic final dry-run folds are present without ready rehearsal
+  sidecars.
 - Provider market-data imbalance broker dispatch now carries those
   dispatch-roundtrip fingerprints forward from route enable: broker-dispatch
   summary/config and manifest extras expose the dispatch-roundtrip capture
@@ -1937,7 +1940,11 @@
   `dispatch_roundtrip_provenance` config block before falling back to the
   broker-readiness config block, while preserving explicit summary `False`
   values, so sparse cutover CSVs do not lose the validated live-data handoff or
-  command bundle proof.
+  command bundle proof. Route-enable also carries the cutover-retained final
+  round-trip `synthetic_sidecar_proof` plus flattened
+  `dispatch_roundtrip_synthetic_*` counters and blocks broker-dispatch planning
+  back to cutover when synthetic final dry-run folds are present without ready
+  rehearsal sidecars.
 - Provider-data imbalance broker-dispatch now preserves the route-enable-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
