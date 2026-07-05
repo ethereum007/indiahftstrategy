@@ -4881,8 +4881,11 @@ capture bundle, blank credential env-template, adapter handoff paths, source
 credential env-template proof, exchange/session metadata, capture-bundle session
 match proof, `live_fetch_contract`, provider-profile contract/SHA, and
 credential-safe `adapter_execution_contract` from scale-up in its
-summary/config/runbook and manifest. Missing, unsafe, or mismatched
-provider-profile or adapter-contract proof blocks guard monitoring and sends
+summary/config/runbook and manifest. It also retains nested
+`synthetic_sidecar_proof` plus flattened sidecar counts from scale-up and
+blocks guard monitoring when synthetic provider folds are missing ready
+rehearsal sidecar proof. Missing, unsafe, or mismatched provider-profile,
+adapter-contract, or synthetic sidecar proof blocks guard monitoring and sends
 the packet back through provider scale-up planning. Supply
 live PnL, open-order, and position CSVs when they are available from
 Arrow.money/iRage; omit them for a dry guard-input snapshot based on scale-up
