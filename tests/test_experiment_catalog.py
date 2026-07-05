@@ -1140,6 +1140,67 @@ def test_write_experiment_catalog_summarizes_broker_roundtrip_resume_route_proof
     assert "- Resume-route launch-control-breach broker round-trip runs: 1" in runbook
 
 
+def test_write_experiment_catalog_summarizes_provider_broker_roundtrip_synthetic_sidecar_proofs(tmp_path):
+    root = tmp_path / "runs"
+    out_dir = tmp_path / "catalog"
+    write_run(
+        root / "provider_roundtrip_ready",
+        run_type="provider_market_data_imbalance_broker_dispatch_roundtrip",
+        summary_name="provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": True,
+            "ready": True,
+            "strategy": "microprice_imbalance",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 0,
+            "dispatch_roundtrip_synthetic_dataset_count": 2,
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready": True,
+            "dispatch_roundtrip_synthetic_sidecar_count": 2,
+            "dispatch_roundtrip_synthetic_sidecar_readable_count": 2,
+        },
+    )
+    write_run(
+        root / "provider_roundtrip_breach",
+        run_type="provider_market_data_imbalance_broker_dispatch_roundtrip",
+        summary_name="provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": False,
+            "ready": False,
+            "strategy": "microprice_imbalance",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 2,
+            "dispatch_roundtrip_synthetic_dataset_count": 2,
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready": False,
+            "dispatch_roundtrip_synthetic_sidecar_count": 1,
+            "dispatch_roundtrip_synthetic_sidecar_readable_count": 1,
+        },
+    )
+
+    report = write_experiment_catalog([root], output_dir=out_dir)
+
+    summary = report.summary.iloc[0]
+    assert int(summary["provider_broker_roundtrip_runs"]) == 2
+    assert int(summary["provider_broker_roundtrip_passed_runs"]) == 1
+    assert int(summary["provider_broker_roundtrip_synthetic_dataset_count"]) == 4
+    assert int(summary["provider_broker_roundtrip_synthetic_sidecar_count"]) == 3
+    assert int(summary["provider_broker_roundtrip_synthetic_sidecar_readable_count"]) == 3
+    assert int(summary["provider_broker_roundtrip_synthetic_sidecar_proof_runs"]) == 2
+    assert int(summary["provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
+    assert int(summary["provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
+    persisted = pd.read_csv(out_dir / "experiment_catalog_summary.csv")
+    assert int(persisted.loc[0, "provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
+    action_plan = json.loads((out_dir / "experiment_catalog_action_plan.json").read_text(encoding="utf-8"))
+    assert action_plan["provider_broker_roundtrip_synthetic_sidecar_ready_runs"] == 1
+    assert action_plan["provider_broker_roundtrip_synthetic_sidecar_breach_runs"] == 1
+    runbook = (out_dir / "experiment_catalog_runbook.md").read_text(encoding="utf-8")
+    assert "- Provider broker round-trip synthetic sidecar ready runs: 1" in runbook
+    assert "- Provider broker round-trip synthetic sidecar breach runs: 1" in runbook
+    rows = report.catalog.set_index("run_dir")
+    ready_row = rows.loc[str(root / "provider_roundtrip_ready")]
+    assert int(ready_row["summary_dispatch_roundtrip_synthetic_sidecar_count"]) == 2
+    assert bool(ready_row["summary_dispatch_roundtrip_synthetic_sidecar_proof_ready"])
+
+
 def test_catalog_experiment_runs_recognizes_route_readiness_next_action(tmp_path):
     root = tmp_path / "runs"
     write_run(
@@ -3307,6 +3368,88 @@ def test_cli_catalog_runs_can_gate_broker_roundtrip_resume_route_proofs(tmp_path
     assert breach_code == 2
     assert missing_code == 2
     assert int(breach_summary.loc[0, "broker_roundtrip_resume_route_breach_runs"]) == 1
+
+
+def test_cli_catalog_runs_can_gate_provider_broker_roundtrip_synthetic_sidecar_proofs(tmp_path):
+    safe_root = tmp_path / "safe_runs"
+    write_run(
+        safe_root / "provider_roundtrip_ready",
+        run_type="provider_market_data_imbalance_broker_dispatch_roundtrip",
+        summary_name="provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": True,
+            "ready": True,
+            "strategy": "microprice_imbalance",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 0,
+            "dispatch_roundtrip_synthetic_dataset_count": 2,
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready": True,
+            "dispatch_roundtrip_synthetic_sidecar_count": 2,
+            "dispatch_roundtrip_synthetic_sidecar_readable_count": 2,
+        },
+    )
+    breach_root = tmp_path / "breach_runs"
+    write_run(
+        breach_root / "provider_roundtrip_breach",
+        run_type="provider_market_data_imbalance_broker_dispatch_roundtrip",
+        summary_name="provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
+        summary_row={
+            "passed": False,
+            "ready": False,
+            "strategy": "microprice_imbalance",
+            "market": "india_nse_index_derivatives",
+            "failed_checks": 2,
+            "dispatch_roundtrip_synthetic_dataset_count": 2,
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready": False,
+            "dispatch_roundtrip_synthetic_sidecar_count": 1,
+            "dispatch_roundtrip_synthetic_sidecar_readable_count": 1,
+        },
+    )
+    missing_root = tmp_path / "missing_runs"
+    write_run(
+        missing_root / "proof",
+        run_type="proof_report",
+        summary_name="proof_summary.csv",
+        summary_row={"all_passed": True, "failed_runs": 0},
+    )
+
+    safe_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(safe_root),
+            "--out",
+            str(tmp_path / "catalog_safe"),
+            "--require-provider-broker-roundtrip-synthetic-sidecar-ready",
+            "--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach",
+        ]
+    )
+    breach_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(breach_root),
+            "--out",
+            str(tmp_path / "catalog_breach"),
+            "--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach",
+        ]
+    )
+    missing_code = main(
+        [
+            "catalog-runs",
+            "--roots",
+            str(missing_root),
+            "--out",
+            str(tmp_path / "catalog_missing"),
+            "--require-provider-broker-roundtrip-synthetic-sidecar-ready",
+        ]
+    )
+
+    breach_summary = pd.read_csv(tmp_path / "catalog_breach" / "experiment_catalog_summary.csv")
+    assert safe_code == 0
+    assert breach_code == 2
+    assert missing_code == 2
+    assert int(breach_summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
 
 
 def test_cli_catalog_runs_can_fail_on_any_actions(tmp_path):

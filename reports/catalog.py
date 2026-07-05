@@ -275,6 +275,7 @@ def _catalog_summary(
     hygiene_counts = _hygiene_gap_counts(hygiene_gaps)
     broker_roundtrip_counts = _broker_roundtrip_portfolio_counts(catalog)
     broker_roundtrip_resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
+    provider_broker_roundtrip_sidecar_counts = _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)
     placeholder_schema_counts = _placeholder_schema_counts(catalog)
     if catalog.empty:
         return pd.DataFrame(
@@ -296,6 +297,7 @@ def _catalog_summary(
                     "runs_with_unfingerprinted_inputs": 0,
                     **broker_roundtrip_counts,
                     **broker_roundtrip_resume_route_counts,
+                    **provider_broker_roundtrip_sidecar_counts,
                     **placeholder_schema_counts,
                     **action_counts,
                     **hygiene_counts,
@@ -322,6 +324,7 @@ def _catalog_summary(
                 "runs_with_unfingerprinted_inputs": int((catalog["input_unfingerprinted_count"] > 0).sum()),
                 **broker_roundtrip_counts,
                 **broker_roundtrip_resume_route_counts,
+                **provider_broker_roundtrip_sidecar_counts,
                 **placeholder_schema_counts,
                 **action_counts,
                 **hygiene_counts,
@@ -511,6 +514,47 @@ def _resume_route_branch_state(frame: pd.DataFrame, prefix: str) -> dict[str, pd
         "portfolio_breach": portfolio_breach,
         "concentration_breach": concentration_breach,
     }
+
+
+def _provider_broker_roundtrip_synthetic_sidecar_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "provider_broker_roundtrip_runs": 0,
+        "provider_broker_roundtrip_passed_runs": 0,
+        "provider_broker_roundtrip_synthetic_dataset_count": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_count": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_readable_count": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_proof_runs": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs": 0,
+    }
+    if catalog.empty or "run_type" not in catalog.columns:
+        return keys
+    frame = catalog.loc[
+        catalog["run_type"].astype(str) == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    ].copy()
+    if frame.empty:
+        return keys
+    passed = _bool_column(frame, "summary_status")
+    dataset_count = _numeric_column(frame, "summary_dispatch_roundtrip_synthetic_dataset_count")
+    sidecar_count = _numeric_column(frame, "summary_dispatch_roundtrip_synthetic_sidecar_count")
+    readable_count = _numeric_column(frame, "summary_dispatch_roundtrip_synthetic_sidecar_readable_count")
+    ready_flag = _bool_column(frame, "summary_dispatch_roundtrip_synthetic_sidecar_proof_ready")
+    proof_runs = dataset_count > 0.0
+    ready_runs = proof_runs & ready_flag & (sidecar_count >= dataset_count) & (readable_count >= dataset_count)
+    breach_runs = proof_runs & ~ready_runs
+    keys.update(
+        {
+            "provider_broker_roundtrip_runs": int(len(frame)),
+            "provider_broker_roundtrip_passed_runs": int(passed.sum()),
+            "provider_broker_roundtrip_synthetic_dataset_count": int(dataset_count.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_count": int(sidecar_count.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_readable_count": int(readable_count.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_proof_runs": int(proof_runs.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_ready_runs": int(ready_runs.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(breach_runs.sum()),
+        }
+    )
+    return keys
 
 
 def _placeholder_schema_counts(catalog: pd.DataFrame) -> dict[str, int]:
@@ -867,6 +911,28 @@ def _catalog_action_plan(
         ),
         "broker_roundtrip_resume_route_concentration_breach_runs": _int_metric(
             summary_row.get("broker_roundtrip_resume_route_concentration_breach_runs")
+        ),
+        "provider_broker_roundtrip_runs": _int_metric(summary_row.get("provider_broker_roundtrip_runs")),
+        "provider_broker_roundtrip_passed_runs": _int_metric(
+            summary_row.get("provider_broker_roundtrip_passed_runs")
+        ),
+        "provider_broker_roundtrip_synthetic_dataset_count": _int_metric(
+            summary_row.get("provider_broker_roundtrip_synthetic_dataset_count")
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_count": _int_metric(
+            summary_row.get("provider_broker_roundtrip_synthetic_sidecar_count")
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_readable_count": _int_metric(
+            summary_row.get("provider_broker_roundtrip_synthetic_sidecar_readable_count")
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_proof_runs": _int_metric(
+            summary_row.get("provider_broker_roundtrip_synthetic_sidecar_proof_runs")
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs": _int_metric(
+            summary_row.get("provider_broker_roundtrip_synthetic_sidecar_ready_runs")
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs": _int_metric(
+            summary_row.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs")
         ),
         "placeholder_schema_active_runs": _int_metric(summary_row.get("placeholder_schema_active_runs")),
         "placeholder_schema_allowed_runs": _int_metric(summary_row.get("placeholder_schema_allowed_runs")),
@@ -1353,6 +1419,38 @@ def _catalog_runbook_markdown(
         (
             "- Resume-route concentration-breach broker round-trip runs: "
             f"{_int_metric(summary_row.get('broker_roundtrip_resume_route_concentration_breach_runs'))}"
+        ),
+        (
+            "- Provider broker round-trip runs: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_runs'))}"
+        ),
+        (
+            "- Provider broker round-trip passed runs: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_passed_runs'))}"
+        ),
+        (
+            "- Provider broker round-trip synthetic datasets: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_synthetic_dataset_count'))}"
+        ),
+        (
+            "- Provider broker round-trip synthetic sidecars: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_synthetic_sidecar_count'))}"
+        ),
+        (
+            "- Provider broker round-trip readable synthetic sidecars: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_synthetic_sidecar_readable_count'))}"
+        ),
+        (
+            "- Provider broker round-trip synthetic sidecar proof runs: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_synthetic_sidecar_proof_runs'))}"
+        ),
+        (
+            "- Provider broker round-trip synthetic sidecar ready runs: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_synthetic_sidecar_ready_runs'))}"
+        ),
+        (
+            "- Provider broker round-trip synthetic sidecar breach runs: "
+            f"{_int_metric(summary_row.get('provider_broker_roundtrip_synthetic_sidecar_breach_runs'))}"
         ),
         "",
         "## Broker Schema Review",

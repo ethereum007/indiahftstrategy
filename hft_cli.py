@@ -368,6 +368,8 @@ def _catalog_exit_code(
     require_broker_roundtrip_portfolio_concentration_ok: bool,
     fail_on_broker_roundtrip_resume_route_breach: bool,
     require_broker_roundtrip_resume_route_ready: bool,
+    fail_on_provider_broker_roundtrip_synthetic_sidecar_breach: bool,
+    require_provider_broker_roundtrip_synthetic_sidecar_ready: bool,
 ) -> int:
     if fail_on_catalog_gaps and _catalog_gap_count(result) > 0:
         return 2
@@ -399,6 +401,16 @@ def _catalog_exit_code(
     if (
         require_broker_roundtrip_resume_route_ready
         and _catalog_summary_metric(result, "broker_roundtrip_resume_route_ready_runs") <= 0
+    ):
+        return 2
+    if (
+        fail_on_provider_broker_roundtrip_synthetic_sidecar_breach
+        and _catalog_summary_metric(result, "provider_broker_roundtrip_synthetic_sidecar_breach_runs") > 0
+    ):
+        return 2
+    if (
+        require_provider_broker_roundtrip_synthetic_sidecar_ready
+        and _catalog_summary_metric(result, "provider_broker_roundtrip_synthetic_sidecar_ready_runs") <= 0
     ):
         return 2
     if fail_on_placeholder_schema and _catalog_summary_metric(result, "placeholder_schema_active_runs") > 0:
@@ -2267,6 +2279,8 @@ def main(argv: list[str] | None = None) -> int:
     catalog.add_argument("--require-broker-roundtrip-portfolio-concentration-ok", action="store_true")
     catalog.add_argument("--fail-on-broker-roundtrip-resume-route-breach", action="store_true")
     catalog.add_argument("--require-broker-roundtrip-resume-route-ready", action="store_true")
+    catalog.add_argument("--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach", action="store_true")
+    catalog.add_argument("--require-provider-broker-roundtrip-synthetic-sidecar-ready", action="store_true")
 
     evidence = sub.add_parser("review-strategy-evidence", help="Gate strategy evidence from an experiment catalog.")
     evidence.add_argument("--catalog", required=True)
@@ -5530,6 +5544,12 @@ def main(argv: list[str] | None = None) -> int:
             ),
             fail_on_broker_roundtrip_resume_route_breach=args.fail_on_broker_roundtrip_resume_route_breach,
             require_broker_roundtrip_resume_route_ready=args.require_broker_roundtrip_resume_route_ready,
+            fail_on_provider_broker_roundtrip_synthetic_sidecar_breach=(
+                args.fail_on_provider_broker_roundtrip_synthetic_sidecar_breach
+            ),
+            require_provider_broker_roundtrip_synthetic_sidecar_ready=(
+                args.require_provider_broker_roundtrip_synthetic_sidecar_ready
+            ),
         )
     if args.command == "review-strategy-evidence":
         required_run_types = (

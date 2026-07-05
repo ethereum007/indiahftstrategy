@@ -932,6 +932,11 @@
   dispatch round-trip portfolio proof counts, including portfolio-provided,
   portfolio-ready, portfolio-safe, and portfolio-breach runs for Arrow.money or
   iRage dry-run launch review.
+- Experiment catalog summaries, action plans, runbooks, and `catalog-runs`
+  gates now expose provider imbalance broker round-trip synthetic sidecar proof
+  counts, ready runs, and breach runs, so scheduler automation can reject final
+  Arrow.money/iRage provider broker dry-run evidence when rehearsal sidecars
+  were expected but not retained/readable.
 - Experiment catalog summaries, action plans, and runbooks now aggregate final
   broker round-trip portfolio concentration proof counts, including
   concentration-present, concentration-ok, and concentration-breach runs when

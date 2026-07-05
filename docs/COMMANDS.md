@@ -97,6 +97,17 @@ adds `broker_roundtrip_resume_route_provided_runs`,
 route gaps, launch controls, portfolio proof, and concentration proof. These
 metrics let scheduler gates reject partial or stale resume authorization
 before Arrow.money/iRage dry-run evidence is treated as reusable.
+When provider imbalance broker round-trip summaries carry final synthetic
+sidecar proof, the catalog also adds
+`provider_broker_roundtrip_runs`, `provider_broker_roundtrip_passed_runs`,
+`provider_broker_roundtrip_synthetic_dataset_count`,
+`provider_broker_roundtrip_synthetic_sidecar_count`,
+`provider_broker_roundtrip_synthetic_sidecar_readable_count`,
+`provider_broker_roundtrip_synthetic_sidecar_proof_runs`,
+`provider_broker_roundtrip_synthetic_sidecar_ready_runs`, and
+`provider_broker_roundtrip_synthetic_sidecar_breach_runs` so schedulers can
+prove the final Arrow.money/iRage-ready provider path retained readable
+synthetic sidecars before treating broker dispatch proof as reusable.
 For broker schema review, the catalog summary/action plan/runbook carry
 `placeholder_schema_active_runs`, `placeholder_schema_allowed_runs`,
 `placeholder_schema_reviewed_runs`, `placeholder_schema_unreviewed_runs`, and
@@ -153,6 +164,12 @@ or concentration-unsafe resume-route proof, and
 `--require-broker-roundtrip-resume-route-ready` when the catalog must contain
 at least one final round-trip with both primary and incident resume-route
 branches ready.
+Use `--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach` to fail when
+any provider imbalance broker round-trip expected synthetic sidecars but did
+not retain a ready/readable proof, and
+`--require-provider-broker-roundtrip-synthetic-sidecar-ready` when the catalog
+must contain at least one final provider broker round-trip with ready synthetic
+sidecar proof.
 Use `--fail-on-catalog-gaps` to fail when cataloged runs include failed
 summary status, missing summaries, dirty git state, or unfingerprinted inputs.
 When that gate fails, inspect `experiment_catalog_hygiene_gaps.csv` first.
