@@ -285,7 +285,10 @@
   The same gate now carries provider-profile proof plus the credential-safe
   `adapter_execution_contract` from the provider launch packet and blocks
   scorecard readiness when either contract is missing, unsafe, or no longer
-  matched to live evidence.
+  matched to live evidence. It now also carries nested `synthetic_sidecar_proof`
+  plus flattened sidecar counts from the provider launch packet, and blocks
+  scorecard readiness when synthetic provider folds are missing ready rehearsal
+  sidecar proof.
 - Provider market-data imbalance scorecard now makes the final readiness gate
   provider-specific: `score-provider-market-data-imbalance-readiness` consumes
   the launch-evidence review, scores only the full `imbalance` profile, carries

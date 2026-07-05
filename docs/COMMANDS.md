@@ -4762,7 +4762,10 @@ manifest retain the upstream capture bundle, blank credential env-template,
 adapter handoff paths, source credential env-template proof, exchange/session
 metadata, capture-bundle session match proof, `live_fetch_contract`, and the
 provider-profile contract/SHA plus credential-safe `adapter_execution_contract`
-from the provider launch packet. If the provider profile or adapter contract is
+from the provider launch packet. They also retain nested
+`synthetic_sidecar_proof` plus flattened sidecar counts, and block scorecard
+readiness when synthetic provider folds are missing ready rehearsal sidecar
+proof. If the provider profile, adapter contract, or synthetic sidecar proof is
 missing, unsafe, or no longer matched to live evidence, scorecard readiness is
 blocked before later broker handoffs can drift from the provider-data source
 contract. Its next gate is
