@@ -389,7 +389,10 @@
   values directly. Broker dispatch also carries provider-profile proof plus the
   credential-safe `adapter_execution_contract` from route enable and blocks
   broker-dispatch-send preparation when either contract is missing, unsafe, or
-  no longer matched to live evidence.
+  no longer matched to live evidence. It also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from route enable and
+  blocks broker-dispatch-send preparation when synthetic provider folds are
+  missing ready rehearsal sidecar proof.
 - Provider market-data imbalance broker dispatch send now preserves those
   adapter fingerprints into the non-submitting sender packet: send
   summary/config and manifest extras expose capture env-template and adapter
@@ -1934,6 +1937,9 @@
   exchange/session identity, `live_fetch_contract`, and source/capture
   provenance-consistency flags through summary/config/runbook artifacts plus
   manifest inputs/metadata before the non-submitting send packet is prepared.
+  It also carries nested `synthetic_sidecar_proof` plus flattened sidecar counts
+  from route enable and blocks send packet preparation when synthetic provider
+  folds are missing ready rehearsal sidecar proof.
   Broker-dispatch now also hydrates missing or blank route-enable
   `dispatch_roundtrip_*` summary fields from the route-enable
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit

@@ -5143,7 +5143,10 @@ from route-enable plus the provider-profile contract/SHA so send preparation can
 trace the live data adapter without exposing credential values. If that
 provider profile or adapter contract is missing, unsafe, or no longer matched
 to live evidence, broker-dispatch blocks send preparation and routes back to
-`review-provider-market-data-imbalance-route-enable`. It also carries the
+`review-provider-market-data-imbalance-route-enable`. It also carries nested
+`synthetic_sidecar_proof` plus flattened sidecar counts from route-enable and
+blocks send preparation when synthetic provider folds are missing ready
+rehearsal sidecar proof. It also carries the
 route-enable-retained
 validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
