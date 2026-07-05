@@ -4943,9 +4943,11 @@ capture bundle, blank credential env-template, adapter handoff paths, source
 credential env-template proof, exchange/session metadata, capture-bundle session
 match proof, `live_fetch_contract`, provider-profile contract/SHA, and
 credential-safe `adapter_execution_contract` in its provider wrapper
-summary/config/runbook and manifest. Missing, unsafe, or mismatched
-provider-profile or adapter-contract proof blocks broker readiness review and
-sends the packet back through provider runtime guard.
+summary/config/runbook and manifest. It also retains nested
+`synthetic_sidecar_proof` plus flattened sidecar counts from runtime guard.
+Missing, unsafe, or mismatched provider-profile, adapter-contract, or
+synthetic sidecar proof blocks broker readiness review and sends the packet
+back through provider runtime guard.
 Clean sessions route to
 `review-provider-market-data-imbalance-broker-readiness`. If the session guard
 halts and a halt response is ready, it emits a ready `export-halt-response`

@@ -333,6 +333,11 @@ def write_provider_market_data_imbalance_runtime_session(
             "capture_bundle_provider_capture_commands": _list(
                 payload.get("capture_bundle_provider_capture_commands")
             ),
+            "synthetic_sidecar_proof": _mapping(payload.get("synthetic_sidecar_proof")),
+            "synthetic_dataset_count": int(summary_row["synthetic_dataset_count"]),
+            "synthetic_sidecar_proof_ready": bool(summary_row["synthetic_sidecar_proof_ready"]),
+            "synthetic_sidecar_count": int(summary_row["synthetic_sidecar_count"]),
+            "synthetic_sidecar_readable_count": int(summary_row["synthetic_sidecar_readable_count"]),
         },
     )
     return ProviderMarketDataImbalanceRuntimeSessionReport(session, checks, summary, action_queue, payload, out)
@@ -470,6 +475,11 @@ def _checks(
     )
     adapter_contract_carried = _adapter_contract_carried(guard_summary)
     provider_profile_carried = _provider_profile_carried(guard_summary)
+    synthetic_dataset_count = int(_first_number(_first_text(guard_summary, "synthetic_dataset_count")) or 0)
+    synthetic_sidecar_count = int(_first_number(_first_text(guard_summary, "synthetic_sidecar_count")) or 0)
+    synthetic_sidecar_proof_required = synthetic_dataset_count > 0
+    synthetic_sidecar_proof_ready = _first_bool(guard_summary, "synthetic_sidecar_proof_ready")
+    synthetic_sidecar_count_matches = synthetic_sidecar_count == synthetic_dataset_count
     rows.append(
         _check(
             "runtime_session_runnable",
@@ -617,6 +627,26 @@ def _checks(
             if bundle_provided
             else True,
             "provider imbalance runtime guard adapter contract provider-profile SHA no longer matches live evidence",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_runtime_guard_synthetic_sidecar_proof_carried",
+            synthetic_sidecar_count,
+            "==",
+            synthetic_dataset_count,
+            synthetic_sidecar_count_matches if synthetic_sidecar_proof_required else True,
+            "provider imbalance runtime guard synthetic folds are missing rehearsal sidecar proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_runtime_guard_synthetic_sidecar_proof_ready",
+            synthetic_sidecar_proof_ready,
+            "is",
+            True,
+            synthetic_sidecar_proof_ready if synthetic_sidecar_proof_required else True,
+            "provider imbalance runtime guard synthetic folds require ready rehearsal sidecar proof",
         )
     )
     return pd.DataFrame(rows)
@@ -777,6 +807,41 @@ def _summary(
                 )
                 if _first_bool(guard_summary, "capture_bundle_provided")
                 else True,
+                "synthetic_dataset_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_dataset_count")) or 0
+                ),
+                "synthetic_sidecar_proof_ready": _first_bool(guard_summary, "synthetic_sidecar_proof_ready"),
+                "synthetic_sidecar_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_count")) or 0
+                ),
+                "synthetic_sidecar_readable_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_readable_count")) or 0
+                ),
+                "synthetic_sidecar_source_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_source_count")) or 0
+                ),
+                "synthetic_sidecar_adapter_command_hash_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_adapter_command_hash_count")) or 0
+                ),
+                "synthetic_sidecar_capture_env_template_match_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_capture_env_template_match_count")) or 0
+                ),
+                "synthetic_sidecar_adapter_handoff_match_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_adapter_handoff_match_count")) or 0
+                ),
+                "synthetic_sidecar_source_env_template_match_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_source_env_template_match_count")) or 0
+                ),
+                "synthetic_sidecar_live_fetch_contract_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_live_fetch_contract_count")) or 0
+                ),
+                "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_adapter_execution_contract_safe_count"))
+                    or 0
+                ),
+                "synthetic_sidecar_invariant_count": int(
+                    _first_number(_first_text(guard_summary, "synthetic_sidecar_invariant_count")) or 0
+                ),
                 "runtime_session_dir": "" if session is None else str(session.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -968,6 +1033,7 @@ def _config(
         "provider_capture_commands": _provider_capture_commands(guard_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(guard_config),
         "adapter_execution_contract": _mapping(guard_config.get("adapter_execution_contract")),
+        "synthetic_sidecar_proof": _mapping(guard_config.get("synthetic_sidecar_proof")),
         "capture_bundle": _provider_capture_bundle(summary, guard_config),
         "provider_runtime_guard": _first_record(guard_summary),
         "provider_runtime_guard_config": _jsonable(guard_config),
@@ -1015,6 +1081,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         "",
         "## Checks",
         "",
