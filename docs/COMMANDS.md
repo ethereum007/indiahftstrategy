@@ -4992,11 +4992,16 @@ and capture-bundle session proof,
 broker-readiness records those exact fields as `dispatch_roundtrip_*`
 provenance, falls back to older top-level wrapper fields for legacy artifacts,
 adds manifest inputs/metadata for every proof root including the round-trip
-source credential env-template, and fails closed back to
+source credential env-template, carries any round-trip
+`synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
+counts, and fails closed back to
 `review-provider-market-data-imbalance-broker-dispatch-roundtrip` if they are
 missing, unsafe, stale, or conflict with the runtime-session provenance,
 exchange/session/live-fetch identity, runtime-session provider profile, or
-runtime-session adapter contract.
+runtime-session adapter contract. If the supplied provider round-trip has
+synthetic provider folds but no ready rehearsal sidecar proof, broker-readiness
+also blocks cutover and routes the packet back to broker-dispatch round-trip
+review.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
 batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields

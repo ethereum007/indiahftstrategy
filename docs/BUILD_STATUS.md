@@ -431,7 +431,10 @@
   proof plus the credential-safe `adapter_execution_contract` and fails closed
   back to `review-provider-market-data-imbalance-broker-dispatch-roundtrip`
   when either final dry-run contract is missing, unsafe, stale, or mismatched
-  against runtime-session evidence.
+  against runtime-session evidence. It also carries the round-trip
+  `synthetic_sidecar_proof` plus flattened sidecar counts and routes back to
+  broker-dispatch round-trip review when synthetic provider folds are present
+  but the final dry-run proof no longer has ready rehearsal sidecars attached.
 - Provider market-data imbalance cutover now carries those dispatch-roundtrip
   fingerprints forward from broker readiness: cutover summary/config and
   manifest extras expose the dispatch-roundtrip capture env-template and
