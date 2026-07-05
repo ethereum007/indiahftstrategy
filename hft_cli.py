@@ -2304,6 +2304,8 @@ def main(argv: list[str] | None = None) -> int:
     evidence.add_argument("--require-broker-roundtrip-portfolio-concentration-ok", action="store_true")
     evidence.add_argument("--fail-on-broker-roundtrip-resume-route-breach", action="store_true")
     evidence.add_argument("--require-broker-roundtrip-resume-route-ready", action="store_true")
+    evidence.add_argument("--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach", action="store_true")
+    evidence.add_argument("--require-provider-broker-roundtrip-synthetic-sidecar-ready", action="store_true")
     evidence.add_argument("--fail-on-breach", action="store_true")
 
     scorecard = sub.add_parser(
@@ -5559,6 +5561,9 @@ def main(argv: list[str] | None = None) -> int:
             evidence_profile_run_types("ops_launch"),
             evidence_profile_run_types("provider_imbalance_ops_launch"),
         }
+        is_provider_imbalance_ops_launch_profile = (
+            tuple(required_run_types) == evidence_profile_run_types("provider_imbalance_ops_launch")
+        )
         result = write_strategy_evidence_review(
             args.catalog,
             output_dir=args.out,
@@ -5591,6 +5596,14 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 fail_on_broker_roundtrip_resume_route_breach=(
                     args.fail_on_broker_roundtrip_resume_route_breach or is_ops_launch_profile
+                ),
+                require_provider_broker_roundtrip_synthetic_sidecar_ready=(
+                    args.require_provider_broker_roundtrip_synthetic_sidecar_ready
+                    or is_provider_imbalance_ops_launch_profile
+                ),
+                fail_on_provider_broker_roundtrip_synthetic_sidecar_breach=(
+                    args.fail_on_provider_broker_roundtrip_synthetic_sidecar_breach
+                    or is_provider_imbalance_ops_launch_profile
                 ),
             ),
         )

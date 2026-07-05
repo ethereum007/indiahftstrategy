@@ -149,6 +149,8 @@ class EvidenceThresholds:
     fail_on_broker_roundtrip_portfolio_concentration_breach: bool = False
     require_broker_roundtrip_resume_route_ready: bool = False
     fail_on_broker_roundtrip_resume_route_breach: bool = False
+    require_provider_broker_roundtrip_synthetic_sidecar_ready: bool = False
+    fail_on_provider_broker_roundtrip_synthetic_sidecar_breach: bool = False
 
 
 @dataclass(frozen=True)
@@ -444,6 +446,30 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "catalog contains broker dispatch round-trip resume-route proof with gaps, failed controls, or unsafe portfolio evidence",
             )
         )
+    if thresholds.require_provider_broker_roundtrip_synthetic_sidecar_ready:
+        ready_sidecar_roundtrips = _provider_broker_roundtrip_synthetic_sidecar_ready_count(catalog)
+        rows.append(
+            _check(
+                "provider_broker_roundtrip_synthetic_sidecar_ready",
+                ready_sidecar_roundtrips,
+                ">=",
+                1,
+                ready_sidecar_roundtrips >= 1,
+                "catalog does not contain provider broker round-trip proof with ready synthetic sidecars",
+            )
+        )
+    if thresholds.fail_on_provider_broker_roundtrip_synthetic_sidecar_breach:
+        breached_sidecar_roundtrips = _provider_broker_roundtrip_synthetic_sidecar_breach_count(catalog)
+        rows.append(
+            _check(
+                "provider_broker_roundtrip_synthetic_sidecar_breach",
+                breached_sidecar_roundtrips,
+                "==",
+                0,
+                breached_sidecar_roundtrips == 0,
+                "catalog contains provider broker round-trip proof with missing or unreadable synthetic sidecars",
+            )
+        )
     return pd.DataFrame(rows)
 
 
@@ -473,6 +499,7 @@ def _summary(
         catalog
     )
     resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
+    provider_sidecar_counts = _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)
     return pd.DataFrame(
         [
             {
@@ -520,6 +547,12 @@ def _summary(
                 "fail_on_broker_roundtrip_resume_route_breach": bool(
                     thresholds.fail_on_broker_roundtrip_resume_route_breach
                 ),
+                "require_provider_broker_roundtrip_synthetic_sidecar_ready": bool(
+                    thresholds.require_provider_broker_roundtrip_synthetic_sidecar_ready
+                ),
+                "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach": bool(
+                    thresholds.fail_on_provider_broker_roundtrip_synthetic_sidecar_breach
+                ),
                 "placeholder_schema_active_runs": placeholder_active,
                 "placeholder_schema_blocked_runs": placeholder_blocked,
                 "broker_roundtrip_portfolio_safe_runs": roundtrip_safe,
@@ -528,6 +561,7 @@ def _summary(
                 "broker_roundtrip_portfolio_concentration_ok_runs": concentration_ok,
                 "broker_roundtrip_portfolio_concentration_breach_runs": concentration_breach,
                 **resume_route_counts,
+                **provider_sidecar_counts,
                 "input_file_count": input_file_count,
                 "input_directory_count": input_directory_count,
                 "input_other_count": input_other_count,
@@ -751,6 +785,18 @@ def _broker_roundtrip_resume_route_breach_count(catalog: pd.DataFrame) -> int:
     return _broker_roundtrip_resume_route_counts(catalog)["broker_roundtrip_resume_route_breach_runs"]
 
 
+def _provider_broker_roundtrip_synthetic_sidecar_ready_count(catalog: pd.DataFrame) -> int:
+    return _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)[
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs"
+    ]
+
+
+def _provider_broker_roundtrip_synthetic_sidecar_breach_count(catalog: pd.DataFrame) -> int:
+    return _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)[
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs"
+    ]
+
+
 def _broker_roundtrip_resume_route_counts(catalog: pd.DataFrame) -> dict[str, int]:
     keys = {
         "broker_roundtrip_resume_route_provided_runs": 0,
@@ -855,6 +901,43 @@ def _resume_route_branch_state(frame: pd.DataFrame, prefix: str) -> dict[str, pd
     }
 
 
+def _provider_broker_roundtrip_synthetic_sidecar_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "provider_broker_roundtrip_runs": 0,
+        "provider_broker_roundtrip_passed_runs": 0,
+        "provider_broker_roundtrip_synthetic_dataset_count": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_count": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_readable_count": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_proof_runs": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs": 0,
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs": 0,
+    }
+    frame = _provider_broker_roundtrip_rows(catalog)
+    if frame.empty:
+        return keys
+    passed = _bool_column(frame, "summary_status")
+    dataset_count = _numeric_column(frame, "summary_dispatch_roundtrip_synthetic_dataset_count")
+    sidecar_count = _numeric_column(frame, "summary_dispatch_roundtrip_synthetic_sidecar_count")
+    readable_count = _numeric_column(frame, "summary_dispatch_roundtrip_synthetic_sidecar_readable_count")
+    ready_flag = _bool_column(frame, "summary_dispatch_roundtrip_synthetic_sidecar_proof_ready")
+    proof_runs = dataset_count > 0.0
+    ready_runs = proof_runs & ready_flag & (sidecar_count >= dataset_count) & (readable_count >= dataset_count)
+    breach_runs = proof_runs & ~ready_runs
+    keys.update(
+        {
+            "provider_broker_roundtrip_runs": int(len(frame)),
+            "provider_broker_roundtrip_passed_runs": int(passed.sum()),
+            "provider_broker_roundtrip_synthetic_dataset_count": int(dataset_count.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_count": int(sidecar_count.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_readable_count": int(readable_count.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_proof_runs": int(proof_runs.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_ready_runs": int(ready_runs.sum()),
+            "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(breach_runs.sum()),
+        }
+    )
+    return keys
+
+
 def _broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:
     if catalog.empty or "run_type" not in catalog.columns:
         return catalog.iloc[0:0].copy()
@@ -864,6 +947,13 @@ def _broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:
         return catalog.loc[generic].copy()
     provider = run_types == "provider_market_data_imbalance_broker_dispatch_roundtrip"
     return catalog.loc[provider].copy()
+
+
+def _provider_broker_roundtrip_rows(catalog: pd.DataFrame) -> pd.DataFrame:
+    if catalog.empty or "run_type" not in catalog.columns:
+        return catalog.iloc[0:0].copy()
+    run_types = catalog["run_type"].astype(str)
+    return catalog.loc[run_types == "provider_market_data_imbalance_broker_dispatch_roundtrip"].copy()
 
 
 def _bool_column(frame: pd.DataFrame, column: str) -> pd.Series:

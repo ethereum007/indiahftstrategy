@@ -353,6 +353,10 @@ limits. It also requires at least one final broker round-trip with ready
 primary and incident resume-route proof and fails when any final round-trip
 contains resume-route gaps, launch-control failures, portfolio breaches, or
 concentration breaches.
+The `provider_imbalance_ops_launch` profile inherits those same launch checks
+and also requires at least one final provider broker round-trip with ready
+synthetic sidecar proof, failing when any provider broker round-trip expected
+synthetic sidecars but did not retain readable sidecar evidence.
 Use `--allow-non-file-inputs` only for legacy exploratory catalogs, or
 `--require-file-inputs` to apply the same fail-closed provenance rule to a
 custom evidence set.
@@ -363,7 +367,9 @@ Custom evidence sets can opt into the same launch controls with
 `--require-broker-roundtrip-portfolio-concentration-ok`, and
 `--fail-on-broker-roundtrip-portfolio-concentration-breach`,
 `--require-broker-roundtrip-resume-route-ready`, and
-`--fail-on-broker-roundtrip-resume-route-breach`.
+`--fail-on-broker-roundtrip-resume-route-breach`,
+`--require-provider-broker-roundtrip-synthetic-sidecar-ready`, and
+`--fail-on-provider-broker-roundtrip-synthetic-sidecar-breach`.
 
 `strategy_evidence_summary.csv` records the inferred `evidence_profile`. Ready
 strategy profiles recommend `eligible_for_shadow_scaleup_review`, while ready
@@ -372,7 +378,9 @@ strategy profiles recommend `eligible_for_shadow_scaleup_review`, while ready
 It also records passed-required input provenance totals, placeholder-schema
 counts, broker round-trip portfolio-safe/breach counts, and broker round-trip
 portfolio concentration OK/breach counts, plus broker resume-route ready and
-breach counts when the catalog contains them.
+breach counts when the catalog contains them. Provider ops-launch evidence also
+records provider broker round-trip synthetic sidecar proof, ready, and breach
+counts.
 
 Outputs:
 

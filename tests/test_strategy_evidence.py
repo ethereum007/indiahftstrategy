@@ -556,6 +556,10 @@ def provider_imbalance_ops_launch_catalog_rows(
             row["summary_strategy_portfolio_allocated_market_count"] = 1
             row["summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.45
             row["summary_strategy_portfolio_max_market_allocation_weight"] = 0.80
+            row["summary_dispatch_roundtrip_synthetic_dataset_count"] = 2
+            row["summary_dispatch_roundtrip_synthetic_sidecar_proof_ready"] = True
+            row["summary_dispatch_roundtrip_synthetic_sidecar_count"] = 2
+            row["summary_dispatch_roundtrip_synthetic_sidecar_readable_count"] = 2
             row.update(_resume_route_columns("summary_route_broker_resume_broker_route_readiness"))
             row.update(
                 _resume_route_columns(
@@ -1075,6 +1079,8 @@ def test_provider_imbalance_ops_launch_uses_provider_roundtrip_safety_controls()
             fail_on_broker_roundtrip_portfolio_concentration_breach=True,
             require_broker_roundtrip_resume_route_ready=True,
             fail_on_broker_roundtrip_resume_route_breach=True,
+            require_provider_broker_roundtrip_synthetic_sidecar_ready=True,
+            fail_on_provider_broker_roundtrip_synthetic_sidecar_breach=True,
         ),
     )
 
@@ -1085,6 +1091,36 @@ def test_provider_imbalance_ops_launch_uses_provider_roundtrip_safety_controls()
     assert int(review.summary.iloc[0]["broker_roundtrip_portfolio_concentration_breach_runs"]) == 0
     assert int(review.summary.iloc[0]["broker_roundtrip_resume_route_ready_runs"]) == 1
     assert int(review.summary.iloc[0]["broker_roundtrip_resume_route_breach_runs"]) == 0
+    assert int(review.summary.iloc[0]["provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
+    assert int(review.summary.iloc[0]["provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+    assert bool(review.summary.iloc[0]["require_provider_broker_roundtrip_synthetic_sidecar_ready"])
+    assert bool(review.summary.iloc[0]["fail_on_provider_broker_roundtrip_synthetic_sidecar_breach"])
+
+
+def test_provider_imbalance_ops_launch_blocks_unready_provider_roundtrip_sidecar_proof():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    mask = catalog["run_type"] == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    catalog.loc[mask, "summary_status"] = False
+    catalog.loc[mask, "summary_dispatch_roundtrip_synthetic_sidecar_proof_ready"] = False
+    catalog.loc[mask, "summary_dispatch_roundtrip_synthetic_sidecar_count"] = 1
+    catalog.loc[mask, "summary_dispatch_roundtrip_synthetic_sidecar_readable_count"] = 1
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("provider_imbalance_ops_launch"),
+            require_provider_broker_roundtrip_synthetic_sidecar_ready=True,
+            fail_on_provider_broker_roundtrip_synthetic_sidecar_breach=True,
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "required_run_type:provider_market_data_imbalance_broker_dispatch_roundtrip" in failed
+    assert "provider_broker_roundtrip_synthetic_sidecar_ready" in failed
+    assert "provider_broker_roundtrip_synthetic_sidecar_breach" in failed
+    assert int(review.summary.iloc[0]["provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 0
+    assert int(review.summary.iloc[0]["provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
 
 
 def test_ops_launch_evidence_profile_fails_without_cutover_gate():
@@ -1562,8 +1598,46 @@ def test_cli_strategy_evidence_provider_ops_launch_profile(tmp_path):
     assert bool(summary.loc[0, "require_no_blocked_placeholder_schema"])
     assert bool(summary.loc[0, "require_broker_roundtrip_portfolio_safe"])
     assert bool(summary.loc[0, "fail_on_broker_roundtrip_resume_route_breach"])
+    assert bool(summary.loc[0, "require_provider_broker_roundtrip_synthetic_sidecar_ready"])
+    assert bool(summary.loc[0, "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach"])
     assert int(summary.loc[0, "broker_roundtrip_portfolio_safe_runs"]) == 1
     assert int(summary.loc[0, "broker_roundtrip_resume_route_ready_runs"]) == 1
+    assert int(summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
+    assert int(summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+
+
+def test_cli_strategy_evidence_provider_ops_launch_profile_blocks_sidecar_breach(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "provider_ops_launch_evidence"
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    mask = catalog["run_type"] == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    catalog.loc[mask, "summary_status"] = False
+    catalog.loc[mask, "summary_dispatch_roundtrip_synthetic_sidecar_proof_ready"] = False
+    catalog.loc[mask, "summary_dispatch_roundtrip_synthetic_sidecar_count"] = 0
+    catalog.loc[mask, "summary_dispatch_roundtrip_synthetic_sidecar_readable_count"] = 0
+    catalog.to_csv(catalog_path, index=False)
+
+    code = main(
+        [
+            "review-strategy-evidence",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "provider_market_data_imbalance_ops_launch",
+            "--fail-on-breach",
+        ]
+    )
+
+    checks = pd.read_csv(out_dir / "strategy_evidence_checks.csv")
+    summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
+    assert "provider_broker_roundtrip_synthetic_sidecar_ready" in failed
+    assert "provider_broker_roundtrip_synthetic_sidecar_breach" in failed
+    assert int(summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 0
+    assert int(summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
 
 
 def test_cli_strategy_evidence_ops_launch_profile_requires_file_inputs(tmp_path):

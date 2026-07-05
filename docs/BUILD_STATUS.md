@@ -937,6 +937,11 @@
   counts, ready runs, and breach runs, so scheduler automation can reject final
   Arrow.money/iRage provider broker dry-run evidence when rehearsal sidecars
   were expected but not retained/readable.
+- Strategy evidence review now consumes those provider broker round-trip
+  synthetic sidecar proof counts: provider imbalance ops-launch evidence
+  automatically requires a ready final sidecar proof and fails on missing or
+  unreadable provider broker round-trip sidecars before live-dryrun route
+  review.
 - Experiment catalog summaries, action plans, and runbooks now aggregate final
   broker round-trip portfolio concentration proof counts, including
   concentration-present, concentration-ok, and concentration-breach runs when
