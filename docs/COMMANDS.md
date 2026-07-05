@@ -5171,11 +5171,17 @@ exact live data source before generating non-submitting dry-run orders. If the
 route-enable-retained round-trip provider profile or adapter contract is
 missing, unsafe, stale, or mismatched against runtime-session evidence,
 broker-dispatch blocks send preparation and routes back to
-`review-provider-market-data-imbalance-route-enable`. When a route-enable CSV is
+`review-provider-market-data-imbalance-route-enable`. Broker-dispatch also
+carries the route-enable-retained final round-trip `synthetic_sidecar_proof`
+plus flattened `dispatch_roundtrip_synthetic_*` counters; if synthetic final
+dry-run folds are present without ready rehearsal sidecars, send preparation is
+blocked and routed back to `review-provider-market-data-imbalance-route-enable`.
+When a route-enable CSV is
 sparse but its config sidecar has `dispatch_roundtrip_provenance`,
 broker-dispatch hydrates missing or blank `dispatch_roundtrip_*` fields,
-including the round-trip provider profile and adapter contract, from that config
-while keeping explicit summary `False` values authoritative. The
+including the round-trip provider profile, adapter contract, and sidecar
+counters, from that config while keeping explicit summary `False` values
+authoritative. The
 wrapper runs `plan-broker-dispatch` under a nested `broker_dispatch` folder,
 and writes provider checks/summary/action/config/runbook artifacts. Fully clean
 wrappers emit a ready `prepare_provider_imbalance_broker_dispatch_send` action

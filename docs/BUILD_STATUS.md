@@ -464,7 +464,10 @@
   preserves the final round-trip provider-profile proof plus the
   credential-safe `adapter_execution_contract` and blocks send preparation when
   either route-enable handoff is missing, unsafe, stale, or no longer matched
-  to runtime-session evidence.
+  to runtime-session evidence. It also carries the route-enable-retained
+  `dispatch_roundtrip_synthetic_*` sidecar proof and routes back to
+  route-enable when synthetic final dry-run folds are present without ready
+  rehearsal sidecars.
 - Provider market-data imbalance broker dispatch send now carries those
   dispatch-roundtrip fingerprints forward from broker dispatch:
   broker-dispatch-send summary/config and manifest extras expose the
@@ -1967,7 +1970,11 @@
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse route-enable CSVs do not lose the
   validated live-data handoff or command bundle proof before send packet
-  preparation.
+  preparation. Broker-dispatch also carries the route-enable-retained final
+  round-trip `synthetic_sidecar_proof` plus flattened
+  `dispatch_roundtrip_synthetic_*` counters and blocks send packet preparation
+  back to route-enable when synthetic final dry-run folds are present without
+  ready rehearsal sidecars.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream
