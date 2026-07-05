@@ -27,6 +27,10 @@ ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS: tuple[str, ...] = (
     "ops_broker_roundtrip_resume_route_concentration_breach_pairs",
 )
 
+ROUTE_READINESS_PROVIDER_SIDECAR_BREACH_PAIR_FIELDS: tuple[str, ...] = (
+    "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+)
+
 BROKER_ROUTE_READINESS_RESUME_ROUTE_RUN_FIELDS: tuple[str, ...] = (
     "ops_broker_roundtrip_resume_route_ready_runs",
     "ops_broker_roundtrip_resume_route_breach_runs",
@@ -1016,6 +1020,10 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
             field: int(_number(route_readiness, field, 0.0))
             for field in ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS
         }
+        route_ops_provider_sidecar_breach_pairs = {
+            field: int(_number(route_readiness, field, 0.0))
+            for field in ROUTE_READINESS_PROVIDER_SIDECAR_BREACH_PAIR_FIELDS
+        }
         if route_readiness_required or route_ops_present:
             checks.extend(
                 [
@@ -1048,6 +1056,10 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
                     *(
                         _threshold_check(f"route_readiness_{field}", value, "<=", 0)
                         for field, value in route_ops_resume_route_breach_pairs.items()
+                    ),
+                    *(
+                        _threshold_check(f"route_readiness_{field}", value, "<=", 0)
+                        for field, value in route_ops_provider_sidecar_breach_pairs.items()
                     ),
                 ]
             )
@@ -2047,6 +2059,15 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 )
                 if not route_readiness.empty
                 else 0,
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _number(
+                        route_readiness,
+                        "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                        0.0,
+                    )
+                )
+                if not route_readiness.empty
+                else 0,
                 "broker_readiness_provided": not broker_readiness.empty,
                 "broker_readiness_ready": _to_bool(broker_readiness.get("ready", False))
                 if not broker_readiness.empty
@@ -2630,6 +2651,9 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                         "route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs"
                     ]
                 ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    plan_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+                ),
                 "broker_readiness_ready": _to_bool(plan_row["broker_readiness_ready"]),
                 "broker_schema_status": str(plan_row["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(plan_row["broker_schema_reviewed"]),
@@ -3077,6 +3101,9 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "ops_broker_roundtrip_resume_route_concentration_breach_pairs": int(
                 plan_row["route_readiness_ops_broker_roundtrip_resume_route_concentration_breach_pairs"]
             ),
+            "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                plan_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+            ),
             "recommendation": _text(plan_row["route_readiness_recommendation"]),
         },
         "broker_readiness": {
@@ -3273,6 +3300,7 @@ def _route_readiness_ops_controls_present(route_readiness: pd.Series) -> bool:
             "ops_broker_roundtrip_portfolio_breach_pairs",
             "ops_broker_roundtrip_portfolio_concentration_breach_pairs",
             *ROUTE_READINESS_RESUME_ROUTE_BREACH_PAIR_FIELDS,
+            *ROUTE_READINESS_PROVIDER_SIDECAR_BREACH_PAIR_FIELDS,
         )
     )
 

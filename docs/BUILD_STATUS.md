@@ -794,6 +794,10 @@
   round-trip synthetic sidecar proof from `provider_imbalance_ops_launch`
   evidence into route pairs, action queues, and config JSON, and blocks live
   dry-run route review when the provider sidecar proof is missing or breached.
+- Provider-data imbalance scale-up now revalidates the route-readiness provider
+  broker round-trip synthetic sidecar breach counter in the nested generic
+  scale-up gate, surfaces that count in wrapper summaries/config, and routes
+  breached Arrow.money/iRage-ready packets back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.

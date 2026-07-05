@@ -500,6 +500,17 @@ def _checks(
     sidecar_proof_required = synthetic_dataset_count > 0
     sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
     sidecar_proof_ready = _first_bool(scorecard_summary, "synthetic_sidecar_proof_ready")
+    route_sidecar_breach_pairs = int(
+        _first_number(
+            scaleup_summary,
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        )
+    )
+    route_sidecar_gate_active = (
+        _first_bool(scaleup_summary, "route_readiness_provided")
+        or _first_bool(scaleup_summary, "route_readiness_ops_launch_controls_present")
+        or route_sidecar_breach_pairs > 0
+    )
     rows.append(
         _check(
             "scaleup_plan_runnable",
@@ -508,6 +519,16 @@ def _checks(
             "ran",
             scaleup is not None and not scaleup_error,
             scaleup_error or "generic scale-up planner was not run",
+        )
+    )
+    rows.append(
+        _check(
+            "route_readiness_provider_sidecar_breach_pairs",
+            route_sidecar_breach_pairs,
+            "<=",
+            0,
+            route_sidecar_breach_pairs <= 0 if route_sidecar_gate_active else True,
+            "provider route readiness has breached broker round-trip synthetic sidecar proof",
         )
     )
     rows.append(
@@ -961,6 +982,12 @@ def _summary(
                     scaleup_summary,
                     "route_readiness_ops_launch_controls_present",
                 ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _first_number(
+                        scaleup_summary,
+                        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                    )
+                ),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()
@@ -1138,6 +1165,8 @@ def _next_gate_for_check(check: str) -> str:
         return "pipeline-provider-market-data-imbalance-launch"
     if check.startswith("strategy_evidence") or check in {"strategy_identity_imbalance", "market_identity_consistent"}:
         return "review-provider-market-data-imbalance-launch-evidence"
+    if check.startswith("route_readiness_provider_sidecar"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("shadow_comparison"):
         return "compare-shadow-sessions"
     if check.startswith("scaleup"):
@@ -1152,6 +1181,8 @@ def _help_command_for_gate(next_gate: str) -> str:
         return "python -m hft_cli review-provider-market-data-imbalance-launch-evidence --help"
     if next_gate == "pipeline-provider-market-data-imbalance-launch":
         return "python -m hft_cli pipeline-provider-market-data-imbalance-launch --help"
+    if next_gate == "review-provider-market-data-imbalance-route-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
     if next_gate == "compare-shadow-sessions":
         return "python -m hft_cli compare-shadow-sessions --help"
     if next_gate == "plan-scaleup":
@@ -1178,6 +1209,8 @@ def _repair_action(check: str) -> str:
         return "review_full_provider_imbalance_launch_evidence"
     if check.startswith("provider_launch") or check.startswith("launch_pipeline"):
         return "rebuild_provider_imbalance_launch_packet"
+    if check.startswith("route_readiness_provider_sidecar"):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("shadow_comparison"):
         return "rerun_provider_imbalance_shadow_comparison"
     if check.startswith("scaleup"):
@@ -1188,6 +1221,8 @@ def _repair_action(check: str) -> str:
 def _reason_for_check(check: str, scaleup: ScaleUpPlanReport | None) -> str:
     if check == "scaleup_plan_ready":
         return _scaleup_failure_reason(scaleup) or "generic scale-up plan is not ready"
+    if check.startswith("route_readiness_provider_sidecar"):
+        return "provider route readiness has breached broker round-trip synthetic sidecar proof"
     return check.replace("_", " ")
 
 

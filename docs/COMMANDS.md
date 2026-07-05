@@ -4875,8 +4875,12 @@ artifacts, but it still requires a real `shadow_session_comparison_summary.csv`.
 Supplying the provider route-readiness wrapper root lets the provider scale-up
 wrapper resolve its nested generic `route_readiness` proof automatically, then
 the generic scale-up gate revalidates ops-launch route controls before runtime
-sizing. It writes provider wrapper checks/summary/action/config/runbook
-artifacts plus a nested generic `scaleup` folder with `scaleup_plan.csv`,
+sizing, including provider broker round-trip synthetic sidecar breach counts
+from the Arrow.money/iRage-ready route packet. Breached sidecar proof blocks the
+provider scale-up action queue back at
+`review-provider-market-data-imbalance-route-readiness`. It writes provider
+wrapper checks/summary/action/config/runbook artifacts plus a nested generic
+`scaleup` folder with `scaleup_plan.csv`,
 `scaleup_checks.csv`, `scaleup_summary.csv`, and `scaleup_config.json`, while
 retaining the upstream capture bundle, blank credential env-template, and
 adapter handoff paths, source credential env-template proof, exchange/session
