@@ -420,6 +420,9 @@
   provider-profile proof plus the credential-safe `adapter_execution_contract`
   from acknowledgement reconciliation and blocks the broker-readiness feed when
   either contract is missing, unsafe, or no longer matched to live evidence.
+  It also carries nested `synthetic_sidecar_proof` plus flattened sidecar
+  counts from acknowledgement reconciliation and blocks the broker-readiness
+  feed when synthetic provider folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance broker readiness now also keeps those final
   dry-run bridge fingerprints when dispatch round-trip proof is supplied:
   broker-readiness summary/config and manifest extras expose the
@@ -2022,7 +2025,10 @@
   provider summary/config/runbook artifacts plus manifest inputs/extra
   metadata. It also hydrates sparse acknowledgement round-trip summary rows
   from the acknowledgement `dispatch_roundtrip_provenance` sidecar without
-  dropping validated command bundle proof. The provider round-trip
+  dropping validated command bundle proof. It also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from acknowledgement
+  reconciliation and blocks broker-readiness feed when synthetic provider folds
+  are missing ready rehearsal sidecar proof. The provider round-trip
   summary/config now also surfaces nested broker
   vendor-market-data batch proof under both
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and

@@ -5302,7 +5302,11 @@ broker-readiness feed can trace the live data adapter without exposing
 credential values. If that provider profile or adapter contract is missing,
 unsafe, or no longer matched to live evidence, round-trip review blocks
 broker-readiness feed and routes back to
-`reconcile-provider-market-data-imbalance-broker-dispatch`. It also carries the
+`reconcile-provider-market-data-imbalance-broker-dispatch`. It also carries
+nested `synthetic_sidecar_proof` plus flattened sidecar counts from
+acknowledgement reconciliation. If the required synthetic sidecar proof is
+missing or unready, round-trip review blocks broker-readiness feed and routes
+back to `reconcile-provider-market-data-imbalance-broker-dispatch`. It also carries the
 ack-retained validated dispatch round-trip
 source credential env-template, round-trip exchange/session metadata,
 capture-bundle session proof, live-fetch exchange/session identity,
