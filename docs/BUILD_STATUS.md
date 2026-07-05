@@ -399,7 +399,10 @@
   handoff SHA-256 values directly. Broker dispatch send also carries
   provider-profile proof plus the credential-safe `adapter_execution_contract`
   from broker dispatch and blocks acknowledgement reconciliation when either
-  contract is missing, unsafe, or no longer matched to live evidence.
+  contract is missing, unsafe, or no longer matched to live evidence. It also
+  carries nested `synthetic_sidecar_proof` plus flattened sidecar counts from
+  broker dispatch and blocks acknowledgement reconciliation when synthetic
+  provider folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance broker dispatch acknowledgement now carries
   those adapter fingerprints into ack reconciliation: acknowledgement
   summary/config and manifest extras expose capture env-template and adapter
@@ -1962,7 +1965,10 @@
   while still keeping `submission_enabled=false`. It blocks acknowledgement
   reconciliation when the broker-dispatch-retained round-trip provider profile
   or adapter contract is missing, unsafe, stale, or no longer matched to
-  runtime-session evidence. Broker-dispatch-send now also
+  runtime-session evidence. It also carries nested `synthetic_sidecar_proof`
+  plus flattened sidecar counts from broker dispatch and blocks acknowledgement
+  reconciliation when synthetic provider folds are missing ready rehearsal
+  sidecar proof. Broker-dispatch-send now also
   hydrates missing or blank broker-dispatch `dispatch_roundtrip_*` summary
   fields from the broker-dispatch `dispatch_roundtrip_provenance` config
   sidecar, while preserving explicit summary `False` values, so sparse

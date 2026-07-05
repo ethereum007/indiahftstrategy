@@ -5193,7 +5193,10 @@ contract/SHA so ack reconciliation can trace the live data adapter without
 exposing credential values. If that provider profile or adapter contract is
 missing, unsafe, or no longer matched to live evidence, broker-dispatch-send
 blocks acknowledgement reconciliation and routes back to
-`plan-provider-market-data-imbalance-broker-dispatch`. It also carries the
+`plan-provider-market-data-imbalance-broker-dispatch`. It also carries nested
+`synthetic_sidecar_proof` plus flattened sidecar counts from broker-dispatch and
+blocks acknowledgement reconciliation when synthetic provider folds are missing
+ready rehearsal sidecar proof. It also carries the
 broker-dispatch-retained validated dispatch round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
 proof, live-fetch exchange/session identity, `live_fetch_contract`, final
