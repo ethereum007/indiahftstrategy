@@ -317,6 +317,21 @@ def write_provider_market_data_imbalance_cutover(
             "synthetic_sidecar_proof_ready": bool(summary_row["synthetic_sidecar_proof_ready"]),
             "synthetic_sidecar_count": int(summary_row["synthetic_sidecar_count"]),
             "synthetic_sidecar_readable_count": int(summary_row["synthetic_sidecar_readable_count"]),
+            "dispatch_roundtrip_synthetic_sidecar_proof": _mapping(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get("synthetic_sidecar_proof")
+            ),
+            "dispatch_roundtrip_synthetic_dataset_count": int(
+                summary_row["dispatch_roundtrip_synthetic_dataset_count"]
+            ),
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready": bool(
+                summary_row["dispatch_roundtrip_synthetic_sidecar_proof_ready"]
+            ),
+            "dispatch_roundtrip_synthetic_sidecar_count": int(
+                summary_row["dispatch_roundtrip_synthetic_sidecar_count"]
+            ),
+            "dispatch_roundtrip_synthetic_sidecar_readable_count": int(
+                summary_row["dispatch_roundtrip_synthetic_sidecar_readable_count"]
+            ),
             "capture_bundle": {
                 "exchange": str(summary_row["capture_bundle_exchange"]),
                 "source_session": _capture_bundle_source_session_contract_from_summary(summary_row),
@@ -564,6 +579,17 @@ def write_provider_market_data_imbalance_cutover(
                 ),
                 "adapter_contract_matches_runtime_session": bool(
                     summary_row["dispatch_roundtrip_adapter_contract_matches_runtime_session"]
+                ),
+                "synthetic_sidecar_proof": _mapping(
+                    _mapping(payload.get("dispatch_roundtrip_provenance")).get("synthetic_sidecar_proof")
+                ),
+                "synthetic_dataset_count": int(summary_row["dispatch_roundtrip_synthetic_dataset_count"]),
+                "synthetic_sidecar_proof_ready": bool(
+                    summary_row["dispatch_roundtrip_synthetic_sidecar_proof_ready"]
+                ),
+                "synthetic_sidecar_count": int(summary_row["dispatch_roundtrip_synthetic_sidecar_count"]),
+                "synthetic_sidecar_readable_count": int(
+                    summary_row["dispatch_roundtrip_synthetic_sidecar_readable_count"]
                 ),
                 "provider_profile": _mapping(
                     _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_profile")
@@ -941,6 +967,32 @@ def _checks(
         provider_summary,
         dispatch_roundtrip,
     )
+    dispatch_synthetic_dataset_count = int(
+        _dispatch_roundtrip_number(
+            provider_summary,
+            dispatch_roundtrip,
+            "dispatch_roundtrip_synthetic_dataset_count",
+            "synthetic_dataset_count",
+        )
+    )
+    dispatch_synthetic_sidecar_count = int(
+        _dispatch_roundtrip_number(
+            provider_summary,
+            dispatch_roundtrip,
+            "dispatch_roundtrip_synthetic_sidecar_count",
+            "synthetic_sidecar_count",
+        )
+    )
+    dispatch_synthetic_sidecar_proof_required = dispatch_synthetic_dataset_count > 0
+    dispatch_synthetic_sidecar_proof_ready = _dispatch_roundtrip_bool(
+        provider_summary,
+        dispatch_roundtrip,
+        "dispatch_roundtrip_synthetic_sidecar_proof_ready",
+        "synthetic_sidecar_proof_ready",
+    )
+    dispatch_synthetic_sidecar_count_matches = (
+        dispatch_synthetic_sidecar_count == dispatch_synthetic_dataset_count
+    )
     rows.append(
         _check(
             "dispatch_roundtrip_provider_capture_commands_carried",
@@ -1095,6 +1147,34 @@ def _checks(
             _provider_profile_metadata_text(provider_summary),
             dispatch_provider_profile_matches_runtime_session if dispatch_bundle_provided else True,
             "provider imbalance cutover round-trip provider profile no longer matches runtime-session proof",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_synthetic_sidecar_proof_carried",
+            dispatch_synthetic_sidecar_count,
+            "==",
+            dispatch_synthetic_dataset_count,
+            (
+                dispatch_synthetic_sidecar_count_matches
+                if dispatch_synthetic_sidecar_proof_required
+                else True
+            ),
+            "provider imbalance cutover is missing broker-readiness round-trip synthetic rehearsal sidecar proof",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready",
+            dispatch_synthetic_sidecar_proof_ready,
+            "is",
+            True,
+            (
+                dispatch_synthetic_sidecar_proof_ready
+                if dispatch_synthetic_sidecar_proof_required
+                else True
+            ),
+            "provider imbalance cutover round-trip synthetic rehearsal sidecar proof is not ready",
         )
     )
     return pd.DataFrame(rows)
@@ -1311,6 +1391,100 @@ def _summary(
                 ),
                 "synthetic_sidecar_invariant_count": int(
                     _first_number(provider_summary, "synthetic_sidecar_invariant_count")
+                ),
+                "dispatch_roundtrip_synthetic_dataset_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_dataset_count",
+                        "synthetic_dataset_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_proof_ready": _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_synthetic_sidecar_proof_ready",
+                    "synthetic_sidecar_proof_ready",
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_count",
+                        "synthetic_sidecar_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_readable_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_readable_count",
+                        "synthetic_sidecar_readable_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_source_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_source_count",
+                        "synthetic_sidecar_source_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count",
+                        "synthetic_sidecar_adapter_command_hash_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count",
+                        "synthetic_sidecar_capture_env_template_match_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count",
+                        "synthetic_sidecar_adapter_handoff_match_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count",
+                        "synthetic_sidecar_source_env_template_match_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count",
+                        "synthetic_sidecar_live_fetch_contract_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count",
+                        "synthetic_sidecar_adapter_execution_contract_safe_count",
+                    )
+                ),
+                "dispatch_roundtrip_synthetic_sidecar_invariant_count": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_synthetic_sidecar_invariant_count",
+                        "synthetic_sidecar_invariant_count",
+                    )
                 ),
                 "dispatch_roundtrip_provider_capture_command_count": int(
                     _dispatch_roundtrip_number(
@@ -2020,6 +2194,11 @@ def _dispatch_roundtrip_capture_bundle_provider_profile(provider_config: dict[st
     )
 
 
+def _dispatch_roundtrip_synthetic_sidecar_proof(provider_config: dict[str, Any]) -> dict[str, Any]:
+    dispatch_roundtrip = _dispatch_roundtrip_provenance(provider_config)
+    return _mapping(dispatch_roundtrip.get("synthetic_sidecar_proof"))
+
+
 def _summary_with_actions(summary: pd.DataFrame, action_queue: pd.DataFrame) -> pd.DataFrame:
     out = summary.copy()
     statuses = action_queue["queue_status"].astype(str) if not action_queue.empty else pd.Series(dtype=str)
@@ -2110,6 +2289,8 @@ def _action_priority(check: str) -> int:
         check.startswith("provider_broker_readiness")
         or check.startswith("nested_broker_readiness")
         or _is_dispatch_roundtrip_adapter_contract_check(check)
+        or _is_dispatch_roundtrip_provider_profile_check(check)
+        or _is_dispatch_roundtrip_synthetic_sidecar_check(check)
     ):
         return 0
     if check.startswith("nested_scaleup"):
@@ -2239,6 +2420,37 @@ def _config(
             "source_session_matches_session": bool(summary["dispatch_roundtrip_source_session_matches_session"]),
             "market_session_matches_session": bool(summary["dispatch_roundtrip_market_session_matches_session"]),
             "metadata_consistent_with_runtime_session": bool(summary["dispatch_roundtrip_metadata_consistent"]),
+            "synthetic_sidecar_proof": _dispatch_roundtrip_synthetic_sidecar_proof(provider_config),
+            "synthetic_dataset_count": int(summary["dispatch_roundtrip_synthetic_dataset_count"]),
+            "synthetic_sidecar_proof_ready": bool(
+                summary["dispatch_roundtrip_synthetic_sidecar_proof_ready"]
+            ),
+            "synthetic_sidecar_count": int(summary["dispatch_roundtrip_synthetic_sidecar_count"]),
+            "synthetic_sidecar_readable_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_readable_count"]
+            ),
+            "synthetic_sidecar_source_count": int(summary["dispatch_roundtrip_synthetic_sidecar_source_count"]),
+            "synthetic_sidecar_adapter_command_hash_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count"]
+            ),
+            "synthetic_sidecar_capture_env_template_match_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count"]
+            ),
+            "synthetic_sidecar_adapter_handoff_match_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count"]
+            ),
+            "synthetic_sidecar_source_env_template_match_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count"]
+            ),
+            "synthetic_sidecar_live_fetch_contract_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count"]
+            ),
+            "synthetic_sidecar_adapter_execution_contract_safe_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count"]
+            ),
+            "synthetic_sidecar_invariant_count": int(
+                summary["dispatch_roundtrip_synthetic_sidecar_invariant_count"]
+            ),
             "provider_capture_command_count": int(summary["dispatch_roundtrip_provider_capture_command_count"]),
             "provider_capture_command_providers": str(
                 summary["dispatch_roundtrip_provider_capture_command_providers"]
@@ -2454,6 +2666,10 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
+        "- Dispatch round-trip synthetic sidecar proof: "
+        f"{'yes' if bool(summary['dispatch_roundtrip_synthetic_sidecar_proof_ready']) else 'no'} "
+        f"({summary['dispatch_roundtrip_synthetic_sidecar_count']}/"
+        f"{summary['dispatch_roundtrip_synthetic_dataset_count']})",
         "- Dispatch round-trip live fetch contract: "
         f"{'available' if bool(summary['dispatch_roundtrip_source_live_fetch_contract_available']) else 'missing'}",
         "- Dispatch round-trip provider capture commands: "
@@ -2546,6 +2762,7 @@ def _next_gate_for_check(check: str, cutover: CutoverGateReport | None) -> str:
         or check.startswith("nested_broker_readiness")
         or _is_dispatch_roundtrip_adapter_contract_check(check)
         or _is_dispatch_roundtrip_provider_profile_check(check)
+        or _is_dispatch_roundtrip_synthetic_sidecar_check(check)
     ):
         return "review-provider-market-data-imbalance-broker-readiness"
     if check.startswith("nested_scaleup"):
@@ -2584,6 +2801,7 @@ def _component_for_check(check: str) -> str:
         or check.startswith("nested_broker_readiness")
         or _is_dispatch_roundtrip_adapter_contract_check(check)
         or _is_dispatch_roundtrip_provider_profile_check(check)
+        or _is_dispatch_roundtrip_synthetic_sidecar_check(check)
     ):
         return "provider_broker_readiness"
     if check.startswith("nested_scaleup"):
@@ -2603,6 +2821,7 @@ def _action_for_check(check: str) -> str:
         or check.startswith("nested_broker_readiness")
         or _is_dispatch_roundtrip_adapter_contract_check(check)
         or _is_dispatch_roundtrip_provider_profile_check(check)
+        or _is_dispatch_roundtrip_synthetic_sidecar_check(check)
     ):
         return "repair_provider_imbalance_broker_readiness"
     if check.startswith("nested_scaleup"):
@@ -2620,6 +2839,7 @@ def _recommendation_for_check(check: str) -> str:
         or check.startswith("nested_broker_readiness")
         or _is_dispatch_roundtrip_adapter_contract_check(check)
         or _is_dispatch_roundtrip_provider_profile_check(check)
+        or _is_dispatch_roundtrip_synthetic_sidecar_check(check)
     ):
         return "rerun_provider_broker_readiness_before_cutover"
     if check.startswith("nested_scaleup"):
@@ -2639,6 +2859,10 @@ def _is_dispatch_roundtrip_provider_profile_check(check: str) -> bool:
     return check.startswith("dispatch_roundtrip_provider_profile") or check.startswith(
         "dispatch_roundtrip_adapter_provider_profile"
     )
+
+
+def _is_dispatch_roundtrip_synthetic_sidecar_check(check: str) -> bool:
+    return check.startswith("dispatch_roundtrip_synthetic_sidecar")
 
 
 def _inferred_scaleup_dir(provider_summary: pd.DataFrame, provider_config: dict[str, Any]) -> Path | None:

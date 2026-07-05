@@ -442,7 +442,10 @@
   round-trip provider-profile proof plus the credential-safe
   `adapter_execution_contract` and blocks route-enable review when either
   broker-readiness handoff is missing, unsafe, stale, or no longer matched to
-  runtime-session evidence.
+  runtime-session evidence. It also carries the broker-readiness
+  `dispatch_roundtrip_synthetic_*` sidecar proof and routes back to broker
+  readiness when synthetic final dry-run folds are present without ready
+  rehearsal sidecars.
 - Provider market-data imbalance route enable now carries those
   dispatch-roundtrip fingerprints forward from cutover: route-enable
   summary/config and manifest extras expose the dispatch-roundtrip capture
