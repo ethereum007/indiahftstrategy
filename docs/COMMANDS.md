@@ -4789,10 +4789,13 @@ summary/config/runbook and manifest also retain the upstream capture bundle,
 blank credential env-template, adapter handoff paths, source credential
 env-template proof, exchange/session metadata, capture-bundle session match
 proof, `live_fetch_contract`, provider-profile contract/SHA, and credential-safe
-`adapter_execution_contract` before scale-up planning begins. If the provider
-profile or adapter contract is missing, unsafe, or no longer matched to live
-evidence, the scorecard blocks scale-up readiness and sends the packet back
-through launch-evidence review.
+`adapter_execution_contract` before scale-up planning begins. It also carries
+nested `synthetic_sidecar_proof` plus flattened sidecar counts, and blocks
+scale-up readiness when synthetic provider folds are missing ready rehearsal
+sidecar proof. If the provider profile, adapter contract, or synthetic sidecar
+proof is missing, unsafe, or no longer matched to live evidence, the scorecard
+blocks scale-up readiness and sends the packet back through launch-evidence
+review.
 
 Build provider route-readiness proof from the same launch evidence:
 

@@ -303,7 +303,9 @@
   The scorecard also carries provider-profile proof plus the credential-safe
   `adapter_execution_contract` from launch evidence and blocks scale-up
   readiness when either contract is missing, unsafe, or no longer matched to
-  live evidence.
+  live evidence. It also carries nested `synthetic_sidecar_proof` plus
+  flattened sidecar counts from launch evidence and blocks scale-up readiness
+  when synthetic provider folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance scale-up planning now preserves the same live
   adapter audit trail from the provider scorecard: the scale-up summary/config
   and manifest extras carry capture env-template and adapter handoff SHA-256
