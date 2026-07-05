@@ -5088,9 +5088,11 @@ exchange/session metadata, capture-bundle session match proof, and
 `live_fetch_contract`, the provider-profile contract/SHA, plus the
 credential-safe `adapter_execution_contract` inherited from cutover so dispatch
 planners can trace the live data source before packaging broker orders without
-exposing credential values. If that provider profile or adapter contract is
-missing, unsafe, or no longer matched to live evidence, route-enable blocks
-broker-dispatch planning and routes the packet back to
+exposing credential values. It also carries any nested
+`synthetic_sidecar_proof` and flattened sidecar counts inherited from cutover.
+If that provider profile, adapter contract, or required synthetic sidecar proof
+is missing, unsafe, unready, or no longer matched to live evidence,
+route-enable blocks broker-dispatch planning and routes the packet back to
 `review-provider-market-data-imbalance-cutover`. If cutover retained
 broker-readiness validated round-trip capture
 bundle/env-template/adapter handoff provenance, route-enable carries those

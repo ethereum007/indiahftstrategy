@@ -379,7 +379,10 @@
   values directly. Route enable also carries provider-profile proof plus the
   credential-safe `adapter_execution_contract` from cutover and blocks
   broker-dispatch planning when either contract is missing, unsafe, or no
-  longer matched to live evidence.
+  longer matched to live evidence. It also carries nested
+  `synthetic_sidecar_proof` plus flattened sidecar counts from cutover and
+  blocks broker-dispatch planning when synthetic provider folds are missing
+  ready rehearsal sidecar proof.
 - Provider market-data imbalance broker dispatch now keeps those adapter
   fingerprints in the dry-run dispatch planner: broker-dispatch summary/config
   and manifest extras expose capture env-template and adapter handoff SHA-256
