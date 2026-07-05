@@ -29,7 +29,9 @@
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
   route-enable, dispatch/send/ack, and final round-trip wrappers before
-  live-dry-run review.
+  live-dry-run review. The scorecard now also propagates provider final
+  broker round-trip synthetic sidecar proof counts and blocks the provider
+  launch profile when expected sidecars are missing or unreadable.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`

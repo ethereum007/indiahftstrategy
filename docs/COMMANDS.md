@@ -464,7 +464,10 @@ failed evidence-check names in
 `strategy_scorecard_action_queue.csv` and `strategy_scorecard_next_actions.json`.
 For provider-data imbalance, `--profile provider_market_data_imbalance_ops_launch`
 uses the provider wrapper run types and applies those same launch controls to
-the provider final broker-dispatch roundtrip.
+the provider final broker-dispatch roundtrip. It also carries provider
+broker round-trip synthetic sidecar counts into `strategy_scorecard.csv` and
+fails closed when the final provider roundtrip expected synthetic sidecars but
+did not retain ready/readable sidecar proof.
 
 Outputs:
 

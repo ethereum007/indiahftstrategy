@@ -168,6 +168,12 @@ def evaluate_strategy_scorecard(
                 fail_on_broker_roundtrip_portfolio_concentration_breach=_is_ops_launch_profile(profile_key),
                 require_broker_roundtrip_resume_route_ready=_is_ops_launch_profile(profile_key),
                 fail_on_broker_roundtrip_resume_route_breach=_is_ops_launch_profile(profile_key),
+                require_provider_broker_roundtrip_synthetic_sidecar_ready=(
+                    _is_provider_imbalance_ops_launch_profile(profile_key)
+                ),
+                fail_on_provider_broker_roundtrip_synthetic_sidecar_breach=(
+                    _is_provider_imbalance_ops_launch_profile(profile_key)
+                ),
             ),
         )
         rows.append(_scorecard_row(profile_key, expected_strategy, expected_market, evidence))
@@ -296,6 +302,30 @@ def _scorecard_row(
         ),
         "broker_roundtrip_resume_route_concentration_breach_runs": int(
             _numeric(summary.get("broker_roundtrip_resume_route_concentration_breach_runs", 0))
+        ),
+        "provider_broker_roundtrip_runs": int(
+            _numeric(summary.get("provider_broker_roundtrip_runs", 0))
+        ),
+        "provider_broker_roundtrip_passed_runs": int(
+            _numeric(summary.get("provider_broker_roundtrip_passed_runs", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_dataset_count": int(
+            _numeric(summary.get("provider_broker_roundtrip_synthetic_dataset_count", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_count": int(
+            _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_count", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_readable_count": int(
+            _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_readable_count", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_proof_runs": int(
+            _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_proof_runs", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs": int(
+            _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_ready_runs", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
+            _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
         ),
         "dirty_runs": int(_numeric(summary.get("dirty_runs", 0))),
         "git_commit_count": int(_numeric(summary.get("git_commit_count", 0))),
@@ -613,6 +643,30 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         "broker_roundtrip_resume_route_concentration_breach_runs": int(
             _numeric(row.get("broker_roundtrip_resume_route_concentration_breach_runs", 0))
         ),
+        "provider_broker_roundtrip_runs": int(
+            _numeric(row.get("provider_broker_roundtrip_runs", 0))
+        ),
+        "provider_broker_roundtrip_passed_runs": int(
+            _numeric(row.get("provider_broker_roundtrip_passed_runs", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_dataset_count": int(
+            _numeric(row.get("provider_broker_roundtrip_synthetic_dataset_count", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_count": int(
+            _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_count", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_readable_count": int(
+            _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_readable_count", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_proof_runs": int(
+            _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_proof_runs", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs": int(
+            _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_ready_runs", 0))
+        ),
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
+            _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
+        ),
         "recommendation": str(row.get("recommendation", "")),
     }
 
@@ -853,6 +907,10 @@ def _expected_strategy(profile: str, thresholds: StrategyScorecardThresholds) ->
 
 def _is_ops_launch_profile(profile: str) -> bool:
     return profile in {"ops_launch", "provider_imbalance_ops_launch"}
+
+
+def _is_provider_imbalance_ops_launch_profile(profile: str) -> bool:
+    return profile == "provider_imbalance_ops_launch"
 
 
 def _latest_generated_at(items: pd.DataFrame) -> str:

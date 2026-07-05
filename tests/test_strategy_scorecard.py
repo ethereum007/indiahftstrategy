@@ -110,7 +110,12 @@ def complete_ops_launch_rows(
     return rows
 
 
-def complete_provider_imbalance_ops_launch_rows(strategy="imbalance", *, market="india_nse_index_derivatives"):
+def complete_provider_imbalance_ops_launch_rows(
+    strategy="imbalance",
+    *,
+    market="india_nse_index_derivatives",
+    sidecar_breach=False,
+):
     run_types = [
         ("provider_market_data_imbalance_scorecard", "provider_market_data_imbalance_scorecard_summary.csv"),
         (
@@ -175,6 +180,10 @@ def complete_provider_imbalance_ops_launch_rows(strategy="imbalance", *, market=
         item["summary_strategy_portfolio_allocated_market_count"] = 1
         item["summary_strategy_portfolio_max_strategy_allocation_weight"] = 0.45
         item["summary_strategy_portfolio_max_market_allocation_weight"] = 0.80
+        item["summary_dispatch_roundtrip_synthetic_dataset_count"] = 2
+        item["summary_dispatch_roundtrip_synthetic_sidecar_proof_ready"] = not sidecar_breach
+        item["summary_dispatch_roundtrip_synthetic_sidecar_count"] = 1 if sidecar_breach else 2
+        item["summary_dispatch_roundtrip_synthetic_sidecar_readable_count"] = 1 if sidecar_breach else 2
         item.update(resume_route_columns("summary_route_broker_resume_broker_route_readiness"))
         item.update(
             resume_route_columns(
@@ -535,10 +544,59 @@ def test_strategy_scorecard_scores_provider_imbalance_ops_launch_profile():
     assert score["next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert int(score["broker_roundtrip_portfolio_safe_runs"]) == 1
     assert int(score["broker_roundtrip_resume_route_ready_runs"]) == 1
+    assert int(score["provider_broker_roundtrip_synthetic_dataset_count"]) == 2
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_count"]) == 2
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_readable_count"]) == 2
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
     assert score["evidence_failed_checks"] == ""
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.config["ready_actions"][0]["profile"] == "provider_imbalance_ops_launch"
     assert report.config["ready_actions"][0]["next_gate"] == "review-route-readiness"
+    assert report.config["ready_actions"][0]["provider_broker_roundtrip_synthetic_sidecar_ready_runs"] == 1
+
+
+def test_strategy_scorecard_provider_imbalance_ops_launch_blocks_sidecar_breach():
+    catalog = pd.DataFrame(complete_provider_imbalance_ops_launch_rows(sidecar_breach=True))
+
+    report = evaluate_strategy_scorecard(
+        catalog,
+        thresholds=StrategyScorecardThresholds(
+            profiles=("provider_market_data_imbalance_ops_launch",),
+            expected_market="india_nse_index_derivatives",
+            require_file_inputs=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    failed_checks = set(str(score["evidence_failed_checks"]).split(";"))
+    assert not report.ready
+    assert not bool(score["ready"])
+    assert score["profile"] == "provider_imbalance_ops_launch"
+    assert score["recommendation"] == "review_ops_launch_checks"
+    assert score["next_gate"] == "review-strategy-evidence"
+    assert "provider_broker_roundtrip_synthetic_sidecar_ready" in failed_checks
+    assert "provider_broker_roundtrip_synthetic_sidecar_breach" in failed_checks
+    assert int(score["provider_broker_roundtrip_synthetic_dataset_count"]) == 2
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_count"]) == 1
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_readable_count"]) == 1
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 0
+    assert int(score["provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
+    assert report.summary.loc[0, "first_failed_reason"] == (
+        "provider_imbalance_ops_launch profile failed evidence check "
+        "provider_broker_roundtrip_synthetic_sidecar_ready"
+    )
+    assert report.config["primary_blocker"]["evidence_failed_checks"] == [
+        "provider_broker_roundtrip_synthetic_sidecar_ready",
+        "provider_broker_roundtrip_synthetic_sidecar_breach",
+    ]
+    assert report.config["blocked_actions"][0][
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs"
+    ] == 1
+    assert report.action_queue is not None
+    assert "provider_broker_roundtrip_synthetic_sidecar_breach" in str(
+        report.action_queue.loc[0, "evidence_failed_checks"]
+    )
 
 
 def test_strategy_scorecard_ops_launch_blocks_portfolio_concentration_breach():
