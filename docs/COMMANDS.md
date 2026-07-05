@@ -5348,11 +5348,15 @@ round-trip review blocks broker-readiness feed and routes back to
 `reconcile-provider-market-data-imbalance-broker-dispatch`; the runbook also
 prints the ack-retained round-trip exchange/session and live-fetch availability
 before writing provider checks/action artifacts.
+The same round-trip review gate also carries the ack-retained final round-trip
+`synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
+counters; if synthetic final dry-run folds are present without ready rehearsal
+sidecars, broker-readiness feed is blocked at the acknowledgement repair gate.
 When an acknowledgement CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, the provider round-trip wrapper hydrates
 missing or blank `dispatch_roundtrip_*` fields, including the round-trip
-adapter contract, from that config while keeping explicit summary `False`
-values authoritative.
+adapter contract and sidecar counters, from that config while keeping explicit
+summary `False` values authoritative.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own
 summary/config under both

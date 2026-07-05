@@ -2060,7 +2060,11 @@
   provider summary/config/runbook artifacts plus manifest inputs/extra
   metadata. It also hydrates sparse acknowledgement round-trip summary rows
   from the acknowledgement `dispatch_roundtrip_provenance` sidecar without
-  dropping validated command bundle proof. It also carries nested
+  dropping validated command bundle proof. It also carries the ack-retained
+  final round-trip `synthetic_sidecar_proof` plus flattened
+  `dispatch_roundtrip_synthetic_*` counters and blocks the broker-readiness
+  feed back to acknowledgement reconciliation when synthetic final dry-run
+  folds are present without ready rehearsal sidecars. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from acknowledgement
   reconciliation and blocks broker-readiness feed when synthetic provider folds
   are missing ready rehearsal sidecar proof. The provider round-trip
@@ -2072,8 +2076,8 @@
   `dispatch_roundtrip_*` summary fields from the acknowledgement
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse acknowledgement CSVs do not lose validated
-  live-data provenance or provider command proof before broker-readiness
-  promotion.
+  live-data provenance, provider command proof, or sidecar counters before
+  broker-readiness promotion.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India
