@@ -360,7 +360,9 @@
   values directly. Broker readiness also carries provider-profile proof plus
   the credential-safe `adapter_execution_contract` from runtime session and
   blocks cutover review when either contract is missing, unsafe, or no longer
-  matched to live evidence.
+  matched to live evidence. It also carries nested `synthetic_sidecar_proof`
+  plus flattened sidecar counts from runtime session and blocks cutover review
+  when synthetic provider folds are missing ready rehearsal sidecar proof.
 - Provider market-data imbalance cutover now keeps the same adapter
   fingerprints in the final pre-dispatch gate: cutover summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256

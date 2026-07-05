@@ -4979,9 +4979,11 @@ credential env-template proof, exchange/session metadata, capture-bundle session
 match proof, `live_fetch_contract`, provider-profile contract/SHA, and
 credential-safe `adapter_execution_contract` in the provider
 summary/config/runbook plus manifest, so broker integration reviewers can trace
-the live data source without opening nested runtime-session folders. Missing,
-unsafe, or mismatched provider-profile or adapter-contract proof blocks cutover
-review and sends the packet back through provider runtime session.
+the live data source without opening nested runtime-session folders. It also
+retains nested `synthetic_sidecar_proof` plus flattened sidecar counts from the
+runtime-session wrapper. Missing, unsafe, or mismatched provider-profile,
+adapter-contract, or synthetic sidecar proof blocks cutover review and sends
+the packet back through provider runtime session.
 When a provider round-trip proof carries its own `dispatch_roundtrip_*` capture
 bundle/env-template, adapter handoff path, source credential env-template
 proof, `live_fetch_contract`, provider-profile contract/SHA, or
