@@ -410,7 +410,12 @@ def _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence, *, ac
     return out_dir
 
 
-def _write_ready_ops_launch_evidence(tmp_path, *, evidence_profile="provider_imbalance_ops_launch"):
+def _write_ready_ops_launch_evidence(
+    tmp_path,
+    *,
+    evidence_profile="provider_imbalance_ops_launch",
+    sidecar_breach=False,
+):
     out_dir = tmp_path / f"{evidence_profile}_evidence"
     out_dir.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(
@@ -446,6 +451,40 @@ def _write_ready_ops_launch_evidence(tmp_path, *, evidence_profile="provider_imb
                 "broker_roundtrip_resume_route_launch_control_breach_runs": 0,
                 "broker_roundtrip_resume_route_portfolio_breach_runs": 0,
                 "broker_roundtrip_resume_route_concentration_breach_runs": 0,
+                "require_provider_broker_roundtrip_synthetic_sidecar_ready": (
+                    evidence_profile == "provider_imbalance_ops_launch"
+                ),
+                "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach": (
+                    evidence_profile == "provider_imbalance_ops_launch"
+                ),
+                "provider_broker_roundtrip_runs": 1 if evidence_profile == "provider_imbalance_ops_launch" else 0,
+                "provider_broker_roundtrip_passed_runs": (
+                    1 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_broker_roundtrip_synthetic_dataset_count": (
+                    2 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_broker_roundtrip_synthetic_sidecar_count": (
+                    1 if sidecar_breach and evidence_profile == "provider_imbalance_ops_launch"
+                    else 2 if evidence_profile == "provider_imbalance_ops_launch"
+                    else 0
+                ),
+                "provider_broker_roundtrip_synthetic_sidecar_readable_count": (
+                    1 if sidecar_breach and evidence_profile == "provider_imbalance_ops_launch"
+                    else 2 if evidence_profile == "provider_imbalance_ops_launch"
+                    else 0
+                ),
+                "provider_broker_roundtrip_synthetic_sidecar_proof_runs": (
+                    1 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_broker_roundtrip_synthetic_sidecar_ready_runs": (
+                    0 if sidecar_breach and evidence_profile == "provider_imbalance_ops_launch"
+                    else 1 if evidence_profile == "provider_imbalance_ops_launch"
+                    else 0
+                ),
+                "provider_broker_roundtrip_synthetic_sidecar_breach_runs": (
+                    1 if sidecar_breach and evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
             }
         ]
     ).to_csv(out_dir / "strategy_evidence_summary.csv", index=False)
@@ -3235,6 +3274,41 @@ def test_provider_market_data_imbalance_route_readiness_accepts_ready_ops_eviden
     assert manifest["run_type"] == "provider_market_data_imbalance_route_readiness"
     assert "strategy_evidence" in manifest["inputs"]
     assert "ops_evidence_1" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_route_readiness_blocks_sidecar_breach(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path, sidecar_breach=True)
+    out_dir = tmp_path / "provider_imbalance_route_readiness_sidecar_breach"
+
+    report = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        out_dir,
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_action_queue.csv")
+    route_pairs = pd.read_csv(out_dir / "route_readiness" / "route_readiness_pairs.csv")
+    route_summary = pd.read_csv(out_dir / "route_readiness" / "route_readiness_summary.csv")
+    provider_ops_gate = (
+        "review-strategy-evidence --profile provider_market_data_imbalance_ops_launch --require-file-inputs"
+    )
+
+    assert not report.ready
+    assert bool(summary.loc[0, "provider_launch_evidence_ready"])
+    assert not bool(summary.loc[0, "route_readiness_ready"])
+    assert summary.loc[0, "next_gate"] == provider_ops_gate
+    assert action_queue.loc[0, "queue_status"] == "blocked"
+    assert action_queue.loc[0, "next_gate"] == provider_ops_gate
+    assert not bool(route_summary.loc[0, "ready"])
+    assert int(route_summary.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 1
+    assert route_pairs.loc[0, "status"] == "ops_launch_controls_not_gated"
+    assert "provider_broker_roundtrip_synthetic_sidecar_ready_runs" in route_pairs.loc[
+        0, "ops_launch_control_failures"
+    ]
+    assert int(route_pairs.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
 
 
 def test_cli_provider_market_data_imbalance_route_readiness_accepts_ready_ops_evidence(tmp_path):

@@ -17,6 +17,8 @@ def evidence_summary(
     include_ops_broker_controls: bool = True,
     concentration_breach: bool = False,
     resume_route_breach: bool = False,
+    sidecar_breach: bool = False,
+    include_provider_sidecar_controls: bool = True,
     input_directory_count: int = 0,
     input_other_count: int = 0,
     input_unfingerprinted_count: int = 0,
@@ -26,9 +28,9 @@ def evidence_summary(
         "failed_checks": 0 if ready else 1,
         "recommendation": (
             "eligible_for_live_dryrun_route_review"
-            if profile == "ops_launch" and ready
+            if profile in {"ops_launch", "provider_imbalance_ops_launch"} and ready
             else "ops_launch_evidence_incomplete"
-            if profile == "ops_launch"
+            if profile in {"ops_launch", "provider_imbalance_ops_launch"}
             else "eligible_for_shadow_scaleup_review"
             if ready
             else "strategy_evidence_incomplete"
@@ -43,7 +45,7 @@ def evidence_summary(
         "input_unfingerprinted_count": input_unfingerprinted_count,
         "source_path": f"runs/evidence/{profile}/strategy_evidence_summary.csv",
     }
-    if profile == "ops_launch" and include_ops_broker_controls:
+    if profile in {"ops_launch", "provider_imbalance_ops_launch"} and include_ops_broker_controls:
         row.update(
             {
                 "require_no_blocked_placeholder_schema": True,
@@ -66,9 +68,41 @@ def evidence_summary(
                 "broker_roundtrip_resume_route_concentration_breach_runs": 1 if resume_route_breach else 0,
             }
         )
+    if profile == "provider_imbalance_ops_launch" and include_provider_sidecar_controls:
+        row.update(
+            {
+                "require_provider_broker_roundtrip_synthetic_sidecar_ready": True,
+                "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach": True,
+                "provider_broker_roundtrip_runs": 1,
+                "provider_broker_roundtrip_passed_runs": 1,
+                "provider_broker_roundtrip_synthetic_dataset_count": 2,
+                "provider_broker_roundtrip_synthetic_sidecar_count": 1 if sidecar_breach else 2,
+                "provider_broker_roundtrip_synthetic_sidecar_readable_count": 1 if sidecar_breach else 2,
+                "provider_broker_roundtrip_synthetic_sidecar_proof_runs": 1,
+                "provider_broker_roundtrip_synthetic_sidecar_ready_runs": 0 if sidecar_breach else 1,
+                "provider_broker_roundtrip_synthetic_sidecar_breach_runs": 1 if sidecar_breach else 0,
+            }
+        )
     return pd.DataFrame(
         [row]
     )
+
+
+def provider_ops_portability_config():
+    portability = build_market_portability_report(
+        MarketPortabilityReportConfig(
+            markets=("india_nse_index_derivatives",),
+            strategies=("microprice_imbalance",),
+        )
+    )
+    provider_ops_gate = (
+        "review-strategy-evidence --profile provider_market_data_imbalance_ops_launch --require-file-inputs"
+    )
+    for key in ("ready_pairs", "gap_pairs"):
+        for pair in portability.config.get(key, []) or []:
+            pair["ops_evidence_profile"] = "provider_imbalance_ops_launch"
+            pair["ops_evidence_gate"] = provider_ops_gate
+    return portability.config
 
 
 def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match():
@@ -119,6 +153,64 @@ def test_route_readiness_passes_when_portability_strategy_and_ops_evidence_match
     assert review.action_queue.loc[0, "next_gate"] == "live_dryrun_route_review"
     assert review.action_queue.loc[0, "ops_launch_controls_ready"]
     assert int(review.action_queue.loc[0, "ops_broker_roundtrip_resume_route_ready_runs"]) == 1
+
+
+def test_route_readiness_passes_provider_ops_evidence_with_sidecar_proof():
+    review = build_route_readiness_review(
+        provider_ops_portability_config(),
+        strategy_evidence_summaries=evidence_summary(profile="imbalance"),
+        ops_evidence_summaries=evidence_summary(
+            profile="provider_imbalance_ops_launch",
+            require_file_inputs=True,
+        ),
+    )
+
+    assert review.ready
+    row = review.pairs.iloc[0]
+    assert row["route_ready"]
+    assert row["ops_evidence_profile"] == "provider_imbalance_ops_launch"
+    assert row["ops_launch_controls_ready"]
+    assert row["ops_launch_control_failures"] == ""
+    assert int(row["ops_provider_broker_roundtrip_synthetic_dataset_count"]) == 2
+    assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_count"]) == 2
+    assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_readable_count"]) == 2
+    assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
+    assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+    assert review.config["ready_actions"][0]["ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"] == 1
+    assert review.action_queue is not None
+    assert int(review.action_queue.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
+
+
+def test_route_readiness_blocks_provider_ops_evidence_with_sidecar_breach():
+    review = build_route_readiness_review(
+        provider_ops_portability_config(),
+        strategy_evidence_summaries=evidence_summary(profile="imbalance"),
+        ops_evidence_summaries=evidence_summary(
+            profile="provider_imbalance_ops_launch",
+            require_file_inputs=True,
+            sidecar_breach=True,
+        ),
+    )
+
+    row = review.pairs.iloc[0]
+    assert not review.ready
+    assert not row["route_ready"]
+    assert row["status"] == "ops_launch_controls_not_gated"
+    assert "provider_broker_roundtrip_synthetic_sidecar_ready_runs" in row["ops_launch_control_failures"]
+    assert "provider_broker_roundtrip_synthetic_sidecar_breach_runs" in row["ops_launch_control_failures"]
+    assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 0
+    assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
+    summary = review.summary.iloc[0]
+    assert int(summary["ops_launch_controls_blocked_pairs"]) == 1
+    assert int(summary["ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 1
+    assert review.config["blocked_actions"][0]["ops_launch_control_failures"] == (
+        "provider_broker_roundtrip_synthetic_sidecar_ready_runs;"
+        "provider_broker_roundtrip_synthetic_sidecar_breach_runs"
+    )
+    assert review.action_queue is not None
+    assert "provider_broker_roundtrip_synthetic_sidecar_breach_runs" in str(
+        review.action_queue.loc[0, "ops_launch_control_failures"]
+    )
 
 
 def test_route_readiness_blocks_ops_evidence_without_file_input_gate():

@@ -676,14 +676,18 @@ portfolio-safe proof with no allocation breaches, and final broker round-trip
 concentration must have at least one concentration-OK proof with no
 concentration breaches. It also requires final broker round-trip resume-route
 proof with ready primary/incident branches and no route-gap, launch-control,
-portfolio, or concentration breaches. Older ops evidence summaries that do not
-carry those control flags/counts fail closed at route review instead of being
-treated as live-dry-run ready. Use `--allow-non-file-ops-inputs` only for
+portfolio, or concentration breaches. Provider-data imbalance ops evidence also
+must carry ready final provider broker round-trip synthetic sidecar proof with
+zero sidecar breaches; stale provider ops summaries that lose those counts fail
+closed here before live dry-run route review. Older ops evidence summaries that
+do not carry those control flags/counts fail closed at route review instead of
+being treated as live-dry-run ready. Use `--allow-non-file-ops-inputs` only for
 explicit dry-run investigations that are not route-review candidates.
 `route_readiness_action_queue.csv` flattens ready and blocked route pairs into
 priority order with `next_gate`, `next_gate_help_command`, evidence statuses,
 `ops_launch_control_failures`, broker proof counts including resume-route
-breach counters, and the route-level recommendation.
+breach counters plus provider synthetic sidecar proof counters, and the
+route-level recommendation.
 `route_readiness_config.json` mirrors the queue as
 `next_actions`, `ready_actions`, and `blocked_actions`, plus the primary next
 gate/help, `primary_action_status`, and `primary_action` for scheduler
@@ -4843,7 +4847,10 @@ controls stay blocked at `review-strategy-evidence --profile
 provider_market_data_imbalance_ops_launch --require-file-inputs`, using a
 provider-specific portability config copy for the nested generic route review;
 a ready wrapper writes nested `route_readiness` outputs and can be passed to
-`plan-provider-market-data-imbalance-scaleup --route-readiness`.
+`plan-provider-market-data-imbalance-scaleup --route-readiness`. Provider
+route-readiness also inherits the generic route sidecar gate, so stale or
+breached provider broker round-trip synthetic sidecar proof is sent back to
+`review-strategy-evidence --profile provider_market_data_imbalance_ops_launch --require-file-inputs`.
 
 Create the provider-data imbalance scale-up plan from that ready scorecard and
 an accepted shadow-session comparison:

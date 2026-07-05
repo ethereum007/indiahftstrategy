@@ -790,6 +790,10 @@
   resume-route proof, blocking live-dryrun route review when primary/incident
   resume branches are missing, gapped, launch-control-failed, portfolio-unsafe,
   or concentration-unsafe.
+- Route readiness now also carries provider-data imbalance final broker
+  round-trip synthetic sidecar proof from `provider_imbalance_ops_launch`
+  evidence into route pairs, action queues, and config JSON, and blocks live
+  dry-run route review when the provider sidecar proof is missing or breached.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
