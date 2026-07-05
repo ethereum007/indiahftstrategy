@@ -5226,12 +5226,12 @@ source beside the dry-run request envelopes. If the broker-dispatch-retained
 round-trip provider profile or adapter contract is missing, unsafe, stale, or
 mismatched against the runtime-session proof, broker-dispatch-send blocks
 acknowledgement reconciliation and routes back to
-`plan-provider-market-data-imbalance-broker-dispatch`. Broker-dispatch-send also
-carries the broker-dispatch-retained final round-trip `synthetic_sidecar_proof`
-plus flattened `dispatch_roundtrip_synthetic_*` counters; if synthetic final
-dry-run folds are present without ready rehearsal sidecars, acknowledgement
-reconciliation is blocked and routed back to
-`plan-provider-market-data-imbalance-broker-dispatch`. When a broker-dispatch
+`plan-provider-market-data-imbalance-broker-dispatch`. The same send-prep gate
+also carries the broker-dispatch-retained final round-trip
+`synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
+counters; if synthetic final dry-run folds are present without ready rehearsal
+sidecars, acknowledgement reconciliation is blocked at that broker-dispatch
+repair gate. When a broker-dispatch
 CSV is sparse but its config sidecar has `dispatch_roundtrip_provenance`,
 broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields,
 including the round-trip provider profile, adapter contract, and sidecar
@@ -5287,12 +5287,16 @@ consistency flags beside the acknowledgement proof. If the send-retained
 round-trip provider profile or adapter contract is missing, unsafe, stale, or
 mismatched against the runtime-session proof, acknowledgement reconciliation
 blocks round-trip review and routes back to
-`prepare-provider-market-data-imbalance-broker-dispatch-send`. When a
+`prepare-provider-market-data-imbalance-broker-dispatch-send`. The same
+acknowledgement gate also carries the send-retained final round-trip
+`synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
+counters; if synthetic final dry-run folds are present without ready rehearsal
+sidecars, round-trip review is blocked at that send-packet repair gate. When a
 send-packet CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, acknowledgement hydrates missing or blank
 `dispatch_roundtrip_*` fields, including the round-trip provider profile and
-adapter contract, from that config while keeping explicit summary `False`
-values authoritative. The
+adapter contract and sidecar counters, from that config while keeping explicit
+summary `False` values authoritative. The
 wrapper runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. Clean

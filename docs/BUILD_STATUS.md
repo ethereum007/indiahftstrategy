@@ -488,7 +488,10 @@
   profile plus credential-safe `adapter_execution_contract` and blocks
   round-trip review when the broker-dispatch-send handoff is missing, unsafe,
   stale, or no longer matched to the runtime-session provider profile or
-  adapter contract.
+  adapter contract. It also carries the send-retained
+  `dispatch_roundtrip_synthetic_*` sidecar proof and routes back to broker
+  dispatch send when synthetic final dry-run folds are present without ready
+  rehearsal sidecars.
 - Provider market-data imbalance broker dispatch round-trip now carries those
   dispatch-roundtrip fingerprints forward from broker dispatch ack:
   broker-dispatch-roundtrip summary/config and manifest extras expose the
@@ -2028,13 +2031,17 @@
   matched to runtime-session evidence. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from broker dispatch
   send and blocks round-trip review when synthetic provider folds are missing
-  ready rehearsal sidecar proof. Acknowledgement now also hydrates
+  ready rehearsal sidecar proof. It also carries the send-retained final
+  round-trip `synthetic_sidecar_proof` plus flattened
+  `dispatch_roundtrip_synthetic_*` counters and blocks round-trip review back
+  to broker-dispatch-send when synthetic final dry-run folds are present
+  without ready rehearsal sidecars. Acknowledgement now also hydrates
   missing or blank send-packet
   `dispatch_roundtrip_*` summary fields from the send
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse send CSVs do not lose validated live-data
-  provenance, provider profile proof, or command bundle proof before final
-  round-trip review.
+  provenance, provider profile proof, command bundle proof, or sidecar counters
+  before final round-trip review.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
   acknowledgement-carried provider/nested proof and vendor-market-data batch
   proof as upstream lineage while also generating a fresh nested
