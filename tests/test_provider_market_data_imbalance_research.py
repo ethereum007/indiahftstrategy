@@ -14091,6 +14091,182 @@ def test_provider_market_data_imbalance_broker_dispatch_send_blocks_missing_roun
     assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-broker-dispatch"
 
 
+def test_provider_market_data_imbalance_broker_dispatch_send_carries_broker_dispatch_roundtrip_synthetic_sidecar_proof(
+    tmp_path,
+):
+    provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
+    proof = {
+        "ready": True,
+        "synthetic_sidecar_count": 2,
+        "sidecar_readable_count": 2,
+        "sidecar_source_count": 2,
+        "adapter_command_hash_count": 2,
+        "capture_env_template_match_count": 2,
+        "adapter_handoff_match_count": 2,
+        "source_credential_env_template_match_count": 2,
+        "live_fetch_contract_count": 2,
+        "adapter_execution_contract_safe_count": 2,
+        "invariant_count": 2,
+    }
+    summary_path = provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_summary.csv"
+    dispatch_summary = pd.read_csv(summary_path)
+    for column in (
+        "dispatch_roundtrip_synthetic_dataset_count",
+        "dispatch_roundtrip_synthetic_sidecar_proof_ready",
+        "dispatch_roundtrip_synthetic_sidecar_count",
+        "dispatch_roundtrip_synthetic_sidecar_readable_count",
+        "dispatch_roundtrip_synthetic_sidecar_source_count",
+        "dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count",
+        "dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count",
+        "dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count",
+        "dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count",
+        "dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count",
+        "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count",
+        "dispatch_roundtrip_synthetic_sidecar_invariant_count",
+    ):
+        if column in dispatch_summary.columns:
+            dispatch_summary[column] = dispatch_summary[column].astype("object")
+        dispatch_summary.loc[0, column] = ""
+    dispatch_summary.to_csv(summary_path, index=False)
+
+    def add_roundtrip_sidecar(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        provenance.update(
+            {
+                "synthetic_sidecar_proof": proof,
+                "synthetic_dataset_count": 2,
+                "synthetic_sidecar_proof_ready": True,
+                "synthetic_sidecar_count": 2,
+                "synthetic_sidecar_readable_count": 2,
+                "synthetic_sidecar_source_count": 2,
+                "synthetic_sidecar_adapter_command_hash_count": 2,
+                "synthetic_sidecar_capture_env_template_match_count": 2,
+                "synthetic_sidecar_adapter_handoff_match_count": 2,
+                "synthetic_sidecar_source_env_template_match_count": 2,
+                "synthetic_sidecar_live_fetch_contract_count": 2,
+                "synthetic_sidecar_adapter_execution_contract_safe_count": 2,
+                "synthetic_sidecar_invariant_count": 2,
+            }
+        )
+
+    _mutate_json(
+        provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_config.json",
+        add_roundtrip_sidecar,
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_send_with_roundtrip_sidecar"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_send(
+        provider_dispatch.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    checks = report.checks.set_index("check")
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_send_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert report.ready
+    assert bool(checks.loc["provider_broker_dispatch_dispatch_roundtrip_synthetic_sidecar_proof_carried", "passed"])
+    assert bool(checks.loc["provider_broker_dispatch_dispatch_roundtrip_synthetic_sidecar_proof_ready", "passed"])
+    assert bool(summary["dispatch_roundtrip_synthetic_sidecar_proof_ready"])
+    assert summary["dispatch_roundtrip_synthetic_dataset_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_readable_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count"] == 2
+    assert summary["dispatch_roundtrip_synthetic_sidecar_invariant_count"] == 2
+    assert config["dispatch_roundtrip_provenance"]["synthetic_sidecar_proof"]["ready"] is True
+    assert config["dispatch_roundtrip_provenance"]["synthetic_sidecar_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_synthetic_sidecar_proof"]["ready"] is True
+    assert manifest["extra"]["dispatch_roundtrip_synthetic_sidecar_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip"]["synthetic_sidecar_proof"]["ready"] is True
+    assert manifest["extra"]["dispatch_roundtrip"]["synthetic_sidecar_count"] == 2
+    assert "Dispatch round-trip synthetic sidecar proof: yes (2/2)" in runbook
+    assert "provider_broker_dispatch_dispatch_roundtrip_synthetic_sidecar_proof_carried" not in failed
+    assert "provider_broker_dispatch_dispatch_roundtrip_synthetic_sidecar_proof_ready" not in failed
+
+
+def test_provider_market_data_imbalance_broker_dispatch_send_blocks_missing_broker_dispatch_roundtrip_synthetic_sidecar_proof(
+    tmp_path,
+):
+    provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
+    summary_path = provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_summary.csv"
+    dispatch_summary = pd.read_csv(summary_path)
+    dispatch_summary.loc[0, "dispatch_roundtrip_synthetic_dataset_count"] = 2
+    dispatch_summary.loc[0, "dispatch_roundtrip_synthetic_sidecar_proof_ready"] = False
+    for column in (
+        "dispatch_roundtrip_synthetic_sidecar_count",
+        "dispatch_roundtrip_synthetic_sidecar_readable_count",
+        "dispatch_roundtrip_synthetic_sidecar_source_count",
+        "dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count",
+        "dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count",
+        "dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count",
+        "dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count",
+        "dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count",
+        "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count",
+        "dispatch_roundtrip_synthetic_sidecar_invariant_count",
+    ):
+        dispatch_summary.loc[0, column] = 0
+    dispatch_summary.to_csv(summary_path, index=False)
+
+    def remove_roundtrip_sidecar(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        provenance.pop("synthetic_sidecar_proof", None)
+        provenance.update(
+            {
+                "synthetic_dataset_count": 2,
+                "synthetic_sidecar_proof_ready": False,
+                "synthetic_sidecar_count": 0,
+                "synthetic_sidecar_readable_count": 0,
+            }
+        )
+
+    _mutate_json(
+        provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_config.json",
+        remove_roundtrip_sidecar,
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_send_missing_roundtrip_sidecar"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_send(
+        provider_dispatch.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_send_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert not report.ready
+    assert summary["dispatch_roundtrip_synthetic_dataset_count"] == 2
+    assert not bool(summary["dispatch_roundtrip_synthetic_sidecar_proof_ready"])
+    assert summary["dispatch_roundtrip_synthetic_sidecar_count"] == 0
+    assert config["dispatch_roundtrip_provenance"]["synthetic_sidecar_proof"] == {}
+    assert manifest["extra"]["dispatch_roundtrip_synthetic_sidecar_proof"] == {}
+    assert manifest["extra"]["dispatch_roundtrip"]["synthetic_sidecar_proof"] == {}
+    assert "provider_broker_dispatch_dispatch_roundtrip_synthetic_sidecar_proof_carried" in failed
+    assert "provider_broker_dispatch_dispatch_roundtrip_synthetic_sidecar_proof_ready" in failed
+    assert "Dispatch round-trip synthetic sidecar proof: no (0/2)" in runbook
+    assert report.action_queue.loc[0, "component"] == "provider_broker_dispatch"
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_dispatch"
+    assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-broker-dispatch"
+
+
 def test_provider_market_data_imbalance_broker_dispatch_send_carries_roundtrip_capture_bundle_provenance(tmp_path):
     provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
     bundle_path = tmp_path / "provider_market_data_capture_bundle.json"

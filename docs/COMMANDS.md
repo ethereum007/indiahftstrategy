@@ -5226,11 +5226,17 @@ source beside the dry-run request envelopes. If the broker-dispatch-retained
 round-trip provider profile or adapter contract is missing, unsafe, stale, or
 mismatched against the runtime-session proof, broker-dispatch-send blocks
 acknowledgement reconciliation and routes back to
+`plan-provider-market-data-imbalance-broker-dispatch`. Broker-dispatch-send also
+carries the broker-dispatch-retained final round-trip `synthetic_sidecar_proof`
+plus flattened `dispatch_roundtrip_synthetic_*` counters; if synthetic final
+dry-run folds are present without ready rehearsal sidecars, acknowledgement
+reconciliation is blocked and routed back to
 `plan-provider-market-data-imbalance-broker-dispatch`. When a broker-dispatch
 CSV is sparse but its config sidecar has `dispatch_roundtrip_provenance`,
 broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields,
-including the round-trip provider profile and adapter contract, from that
-config while keeping explicit summary `False` values authoritative.
+including the round-trip provider profile, adapter contract, and sidecar
+counters, from that config while keeping explicit summary `False` values
+authoritative.
 The wrapper runs
 `prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,
 and writes provider checks, summary, action, config, and runbook artifacts. It

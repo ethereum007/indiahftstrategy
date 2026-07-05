@@ -476,7 +476,10 @@
   profile plus credential-safe `adapter_execution_contract` and blocks
   acknowledgement reconciliation when the broker-dispatch handoff is missing,
   unsafe, stale, or no longer matched to the runtime-session provider profile
-  or adapter contract.
+  or adapter contract. It also carries the broker-dispatch-retained
+  `dispatch_roundtrip_synthetic_*` sidecar proof and routes back to broker
+  dispatch when synthetic final dry-run folds are present without ready
+  rehearsal sidecars.
 - Provider market-data imbalance broker dispatch ack now carries those
   dispatch-roundtrip fingerprints forward from broker dispatch send:
   broker-dispatch-ack summary/config and manifest extras expose the
@@ -1994,13 +1997,18 @@
   runtime-session evidence. It also carries nested `synthetic_sidecar_proof`
   plus flattened sidecar counts from broker dispatch and blocks acknowledgement
   reconciliation when synthetic provider folds are missing ready rehearsal
-  sidecar proof. Broker-dispatch-send now also
+  sidecar proof. Broker-dispatch-send now also carries the
+  broker-dispatch-retained final round-trip `synthetic_sidecar_proof` plus
+  flattened `dispatch_roundtrip_synthetic_*` counters and blocks
+  acknowledgement reconciliation back to broker dispatch when synthetic final
+  dry-run folds are present without ready rehearsal sidecars.
+  Broker-dispatch-send now also
   hydrates missing or blank broker-dispatch `dispatch_roundtrip_*` summary
   fields from the broker-dispatch `dispatch_roundtrip_provenance` config
   sidecar, while preserving explicit summary `False` values, so sparse
   broker-dispatch CSVs do not lose validated live-data provenance, provider
-  profile proof, or command bundle proof before dry-run request envelopes are
-  produced.
+  profile proof, command bundle proof, or sidecar counters before dry-run
+  request envelopes are produced.
 - Provider-data imbalance broker-dispatch acknowledgement now preserves those
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream
