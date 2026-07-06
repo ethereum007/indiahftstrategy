@@ -5111,9 +5111,12 @@ contract/SHA, and credential-safe round-trip `adapter_execution_contract`
 forward for route-enable and dispatch reviewers. It also carries the final
 round-trip `synthetic_sidecar_proof` plus flattened
 `dispatch_roundtrip_synthetic_*` counts from broker-readiness and fails closed
-when synthetic final dry-run folds are missing ready rehearsal sidecars. If
-that final dry-run provider profile, adapter proof, or sidecar proof is
-missing, unsafe, stale, unready, or no longer
+when synthetic final dry-run folds are missing ready rehearsal sidecars. It
+also carries `dispatch_roundtrip_route_readiness_*` sidecar breach proof and
+routes nonzero final dry-run sidecar breaches back to
+`review-provider-market-data-imbalance-route-readiness`. If that final dry-run
+provider profile, adapter proof, or sidecar proof is missing, unsafe, stale,
+unready, or no longer
 matched to runtime-session evidence, cutover blocks route-enable and routes
 back to `review-provider-market-data-imbalance-broker-readiness`.
 When a

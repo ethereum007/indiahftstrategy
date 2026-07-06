@@ -870,6 +870,10 @@
   broker-dispatch round-trip's route-readiness sidecar breach counter, blocks
   cutover review on nonzero final dry-run provider sidecar breaches, and routes
   repair back to provider route readiness.
+- Provider-data imbalance cutover now also carries broker-readiness's final
+  broker-dispatch round-trip route-readiness sidecar breach counter, blocks
+  route-enable review on nonzero final dry-run provider sidecar breaches, and
+  routes repair back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
@@ -2018,7 +2022,11 @@
   `live_fetch_contract`, and
   provenance-consistency flags in summary/config/runbook/manifest artifacts so
   route-enable and later broker dispatch stages can trace the same proof chain
-  before live-data dry-runs. Cutover now also hydrates missing or blank
+  before live-data dry-runs. Cutover also carries the final round-trip
+  `dispatch_roundtrip_route_readiness_*` sidecar breach proof from
+  broker-readiness and blocks route-enable review back to provider route
+  readiness when nonzero final dry-run sidecar breach pairs remain. Cutover now
+  also hydrates missing or blank
   `dispatch_roundtrip_*` summary fields from broker-readiness
   `dispatch_roundtrip_provenance` config sidecars, while keeping explicit CSV
   `False` values authoritative, so mixed-version broker-readiness outputs still

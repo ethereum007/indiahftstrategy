@@ -324,6 +324,17 @@ def write_provider_market_data_imbalance_cutover(
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                 summary_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
             ),
+            "dispatch_roundtrip_route_readiness_provided": bool(
+                summary_row["dispatch_roundtrip_route_readiness_provided"]
+            ),
+            "dispatch_roundtrip_route_readiness_ops_launch_controls_present": bool(
+                summary_row["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+            ),
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary_row[
+                    "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ]
+            ),
             "dispatch_roundtrip_synthetic_sidecar_proof": _mapping(
                 _mapping(payload.get("dispatch_roundtrip_provenance")).get("synthetic_sidecar_proof")
             ),
@@ -597,6 +608,15 @@ def write_provider_market_data_imbalance_cutover(
                 "synthetic_sidecar_count": int(summary_row["dispatch_roundtrip_synthetic_sidecar_count"]),
                 "synthetic_sidecar_readable_count": int(
                     summary_row["dispatch_roundtrip_synthetic_sidecar_readable_count"]
+                ),
+                "route_readiness_provided": bool(summary_row["dispatch_roundtrip_route_readiness_provided"]),
+                "route_readiness_ops_launch_controls_present": bool(
+                    summary_row["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+                ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    summary_row[
+                        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                    ]
                 ),
                 "provider_profile": _mapping(
                     _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_profile")
@@ -1021,6 +1041,29 @@ def _checks(
     dispatch_synthetic_sidecar_count_matches = (
         dispatch_synthetic_sidecar_count == dispatch_synthetic_dataset_count
     )
+    dispatch_route_sidecar_breach_pairs = int(
+        _dispatch_roundtrip_number(
+            provider_summary,
+            dispatch_roundtrip,
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        )
+    )
+    dispatch_route_sidecar_gate_active = (
+        _dispatch_roundtrip_bool(
+            provider_summary,
+            dispatch_roundtrip,
+            "dispatch_roundtrip_route_readiness_provided",
+            "route_readiness_provided",
+        )
+        or _dispatch_roundtrip_bool(
+            provider_summary,
+            dispatch_roundtrip,
+            "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
+            "route_readiness_ops_launch_controls_present",
+        )
+        or dispatch_route_sidecar_breach_pairs > 0
+    )
     rows.append(
         _check(
             "dispatch_roundtrip_provider_capture_commands_carried",
@@ -1203,6 +1246,20 @@ def _checks(
                 else True
             ),
             "provider imbalance cutover round-trip synthetic rehearsal sidecar proof is not ready",
+        )
+    )
+    rows.append(
+        _check(
+            "dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs",
+            dispatch_route_sidecar_breach_pairs,
+            "<=",
+            0,
+            (
+                dispatch_route_sidecar_breach_pairs <= 0
+                if dispatch_route_sidecar_gate_active
+                else True
+            ),
+            "provider imbalance cutover carries broker-readiness final round-trip route-readiness sidecar breaches",
         )
     )
     return pd.DataFrame(rows)
@@ -1428,6 +1485,26 @@ def _summary(
                 "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                     _first_number(
                         provider_summary,
+                        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                    )
+                ),
+                "dispatch_roundtrip_route_readiness_provided": _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_route_readiness_provided",
+                    "route_readiness_provided",
+                ),
+                "dispatch_roundtrip_route_readiness_ops_launch_controls_present": _dispatch_roundtrip_bool(
+                    provider_summary,
+                    dispatch_roundtrip,
+                    "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
+                    "route_readiness_ops_launch_controls_present",
+                ),
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _dispatch_roundtrip_number(
+                        provider_summary,
+                        dispatch_roundtrip,
+                        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
                         "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
                     )
                 ),
@@ -2324,6 +2401,8 @@ def _action_queue(
 
 
 def _action_priority(check: str) -> int:
+    if _is_dispatch_roundtrip_route_sidecar_check(check):
+        return 0
     if (
         check.startswith("provider_broker_readiness")
         or check.startswith("nested_broker_readiness")
@@ -2467,6 +2546,15 @@ def _config(
             "synthetic_sidecar_count": int(summary["dispatch_roundtrip_synthetic_sidecar_count"]),
             "synthetic_sidecar_readable_count": int(
                 summary["dispatch_roundtrip_synthetic_sidecar_readable_count"]
+            ),
+            "route_readiness_provided": bool(summary["dispatch_roundtrip_route_readiness_provided"]),
+            "route_readiness_ops_launch_controls_present": bool(
+                summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+            ),
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary[
+                    "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ]
             ),
             "synthetic_sidecar_source_count": int(summary["dispatch_roundtrip_synthetic_sidecar_source_count"]),
             "synthetic_sidecar_adapter_command_hash_count": int(
@@ -2706,6 +2794,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
+        "- Dispatch round-trip route sidecar breach pairs: "
+        f"{summary['dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "- Dispatch round-trip synthetic sidecar proof: "
         f"{'yes' if bool(summary['dispatch_roundtrip_synthetic_sidecar_proof_ready']) else 'no'} "
         f"({summary['dispatch_roundtrip_synthetic_sidecar_count']}/"
@@ -2797,6 +2887,8 @@ def _blocked_next_gate(checks: pd.DataFrame, cutover: CutoverGateReport | None) 
 
 
 def _next_gate_for_check(check: str, cutover: CutoverGateReport | None) -> str:
+    if _is_dispatch_roundtrip_route_sidecar_check(check):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_broker_readiness_route_readiness_provider_sidecar"):
         return "review-provider-market-data-imbalance-route-readiness"
     if (
@@ -2840,6 +2932,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
+    if _is_dispatch_roundtrip_route_sidecar_check(check):
+        return "provider_route_readiness"
     if check.startswith("provider_broker_readiness_route_readiness_provider_sidecar"):
         return "provider_route_readiness"
     if (
@@ -2862,6 +2956,8 @@ def _component_for_check(check: str) -> str:
 
 
 def _action_for_check(check: str) -> str:
+    if _is_dispatch_roundtrip_route_sidecar_check(check):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_broker_readiness_route_readiness_provider_sidecar"):
         return "review_provider_imbalance_route_readiness"
     if (
@@ -2882,6 +2978,8 @@ def _action_for_check(check: str) -> str:
 
 
 def _recommendation_for_check(check: str) -> str:
+    if _is_dispatch_roundtrip_route_sidecar_check(check):
+        return "review_provider_roundtrip_route_readiness_sidecar_proof_before_cutover"
     if check.startswith("provider_broker_readiness_route_readiness_provider_sidecar"):
         return "review_provider_route_readiness_sidecar_proof_before_cutover"
     if (
@@ -2913,6 +3011,10 @@ def _is_dispatch_roundtrip_provider_profile_check(check: str) -> bool:
 
 def _is_dispatch_roundtrip_synthetic_sidecar_check(check: str) -> bool:
     return check.startswith("dispatch_roundtrip_synthetic_sidecar")
+
+
+def _is_dispatch_roundtrip_route_sidecar_check(check: str) -> bool:
+    return check.startswith("dispatch_roundtrip_route_readiness_provider_sidecar")
 
 
 def _inferred_scaleup_dir(provider_summary: pd.DataFrame, provider_config: dict[str, Any]) -> Path | None:
