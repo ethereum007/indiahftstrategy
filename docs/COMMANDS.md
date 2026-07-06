@@ -5053,7 +5053,11 @@ exchange/session/live-fetch identity, runtime-session provider profile, or
 runtime-session adapter contract. If the supplied provider round-trip has
 synthetic provider folds but no ready rehearsal sidecar proof, broker-readiness
 also blocks cutover and routes the packet back to broker-dispatch round-trip
-review.
+review. If that final provider round-trip carries a route-readiness provider
+broker round-trip synthetic sidecar breach counter, broker-readiness exposes it
+as `dispatch_roundtrip_route_readiness_*` summary/config/manifest fields and
+routes nonzero final dry-run sidecar breaches back to
+`review-provider-market-data-imbalance-route-readiness`.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
 batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields

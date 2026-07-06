@@ -866,6 +866,10 @@
   route-readiness sidecar breach counter from broker dispatch acknowledgement,
   blocks broker-readiness review on nonzero provider sidecar breaches, and
   routes repair back to provider route readiness.
+- Provider-data imbalance broker readiness now also revalidates the final
+  broker-dispatch round-trip's route-readiness sidecar breach counter, blocks
+  cutover review on nonzero final dry-run provider sidecar breaches, and routes
+  repair back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
@@ -2179,7 +2183,12 @@
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
   summary `False` values, so sparse acknowledgement CSVs do not lose validated
   live-data provenance, provider command proof, or sidecar counters before
-  broker-readiness promotion.
+  broker-readiness promotion. Provider broker readiness now consumes that final
+  round-trip route-readiness sidecar breach proof separately from the
+  runtime-session route proof, exposes it as
+  `dispatch_roundtrip_route_readiness_*` summary/config/manifest fields, and
+  blocks cutover review back to provider route readiness when nonzero final
+  dry-run sidecar breach pairs remain.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

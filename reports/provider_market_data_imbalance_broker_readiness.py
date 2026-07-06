@@ -395,6 +395,17 @@ def write_provider_market_data_imbalance_broker_readiness(
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                 summary_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
             ),
+            "dispatch_roundtrip_route_readiness_provided": bool(
+                summary_row["dispatch_roundtrip_route_readiness_provided"]
+            ),
+            "dispatch_roundtrip_route_readiness_ops_launch_controls_present": bool(
+                summary_row["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+            ),
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary_row[
+                    "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ]
+            ),
             "dispatch_roundtrip_synthetic_sidecar_proof": _mapping(
                 _mapping(payload.get("dispatch_roundtrip_provenance")).get("synthetic_sidecar_proof")
             ),
@@ -614,6 +625,15 @@ def write_provider_market_data_imbalance_broker_readiness(
                 "synthetic_sidecar_count": int(summary_row["dispatch_roundtrip_synthetic_sidecar_count"]),
                 "synthetic_sidecar_readable_count": int(
                     summary_row["dispatch_roundtrip_synthetic_sidecar_readable_count"]
+                ),
+                "route_readiness_provided": bool(summary_row["dispatch_roundtrip_route_readiness_provided"]),
+                "route_readiness_ops_launch_controls_present": bool(
+                    summary_row["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+                ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    summary_row[
+                        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                    ]
                 ),
                 "provider_profile": _mapping(
                     _mapping(payload.get("dispatch_roundtrip_provenance")).get("provider_profile")
@@ -964,6 +984,17 @@ def _dispatch_roundtrip_provenance_checks(
     roundtrip_synthetic_sidecar_count_matches = (
         roundtrip_synthetic_sidecar_count == roundtrip_synthetic_dataset_count
     )
+    roundtrip_route_sidecar_breach_pairs = int(
+        _roundtrip_number(
+            provider_roundtrip_summary,
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        )
+    )
+    roundtrip_route_sidecar_gate_active = (
+        _roundtrip_bool(provider_roundtrip_summary, "route_readiness_provided")
+        or _roundtrip_bool(provider_roundtrip_summary, "route_readiness_ops_launch_controls_present")
+        or roundtrip_route_sidecar_breach_pairs > 0
+    )
     return [
         _provenance_check(
             "dispatch_roundtrip_capture_bundle_consistent",
@@ -1124,6 +1155,18 @@ def _dispatch_roundtrip_provenance_checks(
                 else True
             ),
             "dispatch round-trip synthetic provider folds require ready rehearsal sidecar proof",
+        ),
+        _check(
+            "dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs",
+            roundtrip_route_sidecar_breach_pairs,
+            "<=",
+            0,
+            (
+                roundtrip_route_sidecar_breach_pairs <= 0
+                if roundtrip_route_sidecar_gate_active
+                else True
+            ),
+            "dispatch round-trip carries breached route-readiness broker round-trip synthetic sidecar proof",
         ),
         _provenance_check(
             "dispatch_roundtrip_source_credential_env_template_consistent",
@@ -1472,6 +1515,20 @@ def _summary(
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                 _first_number(
                     session_summary,
+                    "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                )
+            ),
+            "dispatch_roundtrip_route_readiness_provided": _roundtrip_bool(
+                provider_roundtrip_summary,
+                "route_readiness_provided",
+            ),
+            "dispatch_roundtrip_route_readiness_ops_launch_controls_present": _roundtrip_bool(
+                provider_roundtrip_summary,
+                "route_readiness_ops_launch_controls_present",
+            ),
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                _roundtrip_number(
+                    provider_roundtrip_summary,
                     "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
                 )
             ),
@@ -2281,6 +2338,15 @@ def _config(
             "synthetic_sidecar_readable_count": int(
                 summary["dispatch_roundtrip_synthetic_sidecar_readable_count"]
             ),
+            "route_readiness_provided": bool(summary["dispatch_roundtrip_route_readiness_provided"]),
+            "route_readiness_ops_launch_controls_present": bool(
+                summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+            ),
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary[
+                    "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ]
+            ),
             "synthetic_sidecar_source_count": int(summary["dispatch_roundtrip_synthetic_sidecar_source_count"]),
             "synthetic_sidecar_adapter_command_hash_count": int(
                 summary["dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count"]
@@ -2520,6 +2586,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
+        "- Dispatch round-trip route sidecar breach pairs: "
+        f"{summary['dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "- Dispatch round-trip synthetic sidecar proof: "
         f"{'yes' if bool(summary['dispatch_roundtrip_synthetic_sidecar_proof_ready']) else 'no'} "
         f"({summary['dispatch_roundtrip_synthetic_sidecar_count']}/"
@@ -2617,6 +2685,8 @@ def _blocked_next_gate(checks: pd.DataFrame) -> str:
 
 
 def _next_gate_for_check(check: str, broker: BrokerReadinessReport | None) -> str:
+    if check.startswith("dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_runtime_session_route_readiness_provider_sidecar"):
         return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_runtime_session") or check.startswith("nested_runtime_session"):
@@ -2678,6 +2748,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
+    if check.startswith("dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "provider_route_readiness"
     if check.startswith("provider_runtime_session_route_readiness_provider_sidecar"):
         return "provider_route_readiness"
     if check.startswith("provider_runtime_session") or check.startswith("nested_runtime_session"):
@@ -2702,6 +2774,8 @@ def _component_for_check(check: str) -> str:
 
 
 def _action_for_check(check: str) -> str:
+    if check.startswith("dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_runtime_session_route_readiness_provider_sidecar"):
         return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_runtime_session") or check.startswith("nested_runtime_session"):
@@ -2722,6 +2796,8 @@ def _action_for_check(check: str) -> str:
 
 
 def _recommendation_for_check(check: str) -> str:
+    if check.startswith("dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "review_provider_roundtrip_route_readiness_sidecar_proof_before_broker_readiness"
     if check.startswith("provider_runtime_session_route_readiness_provider_sidecar"):
         return "review_provider_route_readiness_sidecar_proof_before_broker_readiness"
     if check.startswith("provider_runtime_session") or check.startswith("nested_runtime_session"):
