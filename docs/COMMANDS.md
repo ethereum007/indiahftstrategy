@@ -5406,7 +5406,11 @@ broker-readiness feed and routes back to
 nested `synthetic_sidecar_proof` plus flattened sidecar counts from
 acknowledgement reconciliation. If the required synthetic sidecar proof is
 missing or unready, round-trip review blocks broker-readiness feed and routes
-back to `reconcile-provider-market-data-imbalance-broker-dispatch`. It also carries the
+back to `reconcile-provider-market-data-imbalance-broker-dispatch`. It also
+carries the acknowledgement-carried route-readiness provider broker round-trip
+synthetic sidecar breach counter; if that inherited counter is nonzero,
+broker-readiness feed is blocked and routed back to
+`review-provider-market-data-imbalance-route-readiness`. It also carries the
 ack-retained validated dispatch round-trip
 source credential env-template, round-trip exchange/session metadata,
 capture-bundle session proof, live-fetch exchange/session identity,

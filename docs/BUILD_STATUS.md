@@ -452,6 +452,9 @@
   It also carries nested `synthetic_sidecar_proof` plus flattened sidecar
   counts from acknowledgement reconciliation and blocks the broker-readiness
   feed when synthetic provider folds are missing ready rehearsal sidecar proof.
+  Round-trip proof now also preserves the acknowledgement-carried
+  route-readiness provider broker round-trip synthetic sidecar breach counter
+  and routes stale nonzero breach packets back to provider route readiness.
 - Provider market-data imbalance broker readiness now also keeps those final
   dry-run bridge fingerprints when dispatch round-trip proof is supplied:
   broker-readiness summary/config and manifest extras expose the
@@ -858,6 +861,10 @@
 - Provider-data imbalance broker dispatch acknowledgement now preserves the
   route-readiness sidecar breach counter from broker dispatch send, blocks
   broker-dispatch round-trip review on nonzero provider sidecar breaches, and
+  routes repair back to provider route readiness.
+- Provider-data imbalance broker dispatch round-trip now preserves the
+  route-readiness sidecar breach counter from broker dispatch acknowledgement,
+  blocks broker-readiness review on nonzero provider sidecar breaches, and
   routes repair back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
@@ -2159,7 +2166,10 @@
   folds are present without ready rehearsal sidecars. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from acknowledgement
   reconciliation and blocks broker-readiness feed when synthetic provider folds
-  are missing ready rehearsal sidecar proof. The provider round-trip
+  are missing ready rehearsal sidecar proof. It also carries the
+  acknowledgement-retained route-readiness provider broker round-trip synthetic
+  sidecar breach counter and blocks broker-readiness feed back to provider
+  route readiness when stale packets expose nonzero sidecar breaches. The provider round-trip
   summary/config now also surfaces nested broker
   vendor-market-data batch proof under both
   `roundtrip_broker_dispatch_roundtrip_vendor_market_data_batch_*` and
