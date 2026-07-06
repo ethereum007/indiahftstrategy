@@ -5394,7 +5394,7 @@ send-packet CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, acknowledgement hydrates missing or blank
 `dispatch_roundtrip_*` fields, including the round-trip provider profile and
 adapter contract and sidecar counters, from that config while keeping explicit
-summary `False` values authoritative. The
+summary `False` and `0` values authoritative. The
 wrapper runs `reconcile-broker-dispatch` under a nested
 `broker_dispatch_ack` folder, and writes provider checks, summary, action,
 config, and runbook artifacts. Clean

@@ -2169,7 +2169,7 @@
   missing or blank send-packet
   `dispatch_roundtrip_*` summary fields from the send
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
-  summary `False` values, so sparse send CSVs do not lose validated live-data
+  summary `False` and `0` values, so sparse send CSVs do not lose validated live-data
   provenance, provider profile proof, command bundle proof, or sidecar counters
   before final round-trip review.
 - Provider-data imbalance broker-dispatch round-trip now keeps the
