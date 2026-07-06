@@ -5158,7 +5158,11 @@ exposing credential values. It also carries any nested
 If that provider profile, adapter contract, or required synthetic sidecar proof
 is missing, unsafe, unready, or no longer matched to live evidence,
 route-enable blocks broker-dispatch planning and routes the packet back to
-`review-provider-market-data-imbalance-cutover`. If cutover retained
+`review-provider-market-data-imbalance-cutover`. Route-enable also preserves
+the cutover-carried provider route-readiness broker round-trip synthetic
+sidecar breach counter; stale nonzero breach packets are routed back to
+`review-provider-market-data-imbalance-route-readiness`.
+If cutover retained
 broker-readiness validated round-trip capture
 bundle/env-template/adapter handoff provenance, route-enable carries those
 `dispatch_roundtrip_*` fields plus the validated round-trip source credential

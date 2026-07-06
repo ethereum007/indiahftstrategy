@@ -399,7 +399,10 @@
   longer matched to live evidence. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from cutover and
   blocks broker-dispatch planning when synthetic provider folds are missing
-  ready rehearsal sidecar proof.
+  ready rehearsal sidecar proof. Route enable now also preserves the
+  cutover-carried route-readiness provider broker round-trip synthetic sidecar
+  breach counter and routes stale nonzero breach packets back to provider
+  route readiness.
 - Provider market-data imbalance broker dispatch now keeps those adapter
   fingerprints in the dry-run dispatch planner: broker-dispatch summary/config
   and manifest extras expose capture env-template and adapter handoff SHA-256
@@ -831,6 +834,10 @@
 - Provider-data imbalance cutover now preserves the route-readiness sidecar
   breach counter from broker readiness, blocks route-enable review on nonzero
   provider sidecar breaches, and routes repair back to provider route readiness.
+- Provider-data imbalance route enable now preserves the route-readiness
+  sidecar breach counter from cutover, blocks broker-dispatch planning on
+  nonzero provider sidecar breaches, and routes repair back to provider route
+  readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.

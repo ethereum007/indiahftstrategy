@@ -194,6 +194,7 @@ def write_provider_market_data_imbalance_route_enable(
         route_enable_error,
         provider_summary,
         provider_config,
+        provider_broker_summary,
         provider_broker_config,
         config,
     )
@@ -337,6 +338,13 @@ def write_provider_market_data_imbalance_route_enable(
             "synthetic_sidecar_proof_ready": bool(summary_row["synthetic_sidecar_proof_ready"]),
             "synthetic_sidecar_count": int(summary_row["synthetic_sidecar_count"]),
             "synthetic_sidecar_readable_count": int(summary_row["synthetic_sidecar_readable_count"]),
+            "route_readiness_provided": bool(summary_row["route_readiness_provided"]),
+            "route_readiness_ops_launch_controls_present": bool(
+                summary_row["route_readiness_ops_launch_controls_present"]
+            ),
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+            ),
             "dispatch_roundtrip_synthetic_sidecar_proof": _mapping(
                 _mapping(payload.get("dispatch_roundtrip_provenance")).get("synthetic_sidecar_proof")
             ),
@@ -837,6 +845,7 @@ def _checks(
     route_enable_error: str,
     provider_summary: pd.DataFrame,
     provider_config: dict[str, Any],
+    provider_broker_summary: pd.DataFrame,
     provider_broker_config: dict[str, Any],
     config: ProviderMarketDataImbalanceRouteEnableConfig,
 ) -> pd.DataFrame:
@@ -928,6 +937,26 @@ def _checks(
     synthetic_sidecar_proof_required = synthetic_dataset_count > 0
     synthetic_sidecar_proof_ready = _first_bool(provider_summary, "synthetic_sidecar_proof_ready")
     synthetic_sidecar_count_matches = synthetic_sidecar_count == synthetic_dataset_count
+    route_sidecar_breach_pairs = int(
+        _first_number_from_frames(
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            provider_summary,
+            provider_broker_summary,
+        )
+    )
+    route_sidecar_gate_active = (
+        _first_bool_from_frames(
+            "route_readiness_provided",
+            provider_summary,
+            provider_broker_summary,
+        )
+        or _first_bool_from_frames(
+            "route_readiness_ops_launch_controls_present",
+            provider_summary,
+            provider_broker_summary,
+        )
+        or route_sidecar_breach_pairs > 0
+    )
     rows.append(
         _check(
             "provider_cutover_provider_capture_commands_carried",
@@ -1028,6 +1057,16 @@ def _checks(
             True,
             synthetic_sidecar_proof_ready if synthetic_sidecar_proof_required else True,
             "provider imbalance cutover synthetic rehearsal sidecar proof is not ready",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_cutover_route_readiness_provider_sidecar_breach_pairs",
+            route_sidecar_breach_pairs,
+            "<=",
+            0,
+            route_sidecar_breach_pairs <= 0 if route_sidecar_gate_active else True,
+            "provider imbalance cutover carries breached route-readiness broker round-trip synthetic sidecar proof",
         )
     )
     dispatch_summary = _with_dispatch_roundtrip_config_fallback(
@@ -1626,6 +1665,23 @@ def _summary(
                 "synthetic_sidecar_invariant_count": int(
                     _first_number_from_frames(
                         "synthetic_sidecar_invariant_count",
+                        provider_summary,
+                        provider_broker_summary,
+                    )
+                ),
+                "route_readiness_provided": _first_bool_from_frames(
+                    "route_readiness_provided",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "route_readiness_ops_launch_controls_present": _first_bool_from_frames(
+                    "route_readiness_ops_launch_controls_present",
+                    provider_summary,
+                    provider_broker_summary,
+                ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _first_number_from_frames(
+                        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
                         provider_summary,
                         provider_broker_summary,
                     )
@@ -3513,6 +3569,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
+        f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "- Dispatch round-trip synthetic sidecar proof: "
         f"{'yes' if bool(summary['dispatch_roundtrip_synthetic_sidecar_proof_ready']) else 'no'} "
         f"({summary['dispatch_roundtrip_synthetic_sidecar_count']}/"
@@ -3602,6 +3659,8 @@ def _blocked_next_gate(checks: pd.DataFrame, route_enable: RouteEnableReport | N
 
 
 def _next_gate_for_check(check: str, route_enable: RouteEnableReport | None) -> str:
+    if check.startswith("provider_cutover_route_readiness_provider_sidecar"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_imbalance_cutover") or check.startswith("provider_cutover"):
         return "review-provider-market-data-imbalance-cutover"
     if check.startswith("provider_broker_readiness"):
@@ -3623,6 +3682,8 @@ def _next_gate_for_check(check: str, route_enable: RouteEnableReport | None) -> 
 
 
 def _help_command_for_gate(next_gate: str) -> str:
+    if next_gate == "review-provider-market-data-imbalance-route-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
     if next_gate == "review-provider-market-data-imbalance-broker-readiness":
         return "python -m hft_cli review-provider-market-data-imbalance-broker-readiness --help"
     if next_gate == "review-provider-market-data-imbalance-cutover":
@@ -3645,6 +3706,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
+    if check.startswith("provider_cutover_route_readiness_provider_sidecar"):
+        return "provider_route_readiness"
     if check.startswith("provider_imbalance_cutover") or check.startswith("provider_cutover"):
         return "provider_cutover"
     if check.startswith("provider_broker_readiness"):
@@ -3663,6 +3726,8 @@ def _component_for_check(check: str) -> str:
 
 
 def _action_for_check(check: str) -> str:
+    if check.startswith("provider_cutover_route_readiness_provider_sidecar"):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_broker_readiness"):
         return "repair_provider_imbalance_broker_readiness"
     if check.startswith("provider_imbalance_cutover") or check.startswith("provider_cutover"):
@@ -3679,6 +3744,8 @@ def _action_for_check(check: str) -> str:
 
 
 def _recommendation_for_check(check: str) -> str:
+    if check.startswith("provider_cutover_route_readiness_provider_sidecar"):
+        return "review_provider_route_readiness_sidecar_proof_before_route_enable"
     if check.startswith("provider_broker_readiness"):
         return "rerun_provider_broker_readiness_before_route_enable"
     if check.startswith("provider_imbalance_cutover") or check.startswith("provider_cutover"):
