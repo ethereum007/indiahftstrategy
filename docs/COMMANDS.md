@@ -5185,7 +5185,10 @@ back to
 cutover-retained final round-trip `synthetic_sidecar_proof` plus flattened
 `dispatch_roundtrip_synthetic_*` counters; if synthetic final dry-run folds are
 present without ready rehearsal sidecars, broker-dispatch planning is blocked
-and routed back to `review-provider-market-data-imbalance-cutover`. When a
+and routed back to `review-provider-market-data-imbalance-cutover`. It also
+carries `dispatch_roundtrip_route_readiness_*` sidecar breach proof from
+cutover and routes nonzero final dry-run sidecar breaches back to
+`review-provider-market-data-imbalance-route-readiness`. When a
 cutover CSV is sparse
 but its config sidecar has
 `dispatch_roundtrip_provenance`, route-enable hydrates missing or blank

@@ -850,6 +850,10 @@
   sidecar breach counter from cutover, blocks broker-dispatch planning on
   nonzero provider sidecar breaches, and routes repair back to provider route
   readiness.
+- Provider-data imbalance route enable now also carries cutover's final
+  broker-dispatch round-trip route-readiness sidecar breach counter, blocks
+  broker-dispatch planning on nonzero final dry-run provider sidecar breaches,
+  and routes repair back to provider route readiness.
 - Provider-data imbalance broker dispatch now preserves the route-readiness
   sidecar breach counter from route enable, blocks broker-dispatch-send
   preparation on nonzero provider sidecar breaches, and routes repair back to
@@ -1937,9 +1941,10 @@
   capture-bundle session match proof, provider capture-command proof,
   round-trip provider command arrays from either
   `dispatch_roundtrip_provenance` or older root/capture-bundle config fields,
-  plus
+  final `dispatch_roundtrip_route_readiness_*` sidecar breach proof, plus
   `live_fetch_contract` into provider summary/config/runbook artifacts plus
-  manifest, writes provider
+  manifest, blocks broker-dispatch planning on nonzero final dry-run sidecar
+  breach pairs, writes provider
   checks/summary/action/config/runbook artifacts, routes
   blockers back to the exact repair gate, and sends clean Arrow.money/iRage
   dry-run routes to `plan-broker-dispatch`.
