@@ -412,7 +412,10 @@
   no longer matched to live evidence. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from route enable and
   blocks broker-dispatch-send preparation when synthetic provider folds are
-  missing ready rehearsal sidecar proof.
+  missing ready rehearsal sidecar proof. Broker dispatch now also preserves the
+  route-enable-carried route-readiness provider broker round-trip synthetic
+  sidecar breach counter and routes stale nonzero breach packets back to
+  provider route readiness.
 - Provider market-data imbalance broker dispatch send now preserves those
   adapter fingerprints into the non-submitting sender packet: send
   summary/config and manifest extras expose capture env-template and adapter
@@ -838,6 +841,10 @@
   sidecar breach counter from cutover, blocks broker-dispatch planning on
   nonzero provider sidecar breaches, and routes repair back to provider route
   readiness.
+- Provider-data imbalance broker dispatch now preserves the route-readiness
+  sidecar breach counter from route enable, blocks broker-dispatch-send
+  preparation on nonzero provider sidecar breaches, and routes repair back to
+  provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
@@ -2040,7 +2047,10 @@
   round-trip `synthetic_sidecar_proof` plus flattened
   `dispatch_roundtrip_synthetic_*` counters and blocks send packet preparation
   back to route-enable when synthetic final dry-run folds are present without
-  ready rehearsal sidecars.
+  ready rehearsal sidecars. Broker-dispatch also carries the route-enable
+  route-readiness provider broker round-trip synthetic sidecar breach counter
+  and blocks send packet preparation back to provider route readiness when stale
+  route-readiness packets expose nonzero sidecar breaches.
 - Provider-data imbalance broker-dispatch-send now preserves the same
   provider/nested broker-dispatch round-trip paths, broker-dispatch
   vendor-market-data batch proof, upstream proof lineage, and upstream

@@ -5220,7 +5220,10 @@ to live evidence, broker-dispatch blocks send preparation and routes back to
 `review-provider-market-data-imbalance-route-enable`. It also carries nested
 `synthetic_sidecar_proof` plus flattened sidecar counts from route-enable and
 blocks send preparation when synthetic provider folds are missing ready
-rehearsal sidecar proof. It also carries the
+rehearsal sidecar proof. It also carries the route-enable-carried
+route-readiness provider broker round-trip synthetic sidecar breach counter; if
+that inherited counter is nonzero, send preparation is blocked and routed back
+to `review-provider-market-data-imbalance-route-readiness`. It also carries the
 route-enable-retained
 validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
