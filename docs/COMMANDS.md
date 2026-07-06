@@ -5279,8 +5279,11 @@ blocks acknowledgement reconciliation and routes back to
 `plan-provider-market-data-imbalance-broker-dispatch`. It also carries nested
 `synthetic_sidecar_proof` plus flattened sidecar counts from broker-dispatch and
 blocks acknowledgement reconciliation when synthetic provider folds are missing
-ready rehearsal sidecar proof. It also carries the
-broker-dispatch-retained validated dispatch round-trip source credential
+ready rehearsal sidecar proof. It also carries the broker-dispatch-carried
+route-readiness provider broker round-trip synthetic sidecar breach counter; if
+that inherited counter is nonzero, acknowledgement reconciliation is blocked
+and routed back to `review-provider-market-data-imbalance-route-readiness`. It
+also carries the broker-dispatch-retained validated dispatch round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
 proof, live-fetch exchange/session identity, `live_fetch_contract`, final
 round-trip provider profile, round-trip `adapter_execution_contract`, and

@@ -425,7 +425,10 @@
   contract is missing, unsafe, or no longer matched to live evidence. It also
   carries nested `synthetic_sidecar_proof` plus flattened sidecar counts from
   broker dispatch and blocks acknowledgement reconciliation when synthetic
-  provider folds are missing ready rehearsal sidecar proof.
+  provider folds are missing ready rehearsal sidecar proof. Broker dispatch
+  send now also preserves the broker-dispatch-carried route-readiness provider
+  broker round-trip synthetic sidecar breach counter and routes stale nonzero
+  breach packets back to provider route readiness.
 - Provider market-data imbalance broker dispatch acknowledgement now carries
   those adapter fingerprints into ack reconciliation: acknowledgement
   summary/config and manifest extras expose capture env-template and adapter
@@ -845,6 +848,10 @@
   sidecar breach counter from route enable, blocks broker-dispatch-send
   preparation on nonzero provider sidecar breaches, and routes repair back to
   provider route readiness.
+- Provider-data imbalance broker dispatch send now preserves the
+  route-readiness sidecar breach counter from broker dispatch, blocks
+  acknowledgement reconciliation on nonzero provider sidecar breaches, and
+  routes repair back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
@@ -2074,7 +2081,11 @@
   broker-dispatch-retained final round-trip `synthetic_sidecar_proof` plus
   flattened `dispatch_roundtrip_synthetic_*` counters and blocks
   acknowledgement reconciliation back to broker dispatch when synthetic final
-  dry-run folds are present without ready rehearsal sidecars.
+  dry-run folds are present without ready rehearsal sidecars. It also carries
+  the broker-dispatch-retained route-readiness provider broker round-trip
+  synthetic sidecar breach counter and blocks acknowledgement reconciliation
+  back to provider route readiness when stale packets expose nonzero sidecar
+  breaches.
   Broker-dispatch-send now also
   hydrates missing or blank broker-dispatch `dispatch_roundtrip_*` summary
   fields from the broker-dispatch `dispatch_roundtrip_provenance` config
