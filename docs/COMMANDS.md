@@ -4959,8 +4959,11 @@ manifest. It also retains nested `synthetic_sidecar_proof` plus flattened
 sidecar counts from runtime telemetry. Missing, unsafe, or mismatched
 provider-profile, adapter-contract, or synthetic sidecar proof blocks
 runtime-session monitoring and sends the packet back through provider runtime
-telemetry. It converts guard halts into a ready
-`plan-halt-response` action. A clean guard points to
+telemetry. Runtime guard also carries the provider route-readiness broker
+round-trip synthetic sidecar breach counter from runtime telemetry; stale
+nonzero breach packets are routed back to
+`review-provider-market-data-imbalance-route-readiness`. It converts guard
+halts into a ready `plan-halt-response` action. A clean guard points to
 `monitor-provider-market-data-imbalance-runtime-session`.
 
 Run the provider-specific runtime session wrapper:

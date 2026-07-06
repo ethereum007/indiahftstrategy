@@ -395,6 +395,17 @@ def _checks(
     synthetic_sidecar_proof_required = synthetic_dataset_count > 0
     synthetic_sidecar_proof_ready = _first_bool(provider_summary, "synthetic_sidecar_proof_ready")
     synthetic_sidecar_count_matches = synthetic_sidecar_count == synthetic_dataset_count
+    route_sidecar_breach_pairs = int(
+        _first_number(
+            provider_summary,
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        )
+    )
+    route_sidecar_gate_active = (
+        _first_bool(provider_summary, "route_readiness_provided")
+        or _first_bool(provider_summary, "route_readiness_ops_launch_controls_present")
+        or route_sidecar_breach_pairs > 0
+    )
     rows.append(
         _check(
             "runtime_guard_runnable",
@@ -549,6 +560,16 @@ def _checks(
             True,
             synthetic_sidecar_proof_ready if synthetic_sidecar_proof_required else True,
             "provider imbalance runtime telemetry synthetic folds require ready rehearsal sidecar proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_runtime_telemetry_route_readiness_provider_sidecar_breach_pairs",
+            route_sidecar_breach_pairs,
+            "<=",
+            0,
+            route_sidecar_breach_pairs <= 0 if route_sidecar_gate_active else True,
+            "provider runtime telemetry carries breached route-readiness broker round-trip synthetic sidecar proof",
         )
     )
     return pd.DataFrame(rows)
@@ -732,6 +753,12 @@ def _summary(
                 ),
                 "synthetic_sidecar_invariant_count": int(
                     _first_number(provider_summary, "synthetic_sidecar_invariant_count")
+                ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _first_number(
+                        provider_summary,
+                        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                    )
                 ),
                 "runtime_guard_dir": "" if guard is None else str(guard.output_dir or ""),
                 "output_dir": str(output_dir),
@@ -972,6 +999,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
+        f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "",
         "## Checks",
         "",
@@ -1095,6 +1123,8 @@ def _next_gate_for_check(check: str, guard: RuntimeGuardReport | None) -> str:
         return "build-provider-market-data-imbalance-runtime-telemetry"
     if check.startswith("provider_runtime_telemetry_synthetic_sidecar"):
         return "build-provider-market-data-imbalance-runtime-telemetry"
+    if check.startswith("provider_runtime_telemetry_route_readiness_provider_sidecar"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check == "nested_scaleup_config_exists":
         return "plan-provider-market-data-imbalance-scaleup"
     if check == "runtime_telemetry_csv_exists":
@@ -1109,6 +1139,8 @@ def _next_gate_for_check(check: str, guard: RuntimeGuardReport | None) -> str:
 
 
 def _help_command_for_gate(next_gate: str) -> str:
+    if next_gate == "review-provider-market-data-imbalance-route-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
     if next_gate == "build-provider-market-data-imbalance-runtime-telemetry":
         return "python -m hft_cli build-provider-market-data-imbalance-runtime-telemetry --help"
     if next_gate == "plan-provider-market-data-imbalance-scaleup":
@@ -1125,6 +1157,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
+    if check.startswith("provider_runtime_telemetry_route_readiness_provider_sidecar"):
+        return "provider_route_readiness"
     if check.startswith("provider_runtime_telemetry"):
         return "provider_runtime_telemetry"
     if check.startswith("nested_scaleup"):
@@ -1141,6 +1175,8 @@ def _component_for_check(check: str) -> str:
 def _action_for_check(check: str, guard: RuntimeGuardReport | None) -> str:
     if check == "runtime_guard_continue" and guard is not None and guard.halted:
         return "execute_provider_imbalance_halt_response"
+    if check.startswith("provider_runtime_telemetry_route_readiness_provider_sidecar"):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_runtime_telemetry"):
         return "repair_provider_imbalance_runtime_telemetry"
     if check.startswith("nested_scaleup"):
@@ -1155,6 +1191,8 @@ def _action_for_check(check: str, guard: RuntimeGuardReport | None) -> str:
 def _recommendation_for_check(check: str, guard: RuntimeGuardReport | None) -> str:
     if check == "runtime_guard_continue" and guard is not None and guard.halted:
         return "stop_routing_and_prepare_halt_response"
+    if check.startswith("provider_runtime_telemetry_route_readiness_provider_sidecar"):
+        return "review_provider_route_readiness_sidecar_proof_before_guard"
     if check.startswith("provider_runtime_telemetry"):
         return "rebuild_provider_runtime_telemetry_before_guard"
     if check.startswith("nested_scaleup"):

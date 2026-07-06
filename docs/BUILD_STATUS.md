@@ -348,7 +348,10 @@
   longer matched to live evidence. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from runtime
   telemetry and blocks runtime-session monitoring when synthetic provider
-  folds are missing ready rehearsal sidecar proof.
+  folds are missing ready rehearsal sidecar proof. Runtime guard now also
+  carries the runtime-telemetry route-readiness provider broker round-trip
+  synthetic sidecar breach counter and routes stale nonzero breach packets
+  back to provider route readiness.
 - Provider market-data imbalance runtime session now carries the same adapter
   fingerprints into broker-readiness handoff: session summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
@@ -805,6 +808,10 @@
   route-readiness sidecar breach counter from scale-up, blocks guard monitoring
   when a stale packet exposes nonzero provider sidecar breaches, and routes the
   repair action back to provider route readiness.
+- Provider-data imbalance runtime guard now preserves the route-readiness
+  sidecar breach counter from runtime telemetry, blocks runtime-session
+  monitoring on nonzero provider sidecar breaches, and routes repair back to
+  provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
