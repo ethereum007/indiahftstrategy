@@ -2218,7 +2218,11 @@
   runtime-session route proof, exposes it as
   `dispatch_roundtrip_route_readiness_*` summary/config/manifest fields, and
   blocks cutover review back to provider route readiness when nonzero final
-  dry-run sidecar breach pairs remain.
+  dry-run sidecar breach pairs remain. It also hydrates missing or blank final
+  provider round-trip `dispatch_roundtrip_route_readiness_*` summary fields
+  from the round-trip `dispatch_roundtrip_provenance` config sidecar while
+  keeping explicit CSV `False`/`0` values authoritative, so sparse final
+  round-trip CSVs still carry route-sidecar proof into broker-readiness review.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India

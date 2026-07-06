@@ -5058,6 +5058,11 @@ broker round-trip synthetic sidecar breach counter, broker-readiness exposes it
 as `dispatch_roundtrip_route_readiness_*` summary/config/manifest fields and
 routes nonzero final dry-run sidecar breaches back to
 `review-provider-market-data-imbalance-route-readiness`.
+If the final provider round-trip CSV is sparse but its config sidecar carries
+`dispatch_roundtrip_provenance`, broker-readiness hydrates missing or blank
+`dispatch_roundtrip_route_readiness_*` fields from that sidecar while keeping
+explicit CSV `False` and `0` values authoritative, so mixed-version final
+round-trip artifacts still preserve route-sidecar proof.
 When the final round-trip proof carries Arrow.money/iRage vendor-market-data
 batch evidence, the wrapper
 promotes both generic dispatch and broker-dispatch vendor batch readiness fields

@@ -2857,7 +2857,137 @@ def _read_provider_dispatch_roundtrip_artifacts(path: Path | None) -> tuple[pd.D
         return pd.DataFrame(), {}
     summary, _ = _read_csv(path / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv")
     config, _ = _read_json(path / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json")
-    return summary, config
+    return _with_dispatch_roundtrip_config_fallback(summary, config), config
+
+
+def _with_dispatch_roundtrip_config_fallback(
+    frame: pd.DataFrame,
+    provider_config: dict[str, Any],
+) -> pd.DataFrame:
+    fallback = _dispatch_roundtrip_config_summary(provider_config)
+    if fallback.empty:
+        return frame
+    if frame is None or frame.empty:
+        return fallback
+    out = frame.copy()
+    fallback_row = fallback.iloc[0]
+    for column in fallback.columns:
+        value = fallback_row[column]
+        if not _value_present(value):
+            continue
+        fallback_column = column.removeprefix("dispatch_roundtrip_")
+        if column not in out.columns:
+            out[column] = ""
+        if not _first_value_present(out, column) and not _first_value_present(out, fallback_column):
+            out[column] = out[column].astype("object")
+            out.loc[out.index[0], column] = value
+    return out
+
+
+def _dispatch_roundtrip_config_summary(provider_config: dict[str, Any]) -> pd.DataFrame:
+    provenance = _dispatch_roundtrip_provenance(provider_config)
+    if not provenance:
+        return pd.DataFrame()
+    record: dict[str, Any] = {}
+    _set_config_text(record, "dispatch_roundtrip_synthetic_dataset_count", provenance, "synthetic_dataset_count")
+    _set_config_bool(
+        record,
+        "dispatch_roundtrip_synthetic_sidecar_proof_ready",
+        provenance,
+        "synthetic_sidecar_proof_ready",
+    )
+    for column, key in (
+        ("dispatch_roundtrip_synthetic_sidecar_count", "synthetic_sidecar_count"),
+        ("dispatch_roundtrip_synthetic_sidecar_readable_count", "synthetic_sidecar_readable_count"),
+        ("dispatch_roundtrip_synthetic_sidecar_source_count", "synthetic_sidecar_source_count"),
+        (
+            "dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count",
+            "synthetic_sidecar_adapter_command_hash_count",
+        ),
+        (
+            "dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count",
+            "synthetic_sidecar_capture_env_template_match_count",
+        ),
+        (
+            "dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count",
+            "synthetic_sidecar_adapter_handoff_match_count",
+        ),
+        (
+            "dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count",
+            "synthetic_sidecar_source_env_template_match_count",
+        ),
+        ("dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count", "synthetic_sidecar_live_fetch_contract_count"),
+        (
+            "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count",
+            "synthetic_sidecar_adapter_execution_contract_safe_count",
+        ),
+        ("dispatch_roundtrip_synthetic_sidecar_invariant_count", "synthetic_sidecar_invariant_count"),
+    ):
+        _set_config_text(record, column, provenance, key)
+    _set_config_bool(record, "dispatch_roundtrip_route_readiness_provided", provenance, "route_readiness_provided")
+    _set_config_bool(
+        record,
+        "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
+        provenance,
+        "route_readiness_ops_launch_controls_present",
+    )
+    _set_config_text(
+        record,
+        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        provenance,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    )
+    synthetic_sidecar_proof = _mapping(provenance.get("synthetic_sidecar_proof")) or _mapping(
+        provider_config.get("synthetic_sidecar_proof")
+    )
+    if synthetic_sidecar_proof:
+        _set_config_bool(
+            record,
+            "dispatch_roundtrip_synthetic_sidecar_proof_ready",
+            synthetic_sidecar_proof,
+            "ready",
+        )
+        for column, key in (
+            ("dispatch_roundtrip_synthetic_sidecar_count", "synthetic_sidecar_count"),
+            ("dispatch_roundtrip_synthetic_sidecar_readable_count", "sidecar_readable_count"),
+            ("dispatch_roundtrip_synthetic_sidecar_source_count", "sidecar_source_count"),
+            ("dispatch_roundtrip_synthetic_sidecar_adapter_command_hash_count", "adapter_command_hash_count"),
+            (
+                "dispatch_roundtrip_synthetic_sidecar_capture_env_template_match_count",
+                "capture_env_template_match_count",
+            ),
+            ("dispatch_roundtrip_synthetic_sidecar_adapter_handoff_match_count", "adapter_handoff_match_count"),
+            (
+                "dispatch_roundtrip_synthetic_sidecar_source_env_template_match_count",
+                "source_credential_env_template_match_count",
+            ),
+            ("dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count", "live_fetch_contract_count"),
+            (
+                "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count",
+                "adapter_execution_contract_safe_count",
+            ),
+            ("dispatch_roundtrip_synthetic_sidecar_invariant_count", "invariant_count"),
+        ):
+            _set_config_text(record, column, synthetic_sidecar_proof, key)
+    return pd.DataFrame([record]) if record else pd.DataFrame()
+
+
+def _dispatch_roundtrip_provenance(provider_config: dict[str, Any]) -> dict[str, Any]:
+    return _mapping(provider_config.get("dispatch_roundtrip_provenance"))
+
+
+def _set_config_text(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
+    if _value_present(record.get(column)) or key not in mapping:
+        return
+    value = _clean(mapping.get(key))
+    if value:
+        record[column] = value
+
+
+def _set_config_bool(record: dict[str, Any], column: str, mapping: dict[str, Any], key: str) -> None:
+    if _value_present(record.get(column)) or key not in mapping:
+        return
+    record[column] = _truthy(mapping.get(key))
 
 
 def _inferred_upstream_dispatch_roundtrip_dirs(
@@ -3272,6 +3402,25 @@ def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0
     if pd.isna(value):
         return float(fallback)
     return float(value)
+
+
+def _first_value_present(frame: pd.DataFrame | None, column: str) -> bool:
+    if frame is None or frame.empty or column not in frame.columns:
+        return False
+    return _value_present(frame.iloc[0][column])
+
+
+def _value_present(value: object) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _provenance_matches(expected: object, actual: object) -> bool:
