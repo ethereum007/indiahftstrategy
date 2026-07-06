@@ -5449,6 +5449,10 @@ The same round-trip review gate also carries the ack-retained final round-trip
 `synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
 counters; if synthetic final dry-run folds are present without ready rehearsal
 sidecars, broker-readiness feed is blocked at the acknowledgement repair gate.
+It also carries the ack-retained final `dispatch_roundtrip_route_readiness_*`
+sidecar breach proof; if nonzero final dry-run route sidecar breaches remain,
+broker-readiness feed routes directly back to
+`review-provider-market-data-imbalance-route-readiness`.
 When an acknowledgement CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, the provider round-trip wrapper hydrates
 missing or blank `dispatch_roundtrip_*` fields, including the round-trip

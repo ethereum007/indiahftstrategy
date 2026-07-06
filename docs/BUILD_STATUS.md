@@ -1996,7 +1996,10 @@
   acknowledgement-inherited capture bundle/source credential proof,
   exchange/session metadata, capture-bundle session match proof, provider
   capture-command proof, and `live_fetch_contract` into provider
-  summary/config/runbook artifacts plus manifest metadata, writes provider
+  summary/config/runbook artifacts plus manifest metadata, carries the
+  ack-retained final `dispatch_roundtrip_route_readiness_*` sidecar breach
+  proof, blocks broker-readiness feed on nonzero final dry-run provider
+  sidecar breaches, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean
   dry-run round-trip evidence to
@@ -2191,7 +2194,10 @@
   final round-trip `synthetic_sidecar_proof` plus flattened
   `dispatch_roundtrip_synthetic_*` counters and blocks the broker-readiness
   feed back to acknowledgement reconciliation when synthetic final dry-run
-  folds are present without ready rehearsal sidecars. It also carries nested
+  folds are present without ready rehearsal sidecars. It also carries the
+  ack-retained final `dispatch_roundtrip_route_readiness_*` sidecar breach
+  proof and blocks broker-readiness feed back to provider route readiness when
+  nonzero final dry-run sidecar breaches remain. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from acknowledgement
   reconciliation and blocks broker-readiness feed when synthetic provider folds
   are missing ready rehearsal sidecar proof. It also carries the
