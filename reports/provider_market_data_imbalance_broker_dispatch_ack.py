@@ -380,6 +380,17 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
             "dispatch_roundtrip_synthetic_sidecar_readable_count": int(
                 summary_row["dispatch_roundtrip_synthetic_sidecar_readable_count"]
             ),
+            "dispatch_roundtrip_route_readiness_provided": bool(
+                summary_row["dispatch_roundtrip_route_readiness_provided"]
+            ),
+            "dispatch_roundtrip_route_readiness_ops_launch_controls_present": bool(
+                summary_row["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+            ),
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary_row[
+                    "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ]
+            ),
             "dispatch_roundtrip_capture_provenance_consistent": bool(
                 summary_row["dispatch_roundtrip_capture_provenance_consistent"]
             ),
@@ -539,6 +550,15 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
                 "synthetic_sidecar_count": int(summary_row["dispatch_roundtrip_synthetic_sidecar_count"]),
                 "synthetic_sidecar_readable_count": int(
                     summary_row["dispatch_roundtrip_synthetic_sidecar_readable_count"]
+                ),
+                "route_readiness_provided": bool(summary_row["dispatch_roundtrip_route_readiness_provided"]),
+                "route_readiness_ops_launch_controls_present": bool(
+                    summary_row["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+                ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    summary_row[
+                        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                    ]
                 ),
                 "adapter_execution_contract": _mapping(
                     _mapping(payload.get("dispatch_roundtrip_provenance")).get("adapter_execution_contract")
@@ -1014,6 +1034,17 @@ def _checks(
     dispatch_synthetic_sidecar_count_matches = (
         dispatch_synthetic_sidecar_count == dispatch_synthetic_dataset_count
     )
+    dispatch_route_sidecar_breach_pairs = int(
+        _first_number(
+            dispatch_summary,
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        )
+    )
+    dispatch_route_sidecar_gate_active = (
+        _first_bool(dispatch_summary, "dispatch_roundtrip_route_readiness_provided")
+        or _first_bool(dispatch_summary, "dispatch_roundtrip_route_readiness_ops_launch_controls_present")
+        or dispatch_route_sidecar_breach_pairs > 0
+    )
     rows.append(
         _check(
             "dispatch_roundtrip_provider_capture_commands_carried",
@@ -1161,6 +1192,19 @@ def _checks(
                 else True
             ),
             "provider imbalance broker-dispatch-ack send-retained round-trip synthetic rehearsal sidecar proof is not ready",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs",
+            dispatch_route_sidecar_breach_pairs,
+            "<=",
+            0,
+            dispatch_route_sidecar_breach_pairs <= 0 if dispatch_route_sidecar_gate_active else True,
+            (
+                "provider imbalance broker-dispatch-ack carries breached "
+                "broker-dispatch-send round-trip route-readiness sidecar proof"
+            ),
         )
     )
     return pd.DataFrame(rows)
@@ -1437,6 +1481,20 @@ def _summary(
                 ),
                 "dispatch_roundtrip_synthetic_sidecar_invariant_count": int(
                     _first_number(provider_summary, "dispatch_roundtrip_synthetic_sidecar_invariant_count")
+                ),
+                "dispatch_roundtrip_route_readiness_provided": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_route_readiness_provided",
+                ),
+                "dispatch_roundtrip_route_readiness_ops_launch_controls_present": _first_bool(
+                    provider_summary,
+                    "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
+                ),
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _first_number(
+                        provider_summary,
+                        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                    )
                 ),
                 "dispatch_roundtrip_provider_capture_command_count": int(
                     _first_number(provider_summary, "dispatch_roundtrip_provider_capture_command_count")
@@ -2216,6 +2274,19 @@ def _dispatch_roundtrip_config_summary(provider_config: dict[str, Any]) -> pd.Da
         provenance,
         "synthetic_sidecar_invariant_count",
     )
+    _set_config_bool(record, "dispatch_roundtrip_route_readiness_provided", provenance, "route_readiness_provided")
+    _set_config_bool(
+        record,
+        "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
+        provenance,
+        "route_readiness_ops_launch_controls_present",
+    )
+    _set_config_text(
+        record,
+        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        provenance,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    )
     if synthetic_sidecar_proof:
         _set_config_bool(
             record,
@@ -2661,6 +2732,15 @@ def _config(
             "synthetic_sidecar_invariant_count": int(
                 summary["dispatch_roundtrip_synthetic_sidecar_invariant_count"]
             ),
+            "route_readiness_provided": bool(summary["dispatch_roundtrip_route_readiness_provided"]),
+            "route_readiness_ops_launch_controls_present": bool(
+                summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"]
+            ),
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary[
+                    "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ]
+            ),
             "provider_capture_command_count": int(summary["dispatch_roundtrip_provider_capture_command_count"]),
             "provider_capture_command_providers": str(
                 summary["dispatch_roundtrip_provider_capture_command_providers"]
@@ -2880,6 +2960,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"{'yes' if bool(summary['dispatch_roundtrip_synthetic_sidecar_proof_ready']) else 'no'} "
         f"({summary['dispatch_roundtrip_synthetic_sidecar_count']}/"
         f"{summary['dispatch_roundtrip_synthetic_dataset_count']})",
+        "- Dispatch round-trip route sidecar breach pairs: "
+        f"{summary['dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "- Dispatch round-trip live fetch contract: "
         f"{'available' if bool(summary['dispatch_roundtrip_source_live_fetch_contract_available']) else 'missing'}",
         "- Dispatch round-trip provider capture commands: "
@@ -2961,6 +3043,8 @@ def _blocked_next_gate(checks: pd.DataFrame, broker_dispatch_ack: BrokerDispatch
 
 
 def _next_gate_for_check(check: str, broker_dispatch_ack: BrokerDispatchAckReport | None) -> str:
+    if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
         return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_broker_dispatch_send"):
@@ -3010,6 +3094,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "provider_route_readiness"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
         return "provider_route_readiness"
     if check.startswith("provider_broker_dispatch_send"):
@@ -3024,6 +3110,8 @@ def _component_for_check(check: str) -> str:
 
 
 def _action_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
         return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_broker_dispatch_send"):
@@ -3036,6 +3124,8 @@ def _action_for_check(check: str) -> str:
 
 
 def _recommendation_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
+        return "review_provider_roundtrip_route_readiness_sidecar_proof_before_broker_dispatch_ack"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
         return "review_provider_route_readiness_sidecar_proof_before_broker_dispatch_ack"
     if check.startswith("provider_broker_dispatch_send"):

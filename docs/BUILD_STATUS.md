@@ -1982,7 +1982,10 @@
   folder, carries capture bundle/env-template/adapter handoff provenance,
   source env-template proof, exchange/session metadata, capture-bundle session
   match proof, provider capture-command proof, and `live_fetch_contract` into
-  provider summary/config/runbook artifacts plus manifest, writes provider
+  provider summary/config/runbook artifacts plus manifest, carries the
+  send-retained final `dispatch_roundtrip_route_readiness_*` sidecar breach
+  proof, blocks acknowledgement reconciliation on nonzero final dry-run
+  provider sidecar breaches, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean ack proof to
   `review-provider-market-data-imbalance-broker-dispatch-roundtrip`.
@@ -2155,7 +2158,10 @@
   without ready rehearsal sidecars. It also carries the send-retained
   route-readiness provider broker round-trip synthetic sidecar breach counter
   and blocks round-trip review back to provider route readiness when stale
-  packets expose nonzero sidecar breaches.
+  packets expose nonzero sidecar breaches. It also carries the send-retained
+  final `dispatch_roundtrip_route_readiness_*` sidecar breach proof and blocks
+  acknowledgement reconciliation before final round-trip review when nonzero
+  final dry-run sidecar breaches remain.
   Acknowledgement now also hydrates
   missing or blank send-packet
   `dispatch_roundtrip_*` summary fields from the send

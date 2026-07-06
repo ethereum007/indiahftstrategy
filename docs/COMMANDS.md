@@ -5380,7 +5380,11 @@ blocks round-trip review and routes back to
 acknowledgement gate also carries the send-retained final round-trip
 `synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
 counters; if synthetic final dry-run folds are present without ready rehearsal
-sidecars, round-trip review is blocked at that send-packet repair gate. When a
+sidecars, round-trip review is blocked at that send-packet repair gate. It also
+carries the send-retained final `dispatch_roundtrip_route_readiness_*`
+sidecar breach proof; if nonzero final dry-run route sidecar breaches remain,
+acknowledgement reconciliation routes directly back to
+`review-provider-market-data-imbalance-route-readiness`. When a
 send-packet CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, acknowledgement hydrates missing or blank
 `dispatch_roundtrip_*` fields, including the round-trip provider profile and

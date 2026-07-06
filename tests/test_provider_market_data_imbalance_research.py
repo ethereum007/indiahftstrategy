@@ -17507,6 +17507,9 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_send_roundtr
         "dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count",
         "dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count",
         "dispatch_roundtrip_synthetic_sidecar_invariant_count",
+        "dispatch_roundtrip_route_readiness_provided",
+        "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
+        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
     ):
         if column in send_summary.columns:
             send_summary[column] = send_summary[column].astype("object")
@@ -17530,6 +17533,9 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_send_roundtr
                 "synthetic_sidecar_live_fetch_contract_count": 2,
                 "synthetic_sidecar_adapter_execution_contract_safe_count": 2,
                 "synthetic_sidecar_invariant_count": 2,
+                "route_readiness_provided": True,
+                "route_readiness_ops_launch_controls_present": True,
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": 0,
             }
         )
 
@@ -17563,6 +17569,12 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_send_roundtr
     assert report.passed
     assert bool(checks.loc["provider_broker_dispatch_send_dispatch_roundtrip_synthetic_sidecar_proof_carried", "passed"])
     assert bool(checks.loc["provider_broker_dispatch_send_dispatch_roundtrip_synthetic_sidecar_proof_ready", "passed"])
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs",
+            "passed",
+        ]
+    )
     assert bool(summary["dispatch_roundtrip_synthetic_sidecar_proof_ready"])
     assert summary["dispatch_roundtrip_synthetic_dataset_count"] == 2
     assert summary["dispatch_roundtrip_synthetic_sidecar_count"] == 2
@@ -17574,15 +17586,50 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_send_roundtr
     assert summary["dispatch_roundtrip_synthetic_sidecar_live_fetch_contract_count"] == 2
     assert summary["dispatch_roundtrip_synthetic_sidecar_adapter_execution_contract_safe_count"] == 2
     assert summary["dispatch_roundtrip_synthetic_sidecar_invariant_count"] == 2
+    assert bool(summary["dispatch_roundtrip_route_readiness_provided"])
+    assert bool(summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"])
+    assert (
+        summary["dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
     assert config["dispatch_roundtrip_provenance"]["synthetic_sidecar_proof"]["ready"] is True
     assert config["dispatch_roundtrip_provenance"]["synthetic_sidecar_count"] == 2
+    assert config["dispatch_roundtrip_provenance"]["route_readiness_provided"] is True
+    assert config["dispatch_roundtrip_provenance"]["route_readiness_ops_launch_controls_present"] is True
+    assert (
+        config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
     assert manifest["extra"]["dispatch_roundtrip_synthetic_sidecar_proof"]["ready"] is True
     assert manifest["extra"]["dispatch_roundtrip_synthetic_sidecar_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_route_readiness_provided"] is True
+    assert manifest["extra"]["dispatch_roundtrip_route_readiness_ops_launch_controls_present"] is True
+    assert (
+        manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
     assert manifest["extra"]["dispatch_roundtrip"]["synthetic_sidecar_proof"]["ready"] is True
     assert manifest["extra"]["dispatch_roundtrip"]["synthetic_sidecar_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip"]["route_readiness_provided"] is True
+    assert manifest["extra"]["dispatch_roundtrip"]["route_readiness_ops_launch_controls_present"] is True
+    assert (
+        manifest["extra"]["dispatch_roundtrip"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
     assert "Dispatch round-trip synthetic sidecar proof: yes (2/2)" in runbook
+    assert "Dispatch round-trip route sidecar breach pairs: 0" in runbook
     assert "provider_broker_dispatch_send_dispatch_roundtrip_synthetic_sidecar_proof_carried" not in failed
     assert "provider_broker_dispatch_send_dispatch_roundtrip_synthetic_sidecar_proof_ready" not in failed
+    assert (
+        "provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs"
+        not in failed
+    )
 
 
 def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_missing_send_roundtrip_synthetic_sidecar_proof(
@@ -17659,6 +17706,101 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_missing_send_
     assert report.action_queue.loc[0, "component"] == "provider_broker_dispatch_send"
     assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_dispatch_send"
     assert report.action_queue.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
+
+
+def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_send_roundtrip_route_sidecar_breach(
+    tmp_path,
+):
+    provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
+    summary_path = provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    send_summary = pd.read_csv(summary_path)
+    send_summary.loc[0, "dispatch_roundtrip_route_readiness_provided"] = True
+    send_summary.loc[0, "dispatch_roundtrip_route_readiness_ops_launch_controls_present"] = True
+    send_summary.loc[
+        0,
+        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 1
+    send_summary.to_csv(summary_path, index=False)
+
+    def add_roundtrip_route_breach(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        provenance.update(
+            {
+                "route_readiness_provided": True,
+                "route_readiness_ops_launch_controls_present": True,
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": 1,
+            }
+        )
+
+    _mutate_json(
+        provider_send.output_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json",
+        add_roundtrip_route_breach,
+    )
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_roundtrip_route_sidecar_breach_acks.csv",
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_ack_roundtrip_route_sidecar_breach"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_ack_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert not report.passed
+    assert bool(summary["dispatch_roundtrip_route_readiness_provided"])
+    assert bool(summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"])
+    assert (
+        int(
+            summary[
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+            ]
+        )
+        == 1
+    )
+    assert (
+        "provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs"
+        in failed
+    )
+    assert config["dispatch_roundtrip_provenance"]["route_readiness_provided"] is True
+    assert config["dispatch_roundtrip_provenance"]["route_readiness_ops_launch_controls_present"] is True
+    assert (
+        config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 1
+    )
+    assert (
+        manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 1
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 1
+    )
+    assert "Dispatch round-trip route sidecar breach pairs: 1" in runbook
+    assert report.action_queue.loc[0, "component"] == "provider_route_readiness"
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
+    assert (
+        report.action_queue.loc[0, "recommendation"]
+        == "review_provider_roundtrip_route_readiness_sidecar_proof_before_broker_dispatch_ack"
+    )
 
 
 def test_provider_market_data_imbalance_broker_dispatch_ack_carries_roundtrip_capture_bundle_provenance(tmp_path):
