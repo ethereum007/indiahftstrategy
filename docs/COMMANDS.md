@@ -5297,6 +5297,11 @@ ready rehearsal sidecar proof. It also carries the broker-dispatch-carried
 route-readiness provider broker round-trip synthetic sidecar breach counter; if
 that inherited counter is nonzero, acknowledgement reconciliation is blocked
 and routed back to `review-provider-market-data-imbalance-route-readiness`. It
+also carries the broker-dispatch-retained final round-trip
+`dispatch_roundtrip_route_readiness_*` sidecar breach proof; if the final
+dry-run route sidecar breach counter is nonzero, acknowledgement reconciliation
+is blocked and routed back to
+`review-provider-market-data-imbalance-route-readiness`. It
 also carries the broker-dispatch-retained validated dispatch round-trip source credential
 env-template, round-trip exchange/session metadata, capture-bundle session
 proof, live-fetch exchange/session identity, `live_fetch_contract`, final

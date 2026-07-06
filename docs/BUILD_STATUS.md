@@ -1968,7 +1968,10 @@
   bundle/env-template/adapter handoff provenance, source env-template proof,
   exchange/session metadata, capture-bundle session match proof, provider
   capture-command proof, and `live_fetch_contract` into provider
-  summary/config/runbook artifacts plus manifest, writes provider
+  summary/config/runbook artifacts plus manifest, carries broker-dispatch's
+  final `dispatch_roundtrip_route_readiness_*` sidecar breach proof, blocks
+  acknowledgement reconciliation on nonzero final dry-run provider sidecar
+  breaches, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean non-submitting send packets to
   dry-run acknowledgement capture via `reconcile-broker-dispatch`.
