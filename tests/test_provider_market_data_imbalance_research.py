@@ -7564,11 +7564,16 @@ def test_provider_market_data_imbalance_cutover_blocks_missing_route_proof(tmp_p
     assert not bool(summary.loc[0, "cutover_ready"])
     assert not bool(cutover_summary.loc[0, "ready"])
     assert "cutover_ready" in failed
+    assert int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
     assert summary.loc[0, "next_gate"] == "review-route-readiness"
     assert action_queue.loc[0, "queue_status"] == "blocked"
     assert action_queue.loc[0, "next_gate"] == "review-route-readiness"
     assert action_queue.loc[0, "next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
     assert manifest["run_type"] == "provider_market_data_imbalance_cutover"
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
     assert "cutover" in manifest["inputs"]
     assert "scaleup" in manifest["inputs"]
     assert "broker_readiness" in manifest["inputs"]
@@ -7906,6 +7911,50 @@ def test_provider_market_data_imbalance_cutover_blocks_missing_synthetic_sidecar
     assert "provider_broker_readiness_synthetic_sidecar_proof_ready" in failed
     assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_readiness"
     assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
+
+
+def test_provider_market_data_imbalance_cutover_blocks_broker_readiness_route_sidecar_breach(
+    tmp_path,
+):
+    broker_readiness = _write_ready_provider_imbalance_broker_readiness(tmp_path)
+    summary_path = broker_readiness.output_dir / "provider_market_data_imbalance_broker_readiness_summary.csv"
+    broker_summary = pd.read_csv(summary_path)
+    broker_summary.loc[0, "route_readiness_provided"] = True
+    broker_summary.loc[0, "route_readiness_ops_launch_controls_present"] = True
+    broker_summary.loc[
+        0,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 1
+    broker_summary.to_csv(summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_cutover_route_sidecar_breach"
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads((out_dir / "provider_market_data_imbalance_cutover_config.json").read_text(encoding="utf-8"))
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_cutover_runbook.md").read_text(encoding="utf-8")
+    assert not report.ready
+    assert bool(summary["provider_broker_readiness_ready"])
+    assert "provider_broker_readiness_route_readiness_provider_sidecar_breach_pairs" in failed
+    assert int(summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 1
+    assert (
+        config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 1
+    )
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 1
+    )
+    assert "Route sidecar breach pairs: 1" in runbook
+    assert report.action_queue.loc[0, "component"] == "provider_route_readiness"
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
 
 
 def test_provider_market_data_imbalance_cutover_blocks_missing_adapter_execution_contract(tmp_path):

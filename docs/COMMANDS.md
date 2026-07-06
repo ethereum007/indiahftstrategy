@@ -5094,7 +5094,11 @@ credential values. If the provider-profile, adapter contract, or required
 synthetic sidecar proof is missing, unsafe, unready, or no longer matched to
 live evidence, cutover blocks route-enable and routes the packet back to
 `review-provider-market-data-imbalance-broker-readiness`. If
-broker-readiness validated round-trip capture bundle/env-template/adapter
+broker-readiness carried a provider route-readiness broker round-trip synthetic
+sidecar breach counter, cutover preserves it too; stale nonzero breach packets
+are routed back to
+`review-provider-market-data-imbalance-route-readiness`.
+If broker-readiness validated round-trip capture bundle/env-template/adapter
 handoff provenance, cutover also carries those `dispatch_roundtrip_*`
 provenance fields plus the validated round-trip source credential env-template,
 exchange/session metadata, capture-bundle session proof, live-fetch
