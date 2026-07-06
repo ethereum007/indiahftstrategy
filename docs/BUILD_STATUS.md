@@ -2064,7 +2064,7 @@
   cutover `dispatch_roundtrip_*` summary fields from the cutover
   `dispatch_roundtrip_provenance` config block before falling back to the
   broker-readiness config block, while preserving explicit summary `False`
-  values, so sparse cutover CSVs do not lose the validated live-data handoff or
+  and `0` values, so sparse cutover CSVs do not lose the validated live-data handoff or
   command bundle proof. Route-enable also carries the cutover-retained final
   round-trip `synthetic_sidecar_proof` plus flattened
   `dispatch_roundtrip_synthetic_*` counters and blocks broker-dispatch planning

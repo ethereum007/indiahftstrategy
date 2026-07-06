@@ -11182,6 +11182,80 @@ def test_provider_market_data_imbalance_route_enable_carries_cutover_roundtrip_s
     assert "provider_cutover_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs" not in failed
 
 
+def test_provider_market_data_imbalance_route_enable_prefers_explicit_roundtrip_route_sidecar_zero(
+    tmp_path,
+):
+    provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
+    summary_path = provider_cutover.output_dir / "provider_market_data_imbalance_cutover_summary.csv"
+    cutover_summary = pd.read_csv(summary_path)
+    cutover_summary.loc[0, "dispatch_roundtrip_route_readiness_provided"] = True
+    cutover_summary.loc[0, "dispatch_roundtrip_route_readiness_ops_launch_controls_present"] = True
+    cutover_summary.loc[
+        0,
+        "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 0
+    cutover_summary.to_csv(summary_path, index=False)
+
+    def add_stale_roundtrip_route_sidecar_breach(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        provenance.update(
+            {
+                "route_readiness_provided": True,
+                "route_readiness_ops_launch_controls_present": True,
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": 1,
+            }
+        )
+
+    _mutate_json(
+        provider_cutover.output_dir / "provider_market_data_imbalance_cutover_config.json",
+        add_stale_roundtrip_route_sidecar_breach,
+    )
+    out_dir = tmp_path / "provider_imbalance_route_enable_roundtrip_route_sidecar_explicit_zero"
+
+    report = write_provider_market_data_imbalance_route_enable(
+        provider_cutover.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    checks = report.checks.set_index("check")
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_route_enable_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert report.ready
+    assert bool(
+        checks.loc[
+            "provider_cutover_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs",
+            "passed",
+        ]
+    )
+    assert bool(summary["dispatch_roundtrip_route_readiness_provided"])
+    assert bool(summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"])
+    assert (
+        summary[
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        config["summary"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert "provider_cutover_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs" not in failed
+
+
 def test_provider_market_data_imbalance_route_enable_blocks_missing_cutover_roundtrip_synthetic_sidecar_proof(
     tmp_path,
 ):

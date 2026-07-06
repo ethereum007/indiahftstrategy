@@ -5199,7 +5199,7 @@ but its config sidecar has
 `dispatch_roundtrip_provenance`, route-enable hydrates missing or blank
 `dispatch_roundtrip_*` fields, including the final round-trip sidecar counters,
 from that config before falling back to the broker-readiness config sidecar,
-while keeping explicit summary `False` values authoritative. The
+while keeping explicit summary `False` and `0` values authoritative. The
 wrapper runs `review-route-enable` under a nested
 `route_enable` folder and writes provider checks/summary/action/config/runbook
 artifacts. Fully clean wrappers emit a ready
