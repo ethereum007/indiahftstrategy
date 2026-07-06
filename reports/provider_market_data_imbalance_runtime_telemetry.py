@@ -413,6 +413,17 @@ def _checks(
     sidecar_proof_required = synthetic_dataset_count > 0
     sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
     sidecar_proof_ready = _first_bool(provider_summary, "synthetic_sidecar_proof_ready")
+    route_sidecar_breach_pairs = int(
+        _first_number(
+            provider_summary,
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+        )
+    )
+    route_sidecar_gate_active = (
+        _first_bool(provider_summary, "route_readiness_provided")
+        or _first_bool(provider_summary, "route_readiness_ops_launch_controls_present")
+        or route_sidecar_breach_pairs > 0
+    )
     rows.append(
         _check(
             "runtime_telemetry_runnable",
@@ -556,6 +567,16 @@ def _checks(
             True,
             sidecar_proof_ready if sidecar_proof_required else True,
             "provider imbalance scale-up synthetic folds require ready rehearsal sidecar proof",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_scaleup_route_readiness_provider_sidecar_breach_pairs",
+            route_sidecar_breach_pairs,
+            "<=",
+            0,
+            route_sidecar_breach_pairs <= 0 if route_sidecar_gate_active else True,
+            "provider scale-up carries breached route-readiness broker round-trip synthetic sidecar proof",
         )
     )
     return pd.DataFrame(rows)
@@ -737,6 +758,12 @@ def _summary(
                 "synthetic_sidecar_invariant_count": int(
                     _first_number(provider_summary, "synthetic_sidecar_invariant_count")
                 ),
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                    _first_number(
+                        provider_summary,
+                        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+                    )
+                ),
                 "runtime_telemetry_dir": "" if telemetry is None else str(telemetry.output_dir or ""),
                 "output_dir": str(output_dir),
                 "profile": PROFILE,
@@ -905,6 +932,8 @@ def _blocked_help_command(checks: pd.DataFrame) -> str:
 
 
 def _next_gate_for_check(check: str) -> str:
+    if check.startswith("provider_scaleup_route_readiness_provider_sidecar"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_scaleup") or check.startswith("provider_imbalance_scaleup"):
         return "plan-provider-market-data-imbalance-scaleup"
     if check.startswith("nested_scaleup") or check.startswith("launch_pipeline"):
@@ -915,6 +944,8 @@ def _next_gate_for_check(check: str) -> str:
 
 
 def _help_command_for_gate(next_gate: str) -> str:
+    if next_gate == "review-provider-market-data-imbalance-route-readiness":
+        return "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
     if next_gate == "plan-provider-market-data-imbalance-scaleup":
         return "python -m hft_cli plan-provider-market-data-imbalance-scaleup --help"
     if next_gate == "build-runtime-telemetry":
@@ -925,6 +956,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _repair_action(check: str) -> str:
+    if check.startswith("provider_scaleup_route_readiness_provider_sidecar"):
+        return "review_provider_imbalance_route_readiness"
     if (
         check.startswith("provider_scaleup")
         or check.startswith("provider_imbalance_scaleup")
@@ -941,6 +974,8 @@ def _repair_action(check: str) -> str:
 def _reason_for_check(check: str, telemetry: RuntimeTelemetryReport | None) -> str:
     if check == "runtime_telemetry_ready":
         return _telemetry_failure_reason(telemetry) or "runtime telemetry is not ready"
+    if check.startswith("provider_scaleup_route_readiness_provider_sidecar"):
+        return "provider scale-up carries breached route-readiness broker round-trip synthetic sidecar proof"
     return check.replace("_", " ")
 
 
@@ -964,6 +999,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
+        f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "",
         "## Checks",
         "",

@@ -4923,9 +4923,12 @@ credential-safe `adapter_execution_contract` from scale-up in its
 summary/config/runbook and manifest. It also retains nested
 `synthetic_sidecar_proof` plus flattened sidecar counts from scale-up and
 blocks guard monitoring when synthetic provider folds are missing ready
-rehearsal sidecar proof. Missing, unsafe, or mismatched provider-profile,
-adapter-contract, or synthetic sidecar proof blocks guard monitoring and sends
-the packet back through provider scale-up planning. Supply
+rehearsal sidecar proof. It also carries the provider route-readiness broker
+round-trip synthetic sidecar breach counter from scale-up, and stale packets
+with nonzero route sidecar breaches are routed back to
+`review-provider-market-data-imbalance-route-readiness`. Missing, unsafe, or
+mismatched provider-profile, adapter-contract, or synthetic sidecar proof blocks
+guard monitoring and sends the packet back through provider scale-up planning. Supply
 live PnL, open-order, and position CSVs when they are available from
 Arrow.money/iRage; omit them for a dry guard-input snapshot based on scale-up
 and launch-pipeline metadata. A ready wrapper points to

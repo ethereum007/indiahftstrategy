@@ -3992,6 +3992,7 @@ def test_provider_market_data_imbalance_runtime_telemetry_builds_from_ready_scal
     assert summary.loc[0, "strategy"] == "imbalance"
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert summary.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-guard"
+    assert int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert action_queue.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-guard"
     assert bool(runtime_summary.loc[0, "ready"])
@@ -4450,6 +4451,45 @@ def test_provider_market_data_imbalance_runtime_telemetry_blocks_missing_provide
     assert not bool(summary["provider_profile_matches_session"])
     assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_scaleup"
     assert report.action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+
+
+def test_provider_market_data_imbalance_runtime_telemetry_blocks_scaleup_route_sidecar_breach(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    scaleup_summary_path = scaleup.output_dir / "provider_market_data_imbalance_scaleup_summary.csv"
+    scaleup_summary = pd.read_csv(scaleup_summary_path)
+    scaleup_summary.loc[0, "route_readiness_provided"] = True
+    scaleup_summary.loc[0, "route_readiness_ops_launch_controls_present"] = True
+    scaleup_summary.loc[
+        0,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 1
+    scaleup_summary.to_csv(scaleup_summary_path, index=False)
+
+    report = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry_sidecar_breach",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert "provider_scaleup_route_readiness_provider_sidecar_breach_pairs" in failed
+    assert int(summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 1
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
 
 
 def test_provider_market_data_imbalance_runtime_telemetry_blocks_unready_scaleup(tmp_path):

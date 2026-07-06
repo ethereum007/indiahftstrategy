@@ -332,7 +332,10 @@
   monitoring when either contract is missing, unsafe, or no longer matched to
   live evidence. It also carries nested `synthetic_sidecar_proof` plus
   flattened sidecar counts from scale-up and blocks guard monitoring when
-  synthetic provider folds are missing ready rehearsal sidecar proof.
+  synthetic provider folds are missing ready rehearsal sidecar proof. Runtime
+  telemetry now also carries the scale-up route-readiness provider broker
+  round-trip synthetic sidecar breach counter and routes stale nonzero breach
+  packets back to provider route readiness.
 - Provider market-data imbalance runtime guard now preserves those adapter
   fingerprints through halt/continue monitoring: guard summary/config and
   manifest extras expose capture env-template and adapter handoff SHA-256
@@ -798,6 +801,10 @@
   broker round-trip synthetic sidecar breach counter in the nested generic
   scale-up gate, surfaces that count in wrapper summaries/config, and routes
   breached Arrow.money/iRage-ready packets back to provider route readiness.
+- Provider-data imbalance runtime telemetry now preserves the same
+  route-readiness sidecar breach counter from scale-up, blocks guard monitoring
+  when a stale packet exposes nonzero provider sidecar breaches, and routes the
+  repair action back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
   directly in experiment catalogs.
