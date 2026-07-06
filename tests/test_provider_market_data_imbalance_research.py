@@ -5170,6 +5170,7 @@ def test_provider_market_data_imbalance_runtime_session_monitors_ready_guard(tmp
     assert bool(summary.loc[0, "runtime_session_continue"])
     assert summary.loc[0, "guard_action"] == "continue"
     assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
+    assert int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-readiness"
     assert bool(session_summary.loc[0, "ready"])
@@ -5645,6 +5646,35 @@ def test_provider_market_data_imbalance_runtime_session_blocks_missing_provider_
     assert not bool(summary["provider_profile_matches_session"])
     assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_runtime_guard"
     assert report.action_queue.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-guard"
+
+
+def test_provider_market_data_imbalance_runtime_session_blocks_guard_route_sidecar_breach(tmp_path):
+    runtime_guard = _write_ready_provider_imbalance_runtime_guard(tmp_path)
+    summary_path = runtime_guard.output_dir / "provider_market_data_imbalance_runtime_guard_summary.csv"
+    guard_summary = pd.read_csv(summary_path)
+    guard_summary.loc[0, "route_readiness_provided"] = True
+    guard_summary.loc[0, "route_readiness_ops_launch_controls_present"] = True
+    guard_summary.loc[
+        0,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 1
+    guard_summary.to_csv(summary_path, index=False)
+
+    report = write_provider_market_data_imbalance_runtime_session(
+        runtime_guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session_sidecar_breach",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert not report.halted
+    assert "provider_runtime_guard_route_readiness_provider_sidecar_breach_pairs" in failed
+    assert int(summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 1
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
 
 
 def test_provider_market_data_imbalance_runtime_session_blocks_unready_guard(tmp_path):

@@ -4992,7 +4992,10 @@ summary/config/runbook and manifest. It also retains nested
 `synthetic_sidecar_proof` plus flattened sidecar counts from runtime guard.
 Missing, unsafe, or mismatched provider-profile, adapter-contract, or
 synthetic sidecar proof blocks broker readiness review and sends the packet
-back through provider runtime guard.
+back through provider runtime guard. Runtime session also carries the provider
+route-readiness broker round-trip synthetic sidecar breach counter from runtime
+guard; stale nonzero breach packets are routed back to
+`review-provider-market-data-imbalance-route-readiness`.
 Clean sessions route to
 `review-provider-market-data-imbalance-broker-readiness`. If the session guard
 halts and a halt response is ready, it emits a ready `export-halt-response`
