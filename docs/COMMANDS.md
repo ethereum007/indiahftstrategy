@@ -5032,6 +5032,10 @@ retains nested `synthetic_sidecar_proof` plus flattened sidecar counts from the
 runtime-session wrapper. Missing, unsafe, or mismatched provider-profile,
 adapter-contract, or synthetic sidecar proof blocks cutover review and sends
 the packet back through provider runtime session.
+Broker readiness also carries the provider route-readiness broker round-trip
+synthetic sidecar breach counter from runtime session; stale nonzero breach
+packets are routed back to
+`review-provider-market-data-imbalance-route-readiness`.
 When a provider round-trip proof carries its own `dispatch_roundtrip_*` capture
 bundle/env-template, adapter handoff path, source credential env-template
 proof, `live_fetch_contract`, provider-profile contract/SHA, or

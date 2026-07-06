@@ -5756,10 +5756,15 @@ def test_provider_market_data_imbalance_broker_readiness_reviews_ready_session(t
     assert bool(summary.loc[0, "provider_runtime_session_ready"])
     assert bool(summary.loc[0, "broker_readiness_ready"])
     assert bool(broker_summary.loc[0, "ready"])
+    assert int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
     assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
     assert manifest["run_type"] == "provider_market_data_imbalance_broker_readiness"
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
     assert "broker_readiness" in manifest["inputs"]
     assert "runtime_session" in manifest["inputs"]
     assert "order_export" in manifest["inputs"]
@@ -6095,6 +6100,55 @@ def test_provider_market_data_imbalance_broker_readiness_blocks_missing_syntheti
     assert "provider_runtime_session_synthetic_sidecar_proof_ready" in failed
     assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_runtime_session"
     assert report.action_queue.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-session"
+
+
+def test_provider_market_data_imbalance_broker_readiness_blocks_runtime_session_route_sidecar_breach(
+    tmp_path,
+):
+    runtime_session = _write_ready_provider_imbalance_runtime_session(tmp_path)
+    summary_path = runtime_session.output_dir / "provider_market_data_imbalance_runtime_session_summary.csv"
+    session_summary = pd.read_csv(summary_path)
+    session_summary.loc[0, "route_readiness_provided"] = True
+    session_summary.loc[0, "route_readiness_ops_launch_controls_present"] = True
+    session_summary.loc[
+        0,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 1
+    session_summary.to_csv(summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_broker_readiness_route_sidecar_breach"
+
+    report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_readiness_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_readiness_runbook.md").read_text(
+        encoding="utf-8"
+    )
+    assert not report.ready
+    assert bool(summary["provider_runtime_session_ready"])
+    assert bool(summary["broker_readiness_ready"])
+    assert "provider_runtime_session_route_readiness_provider_sidecar_breach_pairs" in failed
+    assert int(summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 1
+    assert (
+        config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 1
+    )
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 1
+    )
+    assert "Route sidecar breach pairs: 1" in runbook
+    assert report.action_queue.loc[0, "component"] == "provider_route_readiness"
+    assert report.action_queue.loc[0, "action"] == "review_provider_imbalance_route_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
 
 
 def test_provider_market_data_imbalance_broker_readiness_blocks_missing_adapter_execution_contract(tmp_path):
