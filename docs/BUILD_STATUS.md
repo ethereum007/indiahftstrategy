@@ -2090,7 +2090,7 @@
   Broker-dispatch now also hydrates missing or blank route-enable
   `dispatch_roundtrip_*` summary fields from the route-enable
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
-  summary `False` values, so sparse route-enable CSVs do not lose the
+  summary `False` and `0` values, so sparse route-enable CSVs do not lose the
   validated live-data handoff or command bundle proof before send packet
   preparation. Broker-dispatch also carries the route-enable-retained final
   round-trip `synthetic_sidecar_proof` plus flattened

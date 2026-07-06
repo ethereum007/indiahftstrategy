@@ -5262,7 +5262,7 @@ When a route-enable CSV is
 sparse but its config sidecar has `dispatch_roundtrip_provenance`,
 broker-dispatch hydrates missing or blank `dispatch_roundtrip_*` fields,
 including the round-trip provider profile, adapter contract, and sidecar
-counters, from that config while keeping explicit summary `False` values
+counters, from that config while keeping explicit summary `False` and `0` values
 authoritative. The
 wrapper runs `plan-broker-dispatch` under a nested `broker_dispatch` folder,
 and writes provider checks/summary/action/config/runbook artifacts. Fully clean
