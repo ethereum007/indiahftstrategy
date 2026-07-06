@@ -5325,7 +5325,7 @@ repair gate. When a broker-dispatch
 CSV is sparse but its config sidecar has `dispatch_roundtrip_provenance`,
 broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields,
 including the round-trip provider profile, adapter contract, and sidecar
-counters, from that config while keeping explicit summary `False` values
+counters, from that config while keeping explicit summary `False` and `0` values
 authoritative.
 The wrapper runs
 `prepare-broker-dispatch-send` under a nested `broker_dispatch_send` folder,

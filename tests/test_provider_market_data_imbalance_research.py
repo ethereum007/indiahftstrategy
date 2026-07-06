@@ -15723,6 +15723,97 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_broker_disp
     )
 
 
+def test_provider_market_data_imbalance_broker_dispatch_send_prefers_explicit_roundtrip_route_sidecar_zero(
+    tmp_path,
+):
+    provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
+    summary_path = provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_summary.csv"
+    dispatch_summary = pd.read_csv(summary_path)
+    for column, value in (
+        ("dispatch_roundtrip_route_readiness_provided", True),
+        ("dispatch_roundtrip_route_readiness_ops_launch_controls_present", True),
+        (
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            0,
+        ),
+    ):
+        if column in dispatch_summary.columns:
+            dispatch_summary[column] = dispatch_summary[column].astype("object")
+        dispatch_summary.loc[0, column] = value
+    dispatch_summary.to_csv(summary_path, index=False)
+
+    def add_stale_roundtrip_route_sidecar_breach(payload):
+        provenance = payload.setdefault("dispatch_roundtrip_provenance", {})
+        provenance["route_readiness_provided"] = True
+        provenance["route_readiness_ops_launch_controls_present"] = True
+        provenance["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+
+    _mutate_json(
+        provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_config.json",
+        add_stale_roundtrip_route_sidecar_breach,
+    )
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_send_roundtrip_route_sidecar_explicit_zero"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_send(
+        provider_dispatch.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    checks = report.checks.set_index("check")
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (out_dir / "provider_market_data_imbalance_broker_dispatch_send_runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert report.ready
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs",
+            "passed",
+        ]
+    )
+    assert bool(summary["dispatch_roundtrip_route_readiness_provided"])
+    assert bool(summary["dispatch_roundtrip_route_readiness_ops_launch_controls_present"])
+    assert (
+        summary[
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        config["summary"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        manifest["extra"]["dispatch_roundtrip"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert "Dispatch round-trip route sidecar breach pairs: 0" in runbook
+    assert "provider_broker_dispatch_dispatch_roundtrip_route_readiness_provider_sidecar_breach_pairs" not in failed
+
+
 def test_provider_market_data_imbalance_broker_dispatch_send_blocks_missing_broker_dispatch_roundtrip_synthetic_sidecar_proof(
     tmp_path,
 ):

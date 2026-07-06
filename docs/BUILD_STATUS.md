@@ -2131,7 +2131,7 @@
   Broker-dispatch-send now also
   hydrates missing or blank broker-dispatch `dispatch_roundtrip_*` summary
   fields from the broker-dispatch `dispatch_roundtrip_provenance` config
-  sidecar, while preserving explicit summary `False` values, so sparse
+  sidecar, while preserving explicit summary `False` and `0` values, so sparse
   broker-dispatch CSVs do not lose validated live-data provenance, provider
   profile proof, command bundle proof, or sidecar counters before dry-run
   request envelopes are produced.
