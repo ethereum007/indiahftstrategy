@@ -2252,10 +2252,7 @@ def _dispatch_roundtrip_number(
 ) -> float:
     sidecar_fallback = _number_from_value(provenance.get(fallback_key), fallback)
     if _first_value_present(frame, column):
-        value = _first_number(frame, column, fallback)
-        if value == 0 and sidecar_fallback > 0:
-            return sidecar_fallback
-        return value
+        return _first_number(frame, column, fallback)
     return sidecar_fallback
 
 

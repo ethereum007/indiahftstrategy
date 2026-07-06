@@ -5129,7 +5129,7 @@ broker-readiness CSV is from an
 older or thinner wrapper but its config sidecar has
 `dispatch_roundtrip_provenance`, cutover hydrates missing or blank
 `dispatch_roundtrip_*` fields from that config while preserving explicit CSV
-`False` values as authoritative. If provider
+`False` and `0` values as authoritative. If provider
 broker-readiness carried vendor-market-data batch evidence, cutover also
 retains the generic dispatch, broker-dispatch, and inherited upstream vendor
 batch readiness fields plus config snapshots, including

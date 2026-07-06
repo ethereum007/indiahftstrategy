@@ -2045,7 +2045,7 @@
   also hydrates missing or blank
   `dispatch_roundtrip_*` summary fields from broker-readiness
   `dispatch_roundtrip_provenance` config sidecars, while keeping explicit CSV
-  `False` values authoritative, so mixed-version broker-readiness outputs still
+  `False`/`0` values authoritative, so mixed-version broker-readiness outputs still
   preserve the validated iRage/Arrow live-data handoff trail, including the
   command bundle proof needed before provider route-enable.
 - Provider-data imbalance route-enable now preserves the cutover-carried
