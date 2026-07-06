@@ -5462,7 +5462,7 @@ When an acknowledgement CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, the provider round-trip wrapper hydrates
 missing or blank `dispatch_roundtrip_*` fields, including the round-trip
 adapter contract and sidecar counters, from that config while keeping explicit
-summary `False` values authoritative.
+summary `False` and `0` values authoritative.
 When the nested generic round-trip carries broker vendor-market-data batch
 evidence, the provider wrapper also exposes that fresh proof in its own
 summary/config under both

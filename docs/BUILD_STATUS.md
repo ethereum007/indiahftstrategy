@@ -2211,7 +2211,7 @@
   provider round-trip wrapper now also hydrates missing or blank acknowledgement
   `dispatch_roundtrip_*` summary fields from the acknowledgement
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
-  summary `False` values, so sparse acknowledgement CSVs do not lose validated
+  summary `False`/`0` values, so sparse acknowledgement CSVs do not lose validated
   live-data provenance, provider command proof, or sidecar counters before
   broker-readiness promotion. Provider broker readiness now consumes that final
   round-trip route-readiness sidecar breach proof separately from the

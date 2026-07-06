@@ -20150,6 +20150,56 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_ack_ro
     )
 
 
+def test_provider_market_data_imbalance_broker_dispatch_roundtrip_prefers_explicit_roundtrip_command_zero(
+    tmp_path,
+):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+    summary_path = provider_ack.output_dir / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    ack_summary = pd.read_csv(summary_path)
+    ack_summary.loc[0, "capture_bundle_provided"] = True
+    ack_summary.loc[0, "provider_capture_command_count"] = 2
+    ack_summary.loc[0, "capture_bundle_provider_capture_command_count"] = 2
+    ack_summary.loc[0, "capture_bundle_provider_capture_command_missing_count"] = 0
+    ack_summary.loc[0, "capture_bundle_provider_capture_commands_match_session"] = True
+    ack_summary.loc[0, "dispatch_roundtrip_capture_bundle_provided"] = True
+    ack_summary.loc[0, "dispatch_roundtrip_provider_capture_command_count"] = 0
+    ack_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_command_count"] = 0
+    ack_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] = 2
+    ack_summary.loc[0, "dispatch_roundtrip_capture_bundle_provider_capture_commands_match_session"] = False
+    ack_summary.loc[0, "dispatch_roundtrip_provider_capture_commands_match_runtime_session"] = False
+    ack_summary.to_csv(summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip_explicit_command_zero"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert not report.passed
+    assert summary["dispatch_roundtrip_provider_capture_command_count"] == 0
+    assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_count"] == 0
+    assert summary["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"] == 2
+    assert "dispatch_roundtrip_provider_capture_commands_carried" in failed
+    assert "dispatch_roundtrip_provider_capture_commands_match_session" in failed
+    assert "dispatch_roundtrip_provider_capture_commands_match_runtime_session" in failed
+    assert config["dispatch_roundtrip_provenance"]["provider_capture_command_count"] == 0
+    assert (
+        config["summary"]["dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count"]
+        == 2
+    )
+    assert manifest["extra"]["dispatch_roundtrip_provider_capture_command_count"] == 0
+
+
 def test_provider_market_data_imbalance_broker_dispatch_roundtrip_blocks_missing_ack_roundtrip_synthetic_sidecar_proof(
     tmp_path,
 ):

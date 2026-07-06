@@ -3746,10 +3746,7 @@ def _first_number_with_fallback(frame: pd.DataFrame | None, column: str, fallbac
     fallback = _first_number(frame, fallback_column)
     if not _first_value_present(frame, column):
         return fallback
-    value = _first_number(frame, column)
-    if value == 0 and fallback > 0:
-        return fallback
-    return value
+    return _first_number(frame, column)
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:
