@@ -439,6 +439,9 @@
   It also carries nested `synthetic_sidecar_proof` plus flattened sidecar
   counts from broker dispatch send and blocks broker-dispatch round-trip review
   when synthetic provider folds are missing ready rehearsal sidecar proof.
+  Acknowledgement reconciliation now also preserves the send-carried
+  route-readiness provider broker round-trip synthetic sidecar breach counter
+  and routes stale nonzero breach packets back to provider route readiness.
 - Provider market-data imbalance broker dispatch round-trip now preserves those
   adapter fingerprints into the final dry-run bridge proof: round-trip
   summary/config and manifest extras expose capture env-template and adapter
@@ -851,6 +854,10 @@
 - Provider-data imbalance broker dispatch send now preserves the
   route-readiness sidecar breach counter from broker dispatch, blocks
   acknowledgement reconciliation on nonzero provider sidecar breaches, and
+  routes repair back to provider route readiness.
+- Provider-data imbalance broker dispatch acknowledgement now preserves the
+  route-readiness sidecar breach counter from broker dispatch send, blocks
+  broker-dispatch round-trip review on nonzero provider sidecar breaches, and
   routes repair back to provider route readiness.
 - Route readiness summaries now carry primary next-gate/help fields and
   ready/blocked action counts, making the final route scheduler signal visible
@@ -2116,7 +2123,11 @@
   round-trip `synthetic_sidecar_proof` plus flattened
   `dispatch_roundtrip_synthetic_*` counters and blocks round-trip review back
   to broker-dispatch-send when synthetic final dry-run folds are present
-  without ready rehearsal sidecars. Acknowledgement now also hydrates
+  without ready rehearsal sidecars. It also carries the send-retained
+  route-readiness provider broker round-trip synthetic sidecar breach counter
+  and blocks round-trip review back to provider route readiness when stale
+  packets expose nonzero sidecar breaches.
+  Acknowledgement now also hydrates
   missing or blank send-packet
   `dispatch_roundtrip_*` summary fields from the send
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit

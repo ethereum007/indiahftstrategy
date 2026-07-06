@@ -5344,7 +5344,11 @@ reconciliation blocks round-trip review and routes back to
 nested `synthetic_sidecar_proof` plus flattened sidecar counts from the send
 packet. If the required synthetic sidecar proof is missing or unready,
 acknowledgement reconciliation blocks round-trip review and routes back to
-`prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries the
+`prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries
+the send-carried route-readiness provider broker round-trip synthetic sidecar
+breach counter; if that inherited counter is nonzero, round-trip review is
+blocked and routed back to
+`review-provider-market-data-imbalance-route-readiness`. It also carries the
 send-retained validated dispatch round-trip source credential env-template,
 round-trip exchange/session metadata, capture-bundle session proof, live-fetch
 exchange/session identity, `live_fetch_contract`, final round-trip provider
