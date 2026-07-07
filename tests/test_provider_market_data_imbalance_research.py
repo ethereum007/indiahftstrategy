@@ -11518,6 +11518,166 @@ def test_cli_provider_market_data_imbalance_cutover_blocks_missing_route_proof(t
     assert summary.loc[0, "next_gate"] == "review-route-readiness"
 
 
+def test_cli_provider_market_data_imbalance_cutover_accepts_clean_route_readiness_sidecar_zero(
+    tmp_path,
+):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    clean_ops_evidence = _write_ready_ops_launch_evidence(tmp_path / "clean_cutover_cli_ops")
+    stale_ops_evidence = _write_ready_ops_launch_evidence(
+        tmp_path / "stale_cutover_cli_ops",
+        sidecar_breach=True,
+    )
+    route_out = tmp_path / "cli_provider_imbalance_route_readiness_for_cutover"
+
+    route_code = main(
+        [
+            "review-provider-market-data-imbalance-route-readiness",
+            "--provider-launch-evidence-dir",
+            str(launch_evidence.output_dir),
+            "--ops-evidence",
+            str(clean_ops_evidence),
+            "--ops-evidence",
+            str(stale_ops_evidence),
+            "--out",
+            str(route_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup_out = tmp_path / "cli_provider_imbalance_scaleup_for_cutover"
+    scaleup_code = main(
+        [
+            "plan-provider-market-data-imbalance-scaleup",
+            "--scorecard",
+            str(scorecard.output_dir),
+            "--shadow-comparison",
+            str(shadow),
+            "--route-readiness",
+            str(route_out),
+            "--out",
+            str(scaleup_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    telemetry_out = tmp_path / "cli_provider_imbalance_runtime_telemetry_for_cutover"
+    telemetry_code = main(
+        [
+            "build-provider-market-data-imbalance-runtime-telemetry",
+            "--scaleup",
+            str(scaleup_out),
+            "--out",
+            str(telemetry_out),
+            "--snapshot-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+        ]
+    )
+
+    guard_out = tmp_path / "cli_provider_imbalance_runtime_guard_for_cutover"
+    guard_code = main(
+        [
+            "monitor-provider-market-data-imbalance-runtime-guard",
+            "--runtime-telemetry",
+            str(telemetry_out),
+            "--out",
+            str(guard_out),
+            "--as-of-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+            "--fail-on-halt",
+        ]
+    )
+
+    session_out = tmp_path / "cli_provider_imbalance_runtime_session_for_cutover"
+    session_code = main(
+        [
+            "monitor-provider-market-data-imbalance-runtime-session",
+            "--runtime-guard",
+            str(guard_out),
+            "--out",
+            str(session_out),
+            "--as-of-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+            "--fail-on-halt",
+        ]
+    )
+
+    broker_out = tmp_path / "cli_provider_imbalance_broker_readiness_for_cutover"
+    broker_code = main(
+        [
+            "review-provider-market-data-imbalance-broker-readiness",
+            "--runtime-session",
+            str(session_out),
+            "--out",
+            str(broker_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    cutover_out = tmp_path / "cli_provider_imbalance_cutover_route_sidecar_zero"
+    cutover_code = main(
+        [
+            "review-provider-market-data-imbalance-cutover",
+            "--broker-readiness",
+            str(broker_out),
+            "--out",
+            str(cutover_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
+    broker_summary = pd.read_csv(broker_out / "provider_market_data_imbalance_broker_readiness_summary.csv")
+    summary = pd.read_csv(cutover_out / "provider_market_data_imbalance_cutover_summary.csv")
+    config = json.loads(
+        (cutover_out / "provider_market_data_imbalance_cutover_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((cutover_out / "manifest.json").read_text(encoding="utf-8"))
+
+    assert route_code == 0
+    assert scaleup_code == 0
+    assert telemetry_code == 0
+    assert guard_code == 0
+    assert session_code == 0
+    assert broker_code == 0
+    assert cutover_code == 0
+    assert route_pairs.loc[0, "ops_evidence_source"] == str(
+        clean_ops_evidence / "strategy_evidence_summary.csv"
+    )
+    assert bool(broker_summary.loc[0, "ready"])
+    assert (
+        int(broker_summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"])
+        == 0
+    )
+    assert bool(summary.loc[0, "ready"])
+    assert bool(summary.loc[0, "provider_broker_readiness_ready"])
+    assert bool(summary.loc[0, "cutover_ready"])
+    assert summary.loc[0, "next_gate"] == "review-route-enable"
+    assert (
+        int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"])
+        == 0
+    )
+    assert config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] == 0
+    assert (
+        config["provider_broker_readiness"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
+
+
 def test_provider_market_data_imbalance_route_enable_accepts_ready_cutover(tmp_path):
     provider_cutover = _write_ready_provider_imbalance_cutover_with_route_proof(tmp_path)
     out_dir = tmp_path / "provider_imbalance_route_enable"
