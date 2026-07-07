@@ -3355,6 +3355,66 @@ def test_provider_market_data_imbalance_route_readiness_blocks_sidecar_breach(tm
     assert int(route_pairs.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 1
 
 
+def test_provider_market_data_imbalance_route_readiness_prefers_explicit_ops_sidecar_zero(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    ops_summary_path = ops_evidence / "strategy_evidence_summary.csv"
+    ops_summary = pd.read_csv(ops_summary_path)
+    ops_summary.loc[0, "require_provider_broker_roundtrip_synthetic_sidecar_ready"] = True
+    ops_summary.loc[0, "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach"] = True
+    ops_summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_count"] = 2
+    ops_summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_readable_count"] = 2
+    ops_summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_proof_runs"] = 1
+    ops_summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_ready_runs"] = 1
+    ops_summary.loc[0, "provider_broker_roundtrip_synthetic_sidecar_breach_runs"] = 0
+    ops_summary.to_csv(ops_summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_route_readiness_sidecar_explicit_zero"
+
+    report = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        out_dir,
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
+    action_queue = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_action_queue.csv")
+    route_pairs = pd.read_csv(out_dir / "route_readiness" / "route_readiness_pairs.csv")
+    route_summary = pd.read_csv(out_dir / "route_readiness" / "route_readiness_summary.csv")
+    route_config = json.loads((out_dir / "route_readiness" / "route_readiness_config.json").read_text(encoding="utf-8"))
+    provider_config = json.loads(
+        (out_dir / "provider_market_data_imbalance_route_readiness_config.json").read_text(encoding="utf-8")
+    )
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+
+    assert report.ready
+    assert bool(summary.loc[0, "route_readiness_ready"])
+    assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+    assert action_queue.loc[0, "queue_status"] == "ready"
+    assert action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+    assert bool(route_summary.loc[0, "ready"])
+    assert route_pairs.loc[0, "status"] == "ready_for_live_dryrun_route_review"
+    assert pd.isna(route_pairs.loc[0, "ops_launch_control_failures"]) or route_pairs.loc[
+        0, "ops_launch_control_failures"
+    ] == ""
+    assert int(route_pairs.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+    assert int(route_summary.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
+    assert route_config["summary"]["ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] == 0
+    assert (
+        provider_config["route_readiness"]["summary"][
+            "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        provider_config["route_readiness"]["config"]["summary"][
+            "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert "route_readiness_ready" not in failed
+
+
 def test_cli_provider_market_data_imbalance_route_readiness_accepts_ready_ops_evidence(tmp_path):
     launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
     ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
