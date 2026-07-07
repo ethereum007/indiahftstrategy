@@ -3926,6 +3926,107 @@ def test_provider_market_data_imbalance_scaleup_blocks_route_readiness_sidecar_b
     assert action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
 
 
+def test_provider_market_data_imbalance_scaleup_prefers_explicit_route_readiness_sidecar_zero(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness_explicit_zero",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    route_summary_path = route_readiness.output_dir / "route_readiness" / "route_readiness_summary.csv"
+    route_summary = pd.read_csv(route_summary_path)
+    route_summary.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 0
+    route_summary.to_csv(route_summary_path, index=False)
+
+    def add_stale_route_sidecar_config(payload):
+        summary = payload.setdefault("summary", {})
+        if isinstance(summary, dict):
+            summary["ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+            summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+        route_readiness_payload = payload.setdefault("route_readiness", {})
+        if isinstance(route_readiness_payload, dict):
+            route_summary_payload = route_readiness_payload.setdefault("summary", {})
+            if isinstance(route_summary_payload, dict):
+                route_summary_payload["ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+            route_config_payload = route_readiness_payload.setdefault("config", {})
+            if isinstance(route_config_payload, dict):
+                route_config_summary = route_config_payload.setdefault("summary", {})
+                if isinstance(route_config_summary, dict):
+                    route_config_summary["ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+
+    _mutate_json(
+        route_readiness.output_dir / "route_readiness" / "route_readiness_config.json",
+        add_stale_route_sidecar_config,
+    )
+    _mutate_json(
+        route_readiness.output_dir / "provider_market_data_imbalance_route_readiness_config.json",
+        add_stale_route_sidecar_config,
+    )
+
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    out_dir = tmp_path / "provider_imbalance_scaleup_route_sidecar_explicit_zero"
+
+    report = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        out_dir,
+        route_readiness_dir=route_readiness.output_dir,
+        config=ProviderMarketDataImbalanceScaleupConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    checks = report.checks.set_index("check")
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_scaleup_summary.csv")
+    scaleup_summary = pd.read_csv(out_dir / "scaleup" / "scaleup_summary.csv")
+    config = json.loads((out_dir / "provider_market_data_imbalance_scaleup_config.json").read_text(encoding="utf-8"))
+    stale_route_config = json.loads(
+        (route_readiness.output_dir / "route_readiness" / "route_readiness_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    stale_provider_config = json.loads(
+        (route_readiness.output_dir / "provider_market_data_imbalance_route_readiness_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert report.ready
+    assert bool(checks.loc["route_readiness_provider_sidecar_breach_pairs", "passed"])
+    assert (
+        int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"])
+        == 0
+    )
+    assert (
+        int(scaleup_summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"])
+        == 0
+    )
+    assert config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] == 0
+    assert (
+        config["scaleup"]["config"]["route_readiness"][
+            "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        stale_route_config["summary"]["ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 1
+    )
+    assert (
+        stale_provider_config["route_readiness"]["config"]["summary"][
+            "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 1
+    )
+    assert "route_readiness_provider_sidecar_breach_pairs" not in failed
+
+
 def test_provider_market_data_imbalance_scaleup_blocks_unready_scorecard(tmp_path):
     smoke = _write_synthetic_smoke_evidence(tmp_path)
     research = write_provider_market_data_imbalance_research(
