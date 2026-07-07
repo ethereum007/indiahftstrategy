@@ -4536,6 +4536,91 @@ def test_provider_market_data_imbalance_runtime_telemetry_blocks_scaleup_route_s
     assert report.action_queue.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
 
 
+def test_provider_market_data_imbalance_runtime_telemetry_prefers_explicit_scaleup_route_sidecar_zero(tmp_path):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    scaleup_summary_path = scaleup.output_dir / "provider_market_data_imbalance_scaleup_summary.csv"
+    scaleup_summary = pd.read_csv(scaleup_summary_path)
+    scaleup_summary.loc[0, "route_readiness_provided"] = True
+    scaleup_summary.loc[0, "route_readiness_ops_launch_controls_present"] = True
+    scaleup_summary.loc[
+        0,
+        "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+    ] = 0
+    scaleup_summary.to_csv(scaleup_summary_path, index=False)
+
+    def add_stale_route_sidecar_config(payload):
+        payload["route_readiness_provided"] = True
+        payload["route_readiness_ops_launch_controls_present"] = True
+        payload["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+        summary = payload.setdefault("summary", {})
+        if isinstance(summary, dict):
+            summary["route_readiness_provided"] = True
+            summary["route_readiness_ops_launch_controls_present"] = True
+            summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] = 1
+        scaleup_payload = payload.setdefault("scaleup", {})
+        if isinstance(scaleup_payload, dict):
+            scaleup_summary_payload = scaleup_payload.setdefault("summary", {})
+            if isinstance(scaleup_summary_payload, dict):
+                scaleup_summary_payload["route_readiness_provided"] = True
+                scaleup_summary_payload["route_readiness_ops_launch_controls_present"] = True
+                scaleup_summary_payload[
+                    "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+                ] = 1
+
+    _mutate_json(
+        scaleup.output_dir / "provider_market_data_imbalance_scaleup_config.json",
+        add_stale_route_sidecar_config,
+    )
+    out_dir = tmp_path / "provider_imbalance_runtime_telemetry_route_sidecar_explicit_zero"
+
+    report = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        out_dir,
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    checks = report.checks.set_index("check")
+    summary = report.summary.iloc[0]
+    config = json.loads(
+        (out_dir / "provider_market_data_imbalance_runtime_telemetry_config.json").read_text(encoding="utf-8")
+    )
+    runbook = (out_dir / "provider_market_data_imbalance_runtime_telemetry_runbook.md").read_text(
+        encoding="utf-8"
+    )
+
+    assert report.ready
+    assert bool(checks.loc["provider_scaleup_route_readiness_provider_sidecar_breach_pairs", "passed"])
+    assert int(summary["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
+    assert config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] == 0
+    assert config["provider_scaleup"]["route_readiness_provided"] is True
+    assert config["provider_scaleup"]["route_readiness_ops_launch_controls_present"] is True
+    assert (
+        config["provider_scaleup"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
+    assert (
+        config["provider_scaleup_config"]["summary"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 1
+    )
+    assert "Route sidecar breach pairs: 0" in runbook
+    assert "provider_scaleup_route_readiness_provider_sidecar_breach_pairs" not in failed
+
+
 def test_provider_market_data_imbalance_runtime_telemetry_blocks_unready_scaleup(tmp_path):
     scaleup_dir = tmp_path / "provider_imbalance_scaleup"
     scaleup_dir.mkdir(parents=True, exist_ok=True)
