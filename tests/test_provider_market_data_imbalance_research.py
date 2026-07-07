@@ -9337,6 +9337,20 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
         ]
     )
 
+    roundtrip_route_enable_out = (
+        tmp_path / "cli_provider_imbalance_broker_dispatch_roundtrip_route_enable_ack_sidecar_zero"
+    )
+    roundtrip_route_enable_code = main(
+        [
+            "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+            "--provider-broker-dispatch-ack",
+            str(ack_roundtrip_route_enable_out),
+            "--out",
+            str(roundtrip_route_enable_out),
+            "--fail-on-breach",
+        ]
+    )
+
     route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
     roundtrip_summary = pd.read_csv(
         roundtrip_out / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
@@ -9415,6 +9429,33 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     ack_roundtrip_route_enable_manifest = json.loads(
         (ack_roundtrip_route_enable_out / "manifest.json").read_text(encoding="utf-8")
     )
+    roundtrip_route_enable_summary = pd.read_csv(
+        roundtrip_route_enable_out
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    roundtrip_route_enable_packet_summary = pd.read_csv(
+        roundtrip_route_enable_out / "broker_dispatch_roundtrip" / "broker_dispatch_roundtrip_summary.csv"
+    )
+    roundtrip_route_enable_orders = pd.read_csv(
+        roundtrip_route_enable_out / "broker_dispatch_roundtrip" / "broker_dispatch_roundtrip_orders.csv"
+    )
+    roundtrip_route_enable_checks = pd.read_csv(
+        roundtrip_route_enable_out
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_checks.csv"
+    )
+    roundtrip_route_enable_action_queue = pd.read_csv(
+        roundtrip_route_enable_out
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_action_queue.csv"
+    )
+    roundtrip_route_enable_config = json.loads(
+        (
+            roundtrip_route_enable_out
+            / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    roundtrip_route_enable_manifest = json.loads(
+        (roundtrip_route_enable_out / "manifest.json").read_text(encoding="utf-8")
+    )
 
     assert route_code == 0
     assert scaleup_code == 0
@@ -9434,6 +9475,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     assert dispatch_roundtrip_route_enable_code == 0
     assert send_roundtrip_route_enable_code == 0
     assert ack_roundtrip_route_enable_code == 0
+    assert roundtrip_route_enable_code == 0
     assert route_pairs.loc[0, "ops_evidence_source"] == str(
         clean_ops_evidence / "strategy_evidence_summary.csv"
     )
@@ -9624,6 +9666,57 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     )
     assert (
         ack_roundtrip_route_enable_manifest["extra"]["dispatch_roundtrip"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert bool(roundtrip_route_enable_summary.loc[0, "passed"])
+    assert bool(roundtrip_route_enable_summary.loc[0, "provider_broker_dispatch_ack_passed"])
+    assert bool(roundtrip_route_enable_summary.loc[0, "broker_dispatch_roundtrip_passed"])
+    assert bool(roundtrip_route_enable_packet_summary.loc[0, "passed"])
+    assert int(roundtrip_route_enable_summary.loc[0, "missing_request_acks"]) == 0
+    assert int(roundtrip_route_enable_summary.loc[0, "rejected_orders"]) == 0
+    assert bool(roundtrip_route_enable_orders["acked"].astype(bool).all())
+    assert roundtrip_route_enable_checks["passed"].astype(bool).all()
+    assert roundtrip_route_enable_action_queue.loc[0, "queue_status"] == "ready"
+    assert (
+        roundtrip_route_enable_summary.loc[0, "next_gate"]
+        == "review-provider-market-data-imbalance-broker-readiness"
+    )
+    assert (
+        roundtrip_route_enable_action_queue.loc[0, "next_gate"]
+        == "review-provider-market-data-imbalance-broker-readiness"
+    )
+    assert bool(roundtrip_route_enable_summary.loc[0, "dispatch_roundtrip_route_readiness_provided"])
+    assert (
+        int(
+            roundtrip_route_enable_summary.loc[
+                0,
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            ]
+        )
+        == 0
+    )
+    assert (
+        roundtrip_route_enable_config["summary"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        roundtrip_route_enable_config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        roundtrip_route_enable_manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        roundtrip_route_enable_manifest["extra"]["dispatch_roundtrip"][
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
         ]
         == 0
