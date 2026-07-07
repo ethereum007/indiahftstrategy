@@ -183,6 +183,9 @@ def write_provider_market_data_imbalance_runtime_guard(
             "ready": bool(summary_row["ready"]),
             "halted": bool(summary_row["halted"]),
             "guard_action": str(summary_row["guard_action"]),
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+            ),
             "profile": PROFILE,
             "exchange": str(summary_row["exchange"]),
             "source_session": _source_session_contract_from_summary(summary_row),

@@ -5756,6 +5756,130 @@ def test_cli_provider_market_data_imbalance_runtime_guard_accepts_ready_telemetr
     assert summary.loc[0, "next_gate"] == "monitor-provider-market-data-imbalance-runtime-session"
 
 
+def test_cli_provider_market_data_imbalance_runtime_guard_accepts_clean_route_readiness_sidecar_zero(
+    tmp_path,
+):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    clean_ops_evidence = _write_ready_ops_launch_evidence(tmp_path / "clean_runtime_guard_cli_ops")
+    stale_ops_evidence = _write_ready_ops_launch_evidence(
+        tmp_path / "stale_runtime_guard_cli_ops",
+        sidecar_breach=True,
+    )
+    route_out = tmp_path / "cli_provider_imbalance_route_readiness_for_runtime_guard"
+
+    route_code = main(
+        [
+            "review-provider-market-data-imbalance-route-readiness",
+            "--provider-launch-evidence-dir",
+            str(launch_evidence.output_dir),
+            "--ops-evidence",
+            str(clean_ops_evidence),
+            "--ops-evidence",
+            str(stale_ops_evidence),
+            "--out",
+            str(route_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup_out = tmp_path / "cli_provider_imbalance_scaleup_for_runtime_guard"
+    scaleup_code = main(
+        [
+            "plan-provider-market-data-imbalance-scaleup",
+            "--scorecard",
+            str(scorecard.output_dir),
+            "--shadow-comparison",
+            str(shadow),
+            "--route-readiness",
+            str(route_out),
+            "--out",
+            str(scaleup_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    telemetry_out = tmp_path / "cli_provider_imbalance_runtime_telemetry_for_guard"
+    telemetry_code = main(
+        [
+            "build-provider-market-data-imbalance-runtime-telemetry",
+            "--scaleup",
+            str(scaleup_out),
+            "--out",
+            str(telemetry_out),
+            "--snapshot-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+        ]
+    )
+
+    guard_out = tmp_path / "cli_provider_imbalance_runtime_guard_route_sidecar_zero"
+    guard_code = main(
+        [
+            "monitor-provider-market-data-imbalance-runtime-guard",
+            "--runtime-telemetry",
+            str(telemetry_out),
+            "--out",
+            str(guard_out),
+            "--as-of-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+            "--fail-on-halt",
+        ]
+    )
+
+    route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
+    telemetry_summary = pd.read_csv(
+        telemetry_out / "provider_market_data_imbalance_runtime_telemetry_summary.csv"
+    )
+    summary = pd.read_csv(guard_out / "provider_market_data_imbalance_runtime_guard_summary.csv")
+    config = json.loads(
+        (guard_out / "provider_market_data_imbalance_runtime_guard_config.json").read_text(encoding="utf-8")
+    )
+    manifest = json.loads((guard_out / "manifest.json").read_text(encoding="utf-8"))
+
+    assert route_code == 0
+    assert scaleup_code == 0
+    assert telemetry_code == 0
+    assert guard_code == 0
+    assert route_pairs.loc[0, "ops_evidence_source"] == str(
+        clean_ops_evidence / "strategy_evidence_summary.csv"
+    )
+    assert bool(telemetry_summary.loc[0, "ready"])
+    assert (
+        int(
+            telemetry_summary.loc[
+                0,
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            ]
+        )
+        == 0
+    )
+    assert bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "halted"])
+    assert summary.loc[0, "guard_action"] == "continue"
+    assert (
+        int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"])
+        == 0
+    )
+    assert config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] == 0
+    assert (
+        config["provider_runtime_telemetry"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
+
+
 def test_provider_market_data_imbalance_runtime_session_monitors_ready_guard(tmp_path):
     runtime_guard = _write_ready_provider_imbalance_runtime_guard(tmp_path)
     out_dir = tmp_path / "provider_imbalance_runtime_session"
