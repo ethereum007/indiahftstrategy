@@ -3471,6 +3471,44 @@ def test_cli_provider_market_data_imbalance_route_readiness_accepts_ready_ops_ev
     assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
 
 
+def test_cli_provider_market_data_imbalance_route_readiness_prefers_clean_ops_sidecar_zero_over_stale_breach(
+    tmp_path,
+):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    clean_ops_evidence = _write_ready_ops_launch_evidence(tmp_path / "clean_cli_ops")
+    stale_ops_evidence = _write_ready_ops_launch_evidence(tmp_path / "stale_cli_ops", sidecar_breach=True)
+    out_dir = tmp_path / "cli_provider_imbalance_route_readiness_stale_breach"
+
+    code = main(
+        [
+            "review-provider-market-data-imbalance-route-readiness",
+            "--provider-launch-evidence-dir",
+            str(launch_evidence.output_dir),
+            "--ops-evidence",
+            str(clean_ops_evidence),
+            "--ops-evidence",
+            str(stale_ops_evidence),
+            "--out",
+            str(out_dir),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out_dir / "provider_market_data_imbalance_route_readiness_summary.csv")
+    route_pairs = pd.read_csv(out_dir / "route_readiness" / "route_readiness_pairs.csv")
+    route_summary = pd.read_csv(out_dir / "route_readiness" / "route_readiness_summary.csv")
+
+    assert code == 0
+    assert bool(summary.loc[0, "ready"])
+    assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
+    assert bool(route_summary.loc[0, "ready"])
+    assert int(route_summary.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]) == 0
+    assert route_pairs.loc[0, "ops_evidence_source"] == str(
+        clean_ops_evidence / "strategy_evidence_summary.csv"
+    )
+    assert int(route_pairs.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+
+
 def test_provider_market_data_imbalance_scaleup_plans_from_ready_scorecard(tmp_path):
     launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
     scorecard = write_provider_market_data_imbalance_scorecard(
