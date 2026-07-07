@@ -194,6 +194,9 @@ def write_provider_market_data_imbalance_runtime_telemetry_snapshot(
             "ready": bool(summary_row["ready"]),
             "provider_scaleup_ready": bool(summary_row["provider_scaleup_ready"]),
             "runtime_telemetry_ready": bool(summary_row["runtime_telemetry_ready"]),
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
+                summary_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+            ),
             "profile": PROFILE,
             "exchange": str(summary_row["exchange"]),
             "source_session": _source_session_contract_from_summary(summary_row),
