@@ -381,8 +381,20 @@ def _match_evidence(
             recommendation="",
             row={},
         )
+    sort_columns = ["_ready_sort"]
     identity["_ready_sort"] = identity["ready"].map(_to_bool)
-    row = identity.sort_values("_ready_sort").iloc[-1].drop(labels=["_ready_sort"], errors="ignore").to_dict()
+    if label == "ops":
+        identity["_ops_control_failure_sort"] = identity.apply(
+            lambda row: -len(_ops_launch_control_failures(row.to_dict())),
+            axis=1,
+        )
+        sort_columns.append("_ops_control_failure_sort")
+    row = (
+        identity.sort_values(sort_columns, kind="mergesort")
+        .iloc[-1]
+        .drop(labels=["_ready_sort", "_ops_control_failure_sort"], errors="ignore")
+        .to_dict()
+    )
     ready = _to_bool(row.get("ready", False))
     return EvidenceMatch(
         found=True,
