@@ -1356,6 +1356,11 @@ def _summary(
         else Path(broker_dispatch_roundtrip.output_dir or broker_dispatch_roundtrip_dir)
     )
     provider_summary = _with_dispatch_roundtrip_config_fallback(provider_summary, provider_config)
+    nested_route_readiness_provided = _first_bool(roundtrip_summary, "route_readiness_provided")
+    nested_route_readiness_ops_launch_controls_present = _first_bool(
+        roundtrip_summary,
+        "route_readiness_ops_launch_controls_present",
+    )
     return pd.DataFrame(
         [
             {
@@ -1550,11 +1555,13 @@ def _summary(
                 "synthetic_sidecar_invariant_count": int(
                     _first_number(provider_summary, "synthetic_sidecar_invariant_count")
                 ),
-                "route_readiness_provided": _first_bool(provider_summary, "route_readiness_provided"),
+                "route_readiness_provided": _first_bool(provider_summary, "route_readiness_provided")
+                or nested_route_readiness_provided,
                 "route_readiness_ops_launch_controls_present": _first_bool(
                     provider_summary,
                     "route_readiness_ops_launch_controls_present",
-                ),
+                )
+                or nested_route_readiness_ops_launch_controls_present,
                 "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                     _first_number(
                         provider_summary,
@@ -1610,11 +1617,13 @@ def _summary(
                 "dispatch_roundtrip_route_readiness_provided": _first_bool(
                     provider_summary,
                     "dispatch_roundtrip_route_readiness_provided",
-                ),
+                )
+                or nested_route_readiness_provided,
                 "dispatch_roundtrip_route_readiness_ops_launch_controls_present": _first_bool(
                     provider_summary,
                     "dispatch_roundtrip_route_readiness_ops_launch_controls_present",
-                ),
+                )
+                or nested_route_readiness_ops_launch_controls_present,
                 "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                     _first_number(
                         provider_summary,
@@ -1622,10 +1631,11 @@ def _summary(
                     )
                 ),
                 "dispatch_roundtrip_provider_capture_command_count": int(
-                    _first_number_with_fallback(
+                    _first_number_with_unprovided_roundtrip_fallback(
                         provider_summary,
                         "dispatch_roundtrip_provider_capture_command_count",
                         "provider_capture_command_count",
+                        "dispatch_roundtrip_capture_bundle_provided",
                     )
                 ),
                 "dispatch_roundtrip_provider_capture_command_providers": _first_text_with_fallback(
@@ -1639,10 +1649,11 @@ def _summary(
                     "provider_capture_command_transports",
                 ),
                 "dispatch_roundtrip_capture_bundle_provider_capture_command_count": int(
-                    _first_number_with_fallback(
+                    _first_number_with_unprovided_roundtrip_fallback(
                         provider_summary,
                         "dispatch_roundtrip_capture_bundle_provider_capture_command_count",
                         "capture_bundle_provider_capture_command_count",
+                        "dispatch_roundtrip_capture_bundle_provided",
                     )
                 ),
                 "dispatch_roundtrip_capture_bundle_provider_capture_command_missing_count": int(
@@ -3747,6 +3758,18 @@ def _first_number_with_fallback(frame: pd.DataFrame | None, column: str, fallbac
     if not _first_value_present(frame, column):
         return fallback
     return _first_number(frame, column)
+
+
+def _first_number_with_unprovided_roundtrip_fallback(
+    frame: pd.DataFrame | None,
+    column: str,
+    fallback_column: str,
+    provided_column: str,
+) -> float:
+    fallback = _first_number(frame, fallback_column)
+    if fallback and not _first_bool(frame, provided_column):
+        return fallback
+    return _first_number_with_fallback(frame, column, fallback_column)
 
 
 def _first_text(frame: pd.DataFrame | None, column: str) -> str:

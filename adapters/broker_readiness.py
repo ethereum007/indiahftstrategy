@@ -298,6 +298,14 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
     dispatch_config = config.get("dispatch_roundtrip", {}) or {}
     route_readiness = config.get("route_readiness", {}) or dispatch_config.get("route_readiness", {}) or {}
     if route_readiness:
+        legacy_ops_columns = (
+            "route_readiness_ops_launch_controls_ready",
+            "route_readiness_ops_launch_control_failures",
+            "route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
+            "route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
+            "route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
+            "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
+        )
         legacy_ops_present = any(
             key in route_readiness
             for key in (
@@ -311,15 +319,9 @@ def _dispatch_roundtrip_frame(summary: pd.DataFrame | None, config: dict[str, An
                 "ops_broker_roundtrip_portfolio_concentration_breach_runs",
             )
         ) or any(
-            column in frame.columns
-            for column in (
-                "route_readiness_ops_launch_controls_ready",
-                "route_readiness_ops_launch_control_failures",
-                "route_readiness_ops_broker_roundtrip_portfolio_safe_runs",
-                "route_readiness_ops_broker_roundtrip_portfolio_breach_runs",
-                "route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
-                "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
-            )
+            _route_readiness_legacy_value_present(frame.iloc[0].get(column))
+            for column in legacy_ops_columns
+            if column in frame.columns
         )
         for text_column in (
             "route_readiness_strategy",
@@ -4265,10 +4267,11 @@ def _dispatch_bool_any(component: str, row: pd.Series, *columns: str) -> bool:
 def _dispatch_route_readiness_legacy_ops_present(component: str, row: pd.Series) -> bool:
     if component != "dispatch_roundtrip" or row.empty:
         return False
-    if _to_bool(row.get("route_readiness_ops_legacy_counts_present", False)):
-        return True
+    legacy_flag = row.get("route_readiness_ops_legacy_counts_present")
+    if _route_readiness_legacy_value_present(legacy_flag):
+        return _to_bool(legacy_flag)
     return any(
-        column in row.index
+        _route_readiness_legacy_value_present(row.get(column))
         for column in (
             "route_readiness_ops_launch_controls_ready",
             "route_readiness_ops_launch_control_failures",
@@ -4277,7 +4280,18 @@ def _dispatch_route_readiness_legacy_ops_present(component: str, row: pd.Series)
             "route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
             "route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
         )
+        if column in row.index
     )
+
+
+def _route_readiness_legacy_value_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if pd.isna(value):
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
 
 
 def _dispatch_text_any(component: str, row: pd.Series, *columns: str) -> str:
