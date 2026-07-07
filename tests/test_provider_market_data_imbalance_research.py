@@ -21518,6 +21518,245 @@ def test_cli_provider_market_data_imbalance_broker_dispatch_ack_blocks_unready_s
     assert summary.loc[0, "next_gate"] == "prepare-provider-market-data-imbalance-broker-dispatch-send"
 
 
+def test_cli_provider_market_data_imbalance_broker_dispatch_ack_accepts_clean_route_readiness_sidecar_zero(
+    tmp_path,
+):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    clean_ops_evidence = _write_ready_ops_launch_evidence(tmp_path / "clean_broker_dispatch_ack_cli_ops")
+    stale_ops_evidence = _write_ready_ops_launch_evidence(
+        tmp_path / "stale_broker_dispatch_ack_cli_ops",
+        sidecar_breach=True,
+    )
+    route_out = tmp_path / "cli_provider_imbalance_route_readiness_for_broker_dispatch_ack"
+
+    route_code = main(
+        [
+            "review-provider-market-data-imbalance-route-readiness",
+            "--provider-launch-evidence-dir",
+            str(launch_evidence.output_dir),
+            "--ops-evidence",
+            str(clean_ops_evidence),
+            "--ops-evidence",
+            str(stale_ops_evidence),
+            "--out",
+            str(route_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup_out = tmp_path / "cli_provider_imbalance_scaleup_for_broker_dispatch_ack"
+    scaleup_code = main(
+        [
+            "plan-provider-market-data-imbalance-scaleup",
+            "--scorecard",
+            str(scorecard.output_dir),
+            "--shadow-comparison",
+            str(shadow),
+            "--route-readiness",
+            str(route_out),
+            "--out",
+            str(scaleup_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    telemetry_out = tmp_path / "cli_provider_imbalance_runtime_telemetry_for_broker_dispatch_ack"
+    telemetry_code = main(
+        [
+            "build-provider-market-data-imbalance-runtime-telemetry",
+            "--scaleup",
+            str(scaleup_out),
+            "--out",
+            str(telemetry_out),
+            "--snapshot-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+        ]
+    )
+
+    guard_out = tmp_path / "cli_provider_imbalance_runtime_guard_for_broker_dispatch_ack"
+    guard_code = main(
+        [
+            "monitor-provider-market-data-imbalance-runtime-guard",
+            "--runtime-telemetry",
+            str(telemetry_out),
+            "--out",
+            str(guard_out),
+            "--as-of-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+            "--fail-on-halt",
+        ]
+    )
+
+    session_out = tmp_path / "cli_provider_imbalance_runtime_session_for_broker_dispatch_ack"
+    session_code = main(
+        [
+            "monitor-provider-market-data-imbalance-runtime-session",
+            "--runtime-guard",
+            str(guard_out),
+            "--out",
+            str(session_out),
+            "--as-of-ts-ns",
+            "1000000",
+            "--fail-on-breach",
+            "--fail-on-halt",
+        ]
+    )
+
+    broker_out = tmp_path / "cli_provider_imbalance_broker_readiness_for_broker_dispatch_ack"
+    broker_code = main(
+        [
+            "review-provider-market-data-imbalance-broker-readiness",
+            "--runtime-session",
+            str(session_out),
+            "--out",
+            str(broker_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    cutover_out = tmp_path / "cli_provider_imbalance_cutover_for_broker_dispatch_ack"
+    cutover_code = main(
+        [
+            "review-provider-market-data-imbalance-cutover",
+            "--broker-readiness",
+            str(broker_out),
+            "--out",
+            str(cutover_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    route_enable_out = tmp_path / "cli_provider_imbalance_route_enable_for_broker_dispatch_ack"
+    route_enable_code = main(
+        [
+            "review-provider-market-data-imbalance-route-enable",
+            "--provider-cutover",
+            str(cutover_out),
+            "--out",
+            str(route_enable_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    dispatch_out = tmp_path / "cli_provider_imbalance_broker_dispatch_for_ack"
+    dispatch_code = main(
+        [
+            "plan-provider-market-data-imbalance-broker-dispatch",
+            "--provider-route-enable",
+            str(route_enable_out),
+            "--out",
+            str(dispatch_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    send_out = tmp_path / "cli_provider_imbalance_broker_dispatch_send_for_ack"
+    send_code = main(
+        [
+            "prepare-provider-market-data-imbalance-broker-dispatch-send",
+            "--provider-broker-dispatch",
+            str(dispatch_out),
+            "--out",
+            str(send_out),
+            "--fail-on-breach",
+        ]
+    )
+    provider_send = type("ProviderSend", (), {"output_dir": send_out})()
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "cli_provider_imbalance_broker_dispatch_acks.csv",
+    )
+
+    ack_out = tmp_path / "cli_provider_imbalance_broker_dispatch_ack_route_sidecar_zero"
+    ack_code = main(
+        [
+            "reconcile-provider-market-data-imbalance-broker-dispatch",
+            "--provider-broker-dispatch-send",
+            str(send_out),
+            "--acks",
+            str(acks_path),
+            "--out",
+            str(ack_out),
+            "--fail-on-breach",
+        ]
+    )
+
+    route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
+    send_summary = pd.read_csv(
+        send_out / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    )
+    summary = pd.read_csv(ack_out / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv")
+    ack_summary = pd.read_csv(ack_out / "broker_dispatch_ack" / "broker_dispatch_ack_summary.csv")
+    acknowledgements = pd.read_csv(
+        ack_out / "broker_dispatch_ack" / "broker_dispatch_acknowledgements.csv"
+    )
+    config = json.loads(
+        (ack_out / "provider_market_data_imbalance_broker_dispatch_ack_config.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    manifest = json.loads((ack_out / "manifest.json").read_text(encoding="utf-8"))
+
+    assert route_code == 0
+    assert scaleup_code == 0
+    assert telemetry_code == 0
+    assert guard_code == 0
+    assert session_code == 0
+    assert broker_code == 0
+    assert cutover_code == 0
+    assert route_enable_code == 0
+    assert dispatch_code == 0
+    assert send_code == 0
+    assert ack_code == 0
+    assert route_pairs.loc[0, "ops_evidence_source"] == str(
+        clean_ops_evidence / "strategy_evidence_summary.csv"
+    )
+    assert bool(send_summary.loc[0, "ready"])
+    assert bool(send_summary.loc[0, "broker_dispatch_send_ready"])
+    assert send_summary.loc[0, "next_gate"] == "reconcile-broker-dispatch"
+    assert (
+        int(
+            send_summary.loc[
+                0,
+                "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            ]
+        )
+        == 0
+    )
+    assert bool(summary.loc[0, "passed"])
+    assert bool(summary.loc[0, "provider_broker_dispatch_send_ready"])
+    assert bool(summary.loc[0, "broker_dispatch_ack_passed"])
+    assert bool(ack_summary.loc[0, "passed"])
+    assert float(summary.loc[0, "ack_rate"]) == 1.0
+    assert int(summary.loc[0, "missing_acks"]) == 0
+    assert int(summary.loc[0, "rejected_orders"]) == 0
+    assert bool(acknowledgements["acked"].astype(bool).all())
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    assert (
+        int(summary.loc[0, "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"])
+        == 0
+    )
+    assert config["summary"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"] == 0
+    assert (
+        config["provider_broker_dispatch_send"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+        == 0
+    )
+
+
 def test_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_ready_ack(tmp_path):
     provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
     out_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip"
