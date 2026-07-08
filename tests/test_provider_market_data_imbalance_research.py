@@ -9647,6 +9647,31 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             "--fail-on-breach",
         ]
     )
+    provider_send_fourth_roundtrip = type(
+        "ProviderSendFourthRoundtrip",
+        (),
+        {"output_dir": send_fourth_roundtrip_out},
+    )()
+    fourth_roundtrip_acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send_fourth_roundtrip,
+        tmp_path / "cli_provider_imbalance_broker_dispatch_fourth_roundtrip_acks.csv",
+    )
+
+    ack_fourth_roundtrip_out = (
+        tmp_path / "cli_provider_imbalance_broker_dispatch_ack_fourth_roundtrip_sidecar_zero"
+    )
+    ack_fourth_roundtrip_code = main(
+        [
+            "reconcile-provider-market-data-imbalance-broker-dispatch",
+            "--provider-broker-dispatch-send",
+            str(send_fourth_roundtrip_out),
+            "--acks",
+            str(fourth_roundtrip_acks_path),
+            "--out",
+            str(ack_fourth_roundtrip_out),
+            "--fail-on-breach",
+        ]
+    )
 
     route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
     roundtrip_summary = pd.read_csv(
@@ -10040,6 +10065,24 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     send_fourth_roundtrip_manifest = json.loads(
         (send_fourth_roundtrip_out / "manifest.json").read_text(encoding="utf-8")
     )
+    ack_fourth_roundtrip_summary = pd.read_csv(
+        ack_fourth_roundtrip_out / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    )
+    ack_fourth_roundtrip_packet_summary = pd.read_csv(
+        ack_fourth_roundtrip_out / "broker_dispatch_ack" / "broker_dispatch_ack_summary.csv"
+    )
+    ack_fourth_roundtrip_acknowledgements = pd.read_csv(
+        ack_fourth_roundtrip_out / "broker_dispatch_ack" / "broker_dispatch_acknowledgements.csv"
+    )
+    ack_fourth_roundtrip_config = json.loads(
+        (
+            ack_fourth_roundtrip_out
+            / "provider_market_data_imbalance_broker_dispatch_ack_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    ack_fourth_roundtrip_manifest = json.loads(
+        (ack_fourth_roundtrip_out / "manifest.json").read_text(encoding="utf-8")
+    )
 
     assert route_code == 0
     assert scaleup_code == 0
@@ -10079,6 +10122,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     assert route_enable_fourth_roundtrip_code == 0
     assert dispatch_fourth_roundtrip_code == 0
     assert send_fourth_roundtrip_code == 0
+    assert ack_fourth_roundtrip_code == 0
     assert route_pairs.loc[0, "ops_evidence_source"] == str(
         clean_ops_evidence / "strategy_evidence_summary.csv"
     )
@@ -11073,6 +11117,52 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     )
     assert (
         send_fourth_roundtrip_manifest["extra"]["dispatch_roundtrip"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert bool(ack_fourth_roundtrip_summary.loc[0, "passed"])
+    assert bool(ack_fourth_roundtrip_summary.loc[0, "provider_broker_dispatch_send_ready"])
+    assert bool(ack_fourth_roundtrip_summary.loc[0, "broker_dispatch_ack_passed"])
+    assert bool(ack_fourth_roundtrip_packet_summary.loc[0, "passed"])
+    assert float(ack_fourth_roundtrip_summary.loc[0, "ack_rate"]) == 1.0
+    assert int(ack_fourth_roundtrip_summary.loc[0, "missing_acks"]) == 0
+    assert int(ack_fourth_roundtrip_summary.loc[0, "rejected_orders"]) == 0
+    assert bool(ack_fourth_roundtrip_acknowledgements["acked"].astype(bool).all())
+    assert (
+        ack_fourth_roundtrip_summary.loc[0, "next_gate"]
+        == "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    )
+    assert bool(ack_fourth_roundtrip_summary.loc[0, "dispatch_roundtrip_route_readiness_provided"])
+    assert (
+        int(
+            ack_fourth_roundtrip_summary.loc[
+                0,
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            ]
+        )
+        == 0
+    )
+    assert (
+        ack_fourth_roundtrip_config["summary"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        ack_fourth_roundtrip_config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        ack_fourth_roundtrip_manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        ack_fourth_roundtrip_manifest["extra"]["dispatch_roundtrip"][
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
         ]
         == 0
