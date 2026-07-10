@@ -417,7 +417,11 @@
   longer matched to live evidence. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from runtime guard
   and blocks broker-readiness review when synthetic provider folds are missing
-  ready rehearsal sidecar proof. Runtime session now also carries the runtime
+  ready rehearsal sidecar proof. Runtime session now reads the runtime-guard
+  manifest, requires exact `adapter_receipt_proof` agreement with guard config,
+  re-hashes every required receipt and provider capture, fingerprints accepted
+  files in its own manifest, and refuses to invoke the generic session monitor
+  when that proof has drifted. Runtime session now also carries the runtime
   guard route-readiness provider broker round-trip synthetic sidecar breach
   counter and routes stale nonzero breach packets back to provider route
   readiness before broker review.
@@ -2309,17 +2313,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1415 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1416 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider runtime-guard receipt-boundary paths pass.
-Bundle-linked positive provenance and post-telemetry receipt mutation pass
-together (`2 passed`); the original no-bundle ready-telemetry guard path and
-neighboring missing-adapter-contract block also pass (`2 passed`). The
-immediately preceding four runtime-telemetry, four scale-up, four scorecard,
-eight launch/launch-evidence, and ten research/evidence receipt-boundary paths
-remain green, as do the complete receipt-aware live-evidence plus
-research-handoff suites (`25 passed`). The upstream
+Latest focused gate: four provider runtime-session receipt-boundary paths pass.
+Bundle-linked positive provenance and post-guard receipt mutation pass together
+(`2 passed`); the original no-bundle ready-guard session path and neighboring
+missing-adapter-contract block also pass (`2 passed`). The immediately
+preceding four runtime-guard, four runtime-telemetry, four scale-up, four
+scorecard, eight launch/launch-evidence, and ten research/evidence
+receipt-boundary paths remain green, as do the complete receipt-aware
+live-evidence plus research-handoff suites (`25 passed`). The upstream
 provider-adapter/live-ingest (`22 passed`), provider live rehearsal (`5
 passed`), core engine/strategy semantics (`39 passed`), launch pipelines (`45
 passed`), and provider source/fetch/client/live-contract gates (`54 passed`)
@@ -2327,7 +2331,7 @@ also remain green. A combined 14-case provider-imbalance wrapper run previously
 exceeded the 25-minute local timeout without returning a result, and the
 full-suite run exceeded the 20-minute timeout on the G-drive workspace.
 Therefore 1110 remains the last completed full-suite green baseline rather than
-claiming the current 1415-test collection is fully green.
+claiming the current 1416-test collection is fully green.
 
 ## Next Build Targets
 
