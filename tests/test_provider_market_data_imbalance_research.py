@@ -10488,6 +10488,20 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
         ]
     )
 
+    cutover_twelfth_roundtrip_out = (
+        tmp_path / "cli_provider_imbalance_cutover_twelfth_roundtrip_sidecar_zero"
+    )
+    cutover_twelfth_roundtrip_code = main(
+        [
+            "review-provider-market-data-imbalance-cutover",
+            "--broker-readiness",
+            str(broker_twelfth_roundtrip_out),
+            "--out",
+            str(cutover_twelfth_roundtrip_out),
+            "--fail-on-breach",
+        ]
+    )
+
     route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
     roundtrip_summary = pd.read_csv(
         roundtrip_out / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
@@ -11726,6 +11740,18 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     broker_twelfth_roundtrip_manifest = json.loads(
         (broker_twelfth_roundtrip_out / "manifest.json").read_text(encoding="utf-8")
     )
+    cutover_twelfth_roundtrip_summary = pd.read_csv(
+        cutover_twelfth_roundtrip_out / "provider_market_data_imbalance_cutover_summary.csv"
+    )
+    cutover_twelfth_roundtrip_config = json.loads(
+        (
+            cutover_twelfth_roundtrip_out
+            / "provider_market_data_imbalance_cutover_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    cutover_twelfth_roundtrip_manifest = json.loads(
+        (cutover_twelfth_roundtrip_out / "manifest.json").read_text(encoding="utf-8")
+    )
 
     assert route_code == 0
     assert scaleup_code == 0
@@ -11817,6 +11843,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     assert ack_eleventh_roundtrip_code == 0
     assert roundtrip_eleventh_roundtrip_code == 0
     assert broker_twelfth_roundtrip_code == 0
+    assert cutover_twelfth_roundtrip_code == 0
     assert route_pairs.loc[0, "ops_evidence_source"] == str(
         clean_ops_evidence / "strategy_evidence_summary.csv"
     )
@@ -14979,6 +15006,40 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     assert (
         broker_twelfth_roundtrip_manifest["extra"]["dispatch_roundtrip"][
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert bool(cutover_twelfth_roundtrip_summary.loc[0, "ready"])
+    assert bool(cutover_twelfth_roundtrip_summary.loc[0, "provider_broker_readiness_ready"])
+    assert bool(cutover_twelfth_roundtrip_summary.loc[0, "cutover_ready"])
+    assert cutover_twelfth_roundtrip_summary.loc[0, "next_gate"] == "review-route-enable"
+    assert bool(
+        cutover_twelfth_roundtrip_summary.loc[0, "dispatch_roundtrip_route_readiness_provided"]
+    )
+    assert (
+        int(
+            cutover_twelfth_roundtrip_summary.loc[
+                0,
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            ]
+        )
+        == 0
+    )
+    assert (
+        cutover_twelfth_roundtrip_config["summary"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        cutover_twelfth_roundtrip_config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        cutover_twelfth_roundtrip_manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
         ]
         == 0
     )
