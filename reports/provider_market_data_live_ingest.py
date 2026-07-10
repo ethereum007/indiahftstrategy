@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from provider_adapter import validate_provider_capture_receipt
 from reports.manifest import file_sha256, write_experiment_manifest
 from reports.provider_market_data_batch import (
     ProviderMarketDataBatchConfig,
@@ -88,6 +89,14 @@ def write_provider_market_data_live_session_ingest(
     existing_captures = [path for path in capture_paths if path.exists()]
     if existing_captures:
         inputs["captures"] = existing_captures
+    receipt_paths = (
+        [Path(str(path)) for path in report.windows["adapter_receipt_path"].astype(str).tolist()]
+        if not report.windows.empty
+        else []
+    )
+    existing_receipts = [path for path in receipt_paths if path.exists() and path.is_file()]
+    if existing_receipts:
+        inputs["adapter_receipts"] = existing_receipts
     batch_manifest = Path(str(report.summary.iloc[0]["batch_output_dir"])) / "manifest.json"
     if batch_manifest.exists():
         inputs["batch_manifest"] = batch_manifest
@@ -129,6 +138,16 @@ def write_provider_market_data_live_session_ingest(
                 "exists": bool(report.summary.iloc[0]["adapter_handoff_exists"]),
                 "sha256": str(report.summary.iloc[0]["adapter_handoff_sha256"]),
             },
+            "adapter_receipts": {
+                "required": bool(report.summary.iloc[0]["adapter_receipts_required"]),
+                "required_count": int(report.summary.iloc[0]["adapter_receipt_required_count"]),
+                "present_count": int(report.summary.iloc[0]["adapter_receipt_present_count"]),
+                "valid_count": int(report.summary.iloc[0]["adapter_receipt_valid_count"]),
+                "rehearsal_exempt_count": int(
+                    report.summary.iloc[0]["adapter_receipt_rehearsal_exempt_count"]
+                ),
+                "receipts": _adapter_receipt_records(report.windows),
+            },
             "source_credential_env_template": {
                 "path": str(report.summary.iloc[0]["source_credential_env_template_path"]),
                 "exists": bool(report.summary.iloc[0]["source_credential_env_template_exists"]),
@@ -165,7 +184,11 @@ def evaluate_provider_market_data_live_session_ingest(
     packet, packet_error = _read_packet(packet_path)
     bundle_path = Path(config.capture_bundle_path) if config.capture_bundle_path else Path("")
     bundle, bundle_error = _read_optional_json(bundle_path, "capture bundle") if config.capture_bundle_path else ({}, "")
-    windows = _windows(packet)
+    windows = _windows(
+        packet,
+        bundle_path=bundle_path if config.capture_bundle_path and not bundle_error else None,
+        bundle=bundle,
+    )
     checks = pd.DataFrame(_checks(packet_path, packet, packet_error, bundle_path, bundle, bundle_error, windows, config))
     preflight_ready = bool(not checks.empty and checks["passed"].astype(bool).all())
     batch = None
@@ -218,13 +241,31 @@ def _read_optional_json(path: Path, label: str) -> tuple[dict[str, Any], str]:
     return payload, ""
 
 
-def _windows(packet: dict[str, Any]) -> pd.DataFrame:
+def _windows(
+    packet: dict[str, Any],
+    *,
+    bundle_path: Path | None = None,
+    bundle: dict[str, Any] | None = None,
+) -> pd.DataFrame:
     rows = []
     for index, item in enumerate(_list(packet.get("capture_windows")), start=1):
         row = _mapping(item)
         capture_path = Path(_text(row.get("capture_path")))
         exists = capture_path.exists()
         size_bytes = capture_path.stat().st_size if exists and capture_path.is_file() else 0
+        rehearsal_sidecar_path = Path(f"{capture_path}.rehearsal.json")
+        rehearsal_sidecar_exists = rehearsal_sidecar_path.exists() and rehearsal_sidecar_path.is_file()
+        receipt_required = bool(
+            bundle_path is not None
+            and not rehearsal_sidecar_exists
+        )
+        receipt = _adapter_receipt_state(
+            packet,
+            row,
+            capture_path,
+            bundle_path=bundle_path,
+            bundle=bundle or {},
+        )
         rows.append(
             {
                 "priority": index,
@@ -244,6 +285,10 @@ def _windows(packet: dict[str, Any]) -> pd.DataFrame:
                 "capture_exists": bool(exists),
                 "capture_size_bytes": int(size_bytes),
                 "capture_nonempty": bool(size_bytes > 0),
+                "rehearsal_sidecar_path": str(rehearsal_sidecar_path),
+                "rehearsal_sidecar_exists": bool(rehearsal_sidecar_exists),
+                "adapter_receipt_required": receipt_required,
+                **receipt,
             }
         )
     return pd.DataFrame(
@@ -266,8 +311,104 @@ def _windows(packet: dict[str, Any]) -> pd.DataFrame:
             "capture_exists",
             "capture_size_bytes",
             "capture_nonempty",
+            "rehearsal_sidecar_path",
+            "rehearsal_sidecar_exists",
+            "adapter_receipt_required",
+            "adapter_receipt_path",
+            "adapter_receipt_exists",
+            "adapter_receipt_readable",
+            "adapter_receipt_valid",
+            "adapter_receipt_sha256",
+            "adapter_receipt_backend_entrypoint",
+            "adapter_receipt_capture_match",
+            "adapter_receipt_contract_match",
+            "adapter_receipt_handoff_match",
+            "adapter_receipt_env_template_match",
+            "adapter_receipt_credential_contract_safe",
+            "adapter_receipt_window_match",
+            "adapter_receipt_schema_match",
+            "adapter_receipt_row_count",
+            "adapter_receipt_error",
         ],
     )
+
+
+def _adapter_receipt_state(
+    packet: dict[str, Any],
+    window: dict[str, Any],
+    capture_path: Path,
+    *,
+    bundle_path: Path | None,
+    bundle: dict[str, Any],
+) -> dict[str, Any]:
+    receipt_path = Path(f"{capture_path}.adapter.json")
+    empty = {
+        "adapter_receipt_path": str(receipt_path),
+        "adapter_receipt_exists": bool(receipt_path.exists() and receipt_path.is_file()),
+        "adapter_receipt_readable": False,
+        "adapter_receipt_valid": False,
+        "adapter_receipt_sha256": "",
+        "adapter_receipt_backend_entrypoint": "",
+        "adapter_receipt_capture_match": False,
+        "adapter_receipt_contract_match": False,
+        "adapter_receipt_handoff_match": False,
+        "adapter_receipt_env_template_match": False,
+        "adapter_receipt_credential_contract_safe": False,
+        "adapter_receipt_window_match": False,
+        "adapter_receipt_schema_match": False,
+        "adapter_receipt_row_count": 0,
+        "adapter_receipt_error": "adapter receipt not evaluated without a capture bundle",
+    }
+    if bundle_path is None:
+        return empty
+    handoff_path = _adapter_handoff_path(bundle_path, bundle)
+    env_template_path = _env_template_path(bundle_path, bundle)
+    if handoff_path is None or env_template_path is None:
+        empty["adapter_receipt_error"] = "capture bundle handoff or env template is missing"
+        return empty
+    try:
+        validation = validate_provider_capture_receipt(
+            receipt_path=receipt_path,
+            capture_path=capture_path,
+            handoff_path=handoff_path,
+            env_template_path=env_template_path,
+            provider=_text(packet.get("provider")),
+            transport=_text(packet.get("transport")),
+            endpoint=_text(packet.get("endpoint")),
+            market=_text(packet.get("market")),
+            exchange=_text(packet.get("exchange")),
+            kind=_text(packet.get("kind")),
+            start_local=_text(window.get("start_local")),
+            end_local=_text(window.get("end_local")),
+            schema_columns=_string_list(_mapping(packet.get("output")).get("schema_columns")),
+            credential_env_vars=_string_list(
+                _mapping(packet.get("authentication")).get("env_vars")
+            ),
+        )
+    except (OSError, ValueError) as exc:
+        empty["adapter_receipt_error"] = (
+            f"adapter receipt validation failed ({type(exc).__name__})"
+        )
+        return empty
+    return {
+        "adapter_receipt_path": str(validation.receipt_path),
+        "adapter_receipt_exists": bool(validation.exists),
+        "adapter_receipt_readable": bool(validation.readable),
+        "adapter_receipt_valid": bool(validation.passed),
+        "adapter_receipt_sha256": str(validation.receipt_sha256),
+        "adapter_receipt_backend_entrypoint": str(validation.backend_entrypoint),
+        "adapter_receipt_capture_match": bool(validation.capture_match),
+        "adapter_receipt_contract_match": bool(validation.contract_match),
+        "adapter_receipt_handoff_match": bool(validation.handoff_match),
+        "adapter_receipt_env_template_match": bool(validation.env_template_match),
+        "adapter_receipt_credential_contract_safe": bool(
+            validation.credential_contract_safe
+        ),
+        "adapter_receipt_window_match": bool(validation.window_match),
+        "adapter_receipt_schema_match": bool(validation.schema_match),
+        "adapter_receipt_row_count": int(validation.row_count),
+        "adapter_receipt_error": str(validation.error),
+    }
 
 
 def _checks(
@@ -283,6 +424,22 @@ def _checks(
     capture_exists = bool(windows["capture_exists"].astype(bool).all()) if not windows.empty else False
     capture_nonempty = bool(windows["capture_nonempty"].astype(bool).all()) if not windows.empty else False
     labels_unique = bool(windows["pipeline_label"].astype(str).nunique() == len(windows)) if not windows.empty else False
+    required_receipts = (
+        windows.loc[windows["adapter_receipt_required"].astype(bool)]
+        if not windows.empty
+        else pd.DataFrame()
+    )
+    required_receipt_count = int(len(required_receipts))
+    present_receipt_count = (
+        int(required_receipts["adapter_receipt_exists"].astype(bool).sum())
+        if not required_receipts.empty
+        else 0
+    )
+    valid_receipt_count = (
+        int(required_receipts["adapter_receipt_valid"].astype(bool).sum())
+        if not required_receipts.empty
+        else 0
+    )
     bundle_provided = bool(config.capture_bundle_path)
     env_template_path = _env_template_path(bundle_path, bundle) if bundle_provided and not bundle_error else None
     source_env_template = _source_credential_env_template(bundle_path, bundle) if bundle_provided and not bundle_error else {}
@@ -343,6 +500,8 @@ def _checks(
         _check("capture_bundle_source_session_matches_session", _session_contract_text(bundle_source_session), "==", _session_contract_text(packet_source_session), _session_contracts_match(bundle_source_session, packet_source_session) if bundle_provided and not bundle_error else True, "capture bundle source-session metadata must match the live session packet"),
         _check("capture_bundle_market_session_matches_session", _session_contract_text(bundle_market_session), "==", _session_contract_text(packet_market_session), _session_contracts_match(bundle_market_session, packet_market_session) if bundle_provided and not bundle_error else True, "capture bundle market-session metadata must match the live session packet"),
         _check("capture_bundle_live_fetch_contract_metadata_matches_session", _live_contract_metadata_text(live_fetch_contract), "==", "live session source metadata", _live_contract_metadata_matches_packet(packet, live_fetch_contract) if bundle_provided and not bundle_error else True, "capture bundle live fetch-contract exchange/session metadata must match the live session packet"),
+        _check("adapter_receipts_present", present_receipt_count, "==", required_receipt_count, present_receipt_count == required_receipt_count, "every bundle-linked real capture must have a provider-adapter receipt; rehearsal sidecars are exempt"),
+        _check("adapter_receipts_valid", valid_receipt_count, "==", required_receipt_count, valid_receipt_count == required_receipt_count, "provider-adapter receipts must match capture hashes, handoff/env-template hashes, source identity, credentials, schema, and session windows"),
         _check("live_session_packet_ready", bool(packet.get("ready")), "is", True, bool(packet.get("ready")), "live session plan must be ready before ingest"),
         _check("client_packet_path_exists", _text(packet.get("client_packet_path")), "exists", True, Path(_text(packet.get("client_packet_path"))).exists(), "client packet referenced by live session plan is required"),
         _check("capture_windows_present", len(windows), ">=", 1, len(windows) >= 1, "live session packet must include capture windows"),
@@ -405,6 +564,11 @@ def _summary(
     bundle_source_session = _bundle_source_session(bundle) if config.capture_bundle_path else {}
     bundle_market_session = _bundle_market_session(bundle) if config.capture_bundle_path else {}
     live_fetch_session = _mapping(live_fetch_contract.get("session"))
+    required_receipts = (
+        windows.loc[windows["adapter_receipt_required"].astype(bool)]
+        if not windows.empty
+        else pd.DataFrame()
+    )
     return pd.DataFrame(
         [
             {
@@ -502,6 +666,33 @@ def _summary(
                 "expected_capture_count": int(len(windows)),
                 "present_capture_count": int(windows["capture_exists"].astype(bool).sum()) if not windows.empty else 0,
                 "nonempty_capture_count": int(windows["capture_nonempty"].astype(bool).sum()) if not windows.empty else 0,
+                "adapter_receipts_required": bool(
+                    config.capture_bundle_path
+                ),
+                "adapter_receipt_required_count": int(len(required_receipts)),
+                "adapter_receipt_present_count": int(
+                    required_receipts["adapter_receipt_exists"].astype(bool).sum()
+                )
+                if not required_receipts.empty
+                else 0,
+                "adapter_receipt_valid_count": int(
+                    required_receipts["adapter_receipt_valid"].astype(bool).sum()
+                )
+                if not required_receipts.empty
+                else 0,
+                "adapter_receipt_rehearsal_exempt_count": int(
+                    windows["rehearsal_sidecar_exists"].astype(bool).sum()
+                )
+                if config.capture_bundle_path and not windows.empty
+                else 0,
+                "adapter_receipt_backend_entrypoints": _joined_window_values(
+                    windows,
+                    "adapter_receipt_backend_entrypoint",
+                ),
+                "adapter_receipt_sha256s": _joined_window_values(
+                    windows,
+                    "adapter_receipt_sha256",
+                ),
                 "batch_output_dir": str(effective["batch_output_dir"]),
                 "batch_ready": batch_ready,
                 "failed_checks": failed_checks,
@@ -620,6 +811,16 @@ def _config(
             "live_fetch_contract_metadata_matches_session": bool(
                 summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
             ),
+            "adapter_receipts": {
+                "required": bool(summary["adapter_receipts_required"]),
+                "required_count": int(summary["adapter_receipt_required_count"]),
+                "present_count": int(summary["adapter_receipt_present_count"]),
+                "valid_count": int(summary["adapter_receipt_valid_count"]),
+                "rehearsal_exempt_count": int(
+                    summary["adapter_receipt_rehearsal_exempt_count"]
+                ),
+                "receipts": _adapter_receipt_records(windows),
+            },
         },
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
@@ -627,6 +828,16 @@ def _config(
         "provider_profile": _session_provider_profile(packet),
         "adapter_execution_contract": _adapter_execution_contract(bundle) if config.capture_bundle_path else _mapping(packet.get("adapter_execution_contract")),
         "provider_capture_commands": _session_provider_capture_commands(packet),
+        "adapter_receipts": {
+            "required": bool(summary["adapter_receipts_required"]),
+            "required_count": int(summary["adapter_receipt_required_count"]),
+            "present_count": int(summary["adapter_receipt_present_count"]),
+            "valid_count": int(summary["adapter_receipt_valid_count"]),
+            "rehearsal_exempt_count": int(
+                summary["adapter_receipt_rehearsal_exempt_count"]
+            ),
+            "receipts": _adapter_receipt_records(windows),
+        },
         "windows": _records(windows),
         "checks": _records(checks),
         "batch": {} if batch is None else _batch_config(batch),
@@ -666,6 +877,7 @@ def _runbook_markdown(summary: pd.Series, windows: pd.DataFrame, action_queue: p
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Expected captures: {summary['expected_capture_count']}",
         f"- Present captures: {summary['present_capture_count']}",
+        f"- Adapter receipts: {summary['adapter_receipt_valid_count']}/{summary['adapter_receipt_required_count']} valid (rehearsal exemptions: {summary['adapter_receipt_rehearsal_exempt_count']})",
         f"- Batch output: {summary['batch_output_dir']}",
         "",
         "## Captures",
@@ -692,9 +904,14 @@ def _windows_table(windows: pd.DataFrame) -> str:
                 _text(row.get("capture_path")),
                 "yes" if _truthy(row.get("capture_exists")) else "no",
                 str(int(_number(row.get("capture_size_bytes"), fallback=0))),
+                "yes" if _truthy(row.get("adapter_receipt_required")) else "no",
+                "yes" if _truthy(row.get("adapter_receipt_valid")) else "no",
             ]
         )
-    return _markdown_table(["#", "Label", "Capture", "Exists", "Bytes"], rows)
+    return _markdown_table(
+        ["#", "Label", "Capture", "Exists", "Bytes", "Receipt required", "Receipt valid"],
+        rows,
+    )
 
 
 def _actions_table(action_queue: pd.DataFrame) -> str:
@@ -741,6 +958,8 @@ def _next_gate_for_check(check: str) -> str:
         return "plan-provider-market-data-live-session"
     if check.startswith("client_packet"):
         return "prepare-provider-market-data-client"
+    if check.startswith("adapter_receipt"):
+        return "provider-adapter"
     if check.startswith("capture_bundle") or check.startswith("capture_env_template"):
         return "bundle-provider-market-data-live-capture"
     if check.startswith("expected_capture"):
@@ -758,12 +977,16 @@ def _next_gate_help_command(next_gate: str) -> str:
         return f"python -m hft_cli {next_gate} --help"
     if next_gate == "provider_fetcher_live_run":
         return "execute the provider adapter for the missing live capture window"
+    if next_gate == "provider-adapter":
+        return "provider-adapter capture --help"
     if next_gate == "review-data-readiness":
         return "batch output contains comparison and nested data-readiness evidence"
     return ""
 
 
 def _repair_action(check: str) -> str:
+    if check.startswith("adapter_receipt"):
+        return "run_or_repair_provider_adapter_capture"
     if check.startswith("expected_capture"):
         return "produce_expected_provider_capture_file"
     if check.startswith("live_session_packet"):
@@ -974,6 +1197,40 @@ def _provider_capture_command_signature(item: dict[str, str]) -> tuple[str, ...]
 def _unique_command_values(commands: list[dict[str, str]], key: str) -> str:
     values = sorted({_text(item.get(key)) for item in commands if _text(item.get(key))})
     return ";".join(values)
+
+
+def _joined_window_values(windows: pd.DataFrame, column: str) -> str:
+    if windows.empty or column not in windows.columns:
+        return ""
+    values = sorted({_text(value) for value in windows[column].tolist() if _text(value)})
+    return ";".join(values)
+
+
+def _adapter_receipt_records(windows: pd.DataFrame) -> list[dict[str, Any]]:
+    if windows.empty:
+        return []
+    columns = [
+        "label",
+        "capture_path",
+        "rehearsal_sidecar_exists",
+        "adapter_receipt_required",
+        "adapter_receipt_path",
+        "adapter_receipt_exists",
+        "adapter_receipt_readable",
+        "adapter_receipt_valid",
+        "adapter_receipt_sha256",
+        "adapter_receipt_backend_entrypoint",
+        "adapter_receipt_capture_match",
+        "adapter_receipt_contract_match",
+        "adapter_receipt_handoff_match",
+        "adapter_receipt_env_template_match",
+        "adapter_receipt_credential_contract_safe",
+        "adapter_receipt_window_match",
+        "adapter_receipt_schema_match",
+        "adapter_receipt_row_count",
+        "adapter_receipt_error",
+    ]
+    return _records(windows[[column for column in columns if column in windows.columns]])
 
 
 def _bundle_exchange(bundle: dict[str, Any]) -> str:

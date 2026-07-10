@@ -49,6 +49,45 @@ class ProviderCaptureResult:
     receipt_path: Path
 
 
+@dataclass(frozen=True)
+class ProviderCaptureReceiptValidation:
+    receipt_path: Path
+    exists: bool
+    readable: bool
+    receipt_sha256: str
+    ready: bool
+    evidence_class: str
+    backend_entrypoint: str
+    capture_match: bool
+    contract_match: bool
+    handoff_match: bool
+    env_template_match: bool
+    credential_contract_safe: bool
+    window_match: bool
+    schema_match: bool
+    row_count: int
+    error: str
+
+    @property
+    def passed(self) -> bool:
+        return bool(
+            self.exists
+            and self.readable
+            and self.ready
+            and self.evidence_class == "provider_live_capture"
+            and self.backend_entrypoint
+            and self.capture_match
+            and self.contract_match
+            and self.handoff_match
+            and self.env_template_match
+            and self.credential_contract_safe
+            and self.window_match
+            and self.schema_match
+            and self.row_count >= 1
+            and not self.error
+        )
+
+
 def execute_provider_capture(
     *,
     handoff_path: str | Path,
@@ -139,6 +178,157 @@ def execute_provider_capture(
         newline="\n",
     )
     return ProviderCaptureResult(request=request, receipt=receipt, receipt_path=receipt_path)
+
+
+def validate_provider_capture_receipt(
+    *,
+    receipt_path: str | Path,
+    capture_path: str | Path,
+    handoff_path: str | Path,
+    env_template_path: str | Path,
+    provider: str,
+    transport: str,
+    endpoint: str,
+    market: str,
+    exchange: str,
+    kind: str,
+    start_local: str,
+    end_local: str,
+    schema_columns: Sequence[str],
+    credential_env_vars: Sequence[str],
+) -> ProviderCaptureReceiptValidation:
+    receipt_file = Path(receipt_path).resolve()
+    defaults = {
+        "receipt_path": receipt_file,
+        "exists": receipt_file.exists() and receipt_file.is_file(),
+        "readable": False,
+        "receipt_sha256": "",
+        "ready": False,
+        "evidence_class": "",
+        "backend_entrypoint": "",
+        "capture_match": False,
+        "contract_match": False,
+        "handoff_match": False,
+        "env_template_match": False,
+        "credential_contract_safe": False,
+        "window_match": False,
+        "schema_match": False,
+        "row_count": 0,
+        "error": "adapter receipt does not exist",
+    }
+    if not defaults["exists"]:
+        return ProviderCaptureReceiptValidation(**defaults)
+    try:
+        receipt = json.loads(receipt_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        defaults["error"] = f"adapter receipt is not readable JSON ({type(exc).__name__})"
+        return ProviderCaptureReceiptValidation(**defaults)
+    if not isinstance(receipt, dict):
+        defaults["error"] = "adapter receipt JSON must be an object"
+        return ProviderCaptureReceiptValidation(**defaults)
+
+    capture_file = Path(capture_path).resolve()
+    handoff_file = Path(handoff_path).resolve()
+    env_template_file = Path(env_template_path).resolve()
+    output = receipt.get("output") if isinstance(receipt.get("output"), dict) else {}
+    receipt_handoff = receipt.get("handoff") if isinstance(receipt.get("handoff"), dict) else {}
+    receipt_template = (
+        receipt.get("credential_env_template")
+        if isinstance(receipt.get("credential_env_template"), dict)
+        else {}
+    )
+    window = receipt.get("window") if isinstance(receipt.get("window"), dict) else {}
+    env_presence = (
+        receipt.get("credential_env_presence")
+        if isinstance(receipt.get("credential_env_presence"), dict)
+        else {}
+    )
+    expected_env_vars = [str(name) for name in credential_env_vars]
+    receipt_env_vars = receipt.get("credential_env_vars")
+    receipt_env_vars = (
+        [str(name) for name in receipt_env_vars]
+        if isinstance(receipt_env_vars, list)
+        else []
+    )
+    row_count = _safe_int(output.get("row_count"))
+    capture_match = bool(
+        _receipt_path_matches(output.get("path"), capture_file)
+        and capture_file.exists()
+        and _text(output.get("sha256")) == _file_sha256(capture_file)
+        and row_count >= 1
+    )
+    handoff_match = bool(
+        _receipt_path_matches(receipt_handoff.get("path"), handoff_file)
+        and handoff_file.exists()
+        and _text(receipt_handoff.get("sha256")) == _file_sha256(handoff_file)
+    )
+    env_template_match = bool(
+        _receipt_path_matches(receipt_template.get("path"), env_template_file)
+        and env_template_file.exists()
+        and _text(receipt_template.get("sha256")) == _file_sha256(env_template_file)
+    )
+    contract_match = all(
+        _text(receipt.get(field)) == expected
+        for field, expected in {
+            "provider": provider,
+            "transport": transport,
+            "endpoint": endpoint,
+            "market": market,
+            "exchange": exchange,
+            "kind": kind,
+        }.items()
+    )
+    credential_contract_safe = bool(
+        receipt.get("credential_values_stored") is False
+        and receipt_env_vars == expected_env_vars
+        and set(env_presence) == set(expected_env_vars)
+        and all(value is True for value in env_presence.values())
+    )
+    window_match = bool(
+        _text(window.get("start_local")) == start_local
+        and _text(window.get("end_local")) == end_local
+        and _safe_int(window.get("start_ns")) == _iso_ns(start_local, "start")
+        and _safe_int(window.get("end_ns")) == _iso_ns(end_local, "end")
+    )
+    schema_match = output.get("columns") == [str(column) for column in schema_columns]
+    ready = receipt.get("ready") is True
+    evidence_class = _text(receipt.get("evidence_class"))
+    backend_entrypoint = _text(receipt.get("backend_entrypoint"))
+    failures = [
+        name
+        for name, passed in {
+            "receipt_ready": ready,
+            "evidence_class": evidence_class == "provider_live_capture",
+            "backend_entrypoint": bool(backend_entrypoint),
+            "capture_match": capture_match,
+            "contract_match": contract_match,
+            "handoff_match": handoff_match,
+            "env_template_match": env_template_match,
+            "credential_contract_safe": credential_contract_safe,
+            "window_match": window_match,
+            "schema_match": schema_match,
+            "row_count": row_count >= 1,
+        }.items()
+        if not passed
+    ]
+    return ProviderCaptureReceiptValidation(
+        receipt_path=receipt_file,
+        exists=True,
+        readable=True,
+        receipt_sha256=_file_sha256(receipt_file),
+        ready=ready,
+        evidence_class=evidence_class,
+        backend_entrypoint=backend_entrypoint,
+        capture_match=capture_match,
+        contract_match=contract_match,
+        handoff_match=handoff_match,
+        env_template_match=env_template_match,
+        credential_contract_safe=credential_contract_safe,
+        window_match=window_match,
+        schema_match=bool(schema_match),
+        row_count=row_count,
+        error=";".join(failures),
+    )
 
 
 def backend_env_var(provider: str) -> str:
@@ -311,10 +501,7 @@ def _validate_capture_output(request: ProviderCaptureRequest) -> dict[str, objec
     if "ts" not in frame.columns:
         raise ProviderAdapterError("provider capture schema must include ts")
 
-    ts = pd.to_numeric(frame["ts"], errors="coerce")
-    if ts.isna().any() or ((ts % 1) != 0).any():
-        raise ProviderAdapterError("provider capture ts values must be integer nanoseconds")
-    ts = ts.astype("int64")
+    ts = _capture_timestamp_ns(frame["ts"], request)
     if not ts.is_monotonic_increasing:
         raise ProviderAdapterError("provider capture timestamps must be monotonic")
     if bool((ts < request.start_ns).any()) or bool((ts > request.end_ns).any()):
@@ -352,6 +539,39 @@ def _validate_capture_output(request: ProviderCaptureRequest) -> dict[str, objec
         "min_ts_ns": int(ts.min()),
         "max_ts_ns": int(ts.max()),
     }
+
+
+def _capture_timestamp_ns(
+    values: pd.Series,
+    request: ProviderCaptureRequest,
+) -> pd.Series:
+    numeric = pd.to_numeric(values, errors="coerce")
+    if numeric.notna().all():
+        if bool(((numeric % 1) != 0).any()):
+            raise ProviderAdapterError(
+                "numeric provider capture ts values must be integer nanoseconds"
+            )
+        return numeric.astype("int64")
+    try:
+        parsed = pd.to_datetime(values, errors="coerce")
+    except (TypeError, ValueError) as exc:
+        raise ProviderAdapterError(
+            "provider capture ts values must be UTC nanoseconds or datetimes"
+        ) from exc
+    if parsed.isna().any():
+        raise ProviderAdapterError(
+            "provider capture ts values must be UTC nanoseconds or datetimes"
+        )
+    try:
+        if parsed.dt.tz is None:
+            contract_timezone = pd.Timestamp(request.start_local).tzinfo
+            parsed = parsed.dt.tz_localize(contract_timezone)
+        parsed = parsed.dt.tz_convert("UTC")
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ProviderAdapterError(
+            "provider capture datetime timestamps must share one timezone contract"
+        ) from exc
+    return parsed.map(lambda value: pd.Timestamp(value).value).astype("int64")
 
 
 def _read_handoff(path: Path) -> dict[str, object]:
@@ -438,6 +658,23 @@ def _file_sha256(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _receipt_path_matches(value: object, expected: Path) -> bool:
+    raw = _text(value)
+    if not raw:
+        return False
+    try:
+        return Path(raw).resolve() == expected.resolve()
+    except OSError:
+        return str(Path(raw)) == str(expected)
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:

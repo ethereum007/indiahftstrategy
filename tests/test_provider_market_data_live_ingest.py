@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from hft_cli import main
+from provider_adapter import execute_provider_capture
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
 from reports.provider_market_data_client import write_provider_market_data_client_plan
@@ -82,10 +83,44 @@ def _write_capture(path: str | Path, day: str, *, base: float):
     )
 
 
-def _write_expected_captures(live_packet_path):
+def _write_expected_captures(live_packet_path, capture_bundle_path=None):
     packet = json.loads(Path(live_packet_path).read_text(encoding="utf-8"))
     for idx, window in enumerate(packet["capture_windows"]):
-        _write_capture(window["capture_path"], "2026-06-23", base=100.0 + idx)
+        if capture_bundle_path is None:
+            _write_capture(window["capture_path"], "2026-06-23", base=100.0 + idx)
+            continue
+        bundle_dir = Path(capture_bundle_path).parent
+        base = 100.0 + idx
+
+        def backend(request, *, price=base):
+            start = pd.Timestamp(request.start_local)
+            pd.DataFrame(
+                [
+                    [start.strftime("%Y-%m-%d %H:%M:%S"), price, price + 0.05, 75, 150, price + 0.05, 75],
+                    [(start + pd.Timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S"), price + 0.05, price + 0.10, 100, 125, price + 0.05, 50],
+                ],
+                columns=request.schema_columns,
+            ).to_csv(request.output_path, index=False)
+
+        execute_provider_capture(
+            handoff_path=bundle_dir / "provider_market_data_adapter_handoff.json",
+            env_template_path=bundle_dir / "provider_market_data_live_capture_env_template.env",
+            provider=packet["provider"],
+            transport=packet["transport"],
+            endpoint=packet["endpoint"],
+            market=packet["market"],
+            exchange=packet["exchange"],
+            kind=packet["kind"],
+            start_local=window["start_local"],
+            end_local=window["end_local"],
+            output_path=window["capture_path"],
+            backend=backend,
+            backend_entrypoint="approved_test_backend:capture",
+            environ={
+                "ARROW_MONEY_API_KEY": "present-runtime-value-1",
+                "ARROW_MONEY_API_SECRET": "present-runtime-value-2",
+            },
+        )
 
 
 def _write_capture_bundle(tmp_path, live_packet_path):
@@ -150,7 +185,7 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     env_template_path = bundle_path.parent / "provider_market_data_live_capture_env_template.env"
     adapter_handoff_path = bundle_path.parent / "provider_market_data_adapter_handoff.json"
     source_env_template_path = Path(bundle["source_credential_env_template"]["path"])
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
     out_dir = tmp_path / "live_ingest_with_bundle"
 
     report = write_provider_market_data_live_session_ingest(
@@ -206,6 +241,13 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert summary["capture_bundle_market_session_open_local"] == "09:15"
     assert summary["capture_bundle_metadata_matches_session"]
     assert summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+    assert summary["adapter_receipts_required"]
+    assert summary["adapter_receipt_required_count"] == 2
+    assert summary["adapter_receipt_present_count"] == 2
+    assert summary["adapter_receipt_valid_count"] == 2
+    assert summary["adapter_receipt_rehearsal_exempt_count"] == 0
+    assert summary["adapter_receipt_backend_entrypoints"] == "approved_test_backend:capture"
+    assert len(summary["adapter_receipt_sha256s"].split(";")) == 2
     assert config["capture_bundle"]["path"] == str(bundle_path)
     assert config["capture_bundle"]["env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["env_template_exists"] is True
@@ -229,6 +271,10 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert config["capture_bundle"]["market_session"]["open_local"] == "09:15"
     assert config["capture_bundle"]["metadata_matches_session"] is True
     assert config["capture_bundle"]["live_fetch_contract_metadata_matches_session"] is True
+    assert config["capture_bundle"]["adapter_receipts"]["required"] is True
+    assert config["capture_bundle"]["adapter_receipts"]["valid_count"] == 2
+    assert config["adapter_receipts"]["valid_count"] == 2
+    assert config["adapter_receipts"]["receipts"][0]["adapter_receipt_valid"] is True
     assert config["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
@@ -243,6 +289,7 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
+    assert len(manifest["inputs"]["adapter_receipts"]) == 2
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
@@ -258,6 +305,63 @@ def test_provider_market_data_live_ingest_fingerprints_capture_bundle_env_templa
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
     assert manifest["extra"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_receipts"]["required"] is True
+    assert manifest["extra"]["adapter_receipts"]["valid_count"] == 2
+
+
+def test_provider_market_data_live_ingest_blocks_missing_adapter_receipt(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _write_capture_bundle(tmp_path, live_packet)
+    _write_expected_captures(live_packet, bundle_path)
+    packet = json.loads(live_packet.read_text(encoding="utf-8"))
+    Path(f"{packet['capture_windows'][0]['capture_path']}.adapter.json").unlink()
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.batch is None
+    assert "adapter_receipts_present" in failed
+    assert "adapter_receipts_valid" in failed
+    assert report.summary.iloc[0]["adapter_receipt_required_count"] == 2
+    assert report.summary.iloc[0]["adapter_receipt_present_count"] == 1
+    assert report.action_queue.loc[0, "action"] == "run_or_repair_provider_adapter_capture"
+    assert report.action_queue.loc[0, "next_gate"] == "provider-adapter"
+
+
+def test_provider_market_data_live_ingest_blocks_capture_tampered_after_receipt(tmp_path):
+    plan = _write_live_plan(tmp_path)
+    live_packet = plan.output_dir / "provider_market_data_live_session_packet.json"
+    bundle_path = _write_capture_bundle(tmp_path, live_packet)
+    _write_expected_captures(live_packet, bundle_path)
+    packet = json.loads(live_packet.read_text(encoding="utf-8"))
+    capture_path = Path(packet["capture_windows"][0]["capture_path"])
+    capture_path.write_text(
+        capture_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_live_session_ingest(
+        live_packet,
+        tmp_path / "live_ingest",
+        config=ProviderMarketDataLiveIngestConfig(capture_bundle_path=str(bundle_path)),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.batch is None
+    assert "adapter_receipts_present" not in failed
+    assert "adapter_receipts_valid" in failed
+    first_window = report.windows.iloc[0]
+    assert first_window["adapter_receipt_exists"]
+    assert not bool(first_window["adapter_receipt_valid"])
+    assert not bool(first_window["adapter_receipt_capture_match"])
+    assert first_window["adapter_receipt_error"] == "capture_match"
 
 
 def test_provider_market_data_live_ingest_blocks_missing_bundle_adapter_contract(tmp_path):
@@ -270,7 +374,7 @@ def test_provider_market_data_live_ingest_blocks_missing_bundle_adapter_contract
             bundle["preflight"].pop("adapter_execution_contract", None),
         ),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,
@@ -293,7 +397,7 @@ def test_provider_market_data_live_ingest_blocks_capture_bundle_session_mismatch
         _write_capture_bundle(tmp_path, live_packet),
         lambda bundle: bundle["source_session"].update({"open_local": "09:30:00"}),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,
@@ -323,7 +427,7 @@ def test_provider_market_data_live_ingest_blocks_missing_source_env_template(tmp
             bundle["authentication"].pop("source_env_template", None),
         ),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,
@@ -350,7 +454,7 @@ def test_provider_market_data_live_ingest_blocks_missing_live_fetch_contract(tmp
             bundle["preflight"].pop("live_fetch_contract", None),
         ),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,
@@ -377,7 +481,7 @@ def test_provider_market_data_live_ingest_blocks_missing_bundle_provider_profile
             bundle["preflight"].pop("provider_profile", None),
         ),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,
@@ -406,7 +510,7 @@ def test_provider_market_data_live_ingest_blocks_missing_bundle_provider_capture
             [command.pop("provider_capture_command_template", None) for command in bundle["commands"]],
         ),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,
@@ -429,7 +533,7 @@ def test_provider_market_data_live_ingest_blocks_bundle_provider_capture_command
         _write_capture_bundle(tmp_path, live_packet),
         lambda bundle: bundle["provider_capture_commands"][0].update({"command_template": "provider-adapter capture --wrong"}),
     )
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
 
     report = write_provider_market_data_live_session_ingest(
         live_packet,

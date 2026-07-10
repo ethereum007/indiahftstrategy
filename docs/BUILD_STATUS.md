@@ -185,7 +185,14 @@
   provider capture command handoffs, the provider-profile contract/SHA, and the
   adapter execution contract match the live-session packet, then carries the
   structured command list, provider profile, and adapter contract into the
-  ingest summary/config/manifest for downstream live-data audit.
+  ingest summary/config/manifest for downstream live-data audit. Bundle-linked
+  real captures must now also carry adjacent `provider-adapter` receipts. Ingest
+  recomputes and validates capture, handoff, environment-template, and receipt
+  hashes plus provider/window/schema/credential-presence contracts, fingerprints
+  every receipt in the manifest, and routes missing, stale, or mismatched proof
+  back to `provider-adapter`. Rehearsal-sidecar captures remain exempt at ingest
+  only as explicitly synthetic smoke evidence and are still blocked from real
+  research handoff by evidence review.
 - Provider market-data live evidence review now protects research handoff from
   rehearsal artifacts: `review-provider-market-data-live-evidence` verifies
   live ingest, batch readiness, capture row counts, manifest proof,
@@ -2264,15 +2271,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1402 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1405 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: provider-adapter contract tests plus provider live bundle
-tests pass (`18 passed`). Core engine/strategy semantics (`39 passed`), launch
-pipelines (`45 passed`), and provider source/fetch/client/live-contract gates
-(`54 passed`) also pass. A full-suite run exceeded the 20-minute local timeout
+Latest focused gate: provider-adapter receipt and provider live-ingest tests
+pass (`22 passed`), provider live-rehearsal tests pass (`5 passed`), and the
+complete live-evidence plus research-handoff suites pass (`23 passed`). A strict
+bundle-linked provider-imbalance provenance path also passes (`1 passed`), for
+`51 passed` in the current receipt-focused gate. Core engine/strategy semantics
+(`39 passed`), launch pipelines (`45 passed`), and provider
+source/fetch/client/live-contract gates (`54 passed`) also pass. A full-suite
+run exceeded the 20-minute local timeout
 on the G-drive workspace, so 1110 remains the last completed full-suite green
-baseline rather than claiming the current 1402-test collection is fully green.
+baseline rather than claiming the current 1405-test collection is fully green.
 
 ## Next Build Targets
 

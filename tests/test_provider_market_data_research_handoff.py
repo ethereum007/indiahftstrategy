@@ -4,6 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from hft_cli import main
+from tests.provider_adapter_capture_support import write_bundle_captures
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
 from reports.provider_market_data_client import write_provider_market_data_client_plan
@@ -94,8 +95,22 @@ def _write_capture(path: str | Path, day: str, *, base: float):
     )
 
 
-def _write_expected_captures(live_packet_path):
+def _write_expected_captures(live_packet_path, capture_bundle_path=None):
     packet = json.loads(Path(live_packet_path).read_text(encoding="utf-8"))
+    if capture_bundle_path is not None:
+        def frame_factory(request, index):
+            start = pd.Timestamp(request.start_local)
+            base = 100.0 + index
+            return pd.DataFrame(
+                [
+                    [start.strftime("%Y-%m-%d %H:%M:%S"), base, base + 0.05, 75, 150, base + 0.05, 75],
+                    [(start + pd.Timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S"), base + 0.05, base + 0.10, 100, 125, base + 0.05, 50],
+                ],
+                columns=request.schema_columns,
+            )
+
+        write_bundle_captures(live_packet_path, capture_bundle_path, frame_factory)
+        return
     for idx, window in enumerate(packet["capture_windows"]):
         _write_capture(window["capture_path"], "2026-06-23", base=100.0 + idx)
 
@@ -133,7 +148,7 @@ def _write_bundle_linked_real_evidence(tmp_path):
         ),
     )
     bundle_path = bundle.output_dir / "provider_market_data_live_capture_bundle.json"
-    _write_expected_captures(live_packet)
+    _write_expected_captures(live_packet, bundle_path)
     ingest = write_provider_market_data_live_session_ingest(
         live_packet,
         tmp_path / "live_ingest",

@@ -4576,7 +4576,9 @@ The backend callable receives one `ProviderCaptureRequest`, reads credential
 values from the runtime environment, and writes the exact requested output
 path. The runner validates handoff identity, blank credential-template
 contents, runtime credential presence, the exact capture window, ordered CSV
-schema, timestamps, quote ordering, and quantities. It then writes
+schema, timestamps (UTC nanoseconds or contract-local/offset datetimes), quote
+ordering, and quantities. Datetime values are normalized to UTC nanoseconds for
+window checks without changing the backend CSV representation. It then writes
 `<capture>.adapter.json` with handoff, template, backend, window, row-count, and
 output-hash proof while retaining only credential variable names and presence
 booleans. It refuses to run when the backend is absent, untrusted, mismatched,
@@ -4638,7 +4640,15 @@ exchange/session metadata matching the live session packet, and upstream
 provider-profile contract plus `adapter_execution_contract` to be present,
 credential-safe, and matched to the live-session packet before batch ingestion
 can become ready; the provider-profile SHA/capabilities are carried into the
-ingest summary/config/manifest for downstream audit.
+ingest summary/config/manifest for downstream audit. Every bundle-linked real
+capture must also retain its adjacent `<capture>.adapter.json` receipt. Ingest
+recomputes the capture, handoff, environment-template, and receipt hashes and
+verifies provider identity, credential-presence proof, schema, backend, and
+window contract before accepting the capture. The receipt fingerprints and
+per-check results are carried in the ingest summary, config, windows table, and
+manifest. Explicit rehearsal sidecars are exempt from the real-capture receipt
+gate, but remain synthetic smoke evidence and cannot pass the downstream
+research-evidence review as real provider data.
 
 Review the live ingest output before treating it as research evidence:
 

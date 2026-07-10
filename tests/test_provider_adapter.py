@@ -4,7 +4,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from provider_adapter import ProviderAdapterError, execute_provider_capture, main
+from provider_adapter import (
+    ProviderAdapterError,
+    execute_provider_capture,
+    main,
+    validate_provider_capture_receipt,
+)
 
 
 START = "2026-06-23T09:15:00+05:30"
@@ -130,6 +135,31 @@ def test_provider_adapter_executes_trusted_backend_and_writes_safe_receipt(tmp_p
     receipt_text = result.receipt_path.read_text(encoding="utf-8")
     assert "present-runtime-value-1" not in receipt_text
     assert "present-runtime-value-2" not in receipt_text
+
+    validation = _validate_receipt(result.receipt_path, handoff, env_template, output)
+    assert validation.passed
+    assert validation.capture_match
+    assert validation.contract_match
+    assert validation.handoff_match
+    assert validation.env_template_match
+    assert validation.credential_contract_safe
+    assert validation.window_match
+    assert validation.schema_match
+
+
+def test_provider_adapter_receipt_validation_detects_capture_tampering(tmp_path):
+    handoff, env_template, output = _write_contract(tmp_path)
+    result = execute_provider_capture(
+        **_arguments(handoff, env_template, output),
+        backend=_write_valid_capture,
+    )
+    output.write_text(output.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    validation = _validate_receipt(result.receipt_path, handoff, env_template, output)
+
+    assert not validation.passed
+    assert not validation.capture_match
+    assert validation.error == "capture_match"
 
 
 def test_provider_adapter_cli_loads_backend_from_provider_environment(tmp_path, monkeypatch, capsys):
@@ -257,3 +287,27 @@ def _cli_arguments(handoff: Path, env_template: Path, output: Path) -> list[str]
         "--output",
         str(output),
     ]
+
+
+def _validate_receipt(
+    receipt: Path,
+    handoff: Path,
+    env_template: Path,
+    output: Path,
+):
+    return validate_provider_capture_receipt(
+        receipt_path=receipt,
+        capture_path=output,
+        handoff_path=handoff,
+        env_template_path=env_template,
+        provider="arrow_money",
+        transport="websocket",
+        endpoint="wss://feed.arrow.money/market-data/nse",
+        market="india_nse_index_derivatives",
+        exchange="NFO",
+        kind="ticks",
+        start_local=START,
+        end_local=END,
+        schema_columns=SCHEMA,
+        credential_env_vars=["ARROW_MONEY_API_KEY", "ARROW_MONEY_API_SECRET"],
+    )
