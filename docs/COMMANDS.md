@@ -5207,7 +5207,13 @@ can trace the live data source from the cutover artifact set without exposing
 credential values. If the provider-profile, adapter contract, or required
 synthetic sidecar proof is missing, unsafe, unready, or no longer matched to
 live evidence, cutover blocks route-enable and routes the packet back to
-`review-provider-market-data-imbalance-broker-readiness`. If
+`review-provider-market-data-imbalance-broker-readiness`. Before invoking the
+generic cutover gate, the wrapper reads the broker-readiness manifest, requires
+exact `adapter_receipt_proof` agreement with broker-readiness config, and
+re-hashes every required adapter receipt and provider capture. Receipt or
+capture drift leaves the nested generic cutover absent, routes remediation
+back to broker readiness, and only accepted files are fingerprinted again in
+the cutover manifest. If
 broker-readiness carried a provider route-readiness broker round-trip synthetic
 sidecar breach counter, cutover preserves it too; stale nonzero breach packets
 are routed back to

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -122,6 +123,9 @@ def write_provider_market_data_imbalance_cutover(
     provider_config, provider_config_error = _read_json(
         provider_root / "provider_market_data_imbalance_broker_readiness_config.json"
     )
+    provider_manifest, provider_manifest_error = _read_json(
+        provider_root / "manifest.json"
+    )
     inferred_scaleup_dir = _inferred_scaleup_dir(provider_summary, provider_config)
     inferred_broker_readiness_dir = _first_existing_path(
         _path_from_text(_first_text(provider_summary, "broker_readiness_dir")),
@@ -155,7 +159,10 @@ def write_provider_market_data_imbalance_cutover(
         provider_root,
         provider_summary,
         provider_summary_error,
+        provider_config,
         provider_config_error,
+        provider_manifest,
+        provider_manifest_error,
         resolved_scaleup_dir,
         resolved_broker_readiness_dir,
         resolved_runtime_session_dir,
@@ -195,6 +202,7 @@ def write_provider_market_data_imbalance_cutover(
         out,
         provider_summary,
         provider_config,
+        provider_manifest,
     )
     action_queue = _action_queue(summary.iloc[0], checks, cutover)
     summary = _summary_with_actions(summary, action_queue)
@@ -202,6 +210,7 @@ def write_provider_market_data_imbalance_cutover(
         summary.iloc[0],
         provider_summary,
         provider_config,
+        provider_manifest,
         cutover,
         checks,
         action_queue,
@@ -262,6 +271,13 @@ def write_provider_market_data_imbalance_cutover(
     }.items():
         if value is not None:
             inputs[name] = value
+    receipt_paths, capture_paths = _adapter_receipt_proof_paths(
+        _mapping(provider_config.get("adapter_receipt_proof"))
+    )
+    if receipt_paths:
+        inputs["adapter_receipts"] = receipt_paths
+    if capture_paths:
+        inputs["provider_captures"] = capture_paths
 
     write_experiment_manifest(
         out,
@@ -278,6 +294,7 @@ def write_provider_market_data_imbalance_cutover(
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
             "provider_profile": _mapping(payload.get("provider_profile")),
+            "adapter_receipt_proof": _mapping(payload.get("adapter_receipt_proof")),
             "provider_profile_matches_session": bool(summary_row["provider_profile_matches_session"]),
             "provider_profile_matches_bundle": bool(summary_row["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
@@ -372,6 +389,9 @@ def write_provider_market_data_imbalance_cutover(
                 ),
                 "adapter_execution_contract": _mapping(
                     _mapping(payload.get("capture_bundle")).get("adapter_execution_contract")
+                ),
+                "adapter_receipt_proof": _mapping(
+                    payload.get("adapter_receipt_proof")
                 ),
             },
             "source_credential_env_template": {
@@ -676,12 +696,26 @@ def _prechecks(
     provider_root: Path,
     provider_summary: pd.DataFrame,
     provider_summary_error: str,
+    provider_config: dict[str, Any],
     provider_config_error: str,
+    provider_manifest: dict[str, Any],
+    provider_manifest_error: str,
     scaleup_dir: Path | None,
     broker_readiness_dir: Path | None,
     runtime_session_dir: Path | None,
     config: ProviderMarketDataImbalanceCutoverConfig,
 ) -> pd.DataFrame:
+    bundle_provided = _first_bool(provider_summary, "capture_bundle_provided")
+    config_receipt_proof = _mapping(provider_config.get("adapter_receipt_proof"))
+    manifest_receipt_proof = _mapping(
+        _mapping(provider_manifest.get("extra")).get("adapter_receipt_proof")
+    )
+    receipt_proofs_match = bool(
+        config_receipt_proof
+        and manifest_receipt_proof
+        and config_receipt_proof == manifest_receipt_proof
+    )
+    receipt_status = _adapter_receipt_proof_status(config_receipt_proof)
     return pd.DataFrame(
         [
             _check(
@@ -709,12 +743,80 @@ def _prechecks(
                 provider_config_error or "provider imbalance broker-readiness config could not be read",
             ),
             _check(
+                "provider_broker_readiness_manifest_readable",
+                provider_manifest_error or "ok",
+                "is",
+                "ok",
+                not provider_manifest_error,
+                provider_manifest_error or "provider imbalance broker-readiness manifest could not be read",
+            ),
+            _check(
+                "provider_broker_readiness_manifest_type",
+                _clean(provider_manifest.get("run_type")),
+                "is",
+                "provider_market_data_imbalance_broker_readiness",
+                _clean(provider_manifest.get("run_type"))
+                == "provider_market_data_imbalance_broker_readiness",
+                "provider imbalance broker-readiness manifest run_type is not expected",
+            ),
+            _check(
                 "provider_broker_readiness_ready",
                 _first_bool(provider_summary, "ready"),
                 "is",
                 True,
                 _first_bool(provider_summary, "ready") or not config.require_provider_broker_readiness_ready,
                 "provider imbalance broker-readiness is not ready",
+            ),
+            _check(
+                "provider_broker_readiness_adapter_receipt_proof_carried",
+                bool(config_receipt_proof),
+                "is",
+                True,
+                bool(config_receipt_proof)
+                and _truthy(config_receipt_proof.get("ready"))
+                if bundle_provided
+                else True,
+                "provider imbalance broker readiness is missing ready adapter receipt proof",
+            ),
+            _check(
+                "provider_broker_readiness_adapter_receipt_proof_matches_manifest",
+                receipt_proofs_match,
+                "is",
+                True,
+                receipt_proofs_match if bundle_provided else True,
+                "adapter receipt proof differs between broker-readiness config and manifest",
+            ),
+            _check(
+                "provider_broker_readiness_adapter_receipts_valid",
+                receipt_status["valid_count"],
+                "==",
+                receipt_status["required_count"],
+                receipt_status["valid_count"] == receipt_status["required_count"]
+                if bundle_provided
+                else True,
+                "provider imbalance broker readiness did not preserve valid required adapter receipts",
+            ),
+            _check(
+                "provider_broker_readiness_adapter_receipt_fingerprints_current",
+                receipt_status["receipt_fingerprint_match_count"],
+                "==",
+                receipt_status["required_count"],
+                receipt_status["receipt_fingerprint_match_count"]
+                == receipt_status["required_count"]
+                if bundle_provided
+                else True,
+                "adapter receipt files changed after provider broker-readiness review",
+            ),
+            _check(
+                "provider_broker_readiness_capture_fingerprints_current",
+                receipt_status["capture_fingerprint_match_count"],
+                "==",
+                receipt_status["required_count"],
+                receipt_status["capture_fingerprint_match_count"]
+                == receipt_status["required_count"]
+                if bundle_provided
+                else True,
+                "provider capture files changed after provider broker-readiness review",
             ),
             _check(
                 "nested_scaleup_config_exists",
@@ -1280,11 +1382,17 @@ def _summary(
     output_dir: Path,
     provider_summary: pd.DataFrame,
     provider_config: dict[str, Any],
+    provider_manifest: dict[str, Any],
 ) -> pd.DataFrame:
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
     ready = failed == 0
     cutover_summary = cutover.summary if cutover is not None else pd.DataFrame()
     dispatch_roundtrip = _dispatch_roundtrip_provenance(provider_config)
+    config_receipt_proof = _mapping(provider_config.get("adapter_receipt_proof"))
+    manifest_receipt_proof = _mapping(
+        _mapping(provider_manifest.get("extra")).get("adapter_receipt_proof")
+    )
+    receipt_status = _adapter_receipt_proof_status(config_receipt_proof)
     return pd.DataFrame(
         [
             {
@@ -1341,6 +1449,28 @@ def _summary(
                 "adapter_handoff_provided": _first_bool(provider_summary, "adapter_handoff_provided"),
                 "adapter_handoff_exists": _first_bool(provider_summary, "adapter_handoff_exists"),
                 "adapter_handoff_sha256": _first_text(provider_summary, "adapter_handoff_sha256"),
+                "provider_broker_readiness_manifest_run_type": _clean(
+                    provider_manifest.get("run_type")
+                ),
+                "adapter_receipt_proof_ready": bool(receipt_status["ready"]),
+                "adapter_receipt_proof_matches_manifest": bool(
+                    config_receipt_proof
+                    and manifest_receipt_proof
+                    and config_receipt_proof == manifest_receipt_proof
+                ),
+                "adapter_receipts_required": _truthy(
+                    config_receipt_proof.get("required")
+                ),
+                "adapter_receipt_required_count": int(
+                    receipt_status["required_count"]
+                ),
+                "adapter_receipt_valid_count": int(receipt_status["valid_count"]),
+                "adapter_receipt_fingerprint_match_count": int(
+                    receipt_status["receipt_fingerprint_match_count"]
+                ),
+                "capture_fingerprint_match_count": int(
+                    receipt_status["capture_fingerprint_match_count"]
+                ),
                 "source_credential_env_template_path": _first_text(
                     provider_summary,
                     "source_credential_env_template_path",
@@ -2425,6 +2555,7 @@ def _config(
     summary: pd.Series,
     provider_summary: pd.DataFrame,
     provider_config: dict[str, Any],
+    provider_manifest: dict[str, Any],
     cutover: CutoverGateReport | None,
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
@@ -2447,6 +2578,9 @@ def _config(
         "provider_capture_commands": _provider_capture_commands(provider_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(provider_config),
         "adapter_execution_contract": _adapter_execution_contract(provider_config),
+        "adapter_receipt_proof": _mapping(
+            provider_config.get("adapter_receipt_proof")
+        ),
         "synthetic_sidecar_proof": _mapping(provider_config.get("synthetic_sidecar_proof")),
         "capture_bundle": {
             "capture_bundle_path": str(summary["capture_bundle_path"]),
@@ -2506,6 +2640,9 @@ def _config(
                 summary["source_live_fetch_contract_session_close_local"]
             ),
             "adapter_execution_contract": _adapter_execution_contract(provider_config),
+            "adapter_receipt_proof": _mapping(
+                provider_config.get("adapter_receipt_proof")
+            ),
             "adapter_contract_provider": str(summary["adapter_contract_provider"]),
             "adapter_contract_transport": str(summary["adapter_contract_transport"]),
             "adapter_contract_market": str(summary["adapter_contract_market"]),
@@ -2719,6 +2856,9 @@ def _config(
         },
         "provider_broker_readiness": _first_record(provider_summary),
         "provider_broker_readiness_config": provider_config,
+        "provider_broker_readiness_manifest_run_type": _clean(
+            provider_manifest.get("run_type")
+        ),
         "upstream_dispatch_roundtrip_vendor_market_data_batch": (
             _provider_broker_readiness_vendor_market_data_batch_config(
                 provider_config,
@@ -2789,6 +2929,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"(evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Adapter receipt proof: {'ready' if bool(summary['adapter_receipt_proof_ready']) else 'blocked'} ({summary['adapter_receipt_fingerprint_match_count']}/{summary['adapter_receipt_required_count']} sealed; broker-readiness manifest match: {'yes' if bool(summary['adapter_receipt_proof_matches_manifest']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "- Dispatch round-trip route sidecar breach pairs: "
@@ -3167,6 +3308,96 @@ def _path_text(path: Path | None) -> str:
     return "" if path is None else str(path)
 
 
+def _adapter_receipt_proof_status(proof: dict[str, Any]) -> dict[str, Any]:
+    records = [
+        _mapping(item)
+        for item in _list(proof.get("receipts"))
+        if _truthy(_mapping(item).get("adapter_receipt_required"))
+    ]
+    required_count = int(_number(proof.get("required_count")))
+    valid_count = int(_number(proof.get("valid_count")))
+    receipt_fingerprint_match_count = sum(
+        _proof_file_matches(
+            _clean(record.get("adapter_receipt_path")),
+            _clean(record.get("adapter_receipt_current_sha256"))
+            or _clean(record.get("adapter_receipt_ingest_sha256")),
+        )
+        for record in records
+    )
+    capture_fingerprint_match_count = sum(
+        _proof_file_matches(
+            _clean(record.get("capture_path")),
+            _clean(record.get("capture_sha256")),
+        )
+        for record in records
+    )
+    ready = bool(
+        _truthy(proof.get("ready"))
+        and required_count > 0
+        and len(records) == required_count
+        and valid_count == required_count
+        and receipt_fingerprint_match_count == required_count
+        and capture_fingerprint_match_count == required_count
+    )
+    return {
+        "ready": ready,
+        "required_count": required_count,
+        "valid_count": valid_count,
+        "receipt_fingerprint_match_count": int(receipt_fingerprint_match_count),
+        "capture_fingerprint_match_count": int(capture_fingerprint_match_count),
+    }
+
+
+def _adapter_receipt_proof_paths(
+    proof: dict[str, Any],
+) -> tuple[list[Path], list[Path]]:
+    receipt_paths: list[Path] = []
+    capture_paths: list[Path] = []
+    for item in _list(proof.get("receipts")):
+        record = _mapping(item)
+        if not _truthy(record.get("adapter_receipt_required")):
+            continue
+        receipt_path = _path_from_text(_clean(record.get("adapter_receipt_path")))
+        if (
+            receipt_path is not None
+            and receipt_path.exists()
+            and receipt_path.is_file()
+            and receipt_path not in receipt_paths
+        ):
+            receipt_paths.append(receipt_path)
+        capture_path = _path_from_text(_clean(record.get("capture_path")))
+        if (
+            capture_path is not None
+            and capture_path.exists()
+            and capture_path.is_file()
+            and capture_path not in capture_paths
+        ):
+            capture_paths.append(capture_path)
+    return receipt_paths, capture_paths
+
+
+def _proof_file_matches(path_text: str, expected_sha256: str) -> bool:
+    path = _path_from_text(path_text)
+    return bool(
+        path is not None
+        and path.exists()
+        and path.is_file()
+        and expected_sha256
+        and _file_sha256(path) == expected_sha256
+    )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
+
+
 def _mapping(value: object) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
@@ -3537,6 +3768,18 @@ def _first_number(frame: pd.DataFrame | None, column: str, fallback: float = 0.0
         return float(value)
     except (TypeError, ValueError):
         return fallback
+
+
+def _number(value: object) -> float:
+    try:
+        if pd.isna(value):
+            return 0.0
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _identity_key(value: object) -> str:

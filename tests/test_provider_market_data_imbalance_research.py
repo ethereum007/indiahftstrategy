@@ -16083,6 +16083,14 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert config["source_session"]["close_local"] == "15:30:00"
     assert config["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["live_session_provider_profile"]["sha256"] == summary["provider_profile_sha256"]
+    assert bool(summary["adapter_receipt_proof_ready"])
+    assert bool(summary["adapter_receipt_proof_matches_manifest"])
+    assert summary["adapter_receipt_required_count"] == 2
+    assert summary["adapter_receipt_valid_count"] == 2
+    assert summary["adapter_receipt_fingerprint_match_count"] == 2
+    assert summary["capture_fingerprint_match_count"] == 2
+    assert config["adapter_receipt_proof"]["ready"] is True
+    assert config["adapter_receipt_proof"]["valid_count"] == 2
     assert config["provider_broker_readiness"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["provider_broker_readiness"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
     assert config["provider_broker_readiness"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
@@ -16101,6 +16109,8 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
+    assert len(manifest["inputs"]["adapter_receipts"]) == 2
+    assert len(manifest["inputs"]["provider_captures"]) == 2
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
@@ -16138,14 +16148,85 @@ def test_provider_market_data_imbalance_cutover_carries_capture_bundle_provenanc
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_receipt_proof"]["ready"] is True
+    assert manifest["extra"]["adapter_receipt_proof"]["valid_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["adapter_receipt_proof"]["ready"] is True
     assert manifest["extra"]["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert "Exchange: NFO" in runbook
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Adapter receipt proof: ready (2/2 sealed; broker-readiness manifest match: yes)" in runbook
     assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert f"Provider profile: {summary['provider_profile_sha256']} (bundle match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+
+
+def test_provider_market_data_imbalance_cutover_blocks_receipt_mutated_after_broker_readiness(tmp_path):
+    launch_evidence, _ = _write_bundle_linked_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    runtime_telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    runtime_guard = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+    runtime_session = write_provider_market_data_imbalance_runtime_session(
+        runtime_guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    broker_readiness = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+    broker_config = json.loads(
+        (
+            broker_readiness.output_dir
+            / "provider_market_data_imbalance_broker_readiness_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    receipt_path = Path(
+        broker_config["adapter_receipt_proof"]["receipts"][0]["adapter_receipt_path"]
+    )
+    receipt_path.write_text(
+        receipt_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        tmp_path / "provider_imbalance_cutover",
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.cutover is None
+    assert "provider_broker_readiness_adapter_receipt_fingerprints_current" in failed
+    assert report.summary.iloc[0]["adapter_receipt_fingerprint_match_count"] == 1
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_broker_readiness"
+    assert report.action_queue.loc[0, "next_gate"] == (
+        "review-provider-market-data-imbalance-broker-readiness"
+    )
 
 
 def test_provider_market_data_imbalance_cutover_carries_synthetic_sidecar_proof(tmp_path):
