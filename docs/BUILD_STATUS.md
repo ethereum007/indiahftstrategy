@@ -303,7 +303,11 @@
   is missing, unsafe, or no longer matched to live evidence. It now also carries
   nested `synthetic_sidecar_proof` plus flattened sidecar counts from provider
   imbalance evidence, and blocks the downstream launch pipeline when synthetic
-  provider folds are missing ready rehearsal sidecar proof.
+  provider folds are missing ready rehearsal sidecar proof. The launch wrapper
+  now reads the provider evidence manifest, requires exact
+  `adapter_receipt_proof` agreement with evidence config, re-hashes every
+  required receipt and provider capture before broker launch math can run, and
+  fingerprints those files again in its own manifest.
 - Provider market-data imbalance launch evidence review now closes that proof
   loop: `review-provider-market-data-imbalance-launch-evidence` catalogs both
   provider research and provider launch roots, carries capture
@@ -321,7 +325,10 @@
   matched to live evidence. It now also carries nested `synthetic_sidecar_proof`
   plus flattened sidecar counts from the provider launch packet, and blocks
   scorecard readiness when synthetic provider folds are missing ready rehearsal
-  sidecar proof.
+  sidecar proof. The review now reads the launch manifest, requires exact
+  `adapter_receipt_proof` agreement with launch config, re-hashes every required
+  receipt and provider capture, and fingerprints those files in its own manifest
+  before strategy scorecard readiness can pass.
 - Provider market-data imbalance scorecard now makes the final readiness gate
   provider-specific: `score-provider-market-data-imbalance-readiness` consumes
   the launch-evidence review, scores only the full `imbalance` profile, carries
@@ -2284,26 +2291,25 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1409 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1411 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: ten provider-imbalance receipt-boundary paths pass. Four
-receipt-specific research/evidence cases cover positive sealed provenance,
-missing handoff proof, and research config/manifest mismatch; four neighboring
-adapter-contract and synthetic-sidecar fail-closed cases pass together
-(`4 passed`); the two original real-evidence ready paths without capture bundles
-also remain green together (`2 passed`). The complete receipt-aware
-live-evidence plus research-handoff suites pass (`25 passed`), including
-post-ingest and post-evidence receipt mutation tests. The immediately preceding
-upstream gate remains green for provider-adapter/live-ingest (`22 passed`) and
-provider live rehearsal (`5 passed`). Core engine/strategy semantics (`39
-passed`), launch pipelines (`45 passed`), and provider
-source/fetch/client/live-contract gates (`54 passed`) also pass. A combined
-14-case provider-imbalance wrapper run exceeded the 25-minute local timeout
-without returning a result, and the full-suite run previously exceeded the
-20-minute timeout on the G-drive workspace. Therefore 1110 remains the last
-completed full-suite green baseline rather than claiming the current 1409-test
-collection is fully green.
+Latest focused gate: eight downstream provider-imbalance receipt-boundary paths
+pass. Launch packet positive provenance and post-evidence receipt mutation pass
+together (`2 passed`); launch-evidence positive provenance and packet
+config/manifest mismatch pass together (`2 passed`); the two original no-bundle
+launch/evidence ready paths also remain green (`2 passed`); the neighboring
+missing-adapter-contract blocks remain green at both layers (`2 passed`). The
+immediately preceding ten research/evidence receipt-boundary paths remain green,
+as do the complete receipt-aware live-evidence plus research-handoff suites (`25
+passed`). The upstream provider-adapter/live-ingest (`22 passed`), provider live
+rehearsal (`5 passed`), core engine/strategy semantics (`39 passed`), launch
+pipelines (`45 passed`), and provider source/fetch/client/live-contract gates
+(`54 passed`) also remain green. A combined 14-case provider-imbalance wrapper
+run previously exceeded the 25-minute local timeout without returning a result,
+and the full-suite run exceeded the 20-minute timeout on the G-drive workspace.
+Therefore 1110 remains the last completed full-suite green baseline rather than
+claiming the current 1411-test collection is fully green.
 
 ## Next Build Targets
 

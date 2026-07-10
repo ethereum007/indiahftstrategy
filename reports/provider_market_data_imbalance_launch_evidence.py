@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -68,6 +69,9 @@ def write_provider_market_data_imbalance_launch_evidence_review(
     launch_config, launch_config_error = _read_json(
         launch_dir / "provider_market_data_imbalance_launch_config.json"
     )
+    launch_manifest, launch_manifest_error = _read_json(
+        launch_dir / "manifest.json"
+    )
     provider_research_dir = _provider_research_dir(launch_summary)
     catalog = None
     evidence = None
@@ -108,6 +112,8 @@ def write_provider_market_data_imbalance_launch_evidence_review(
         launch_summary_error,
         launch_config,
         launch_config_error,
+        launch_manifest,
+        launch_manifest_error,
         provider_research_dir,
         catalog,
         catalog_error,
@@ -115,9 +121,30 @@ def write_provider_market_data_imbalance_launch_evidence_review(
         evidence_error,
         config,
     )
-    summary = _summary(launch_dir, launch_summary, provider_research_dir, catalog, evidence, checks, out, config)
+    summary = _summary(
+        launch_dir,
+        launch_summary,
+        launch_config,
+        launch_manifest,
+        provider_research_dir,
+        catalog,
+        evidence,
+        checks,
+        out,
+        config,
+    )
     action_queue = _action_queue(summary.iloc[0], checks, catalog, evidence)
-    payload = _config(summary.iloc[0], launch_summary, launch_config, catalog, evidence, checks, action_queue, config)
+    payload = _config(
+        summary.iloc[0],
+        launch_summary,
+        launch_config,
+        launch_manifest,
+        catalog,
+        evidence,
+        checks,
+        action_queue,
+        config,
+    )
 
     checks.to_csv(out / "provider_market_data_imbalance_launch_evidence_checks.csv", index=False)
     summary.to_csv(out / "provider_market_data_imbalance_launch_evidence_summary.csv", index=False)
@@ -150,6 +177,13 @@ def write_provider_market_data_imbalance_launch_evidence_review(
     source_env_template = _path_from_text(str(summary_row["source_credential_env_template_path"]))
     if source_env_template is not None and source_env_template.exists():
         inputs["source_credential_env_template"] = source_env_template
+    receipt_paths, capture_paths = _adapter_receipt_proof_paths(
+        _mapping(payload.get("adapter_receipt_proof"))
+    )
+    if receipt_paths:
+        inputs["adapter_receipts"] = receipt_paths
+    if capture_paths:
+        inputs["provider_captures"] = capture_paths
     write_experiment_manifest(
         out,
         run_type="provider_market_data_imbalance_launch_evidence_review",
@@ -164,6 +198,7 @@ def write_provider_market_data_imbalance_launch_evidence_review(
             "source_session": _source_session_contract_from_summary(summary.iloc[0]),
             "market_session": _market_session_contract_from_summary(summary.iloc[0]),
             "provider_profile": _mapping(payload.get("provider_profile")),
+            "adapter_receipt_proof": _mapping(payload.get("adapter_receipt_proof")),
             "provider_profile_matches_session": bool(summary.iloc[0]["provider_profile_matches_session"]),
             "provider_profile_matches_bundle": bool(summary.iloc[0]["provider_profile_matches_bundle"]),
             "synthetic_sidecar_proof": _mapping(payload.get("synthetic_sidecar_proof")),
@@ -225,6 +260,9 @@ def write_provider_market_data_imbalance_launch_evidence_review(
                 ),
                 "adapter_execution_contract": _mapping(
                     _mapping(payload.get("capture_bundle")).get("adapter_execution_contract")
+                ),
+                "adapter_receipt_proof": _mapping(
+                    payload.get("adapter_receipt_proof")
                 ),
                 "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -296,6 +334,8 @@ def _checks(
     launch_summary_error: str,
     launch_config: dict[str, Any],
     launch_config_error: str,
+    launch_manifest: dict[str, Any],
+    launch_manifest_error: str,
     provider_research_dir: Path,
     catalog: ExperimentCatalog | None,
     catalog_error: str,
@@ -333,6 +373,16 @@ def _checks(
     sidecar_proof_required = synthetic_dataset_count > 0
     sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
     sidecar_proof_ready = _first_bool(launch_summary, "synthetic_sidecar_proof_ready")
+    config_receipt_proof = _mapping(launch_config.get("adapter_receipt_proof"))
+    manifest_receipt_proof = _mapping(
+        _mapping(launch_manifest.get("extra")).get("adapter_receipt_proof")
+    )
+    receipt_proofs_match = bool(
+        config_receipt_proof
+        and manifest_receipt_proof
+        and config_receipt_proof == manifest_receipt_proof
+    )
+    receipt_status = _adapter_receipt_proof_status(config_receipt_proof)
     return pd.DataFrame(
         [
             _check(
@@ -358,6 +408,23 @@ def _checks(
                 "ok",
                 not launch_config_error,
                 launch_config_error or "provider imbalance launch config could not be read",
+            ),
+            _check(
+                "provider_launch_manifest_readable",
+                launch_manifest_error or "ok",
+                "is",
+                "ok",
+                not launch_manifest_error,
+                launch_manifest_error or "provider imbalance launch manifest could not be read",
+            ),
+            _check(
+                "provider_launch_manifest_type",
+                _text(launch_manifest.get("run_type")),
+                "is",
+                "provider_market_data_imbalance_launch_packet",
+                _text(launch_manifest.get("run_type"))
+                == "provider_market_data_imbalance_launch_packet",
+                "provider imbalance launch manifest run_type is not expected",
             ),
             _check(
                 "provider_imbalance_launch_ready",
@@ -434,6 +501,57 @@ def _checks(
                 "provider imbalance launch adapter contract provider-profile SHA no longer matches live evidence",
             ),
             _check(
+                "provider_launch_adapter_receipt_proof_carried",
+                bool(config_receipt_proof),
+                "is",
+                True,
+                bool(config_receipt_proof)
+                and _truthy(config_receipt_proof.get("ready"))
+                if bundle_provided
+                else True,
+                "provider imbalance launch is missing ready adapter receipt proof",
+            ),
+            _check(
+                "provider_launch_adapter_receipt_proof_matches_manifest",
+                receipt_proofs_match,
+                "is",
+                True,
+                receipt_proofs_match if bundle_provided else True,
+                "adapter receipt proof differs between provider launch config and manifest",
+            ),
+            _check(
+                "provider_launch_adapter_receipts_valid",
+                receipt_status["valid_count"],
+                "==",
+                receipt_status["required_count"],
+                receipt_status["valid_count"] == receipt_status["required_count"]
+                if bundle_provided
+                else True,
+                "provider imbalance launch did not preserve valid required adapter receipts",
+            ),
+            _check(
+                "provider_launch_adapter_receipt_fingerprints_current",
+                receipt_status["receipt_fingerprint_match_count"],
+                "==",
+                receipt_status["required_count"],
+                receipt_status["receipt_fingerprint_match_count"]
+                == receipt_status["required_count"]
+                if bundle_provided
+                else True,
+                "adapter receipt files changed after provider imbalance launch packaging",
+            ),
+            _check(
+                "provider_launch_capture_fingerprints_current",
+                receipt_status["capture_fingerprint_match_count"],
+                "==",
+                receipt_status["required_count"],
+                receipt_status["capture_fingerprint_match_count"]
+                == receipt_status["required_count"]
+                if bundle_provided
+                else True,
+                "provider capture files changed after provider imbalance launch packaging",
+            ),
+            _check(
                 "provider_launch_synthetic_sidecar_proof_carried",
                 sidecar_proof_count,
                 "==",
@@ -504,6 +622,8 @@ def _checks(
 def _summary(
     launch_dir: Path,
     launch_summary: pd.DataFrame,
+    launch_config: dict[str, Any],
+    launch_manifest: dict[str, Any],
     provider_research_dir: Path,
     catalog: ExperimentCatalog | None,
     evidence: StrategyEvidenceReview | None,
@@ -516,6 +636,11 @@ def _summary(
     evidence_summary = evidence.summary if evidence is not None else pd.DataFrame()
     passed_required = int(_first_number(evidence_summary, "passed_required_run_types"))
     required_count = int(_first_number(evidence_summary, "required_run_type_count"))
+    config_receipt_proof = _mapping(launch_config.get("adapter_receipt_proof"))
+    manifest_receipt_proof = _mapping(
+        _mapping(launch_manifest.get("extra")).get("adapter_receipt_proof")
+    )
+    receipt_status = _adapter_receipt_proof_status(config_receipt_proof)
     return pd.DataFrame(
         [
             {
@@ -574,6 +699,28 @@ def _summary(
                 "adapter_handoff_provided": _first_bool(launch_summary, "adapter_handoff_provided"),
                 "adapter_handoff_exists": _first_bool(launch_summary, "adapter_handoff_exists"),
                 "adapter_handoff_sha256": _first_text(launch_summary, "adapter_handoff_sha256"),
+                "provider_launch_manifest_run_type": _text(
+                    launch_manifest.get("run_type")
+                ),
+                "adapter_receipt_proof_ready": bool(receipt_status["ready"]),
+                "adapter_receipt_proof_matches_manifest": bool(
+                    config_receipt_proof
+                    and manifest_receipt_proof
+                    and config_receipt_proof == manifest_receipt_proof
+                ),
+                "adapter_receipts_required": _truthy(
+                    config_receipt_proof.get("required")
+                ),
+                "adapter_receipt_required_count": int(
+                    receipt_status["required_count"]
+                ),
+                "adapter_receipt_valid_count": int(receipt_status["valid_count"]),
+                "adapter_receipt_fingerprint_match_count": int(
+                    receipt_status["receipt_fingerprint_match_count"]
+                ),
+                "capture_fingerprint_match_count": int(
+                    receipt_status["capture_fingerprint_match_count"]
+                ),
                 "source_credential_env_template_path": _first_text(
                     launch_summary, "source_credential_env_template_path"
                 ),
@@ -756,6 +903,7 @@ def _config(
     summary: pd.Series,
     launch_summary: pd.DataFrame,
     launch_config: dict[str, Any],
+    launch_manifest: dict[str, Any],
     catalog: ExperimentCatalog | None,
     evidence: StrategyEvidenceReview | None,
     checks: pd.DataFrame,
@@ -770,6 +918,9 @@ def _config(
         "summary": _series_record(summary),
         "provider_launch": _first_record(launch_summary),
         "provider_launch_config": _jsonable(launch_config),
+        "provider_launch_manifest_run_type": _text(
+            launch_manifest.get("run_type")
+        ),
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
         "market_session": _market_session_contract_from_summary(summary),
@@ -778,6 +929,9 @@ def _config(
         "provider_capture_commands": _provider_capture_commands(launch_config),
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(launch_config),
         "adapter_execution_contract": _mapping(launch_config.get("adapter_execution_contract")),
+        "adapter_receipt_proof": _mapping(
+            launch_config.get("adapter_receipt_proof")
+        ),
         "synthetic_sidecar_proof": _mapping(launch_config.get("synthetic_sidecar_proof")),
         "capture_bundle": _provider_capture_bundle(launch_summary, launch_config),
         "catalog": {
@@ -895,6 +1049,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Adapter receipt proof: {'ready' if bool(summary['adapter_receipt_proof_ready']) else 'blocked'} ({summary['adapter_receipt_fingerprint_match_count']}/{summary['adapter_receipt_required_count']} sealed; launch manifest match: {'yes' if bool(summary['adapter_receipt_proof_matches_manifest']) else 'no'})",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         f"- Catalog runs: {summary['catalog_run_count']}",
         f"- Required run types: {summary['passed_required_run_types']}/{summary['required_run_type_count']}",
@@ -1118,6 +1273,9 @@ def _provider_capture_bundle(launch_summary: pd.DataFrame, launch_config: dict[s
             launch_summary, "source_live_fetch_contract_session_close_local"
         ),
         "adapter_execution_contract": _mapping(launch_config.get("adapter_execution_contract")),
+        "adapter_receipt_proof": _mapping(
+            launch_config.get("adapter_receipt_proof")
+        ),
         "adapter_contract_provider": _first_text(launch_summary, "adapter_contract_provider"),
         "adapter_contract_transport": _first_text(launch_summary, "adapter_contract_transport"),
         "adapter_contract_market": _first_text(launch_summary, "adapter_contract_market"),
@@ -1160,6 +1318,96 @@ def _provider_capture_bundle(launch_summary: pd.DataFrame, launch_config: dict[s
         else True,
         "capture_bundle_provider_capture_commands": _bundle_provider_capture_commands(launch_config),
     }
+
+
+def _adapter_receipt_proof_status(proof: dict[str, Any]) -> dict[str, Any]:
+    records = [
+        _mapping(item)
+        for item in _list(proof.get("receipts"))
+        if _truthy(_mapping(item).get("adapter_receipt_required"))
+    ]
+    required_count = int(_number(proof.get("required_count")))
+    valid_count = int(_number(proof.get("valid_count")))
+    receipt_fingerprint_match_count = sum(
+        _proof_file_matches(
+            _text(record.get("adapter_receipt_path")),
+            _text(record.get("adapter_receipt_current_sha256"))
+            or _text(record.get("adapter_receipt_ingest_sha256")),
+        )
+        for record in records
+    )
+    capture_fingerprint_match_count = sum(
+        _proof_file_matches(
+            _text(record.get("capture_path")),
+            _text(record.get("capture_sha256")),
+        )
+        for record in records
+    )
+    ready = bool(
+        _truthy(proof.get("ready"))
+        and required_count > 0
+        and len(records) == required_count
+        and valid_count == required_count
+        and receipt_fingerprint_match_count == required_count
+        and capture_fingerprint_match_count == required_count
+    )
+    return {
+        "ready": ready,
+        "required_count": required_count,
+        "valid_count": valid_count,
+        "receipt_fingerprint_match_count": int(receipt_fingerprint_match_count),
+        "capture_fingerprint_match_count": int(capture_fingerprint_match_count),
+    }
+
+
+def _adapter_receipt_proof_paths(
+    proof: dict[str, Any],
+) -> tuple[list[Path], list[Path]]:
+    receipt_paths: list[Path] = []
+    capture_paths: list[Path] = []
+    for item in _list(proof.get("receipts")):
+        record = _mapping(item)
+        if not _truthy(record.get("adapter_receipt_required")):
+            continue
+        receipt_path = _path_from_text(_text(record.get("adapter_receipt_path")))
+        if (
+            receipt_path is not None
+            and receipt_path.exists()
+            and receipt_path.is_file()
+            and receipt_path not in receipt_paths
+        ):
+            receipt_paths.append(receipt_path)
+        capture_path = _path_from_text(_text(record.get("capture_path")))
+        if (
+            capture_path is not None
+            and capture_path.exists()
+            and capture_path.is_file()
+            and capture_path not in capture_paths
+        ):
+            capture_paths.append(capture_path)
+    return receipt_paths, capture_paths
+
+
+def _proof_file_matches(path_text: str, expected_sha256: str) -> bool:
+    path = _path_from_text(path_text)
+    return bool(
+        path is not None
+        and path.exists()
+        and path.is_file()
+        and expected_sha256
+        and _file_sha256(path) == expected_sha256
+    )
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    try:
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+    except OSError:
+        return ""
+    return digest.hexdigest()
 
 
 def _path_from_text(value: str) -> Path | None:

@@ -4835,10 +4835,13 @@ proof, `live_fetch_contract`, provider-profile contract/SHA, and credential-safe
 `adapter_execution_contract` when present in the provider evidence review. They
 also retain nested `synthetic_sidecar_proof` plus flattened sidecar counts, and
 block the downstream launch pipeline when synthetic provider folds are missing
-ready rehearsal sidecar proof. If the provider profile, adapter contract, or
-synthetic sidecar proof is missing, unsafe, or no longer matched to live
-evidence, the downstream launch pipeline is not run, keeping broker-facing
-artifacts tied to the live data source contract.
+ready rehearsal sidecar proof. The launch wrapper now reads the evidence
+manifest, requires its sealed `adapter_receipt_proof` to exactly match evidence
+config, re-hashes every required receipt and provider capture, and fingerprints
+those files again in the launch manifest. If the provider profile, adapter
+contract, adapter receipt proof, or synthetic sidecar proof is missing, unsafe,
+or no longer matched to live evidence, the downstream launch pipeline is not
+run, keeping broker-facing artifacts tied to the live data source contract.
 
 Review the full launch-ready imbalance profile from the provider launch packet:
 
@@ -4862,10 +4865,13 @@ provider-profile contract/SHA plus credential-safe `adapter_execution_contract`
 from the provider launch packet. They also retain nested
 `synthetic_sidecar_proof` plus flattened sidecar counts, and block scorecard
 readiness when synthetic provider folds are missing ready rehearsal sidecar
-proof. If the provider profile, adapter contract, or synthetic sidecar proof is
-missing, unsafe, or no longer matched to live evidence, scorecard readiness is
-blocked before later broker handoffs can drift from the provider-data source
-contract. Its next gate is
+proof. The review now reads the launch manifest, requires its sealed
+`adapter_receipt_proof` to exactly match launch config, re-hashes every required
+receipt and provider capture, and fingerprints those files in its own manifest.
+If the provider profile, adapter contract, adapter receipt proof, or synthetic
+sidecar proof is missing, unsafe, or no longer matched to live evidence,
+scorecard readiness is blocked before later broker handoffs can drift from the
+provider-data source contract. Its next gate is
 `score-strategy-readiness --profile imbalance`.
 
 Score the provider-data imbalance launch evidence for shadow scale-up planning:
