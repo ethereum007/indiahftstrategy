@@ -4548,6 +4548,44 @@ post-capture
 `ingest-provider-market-data-live-session` command without storing credential
 values.
 
+The default `provider-adapter capture` command is now an installed, fail-closed
+runner rather than a placeholder executable. Configure a reviewed provider
+backend as a trusted Python `module:function` entrypoint before running a
+generated capture command:
+
+```powershell
+$env:ARROW_MONEY_PROVIDER_ADAPTER_BACKEND = "approved_arrow_backend.capture:capture"
+$env:ARROW_MONEY_API_KEY = "<runtime value>"
+$env:ARROW_MONEY_API_SECRET = "<runtime value>"
+
+provider-adapter capture `
+  --handoff runs\provider_market_data_live_capture_bundles\arrow_ws_nse_2026_06_23\provider_market_data_adapter_handoff.json `
+  --env-template runs\provider_market_data_live_capture_bundles\arrow_ws_nse_2026_06_23\provider_market_data_live_capture_env_template.env `
+  --provider arrow_money `
+  --transport websocket `
+  --endpoint wss://feed.arrow.money/market-data/nse `
+  --market india_nse_index_derivatives `
+  --exchange NFO `
+  --kind ticks `
+  --start 2026-06-23T09:15:00+05:30 `
+  --end 2026-06-23T09:45:00+05:30 `
+  --output captures\provider_market_data\arrow_money\2026-06-23\open.csv
+```
+
+The backend callable receives one `ProviderCaptureRequest`, reads credential
+values from the runtime environment, and writes the exact requested output
+path. The runner validates handoff identity, blank credential-template
+contents, runtime credential presence, the exact capture window, ordered CSV
+schema, timestamps, quote ordering, and quantities. It then writes
+`<capture>.adapter.json` with handoff, template, backend, window, row-count, and
+output-hash proof while retaining only credential variable names and presence
+booleans. It refuses to run when the backend is absent, untrusted, mismatched,
+or produces drifted data. The generic `PROVIDER_ADAPTER_BACKEND` variable is a
+fallback; prefer the provider-specific variable recorded in
+`provider_market_data_adapter_handoff.json`. The repository still does not
+implement Arrow.money or iRage network APIs; those approved backend callables
+remain the real-provider integration boundary.
+
 Before using real provider credentials, rehearse the backend handoff with
 synthetic normalized captures:
 

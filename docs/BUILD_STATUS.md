@@ -147,6 +147,17 @@
   the same contract artifacts the bundle manifests. Bundle summary/JSON,
   adapter handoff, and manifest extras now include capture env-template and
   adapter handoff SHA-256 values for direct provider handoff audit.
+- The default provider capture command is now executable through the
+  credential-safe `provider-adapter` runner. It loads only an explicit trusted
+  Python `module:function` backend from the provider-specific backend env var
+  (or the generic fallback), validates the ready handoff and blank credential
+  template, requires runtime credentials without persisting their values,
+  enforces exact provider/window/output identity, and verifies CSV schema,
+  timestamps, quotes, and quantities before writing a hash-backed
+  `<capture>.adapter.json` receipt. Capture bundles now publish the backend
+  entrypoint env-var and callable contract in both the adapter handoff and
+  `adapter_execution_contract`. Arrow.money/iRage network backends remain
+  intentionally external until their approved API contracts are available.
 - Provider market-data live rehearsal now proves the backend handoff without
   provider credentials: `rehearse-provider-market-data-live-capture` writes
   explicitly marked synthetic normalized captures from the bundle, optionally
@@ -2253,14 +2264,15 @@ Run from repo root:
 pytest
 ```
 
-Current passing suite: 1110 tests.
+Current collected suite: 1402 tests. Last completed full-suite baseline: 1110
+passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: provider live bundle plus live rehearsal tests pass
-(`15 passed`), provider route-readiness plus scale-up targeted tests pass
-(`10 passed`), and the generic route-readiness suite passes (`8 passed`). A
-single-file run of `tests/test_provider_market_data_imbalance_research.py`
-exceeded the local timeout after provider path work, so the full-suite count
-above is left at the last completed full run.
+Latest focused gate: provider-adapter contract tests plus provider live bundle
+tests pass (`18 passed`). Core engine/strategy semantics (`39 passed`), launch
+pipelines (`45 passed`), and provider source/fetch/client/live-contract gates
+(`54 passed`) also pass. A full-suite run exceeded the 20-minute local timeout
+on the G-drive workspace, so 1110 remains the last completed full-suite green
+baseline rather than claiming the current 1402-test collection is fully green.
 
 ## Next Build Targets
 

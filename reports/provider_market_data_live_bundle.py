@@ -11,6 +11,7 @@ from typing import Any
 
 import pandas as pd
 
+from provider_adapter import backend_env_var
 from reports.manifest import write_experiment_manifest
 
 
@@ -653,6 +654,7 @@ def _adapter_handoff(
     output = _mapping(packet.get("output"))
     auth = _mapping(packet.get("authentication"))
     adapter_execution_contract = _adapter_execution_contract(summary, packet, preflight, env_presence, commands, config)
+    backend_contract = _provider_backend_contract(_text(packet.get("provider")))
     return {
         "schema_version": 1,
         "ready": bool(summary["ready"]),
@@ -679,6 +681,7 @@ def _adapter_handoff(
         },
         "source_credential_env_template": _credential_env_template_contract(summary),
         "capture_env_template": ENV_TEMPLATE_NAME,
+        "backend": backend_contract,
         "provider_profile": _session_provider_profile(packet),
         "adapter_execution_contract": adapter_execution_contract,
         "live_fetch_contract": _preflight_live_fetch_contract(preflight),
@@ -698,6 +701,7 @@ def _adapter_handoff(
         "handoff_invariants": {
             "credential_values_must_not_be_persisted": True,
             "credential_values_must_be_loaded_from_env": True,
+            "provider_backend_must_be_explicit_trusted_python_entrypoint": True,
             "adapter_must_write_exact_capture_paths": True,
             "capture_output_must_match_schema_columns": _string_list(output.get("schema_columns")),
             "run_post_capture_ingest_after_all_windows": True,
@@ -717,6 +721,9 @@ def _adapter_execution_contract(
     if not contract:
         contract = _preflight_adapter_execution_contract(preflight)
     provider_profile = _session_provider_profile(packet) or _preflight_provider_profile(preflight)
+    backend_contract = _provider_backend_contract(
+        _text(contract.get("provider") or packet.get("provider"))
+    )
     out = contract.copy()
     ready_commands = _records(_commands_with_status(commands, "ready" if bool(summary["ready"]) else "blocked"))
     out.update(
@@ -737,6 +744,9 @@ def _adapter_execution_contract(
             "capture_bundle_ready": bool(summary["ready"]),
             "adapter_handoff": ADAPTER_HANDOFF_NAME,
             "capture_env_template": ENV_TEMPLATE_NAME,
+            "backend_entrypoint_env_var": backend_contract["entrypoint_env_var"],
+            "backend_fallback_entrypoint_env_var": backend_contract["fallback_entrypoint_env_var"],
+            "backend_entrypoint_format": backend_contract["entrypoint_format"],
             "command_count": int(summary["command_count"]),
             "capture_commands": ready_commands,
             "post_capture_ingest_command": str(summary["post_capture_ingest_command"]),
@@ -747,6 +757,19 @@ def _adapter_execution_contract(
         }
     )
     return out
+
+
+def _provider_backend_contract(provider: str) -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "entrypoint_env_var": backend_env_var(provider) if provider else "",
+        "fallback_entrypoint_env_var": "PROVIDER_ADAPTER_BACKEND",
+        "entrypoint_format": "python.module:function",
+        "callable_signature": "capture(request: ProviderCaptureRequest) -> None",
+        "trusted_code_required": True,
+        "credential_loading": "read_required_values_from_environment_by_name",
+        "output_validation": "strict_handoff_csv_schema_and_session_window",
+    }
 
 
 def _commands_with_status(commands: pd.DataFrame, status: str) -> pd.DataFrame:

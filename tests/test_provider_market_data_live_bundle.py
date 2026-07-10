@@ -178,6 +178,9 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert bundle["adapter_execution_contract"]["command_count"] == 2
     assert bundle["adapter_execution_contract"]["adapter_handoff"] == "provider_market_data_adapter_handoff.json"
     assert bundle["adapter_execution_contract"]["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
+    assert bundle["adapter_execution_contract"]["backend_entrypoint_env_var"] == "ARROW_MONEY_PROVIDER_ADAPTER_BACKEND"
+    assert bundle["adapter_execution_contract"]["backend_fallback_entrypoint_env_var"] == "PROVIDER_ADAPTER_BACKEND"
+    assert bundle["adapter_execution_contract"]["backend_entrypoint_format"] == "python.module:function"
     assert bundle["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert "live_ticks" in bundle["adapter_execution_contract"]["provider_capabilities"]
     assert bundle["adapter_execution_contract"]["credential_env_vars"] == [
@@ -203,6 +206,10 @@ def test_provider_market_data_live_capture_bundle_accepts_ready_preflight(tmp_pa
     assert handoff["source_credential_env_template"]["exists"] is True
     assert handoff["capture_env_template"] == "provider_market_data_live_capture_env_template.env"
     assert handoff["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
+    assert handoff["backend"]["entrypoint_env_var"] == "ARROW_MONEY_PROVIDER_ADAPTER_BACKEND"
+    assert handoff["backend"]["fallback_entrypoint_env_var"] == "PROVIDER_ADAPTER_BACKEND"
+    assert handoff["backend"]["entrypoint_format"] == "python.module:function"
+    assert handoff["backend"]["trusted_code_required"] is True
     assert handoff["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert handoff["adapter_execution_contract"]["provider"] == "arrow_money"
     assert handoff["adapter_execution_contract"]["capture_bundle_ready"] is True
