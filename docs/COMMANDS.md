@@ -5130,7 +5130,13 @@ the live data source without opening nested runtime-session folders. It also
 retains nested `synthetic_sidecar_proof` plus flattened sidecar counts from the
 runtime-session wrapper. Missing, unsafe, or mismatched provider-profile,
 adapter-contract, or synthetic sidecar proof blocks cutover review and sends
-the packet back through provider runtime session.
+the packet back through provider runtime session. Before invoking the generic
+broker-readiness scorer, the wrapper reads the runtime-session manifest,
+requires exact `adapter_receipt_proof` agreement with session config, and
+re-hashes every required adapter receipt and provider capture. Receipt or
+capture drift leaves the nested generic broker-readiness report absent, routes
+remediation back to runtime session, and only accepted files are fingerprinted
+again in the broker-readiness manifest.
 Broker readiness also carries the provider route-readiness broker round-trip
 synthetic sidecar breach counter from runtime session; stale nonzero breach
 packets are routed back to
