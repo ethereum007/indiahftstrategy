@@ -5415,8 +5415,15 @@ metadata, capture-bundle session match proof, and `live_fetch_contract`
 inherited from dispatch. It also carries the credential-safe
 `adapter_execution_contract` from broker-dispatch plus the provider-profile
 contract/SHA so ack reconciliation can trace the live data adapter without
-exposing credential values. If that provider profile or adapter contract is
-missing, unsafe, or no longer matched to live evidence, broker-dispatch-send
+exposing credential values. Before invoking generic
+`prepare-broker-dispatch-send`, the wrapper reads the broker-dispatch manifest,
+requires its `adapter_receipt_proof` to match broker-dispatch config exactly,
+and re-hashes every required adapter receipt and provider capture. Accepted
+files are fingerprinted again in the send-packet manifest; any drift leaves the
+nested generic `broker_dispatch_send` absent and routes repair back to
+`plan-provider-market-data-imbalance-broker-dispatch`. If that provider profile
+or adapter contract is missing, unsafe, or no longer matched to live evidence,
+broker-dispatch-send
 blocks acknowledgement reconciliation and routes back to
 `plan-provider-market-data-imbalance-broker-dispatch`. It also carries nested
 `synthetic_sidecar_proof` plus flattened sidecar counts from broker-dispatch and
