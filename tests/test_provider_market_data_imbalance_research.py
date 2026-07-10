@@ -26764,6 +26764,16 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_capture_bund
         encoding="utf-8"
     )
     assert report.passed
+    assert (
+        summary["provider_broker_dispatch_send_manifest_run_type"]
+        == "provider_market_data_imbalance_broker_dispatch_send"
+    )
+    assert bool(summary["adapter_receipt_proof_ready"])
+    assert bool(summary["adapter_receipt_proof_matches_manifest"])
+    assert summary["adapter_receipt_required_count"] == 2
+    assert summary["adapter_receipt_valid_count"] == 2
+    assert summary["adapter_receipt_fingerprint_match_count"] == 2
+    assert summary["capture_fingerprint_match_count"] == 2
     assert Path(summary["capture_bundle_path"]) == bundle_path
     assert bool(summary["capture_bundle_provided"])
     assert bool(summary["capture_bundle_exists"])
@@ -26866,6 +26876,9 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_capture_bund
     assert config["capture_bundle_provider_capture_commands"][0]["provider"] == "arrow_money"
     assert config["exchange"] == "NFO"
     assert config["source_session"]["close_local"] == "15:30:00"
+    assert config["adapter_receipt_proof"]["ready"] is True
+    assert config["adapter_receipt_proof"]["valid_count"] == 2
+    assert config["capture_bundle"]["adapter_receipt_proof"]["ready"] is True
     assert config["provider_broker_dispatch_send"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert (
         config["provider_broker_dispatch_send"]["capture_env_template_sha256"]
@@ -26884,11 +26897,17 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_capture_bund
     assert config["provider_broker_dispatch_send"]["adapter_contract_metadata_matches_evidence"] is True
     assert config["provider_broker_dispatch_send"]["provider_capture_command_count"] == 2
     assert config["provider_broker_dispatch_send"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert (
+        config["provider_broker_dispatch_send_manifest_run_type"]
+        == "provider_market_data_imbalance_broker_dispatch_send"
+    )
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
+    assert len(manifest["inputs"]["adapter_receipts"]) == 2
+    assert len(manifest["inputs"]["provider_captures"]) == 2
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
@@ -26927,14 +26946,218 @@ def test_provider_market_data_imbalance_broker_dispatch_ack_carries_capture_bund
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_receipt_proof"]["ready"] is True
+    assert manifest["extra"]["adapter_receipt_proof"]["valid_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["adapter_receipt_proof"]["ready"] is True
     assert manifest["extra"]["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert "Exchange: NFO" in runbook
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Adapter receipt proof: ready (2/2 sealed; send manifest match: yes)" in runbook
     assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert f"Provider profile: {summary['provider_profile_sha256']} (bundle match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+
+
+def test_provider_market_data_imbalance_broker_dispatch_ack_blocks_receipt_proof_drift_after_send(
+    tmp_path,
+):
+    launch_evidence, _ = _write_bundle_linked_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+        route_readiness_dir=route_readiness.output_dir,
+    )
+    runtime_telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    runtime_guard = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+    runtime_session = write_provider_market_data_imbalance_runtime_session(
+        runtime_guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    broker_readiness = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+    cutover = write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        tmp_path / "provider_imbalance_cutover",
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+    route_enable = write_provider_market_data_imbalance_route_enable(
+        cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+    broker_dispatch = write_provider_market_data_imbalance_broker_dispatch(
+        route_enable.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch",
+        config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
+    )
+    provider_send = write_provider_market_data_imbalance_broker_dispatch_send(
+        broker_dispatch.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_send",
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_acks.csv",
+    )
+    provider_send_config = json.loads(
+        (
+            provider_send.output_dir
+            / "provider_market_data_imbalance_broker_dispatch_send_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest_path = provider_send.output_dir / "manifest.json"
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    provider_send_manifest = json.loads(manifest_text)
+    provider_send_manifest["extra"]["adapter_receipt_proof"]["valid_count"] = 1
+    manifest_path.write_text(
+        json.dumps(provider_send_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    manifest_drift_report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        tmp_path / "provider_imbalance_broker_dispatch_ack_manifest_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    manifest_drift_failed = set(
+        manifest_drift_report.checks.loc[
+            ~manifest_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert provider_send.ready
+    assert not manifest_drift_report.passed
+    assert manifest_drift_report.broker_dispatch_ack is None
+    assert (
+        "provider_broker_dispatch_send_adapter_receipt_proof_matches_manifest"
+        in manifest_drift_failed
+    )
+    assert not bool(
+        manifest_drift_report.summary.iloc[0][
+            "adapter_receipt_proof_matches_manifest"
+        ]
+    )
+    assert (
+        manifest_drift_report.action_queue.loc[0, "action"]
+        == "repair_provider_imbalance_broker_dispatch_send"
+    )
+    assert manifest_drift_report.action_queue.loc[0, "next_gate"] == (
+        "prepare-provider-market-data-imbalance-broker-dispatch-send"
+    )
+
+    manifest_path.write_text(manifest_text, encoding="utf-8")
+    receipt_path = Path(
+        provider_send_config["adapter_receipt_proof"]["receipts"][0][
+            "adapter_receipt_path"
+        ]
+    )
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt_path.write_text(
+        receipt_text + "\n",
+        encoding="utf-8",
+    )
+
+    receipt_drift_report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        tmp_path / "provider_imbalance_broker_dispatch_ack_receipt_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    receipt_drift_failed = set(
+        receipt_drift_report.checks.loc[
+            ~receipt_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not receipt_drift_report.passed
+    assert receipt_drift_report.broker_dispatch_ack is None
+    assert (
+        "provider_broker_dispatch_send_adapter_receipt_fingerprints_current"
+        in receipt_drift_failed
+    )
+    assert (
+        receipt_drift_report.summary.iloc[0][
+            "adapter_receipt_fingerprint_match_count"
+        ]
+        == 1
+    )
+    assert (
+        receipt_drift_report.action_queue.loc[0, "action"]
+        == "repair_provider_imbalance_broker_dispatch_send"
+    )
+    assert receipt_drift_report.action_queue.loc[0, "next_gate"] == (
+        "prepare-provider-market-data-imbalance-broker-dispatch-send"
+    )
+
+    receipt_path.write_text(receipt_text, encoding="utf-8")
+    capture_path = Path(
+        provider_send_config["adapter_receipt_proof"]["receipts"][0][
+            "capture_path"
+        ]
+    )
+    capture_path.write_bytes(capture_path.read_bytes() + b"\n")
+
+    capture_drift_report = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        tmp_path / "provider_imbalance_broker_dispatch_ack_capture_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+
+    capture_drift_failed = set(
+        capture_drift_report.checks.loc[
+            ~capture_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not capture_drift_report.passed
+    assert capture_drift_report.broker_dispatch_ack is None
+    assert (
+        "provider_broker_dispatch_send_capture_fingerprints_current"
+        in capture_drift_failed
+    )
+    assert (
+        capture_drift_report.summary.iloc[0]["capture_fingerprint_match_count"]
+        == 1
+    )
+    assert (
+        capture_drift_report.action_queue.loc[0, "action"]
+        == "repair_provider_imbalance_broker_dispatch_send"
+    )
+    assert capture_drift_report.action_queue.loc[0, "next_gate"] == (
+        "prepare-provider-market-data-imbalance-broker-dispatch-send"
+    )
 
 
 def test_provider_market_data_imbalance_broker_dispatch_ack_carries_synthetic_sidecar_proof(tmp_path):

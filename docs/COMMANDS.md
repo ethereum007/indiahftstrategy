@@ -5491,8 +5491,15 @@ metadata, capture-bundle session match proof, and `live_fetch_contract`
 inherited from the send packet. It also carries the credential-safe
 `adapter_execution_contract` from the send packet plus the provider-profile
 contract/SHA so round-trip review can trace the live data adapter without
-exposing credential values. If that provider profile or adapter contract is
-missing, unsafe, or no longer matched to live evidence, acknowledgement
+exposing credential values. Before invoking generic `reconcile-broker-dispatch`,
+the wrapper reads the send-packet manifest, requires its
+`adapter_receipt_proof` to match send-packet config exactly, and re-hashes every
+required adapter receipt and provider capture. Accepted files are fingerprinted
+again in the acknowledgement manifest; any drift leaves the nested generic
+`broker_dispatch_ack` absent and routes repair back to
+`prepare-provider-market-data-imbalance-broker-dispatch-send`. If that provider
+profile or adapter contract is missing, unsafe, or no longer matched to live
+evidence, acknowledgement
 reconciliation blocks round-trip review and routes back to
 `prepare-provider-market-data-imbalance-broker-dispatch-send`. It also carries
 nested `synthetic_sidecar_proof` plus flattened sidecar counts from the send

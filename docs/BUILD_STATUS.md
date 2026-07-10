@@ -523,7 +523,12 @@
   It also carries nested `synthetic_sidecar_proof` plus flattened sidecar
   counts from broker dispatch send and blocks broker-dispatch round-trip review
   when synthetic provider folds are missing ready rehearsal sidecar proof.
-  Acknowledgement reconciliation now also preserves the send-carried
+  Acknowledgement reconciliation now reads the send-packet manifest, requires
+  exact `adapter_receipt_proof` agreement with send-packet config, re-hashes
+  every required receipt and provider capture, fingerprints accepted files in
+  its own manifest, and refuses to invoke generic acknowledgement reconciliation
+  when that proof has drifted. Acknowledgement reconciliation now also
+  preserves the send-carried
   route-readiness provider broker round-trip synthetic sidecar breach counter
   and routes stale nonzero breach packets back to provider route readiness.
 - Provider market-data imbalance broker dispatch round-trip now preserves those
@@ -2337,14 +2342,14 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1421 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1422 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider broker-dispatch-send receipt-boundary paths
-pass. Bundle-linked positive provenance and post-broker-dispatch
-manifest/receipt/capture drift pass together (`2 passed`); the established
-ready-dispatch compatibility and missing-adapter-contract paths also pass (`2
-passed`). The immediately preceding four broker-dispatch, four route-enable,
+Latest focused gate: four provider broker-dispatch-ack receipt-boundary paths
+pass. Bundle-linked positive provenance and post-send manifest/receipt/capture
+drift pass together (`2 passed`); the established ready-send compatibility and
+missing-adapter-contract paths also pass (`2 passed`). The immediately
+preceding four broker-dispatch-send, four broker-dispatch, four route-enable,
 four cutover, four broker-readiness, four runtime-session, four runtime-guard,
 four runtime-telemetry, four scale-up, four scorecard, eight
 launch/launch-evidence, and ten research/evidence receipt-boundary paths remain
@@ -2357,7 +2362,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1421-test collection is fully green.
+1422-test collection is fully green.
 
 ## Next Build Targets
 
