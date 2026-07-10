@@ -345,7 +345,12 @@
   readiness when either contract is missing, unsafe, or no longer matched to
   live evidence. It also carries nested `synthetic_sidecar_proof` plus
   flattened sidecar counts from launch evidence and blocks scale-up readiness
-  when synthetic provider folds are missing ready rehearsal sidecar proof.
+  when synthetic provider folds are missing ready rehearsal sidecar proof. The
+  scorecard now reads the launch-evidence manifest, requires exact
+  `adapter_receipt_proof` agreement with launch-evidence config, re-hashes every
+  required receipt and provider capture, fingerprints those files in its own
+  manifest, and refuses to run the nested readiness scorer when that proof has
+  drifted.
 - Provider market-data imbalance scale-up planning now preserves the same live
   adapter audit trail from the provider scorecard: the scale-up summary/config
   and manifest extras carry capture env-template and adapter handoff SHA-256
@@ -2291,25 +2296,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1411 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1412 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: eight downstream provider-imbalance receipt-boundary paths
-pass. Launch packet positive provenance and post-evidence receipt mutation pass
-together (`2 passed`); launch-evidence positive provenance and packet
-config/manifest mismatch pass together (`2 passed`); the two original no-bundle
-launch/evidence ready paths also remain green (`2 passed`); the neighboring
-missing-adapter-contract blocks remain green at both layers (`2 passed`). The
-immediately preceding ten research/evidence receipt-boundary paths remain green,
-as do the complete receipt-aware live-evidence plus research-handoff suites (`25
-passed`). The upstream provider-adapter/live-ingest (`22 passed`), provider live
-rehearsal (`5 passed`), core engine/strategy semantics (`39 passed`), launch
-pipelines (`45 passed`), and provider source/fetch/client/live-contract gates
-(`54 passed`) also remain green. A combined 14-case provider-imbalance wrapper
-run previously exceeded the 25-minute local timeout without returning a result,
-and the full-suite run exceeded the 20-minute timeout on the G-drive workspace.
-Therefore 1110 remains the last completed full-suite green baseline rather than
-claiming the current 1411-test collection is fully green.
+Latest focused gate: four provider scorecard receipt-boundary paths pass.
+Bundle-linked positive provenance and post-launch-evidence receipt mutation pass
+together (`2 passed`); the original no-bundle ready path and neighboring
+missing-adapter-contract block also pass (`2 passed`). The immediately preceding
+eight launch/launch-evidence and ten research/evidence receipt-boundary paths
+remain green, as do the complete receipt-aware live-evidence plus
+research-handoff suites (`25 passed`). The upstream provider-adapter/live-ingest
+(`22 passed`), provider live rehearsal (`5 passed`), core engine/strategy
+semantics (`39 passed`), launch pipelines (`45 passed`), and provider
+source/fetch/client/live-contract gates (`54 passed`) also remain green. A
+combined 14-case provider-imbalance wrapper run previously exceeded the
+25-minute local timeout without returning a result, and the full-suite run
+exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
+the last completed full-suite green baseline rather than claiming the current
+1412-test collection is fully green.
 
 ## Next Build Targets
 

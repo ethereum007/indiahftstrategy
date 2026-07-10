@@ -4895,8 +4895,12 @@ proof, `live_fetch_contract`, provider-profile contract/SHA, and credential-safe
 `adapter_execution_contract` before scale-up planning begins. It also carries
 nested `synthetic_sidecar_proof` plus flattened sidecar counts, and blocks
 scale-up readiness when synthetic provider folds are missing ready rehearsal
-sidecar proof. If the provider profile, adapter contract, or synthetic sidecar
-proof is missing, unsafe, or no longer matched to live evidence, the scorecard
+sidecar proof. The provider scorecard now reads the launch-evidence manifest,
+requires exact `adapter_receipt_proof` agreement with launch-evidence config,
+re-hashes every required receipt and provider capture, and fingerprints those
+files in its own manifest. If the provider profile, adapter contract, adapter
+receipt proof, or synthetic sidecar proof is missing, unsafe, or no longer
+matched to live evidence, the nested readiness scorer is not run; the wrapper
 blocks scale-up readiness and sends the packet back through launch-evidence
 review.
 
