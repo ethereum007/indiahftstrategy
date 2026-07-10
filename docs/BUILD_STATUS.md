@@ -486,7 +486,12 @@
   no longer matched to live evidence. It also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from route enable and
   blocks broker-dispatch-send preparation when synthetic provider folds are
-  missing ready rehearsal sidecar proof. Broker dispatch now also preserves the
+  missing ready rehearsal sidecar proof. Broker dispatch now reads the
+  route-enable manifest, requires exact `adapter_receipt_proof` agreement with
+  route-enable config, re-hashes every required receipt and provider capture,
+  fingerprints accepted files in its own manifest, and refuses to invoke the
+  generic broker-dispatch planner when that proof has drifted. Broker dispatch
+  now also preserves the
   route-enable-carried route-readiness provider broker round-trip synthetic
   sidecar breach counter and routes stale nonzero breach packets back to
   provider route readiness.
@@ -2327,26 +2332,27 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1419 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1420 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider route-enable receipt-boundary paths pass.
-Bundle-linked positive provenance and post-cutover manifest/receipt/capture
-drift pass together (`2 passed`); the established ready-cutover compatibility
-and missing-adapter-contract paths also pass (`2 passed`). The immediately
-preceding four cutover, four broker-readiness, four runtime-session, four
-runtime-guard, four runtime-telemetry, four scale-up, four scorecard, eight
-launch/launch-evidence, and ten research/evidence receipt-boundary paths remain
-green, as do the complete receipt-aware live-evidence plus research-handoff
-suites (`25 passed`). The upstream provider-adapter/live-ingest (`22 passed`),
-provider live rehearsal (`5 passed`), core engine/strategy semantics (`39
-passed`), launch pipelines (`45 passed`), and provider
+Latest focused gate: four provider broker-dispatch receipt-boundary paths pass.
+Bundle-linked positive provenance and post-route-enable
+manifest/receipt/capture drift pass together (`2 passed`); the established
+ready-route-enable compatibility and missing-adapter-contract paths also pass
+(`2 passed`). The immediately preceding four route-enable, four cutover, four
+broker-readiness, four runtime-session, four runtime-guard, four
+runtime-telemetry, four scale-up, four scorecard, eight launch/launch-evidence,
+and ten research/evidence receipt-boundary paths remain green, as do the
+complete receipt-aware live-evidence plus research-handoff suites (`25
+passed`). The upstream provider-adapter/live-ingest (`22 passed`), provider
+live rehearsal (`5 passed`), core engine/strategy semantics (`39 passed`),
+launch pipelines (`45 passed`), and provider
 source/fetch/client/live-contract gates (`54 passed`) also remain green. A
 combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1419-test collection is fully green.
+1420-test collection is fully green.
 
 ## Next Build Targets
 

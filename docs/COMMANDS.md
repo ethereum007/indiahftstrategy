@@ -5346,7 +5346,13 @@ handoff paths, source credential env-template proof, exchange/session metadata,
 capture-bundle session match proof, and `live_fetch_contract` inherited from
 route-enable. It also carries the credential-safe `adapter_execution_contract`
 from route-enable plus the provider-profile contract/SHA so send preparation can
-trace the live data adapter without exposing credential values. If that
+trace the live data adapter without exposing credential values. Before invoking
+generic `plan-broker-dispatch`, the wrapper reads the route-enable manifest,
+requires its `adapter_receipt_proof` to match route-enable config exactly, and
+re-hashes every required adapter receipt and provider capture. Accepted files
+are fingerprinted again in the broker-dispatch manifest; any drift leaves the
+nested generic `broker_dispatch` absent and routes repair back to
+`review-provider-market-data-imbalance-route-enable`. If that
 provider profile or adapter contract is missing, unsafe, or no longer matched
 to live evidence, broker-dispatch blocks send preparation and routes back to
 `review-provider-market-data-imbalance-route-enable`. It also carries nested
