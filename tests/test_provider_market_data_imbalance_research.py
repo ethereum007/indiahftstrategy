@@ -18761,10 +18761,22 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert summary["capture_bundle_provider_capture_command_count"] == 2
     assert summary["capture_bundle_provider_capture_command_missing_count"] == 0
     assert bool(summary["capture_bundle_provider_capture_commands_match_session"])
+    assert (
+        summary["provider_cutover_manifest_run_type"]
+        == "provider_market_data_imbalance_cutover"
+    )
+    assert bool(summary["adapter_receipt_proof_ready"])
+    assert bool(summary["adapter_receipt_proof_matches_manifest"])
+    assert summary["adapter_receipt_required_count"] == 2
+    assert summary["adapter_receipt_valid_count"] == 2
+    assert summary["adapter_receipt_fingerprint_match_count"] == 2
+    assert summary["capture_fingerprint_match_count"] == 2
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
     assert config["adapter_execution_contract"]["transport"] == "websocket"
     assert config["adapter_execution_contract"]["values_stored"] is False
     assert config["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
+    assert config["adapter_receipt_proof"]["ready"] is True
+    assert config["adapter_receipt_proof"]["valid_count"] == 2
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["exchange"] == "NFO"
     assert config["capture_bundle"]["source_session"]["timezone"] == "Asia/Kolkata"
@@ -18783,6 +18795,7 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert config["capture_bundle"]["source_live_fetch_contract_exchange"] == "NFO"
     assert config["capture_bundle"]["source_live_fetch_contract_session_open_local"] == "09:15:00"
     assert config["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert config["capture_bundle"]["adapter_receipt_proof"]["ready"] is True
     assert (
         config["capture_bundle"]["adapter_execution_contract"]["provider_profile_sha256"]
         == summary["provider_profile_sha256"]
@@ -18821,11 +18834,14 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert config["provider_cutover"]["provider_profile_matches_bundle"] is True
     assert config["provider_cutover"]["provider_capture_command_count"] == 2
     assert config["provider_cutover"]["capture_bundle_provider_capture_commands_match_session"] is True
+    assert config["provider_cutover_manifest_run_type"] == "provider_market_data_imbalance_cutover"
     assert manifest["inputs"]["capture_bundle"]["path"] == str(bundle_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["path"] == str(env_template_path.resolve())
     assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
+    assert len(manifest["inputs"]["adapter_receipts"]) == 2
+    assert len(manifest["inputs"]["provider_captures"]) == 2
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
@@ -18864,14 +18880,178 @@ def test_provider_market_data_imbalance_route_enable_carries_capture_bundle_prov
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["adapter_receipt_proof"]["ready"] is True
+    assert manifest["extra"]["adapter_receipt_proof"]["valid_count"] == 2
+    assert manifest["extra"]["capture_bundle"]["adapter_receipt_proof"]["ready"] is True
     assert manifest["extra"]["capture_bundle"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert "Exchange: NFO" in runbook
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Adapter receipt proof: ready (2/2 sealed; cutover manifest match: yes)" in runbook
     assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert f"Provider profile: {summary['provider_profile_sha256']} (bundle match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+
+
+def test_provider_market_data_imbalance_route_enable_blocks_receipt_proof_drift_after_cutover(
+    tmp_path,
+):
+    launch_evidence, _ = _write_bundle_linked_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+        route_readiness_dir=route_readiness.output_dir,
+    )
+    runtime_telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    runtime_guard = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+    runtime_session = write_provider_market_data_imbalance_runtime_session(
+        runtime_guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    broker_readiness = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+    cutover = write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        tmp_path / "provider_imbalance_cutover",
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+    cutover_config = json.loads(
+        (
+            cutover.output_dir
+            / "provider_market_data_imbalance_cutover_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest_path = cutover.output_dir / "manifest.json"
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    cutover_manifest = json.loads(manifest_text)
+    cutover_manifest["extra"]["adapter_receipt_proof"]["valid_count"] = 1
+    manifest_path.write_text(
+        json.dumps(cutover_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    manifest_drift_report = write_provider_market_data_imbalance_route_enable(
+        cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable_manifest_drift",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    manifest_drift_failed = set(
+        manifest_drift_report.checks.loc[
+            ~manifest_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert cutover.ready
+    assert not manifest_drift_report.ready
+    assert manifest_drift_report.route_enable is None
+    assert (
+        "provider_cutover_adapter_receipt_proof_matches_manifest"
+        in manifest_drift_failed
+    )
+    assert not bool(
+        manifest_drift_report.summary.iloc[0][
+            "adapter_receipt_proof_matches_manifest"
+        ]
+    )
+    assert (
+        manifest_drift_report.action_queue.loc[0, "action"]
+        == "repair_provider_imbalance_cutover"
+    )
+    assert manifest_drift_report.action_queue.loc[0, "next_gate"] == (
+        "review-provider-market-data-imbalance-cutover"
+    )
+
+    manifest_path.write_text(manifest_text, encoding="utf-8")
+    receipt_path = Path(
+        cutover_config["adapter_receipt_proof"]["receipts"][0]["adapter_receipt_path"]
+    )
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt_path.write_text(
+        receipt_text + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_route_enable(
+        cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert cutover.ready
+    assert not report.ready
+    assert report.route_enable is None
+    assert "provider_cutover_adapter_receipt_fingerprints_current" in failed
+    assert report.summary.iloc[0]["adapter_receipt_fingerprint_match_count"] == 1
+    assert (
+        report.action_queue.loc[0, "action"]
+        == "repair_provider_imbalance_cutover"
+    )
+    assert report.action_queue.loc[0, "next_gate"] == (
+        "review-provider-market-data-imbalance-cutover"
+    )
+
+    receipt_path.write_text(receipt_text, encoding="utf-8")
+    capture_path = Path(
+        cutover_config["adapter_receipt_proof"]["receipts"][0]["capture_path"]
+    )
+    capture_path.write_bytes(capture_path.read_bytes() + b"\n")
+
+    capture_drift_report = write_provider_market_data_imbalance_route_enable(
+        cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable_capture_drift",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+
+    capture_drift_failed = set(
+        capture_drift_report.checks.loc[
+            ~capture_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not capture_drift_report.ready
+    assert capture_drift_report.route_enable is None
+    assert "provider_cutover_capture_fingerprints_current" in capture_drift_failed
+    assert (
+        capture_drift_report.summary.iloc[0]["capture_fingerprint_match_count"]
+        == 1
+    )
+    assert (
+        capture_drift_report.action_queue.loc[0, "action"]
+        == "repair_provider_imbalance_cutover"
+    )
+    assert capture_drift_report.action_queue.loc[0, "next_gate"] == (
+        "review-provider-market-data-imbalance-cutover"
+    )
 
 
 def test_provider_market_data_imbalance_route_enable_carries_synthetic_sidecar_proof(tmp_path):

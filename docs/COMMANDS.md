@@ -5276,7 +5276,13 @@ exchange/session metadata, capture-bundle session match proof, and
 `live_fetch_contract`, the provider-profile contract/SHA, plus the
 credential-safe `adapter_execution_contract` inherited from cutover so dispatch
 planners can trace the live data source before packaging broker orders without
-exposing credential values. It also carries any nested
+exposing credential values. Before invoking generic `review-route-enable`, the
+wrapper reads the cutover manifest, requires its `adapter_receipt_proof` to
+match the cutover config exactly, and re-hashes every required adapter receipt
+and provider capture. Accepted receipt/capture files are fingerprinted in the
+route-enable manifest; any drift leaves the nested generic `route_enable`
+absent and routes repair back to
+`review-provider-market-data-imbalance-cutover`. It also carries any nested
 `synthetic_sidecar_proof` and flattened sidecar counts inherited from cutover.
 If that provider profile, adapter contract, or required synthetic sidecar proof
 is missing, unsafe, unready, or no longer matched to live evidence,
