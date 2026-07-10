@@ -2087,8 +2087,13 @@
   capture-command proof, and `live_fetch_contract` into provider
   summary/config/runbook artifacts plus manifest metadata, carries the
   ack-retained final `dispatch_roundtrip_route_readiness_*` sidecar breach
-  proof, blocks broker-readiness feed on nonzero final dry-run provider
-  sidecar breaches, writes provider
+  proof, reads the acknowledgement manifest, requires exact config/manifest
+  `adapter_receipt_proof` agreement, re-hashes every required adapter receipt
+  and provider capture, and fingerprints the accepted files in its own
+  manifest. Receipt-proof or file drift prevents the nested generic round-trip
+  from running and routes repair back to provider broker-dispatch
+  acknowledgement reconciliation. It blocks broker-readiness feed on nonzero
+  final dry-run provider sidecar breaches, writes provider
   checks/summary/action/config/runbook artifacts, indexes the run for
   catalog/scorecard discovery, and routes clean
   dry-run round-trip evidence to
@@ -2342,16 +2347,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1422 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1423 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider broker-dispatch-ack receipt-boundary paths
-pass. Bundle-linked positive provenance and post-send manifest/receipt/capture
-drift pass together (`2 passed`); the established ready-send compatibility and
-missing-adapter-contract paths also pass (`2 passed`). The immediately
-preceding four broker-dispatch-send, four broker-dispatch, four route-enable,
-four cutover, four broker-readiness, four runtime-session, four runtime-guard,
-four runtime-telemetry, four scale-up, four scorecard, eight
+Latest focused gate: four provider broker-dispatch-roundtrip receipt-boundary
+paths pass. Bundle-linked positive provenance and post-ack
+manifest/receipt/capture drift pass together (`2 passed`); the established
+ready-ack compatibility and missing-adapter-contract paths also pass (`2
+passed`). The immediately preceding four broker-dispatch-ack, four
+broker-dispatch-send, four broker-dispatch, four route-enable, four cutover,
+four broker-readiness, four runtime-session, four runtime-guard, four
+runtime-telemetry, four scale-up, four scorecard, eight
 launch/launch-evidence, and ten research/evidence receipt-boundary paths remain
 green, as do the complete receipt-aware live-evidence plus research-handoff
 suites (`25 passed`). The upstream provider-adapter/live-ingest (`22 passed`),
@@ -2362,7 +2368,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1422-test collection is fully green.
+1423-test collection is fully green.
 
 ## Next Build Targets
 

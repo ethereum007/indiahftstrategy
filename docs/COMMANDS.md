@@ -5564,7 +5564,15 @@ exchange/session metadata, capture-bundle session match proof, and
 `live_fetch_contract`, plus the credential-safe `adapter_execution_contract`
 from acknowledgement reconciliation plus the provider-profile contract/SHA, so
 broker-readiness feed can trace the live data adapter without exposing
-credential values. If that provider profile or adapter contract is missing,
+credential values. Before invoking the generic round-trip review, the wrapper
+reads the provider acknowledgement manifest and requires its
+`adapter_receipt_proof` to match the acknowledgement config exactly. It then
+re-hashes every required adapter receipt and provider capture and fingerprints
+the accepted files in the provider round-trip manifest. Manifest-proof drift or
+changed receipt/capture bytes leave the nested generic
+`broker_dispatch_roundtrip` artifact absent and route repair back to
+`reconcile-provider-market-data-imbalance-broker-dispatch`. If that provider
+profile or adapter contract is missing,
 unsafe, or no longer matched to live evidence, round-trip review blocks
 broker-readiness feed and routes back to
 `reconcile-provider-market-data-imbalance-broker-dispatch`. It also carries
