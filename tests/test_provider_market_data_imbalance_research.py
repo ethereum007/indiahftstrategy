@@ -5609,6 +5609,12 @@ def test_provider_market_data_imbalance_runtime_guard_carries_capture_bundle_pro
     assert summary["capture_bundle_market_session_open_local"] == "09:15"
     assert bool(summary["capture_bundle_metadata_matches_session"])
     assert bool(summary["capture_bundle_live_fetch_contract_metadata_matches_session"])
+    assert bool(summary["adapter_receipt_proof_ready"])
+    assert bool(summary["adapter_receipt_proof_matches_manifest"])
+    assert summary["adapter_receipt_required_count"] == 2
+    assert summary["adapter_receipt_valid_count"] == 2
+    assert summary["adapter_receipt_fingerprint_match_count"] == 2
+    assert summary["capture_fingerprint_match_count"] == 2
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
@@ -5643,6 +5649,8 @@ def test_provider_market_data_imbalance_runtime_guard_carries_capture_bundle_pro
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
     assert config["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["values_stored"] is False
+    assert config["adapter_receipt_proof"]["ready"] is True
+    assert config["adapter_receipt_proof"]["valid_count"] == 2
     assert config["provider_runtime_telemetry"]["adapter_handoff_path"] == str(adapter_handoff_path)
     assert config["provider_runtime_telemetry"]["adapter_handoff_sha256"] == summary["adapter_handoff_sha256"]
     assert config["provider_runtime_telemetry"]["source_credential_env_template_path"] == str(
@@ -5662,6 +5670,8 @@ def test_provider_market_data_imbalance_runtime_guard_carries_capture_bundle_pro
     assert manifest["inputs"]["capture_env_template"]["sha256"] == summary["capture_env_template_sha256"]
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
+    assert len(manifest["inputs"]["adapter_receipts"]) == 2
+    assert len(manifest["inputs"]["provider_captures"]) == 2
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
@@ -5677,6 +5687,8 @@ def test_provider_market_data_imbalance_runtime_guard_carries_capture_bundle_pro
         "provider_profile_sha256"
     ]
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
+    assert manifest["extra"]["adapter_receipt_proof"]["ready"] is True
+    assert manifest["extra"]["adapter_receipt_proof"]["valid_count"] == 2
     assert manifest["extra"]["adapter_contract_provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert manifest["extra"]["adapter_contract_provider_profile_matches_evidence"] is True
     assert manifest["extra"]["provider_capture_command_count"] == 2
@@ -5692,17 +5704,70 @@ def test_provider_market_data_imbalance_runtime_guard_carries_capture_bundle_pro
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
     assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["capture_bundle"]["adapter_receipt_proof"]["ready"] is True
     assert manifest["extra"]["capture_bundle_provided"]
     assert manifest["extra"]["capture_env_template_exists"]
     assert manifest["extra"]["adapter_handoff_exists"]
     assert manifest["extra"]["source_credential_env_template"]["exists"] is True
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
+    assert "Adapter receipt proof: ready (2/2 sealed; telemetry manifest match: yes)" in runbook
     assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert f"Provider profile: {summary['provider_profile_sha256']} (bundle match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
     assert str(source_env_template_path) in runbook
     assert str(adapter_handoff_path) in runbook
+
+
+def test_provider_market_data_imbalance_runtime_guard_blocks_receipt_mutated_after_telemetry(tmp_path):
+    launch_evidence, _ = _write_bundle_linked_provider_imbalance_launch_evidence(tmp_path)
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+    )
+    runtime_telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    telemetry_config = json.loads(
+        (
+            runtime_telemetry.output_dir
+            / "provider_market_data_imbalance_runtime_telemetry_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    receipt_path = Path(
+        telemetry_config["adapter_receipt_proof"]["receipts"][0]["adapter_receipt_path"]
+    )
+    receipt_path.write_text(
+        receipt_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert report.guard is None
+    assert "provider_runtime_telemetry_adapter_receipt_fingerprints_current" in failed
+    assert report.summary.iloc[0]["adapter_receipt_fingerprint_match_count"] == 1
+    assert report.action_queue.loc[0, "action"] == "repair_provider_imbalance_runtime_telemetry"
+    assert report.action_queue.loc[0, "next_gate"] == (
+        "build-provider-market-data-imbalance-runtime-telemetry"
+    )
 
 
 def test_provider_market_data_imbalance_runtime_guard_carries_synthetic_sidecar_proof(tmp_path):

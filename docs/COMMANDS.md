@@ -5046,7 +5046,13 @@ manifest. It also retains nested `synthetic_sidecar_proof` plus flattened
 sidecar counts from runtime telemetry. Missing, unsafe, or mismatched
 provider-profile, adapter-contract, or synthetic sidecar proof blocks
 runtime-session monitoring and sends the packet back through provider runtime
-telemetry. Runtime guard also carries the provider route-readiness broker
+telemetry. Before invoking the generic guard, the wrapper reads the runtime
+telemetry manifest, requires exact `adapter_receipt_proof` agreement with the
+telemetry config, and re-hashes every required adapter receipt and provider
+capture. Receipt or capture drift leaves the nested generic guard absent,
+routes remediation back to runtime telemetry generation, and only accepted
+files are fingerprinted again in the guard manifest. Runtime guard also carries
+the provider route-readiness broker
 round-trip synthetic sidecar breach counter from runtime telemetry; stale
 nonzero breach packets are routed back to
 `review-provider-market-data-imbalance-route-readiness`. It converts guard
