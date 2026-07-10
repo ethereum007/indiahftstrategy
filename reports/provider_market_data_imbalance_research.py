@@ -165,6 +165,22 @@ def write_provider_market_data_imbalance_research(
     source_env_template = _path_from_text(str(summary_row["source_credential_env_template_path"]))
     if source_env_template is not None and source_env_template.exists():
         manifest_inputs["source_credential_env_template"] = source_env_template
+    receipt_paths = (
+        [Path(str(path)) for path in handoff.datasets["adapter_receipt_path"].astype(str).tolist()]
+        if not handoff.datasets.empty
+        else []
+    )
+    existing_receipts = [path for path in receipt_paths if path.exists() and path.is_file()]
+    if existing_receipts:
+        manifest_inputs["adapter_receipts"] = existing_receipts
+    capture_paths = (
+        [Path(str(path)) for path in handoff.datasets["capture_path"].astype(str).tolist()]
+        if not handoff.datasets.empty
+        else []
+    )
+    existing_captures = [path for path in capture_paths if path.exists() and path.is_file()]
+    if existing_captures:
+        manifest_inputs["provider_captures"] = existing_captures
     if pipeline is not None:
         manifest_inputs["imbalance_research"] = pipeline_dir
     write_experiment_manifest(
@@ -177,6 +193,7 @@ def write_provider_market_data_imbalance_research(
             "pipeline_ready": bool(summary.iloc[0]["pipeline_ready"]),
             "handoff_ready": bool(summary.iloc[0]["handoff_ready"]),
             "candidate_ready": bool(summary.iloc[0]["candidate_ready"]),
+            "adapter_receipt_proof": _mapping(payload.get("adapter_receipt_proof")),
             "synthetic_sidecar_proof": _mapping(payload.get("synthetic_sidecar_proof")),
             "exchange": str(summary.iloc[0]["exchange"]),
             "source_session": _source_session_contract_from_summary(summary.iloc[0]),
@@ -238,6 +255,9 @@ def write_provider_market_data_imbalance_research(
                 ),
                 "adapter_execution_contract": _mapping(
                     _mapping(payload.get("capture_bundle")).get("adapter_execution_contract")
+                ),
+                "adapter_receipt_proof": _mapping(
+                    payload.get("adapter_receipt_proof")
                 ),
                 "metadata_matches_session": bool(summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -406,6 +426,17 @@ def _checks(
     sidecar_proof_required = synthetic_dataset_count > 0
     sidecar_proof_count_matches = sidecar_proof_count == synthetic_dataset_count
     sidecar_proof_ready = _truthy(handoff_row.get("synthetic_sidecar_proof_ready"))
+    dataset_count = int(handoff_row.get("dataset_count", 0) or 0)
+    receipt_required_count = int(
+        handoff_row.get("adapter_receipt_required_count", 0) or 0
+    )
+    receipt_valid_count = int(handoff_row.get("adapter_receipt_valid_count", 0) or 0)
+    receipt_fingerprint_match_count = int(
+        handoff_row.get("adapter_receipt_fingerprint_match_count", 0) or 0
+    )
+    capture_fingerprint_match_count = int(
+        handoff_row.get("capture_fingerprint_match_count", 0) or 0
+    )
     return pd.DataFrame(
         [
             _check(
@@ -497,6 +528,50 @@ def _checks(
                 if bundle_provided
                 else True,
                 "provider research handoff adapter contract provider-profile SHA no longer matches live evidence",
+            ),
+            _check(
+                "provider_research_handoff_adapter_receipt_proof_ready",
+                _truthy(handoff_row.get("adapter_receipt_proof_ready")),
+                "is",
+                True,
+                _truthy(handoff_row.get("adapter_receipt_proof_ready")) if bundle_provided else True,
+                "provider research handoff adapter receipt proof is not ready",
+            ),
+            _check(
+                "provider_research_handoff_adapter_receipt_proofs_match_evidence_manifest",
+                _truthy(handoff_row.get("adapter_receipt_proofs_match_evidence_manifest")),
+                "is",
+                True,
+                _truthy(handoff_row.get("adapter_receipt_proofs_match_evidence_manifest"))
+                if bundle_provided
+                else True,
+                "provider research handoff receipt proof differs between evidence config and manifest",
+            ),
+            _check(
+                "provider_research_handoff_adapter_receipts_valid",
+                receipt_valid_count,
+                "==",
+                receipt_required_count,
+                receipt_valid_count == receipt_required_count if bundle_provided else True,
+                "provider research handoff did not validate every required adapter receipt",
+            ),
+            _check(
+                "provider_research_handoff_adapter_receipt_fingerprints_match_evidence",
+                receipt_fingerprint_match_count,
+                "==",
+                receipt_required_count,
+                receipt_fingerprint_match_count == receipt_required_count
+                if bundle_provided
+                else True,
+                "provider research handoff receipt files changed after evidence review",
+            ),
+            _check(
+                "provider_research_handoff_capture_fingerprints_match_evidence",
+                capture_fingerprint_match_count,
+                "==",
+                dataset_count,
+                bool(dataset_count and capture_fingerprint_match_count == dataset_count),
+                "provider research handoff capture files changed after evidence review",
             ),
             _check(
                 "provider_research_handoff_synthetic_sidecar_proof_carried",
@@ -608,6 +683,27 @@ def _summary(
                 "adapter_handoff_provided": _truthy(handoff_row.get("adapter_handoff_provided")),
                 "adapter_handoff_exists": _truthy(handoff_row.get("adapter_handoff_exists")),
                 "adapter_handoff_sha256": str(handoff_row.get("adapter_handoff_sha256", "") or ""),
+                "adapter_receipt_proof_ready": _truthy(
+                    handoff_row.get("adapter_receipt_proof_ready")
+                ),
+                "adapter_receipt_proofs_match_evidence_manifest": _truthy(
+                    handoff_row.get("adapter_receipt_proofs_match_evidence_manifest")
+                ),
+                "adapter_receipts_required": _truthy(
+                    handoff_row.get("adapter_receipts_required")
+                ),
+                "adapter_receipt_required_count": int(
+                    handoff_row.get("adapter_receipt_required_count", 0) or 0
+                ),
+                "adapter_receipt_valid_count": int(
+                    handoff_row.get("adapter_receipt_valid_count", 0) or 0
+                ),
+                "adapter_receipt_fingerprint_match_count": int(
+                    handoff_row.get("adapter_receipt_fingerprint_match_count", 0) or 0
+                ),
+                "capture_fingerprint_match_count": int(
+                    handoff_row.get("capture_fingerprint_match_count", 0) or 0
+                ),
                 "source_credential_env_template_path": str(
                     handoff_row.get("source_credential_env_template_path", "") or ""
                 ),
@@ -852,6 +948,11 @@ def _config(
         "adapter_execution_contract": _mapping(
             handoff.config.get("adapter_execution_contract") if isinstance(handoff.config, dict) else {}
         ),
+        "adapter_receipt_proof": _mapping(
+            handoff.config.get("adapter_receipt_proof")
+            if isinstance(handoff.config, dict)
+            else {}
+        ),
         "synthetic_sidecar_proof": _mapping(
             handoff.config.get("synthetic_sidecar_proof") if isinstance(handoff.config, dict) else {}
         ),
@@ -940,6 +1041,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Adapter receipt proof: {'ready' if bool(summary['adapter_receipt_proof_ready']) else 'blocked'} ({summary['adapter_receipt_fingerprint_match_count']}/{summary['adapter_receipt_required_count']} sealed)",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Edge passed: {'yes' if bool(summary['edge_passed']) else 'no'}",
@@ -1188,6 +1290,11 @@ def _handoff_capture_bundle(handoff: ProviderMarketDataResearchHandoffReport) ->
         ),
         "adapter_execution_contract": _mapping(
             handoff.config.get("adapter_execution_contract") if isinstance(handoff.config, dict) else {}
+        ),
+        "adapter_receipt_proof": _mapping(
+            handoff.config.get("adapter_receipt_proof")
+            if isinstance(handoff.config, dict)
+            else {}
         ),
         "adapter_contract_provider": str(row.get("adapter_contract_provider", "") or ""),
         "adapter_contract_transport": str(row.get("adapter_contract_transport", "") or ""),

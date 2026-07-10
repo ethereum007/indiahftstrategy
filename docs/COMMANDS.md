@@ -4760,12 +4760,16 @@ paths, upstream source credential env-template proof, exchange/session metadata,
 `adapter_execution_contract` carried by the nested research handoff. They also
 carry nested `synthetic_sidecar_proof`, so explicit synthetic-smoke runs remain
 blocked if rehearsal sidecar proof is missing, stale, or does not cover every
-synthetic fold. If the provider profile or adapter contract is missing, stores
-credential values, or no longer matches live evidence, the strategy pipeline is
-blocked before imbalance research runs. If the live evidence is synthetic smoke
-evidence, not research-ready, or too thin, the strategy pipeline is not run and
-the action queue points back to the provider evidence or imbalance research
-gate.
+synthetic fold. The wrapper now also requires the nested handoff's sealed
+`adapter_receipt_proof`, verifies its receipt and capture hash counts against
+live evidence, fingerprints every required receipt and capture in its own
+manifest, and carries the proof into summary/config/runbook and manifest
+artifacts. If the provider profile, adapter contract, or adapter receipt proof
+is missing, unsafe, incomplete, or no longer matches live evidence, the
+strategy pipeline is blocked before imbalance research runs. If the live
+evidence is synthetic smoke evidence, not research-ready, or too thin, the
+strategy pipeline is not run and the action queue points back to the provider
+evidence or imbalance research gate.
 
 Review the provider imbalance research evidence before building broker launch
 artifacts:
@@ -4791,12 +4795,15 @@ provider-profile contract/SHA plus credential-safe
 research wrapper. It also carries nested `synthetic_sidecar_proof` and flattened
 sidecar counts from provider imbalance research, so synthetic provider folds
 remain blocked from launch packaging if rehearsal sidecar proof is missing or no
-longer covers every synthetic fold. If the provider profile, adapter contract,
-or synthetic sidecar proof is missing, unsafe, or no longer matched to live
-evidence, the review blocks launch packaging. A ready review points to
-`pipeline-imbalance-launch`; it does not weaken the full `imbalance` profile,
-which still requires order-plan and launch pipeline proof before shadow
-scale-up.
+longer covers every synthetic fold. The review reads the provider research
+manifest, requires its sealed `adapter_receipt_proof` to exactly match the
+research config, rechecks the receipt/capture fingerprint counts, and carries
+that proof into the evidence manifest. If the provider profile, adapter
+contract, adapter receipt proof, or synthetic sidecar proof is missing, unsafe,
+or no longer matched to live evidence, the review blocks launch packaging. A
+ready review points to `pipeline-imbalance-launch`; it does not weaken the full
+`imbalance` profile, which still requires order-plan and launch pipeline proof
+before shadow scale-up.
 
 Build the provider imbalance launch packet directly from the ready evidence
 review:

@@ -256,7 +256,11 @@
   when either contract is missing, unsafe, or no longer matched to live
   evidence. It now also carries nested `synthetic_sidecar_proof` and blocks
   explicit synthetic-smoke research when the rehearsal sidecar proof is missing,
-  stale, or does not cover every synthetic fold.
+  stale, or does not cover every synthetic fold. The wrapper now requires the
+  handoff's sealed `adapter_receipt_proof`, verifies every required receipt and
+  capture fingerprint against live evidence, fingerprints those source files in
+  its own manifest, and blocks before strategy math when that proof is missing,
+  incomplete, or mismatched.
 - Provider market-data imbalance evidence review now packages live-data research
   into a research-only evidence profile:
   `review-provider-market-data-imbalance-evidence` catalogs the provider
@@ -276,7 +280,11 @@
   unsafe, or no longer matched to live evidence. It now also carries nested
   `synthetic_sidecar_proof` plus flattened sidecar counts from provider
   imbalance research, and blocks launch packaging when synthetic provider folds
-  are missing ready rehearsal sidecar proof.
+  are missing ready rehearsal sidecar proof. The review now reads the provider
+  research manifest, requires its sealed `adapter_receipt_proof` to exactly
+  match research config, rechecks all receipt/capture fingerprint counts, and
+  preserves the proof in summary/config/runbook and manifest artifacts before
+  launch packaging can become ready.
 - Provider market-data imbalance launch packaging now bridges ready provider
   research evidence into broker handoff artifacts:
   `pipeline-provider-market-data-imbalance-launch` infers the promoted candidate,
@@ -2276,20 +2284,26 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1407 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1409 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: the complete receipt-aware live-evidence plus
-research-handoff suites pass (`25 passed`), including post-ingest and
-post-evidence receipt mutation tests. A strict bundle-linked provider-imbalance
-provenance path also passes (`1 passed`). The immediately preceding upstream
-gate remains green for provider-adapter/live-ingest (`22 passed`) and provider
-live rehearsal (`5 passed`). Core engine/strategy semantics (`39 passed`),
-launch pipelines (`45 passed`), and provider
-source/fetch/client/live-contract gates (`54 passed`) also pass. A full-suite
-run exceeded the 20-minute local timeout
-on the G-drive workspace, so 1110 remains the last completed full-suite green
-baseline rather than claiming the current 1407-test collection is fully green.
+Latest focused gate: ten provider-imbalance receipt-boundary paths pass. Four
+receipt-specific research/evidence cases cover positive sealed provenance,
+missing handoff proof, and research config/manifest mismatch; four neighboring
+adapter-contract and synthetic-sidecar fail-closed cases pass together
+(`4 passed`); the two original real-evidence ready paths without capture bundles
+also remain green together (`2 passed`). The complete receipt-aware
+live-evidence plus research-handoff suites pass (`25 passed`), including
+post-ingest and post-evidence receipt mutation tests. The immediately preceding
+upstream gate remains green for provider-adapter/live-ingest (`22 passed`) and
+provider live rehearsal (`5 passed`). Core engine/strategy semantics (`39
+passed`), launch pipelines (`45 passed`), and provider
+source/fetch/client/live-contract gates (`54 passed`) also pass. A combined
+14-case provider-imbalance wrapper run exceeded the 25-minute local timeout
+without returning a result, and the full-suite run previously exceeded the
+20-minute timeout on the G-drive workspace. Therefore 1110 remains the last
+completed full-suite green baseline rather than claiming the current 1409-test
+collection is fully green.
 
 ## Next Build Targets
 
