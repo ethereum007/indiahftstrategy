@@ -4967,7 +4967,12 @@ sidecar counts from the provider scorecard and blocks runtime telemetry when
 synthetic provider folds are missing ready rehearsal sidecar proof. Missing,
 unsafe, or mismatched provider-profile, adapter-contract, or synthetic sidecar
 proof keeps scale-up blocked at provider scorecard readiness before runtime
-telemetry begins. A ready wrapper points to
+telemetry begins. The scale-up wrapper also reads the provider scorecard
+manifest, requires exact `adapter_receipt_proof` agreement with scorecard
+config, re-hashes every required receipt and provider capture, and fingerprints
+those files in its own manifest. Receipt or capture drift prevents the generic
+scale-up planner from running and routes remediation back to provider scorecard
+generation. A ready wrapper points to
 `build-provider-market-data-imbalance-runtime-telemetry`; missing or rejected
 shadow evidence stays blocked at `compare-shadow-sessions`.
 
