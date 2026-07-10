@@ -5003,7 +5003,14 @@ credential-safe `adapter_execution_contract` from scale-up in its
 summary/config/runbook and manifest. It also retains nested
 `synthetic_sidecar_proof` plus flattened sidecar counts from scale-up and
 blocks guard monitoring when synthetic provider folds are missing ready
-rehearsal sidecar proof. It also carries the provider route-readiness broker
+rehearsal sidecar proof. Before invoking the generic telemetry builder, the
+wrapper reads the provider scale-up manifest, requires exact
+`adapter_receipt_proof` agreement with scale-up config, and re-hashes every
+required adapter receipt and provider capture. Receipt or capture drift keeps
+telemetry blocked, leaves the nested generic telemetry absent, and routes
+remediation back to provider scale-up planning; accepted files are
+fingerprinted again in the runtime telemetry manifest. It also carries the
+provider route-readiness broker
 round-trip synthetic sidecar breach counter from scale-up, and stale packets
 with nonzero route sidecar breaches are routed back to
 `review-provider-market-data-imbalance-route-readiness`. Missing, unsafe, or
