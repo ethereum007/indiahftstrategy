@@ -10418,6 +10418,20 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
         ]
     )
 
+    send_eleventh_roundtrip_out = (
+        tmp_path / "cli_provider_imbalance_broker_dispatch_send_eleventh_roundtrip_sidecar_zero"
+    )
+    send_eleventh_roundtrip_code = main(
+        [
+            "prepare-provider-market-data-imbalance-broker-dispatch-send",
+            "--provider-broker-dispatch",
+            str(dispatch_eleventh_roundtrip_out),
+            "--out",
+            str(send_eleventh_roundtrip_out),
+            "--fail-on-breach",
+        ]
+    )
+
     route_pairs = pd.read_csv(route_out / "route_readiness" / "route_readiness_pairs.csv")
     roundtrip_summary = pd.read_csv(
         roundtrip_out / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
@@ -11580,6 +11594,21 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     dispatch_eleventh_roundtrip_manifest = json.loads(
         (dispatch_eleventh_roundtrip_out / "manifest.json").read_text(encoding="utf-8")
     )
+    send_eleventh_roundtrip_summary = pd.read_csv(
+        send_eleventh_roundtrip_out / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
+    )
+    send_eleventh_roundtrip_packet_summary = pd.read_csv(
+        send_eleventh_roundtrip_out / "broker_dispatch_send" / "broker_dispatch_send_summary.csv"
+    )
+    send_eleventh_roundtrip_config = json.loads(
+        (
+            send_eleventh_roundtrip_out
+            / "provider_market_data_imbalance_broker_dispatch_send_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    send_eleventh_roundtrip_manifest = json.loads(
+        (send_eleventh_roundtrip_out / "manifest.json").read_text(encoding="utf-8")
+    )
 
     assert route_code == 0
     assert scaleup_code == 0
@@ -11667,6 +11696,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     assert cutover_eleventh_roundtrip_code == 0
     assert route_enable_eleventh_roundtrip_code == 0
     assert dispatch_eleventh_roundtrip_code == 0
+    assert send_eleventh_roundtrip_code == 0
     assert route_pairs.loc[0, "ops_evidence_source"] == str(
         clean_ops_evidence / "strategy_evidence_summary.csv"
     )
@@ -14644,6 +14674,47 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
     assert (
         dispatch_eleventh_roundtrip_manifest["extra"][
             "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert bool(send_eleventh_roundtrip_summary.loc[0, "ready"])
+    assert bool(send_eleventh_roundtrip_summary.loc[0, "provider_broker_dispatch_ready"])
+    assert bool(send_eleventh_roundtrip_summary.loc[0, "broker_dispatch_send_ready"])
+    assert bool(send_eleventh_roundtrip_packet_summary.loc[0, "ready"])
+    assert send_eleventh_roundtrip_summary.loc[0, "request_state"] == "dry_run_send_packet_ready"
+    assert not bool(send_eleventh_roundtrip_summary.loc[0, "submission_enabled"])
+    assert send_eleventh_roundtrip_summary.loc[0, "next_gate"] == "reconcile-broker-dispatch"
+    assert bool(send_eleventh_roundtrip_summary.loc[0, "dispatch_roundtrip_route_readiness_provided"])
+    assert (
+        int(
+            send_eleventh_roundtrip_summary.loc[
+                0,
+                "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
+            ]
+        )
+        == 0
+    )
+    assert (
+        send_eleventh_roundtrip_config["summary"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        send_eleventh_roundtrip_config["dispatch_roundtrip_provenance"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        send_eleventh_roundtrip_manifest["extra"][
+            "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
+        ]
+        == 0
+    )
+    assert (
+        send_eleventh_roundtrip_manifest["extra"]["dispatch_roundtrip"][
+            "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
         ]
         == 0
     )
