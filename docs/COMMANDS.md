@@ -4678,7 +4678,13 @@ when carried, or against the referenced files when the rehearsal ingest did not
 carry the bundle block, before classifying it as backend smoke evidence. It
 fails closed if capture-bundle source metadata, provider-profile metadata,
 adapter-contract metadata, or rehearsal sidecar proof drifts from the live
-session packet.
+session packet. For bundle-linked real captures, evidence review also reruns
+the adapter receipt validator against the current capture, handoff, credential
+template, provider identity, schema, and session window. It requires every
+receipt hash and record to match both the ingest config and ingest manifest,
+then fingerprints the receipts again in the evidence manifest. A capture or
+receipt changed after ingest therefore blocks research readiness and routes
+back through provider adapter plus live ingest.
 Use `--allow-synthetic-rehearsal` only to classify a smoke test; the
 recommendation remains to replace synthetic captures with real Arrow.money/iRage
 provider captures before feeding walk-forward research.
@@ -4709,7 +4715,11 @@ source credential env-template proof, exchange/session metadata, and
 `live_fetch_contract` before strategy research starts. They also retain the
 provider-profile contract/SHA plus credential-safe
 `adapter_execution_contract` and block if either is missing, stores credential
-values, or no longer matches live evidence. Synthetic smoke evidence remains
+values, or no longer matches live evidence. The handoff also requires the
+evidence receipt proof to match between evidence config and manifest, then
+recomputes every provider capture and required receipt hash before emitting a
+strategy command. Post-evidence file changes route back to live-evidence review.
+Synthetic smoke evidence remains
 blocked by default, but the handoff still carries the live-evidence
 `synthetic_sidecar_proof` into summary/config/runbook and manifest artifacts;
 if smoke mode is explicitly enabled, missing or stale sidecar proof routes back

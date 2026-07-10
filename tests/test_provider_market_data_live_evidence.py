@@ -263,6 +263,16 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert summary["capture_bundle_market_session_open_local"] == "09:15"
     assert summary["capture_bundle_metadata_matches_session"]
     assert summary["capture_bundle_live_fetch_contract_metadata_matches_session"]
+    assert summary["adapter_receipt_proof_ready"]
+    assert summary["adapter_receipts_required"]
+    assert summary["adapter_receipt_required_count"] == 2
+    assert summary["adapter_receipt_present_count"] == 2
+    assert summary["adapter_receipt_valid_count"] == 2
+    assert summary["adapter_receipt_fingerprint_match_count"] == 2
+    assert summary["adapter_receipt_manifest_input_match_count"] == 2
+    assert summary["adapter_receipt_lineage_matches"]
+    assert report.captures["adapter_receipt_revalidated"].astype(bool).all()
+    assert report.captures["adapter_receipt_fingerprint_matches_ingest"].astype(bool).all()
     assert config["capture_bundle"]["capture_bundle_path"] == str(bundle_path)
     assert config["capture_bundle"]["capture_env_template_path"] == str(env_template_path)
     assert config["capture_bundle"]["capture_env_template_sha256"] == summary["capture_env_template_sha256"]
@@ -287,6 +297,9 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert config["adapter_execution_contract"]["provider"] == "arrow_money"
     assert config["adapter_execution_contract"]["provider_profile_sha256"] == summary["provider_profile_sha256"]
     assert config["adapter_execution_contract"]["values_stored"] is False
+    assert config["adapter_receipt_proof"]["ready"] is True
+    assert config["adapter_receipt_proof"]["valid_count"] == 2
+    assert len(config["adapter_receipt_proof"]["receipts"]) == 2
     assert config["live_session_packet"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
     assert config["capture_bundle"]["capture_bundle_exchange"] == "NFO"
     assert config["capture_bundle"]["capture_bundle_source_session"]["timezone"] == "Asia/Kolkata"
@@ -300,6 +313,7 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert manifest["inputs"]["adapter_handoff"]["path"] == str(adapter_handoff_path.resolve())
     assert manifest["inputs"]["adapter_handoff"]["sha256"] == summary["adapter_handoff_sha256"]
     assert manifest["inputs"]["source_credential_env_template"]["path"] == str(source_env_template_path.resolve())
+    assert len(manifest["inputs"]["adapter_receipts"]) == 2
     assert manifest["extra"]["exchange"] == "NFO"
     assert manifest["extra"]["source_session"]["timezone"] == "Asia/Kolkata"
     assert manifest["extra"]["provider_profile"]["sha256"] == summary["provider_profile_sha256"]
@@ -312,6 +326,8 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert manifest["extra"]["live_fetch_contract"]["available"] is True
     assert manifest["extra"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["adapter_execution_contract"]["values_stored"] is False
+    assert manifest["extra"]["adapter_receipt_proof"]["ready"] is True
+    assert manifest["extra"]["adapter_receipt_proof"]["valid_count"] == 2
     assert manifest["extra"]["live_fetch_contract"]["exchange"] == "NFO"
     assert manifest["extra"]["live_fetch_contract"]["session"]["close_local"] == "15:30:00"
     assert manifest["extra"]["provider_capture_command_count"] == 2
@@ -326,6 +342,32 @@ def test_provider_market_data_live_evidence_carries_capture_bundle_provenance(tm
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands"][0]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["adapter_execution_contract"]["provider"] == "arrow_money"
     assert manifest["extra"]["capture_bundle"]["provider_capture_commands_match_session"] is True
+
+
+def test_provider_market_data_live_evidence_blocks_receipt_changed_after_ingest(tmp_path):
+    ingest, _ = _write_bundle_linked_real_ingest(tmp_path)
+    receipt_path = Path(str(ingest.windows.iloc[0]["adapter_receipt_path"]))
+    receipt_path.write_text(
+        receipt_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_market_data_live_evidence_review(
+        ingest.output_dir,
+        tmp_path / "evidence",
+        config=ProviderMarketDataLiveEvidenceConfig(min_capture_rows=2),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert not bool(report.summary.iloc[0]["research_ready"])
+    assert "adapter_receipts_revalidated" in failed
+    assert "adapter_receipt_fingerprints_match_ingest" in failed
+    assert "adapter_receipt_proof_ready" in failed
+    assert report.summary.iloc[0]["adapter_receipt_valid_count"] == 1
+    assert report.summary.iloc[0]["adapter_receipt_fingerprint_match_count"] == 1
+    assert report.action_queue.loc[0, "action"] == "rerun_provider_adapter_and_live_ingest"
+    assert report.action_queue.loc[0, "next_gate"] == "ingest-provider-market-data-live-session"
 
 
 def test_provider_market_data_live_evidence_blocks_capture_bundle_session_mismatch(tmp_path):

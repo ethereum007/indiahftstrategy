@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 
+from provider_adapter import ProviderAdapterError, validate_provider_capture_receipt
 from reports.manifest import write_experiment_manifest
 
 
@@ -80,6 +81,14 @@ def write_provider_market_data_live_evidence_review(
     capture_paths = [Path(str(path)) for path in report.captures["capture_path"].astype(str).tolist()] if not report.captures.empty else []
     if capture_paths:
         inputs["captures"] = [path for path in capture_paths if path.exists()]
+    receipt_paths = (
+        [Path(str(path)) for path in report.captures["adapter_receipt_path"].astype(str).tolist()]
+        if not report.captures.empty
+        else []
+    )
+    existing_receipts = [path for path in receipt_paths if path.exists() and path.is_file()]
+    if existing_receipts:
+        inputs["adapter_receipts"] = existing_receipts
     sidecar_paths = (
         [Path(str(path)) for path in report.captures["rehearsal_sidecar_path"].astype(str).tolist()]
         if not report.captures.empty
@@ -106,6 +115,7 @@ def write_provider_market_data_live_evidence_review(
             "source_session": _source_session_contract_from_summary(report.summary.iloc[0]),
             "market_session": _market_session_contract_from_summary(report.summary.iloc[0]),
             "provider_profile": _mapping(report.config.get("provider_profile")),
+            "adapter_receipt_proof": _mapping(report.config.get("adapter_receipt_proof")),
             "capture_bundle_metadata_matches_session": bool(report.summary.iloc[0]["capture_bundle_metadata_matches_session"]),
             "capture_bundle_live_fetch_contract_metadata_matches_session": bool(
                 report.summary.iloc[0]["capture_bundle_live_fetch_contract_metadata_matches_session"]
@@ -138,6 +148,9 @@ def write_provider_market_data_live_evidence_review(
                 ),
                 "adapter_execution_contract": _mapping(
                     _mapping(report.config.get("capture_bundle")).get("adapter_execution_contract")
+                ),
+                "adapter_receipt_proof": _mapping(
+                    report.config.get("adapter_receipt_proof")
                 ),
                 "metadata_matches_session": bool(report.summary.iloc[0]["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -200,9 +213,18 @@ def evaluate_provider_market_data_live_evidence(
     manifest, manifest_error = _read_json(ingest_dir / "manifest.json")
     live_packet_path = Path(_first_text(ingest_summary, "live_session_packet_path"))
     live_packet, packet_error = _read_json(live_packet_path)
-    captures = _captures(ingest_windows, config)
     batch = _batch_status(ingest_summary, ingest_config)
     capture_provenance = _capture_provenance(ingest_config, manifest)
+    captures = _captures(
+        ingest_windows,
+        config,
+        live_packet=live_packet,
+        capture_provenance=capture_provenance,
+    )
+    capture_provenance["adapter_receipt_proof"] = _adapter_receipt_proof(
+        captures,
+        capture_provenance,
+    )
     checks = pd.DataFrame(
         _checks(
             ingest_dir,
@@ -282,7 +304,13 @@ def _read_json(path: Path) -> tuple[dict[str, Any], str]:
     return payload, ""
 
 
-def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfig) -> pd.DataFrame:
+def _captures(
+    windows: pd.DataFrame,
+    config: ProviderMarketDataLiveEvidenceConfig,
+    *,
+    live_packet: dict[str, Any],
+    capture_provenance: dict[str, Any],
+) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for index, row in enumerate(windows.to_dict(orient="records") if not windows.empty else [], start=1):
         capture_path = Path(_text(row.get("capture_path")))
@@ -290,7 +318,14 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
         sidecar, sidecar_error = _read_json(sidecar_path) if str(sidecar_path) and sidecar_path.exists() else ({}, "")
         capture_exists = bool(str(capture_path) and capture_path.exists() and capture_path.is_file())
         capture_rows = _capture_rows(capture_path) if capture_exists else 0
+        capture_sha256 = _file_sha256_or_empty(capture_path) if capture_exists else ""
         synthetic = bool(sidecar_path.exists() and _truthy(sidecar.get("synthetic_only", True)))
+        receipt_state = _adapter_receipt_state(
+            row,
+            capture_path,
+            live_packet=live_packet,
+            capture_provenance=capture_provenance,
+        )
         sidecar_capture_env = _mapping(sidecar.get("capture_env_template"))
         sidecar_handoff = _mapping(sidecar.get("adapter_handoff"))
         sidecar_source_env = _mapping(sidecar.get("source_credential_env_template"))
@@ -306,8 +341,12 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
                 "capture_exists": capture_exists,
                 "capture_size_bytes": int(capture_path.stat().st_size) if capture_exists else 0,
                 "capture_rows": int(capture_rows),
+                "capture_sha256": capture_sha256,
                 "min_capture_rows": int(config.min_capture_rows),
                 "row_count_ok": bool(capture_rows >= config.min_capture_rows),
+                "start_local": _text(row.get("start_local")),
+                "end_local": _text(row.get("end_local")),
+                **receipt_state,
                 "rehearsal_sidecar_path": str(sidecar_path),
                 "rehearsal_sidecar_exists": bool(sidecar_path.exists()),
                 "synthetic_rehearsal": synthetic,
@@ -349,8 +388,29 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
             "capture_exists",
             "capture_size_bytes",
             "capture_rows",
+            "capture_sha256",
             "min_capture_rows",
             "row_count_ok",
+            "start_local",
+            "end_local",
+            "adapter_receipt_required",
+            "adapter_receipt_path",
+            "adapter_receipt_ingest_exists",
+            "adapter_receipt_ingest_valid",
+            "adapter_receipt_ingest_sha256",
+            "adapter_receipt_current_exists",
+            "adapter_receipt_current_sha256",
+            "adapter_receipt_fingerprint_matches_ingest",
+            "adapter_receipt_revalidated",
+            "adapter_receipt_backend_entrypoint",
+            "adapter_receipt_capture_match",
+            "adapter_receipt_contract_match",
+            "adapter_receipt_handoff_match",
+            "adapter_receipt_env_template_match",
+            "adapter_receipt_credential_contract_safe",
+            "adapter_receipt_window_match",
+            "adapter_receipt_schema_match",
+            "adapter_receipt_error",
             "rehearsal_sidecar_path",
             "rehearsal_sidecar_exists",
             "synthetic_rehearsal",
@@ -374,6 +434,97 @@ def _captures(windows: pd.DataFrame, config: ProviderMarketDataLiveEvidenceConfi
             "sidecar_invariant_adapter_writes_exact_capture_path",
         ],
     )
+
+
+def _adapter_receipt_state(
+    window: dict[str, Any],
+    capture_path: Path,
+    *,
+    live_packet: dict[str, Any],
+    capture_provenance: dict[str, Any],
+) -> dict[str, Any]:
+    receipt_path = _path_from_text(_text(window.get("adapter_receipt_path")))
+    if receipt_path is None:
+        receipt_path = Path(f"{capture_path}.adapter.json")
+    required = _truthy(window.get("adapter_receipt_required"))
+    ingest_sha256 = _text(window.get("adapter_receipt_sha256"))
+    defaults = {
+        "adapter_receipt_required": required,
+        "adapter_receipt_path": str(receipt_path),
+        "adapter_receipt_ingest_exists": _truthy(window.get("adapter_receipt_exists")),
+        "adapter_receipt_ingest_valid": _truthy(window.get("adapter_receipt_valid")),
+        "adapter_receipt_ingest_sha256": ingest_sha256,
+        "adapter_receipt_current_exists": bool(receipt_path.exists() and receipt_path.is_file()),
+        "adapter_receipt_current_sha256": "",
+        "adapter_receipt_fingerprint_matches_ingest": False,
+        "adapter_receipt_revalidated": False,
+        "adapter_receipt_backend_entrypoint": "",
+        "adapter_receipt_capture_match": False,
+        "adapter_receipt_contract_match": False,
+        "adapter_receipt_handoff_match": False,
+        "adapter_receipt_env_template_match": False,
+        "adapter_receipt_credential_contract_safe": False,
+        "adapter_receipt_window_match": False,
+        "adapter_receipt_schema_match": False,
+        "adapter_receipt_error": "adapter receipt is not required for this capture",
+    }
+    if not required:
+        return defaults
+    handoff_path = _path_from_text(_text(capture_provenance.get("adapter_handoff_path")))
+    env_template_path = _path_from_text(
+        _text(capture_provenance.get("capture_env_template_path"))
+    )
+    if handoff_path is None or env_template_path is None:
+        defaults["adapter_receipt_error"] = (
+            "adapter receipt cannot be revalidated without handoff and env template"
+        )
+        return defaults
+    try:
+        validation = validate_provider_capture_receipt(
+            receipt_path=receipt_path,
+            capture_path=capture_path,
+            handoff_path=handoff_path,
+            env_template_path=env_template_path,
+            provider=_text(live_packet.get("provider")),
+            transport=_text(live_packet.get("transport")),
+            endpoint=_text(live_packet.get("endpoint")),
+            market=_text(live_packet.get("market")),
+            exchange=_text(live_packet.get("exchange")),
+            kind=_text(live_packet.get("kind")),
+            start_local=_text(window.get("start_local")),
+            end_local=_text(window.get("end_local")),
+            schema_columns=_string_list(_mapping(live_packet.get("output")).get("schema_columns")),
+            credential_env_vars=_string_list(
+                _mapping(live_packet.get("authentication")).get("env_vars")
+            ),
+        )
+    except (OSError, TypeError, ValueError, ProviderAdapterError) as exc:
+        defaults["adapter_receipt_error"] = (
+            f"adapter receipt revalidation failed ({type(exc).__name__})"
+        )
+        return defaults
+    fingerprint_matches = bool(
+        ingest_sha256
+        and validation.receipt_sha256 == ingest_sha256
+    )
+    return {
+        **defaults,
+        "adapter_receipt_current_exists": bool(validation.exists),
+        "adapter_receipt_current_sha256": str(validation.receipt_sha256),
+        "adapter_receipt_fingerprint_matches_ingest": fingerprint_matches,
+        "adapter_receipt_revalidated": bool(validation.passed and fingerprint_matches),
+        "adapter_receipt_backend_entrypoint": str(validation.backend_entrypoint),
+        "adapter_receipt_capture_match": bool(validation.capture_match),
+        "adapter_receipt_contract_match": bool(validation.contract_match),
+        "adapter_receipt_handoff_match": bool(validation.handoff_match),
+        "adapter_receipt_env_template_match": bool(validation.env_template_match),
+        "adapter_receipt_credential_contract_safe": bool(
+            validation.credential_contract_safe
+        ),
+        "adapter_receipt_window_match": bool(validation.window_match),
+        "adapter_receipt_schema_match": bool(validation.schema_match),
+        "adapter_receipt_error": str(validation.error),
+    }
 
 
 def _capture_rows(path: Path) -> int:
@@ -412,6 +563,15 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
     manifest_extra_handoff = _mapping(manifest_extra.get("adapter_handoff"))
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
+    ingest_adapter_receipts = _mapping(ingest_config.get("adapter_receipts")) or _mapping(
+        bundle.get("adapter_receipts")
+    )
+    manifest_adapter_receipts = _mapping(manifest_extra.get("adapter_receipts")) or _mapping(
+        manifest_extra_bundle.get("adapter_receipts")
+    )
+    manifest_adapter_receipt_inputs = [
+        _mapping(item) for item in _list(manifest_inputs.get("adapter_receipts"))
+    ]
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
     adapter_execution_contract = (
         _mapping(bundle.get("adapter_execution_contract"))
@@ -473,6 +633,9 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
         "adapter_handoff_sha256": _text(bundle.get("adapter_handoff_sha256"))
         or _text(manifest_handoff.get("sha256"))
         or _text(manifest_extra_handoff.get("sha256")),
+        "ingest_adapter_receipts": ingest_adapter_receipts,
+        "manifest_adapter_receipts": manifest_adapter_receipts,
+        "manifest_adapter_receipt_inputs": manifest_adapter_receipt_inputs,
         "source_credential_env_template_path": _path_text(source_env_template_path),
         "source_credential_env_template_provided": bool(source_env_template_path),
         "source_credential_env_template_exists": bool(
@@ -526,6 +689,171 @@ def _capture_provenance(ingest_config: dict[str, Any], manifest: dict[str, Any])
             manifest_extra.get("capture_bundle_live_fetch_contract_metadata_matches_session"),
         ),
     }
+
+
+def _adapter_receipt_proof(
+    captures: pd.DataFrame,
+    capture_provenance: dict[str, Any],
+) -> dict[str, Any]:
+    ingest = _mapping(capture_provenance.get("ingest_adapter_receipts"))
+    manifest = _mapping(capture_provenance.get("manifest_adapter_receipts"))
+    manifest_inputs = [
+        _mapping(item)
+        for item in _list(capture_provenance.get("manifest_adapter_receipt_inputs"))
+    ]
+    required = (
+        captures.loc[captures["adapter_receipt_required"].astype(bool)]
+        if not captures.empty
+        else pd.DataFrame()
+    )
+    records = required.to_dict(orient="records") if not required.empty else []
+    required_count = int(len(records))
+    present_count = sum(_truthy(row.get("adapter_receipt_current_exists")) for row in records)
+    valid_count = sum(_truthy(row.get("adapter_receipt_revalidated")) for row in records)
+    fingerprint_match_count = sum(
+        _truthy(row.get("adapter_receipt_fingerprint_matches_ingest"))
+        for row in records
+    )
+    ingest_records = [_mapping(item) for item in _list(ingest.get("receipts"))]
+    manifest_records = [_mapping(item) for item in _list(manifest.get("receipts"))]
+    ingest_record_match_count = sum(
+        _receipt_record_matches(row, ingest_records) for row in records
+    )
+    manifest_record_match_count = sum(
+        _receipt_record_matches(row, manifest_records) for row in records
+    )
+    manifest_input_match_count = sum(
+        _receipt_input_matches(row, manifest_inputs) for row in records
+    )
+    bundle_provided = bool(capture_provenance.get("capture_bundle_provided"))
+    rehearsal_exempt_count = (
+        int(captures["synthetic_rehearsal"].astype(bool).sum())
+        if bundle_provided and not captures.empty
+        else 0
+    )
+    ingest_aggregate_matches = _receipt_aggregate_matches(
+        ingest,
+        policy_required=bundle_provided,
+        required_count=required_count,
+        rehearsal_exempt_count=rehearsal_exempt_count,
+    )
+    manifest_aggregate_matches = _receipt_aggregate_matches(
+        manifest,
+        policy_required=bundle_provided,
+        required_count=required_count,
+        rehearsal_exempt_count=rehearsal_exempt_count,
+    )
+    lineage_matches = bool(
+        ingest_record_match_count == required_count
+        and manifest_record_match_count == required_count
+        and manifest_input_match_count == required_count
+        and len(manifest_inputs) == required_count
+    )
+    ready = bool(
+        ingest
+        and manifest
+        and ingest_aggregate_matches
+        and manifest_aggregate_matches
+        and present_count == required_count
+        and valid_count == required_count
+        and fingerprint_match_count == required_count
+        and lineage_matches
+    )
+    return {
+        "ready": ready,
+        "required": bundle_provided,
+        "required_count": required_count,
+        "present_count": int(present_count),
+        "valid_count": int(valid_count),
+        "fingerprint_match_count": int(fingerprint_match_count),
+        "ingest_record_match_count": int(ingest_record_match_count),
+        "manifest_record_match_count": int(manifest_record_match_count),
+        "manifest_input_match_count": int(manifest_input_match_count),
+        "rehearsal_exempt_count": rehearsal_exempt_count,
+        "ingest_aggregate_matches": ingest_aggregate_matches,
+        "manifest_aggregate_matches": manifest_aggregate_matches,
+        "lineage_matches": lineage_matches,
+        "receipt_sha256s": sorted(
+            {
+                _text(row.get("adapter_receipt_current_sha256"))
+                for row in records
+                if _text(row.get("adapter_receipt_current_sha256"))
+            }
+        ),
+        "receipts": _adapter_receipt_records(captures),
+    }
+
+
+def _receipt_aggregate_matches(
+    proof: dict[str, Any],
+    *,
+    policy_required: bool,
+    required_count: int,
+    rehearsal_exempt_count: int,
+) -> bool:
+    return bool(
+        proof
+        and _truthy(proof.get("required")) is policy_required
+        and _safe_int(proof.get("required_count")) == required_count
+        and _safe_int(proof.get("present_count")) == required_count
+        and _safe_int(proof.get("valid_count")) == required_count
+        and _safe_int(proof.get("rehearsal_exempt_count"))
+        == rehearsal_exempt_count
+    )
+
+
+def _receipt_record_matches(
+    expected: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> bool:
+    expected_path = _text(expected.get("adapter_receipt_path"))
+    expected_sha = _text(expected.get("adapter_receipt_ingest_sha256"))
+    return any(
+        _paths_match(expected_path, _text(record.get("adapter_receipt_path")))
+        and expected_sha == _text(record.get("adapter_receipt_sha256"))
+        and _truthy(record.get("adapter_receipt_valid"))
+        for record in records
+    )
+
+
+def _receipt_input_matches(
+    expected: dict[str, Any],
+    records: list[dict[str, Any]],
+) -> bool:
+    expected_path = _text(expected.get("adapter_receipt_path"))
+    expected_sha = _text(expected.get("adapter_receipt_ingest_sha256"))
+    return any(
+        _paths_match(expected_path, _text(record.get("path")))
+        and expected_sha == _text(record.get("sha256"))
+        for record in records
+    )
+
+
+def _adapter_receipt_records(captures: pd.DataFrame) -> list[dict[str, Any]]:
+    if captures.empty:
+        return []
+    columns = [
+        "label",
+        "capture_path",
+        "capture_sha256",
+        "synthetic_rehearsal",
+        "adapter_receipt_required",
+        "adapter_receipt_path",
+        "adapter_receipt_ingest_sha256",
+        "adapter_receipt_current_sha256",
+        "adapter_receipt_fingerprint_matches_ingest",
+        "adapter_receipt_revalidated",
+        "adapter_receipt_backend_entrypoint",
+        "adapter_receipt_capture_match",
+        "adapter_receipt_contract_match",
+        "adapter_receipt_handoff_match",
+        "adapter_receipt_env_template_match",
+        "adapter_receipt_credential_contract_safe",
+        "adapter_receipt_window_match",
+        "adapter_receipt_schema_match",
+        "adapter_receipt_error",
+    ]
+    return _records(captures[[column for column in columns if column in captures.columns]])
 
 
 def _synthetic_sidecar_proof(captures: pd.DataFrame, capture_provenance: dict[str, Any]) -> dict[str, Any]:
@@ -696,6 +1024,8 @@ def _checks(
     bundle_provider_profile_match_ok = (
         _provider_profiles_match(live_session_provider_profile, bundle_provider_profile) if bundle_provided else True
     )
+    adapter_receipt_proof = _mapping(capture_provenance.get("adapter_receipt_proof"))
+    receipt_required_count = _safe_int(adapter_receipt_proof.get("required_count"))
     return [
         _check("live_ingest_dir_exists", str(ingest_dir), "exists", True, ingest_dir.exists(), "live ingest directory is required"),
         _check("live_ingest_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live ingest summary could not be read"),
@@ -708,6 +1038,11 @@ def _checks(
         _check("capture_env_template_fingerprinted", capture_provenance["capture_env_template_sha256"], "has", "sha256", bool(capture_provenance["capture_env_template_sha256"]) if bundle_provided else True, "credential env-template fingerprint is missing from ingest provenance"),
         _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if bool(capture_provenance["adapter_handoff_provided"]) else True, "adapter handoff referenced by ingest provenance is missing"),
         _check("adapter_handoff_fingerprinted", capture_provenance["adapter_handoff_sha256"], "has", "sha256", bool(capture_provenance["adapter_handoff_sha256"]) if bool(capture_provenance["adapter_handoff_provided"]) else True, "adapter handoff fingerprint is missing from ingest provenance"),
+        _check("adapter_receipt_proof_carried", bool(adapter_receipt_proof), "is", True, bool(adapter_receipt_proof) if bundle_provided else True, "bundle-linked ingest must carry adapter receipt proof into evidence review"),
+        _check("adapter_receipts_revalidated", _safe_int(adapter_receipt_proof.get("valid_count")), "==", receipt_required_count, _safe_int(adapter_receipt_proof.get("valid_count")) == receipt_required_count if bundle_provided else True, "every required adapter receipt must still validate against its current capture and contract"),
+        _check("adapter_receipt_fingerprints_match_ingest", _safe_int(adapter_receipt_proof.get("fingerprint_match_count")), "==", receipt_required_count, _safe_int(adapter_receipt_proof.get("fingerprint_match_count")) == receipt_required_count if bundle_provided else True, "adapter receipt fingerprints must match the hashes accepted by live ingest"),
+        _check("adapter_receipt_lineage_matches_ingest_manifest", bool(adapter_receipt_proof.get("lineage_matches")), "is", True, bool(adapter_receipt_proof.get("lineage_matches")) if bundle_provided else True, "adapter receipt records and manifest inputs must match live-ingest provenance"),
+        _check("adapter_receipt_proof_ready", bool(adapter_receipt_proof.get("ready")), "is", True, bool(adapter_receipt_proof.get("ready")) if bundle_provided else True, "adapter receipt proof is incomplete or inconsistent"),
         _check("capture_bundle_source_credential_env_template_carried", capture_provenance["source_credential_env_template_path"], "exists", True, bool(capture_provenance["source_credential_env_template_exists"]) and bool(capture_provenance["source_credential_env_template_sha256"]) if bundle_provided else True, "source credential env-template referenced by ingest provenance is missing"),
         _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by ingest provenance is missing"),
         _check("capture_bundle_adapter_execution_contract_carried", capture_provenance["adapter_contract_provider"], "is_not", "", bool(capture_provenance["adapter_contract_provider"]) and bool(capture_provenance["adapter_contract_values_stored"]) is False if bundle_provided else True, "adapter execution contract referenced by ingest provenance is missing"),
@@ -774,6 +1109,7 @@ def _summary(
     live_session_provider_profile = _mapping(live_packet.get("provider_profile"))
     ingest_provider_profile = _mapping(capture_provenance.get("provider_profile"))
     bundle_provider_profile = _mapping(capture_provenance.get("capture_bundle_provider_profile"))
+    adapter_receipt_proof = _mapping(capture_provenance.get("adapter_receipt_proof"))
     return pd.DataFrame(
         [
             {
@@ -792,6 +1128,29 @@ def _summary(
                 "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
                 "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
                 "adapter_handoff_sha256": str(capture_provenance["adapter_handoff_sha256"]),
+                "adapter_receipt_proof_ready": bool(adapter_receipt_proof.get("ready")),
+                "adapter_receipts_required": bool(adapter_receipt_proof.get("required")),
+                "adapter_receipt_required_count": _safe_int(
+                    adapter_receipt_proof.get("required_count")
+                ),
+                "adapter_receipt_present_count": _safe_int(
+                    adapter_receipt_proof.get("present_count")
+                ),
+                "adapter_receipt_valid_count": _safe_int(
+                    adapter_receipt_proof.get("valid_count")
+                ),
+                "adapter_receipt_fingerprint_match_count": _safe_int(
+                    adapter_receipt_proof.get("fingerprint_match_count")
+                ),
+                "adapter_receipt_manifest_input_match_count": _safe_int(
+                    adapter_receipt_proof.get("manifest_input_match_count")
+                ),
+                "adapter_receipt_rehearsal_exempt_count": _safe_int(
+                    adapter_receipt_proof.get("rehearsal_exempt_count")
+                ),
+                "adapter_receipt_lineage_matches": bool(
+                    adapter_receipt_proof.get("lineage_matches")
+                ),
                 "source_credential_env_template_path": str(capture_provenance["source_credential_env_template_path"]),
                 "source_credential_env_template_exists": bool(capture_provenance["source_credential_env_template_exists"]),
                 "source_credential_env_template_sha256": str(capture_provenance["source_credential_env_template_sha256"]),
@@ -990,6 +1349,9 @@ def _config(
         ),
         "adapter_execution_contract": _mapping(capture_provenance.get("adapter_execution_contract")),
         "capture_bundle": capture_provenance,
+        "adapter_receipt_proof": _mapping(
+            capture_provenance.get("adapter_receipt_proof")
+        ),
         "synthetic_sidecar_proof": _synthetic_sidecar_proof(captures, capture_provenance),
         "live_session_packet": _safe_packet(live_packet),
         "captures": _records(captures),
@@ -1042,6 +1404,8 @@ def _next_gate_for_check(check: str) -> str:
         return "ingest-provider-market-data-live-session"
     if check.startswith("ingest_provider_profile"):
         return "ingest-provider-market-data-live-session"
+    if check.startswith("adapter_receipt"):
+        return "ingest-provider-market-data-live-session"
     if (
         check.startswith("capture_bundle")
         or check.startswith("capture_env_template")
@@ -1083,6 +1447,8 @@ def _next_gate_help_command(next_gate: str) -> str:
 def _repair_action(check: str) -> str:
     if check.startswith("live_ingest"):
         return "repair_provider_live_ingest_artifacts"
+    if check.startswith("adapter_receipt"):
+        return "rerun_provider_adapter_and_live_ingest"
     if check == "capture_bundle_source_credential_env_template_carried":
         return "regenerate_capture_bundle_with_source_env_template"
     if check == "capture_bundle_live_fetch_contract_carried":
@@ -1145,6 +1511,7 @@ def _runbook_markdown(summary: pd.Series, captures: pd.DataFrame, action_queue: 
         f"- Source session: {summary['source_session_open_local'] or '?'} - {summary['source_session_close_local'] or '?'} {summary['source_session_timezone'] or ''}",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'}",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Adapter receipts: {summary['adapter_receipt_valid_count']}/{summary['adapter_receipt_required_count']} revalidated (lineage match: {'yes' if bool(summary['adapter_receipt_lineage_matches']) else 'no'})",
         f"- Synthetic captures: {summary['synthetic_capture_count']}",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'}",
         f"- Batch ready: {'yes' if bool(summary['batch_ready']) else 'no'}",
@@ -1174,9 +1541,14 @@ def _captures_table(captures: pd.DataFrame) -> str:
                 _text(row.get("capture_path")),
                 str(row.get("capture_rows", "")),
                 "yes" if _truthy(row.get("synthetic_rehearsal")) else "no",
+                "yes" if _truthy(row.get("adapter_receipt_required")) else "no",
+                "yes" if _truthy(row.get("adapter_receipt_revalidated")) else "no",
             ]
         )
-    return _markdown_table(["#", "Label", "Capture", "Rows", "Synthetic"], rows)
+    return _markdown_table(
+        ["#", "Label", "Capture", "Rows", "Synthetic", "Receipt required", "Receipt valid"],
+        rows,
+    )
 
 
 def _actions_table(action_queue: pd.DataFrame) -> str:
@@ -1239,6 +1611,24 @@ def _path_from_text(value: str) -> Path | None:
 
 def _path_text(path: Path | None) -> str:
     return "" if path is None else str(path)
+
+
+def _paths_match(left: object, right: object) -> bool:
+    left_text = _text(left)
+    right_text = _text(right)
+    if not left_text or not right_text:
+        return False
+    try:
+        return Path(left_text).resolve() == Path(right_text).resolve()
+    except OSError:
+        return left_text == right_text
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _coalesced_bool(*values: object) -> bool:

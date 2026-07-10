@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 
 
 SUPPORTED_STRATEGIES = {"imbalance"}
@@ -83,6 +83,14 @@ def write_provider_market_data_research_handoff(
     capture_paths = [Path(str(path)) for path in report.datasets["capture_path"].astype(str).tolist()] if not report.datasets.empty else []
     if capture_paths:
         inputs["captures"] = [path for path in capture_paths if path.exists()]
+    receipt_paths = (
+        [Path(str(path)) for path in report.datasets["adapter_receipt_path"].astype(str).tolist()]
+        if not report.datasets.empty
+        else []
+    )
+    existing_receipts = [path for path in receipt_paths if path.exists() and path.is_file()]
+    if existing_receipts:
+        inputs["adapter_receipts"] = existing_receipts
     write_experiment_manifest(
         out,
         run_type="provider_market_data_research_handoff",
@@ -98,6 +106,7 @@ def write_provider_market_data_research_handoff(
             "source_session": _source_session_contract_from_summary(summary_row),
             "market_session": _market_session_contract_from_summary(summary_row),
             "provider_profile": _mapping(report.config.get("provider_profile")),
+            "adapter_receipt_proof": _mapping(report.config.get("adapter_receipt_proof")),
             "provider_profile_matches_session": bool(summary_row["provider_profile_matches_session"]),
             "provider_profile_matches_bundle": bool(summary_row["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
@@ -150,6 +159,9 @@ def write_provider_market_data_research_handoff(
                 ),
                 "adapter_execution_contract": _mapping(
                     _mapping(report.config.get("capture_bundle")).get("adapter_execution_contract")
+                ),
+                "adapter_receipt_proof": _mapping(
+                    report.config.get("adapter_receipt_proof")
                 ),
                 "metadata_matches_session": bool(summary_row["capture_bundle_metadata_matches_session"]),
                 "live_fetch_contract_metadata_matches_session": bool(
@@ -263,14 +275,45 @@ def _datasets(captures: pd.DataFrame) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for index, row in enumerate(captures.to_dict(orient="records") if not captures.empty else [], start=1):
         capture_path = Path(_text(row.get("capture_path")))
+        capture_exists = bool(capture_path.exists() and capture_path.is_file())
+        capture_evidence_sha256 = _text(row.get("capture_sha256"))
+        capture_current_sha256 = _file_sha256_or_empty(capture_path) if capture_exists else ""
+        receipt_path = _path_from_text(_text(row.get("adapter_receipt_path")))
+        receipt_exists = bool(
+            receipt_path is not None and receipt_path.exists() and receipt_path.is_file()
+        )
+        receipt_evidence_sha256 = _text(row.get("adapter_receipt_current_sha256"))
+        receipt_current_sha256 = (
+            _file_sha256_or_empty(receipt_path) if receipt_exists and receipt_path is not None else ""
+        )
         rows.append(
             {
                 "priority": index,
                 "fold_label": _text(row.get("pipeline_label"), _text(row.get("label"), f"fold_{index}")),
                 "capture_path": str(capture_path),
-                "capture_exists": bool(capture_path.exists() and capture_path.is_file()),
+                "capture_exists": capture_exists,
                 "capture_rows": int(_number(row.get("capture_rows"))),
+                "capture_evidence_sha256": capture_evidence_sha256,
+                "capture_current_sha256": capture_current_sha256,
+                "capture_fingerprint_matches_evidence": bool(
+                    capture_evidence_sha256
+                    and capture_current_sha256 == capture_evidence_sha256
+                ),
                 "synthetic_rehearsal": _truthy(row.get("synthetic_rehearsal")),
+                "adapter_receipt_required": _truthy(
+                    row.get("adapter_receipt_required")
+                ),
+                "adapter_receipt_path": "" if receipt_path is None else str(receipt_path),
+                "adapter_receipt_evidence_valid": _truthy(
+                    row.get("adapter_receipt_revalidated")
+                ),
+                "adapter_receipt_evidence_sha256": receipt_evidence_sha256,
+                "adapter_receipt_current_exists": receipt_exists,
+                "adapter_receipt_current_sha256": receipt_current_sha256,
+                "adapter_receipt_fingerprint_matches_evidence": bool(
+                    receipt_evidence_sha256
+                    and receipt_current_sha256 == receipt_evidence_sha256
+                ),
                 "role": "tick_fold",
             }
         )
@@ -282,7 +325,17 @@ def _datasets(captures: pd.DataFrame) -> pd.DataFrame:
             "capture_path",
             "capture_exists",
             "capture_rows",
+            "capture_evidence_sha256",
+            "capture_current_sha256",
+            "capture_fingerprint_matches_evidence",
             "synthetic_rehearsal",
+            "adapter_receipt_required",
+            "adapter_receipt_path",
+            "adapter_receipt_evidence_valid",
+            "adapter_receipt_evidence_sha256",
+            "adapter_receipt_current_exists",
+            "adapter_receipt_current_sha256",
+            "adapter_receipt_fingerprint_matches_evidence",
             "role",
         ],
     )
@@ -302,6 +355,15 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
     manifest_extra_source_env = _mapping(manifest_extra.get("source_credential_env_template"))
     synthetic_sidecar_proof = _mapping(evidence_config.get("synthetic_sidecar_proof")) or _mapping(
         manifest_extra.get("synthetic_sidecar_proof")
+    )
+    evidence_adapter_receipt_proof = _mapping(
+        evidence_config.get("adapter_receipt_proof")
+    )
+    manifest_adapter_receipt_proof = _mapping(
+        manifest_extra.get("adapter_receipt_proof")
+    )
+    adapter_receipt_proof = (
+        evidence_adapter_receipt_proof or manifest_adapter_receipt_proof
     )
     bundle_source_env = _mapping(bundle.get("source_credential_env_template"))
     live_fetch_contract = _mapping(bundle.get("live_fetch_contract")) or _mapping(manifest_extra.get("live_fetch_contract"))
@@ -442,6 +504,13 @@ def _capture_provenance(evidence_config: dict[str, Any], manifest: dict[str, Any
         "adapter_handoff_provided": bool(adapter_handoff_path),
         "adapter_handoff_exists": bool(adapter_handoff_path is not None and adapter_handoff_path.exists()),
         "adapter_handoff_sha256": adapter_handoff_sha256,
+        "adapter_receipt_proof": adapter_receipt_proof,
+        "evidence_adapter_receipt_proof": evidence_adapter_receipt_proof,
+        "manifest_adapter_receipt_proof": manifest_adapter_receipt_proof,
+        "adapter_receipt_proofs_match": _adapter_receipt_proofs_match(
+            evidence_adapter_receipt_proof,
+            manifest_adapter_receipt_proof,
+        ),
         "source_credential_env_template_path": _path_text(source_env_template_path),
         "source_credential_env_template_provided": bool(source_env_template_path),
         "source_credential_env_template_exists": source_env_template_exists,
@@ -756,6 +825,28 @@ def _checks(
     sidecar_proof_count = int(capture_provenance["synthetic_sidecar_count"])
     sidecar_proof_count_matches = sidecar_proof_count == synthetic_count
     sidecar_proof_ready = bool(capture_provenance["synthetic_sidecar_proof_ready"])
+    adapter_receipt_proof = _mapping(capture_provenance.get("adapter_receipt_proof"))
+    receipt_required = (
+        datasets.loc[datasets["adapter_receipt_required"].astype(bool)]
+        if not datasets.empty
+        else pd.DataFrame()
+    )
+    receipt_required_count = int(len(receipt_required))
+    receipt_fingerprint_match_count = (
+        int(receipt_required["adapter_receipt_fingerprint_matches_evidence"].astype(bool).sum())
+        if not receipt_required.empty
+        else 0
+    )
+    receipt_evidence_valid_count = (
+        int(receipt_required["adapter_receipt_evidence_valid"].astype(bool).sum())
+        if not receipt_required.empty
+        else 0
+    )
+    capture_fingerprint_match_count = (
+        int(datasets["capture_fingerprint_matches_evidence"].astype(bool).sum())
+        if not datasets.empty
+        else 0
+    )
     return [
         _check("live_evidence_dir_exists", str(evidence_dir), "exists", True, evidence_dir.exists(), "live evidence directory is required"),
         _check("live_evidence_summary_readable", summary_error or "ok", "is", "ok", not summary_error, summary_error or "live evidence summary could not be read"),
@@ -766,6 +857,11 @@ def _checks(
         _check("capture_bundle_exists", capture_provenance["capture_bundle_path"], "exists", True, bool(capture_provenance["capture_bundle_exists"]) if bundle_provided else True, "capture bundle referenced by live evidence is missing"),
         _check("capture_env_template_exists", capture_provenance["capture_env_template_path"], "exists", True, bool(capture_provenance["capture_env_template_exists"]) if env_template_required else True, "credential env-template referenced by live evidence is missing"),
         _check("adapter_handoff_exists", capture_provenance["adapter_handoff_path"], "exists", True, bool(capture_provenance["adapter_handoff_exists"]) if handoff_required else True, "adapter handoff referenced by live evidence is missing"),
+        _check("adapter_receipt_proof_carried", bool(adapter_receipt_proof), "is", True, bool(adapter_receipt_proof) and bool(adapter_receipt_proof.get("ready")) if bundle_provided else True, "live evidence must carry ready adapter receipt proof"),
+        _check("adapter_receipt_proofs_match_evidence_manifest", bool(capture_provenance["adapter_receipt_proofs_match"]), "is", True, bool(capture_provenance["adapter_receipt_proofs_match"]) if bundle_provided else True, "adapter receipt proof must match between live-evidence config and manifest"),
+        _check("adapter_receipt_required_count_matches_datasets", receipt_required_count, "==", _safe_int(adapter_receipt_proof.get("required_count")), receipt_required_count == _safe_int(adapter_receipt_proof.get("required_count")) if bundle_provided else True, "adapter receipt proof count must match bundle-linked research datasets"),
+        _check("adapter_receipt_evidence_validation_carried", receipt_evidence_valid_count, "==", receipt_required_count, receipt_evidence_valid_count == receipt_required_count if bundle_provided else True, "every required research dataset must carry successful evidence-time receipt validation"),
+        _check("adapter_receipt_fingerprints_match_evidence", receipt_fingerprint_match_count, "==", receipt_required_count, receipt_fingerprint_match_count == receipt_required_count if bundle_provided else True, "adapter receipt files changed after live-evidence review"),
         _check("capture_bundle_source_credential_env_template_carried", capture_provenance["source_credential_env_template_path"], "exists", True, bool(capture_provenance["source_credential_env_template_exists"]) and bool(capture_provenance["source_credential_env_template_sha256"]) if bundle_provided else True, "source credential env-template referenced by live evidence is missing"),
         _check("capture_bundle_live_fetch_contract_carried", bool(capture_provenance["source_live_fetch_contract_available"]), "is", True, bool(capture_provenance["source_live_fetch_contract_available"]) and str(capture_provenance["source_live_fetch_contract_next_gate"]) == "provider_fetcher" if bundle_provided else True, "live fetch-contract referenced by live evidence is missing"),
         _check("capture_bundle_provider_capture_commands_carried", bundle_provider_capture_command_count, "==", provider_capture_command_count, bundle_provider_capture_commands_carried if bundle_provided else True, "live evidence provider capture command handoffs are missing"),
@@ -792,6 +888,7 @@ def _checks(
         _check("synthetic_rehearsal_absent", synthetic_count, "==", 0 if not config.allow_synthetic_smoke else "allowed", synthetic_count == 0 or config.allow_synthetic_smoke, "synthetic rehearsal captures cannot be handed to strategy research"),
         _check("tick_folds_present", dataset_count, ">=", config.min_tick_folds, dataset_count >= config.min_tick_folds, "not enough tick folds for walk-forward research"),
         _check("tick_fold_files_exist", int(datasets["capture_exists"].astype(bool).sum()) if not datasets.empty else 0, "==", dataset_count, bool(dataset_count and datasets["capture_exists"].astype(bool).all()), "all tick fold files must exist"),
+        _check("tick_fold_capture_fingerprints_match_evidence", capture_fingerprint_match_count, "==", dataset_count, bool(dataset_count and capture_fingerprint_match_count == dataset_count), "provider capture files changed after live-evidence review"),
         _check("tick_fold_rows_positive", int((datasets["capture_rows"].astype(int) > 0).sum()) if not datasets.empty else 0, "==", dataset_count, bool(dataset_count and (datasets["capture_rows"].astype(int) > 0).all()), "all tick folds must contain rows"),
         _check("requested_strategies_supported", ";".join(unsupported), "is", "", not unsupported, "some requested strategies need extra inputs before provider tick handoff"),
         _check("ready_research_commands_present", ready_commands, ">=", 1, ready_commands >= 1, "at least one ready research command is required"),
@@ -821,6 +918,12 @@ def _summary(
     bundle_market_session = _mapping(capture_provenance.get("capture_bundle_market_session"))
     provider_capture_command_count = int(capture_provenance["provider_capture_command_count"])
     bundle_provider_capture_command_count = int(capture_provenance["capture_bundle_provider_capture_command_count"])
+    adapter_receipt_proof = _mapping(capture_provenance.get("adapter_receipt_proof"))
+    receipt_required = (
+        datasets.loc[datasets["adapter_receipt_required"].astype(bool)]
+        if not datasets.empty
+        else pd.DataFrame()
+    )
     return pd.DataFrame(
         [
             {
@@ -852,6 +955,29 @@ def _summary(
                 "adapter_handoff_provided": bool(capture_provenance["adapter_handoff_provided"]),
                 "adapter_handoff_exists": bool(capture_provenance["adapter_handoff_exists"]),
                 "adapter_handoff_sha256": str(capture_provenance["adapter_handoff_sha256"]),
+                "adapter_receipt_proof_ready": bool(adapter_receipt_proof.get("ready")),
+                "adapter_receipt_proofs_match_evidence_manifest": bool(
+                    capture_provenance["adapter_receipt_proofs_match"]
+                ),
+                "adapter_receipts_required": bool(adapter_receipt_proof.get("required")),
+                "adapter_receipt_required_count": int(len(receipt_required)),
+                "adapter_receipt_valid_count": int(
+                    receipt_required["adapter_receipt_evidence_valid"].astype(bool).sum()
+                )
+                if not receipt_required.empty
+                else 0,
+                "adapter_receipt_fingerprint_match_count": int(
+                    receipt_required[
+                        "adapter_receipt_fingerprint_matches_evidence"
+                    ].astype(bool).sum()
+                )
+                if not receipt_required.empty
+                else 0,
+                "capture_fingerprint_match_count": int(
+                    datasets["capture_fingerprint_matches_evidence"].astype(bool).sum()
+                )
+                if not datasets.empty
+                else 0,
                 "source_credential_env_template_path": str(capture_provenance["source_credential_env_template_path"]),
                 "source_credential_env_template_exists": bool(capture_provenance["source_credential_env_template_exists"]),
                 "source_credential_env_template_sha256": str(capture_provenance["source_credential_env_template_sha256"]),
@@ -1025,6 +1151,9 @@ def _config(
         ),
         "adapter_execution_contract": _mapping(capture_provenance.get("adapter_execution_contract")),
         "capture_bundle": capture_provenance,
+        "adapter_receipt_proof": _mapping(
+            capture_provenance.get("adapter_receipt_proof")
+        ),
         "synthetic_sidecar_proof": _mapping(capture_provenance.get("synthetic_sidecar_proof")),
         "datasets": _records(datasets),
         "commands": _records(commands),
@@ -1040,6 +1169,8 @@ def _config(
 
 
 def _next_gate_for_check(check: str) -> str:
+    if check.startswith("adapter_receipt") or check == "tick_fold_capture_fingerprints_match_evidence":
+        return "review-provider-market-data-live-evidence"
     if check in {
         "capture_bundle_adapter_execution_contract_carried",
         "capture_bundle_adapter_execution_contract_matches_evidence",
@@ -1084,6 +1215,10 @@ def _next_gate_help_command(next_gate: str) -> str:
 
 
 def _repair_action(check: str) -> str:
+    if check.startswith("adapter_receipt"):
+        return "regenerate_live_evidence_with_adapter_receipt_proof"
+    if check == "tick_fold_capture_fingerprints_match_evidence":
+        return "regenerate_live_evidence_after_capture_change"
     if check == "capture_bundle_source_credential_env_template_carried":
         return "regenerate_capture_bundle_with_source_env_template"
     if check == "capture_bundle_live_fetch_contract_carried":
@@ -1174,6 +1309,7 @@ def _runbook_markdown(summary: pd.Series, datasets: pd.DataFrame, commands: pd.D
         f"- Adapter execution contract: {summary['adapter_contract_provider'] or 'missing'} / {summary['adapter_contract_transport'] or 'missing'} (evidence match: {'yes' if bool(summary['adapter_contract_metadata_matches_evidence']) else 'no'})",
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
+        f"- Adapter receipts: {summary['adapter_receipt_fingerprint_match_count']}/{summary['adapter_receipt_required_count']} unchanged since evidence review",
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'}",
         f"- Tick folds: {summary['dataset_count']}",
         f"- Ready commands: {summary['ready_command_count']}",
@@ -1206,9 +1342,14 @@ def _datasets_table(datasets: pd.DataFrame) -> str:
                 _text(row.get("capture_path")),
                 str(row.get("capture_rows", "")),
                 "yes" if _truthy(row.get("synthetic_rehearsal")) else "no",
+                "yes" if _truthy(row.get("capture_fingerprint_matches_evidence")) else "no",
+                "yes" if _truthy(row.get("adapter_receipt_fingerprint_matches_evidence")) else "no",
             ]
         )
-    return _markdown_table(["#", "Fold", "Capture", "Rows", "Synthetic"], rows)
+    return _markdown_table(
+        ["#", "Fold", "Capture", "Rows", "Synthetic", "Capture sealed", "Receipt sealed"],
+        rows,
+    )
 
 
 def _commands_table(commands: pd.DataFrame) -> str:
@@ -1547,6 +1688,27 @@ def _path_from_text(value: str) -> Path | None:
 
 def _path_text(path: Path | None) -> str:
     return "" if path is None else str(path)
+
+
+def _adapter_receipt_proofs_match(
+    left: dict[str, Any],
+    right: dict[str, Any],
+) -> bool:
+    return bool(left and right and left == right)
+
+
+def _file_sha256_or_empty(path: Path) -> str:
+    try:
+        return file_sha256(path)
+    except OSError:
+        return ""
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _mapping(value: object) -> dict[str, Any]:

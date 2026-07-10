@@ -212,7 +212,10 @@
   ingest into summary/config/manifest artifacts and blocks research handoff if
   the capture-bundle command list, provider profile, adapter contract, or
   rehearsal sidecar proof is missing or no longer matches the live-session
-  packet.
+  packet. Bundle-linked real evidence now reruns adapter receipt validation
+  against current captures and contracts, matches receipt records and hashes
+  across ingest config plus manifest inputs/extras, fingerprints the receipts
+  again, and blocks any capture or receipt mutation after ingest.
 - Provider market-data research handoff now turns research-ready live evidence
   into executable strategy-research command plans:
   `handoff-provider-market-data-research` maps provider top-of-book tick folds
@@ -233,7 +236,9 @@
   handoff now also carries `synthetic_sidecar_proof` from live evidence into
   summary/config/runbook and manifest artifacts, and even explicit smoke mode
   blocks if the proof is missing, stale, or no longer covers every synthetic
-  fold.
+  fold. The same handoff now carries `adapter_receipt_proof`, requires it to
+  match between evidence config and manifest, and recomputes every capture and
+  required receipt hash before strategy commands can become ready.
 - Provider market-data imbalance research now runs the first strategy pipeline
   directly from provider live evidence: `run-provider-market-data-imbalance-research`
   nests the research handoff, executes imbalance edge/replay/promotion on real
@@ -2271,19 +2276,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1405 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1407 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: provider-adapter receipt and provider live-ingest tests
-pass (`22 passed`), provider live-rehearsal tests pass (`5 passed`), and the
-complete live-evidence plus research-handoff suites pass (`23 passed`). A strict
-bundle-linked provider-imbalance provenance path also passes (`1 passed`), for
-`51 passed` in the current receipt-focused gate. Core engine/strategy semantics
-(`39 passed`), launch pipelines (`45 passed`), and provider
+Latest focused gate: the complete receipt-aware live-evidence plus
+research-handoff suites pass (`25 passed`), including post-ingest and
+post-evidence receipt mutation tests. A strict bundle-linked provider-imbalance
+provenance path also passes (`1 passed`). The immediately preceding upstream
+gate remains green for provider-adapter/live-ingest (`22 passed`) and provider
+live rehearsal (`5 passed`). Core engine/strategy semantics (`39 passed`),
+launch pipelines (`45 passed`), and provider
 source/fetch/client/live-contract gates (`54 passed`) also pass. A full-suite
 run exceeded the 20-minute local timeout
 on the G-drive workspace, so 1110 remains the last completed full-suite green
-baseline rather than claiming the current 1405-test collection is fully green.
+baseline rather than claiming the current 1407-test collection is fully green.
 
 ## Next Build Targets
 
