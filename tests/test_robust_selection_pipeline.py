@@ -30,6 +30,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert report.ready
     assert report.action_queue.empty
     assert set(report.stages["stage"]) == {
+        "research_launch_execution_receipt",
         "research_launch_contract",
         "research_registration",
         "sweep_provenance",
@@ -49,6 +50,8 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert bool(summary["research_registration_passed"])
     assert not bool(summary["research_launch_contract_provided"])
     assert bool(summary["research_launch_contract_passed"])
+    assert not bool(summary["research_launch_execution_receipt_provided"])
+    assert bool(summary["research_launch_execution_receipt_passed"])
     registration_stage = report.stages.set_index("stage").loc[
         "research_registration"
     ]
@@ -97,6 +100,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
         "03_promotion/promotion_summary.csv",
         "robust_selection_pipeline_research_registration.csv",
         "robust_selection_pipeline_research_launch_contract.csv",
+        "robust_selection_pipeline_research_launch_execution_receipt.csv",
         "robust_selection_pipeline_preflight.csv",
         "robust_selection_pipeline_sweep_provenance.csv",
         "robust_selection_pipeline_stages.csv",

@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
-from dataclasses import dataclass
+import uuid
+from dataclasses import asdict, dataclass, replace
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -15,9 +17,21 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
+from reports.backtest_overfit import BacktestOverfitConfig, BacktestOverfitThresholds
+from reports.backtest_significance import (
+    BacktestSignificanceConfig,
+    BacktestSignificanceThresholds,
+)
+from reports.backtest_holdout import BacktestHoldoutConfig, BacktestHoldoutThresholds
+from reports.promotion import PromotionThresholds
 from reports.research_family_registration import (
     ResearchFamilyRegistrationSnapshot,
     load_research_family_registration,
+)
+from reports.robust_selection_semantics import (
+    argv_digest,
+    build_robust_selection_semantics,
+    semantic_digest,
 )
 
 
@@ -93,6 +107,18 @@ class ResearchFamilyLaunchContractSnapshot:
     contract_path: Path
     argv: list[str]
     ready: bool
+
+
+@dataclass(frozen=True)
+class ResearchFamilyLaunchExecutionReceipt:
+    path: Path
+    payload: dict[str, Any]
+    receipt_id: str
+    dispatch_id: str
+    contract_id: str
+    argv: list[str]
+    argv_sha256: str
+    semantic_sha256: str
 
 
 def load_research_family_launch_matrix(
@@ -215,6 +241,94 @@ def load_research_family_launch_contract(
             and _to_bool(row.get("contract_valid", False))
             and _to_bool(row.get("contract_ready", False))
         ),
+    )
+
+
+def write_research_family_launch_execution_receipt(
+    contract: ResearchFamilyLaunchContractSnapshot,
+) -> ResearchFamilyLaunchExecutionReceipt:
+    if not contract.ready:
+        raise ValueError("launch contract is not current and ready")
+    core = contract.payload.get("contract_core", {})
+    semantics = core.get("semantic_parameters", {}) if isinstance(core, dict) else {}
+    expected_semantic_digest = str(core.get("semantic_digest", ""))
+    if not isinstance(semantics, dict) or not expected_semantic_digest:
+        raise ValueError("launch contract lacks resolved semantic parameters")
+    if semantic_digest(semantics) != expected_semantic_digest:
+        raise ValueError("launch contract semantic digest is invalid")
+    dispatch_id = uuid.uuid4().hex
+    generated_at = (
+        datetime.now(timezone.utc)
+        .isoformat(timespec="microseconds")
+        .replace("+00:00", "Z")
+    )
+    receipt_core = {
+        "schema_version": 1,
+        "dispatch_id": dispatch_id,
+        "generated_at_utc": generated_at,
+        "launch_matrix_path": str(contract.matrix.root),
+        "launch_matrix_manifest_sha256": contract.matrix.manifest_sha256,
+        "contract_id": contract.contract_id,
+        "contract_path": str(contract.contract_path),
+        "contract_sha256": file_sha256(contract.contract_path),
+        "argv": contract.argv,
+        "argv_sha256": argv_digest(contract.argv),
+        "semantic_parameters": semantics,
+        "semantic_sha256": expected_semantic_digest,
+        "authorizes_submission": False,
+    }
+    receipt_id = _payload_sha256(receipt_core)
+    payload = {
+        **receipt_core,
+        "receipt_id": receipt_id,
+    }
+    receipt_dir = contract.matrix.root / "executions"
+    receipt_dir.mkdir(parents=True, exist_ok=True)
+    path = receipt_dir / f"{contract.contract_id[:12]}_{dispatch_id}.json"
+    path.write_text(
+        json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return ResearchFamilyLaunchExecutionReceipt(
+        path=path,
+        payload=payload,
+        receipt_id=receipt_id,
+        dispatch_id=dispatch_id,
+        contract_id=contract.contract_id,
+        argv=contract.argv,
+        argv_sha256=str(payload["argv_sha256"]),
+        semantic_sha256=str(payload["semantic_sha256"]),
+    )
+
+
+def load_research_family_launch_execution_receipt(
+    receipt_path: str | Path,
+) -> ResearchFamilyLaunchExecutionReceipt:
+    path = Path(receipt_path).resolve()
+    payload = _read_json_object(path)
+    receipt_id = str(payload.get("receipt_id", ""))
+    receipt_core = {key: value for key, value in payload.items() if key != "receipt_id"}
+    if not receipt_id or _payload_sha256(receipt_core) != receipt_id:
+        raise ValueError("launch execution receipt ID is invalid")
+    argv = payload.get("argv", [])
+    semantics = payload.get("semantic_parameters", {})
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("launch execution receipt argv is invalid")
+    if not isinstance(semantics, dict):
+        raise ValueError("launch execution receipt semantics are invalid")
+    if argv_digest(argv) != str(payload.get("argv_sha256", "")):
+        raise ValueError("launch execution receipt argv digest is invalid")
+    if semantic_digest(semantics) != str(payload.get("semantic_sha256", "")):
+        raise ValueError("launch execution receipt semantic digest is invalid")
+    return ResearchFamilyLaunchExecutionReceipt(
+        path=path,
+        payload=payload,
+        receipt_id=receipt_id,
+        dispatch_id=str(payload.get("dispatch_id", "")),
+        contract_id=str(payload.get("contract_id", "")),
+        argv=argv,
+        argv_sha256=str(payload.get("argv_sha256", "")),
+        semantic_sha256=str(payload.get("semantic_sha256", "")),
     )
 
 
@@ -402,6 +516,12 @@ def _build_launches(
             group_cols=group_cols,
             sweep_labels=sweep_labels,
         )
+        semantic_parameters = _default_robust_selection_semantics(
+            study,
+            sweep_paths=sweep_paths,
+            group_cols=group_cols,
+            sweep_labels=sweep_labels,
+        )
         contract_core = {
             "schema_version": 1,
             "family_id": registration.family_id,
@@ -412,6 +532,8 @@ def _build_launches(
             "group_cols": group_cols,
             "sweep_labels": sweep_labels,
             "base_argv": base_argv,
+            "semantic_parameters": semantic_parameters,
+            "semantic_digest": semantic_digest(semantic_parameters),
             "contract_valid": contract_valid,
             "authorizes_submission": False,
         }
@@ -426,6 +548,7 @@ def _build_launches(
             "--research-launch-contract-id",
             contract_id,
             "--require-research-launch-contract",
+            "--require-research-launch-execution-receipt",
         ]
         contract_payload = {
             "schema_version": 1,
@@ -482,6 +605,7 @@ def _build_launches(
                 and result["result_manifest_current"]
                 and result["result_registration_bound"]
                 and result["result_launch_contract_bound"]
+                and result["result_launch_execution_receipt_bound"]
                 and not abandonment_conflict
             )
             or abandonment_valid
@@ -557,6 +681,7 @@ def _result_evidence(
             "result_manifest_path": str(manifest_path),
             "result_registration_bound": False,
             "result_launch_contract_bound": False,
+            "result_launch_execution_receipt_bound": False,
         }
     summary = pd.read_csv(summary_path)
     source = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -567,6 +692,7 @@ def _result_evidence(
             "robust_selection_pipeline_summary.csv",
             "robust_selection_pipeline_research_registration.csv",
             "robust_selection_pipeline_research_launch_contract.csv",
+            "robust_selection_pipeline_research_launch_execution_receipt.csv",
         ),
         require_input_fingerprints=True,
     )
@@ -578,6 +704,10 @@ def _result_evidence(
     contract_input = _manifest_input(
         manifest,
         "research_family_launch_contract",
+    )
+    receipt_input = _manifest_input(
+        manifest,
+        "research_family_launch_execution_receipt",
     )
     bound = bool(
         _to_bool(source.get("research_registration_provided", False))
@@ -604,6 +734,26 @@ def _result_evidence(
         and _canonical_path(contract_input.get("path", ""))
         == _canonical_path(contract_path)
     )
+    receipt_path = Path(str(receipt_input.get("path", "")))
+    try:
+        receipt = load_research_family_launch_execution_receipt(receipt_path)
+    except (OSError, ValueError, KeyError):
+        receipt = None
+    receipt_bound = bool(
+        receipt is not None
+        and _to_bool(
+            source.get("research_launch_execution_receipt_provided", False)
+        )
+        and _to_bool(
+            source.get("research_launch_execution_receipt_passed", False)
+        )
+        and str(source.get("research_launch_execution_receipt_id", ""))
+        == receipt.receipt_id
+        and receipt.contract_id == contract_id
+        and str(source.get("research_launch_execution_receipt_sha256", ""))
+        == str(receipt_input.get("sha256", ""))
+        and file_sha256(receipt.path) == str(receipt_input.get("sha256", ""))
+    )
     return {
         "result_exists": True,
         "result_ready": _to_bool(source.get("ready", False)),
@@ -612,7 +762,57 @@ def _result_evidence(
         "result_manifest_path": str(manifest_path),
         "result_registration_bound": bound,
         "result_launch_contract_bound": contract_bound,
+        "result_launch_execution_receipt_bound": receipt_bound,
     }
+
+
+def _default_robust_selection_semantics(
+    study: pd.Series,
+    *,
+    sweep_paths: list[Path],
+    group_cols: list[str],
+    sweep_labels: list[str],
+) -> dict[str, Any]:
+    holdout_sweeps = _int(study.get("holdout_sweeps"))
+    overfit_config = BacktestOverfitConfig(
+        scenario_columns=tuple(group_cols),
+        require_selection_manifest=True,
+    )
+    holdout_config = BacktestHoldoutConfig(
+        group_columns=tuple(group_cols),
+        score_column=str(study.get("primary_metric", "")),
+        require_selection_manifest=True,
+        require_sweep_manifests=True,
+    )
+    promotion_thresholds = replace(
+        PromotionThresholds(),
+        require_overfit_audit=True,
+        require_significance_audit=True,
+        require_holdout_audit=True,
+    )
+    return build_robust_selection_semantics(
+        sweep_paths=sweep_paths,
+        labels=sweep_labels,
+        group_cols=group_cols,
+        strategy=str(study.get("strategy", "")),
+        market=str(study.get("market", "")),
+        selection={
+            "min_pass_rate": 1.0,
+            "min_sweeps": len(sweep_paths) - holdout_sweeps,
+            "min_median_net_pnl": 0.0,
+            "max_worst_drawdown": None,
+        },
+        overfit_config=asdict(overfit_config),
+        overfit_thresholds=asdict(BacktestOverfitThresholds()),
+        significance_config=asdict(BacktestSignificanceConfig()),
+        significance_thresholds=asdict(BacktestSignificanceThresholds()),
+        holdout_sweeps=holdout_sweeps,
+        holdout_config=asdict(holdout_config),
+        holdout_thresholds=asdict(
+            BacktestHoldoutThresholds(min_sweeps=holdout_sweeps)
+        ),
+        promotion_thresholds=asdict(promotion_thresholds),
+    )
 
 
 def _launch_argv(

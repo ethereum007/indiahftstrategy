@@ -37,7 +37,14 @@ from reports.promotion import (
 from reports.research_family_registration import (
     load_research_family_registration,
 )
-from reports.research_family_launch import load_research_family_launch_contract
+from reports.research_family_launch import (
+    load_research_family_launch_contract,
+    load_research_family_launch_execution_receipt,
+)
+from reports.robust_selection_semantics import (
+    build_robust_selection_semantics,
+    semantic_digest,
+)
 from reports.sweep_provenance import build_sweep_provenance
 from reports.sweeps import SweepComparison, write_sweep_comparison
 
@@ -45,6 +52,7 @@ from reports.sweeps import SweepComparison, write_sweep_comparison
 RUN_TYPE = "robust_selection_pipeline"
 READY_NEXT_GATE = "stage-orders"
 STAGE_NEXT_GATES = {
+    "research_launch_execution_receipt": "run-research-family-study",
     "research_launch_contract": "plan-research-family-launches",
     "research_registration": "register-research-family",
     "sweep_provenance": "pipeline-robust-selection",
@@ -74,6 +82,7 @@ ACTION_QUEUE_COLUMNS = [
 
 @dataclass(frozen=True)
 class RobustSelectionPipelineReport:
+    research_launch_execution_receipt: pd.DataFrame
     research_launch_contract: pd.DataFrame
     research_registration: pd.DataFrame
     preflight: pd.DataFrame
@@ -122,6 +131,8 @@ def write_robust_selection_pipeline(
     research_launch_matrix_path: str | Path | None = None,
     research_launch_contract_id: str | None = None,
     require_research_launch_contract: bool = False,
+    research_launch_execution_receipt_path: str | Path | None = None,
+    require_research_launch_execution_receipt: bool = False,
 ) -> RobustSelectionPipelineReport:
     paths = [Path(path).resolve() for path in sweep_paths]
     if not paths:
@@ -222,6 +233,41 @@ def write_robust_selection_pipeline(
         if not overfit.summary.empty
         else pd.Series(dtype=object)
     )
+    holdout_config = holdout_config or BacktestHoldoutConfig(
+        group_columns=tuple(resolved_group_cols),
+    )
+    holdout_config = replace(
+        holdout_config,
+        group_columns=tuple(resolved_group_cols),
+        score_column=resolved_score_column,
+        require_selection_manifest=True,
+        require_sweep_manifests=True,
+    )
+    holdout_thresholds = holdout_thresholds or BacktestHoldoutThresholds(
+        min_sweeps=holdout_sweeps
+    )
+    runtime_semantics = build_robust_selection_semantics(
+        sweep_paths=paths,
+        labels=labels,
+        group_cols=resolved_group_cols,
+        strategy=strategy,
+        market=market,
+        selection={
+            "min_pass_rate": selection_min_pass_rate,
+            "min_sweeps": resolved_selection_min_sweeps,
+            "min_median_net_pnl": selection_min_median_net_pnl,
+            "max_worst_drawdown": selection_max_worst_drawdown,
+        },
+        overfit_config=asdict(overfit_config),
+        overfit_thresholds=asdict(overfit_thresholds),
+        significance_config=asdict(significance_config),
+        significance_thresholds=asdict(significance_thresholds),
+        holdout_sweeps=holdout_sweeps,
+        holdout_config=asdict(holdout_config),
+        holdout_thresholds=asdict(holdout_thresholds),
+        promotion_thresholds=asdict(promotion_thresholds),
+    )
+    runtime_semantic_digest = semantic_digest(runtime_semantics)
     research_registration = _research_registration_binding(
         research_registration_path,
         registered_study_label=registered_study_label,
@@ -267,8 +313,36 @@ def write_robust_selection_pipeline(
         not research_launch_contract.empty
         and research_launch_contract["passed"].map(_to_bool).all()
     )
+    research_launch_execution_receipt = _research_launch_execution_receipt_binding(
+        research_launch_execution_receipt_path,
+        require_receipt=require_research_launch_execution_receipt,
+        research_launch_contract=research_launch_contract.iloc[0],
+        runtime_semantics=runtime_semantics,
+        runtime_semantic_digest=runtime_semantic_digest,
+    )
+    research_launch_execution_receipt_path_out = (
+        out / "robust_selection_pipeline_research_launch_execution_receipt.csv"
+    )
+    research_launch_execution_receipt.to_csv(
+        research_launch_execution_receipt_path_out,
+        index=False,
+    )
+    research_launch_execution_receipt_passed = bool(
+        not research_launch_execution_receipt.empty
+        and research_launch_execution_receipt["passed"].map(_to_bool).all()
+    )
     preflight = pd.DataFrame(
         [
+            {
+                "component": "research_launch_execution_receipt",
+                "passed": research_launch_execution_receipt_passed,
+                "evidence_path": str(
+                    research_launch_execution_receipt_path_out
+                ),
+                "detail": str(
+                    research_launch_execution_receipt.iloc[0].get("detail", "")
+                ),
+            },
             {
                 "component": "research_launch_contract",
                 "passed": research_launch_contract_passed,
@@ -298,19 +372,6 @@ def write_robust_selection_pipeline(
     preflight_path = out / "robust_selection_pipeline_preflight.csv"
     preflight.to_csv(preflight_path, index=False)
     preflight_passed = bool(preflight["passed"].map(_to_bool).all())
-    holdout_config = holdout_config or BacktestHoldoutConfig(
-        group_columns=tuple(resolved_group_cols),
-    )
-    holdout_config = replace(
-        holdout_config,
-        group_columns=tuple(resolved_group_cols),
-        score_column=resolved_score_column,
-        require_selection_manifest=True,
-        require_sweep_manifests=True,
-    )
-    holdout_thresholds = holdout_thresholds or BacktestHoldoutThresholds(
-        min_sweeps=holdout_sweeps
-    )
     holdout = write_backtest_holdout_audit(
         selection_dir,
         reserved_paths,
@@ -331,6 +392,7 @@ def write_robust_selection_pipeline(
     )
 
     stages = _stages(
+        research_launch_execution_receipt,
         research_launch_contract,
         research_registration,
         sweep_provenance,
@@ -352,6 +414,7 @@ def write_robust_selection_pipeline(
         strategy=strategy,
         market=market,
         sweep_count=len(paths),
+        research_launch_execution_receipt=research_launch_execution_receipt,
         research_launch_contract=research_launch_contract,
         research_registration=research_registration,
         sweep_provenance=sweep_provenance,
@@ -400,6 +463,15 @@ def write_robust_selection_pipeline(
         "require_research_launch_contract": bool(
             require_research_launch_contract
         ),
+        "research_launch_execution_receipt_path": (
+            str(Path(research_launch_execution_receipt_path).resolve())
+            if research_launch_execution_receipt_path is not None
+            else ""
+        ),
+        "require_research_launch_execution_receipt": bool(
+            require_research_launch_execution_receipt
+        ),
+        "runtime_semantic_digest": runtime_semantic_digest,
         "selection": {
             "min_pass_rate": selection_min_pass_rate,
             "min_sweeps": resolved_selection_min_sweeps,
@@ -445,6 +517,10 @@ def write_robust_selection_pipeline(
     )
     if launch_contract_path.is_file():
         inputs["research_family_launch_contract"] = launch_contract_path
+    receipt_row = research_launch_execution_receipt.iloc[0]
+    receipt_path = Path(str(receipt_row.get("receipt_path", "")))
+    if receipt_path.is_file():
+        inputs["research_family_launch_execution_receipt"] = receipt_path
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
@@ -489,6 +565,24 @@ def write_robust_selection_pipeline(
             "research_launch_matrix_manifest_sha256": str(
                 summary.iloc[0]["research_launch_matrix_manifest_sha256"]
             ),
+            "research_launch_execution_receipt_provided": bool(
+                summary.iloc[0]["research_launch_execution_receipt_provided"]
+            ),
+            "research_launch_execution_receipt_passed": bool(
+                summary.iloc[0]["research_launch_execution_receipt_passed"]
+            ),
+            "research_launch_execution_receipt_id": str(
+                summary.iloc[0]["research_launch_execution_receipt_id"]
+            ),
+            "research_launch_dispatch_id": str(
+                summary.iloc[0]["research_launch_dispatch_id"]
+            ),
+            "research_launch_argv_sha256": str(
+                summary.iloc[0]["research_launch_argv_sha256"]
+            ),
+            "research_launch_semantic_sha256": str(
+                summary.iloc[0]["research_launch_semantic_sha256"]
+            ),
             "backtest_significance_passed": bool(
                 summary.iloc[0]["backtest_significance_passed"]
             ),
@@ -499,6 +593,7 @@ def write_robust_selection_pipeline(
         },
     )
     return RobustSelectionPipelineReport(
+        research_launch_execution_receipt=research_launch_execution_receipt,
         research_launch_contract=research_launch_contract,
         research_registration=research_registration,
         preflight=preflight,
@@ -514,6 +609,152 @@ def write_robust_selection_pipeline(
         promotion=promotion,
         output_dir=out,
     )
+
+
+def _research_launch_execution_receipt_binding(
+    raw_receipt_path: str | Path | None,
+    *,
+    require_receipt: bool,
+    research_launch_contract: pd.Series,
+    runtime_semantics: dict[str, Any],
+    runtime_semantic_digest: str,
+) -> pd.DataFrame:
+    provided = raw_receipt_path is not None
+    requested = bool(provided or require_receipt)
+    base: dict[str, Any] = {
+        "provided": provided,
+        "required": bool(require_receipt),
+        "skipped": False,
+        "passed": False,
+        "receipt_path": "",
+        "receipt_sha256": "",
+        "receipt_id": "",
+        "dispatch_id": "",
+        "contract_id": "",
+        "contract_id_matches": False,
+        "contract_sha256_matches": False,
+        "contract_path_matches": False,
+        "launch_matrix_manifest_matches": False,
+        "argv_matches": False,
+        "argv_sha256": "",
+        "semantic_matches": False,
+        "semantic_sha256": runtime_semantic_digest,
+        "non_authorizing": False,
+        "failed_checks": 0,
+        "failed_check_names": "",
+        "detail": "",
+        "recommendation": "run_the_study_through_the_contract_executor",
+    }
+    if not provided:
+        passed = not requested
+        base.update(
+            {
+                "skipped": passed,
+                "passed": passed,
+                "failed_checks": 0 if passed else 1,
+                "failed_check_names": "" if passed else "execution_receipt_provided",
+                "detail": (
+                    "optional_execution_receipt_not_provided"
+                    if passed
+                    else "launch_execution_receipt_is_required"
+                ),
+                "recommendation": (
+                    "continue_without_execution_receipt"
+                    if passed
+                    else "run_the_study_through_the_contract_executor"
+                ),
+            }
+        )
+        return pd.DataFrame([base])
+    receipt_path = Path(raw_receipt_path).resolve()
+    base["receipt_path"] = str(receipt_path)
+    try:
+        receipt = load_research_family_launch_execution_receipt(receipt_path)
+        contract = load_research_family_launch_contract(
+            str(research_launch_contract.get("launch_matrix_path", "")),
+            str(research_launch_contract.get("contract_id", "")),
+        )
+    except (OSError, ValueError, KeyError) as exc:
+        base.update(
+            {
+                "failed_checks": 1,
+                "failed_check_names": "execution_receipt_loadable",
+                "detail": f"{type(exc).__name__}: {exc}",
+            }
+        )
+        return pd.DataFrame([base])
+    payload = receipt.payload
+    contract_id_matches = bool(
+        _to_bool(research_launch_contract.get("passed", False))
+        and receipt.contract_id == str(research_launch_contract.get("contract_id", ""))
+    )
+    expected_contract_sha = str(research_launch_contract.get("contract_sha256", ""))
+    contract_sha_matches = bool(
+        str(payload.get("contract_sha256", "")) == expected_contract_sha
+        and file_sha256(contract.contract_path) == expected_contract_sha
+    )
+    contract_path_matches = bool(
+        _canonical_path(payload.get("contract_path", ""))
+        == _canonical_path(contract.contract_path)
+    )
+    matrix_manifest_matches = bool(
+        str(payload.get("launch_matrix_manifest_sha256", ""))
+        == str(
+            research_launch_contract.get(
+                "launch_matrix_manifest_sha256",
+                "",
+            )
+        )
+    )
+    argv_matches = receipt.argv == contract.argv
+    semantic_matches = bool(
+        receipt.semantic_sha256 == runtime_semantic_digest
+        and payload.get("semantic_parameters", {}) == runtime_semantics
+    )
+    non_authorizing = not _to_bool(payload.get("authorizes_submission", False))
+    checks = {
+        "contract_id_matches": contract_id_matches,
+        "contract_sha256_matches": contract_sha_matches,
+        "contract_path_matches": contract_path_matches,
+        "launch_matrix_manifest_matches": matrix_manifest_matches,
+        "argv_matches": argv_matches,
+        "semantic_matches": semantic_matches,
+        "non_authorizing": non_authorizing,
+    }
+    failed = [name for name, value in checks.items() if not value]
+    passed = not failed
+    base.update(
+        {
+            "passed": passed,
+            "receipt_path": str(receipt.path),
+            "receipt_sha256": file_sha256(receipt.path),
+            "receipt_id": receipt.receipt_id,
+            "dispatch_id": receipt.dispatch_id,
+            "contract_id": receipt.contract_id,
+            "contract_id_matches": contract_id_matches,
+            "contract_sha256_matches": contract_sha_matches,
+            "contract_path_matches": contract_path_matches,
+            "launch_matrix_manifest_matches": matrix_manifest_matches,
+            "argv_matches": argv_matches,
+            "argv_sha256": receipt.argv_sha256,
+            "semantic_matches": semantic_matches,
+            "semantic_sha256": receipt.semantic_sha256,
+            "non_authorizing": non_authorizing,
+            "failed_checks": len(failed),
+            "failed_check_names": ",".join(failed),
+            "detail": (
+                f"receipt_id={receipt.receipt_id};dispatch_id={receipt.dispatch_id}"
+                if passed
+                else f"failed_checks={','.join(failed)}"
+            ),
+            "recommendation": (
+                "continue_to_contract_registration_and_sweep_validation"
+                if passed
+                else "run_the_study_through_the_contract_executor"
+            ),
+        }
+    )
+    return pd.DataFrame([base])
 
 
 def _research_launch_contract_binding(
@@ -918,6 +1159,7 @@ def _research_registration_binding(
 
 
 def _stages(
+    research_launch_execution_receipt: pd.DataFrame,
     research_launch_contract: pd.DataFrame,
     research_registration: pd.DataFrame,
     sweep_provenance: pd.DataFrame,
@@ -968,8 +1210,30 @@ def _stages(
     )
     launch_contract_passed = _to_bool(launch_contract_row.get("passed", False))
     launch_contract_skipped = _to_bool(launch_contract_row.get("skipped", False))
+    receipt_row = (
+        research_launch_execution_receipt.iloc[0]
+        if not research_launch_execution_receipt.empty
+        else pd.Series(dtype=object)
+    )
+    receipt_passed = _to_bool(receipt_row.get("passed", False))
+    receipt_skipped = _to_bool(receipt_row.get("skipped", False))
     return pd.DataFrame(
         [
+            {
+                "stage": "research_launch_execution_receipt",
+                "status": receipt_passed,
+                "status_column": "passed",
+                "skipped": receipt_skipped,
+                "output_dir": str(receipt_row.get("receipt_path", "")),
+                "failed_checks": 0 if receipt_passed else 1,
+                "recommendation": str(
+                    receipt_row.get(
+                        "recommendation",
+                        "run_the_study_through_the_contract_executor",
+                    )
+                ),
+                "detail": str(receipt_row.get("detail", "")),
+            },
             {
                 "stage": "research_launch_contract",
                 "status": launch_contract_passed,
@@ -1098,6 +1362,7 @@ def _summary(
     strategy: str,
     market: str,
     sweep_count: int,
+    research_launch_execution_receipt: pd.DataFrame,
     research_launch_contract: pd.DataFrame,
     research_registration: pd.DataFrame,
     sweep_provenance: pd.DataFrame,
@@ -1126,6 +1391,11 @@ def _summary(
         if not research_launch_contract.empty
         else pd.Series(dtype=object)
     )
+    receipt_row = (
+        research_launch_execution_receipt.iloc[0]
+        if not research_launch_execution_receipt.empty
+        else pd.Series(dtype=object)
+    )
     first_failed = stages.loc[~stages["status"].map(_to_bool)]
     next_gate = READY_NEXT_GATE if ready else STAGE_NEXT_GATES.get(
         str(first_failed.iloc[0]["stage"]) if not first_failed.empty else "",
@@ -1143,6 +1413,30 @@ def _summary(
                 ),
                 "holdout_sweep_count": int(
                     sweep_provenance["study_role"].astype(str).eq("holdout").sum()
+                ),
+                "research_launch_execution_receipt_provided": _to_bool(
+                    receipt_row.get("provided", False)
+                ),
+                "research_launch_execution_receipt_required": _to_bool(
+                    receipt_row.get("required", False)
+                ),
+                "research_launch_execution_receipt_passed": _to_bool(
+                    receipt_row.get("passed", False)
+                ),
+                "research_launch_execution_receipt_id": str(
+                    receipt_row.get("receipt_id", "")
+                ),
+                "research_launch_dispatch_id": str(
+                    receipt_row.get("dispatch_id", "")
+                ),
+                "research_launch_execution_receipt_sha256": str(
+                    receipt_row.get("receipt_sha256", "")
+                ),
+                "research_launch_argv_sha256": str(
+                    receipt_row.get("argv_sha256", "")
+                ),
+                "research_launch_semantic_sha256": str(
+                    receipt_row.get("semantic_sha256", "")
                 ),
                 "research_launch_contract_provided": _to_bool(
                     launch_contract_row.get("provided", False)
@@ -1306,6 +1600,30 @@ def _candidate_config(
     ].astype(str).tolist()
     config["pipeline"] = {
         "ready": bool(summary["ready"]),
+        "research_launch_execution_receipt_provided": bool(
+            summary["research_launch_execution_receipt_provided"]
+        ),
+        "research_launch_execution_receipt_required": bool(
+            summary["research_launch_execution_receipt_required"]
+        ),
+        "research_launch_execution_receipt_passed": bool(
+            summary["research_launch_execution_receipt_passed"]
+        ),
+        "research_launch_execution_receipt_id": str(
+            summary["research_launch_execution_receipt_id"]
+        ),
+        "research_launch_dispatch_id": str(
+            summary["research_launch_dispatch_id"]
+        ),
+        "research_launch_execution_receipt_sha256": str(
+            summary["research_launch_execution_receipt_sha256"]
+        ),
+        "research_launch_argv_sha256": str(
+            summary["research_launch_argv_sha256"]
+        ),
+        "research_launch_semantic_sha256": str(
+            summary["research_launch_semantic_sha256"]
+        ),
         "research_launch_contract_provided": bool(
             summary["research_launch_contract_provided"]
         ),
@@ -1369,6 +1687,12 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
         "",
         f"- Status: **{'ready' if bool(summary['ready']) else 'blocked'}**",
         f"- Strategy/market: `{summary['strategy']}` / `{summary['market']}`",
+        (
+            "- Research launch execution receipt: "
+            f"{'bound' if bool(summary['research_launch_execution_receipt_provided']) else 'not provided'}"
+            f"; passed `{str(bool(summary['research_launch_execution_receipt_passed'])).lower()}`"
+        ),
+        f"- Launch dispatch ID: `{summary['research_launch_dispatch_id']}`",
         (
             "- Research launch contract: "
             f"{'bound' if bool(summary['research_launch_contract_provided']) else 'not provided'}"

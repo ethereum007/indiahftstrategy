@@ -109,6 +109,7 @@ from reports.research_family import (
 )
 from reports.research_family_launch import (
     load_research_family_launch_contract,
+    write_research_family_launch_execution_receipt,
     write_research_family_launch_matrix,
 )
 from reports.research_family_registration import (
@@ -2651,6 +2652,14 @@ def main(argv: list[str] | None = None) -> int:
     robust_selection.add_argument("--research-launch-contract-id", default=None)
     robust_selection.add_argument(
         "--require-research-launch-contract",
+        action="store_true",
+    )
+    robust_selection.add_argument(
+        "--research-launch-execution-receipt",
+        default=None,
+    )
+    robust_selection.add_argument(
+        "--require-research-launch-execution-receipt",
         action="store_true",
     )
     robust_selection.add_argument("--min-selection-pass-rate", type=float, default=1.0)
@@ -6326,6 +6335,12 @@ def main(argv: list[str] | None = None) -> int:
             require_research_launch_contract=(
                 args.require_research_launch_contract
             ),
+            research_launch_execution_receipt_path=(
+                args.research_launch_execution_receipt
+            ),
+            require_research_launch_execution_receipt=(
+                args.require_research_launch_execution_receipt
+            ),
             selection_min_pass_rate=args.min_selection_pass_rate,
             selection_min_sweeps=args.min_selection_sweeps,
             selection_min_median_net_pnl=args.min_selection_median_net_pnl,
@@ -6566,7 +6581,13 @@ def main(argv: list[str] | None = None) -> int:
             "pipeline-robust-selection",
         ]:
             raise ValueError("launch contract does not target robust selection")
-        return main(contract.argv[3:])
+        receipt = write_research_family_launch_execution_receipt(contract)
+        dispatch_argv = [
+            *contract.argv,
+            "--research-launch-execution-receipt",
+            str(receipt.path),
+        ]
+        return main(dispatch_argv[3:])
     if args.command == "audit-research-family":
         result = write_research_family_audit(
             args.studies,

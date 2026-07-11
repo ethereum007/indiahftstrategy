@@ -12,7 +12,9 @@ from reports.manifest import (
 )
 from reports.research_family import ResearchFamilyConfig, write_research_family_audit
 from reports.research_family_launch import (
+    load_research_family_launch_contract,
     load_research_family_launch_matrix,
+    write_research_family_launch_execution_receipt,
     write_research_family_launch_matrix,
 )
 from reports.research_family_registration import write_research_family_registration
@@ -50,6 +52,7 @@ def test_research_family_launch_builds_deterministic_pending_contracts(tmp_path)
         assert "--research-launch-matrix" in argv
         assert "--research-launch-contract-id" in argv
         assert "--require-research-launch-contract" in argv
+        assert "--require-research-launch-execution-receipt" in argv
         assert "--fail-on-breach" in argv
         assert not bool(row.authorizes_submission)
         contract = json.loads(
@@ -85,17 +88,31 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     binding = pd.read_csv(
         result_root / "robust_selection_pipeline_research_launch_contract.csv"
     ).iloc[0]
+    receipt_binding = pd.read_csv(
+        result_root
+        / "robust_selection_pipeline_research_launch_execution_receipt.csv"
+    ).iloc[0]
     manifest = json.loads((result_root / "manifest.json").read_text(encoding="utf-8"))
     assert status == 0
     assert bool(summary["ready"])
     assert bool(summary["research_launch_contract_passed"])
+    assert bool(summary["research_launch_execution_receipt_passed"])
+    assert summary["research_launch_execution_receipt_id"]
+    assert summary["research_launch_dispatch_id"]
+    assert summary["research_launch_semantic_sha256"]
     assert summary["research_launch_contract_id"] == contract["contract_id"]
     assert bool(binding["passed"])
     assert bool(binding["sweep_paths_match"])
     assert bool(binding["group_columns_match"])
+    assert bool(receipt_binding["passed"])
+    assert bool(receipt_binding["argv_matches"])
+    assert bool(receipt_binding["semantic_matches"])
     assert manifest["inputs"]["research_family_launch_contract"]["sha256"] == (
         file_sha256(Path(str(contract["contract_path"])))
     )
+    assert manifest["inputs"]["research_family_launch_execution_receipt"][
+        "kind"
+    ] == "file"
     refreshed = write_research_family_launch_matrix(
         registration_dir,
         output_dir=launch_dir,
@@ -110,6 +127,7 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     )
     assert refreshed_leadlag["study_status"] == "completed_ready"
     assert bool(refreshed_leadlag["result_launch_contract_bound"])
+    assert bool(refreshed_leadlag["result_launch_execution_receipt_bound"])
     assert root_integrity.passed
     result_summary_path = result_root / "robust_selection_pipeline_summary.csv"
     result_summary_path.write_text(
@@ -147,10 +165,49 @@ def test_research_family_launch_blocks_contract_argument_drift(tmp_path):
     ).iloc[0]
     assert status == 2
     assert not bool(summary["ready"])
-    assert summary["next_gate"] == "plan-research-family-launches"
+    assert summary["next_gate"] == "run-research-family-study"
     assert not bool(binding["passed"])
     assert not bool(binding["sweep_paths_match"])
     assert "sweep_paths_match" in binding["failed_check_names"]
+
+
+def test_research_family_launch_receipt_blocks_semantic_parameter_drift(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    row = pending.launches.set_index("study_label").loc["leadlag"]
+    contract = load_research_family_launch_contract(
+        launch_dir,
+        str(row["contract_id"]),
+    )
+    receipt = write_research_family_launch_execution_receipt(contract)
+    drifted_argv = [
+        *contract.argv,
+        "--research-launch-execution-receipt",
+        str(receipt.path),
+        "--max-probability-overfit",
+        "0.20",
+    ]
+
+    status = main(drifted_argv[3:])
+
+    result_root = tmp_path / "results" / "leadlag"
+    summary = pd.read_csv(
+        result_root / "robust_selection_pipeline_summary.csv"
+    ).iloc[0]
+    receipt_binding = pd.read_csv(
+        result_root
+        / "robust_selection_pipeline_research_launch_execution_receipt.csv"
+    ).iloc[0]
+    assert status == 2
+    assert not bool(summary["ready"])
+    assert summary["next_gate"] == "run-research-family-study"
+    assert bool(receipt_binding["argv_matches"])
+    assert not bool(receipt_binding["semantic_matches"])
+    assert "semantic_matches" in receipt_binding["failed_check_names"]
 
 
 def test_research_family_launch_covers_bound_result_and_attested_abandonment(
@@ -163,6 +220,12 @@ def test_research_family_launch_covers_bound_result_and_attested_abandonment(
         output_dir=tmp_path / "launches",
     )
     leadlag_contract = pending.launches.set_index("study_label").loc["leadlag"]
+    execution_receipt = write_research_family_launch_execution_receipt(
+        load_research_family_launch_contract(
+            tmp_path / "launches",
+            str(leadlag_contract["contract_id"]),
+        )
+    )
     _write_bound_result(
         tmp_path / "results" / "leadlag",
         registration_dir=registration_dir,
@@ -170,6 +233,8 @@ def test_research_family_launch_covers_bound_result_and_attested_abandonment(
         study_label="leadlag",
         launch_contract_id=str(leadlag_contract["contract_id"]),
         launch_contract_path=Path(str(leadlag_contract["contract_path"])),
+        execution_receipt_path=execution_receipt.path,
+        execution_receipt_id=execution_receipt.receipt_id,
     )
     abandonments = tmp_path / "abandonments.csv"
     pd.DataFrame(
@@ -298,6 +363,12 @@ def test_research_family_launch_blocks_result_bound_to_different_registration(
         output_dir=tmp_path / "launches",
     )
     leadlag_contract = pending.launches.set_index("study_label").loc["leadlag"]
+    execution_receipt = write_research_family_launch_execution_receipt(
+        load_research_family_launch_contract(
+            tmp_path / "launches",
+            str(leadlag_contract["contract_id"]),
+        )
+    )
     _write_bound_result(
         tmp_path / "results" / "leadlag",
         registration_dir=registration_dir,
@@ -305,6 +376,8 @@ def test_research_family_launch_blocks_result_bound_to_different_registration(
         study_label="leadlag",
         launch_contract_id=str(leadlag_contract["contract_id"]),
         launch_contract_path=Path(str(leadlag_contract["contract_path"])),
+        execution_receipt_path=execution_receipt.path,
+        execution_receipt_id=execution_receipt.receipt_id,
     )
     abandonments = tmp_path / "abandonments.csv"
     pd.DataFrame(
@@ -405,6 +478,8 @@ def _write_bound_result(
     study_label,
     launch_contract_id,
     launch_contract_path,
+    execution_receipt_path,
+    execution_receipt_id,
 ):
     root.mkdir(parents=True)
     significance_dir = root / "02_backtest_significance"
@@ -413,6 +488,7 @@ def _write_bound_result(
     overfit_dir.mkdir()
     manifest_sha = file_sha256(registration_dir / "manifest.json")
     launch_contract_sha = file_sha256(launch_contract_path)
+    execution_receipt_sha = file_sha256(execution_receipt_path)
     pd.DataFrame(
         [
             {
@@ -435,6 +511,10 @@ def _write_bound_result(
                 "research_launch_contract_passed": True,
                 "research_launch_contract_id": launch_contract_id,
                 "research_launch_contract_sha256": launch_contract_sha,
+                "research_launch_execution_receipt_provided": True,
+                "research_launch_execution_receipt_passed": True,
+                "research_launch_execution_receipt_id": execution_receipt_id,
+                "research_launch_execution_receipt_sha256": execution_receipt_sha,
                 "authorizes_submission": False,
             }
         ]
@@ -467,6 +547,18 @@ def _write_bound_result(
         [
             {
                 "passed": True,
+                "receipt_id": execution_receipt_id,
+                "receipt_sha256": execution_receipt_sha,
+            }
+        ]
+    ).to_csv(
+        root / "robust_selection_pipeline_research_launch_execution_receipt.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "passed": True,
                 "candidate_scenario": f"scenario={study_label}",
                 "scenario_trial_count": 3,
                 "sign_pvalue": 0.003,
@@ -488,5 +580,6 @@ def _write_bound_result(
             "research_family_registration_manifest": registration_dir
             / "manifest.json",
             "research_family_launch_contract": launch_contract_path,
+            "research_family_launch_execution_receipt": execution_receipt_path,
         },
     )

@@ -2351,12 +2351,18 @@ so a mismatched, failed, or drifted registration cannot yield a ready leaf.
 
 The generated family launcher also supplies `--research-launch-matrix`,
 `--research-launch-contract-id`, and
-`--require-research-launch-contract`. That preflight verifies the current
+`--require-research-launch-contract`. The official executor additionally
+creates a unique execution receipt and supplies
+`--research-launch-execution-receipt` with
+`--require-research-launch-execution-receipt`. These preflights verify the current
 matrix artifact, immutable contract-core hash, exact study/output identity,
 ordered sweeps and labels, grouping columns, holdout count, and registration
-fingerprint. The root manifest fingerprints the immutable contract file while
-recording the matrix-manifest SHA observed at launch. A later coverage refresh
-therefore cannot invalidate an otherwise unchanged robust result.
+fingerprint. The receipt binds the exact stored argv and a canonical digest of
+the resolved selection, overfit, significance, holdout, and promotion
+semantics. The root manifest fingerprints both immutable files while recording
+the matrix-manifest SHA observed at launch. A later coverage refresh therefore
+cannot invalidate an otherwise unchanged robust result, while manual dispatch,
+argument drift, changed defaults, and threshold overrides fail closed.
 
 Outputs:
 
@@ -2369,6 +2375,7 @@ Outputs:
 robust_selection_pipeline_sweep_provenance.csv
 robust_selection_pipeline_research_registration.csv
 robust_selection_pipeline_research_launch_contract.csv
+robust_selection_pipeline_research_launch_execution_receipt.csv
 robust_selection_pipeline_preflight.csv
 robust_selection_pipeline_stages.csv
 robust_selection_pipeline_summary.csv
@@ -2464,14 +2471,20 @@ python -m hft_cli run-research-family-study `
 ```
 
 The executor accepts only a current matrix artifact whose selected row is both
-contract-valid and launch-ready. It then runs the exact stored argv, including
-mandatory registration and launch-contract gates.
+contract-valid and launch-ready. Before dispatch it writes a unique receipt
+under `executions\`, then runs the exact stored argv with that receipt path and
+mandatory registration, launch-contract, and execution-receipt gates. The
+receipt records the dispatch ID and time, matrix/contract fingerprints, exact
+argv digest, resolved semantic parameters and digest, and
+`authorizes_submission=false`.
 
 The command verifies the registration, exact sweep and label counts, unique
 scenario-group columns, every sweep manifest, and any existing robust root.
 Existing results count as covered only when their current root manifest binds
 the same registration ID, study label, registration-manifest SHA, immutable
-contract ID, and contract-file SHA. Pending
+contract ID, contract-file SHA, and execution-receipt ID/SHA. The root must
+also reproduce the receipt's exact semantic digest from its actual runtime
+configuration. Pending
 rows retain both a machine-readable argv array and display command. Contract
 IDs are deterministic hashes of the registered row and exact launch arguments.
 
@@ -2491,6 +2504,7 @@ Outputs:
 
 ```text
 contracts\*.json
+executions\*.json
 research_family_launch_matrix.csv
 research_family_launch_checks.csv
 research_family_launch_summary.csv

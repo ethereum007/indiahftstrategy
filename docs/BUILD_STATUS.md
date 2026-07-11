@@ -85,6 +85,13 @@
   fingerprint. The robust root fingerprints the immutable contract file and
   records the matrix-manifest SHA observed at launch, so refreshing mutable
   closure coverage does not invalidate the completed result.
+  The official executor now creates a unique launch-execution receipt before
+  dispatch. That receipt binds the immutable contract, exact stored argv,
+  launch-matrix manifest observed at dispatch, and a canonical digest of the
+  resolved robust-selection semantics. The completed root fingerprints the
+  receipt and must reproduce the same semantic digest, so manual argv edits,
+  changed defaults, threshold overrides, or reconstructed launches fail the
+  promotion preflight.
 - Research families can now be registered prospectively before outcomes exist.
   `register-research-family` normalizes and validates a CSV plan containing
   strategy, market, hypothesis, metric, maximum search breadth, at least six
@@ -98,10 +105,12 @@
   deterministic argv contract per registered row, and classifies results as
   completed-ready, completed-blocked, explicitly abandoned, or never launched.
   Existing roots count only when they bind the exact registration ID, label,
-  manifest SHA, launch-contract ID, and contract-file SHA. The
+  manifest SHA, launch-contract ID, contract-file SHA, and execution-receipt
+  ID. The
   `run-research-family-study` executor runs only a current launch-ready row's
-  exact stored argv. Abandonments require a unique reason ledger row and an
-  explicit operator attestation; all artifacts remain non-authorizing.
+  exact stored argv and injects the receipt path as dispatch evidence.
+  Abandonments require a unique reason ledger row and an explicit operator
+  attestation; all artifacts remain non-authorizing.
 - Cross-strategy research now has a declared-family multiple-testing ledger.
   `audit-research-family` verifies each robust-selection root, includes failed
   and non-ready attempts in the family size, and applies Holm-Bonferroni to the
@@ -2507,16 +2516,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1496 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1497 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`132 passed`). This covers deterministic plan locking, immutable
-registered-study launch contracts, exact contract execution, launch-argument
-drift rejection, mutable coverage refresh without root invalidation, recursive
+together (`133 passed`). This covers deterministic plan locking, immutable
+registered-study launch contracts, exact contract execution, unique execution
+receipts, resolved semantic-digest binding, launch-argument and semantic-drift
+rejection, mutable coverage refresh without root invalidation, recursive
 post-coverage result-drift detection, current sweep and result coverage,
 never-launched blocking, attested reasoned abandonment, conservative abandoned
 study accounting, direct registered-row and registration-manifest source binding, exact
@@ -2560,7 +2570,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1496-test collection is fully green.
+1497-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2569,6 +2579,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add an execution receipt and resolved semantic-parameter digest to each
-   launch-contract run, proving the stored argv was dispatched intact rather
-   than merely reconstructed with matching core paths.
+4. Add an append-only launch-attempt ledger with explicit retry intent and
+   duplicate-dispatch/replay detection, so repeated executor calls cannot
+   silently replace study-attempt history.
