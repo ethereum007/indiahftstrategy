@@ -44,6 +44,7 @@ def write_experiment_manifest(
     parameters: Mapping[str, Any] | None = None,
     inputs: Mapping[str, Any] | None = None,
     extra: Mapping[str, Any] | None = None,
+    artifact_exclude_paths: tuple[str | Path, ...] = (),
     cwd: str | Path | None = None,
 ) -> Path:
     out = Path(output_dir)
@@ -54,6 +55,7 @@ def write_experiment_manifest(
         parameters=parameters,
         inputs=inputs,
         extra=extra,
+        artifact_exclude_paths=artifact_exclude_paths,
         cwd=cwd,
     )
     path = out / MANIFEST_NAME
@@ -68,6 +70,7 @@ def build_experiment_manifest(
     parameters: Mapping[str, Any] | None = None,
     inputs: Mapping[str, Any] | None = None,
     extra: Mapping[str, Any] | None = None,
+    artifact_exclude_paths: tuple[str | Path, ...] = (),
     cwd: str | Path | None = None,
 ) -> dict[str, Any]:
     out = Path(output_dir)
@@ -78,7 +81,10 @@ def build_experiment_manifest(
         "run_type": run_type,
         "parameters": _jsonable(parameters or {}),
         "inputs": {name: _input_fingerprint(value) for name, value in (inputs or {}).items()},
-        "artifacts": _artifact_fingerprints(out),
+        "artifacts": _artifact_fingerprints(
+            out,
+            exclude_paths=artifact_exclude_paths,
+        ),
         "git": _git_state(repo_cwd),
         "environment": {
             "python": sys.version.split()[0],
@@ -301,12 +307,39 @@ def _manifest_fingerprint_current(fingerprint: dict[str, Any]) -> bool:
         return False
 
 
-def _artifact_fingerprints(output_dir: Path) -> list[dict[str, Any]]:
+def _artifact_fingerprints(
+    output_dir: Path,
+    *,
+    exclude_paths: tuple[str | Path, ...] = (),
+) -> list[dict[str, Any]]:
     if not output_dir.exists():
         return []
+    resolved_output = output_dir.resolve()
+    excluded: list[Path] = []
+    for value in exclude_paths:
+        raw_path = Path(value)
+        candidate = (
+            raw_path.resolve()
+            if raw_path.is_absolute()
+            else (resolved_output / raw_path).resolve()
+        )
+        try:
+            candidate.relative_to(resolved_output)
+        except ValueError as exc:
+            raise ValueError(
+                "artifact exclusion escapes the output directory"
+            ) from exc
+        excluded.append(candidate)
     rows = []
     for path in sorted(output_dir.rglob("*")):
         if not path.is_file() or path.name == MANIFEST_NAME:
+            continue
+        resolved_path = path.resolve()
+        if any(
+            resolved_path == excluded_path
+            or excluded_path in resolved_path.parents
+            for excluded_path in excluded
+        ):
             continue
         rows.append(
             {

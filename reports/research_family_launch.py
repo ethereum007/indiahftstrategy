@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import subprocess
 import uuid
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
@@ -39,6 +41,9 @@ RUN_TYPE = "research_family_launch_matrix"
 READY_NEXT_GATE = "audit-research-family"
 LAUNCH_NEXT_GATE = "run-research-family-study"
 REPAIR_NEXT_GATE = "plan-research-family-launches"
+ATTEMPT_LEDGER_NAME = "attempts.jsonl"
+ATTEMPT_LOCK_NAME = "attempts.lock"
+ATTEMPT_RECORD_DIR = "records"
 
 LAUNCH_COLUMNS = (
     "sweep_paths_json",
@@ -119,6 +124,25 @@ class ResearchFamilyLaunchExecutionReceipt:
     argv: list[str]
     argv_sha256: str
     semantic_sha256: str
+    attempt_id: str
+    attempt_number: int
+    retry_of_attempt_id: str
+    attempt_ledger_path: Path
+    attempt_record_path: Path
+    attempt_record_sha256: str
+
+
+@dataclass(frozen=True)
+class ResearchFamilyLaunchAttemptLedgerSnapshot:
+    root: Path
+    path: Path
+    records: tuple[dict[str, Any], ...]
+    sha256: str
+    latest_record_sha256: str
+
+    @property
+    def attempt_count(self) -> int:
+        return len(self.records)
 
 
 def load_research_family_launch_matrix(
@@ -246,6 +270,10 @@ def load_research_family_launch_contract(
 
 def write_research_family_launch_execution_receipt(
     contract: ResearchFamilyLaunchContractSnapshot,
+    *,
+    retry_of_attempt_id: str | None = None,
+    retry_reason: str | None = None,
+    attest_retry: bool = False,
 ) -> ResearchFamilyLaunchExecutionReceipt:
     if not contract.ready:
         raise ValueError("launch contract is not current and ready")
@@ -256,49 +284,139 @@ def write_research_family_launch_execution_receipt(
         raise ValueError("launch contract lacks resolved semantic parameters")
     if semantic_digest(semantics) != expected_semantic_digest:
         raise ValueError("launch contract semantic digest is invalid")
-    dispatch_id = uuid.uuid4().hex
-    generated_at = (
-        datetime.now(timezone.utc)
-        .isoformat(timespec="microseconds")
-        .replace("+00:00", "Z")
-    )
-    receipt_core = {
-        "schema_version": 1,
-        "dispatch_id": dispatch_id,
-        "generated_at_utc": generated_at,
-        "launch_matrix_path": str(contract.matrix.root),
-        "launch_matrix_manifest_sha256": contract.matrix.manifest_sha256,
-        "contract_id": contract.contract_id,
-        "contract_path": str(contract.contract_path),
-        "contract_sha256": file_sha256(contract.contract_path),
-        "argv": contract.argv,
-        "argv_sha256": argv_digest(contract.argv),
-        "semantic_parameters": semantics,
-        "semantic_sha256": expected_semantic_digest,
-        "authorizes_submission": False,
-    }
-    receipt_id = _payload_sha256(receipt_core)
-    payload = {
-        **receipt_core,
-        "receipt_id": receipt_id,
-    }
     receipt_dir = contract.matrix.root / "executions"
     receipt_dir.mkdir(parents=True, exist_ok=True)
-    path = receipt_dir / f"{contract.contract_id[:12]}_{dispatch_id}.json"
-    path.write_text(
-        json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return ResearchFamilyLaunchExecutionReceipt(
-        path=path,
-        payload=payload,
-        receipt_id=receipt_id,
-        dispatch_id=dispatch_id,
-        contract_id=contract.contract_id,
-        argv=contract.argv,
-        argv_sha256=str(payload["argv_sha256"]),
-        semantic_sha256=str(payload["semantic_sha256"]),
-    )
+    ledger_path = receipt_dir / ATTEMPT_LEDGER_NAME
+    record_dir = receipt_dir / ATTEMPT_RECORD_DIR
+    record_dir.mkdir(parents=True, exist_ok=True)
+    requested_retry = str(retry_of_attempt_id or "").strip()
+    reason = str(retry_reason or "").strip()
+
+    with _attempt_ledger_lock(receipt_dir):
+        ledger = load_research_family_launch_attempt_ledger(contract.matrix.root)
+        prior_attempts = [
+            record
+            for record in ledger.records
+            if str(record.get("contract_id", "")) == contract.contract_id
+        ]
+        result_root = Path(str(contract.row.get("planned_study_path", ""))).resolve()
+        result_summary = result_root / "robust_selection_pipeline_summary.csv"
+        result_root_nonempty = bool(
+            result_root.is_dir()
+            and any(item.is_file() for item in result_root.rglob("*"))
+        )
+        if result_summary.is_file():
+            raise ValueError(
+                "registered study already has a completed result; create a new "
+                "registered study instead of replaying the contract"
+            )
+        if not prior_attempts:
+            if requested_retry or reason or attest_retry:
+                raise ValueError("the first contract dispatch cannot be marked as a retry")
+            if result_root_nonempty:
+                raise ValueError(
+                    "the first contract dispatch requires an empty planned result root"
+                )
+        else:
+            latest_attempt_id = str(prior_attempts[-1].get("attempt_id", ""))
+            if requested_retry != latest_attempt_id:
+                raise ValueError(
+                    "contract already has an attempt; retry must name the latest "
+                    "attempt ID"
+                )
+            if not reason:
+                raise ValueError("contract retry requires a non-empty retry reason")
+            if not attest_retry:
+                raise ValueError("contract retry requires explicit operator attestation")
+
+        attempt_number = len(prior_attempts) + 1
+        dispatch_id = uuid.uuid4().hex
+        generated_at = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
+        receipt_path = receipt_dir / (
+            f"{contract.contract_id[:12]}_{dispatch_id}.json"
+        )
+        record_path = record_dir / (
+            f"{contract.contract_id[:12]}_{dispatch_id}.json"
+        )
+        receipt_core = {
+            "schema_version": 2,
+            "dispatch_id": dispatch_id,
+            "generated_at_utc": generated_at,
+            "attempt_number": attempt_number,
+            "attempt_ledger_path": str(ledger_path),
+            "attempt_record_path": str(record_path),
+            "retry_of_attempt_id": requested_retry,
+            "retry_reason": reason,
+            "retry_attested": bool(attest_retry),
+            "launch_matrix_path": str(contract.matrix.root),
+            "launch_matrix_manifest_sha256": contract.matrix.manifest_sha256,
+            "contract_id": contract.contract_id,
+            "contract_path": str(contract.contract_path),
+            "contract_sha256": file_sha256(contract.contract_path),
+            "result_root": str(result_root),
+            "result_root_nonempty_before_dispatch": result_root_nonempty,
+            "argv": contract.argv,
+            "argv_sha256": argv_digest(contract.argv),
+            "semantic_parameters": semantics,
+            "semantic_sha256": expected_semantic_digest,
+            "authorizes_submission": False,
+        }
+        receipt_id = _payload_sha256(receipt_core)
+        payload = {
+            **receipt_core,
+            "receipt_id": receipt_id,
+        }
+        receipt_path.write_text(
+            json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        receipt_sha256 = file_sha256(receipt_path)
+        previous_record_sha256 = ledger.latest_record_sha256
+        record_core = {
+            "schema_version": 1,
+            "attempt_id": receipt_id,
+            "attempt_number": attempt_number,
+            "dispatch_id": dispatch_id,
+            "generated_at_utc": generated_at,
+            "contract_id": contract.contract_id,
+            "launch_matrix_path": str(contract.matrix.root),
+            "launch_matrix_manifest_sha256": contract.matrix.manifest_sha256,
+            "contract_path": str(contract.contract_path),
+            "contract_sha256": file_sha256(contract.contract_path),
+            "result_root": str(result_root),
+            "result_root_nonempty_before_dispatch": result_root_nonempty,
+            "retry_of_attempt_id": requested_retry,
+            "retry_reason": reason,
+            "retry_attested": bool(attest_retry),
+            "receipt_path": str(receipt_path),
+            "receipt_sha256": receipt_sha256,
+            "attempt_record_path": str(record_path),
+            "previous_record_sha256": previous_record_sha256,
+            "authorizes_submission": False,
+        }
+        record = {
+            **record_core,
+            "record_sha256": _payload_sha256(record_core),
+        }
+        record_path.write_text(
+            json.dumps(_jsonable(record), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with ledger_path.open("a", encoding="utf-8", newline="\n") as handle:
+            handle.write(json.dumps(_jsonable(record), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        validated = load_research_family_launch_attempt_ledger(
+            contract.matrix.root
+        )
+        if not validated.records or validated.records[-1] != record:
+            raise ValueError("launch attempt ledger append could not be verified")
+
+    return load_research_family_launch_execution_receipt(receipt_path)
 
 
 def load_research_family_launch_execution_receipt(
@@ -320,15 +438,200 @@ def load_research_family_launch_execution_receipt(
         raise ValueError("launch execution receipt argv digest is invalid")
     if semantic_digest(semantics) != str(payload.get("semantic_sha256", "")):
         raise ValueError("launch execution receipt semantic digest is invalid")
+    dispatch_id = str(payload.get("dispatch_id", ""))
+    attempt_number = _int(payload.get("attempt_number"))
+    retry_of_attempt_id = str(payload.get("retry_of_attempt_id", ""))
+    retry_reason = str(payload.get("retry_reason", "")).strip()
+    retry_attested = _to_bool(payload.get("retry_attested", False))
+    if not dispatch_id or attempt_number < 1:
+        raise ValueError("launch execution receipt attempt identity is invalid")
+    if attempt_number == 1 and (
+        retry_of_attempt_id or retry_reason or retry_attested
+    ):
+        raise ValueError("initial launch execution receipt is marked as a retry")
+    if attempt_number > 1 and (
+        not retry_of_attempt_id or not retry_reason or not retry_attested
+    ):
+        raise ValueError("retry launch execution receipt lacks attested retry evidence")
+    matrix_root = Path(str(payload.get("launch_matrix_path", ""))).resolve()
+    execution_root = (matrix_root / "executions").resolve()
+    ledger_path = Path(str(payload.get("attempt_ledger_path", ""))).resolve()
+    record_path = Path(str(payload.get("attempt_record_path", ""))).resolve()
+    if ledger_path != execution_root / ATTEMPT_LEDGER_NAME:
+        raise ValueError("launch execution receipt attempt ledger path is invalid")
+    try:
+        path.relative_to(execution_root)
+        record_path.relative_to((execution_root / ATTEMPT_RECORD_DIR).resolve())
+    except ValueError as exc:
+        raise ValueError("launch execution receipt path escapes execution root") from exc
+    record = _read_json_object(record_path)
+    record_sha256 = str(record.get("record_sha256", ""))
+    record_core = {
+        key: value for key, value in record.items() if key != "record_sha256"
+    }
+    if not record_sha256 or _payload_sha256(record_core) != record_sha256:
+        raise ValueError("launch attempt record digest is invalid")
+    if (
+        str(record.get("attempt_id", "")) != receipt_id
+        or str(record.get("receipt_path", "")) != str(path)
+        or str(record.get("receipt_sha256", "")) != file_sha256(path)
+        or _int(record.get("attempt_number")) != attempt_number
+        or str(record.get("dispatch_id", "")) != dispatch_id
+        or str(record.get("contract_id", ""))
+        != str(payload.get("contract_id", ""))
+        or str(record.get("retry_of_attempt_id", "")) != retry_of_attempt_id
+        or str(record.get("retry_reason", "")).strip() != retry_reason
+        or _to_bool(record.get("retry_attested", False)) != retry_attested
+    ):
+        raise ValueError("launch attempt record does not match its receipt")
     return ResearchFamilyLaunchExecutionReceipt(
         path=path,
         payload=payload,
         receipt_id=receipt_id,
-        dispatch_id=str(payload.get("dispatch_id", "")),
+        dispatch_id=dispatch_id,
         contract_id=str(payload.get("contract_id", "")),
         argv=argv,
         argv_sha256=str(payload.get("argv_sha256", "")),
         semantic_sha256=str(payload.get("semantic_sha256", "")),
+        attempt_id=receipt_id,
+        attempt_number=attempt_number,
+        retry_of_attempt_id=retry_of_attempt_id,
+        attempt_ledger_path=ledger_path,
+        attempt_record_path=record_path,
+        attempt_record_sha256=record_sha256,
+    )
+
+
+def load_research_family_launch_attempt_ledger(
+    launch_matrix_path: str | Path,
+) -> ResearchFamilyLaunchAttemptLedgerSnapshot:
+    raw_path = Path(launch_matrix_path).resolve()
+    root = raw_path if raw_path.is_dir() else raw_path.parent
+    execution_root = (root / "executions").resolve()
+    ledger_path = execution_root / ATTEMPT_LEDGER_NAME
+    if not ledger_path.is_file():
+        return ResearchFamilyLaunchAttemptLedgerSnapshot(
+            root=root,
+            path=ledger_path,
+            records=(),
+            sha256="",
+            latest_record_sha256="",
+        )
+    records: list[dict[str, Any]] = []
+    contract_attempts: dict[str, list[dict[str, Any]]] = {}
+    seen_attempt_ids: set[str] = set()
+    seen_dispatch_ids: set[str] = set()
+    previous_record_sha256 = ""
+    for line_number, raw_line in enumerate(
+        ledger_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not raw_line.strip():
+            raise ValueError(f"launch attempt ledger line {line_number} is empty")
+        try:
+            record = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} is invalid JSON"
+            ) from exc
+        if not isinstance(record, dict):
+            raise ValueError(
+                f"launch attempt ledger line {line_number} is not an object"
+            )
+        record_sha256 = str(record.get("record_sha256", ""))
+        record_core = {
+            key: value for key, value in record.items() if key != "record_sha256"
+        }
+        if not record_sha256 or _payload_sha256(record_core) != record_sha256:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} digest is invalid"
+            )
+        if str(record.get("previous_record_sha256", "")) != previous_record_sha256:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} breaks the hash chain"
+            )
+        attempt_id = str(record.get("attempt_id", ""))
+        dispatch_id = str(record.get("dispatch_id", ""))
+        contract_id = str(record.get("contract_id", ""))
+        if (
+            not attempt_id
+            or attempt_id in seen_attempt_ids
+            or not dispatch_id
+            or dispatch_id in seen_dispatch_ids
+            or not contract_id
+        ):
+            raise ValueError(
+                f"launch attempt ledger line {line_number} identity is invalid"
+            )
+        prior_contract_attempts = contract_attempts.setdefault(contract_id, [])
+        attempt_number = _int(record.get("attempt_number"))
+        expected_attempt_number = len(prior_contract_attempts) + 1
+        retry_of_attempt_id = str(record.get("retry_of_attempt_id", ""))
+        retry_reason = str(record.get("retry_reason", "")).strip()
+        retry_attested = _to_bool(record.get("retry_attested", False))
+        if attempt_number != expected_attempt_number:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} attempt number is invalid"
+            )
+        if attempt_number == 1:
+            retry_valid = not retry_of_attempt_id and not retry_reason and not retry_attested
+        else:
+            retry_valid = bool(
+                retry_of_attempt_id
+                == str(prior_contract_attempts[-1].get("attempt_id", ""))
+                and retry_reason
+                and retry_attested
+            )
+        if not retry_valid:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} retry chain is invalid"
+            )
+        if _to_bool(record.get("authorizes_submission", True)):
+            raise ValueError(
+                f"launch attempt ledger line {line_number} authorizes submission"
+            )
+        if _canonical_path(record.get("launch_matrix_path", "")) != _canonical_path(root):
+            raise ValueError(
+                f"launch attempt ledger line {line_number} matrix path is invalid"
+            )
+        receipt_path = Path(str(record.get("receipt_path", ""))).resolve()
+        record_path = Path(str(record.get("attempt_record_path", ""))).resolve()
+        try:
+            receipt_path.relative_to(execution_root)
+            record_path.relative_to((execution_root / ATTEMPT_RECORD_DIR).resolve())
+        except ValueError as exc:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} escapes execution root"
+            ) from exc
+        stored_record = _read_json_object(record_path)
+        if stored_record != record:
+            raise ValueError(
+                f"launch attempt ledger line {line_number} record file differs"
+            )
+        receipt = load_research_family_launch_execution_receipt(receipt_path)
+        if (
+            receipt.attempt_id != attempt_id
+            or receipt.dispatch_id != dispatch_id
+            or receipt.contract_id != contract_id
+            or receipt.attempt_number != attempt_number
+            or receipt.retry_of_attempt_id != retry_of_attempt_id
+            or str(record.get("receipt_sha256", "")) != file_sha256(receipt.path)
+            or receipt.attempt_record_sha256 != record_sha256
+        ):
+            raise ValueError(
+                f"launch attempt ledger line {line_number} receipt binding is invalid"
+            )
+        records.append(record)
+        prior_contract_attempts.append(record)
+        seen_attempt_ids.add(attempt_id)
+        seen_dispatch_ids.add(dispatch_id)
+        previous_record_sha256 = record_sha256
+    return ResearchFamilyLaunchAttemptLedgerSnapshot(
+        root=root,
+        path=ledger_path,
+        records=tuple(records),
+        sha256=file_sha256(ledger_path),
+        latest_record_sha256=previous_record_sha256,
     )
 
 
@@ -344,6 +647,19 @@ def write_research_family_launch_matrix(
     out.mkdir(parents=True, exist_ok=True)
     contract_dir = out / "contracts"
     contract_dir.mkdir(parents=True, exist_ok=True)
+    attempt_ledger_error = ""
+    try:
+        attempt_ledger = load_research_family_launch_attempt_ledger(out)
+    except (OSError, ValueError, KeyError) as exc:
+        ledger_path = out / "executions" / ATTEMPT_LEDGER_NAME
+        attempt_ledger = ResearchFamilyLaunchAttemptLedgerSnapshot(
+            root=out,
+            path=ledger_path,
+            records=(),
+            sha256=file_sha256(ledger_path) if ledger_path.is_file() else "",
+            latest_record_sha256="",
+        )
+        attempt_ledger_error = f"{type(exc).__name__}: {exc}"
 
     abandonments, abandonment_source = _read_abandonments(abandonment_path)
     plan_path = Path(str(registration.config.get("plan_path", "")))
@@ -354,12 +670,16 @@ def write_research_family_launch_matrix(
         attest_abandonments=attest_abandonments,
         plan_root=plan_root,
         contract_dir=contract_dir,
+        attempt_ledger=attempt_ledger,
+        attempt_ledger_error=attempt_ledger_error,
     )
     checks = _checks(
         registration,
         launches,
         abandonments,
         attest_abandonments=attest_abandonments,
+        attempt_ledger=attempt_ledger,
+        attempt_ledger_error=attempt_ledger_error,
     )
     passed = bool(not checks.empty and checks["passed"].map(_to_bool).all())
     action_queue = _action_queue(launches, checks)
@@ -387,6 +707,10 @@ def write_research_family_launch_matrix(
         "registration_manifest_sha256": registration.manifest_sha256,
         "abandonment_path": str(abandonment_source or ""),
         "attest_abandonments": bool(attest_abandonments),
+        "attempt_ledger_path": str(attempt_ledger.path),
+        "attempt_ledger_sha256_observed": attempt_ledger.sha256,
+        "attempt_ledger_record_count": attempt_ledger.attempt_count,
+        "attempt_ledger_error": attempt_ledger_error,
         "summary": _record(summary.iloc[0]),
         "launch_contracts": [_record(row) for _, row in launches.iterrows()],
         "authorizes_submission": False,
@@ -424,6 +748,9 @@ def write_research_family_launch_matrix(
         run_type=RUN_TYPE,
         parameters={
             "attest_abandonments": bool(attest_abandonments),
+            "artifact_exclude_paths": ["executions"],
+            "attempt_ledger_sha256_observed": attempt_ledger.sha256,
+            "attempt_ledger_record_count": attempt_ledger.attempt_count,
         },
         inputs=inputs,
         extra={
@@ -433,6 +760,11 @@ def write_research_family_launch_matrix(
             "study_count": int(len(launches)),
             "contract_ready_count": _bool_count(launches, "contract_ready"),
             "closure_covered_count": _bool_count(launches, "closure_covered"),
+            "attempt_count": int(
+                launches.get("attempt_count", pd.Series(dtype=int)).sum()
+            ),
+            "retry_ready_count": _bool_count(launches, "retry_ready"),
+            "attempt_ledger_valid": not bool(attempt_ledger_error),
             "abandoned_count": int(
                 launches.get("study_status", pd.Series(dtype=str))
                 .astype(str)
@@ -441,6 +773,7 @@ def write_research_family_launch_matrix(
             ),
             "authorizes_submission": False,
         },
+        artifact_exclude_paths=("executions",),
     )
     return ResearchFamilyLaunchReport(
         launches=launches,
@@ -459,6 +792,8 @@ def _build_launches(
     attest_abandonments: bool,
     plan_root: Path,
     contract_dir: Path,
+    attempt_ledger: ResearchFamilyLaunchAttemptLedgerSnapshot,
+    attempt_ledger_error: str,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for index, study in registration.studies.reset_index(drop=True).iterrows():
@@ -567,6 +902,13 @@ def _build_launches(
             contract_id=contract_id,
             contract_path=contract_path,
         )
+        attempts = [
+            record
+            for record in attempt_ledger.records
+            if str(record.get("contract_id", "")) == contract_id
+        ]
+        latest_attempt = attempts[-1] if attempts else {}
+        attempt_count = len(attempts)
         abandonment_matches = abandonments.loc[
             abandonments.get(
                 "study_label",
@@ -597,6 +939,8 @@ def _build_launches(
             )
         elif abandonment_valid:
             status = "abandoned"
+        elif attempt_count:
+            status = "attempt_incomplete"
         else:
             status = "never_launched"
         closure_covered = bool(
@@ -606,11 +950,12 @@ def _build_launches(
                 and result["result_registration_bound"]
                 and result["result_launch_contract_bound"]
                 and result["result_launch_execution_receipt_bound"]
+                and result["result_launch_attempt_bound"]
                 and not abandonment_conflict
             )
             or abandonment_valid
         )
-        contract_ready = bool(
+        dispatch_prerequisites = bool(
             contract_valid
             and sweep_inputs_current
             and registration.ready
@@ -618,7 +963,11 @@ def _build_launches(
             and registration.registration_id_consistent
             and not result["result_exists"]
             and abandonment_matches.empty
+            and not attempt_ledger_error
         )
+        initial_dispatch_ready = bool(dispatch_prerequisites and not attempts)
+        retry_ready = bool(dispatch_prerequisites and attempts)
+        contract_ready = bool(initial_dispatch_ready or retry_ready)
         rows.append(
             {
                 "study_label": label,
@@ -642,10 +991,29 @@ def _build_launches(
                 "launch_spec_error": parse_error,
                 "contract_valid": contract_valid,
                 "contract_ready": contract_ready,
+                "initial_dispatch_ready": initial_dispatch_ready,
+                "retry_ready": retry_ready,
+                "retry_required": bool(attempts),
                 "contract_id": contract_id,
                 "contract_path": str(contract_path),
                 "launch_argv_json": json.dumps(argv, separators=(",", ":")),
                 "launch_command": subprocess.list2cmdline(argv),
+                "attempt_ledger_valid": not bool(attempt_ledger_error),
+                "attempt_ledger_error": attempt_ledger_error,
+                "attempt_count": attempt_count,
+                "latest_attempt_id": str(latest_attempt.get("attempt_id", "")),
+                "latest_attempt_number": _int(
+                    latest_attempt.get("attempt_number")
+                ),
+                "latest_attempt_record_sha256": str(
+                    latest_attempt.get("record_sha256", "")
+                ),
+                "latest_attempt_generated_at_utc": str(
+                    latest_attempt.get("generated_at_utc", "")
+                ),
+                "latest_attempt_retry_of_id": str(
+                    latest_attempt.get("retry_of_attempt_id", "")
+                ),
                 **result,
                 "abandonment_declared": bool(len(abandonment_matches) == 1),
                 "abandonment_reason": abandonment_reason,
@@ -682,6 +1050,7 @@ def _result_evidence(
             "result_registration_bound": False,
             "result_launch_contract_bound": False,
             "result_launch_execution_receipt_bound": False,
+            "result_launch_attempt_bound": False,
         }
     summary = pd.read_csv(summary_path)
     source = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -708,6 +1077,10 @@ def _result_evidence(
     receipt_input = _manifest_input(
         manifest,
         "research_family_launch_execution_receipt",
+    )
+    attempt_record_input = _manifest_input(
+        manifest,
+        "research_family_launch_attempt_record",
     )
     bound = bool(
         _to_bool(source.get("research_registration_provided", False))
@@ -737,8 +1110,18 @@ def _result_evidence(
     receipt_path = Path(str(receipt_input.get("path", "")))
     try:
         receipt = load_research_family_launch_execution_receipt(receipt_path)
+        attempt_ledger = load_research_family_launch_attempt_ledger(
+            contract_path.parent.parent
+        )
+        matching_attempts = [
+            record
+            for record in attempt_ledger.records
+            if str(record.get("attempt_id", "")) == receipt.attempt_id
+        ]
+        attempt_record = matching_attempts[0] if len(matching_attempts) == 1 else {}
     except (OSError, ValueError, KeyError):
         receipt = None
+        attempt_record = {}
     receipt_bound = bool(
         receipt is not None
         and _to_bool(
@@ -754,6 +1137,22 @@ def _result_evidence(
         == str(receipt_input.get("sha256", ""))
         and file_sha256(receipt.path) == str(receipt_input.get("sha256", ""))
     )
+    attempt_bound = bool(
+        receipt is not None
+        and attempt_record
+        and str(source.get("research_launch_attempt_id", ""))
+        == receipt.attempt_id
+        and _int(source.get("research_launch_attempt_number"))
+        == receipt.attempt_number
+        and str(source.get("research_launch_attempt_record_sha256", ""))
+        == receipt.attempt_record_sha256
+        and str(attempt_record.get("record_sha256", ""))
+        == receipt.attempt_record_sha256
+        and _canonical_path(attempt_record_input.get("path", ""))
+        == _canonical_path(receipt.attempt_record_path)
+        and str(attempt_record_input.get("sha256", ""))
+        == file_sha256(receipt.attempt_record_path)
+    )
     return {
         "result_exists": True,
         "result_ready": _to_bool(source.get("ready", False)),
@@ -763,6 +1162,7 @@ def _result_evidence(
         "result_registration_bound": bound,
         "result_launch_contract_bound": contract_bound,
         "result_launch_execution_receipt_bound": receipt_bound,
+        "result_launch_attempt_bound": attempt_bound,
     }
 
 
@@ -859,6 +1259,8 @@ def _checks(
     abandonments: pd.DataFrame,
     *,
     attest_abandonments: bool,
+    attempt_ledger: ResearchFamilyLaunchAttemptLedgerSnapshot,
+    attempt_ledger_error: str,
 ) -> pd.DataFrame:
     study_count = int(len(launches))
     registered_labels = set(registration.studies["study_label"].astype(str))
@@ -873,7 +1275,30 @@ def _checks(
             and abandonments["reason"].astype(str).str.strip().ne("").all()
         )
     )
+    current_contract_ids = set(
+        launches.get("contract_id", pd.Series(dtype=str)).astype(str)
+    )
+    attempt_contract_ids = {
+        str(record.get("contract_id", "")) for record in attempt_ledger.records
+    }
+    attempt_contracts_current = attempt_contract_ids.issubset(current_contract_ids)
     rows = [
+        _check(
+            "attempt_ledger_integrity",
+            not bool(attempt_ledger_error),
+            "is",
+            True,
+            not bool(attempt_ledger_error),
+            attempt_ledger_error or "launch attempt ledger is invalid",
+        ),
+        _check(
+            "attempt_contracts_current",
+            attempt_contracts_current,
+            "is",
+            True,
+            attempt_contracts_current,
+            "attempt ledger contains a contract outside this launch matrix",
+        ),
         _check(
             "registration_ready",
             registration.ready,
@@ -950,12 +1375,21 @@ def _summary(
 ) -> pd.DataFrame:
     status = launches.get("study_status", pd.Series(dtype=str)).astype(str)
     contract_ready_count = _bool_count(launches, "contract_ready")
+    failed_check_names = set(
+        checks.loc[~checks["passed"].map(_to_bool), "check"].astype(str)
+    )
+    repair_required = bool(
+        _bool_count(launches, "contract_valid") < len(launches)
+        or failed_check_names.intersection(
+            {"attempt_ledger_integrity", "attempt_contracts_current"}
+        )
+    )
     next_gate = (
         READY_NEXT_GATE
         if passed
         else (
             REPAIR_NEXT_GATE
-            if _bool_count(launches, "contract_valid") < len(launches)
+            if repair_required
             else LAUNCH_NEXT_GATE
         )
     )
@@ -968,8 +1402,19 @@ def _summary(
                 "study_count": int(len(launches)),
                 "valid_contract_count": _bool_count(launches, "contract_valid"),
                 "contract_ready_count": contract_ready_count,
+                "initial_dispatch_ready_count": _bool_count(
+                    launches,
+                    "initial_dispatch_ready",
+                ),
+                "retry_ready_count": _bool_count(launches, "retry_ready"),
+                "attempt_count": int(
+                    launches.get("attempt_count", pd.Series(dtype=int)).sum()
+                ),
                 "completed_ready_count": int(status.eq("completed_ready").sum()),
                 "completed_blocked_count": int(status.eq("completed_blocked").sum()),
+                "attempt_incomplete_count": int(
+                    status.eq("attempt_incomplete").sum()
+                ),
                 "abandoned_count": int(status.eq("abandoned").sum()),
                 "never_launched_count": int(status.eq("never_launched").sum()),
                 "closure_covered_count": _bool_count(launches, "closure_covered"),
@@ -1002,9 +1447,18 @@ def _action_queue(
     for launch in launches.itertuples(index=False):
         if bool(launch.closure_covered):
             continue
-        if not bool(launch.contract_valid):
+        if not bool(launch.attempt_ledger_valid):
+            action = "repair_the_hash_chained_launch_attempt_ledger"
+            next_gate = REPAIR_NEXT_GATE
+        elif not bool(launch.contract_valid):
             action = "repair_the_registered_launch_spec"
             next_gate = REPAIR_NEXT_GATE
+        elif bool(launch.retry_ready):
+            action = (
+                f"retry_contract_{launch.contract_id}_from_"
+                f"{launch.latest_attempt_id}_with_attested_reason"
+            )
+            next_gate = LAUNCH_NEXT_GATE
         elif bool(launch.contract_ready):
             action = f"execute_contract_{launch.contract_id}"
             next_gate = LAUNCH_NEXT_GATE
@@ -1138,6 +1592,44 @@ def _payload_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+@contextmanager
+def _attempt_ledger_lock(execution_root: Path):
+    lock_path = execution_root / ATTEMPT_LOCK_NAME
+    handle = lock_path.open("a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError as exc:
+        handle.close()
+        raise ValueError("another launch attempt is already being prepared") from exc
+    try:
+        yield
+    finally:
+        try:
+            handle.seek(0)
+            if os.name == "nt":
+                import msvcrt
+
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            handle.close()
+
+
 def _slug(value: str) -> str:
     slug = "".join(character if character.isalnum() else "_" for character in value)
     slug = "_".join(part for part in slug.split("_") if part)
@@ -1200,6 +1692,8 @@ def _runbook(
         f"- Registration ID: `{summary['registration_id']}`",
         f"- Studies: {int(summary['study_count'])}",
         f"- Closure covered: {int(summary['closure_covered_count'])}/{int(summary['study_count'])}",
+        f"- Dispatch attempts: {int(summary['attempt_count'])}",
+        f"- Incomplete attempts: {int(summary['attempt_incomplete_count'])}",
         f"- Never launched: {int(summary['never_launched_count'])}",
         f"- Explicitly abandoned: {int(summary['abandoned_count'])}",
         f"- Next gate: `{summary['next_gate']}`",
@@ -1216,6 +1710,12 @@ def _runbook(
         )
         if bool(launch.contract_ready):
             lines.append(f"  `{launch.launch_command}`")
+        if bool(launch.retry_ready):
+            lines.append(
+                "  Retry only with `--retry-of-attempt-id "
+                f"{launch.latest_attempt_id} --retry-reason <reason> "
+                "--attest-retry`."
+            )
     failed = checks.loc[~checks["passed"].map(_to_bool)]
     if not failed.empty:
         lines.extend(["", "## Blocking Checks", ""])

@@ -2359,10 +2359,15 @@ matrix artifact, immutable contract-core hash, exact study/output identity,
 ordered sweeps and labels, grouping columns, holdout count, and registration
 fingerprint. The receipt binds the exact stored argv and a canonical digest of
 the resolved selection, overfit, significance, holdout, and promotion
-semantics. The root manifest fingerprints both immutable files while recording
-the matrix-manifest SHA observed at launch. A later coverage refresh therefore
+semantics. The root manifest fingerprints the immutable contract, receipt, and
+attempt record while recording the matrix-manifest SHA observed at launch. A
+later coverage refresh therefore
 cannot invalidate an otherwise unchanged robust result, while manual dispatch,
 argument drift, changed defaults, and threshold overrides fail closed.
+The receipt must also resolve to exactly one valid record in the launch
+matrix's hash-chained attempt ledger. The root fingerprints that immutable
+record file rather than the mutable append-only ledger, so later attempts do
+not create false result drift.
 
 Outputs:
 
@@ -2478,13 +2483,41 @@ receipt records the dispatch ID and time, matrix/contract fingerprints, exact
 argv digest, resolved semantic parameters and digest, and
 `authorizes_submission=false`.
 
+Every receipt is also an attempt ID. The executor writes an immutable matching
+record under `executions\records\` and appends that record to
+`executions\attempts.jsonl` under an OS-level lock. Each ledger row hashes the
+previous row. The executor and every coverage refresh revalidate record order,
+receipt and file hashes, retry lineage, unique attempt/dispatch IDs, and the
+non-authorizing claim. The
+dynamic `executions\` tree is excluded from the mutable launch-matrix manifest;
+completed robust roots still fingerprint their exact receipt and attempt
+record.
+
+An interrupted attempt with no robust summary can be retried only by naming the
+latest attempt and attesting a reason:
+
+```powershell
+python -m hft_cli run-research-family-study `
+  --launch-matrix runs\research_launches\india_index_microstructure_v1 `
+  --contract-id CONTRACT_ID_FROM_THE_MATRIX `
+  --retry-of-attempt-id LATEST_ATTEMPT_ID `
+  --retry-reason "worker stopped before the pipeline completed" `
+  --attest-retry
+```
+
+A duplicate without these fields, a retry of an older attempt, a missing or
+unattested reason, ledger drift, or any retry after a robust summary exists is
+blocked. Intentional re-research after a completed result requires a new
+prospective registered study and contract.
+
 The command verifies the registration, exact sweep and label counts, unique
 scenario-group columns, every sweep manifest, and any existing robust root.
 Existing results count as covered only when their current root manifest binds
 the same registration ID, study label, registration-manifest SHA, immutable
 contract ID, contract-file SHA, and execution-receipt ID/SHA. The root must
 also reproduce the receipt's exact semantic digest from its actual runtime
-configuration. Pending
+configuration and bind the same immutable attempt record carried by the current
+hash chain. Pending
 rows retain both a machine-readable argv array and display command. Contract
 IDs are deterministic hashes of the registered row and exact launch arguments.
 
@@ -2504,7 +2537,9 @@ Outputs:
 
 ```text
 contracts\*.json
-executions\*.json
+executions\<contract>_<dispatch>.json
+executions\attempts.jsonl
+executions\records\*.json
 research_family_launch_matrix.csv
 research_family_launch_checks.csv
 research_family_launch_summary.csv

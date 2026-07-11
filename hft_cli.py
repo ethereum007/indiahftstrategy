@@ -2888,6 +2888,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     run_research_family_study.add_argument("--launch-matrix", required=True)
     run_research_family_study.add_argument("--contract-id", required=True)
+    run_research_family_study.add_argument("--retry-of-attempt-id", default=None)
+    run_research_family_study.add_argument("--retry-reason", default=None)
+    run_research_family_study.add_argument("--attest-retry", action="store_true")
 
     research_family = sub.add_parser(
         "audit-research-family",
@@ -6581,7 +6584,16 @@ def main(argv: list[str] | None = None) -> int:
             "pipeline-robust-selection",
         ]:
             raise ValueError("launch contract does not target robust selection")
-        receipt = write_research_family_launch_execution_receipt(contract)
+        try:
+            receipt = write_research_family_launch_execution_receipt(
+                contract,
+                retry_of_attempt_id=args.retry_of_attempt_id,
+                retry_reason=args.retry_reason,
+                attest_retry=args.attest_retry,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"launch dispatch blocked: {exc}")
+            return 2
         dispatch_argv = [
             *contract.argv,
             "--research-launch-execution-receipt",

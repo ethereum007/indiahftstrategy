@@ -38,6 +38,7 @@ from reports.research_family_registration import (
     load_research_family_registration,
 )
 from reports.research_family_launch import (
+    load_research_family_launch_attempt_ledger,
     load_research_family_launch_contract,
     load_research_family_launch_execution_receipt,
 )
@@ -521,6 +522,11 @@ def write_robust_selection_pipeline(
     receipt_path = Path(str(receipt_row.get("receipt_path", "")))
     if receipt_path.is_file():
         inputs["research_family_launch_execution_receipt"] = receipt_path
+    attempt_record_path = Path(
+        str(receipt_row.get("attempt_record_path", ""))
+    )
+    if attempt_record_path.is_file():
+        inputs["research_family_launch_attempt_record"] = attempt_record_path
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
@@ -577,6 +583,15 @@ def write_robust_selection_pipeline(
             "research_launch_dispatch_id": str(
                 summary.iloc[0]["research_launch_dispatch_id"]
             ),
+            "research_launch_attempt_id": str(
+                summary.iloc[0]["research_launch_attempt_id"]
+            ),
+            "research_launch_attempt_number": int(
+                summary.iloc[0]["research_launch_attempt_number"]
+            ),
+            "research_launch_attempt_record_sha256": str(
+                summary.iloc[0]["research_launch_attempt_record_sha256"]
+            ),
             "research_launch_argv_sha256": str(
                 summary.iloc[0]["research_launch_argv_sha256"]
             ),
@@ -630,6 +645,14 @@ def _research_launch_execution_receipt_binding(
         "receipt_sha256": "",
         "receipt_id": "",
         "dispatch_id": "",
+        "attempt_id": "",
+        "attempt_number": 0,
+        "attempt_ledger_path": "",
+        "attempt_record_path": "",
+        "attempt_record_sha256": "",
+        "attempt_ledger_matches": False,
+        "retry_of_attempt_id": "",
+        "retry_attested": False,
         "contract_id": "",
         "contract_id_matches": False,
         "contract_sha256_matches": False,
@@ -674,6 +697,9 @@ def _research_launch_execution_receipt_binding(
             str(research_launch_contract.get("launch_matrix_path", "")),
             str(research_launch_contract.get("contract_id", "")),
         )
+        attempt_ledger = load_research_family_launch_attempt_ledger(
+            contract.matrix.root
+        )
     except (OSError, ValueError, KeyError) as exc:
         base.update(
             {
@@ -684,6 +710,23 @@ def _research_launch_execution_receipt_binding(
         )
         return pd.DataFrame([base])
     payload = receipt.payload
+    matching_attempts = [
+        record
+        for record in attempt_ledger.records
+        if str(record.get("attempt_id", "")) == receipt.attempt_id
+    ]
+    attempt_record = matching_attempts[0] if len(matching_attempts) == 1 else {}
+    attempt_ledger_matches = bool(
+        len(matching_attempts) == 1
+        and _canonical_path(attempt_ledger.path)
+        == _canonical_path(receipt.attempt_ledger_path)
+        and _canonical_path(attempt_record.get("attempt_record_path", ""))
+        == _canonical_path(receipt.attempt_record_path)
+        and str(attempt_record.get("record_sha256", ""))
+        == receipt.attempt_record_sha256
+        and str(attempt_record.get("receipt_sha256", ""))
+        == file_sha256(receipt.path)
+    )
     contract_id_matches = bool(
         _to_bool(research_launch_contract.get("passed", False))
         and receipt.contract_id == str(research_launch_contract.get("contract_id", ""))
@@ -713,6 +756,7 @@ def _research_launch_execution_receipt_binding(
     )
     non_authorizing = not _to_bool(payload.get("authorizes_submission", False))
     checks = {
+        "attempt_ledger_matches": attempt_ledger_matches,
         "contract_id_matches": contract_id_matches,
         "contract_sha256_matches": contract_sha_matches,
         "contract_path_matches": contract_path_matches,
@@ -730,6 +774,16 @@ def _research_launch_execution_receipt_binding(
             "receipt_sha256": file_sha256(receipt.path),
             "receipt_id": receipt.receipt_id,
             "dispatch_id": receipt.dispatch_id,
+            "attempt_id": receipt.attempt_id,
+            "attempt_number": receipt.attempt_number,
+            "attempt_ledger_path": str(receipt.attempt_ledger_path),
+            "attempt_record_path": str(receipt.attempt_record_path),
+            "attempt_record_sha256": receipt.attempt_record_sha256,
+            "attempt_ledger_matches": attempt_ledger_matches,
+            "retry_of_attempt_id": receipt.retry_of_attempt_id,
+            "retry_attested": _to_bool(
+                receipt.payload.get("retry_attested", False)
+            ),
             "contract_id": receipt.contract_id,
             "contract_id_matches": contract_id_matches,
             "contract_sha256_matches": contract_sha_matches,
@@ -1429,6 +1483,21 @@ def _summary(
                 "research_launch_dispatch_id": str(
                     receipt_row.get("dispatch_id", "")
                 ),
+                "research_launch_attempt_id": str(
+                    receipt_row.get("attempt_id", "")
+                ),
+                "research_launch_attempt_number": _int(
+                    receipt_row.get("attempt_number")
+                ),
+                "research_launch_attempt_record_sha256": str(
+                    receipt_row.get("attempt_record_sha256", "")
+                ),
+                "research_launch_retry_of_attempt_id": str(
+                    receipt_row.get("retry_of_attempt_id", "")
+                ),
+                "research_launch_retry_attested": _to_bool(
+                    receipt_row.get("retry_attested", False)
+                ),
                 "research_launch_execution_receipt_sha256": str(
                     receipt_row.get("receipt_sha256", "")
                 ),
@@ -1615,6 +1684,21 @@ def _candidate_config(
         "research_launch_dispatch_id": str(
             summary["research_launch_dispatch_id"]
         ),
+        "research_launch_attempt_id": str(
+            summary["research_launch_attempt_id"]
+        ),
+        "research_launch_attempt_number": int(
+            summary["research_launch_attempt_number"]
+        ),
+        "research_launch_attempt_record_sha256": str(
+            summary["research_launch_attempt_record_sha256"]
+        ),
+        "research_launch_retry_of_attempt_id": str(
+            summary["research_launch_retry_of_attempt_id"]
+        ),
+        "research_launch_retry_attested": bool(
+            summary["research_launch_retry_attested"]
+        ),
         "research_launch_execution_receipt_sha256": str(
             summary["research_launch_execution_receipt_sha256"]
         ),
@@ -1693,6 +1777,11 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
             f"; passed `{str(bool(summary['research_launch_execution_receipt_passed'])).lower()}`"
         ),
         f"- Launch dispatch ID: `{summary['research_launch_dispatch_id']}`",
+        (
+            "- Launch attempt: "
+            f"`{summary['research_launch_attempt_id']}` "
+            f"(number {int(summary['research_launch_attempt_number'])})"
+        ),
         (
             "- Research launch contract: "
             f"{'bound' if bool(summary['research_launch_contract_provided']) else 'not provided'}"

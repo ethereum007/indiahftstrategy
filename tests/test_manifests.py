@@ -109,3 +109,23 @@ def test_verify_experiment_manifest_fails_missing_or_wrong_run_type(tmp_path):
     )
     assert not mismatch.passed
     assert mismatch.error == "run_type_mismatch"
+
+
+def test_write_experiment_manifest_excludes_dynamic_artifact_tree(tmp_path):
+    output = tmp_path / "run"
+    executions = output / "executions"
+    executions.mkdir(parents=True)
+    (output / "summary.csv").write_text("passed\ntrue\n", encoding="utf-8")
+    attempt = executions / "attempt.json"
+    attempt.write_text('{"attempt": 1}\n', encoding="utf-8")
+
+    manifest_path = write_experiment_manifest(
+        output,
+        run_type="unit_test_run",
+        artifact_exclude_paths=("executions",),
+    )
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert [item["path"] for item in payload["artifacts"]] == ["summary.csv"]
+    attempt.write_text('{"attempt": 2}\n', encoding="utf-8")
+    assert verify_experiment_manifest(manifest_path).passed

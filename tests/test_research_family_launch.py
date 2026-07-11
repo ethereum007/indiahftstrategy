@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
@@ -12,7 +13,9 @@ from reports.manifest import (
 )
 from reports.research_family import ResearchFamilyConfig, write_research_family_audit
 from reports.research_family_launch import (
+    load_research_family_launch_attempt_ledger,
     load_research_family_launch_contract,
+    load_research_family_launch_execution_receipt,
     load_research_family_launch_matrix,
     write_research_family_launch_execution_receipt,
     write_research_family_launch_matrix,
@@ -99,12 +102,16 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     assert bool(summary["research_launch_execution_receipt_passed"])
     assert summary["research_launch_execution_receipt_id"]
     assert summary["research_launch_dispatch_id"]
+    assert summary["research_launch_attempt_id"]
+    assert int(summary["research_launch_attempt_number"]) == 1
+    assert summary["research_launch_attempt_record_sha256"]
     assert summary["research_launch_semantic_sha256"]
     assert summary["research_launch_contract_id"] == contract["contract_id"]
     assert bool(binding["passed"])
     assert bool(binding["sweep_paths_match"])
     assert bool(binding["group_columns_match"])
     assert bool(receipt_binding["passed"])
+    assert bool(receipt_binding["attempt_ledger_matches"])
     assert bool(receipt_binding["argv_matches"])
     assert bool(receipt_binding["semantic_matches"])
     assert manifest["inputs"]["research_family_launch_contract"]["sha256"] == (
@@ -113,6 +120,38 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     assert manifest["inputs"]["research_family_launch_execution_receipt"][
         "kind"
     ] == "file"
+    assert manifest["inputs"]["research_family_launch_attempt_record"][
+        "kind"
+    ] == "file"
+    ledger = load_research_family_launch_attempt_ledger(launch_dir)
+    assert ledger.attempt_count == 1
+    assert ledger.records[0]["attempt_id"] == summary["research_launch_attempt_id"]
+    duplicate_status = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            str(contract["contract_id"]),
+        ]
+    )
+    completed_retry_status = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            str(contract["contract_id"]),
+            "--retry-of-attempt-id",
+            str(ledger.records[0]["attempt_id"]),
+            "--retry-reason",
+            "repeat completed result",
+            "--attest-retry",
+        ]
+    )
+    assert duplicate_status == 2
+    assert completed_retry_status == 2
+    assert load_research_family_launch_attempt_ledger(launch_dir).attempt_count == 1
     refreshed = write_research_family_launch_matrix(
         registration_dir,
         output_dir=launch_dir,
@@ -128,6 +167,7 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     assert refreshed_leadlag["study_status"] == "completed_ready"
     assert bool(refreshed_leadlag["result_launch_contract_bound"])
     assert bool(refreshed_leadlag["result_launch_execution_receipt_bound"])
+    assert bool(refreshed_leadlag["result_launch_attempt_bound"])
     assert root_integrity.passed
     result_summary_path = result_root / "robust_selection_pipeline_summary.csv"
     result_summary_path.write_text(
@@ -208,6 +248,149 @@ def test_research_family_launch_receipt_blocks_semantic_parameter_drift(tmp_path
     assert bool(receipt_binding["argv_matches"])
     assert not bool(receipt_binding["semantic_matches"])
     assert "semantic_matches" in receipt_binding["failed_check_names"]
+
+
+def test_research_family_launch_requires_attested_latest_incomplete_retry(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    row = pending.launches.set_index("study_label").loc["leadlag"]
+    contract_id = str(row["contract_id"])
+    first_receipt = write_research_family_launch_execution_receipt(
+        load_research_family_launch_contract(launch_dir, contract_id)
+    )
+
+    refreshed = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    refreshed_row = refreshed.launches.set_index("study_label").loc["leadlag"]
+    assert refreshed_row["study_status"] == "attempt_incomplete"
+    assert bool(refreshed_row["retry_ready"])
+    assert int(refreshed_row["attempt_count"]) == 1
+    assert refreshed_row["latest_attempt_id"] == first_receipt.attempt_id
+
+    wrong_retry = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            contract_id,
+            "--retry-of-attempt-id",
+            "not-the-latest-attempt",
+            "--retry-reason",
+            "worker interrupted",
+            "--attest-retry",
+        ]
+    )
+    unattested_retry = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            contract_id,
+            "--retry-of-attempt-id",
+            first_receipt.attempt_id,
+            "--retry-reason",
+            "worker interrupted",
+        ]
+    )
+    assert wrong_retry == 2
+    assert unattested_retry == 2
+    assert load_research_family_launch_attempt_ledger(launch_dir).attempt_count == 1
+
+    retry_status = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            contract_id,
+            "--retry-of-attempt-id",
+            first_receipt.attempt_id,
+            "--retry-reason",
+            "worker interrupted before the pipeline started",
+            "--attest-retry",
+        ]
+    )
+
+    ledger = load_research_family_launch_attempt_ledger(launch_dir)
+    result_summary = pd.read_csv(
+        tmp_path / "results" / "leadlag" / "robust_selection_pipeline_summary.csv"
+    ).iloc[0]
+    assert retry_status == 0
+    assert ledger.attempt_count == 2
+    assert ledger.records[1]["retry_of_attempt_id"] == first_receipt.attempt_id
+    assert bool(ledger.records[1]["retry_attested"])
+    assert int(result_summary["research_launch_attempt_number"]) == 2
+    assert (
+        result_summary["research_launch_retry_of_attempt_id"]
+        == first_receipt.attempt_id
+    )
+    assert bool(result_summary["research_launch_retry_attested"])
+    assert load_research_family_launch_matrix(launch_dir).manifest_current
+    completed = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    completed_row = completed.launches.set_index("study_label").loc["leadlag"]
+    assert completed_row["study_status"] == "completed_ready"
+    assert int(completed_row["attempt_count"]) == 2
+    assert bool(completed_row["result_launch_attempt_bound"])
+
+
+def test_research_family_launch_rejects_tampered_attempt_chain(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    row = pending.launches.set_index("study_label").loc["leadlag"]
+    contract_id = str(row["contract_id"])
+    receipt = write_research_family_launch_execution_receipt(
+        load_research_family_launch_contract(launch_dir, contract_id)
+    )
+    ledger_path = launch_dir / "executions" / "attempts.jsonl"
+    record = json.loads(ledger_path.read_text(encoding="utf-8").strip())
+    record["retry_reason"] = "tampered after append"
+    ledger_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="digest is invalid"):
+        load_research_family_launch_attempt_ledger(launch_dir)
+    blocked_matrix = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    ledger_check = blocked_matrix.checks.set_index("check").loc[
+        "attempt_ledger_integrity"
+    ]
+    assert not blocked_matrix.passed
+    assert not bool(ledger_check["passed"])
+    assert blocked_matrix.summary.iloc[0]["next_gate"] == (
+        "plan-research-family-launches"
+    )
+    status = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            contract_id,
+            "--retry-of-attempt-id",
+            receipt.attempt_id,
+            "--retry-reason",
+            "recover interrupted worker",
+            "--attest-retry",
+        ]
+    )
+    assert status == 2
+    assert len(ledger_path.read_text(encoding="utf-8").splitlines()) == 1
 
 
 def test_research_family_launch_covers_bound_result_and_attested_abandonment(
@@ -489,6 +672,9 @@ def _write_bound_result(
     manifest_sha = file_sha256(registration_dir / "manifest.json")
     launch_contract_sha = file_sha256(launch_contract_path)
     execution_receipt_sha = file_sha256(execution_receipt_path)
+    execution_receipt = load_research_family_launch_execution_receipt(
+        execution_receipt_path
+    )
     pd.DataFrame(
         [
             {
@@ -515,6 +701,11 @@ def _write_bound_result(
                 "research_launch_execution_receipt_passed": True,
                 "research_launch_execution_receipt_id": execution_receipt_id,
                 "research_launch_execution_receipt_sha256": execution_receipt_sha,
+                "research_launch_attempt_id": execution_receipt.attempt_id,
+                "research_launch_attempt_number": execution_receipt.attempt_number,
+                "research_launch_attempt_record_sha256": (
+                    execution_receipt.attempt_record_sha256
+                ),
                 "authorizes_submission": False,
             }
         ]
@@ -581,5 +772,8 @@ def _write_bound_result(
             / "manifest.json",
             "research_family_launch_contract": launch_contract_path,
             "research_family_launch_execution_receipt": execution_receipt_path,
+            "research_family_launch_attempt_record": (
+                execution_receipt.attempt_record_path
+            ),
         },
     )

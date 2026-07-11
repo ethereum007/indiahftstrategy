@@ -92,6 +92,12 @@
   receipt and must reproduce the same semantic digest, so manual argv edits,
   changed defaults, threshold overrides, or reconstructed launches fail the
   promotion preflight.
+  Dispatches now also append an immutable receipt-linked record to a
+  lock-protected, hash-chained attempt ledger. Duplicate calls fail closed.
+  A retry must name the latest attempt ID, include a non-empty reason, and carry
+  explicit operator attestation; a contract with any completed robust summary
+  cannot be replayed. Robust roots fingerprint their immutable attempt record,
+  while launch coverage revalidates the complete live chain.
 - Research families can now be registered prospectively before outcomes exist.
   `register-research-family` normalizes and validates a CSV plan containing
   strategy, market, hypothesis, metric, maximum search breadth, at least six
@@ -103,10 +109,11 @@
   coverage matrix. `plan-research-family-launches` consumes prospective JSON
   sweep/group specifications, verifies every sweep manifest, emits a
   deterministic argv contract per registered row, and classifies results as
-  completed-ready, completed-blocked, explicitly abandoned, or never launched.
+  completed-ready, completed-blocked, attempt-incomplete, explicitly abandoned,
+  or never launched.
   Existing roots count only when they bind the exact registration ID, label,
-  manifest SHA, launch-contract ID, contract-file SHA, and execution-receipt
-  ID. The
+  manifest SHA, launch-contract ID, contract-file SHA, execution-receipt ID,
+  and hash-chained attempt record. The
   `run-research-family-study` executor runs only a current launch-ready row's
   exact stored argv and injects the receipt path as dispatch evidence.
   Abandonments require a unique reason ledger row and an explicit operator
@@ -2516,17 +2523,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1497 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1500 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`133 passed`). This covers deterministic plan locking, immutable
+together (`136 passed`). This covers deterministic plan locking, immutable
 registered-study launch contracts, exact contract execution, unique execution
-receipts, resolved semantic-digest binding, launch-argument and semantic-drift
-rejection, mutable coverage refresh without root invalidation, recursive
+receipts, hash-chained attempt records, attested latest-attempt retry policy,
+duplicate/completed replay blocking, attempt-ledger tamper rejection, resolved
+semantic-digest binding, launch-argument and semantic-drift rejection, mutable
+coverage refresh without root invalidation, recursive
 post-coverage result-drift detection, current sweep and result coverage,
 never-launched blocking, attested reasoned abandonment, conservative abandoned
 study accounting, direct registered-row and registration-manifest source binding, exact
@@ -2570,7 +2579,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1497-test collection is fully green.
+1500-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2579,6 +2588,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add an append-only launch-attempt ledger with explicit retry intent and
-   duplicate-dispatch/replay detection, so repeated executor calls cannot
-   silently replace study-attempt history.
+4. Add immutable attempt-outcome records that bind executor exit status and the
+   resulting manifest SHA, so completed, blocked, and interrupted attempts are
+   explicit rather than inferred only from current filesystem state.
