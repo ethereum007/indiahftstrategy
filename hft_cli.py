@@ -24,6 +24,11 @@ from reports.backtest_overfit import (
     BacktestOverfitThresholds,
     write_backtest_overfit_audit,
 )
+from reports.backtest_significance import (
+    BacktestSignificanceConfig,
+    BacktestSignificanceThresholds,
+    write_backtest_significance_audit,
+)
 from reports.catalog import write_experiment_catalog
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
@@ -2634,6 +2639,44 @@ def main(argv: list[str] | None = None) -> int:
     robust_selection.add_argument("--min-candidate-selection-rate", type=float, default=0.25)
     robust_selection.add_argument("--max-candidate-overfit-rate", type=float, default=0.25)
     robust_selection.add_argument("--min-candidate-oos-positive-rate", type=float, default=0.5)
+    robust_selection.add_argument(
+        "--significance-bootstrap-samples",
+        type=int,
+        default=10_000,
+    )
+    robust_selection.add_argument(
+        "--significance-confidence-level",
+        type=float,
+        default=0.95,
+    )
+    robust_selection.add_argument("--significance-random-seed", type=int, default=1729)
+    robust_selection.add_argument("--significance-zero-tolerance", type=float, default=0.0)
+    robust_selection.add_argument("--min-significance-observations", type=int, default=6)
+    robust_selection.add_argument(
+        "--min-significance-nonzero-observations",
+        type=int,
+        default=6,
+    )
+    robust_selection.add_argument(
+        "--min-significance-positive-rate",
+        type=float,
+        default=0.5,
+    )
+    robust_selection.add_argument(
+        "--max-significance-adjusted-sign-pvalue",
+        type=float,
+        default=0.1,
+    )
+    robust_selection.add_argument(
+        "--min-significance-bootstrap-probability-positive",
+        type=float,
+        default=0.95,
+    )
+    robust_selection.add_argument(
+        "--min-significance-bootstrap-mean-lower",
+        type=float,
+        default=0.0,
+    )
     robust_selection.add_argument("--min-promotion-pass-rate", type=float, default=1.0)
     robust_selection.add_argument("--min-promotion-sweeps", type=int, default=1)
     robust_selection.add_argument("--min-promotion-median-net-pnl", type=float, default=0.0)
@@ -2676,6 +2719,43 @@ def main(argv: list[str] | None = None) -> int:
     backtest_overfit.add_argument("--fail-on-blocked-actions", action="store_true")
     backtest_overfit.add_argument("--fail-on-actions", action="store_true")
 
+    backtest_significance = sub.add_parser(
+        "audit-backtest-significance",
+        help="Test selected-candidate significance across overfit audit partitions.",
+    )
+    backtest_significance.add_argument("--overfit-audit", required=True)
+    backtest_significance.add_argument("--out", required=True)
+    backtest_significance.add_argument("--bootstrap-samples", type=int, default=10_000)
+    backtest_significance.add_argument("--confidence-level", type=float, default=0.95)
+    backtest_significance.add_argument("--random-seed", type=int, default=1729)
+    backtest_significance.add_argument("--zero-tolerance", type=float, default=0.0)
+    backtest_significance.add_argument(
+        "--allow-missing-overfit-manifest",
+        action="store_true",
+    )
+    backtest_significance.add_argument("--min-observations", type=int, default=6)
+    backtest_significance.add_argument("--min-nonzero-observations", type=int, default=6)
+    backtest_significance.add_argument("--min-positive-rate", type=float, default=0.5)
+    backtest_significance.add_argument(
+        "--max-adjusted-sign-pvalue",
+        type=float,
+        default=0.1,
+    )
+    backtest_significance.add_argument(
+        "--min-bootstrap-probability-positive",
+        type=float,
+        default=0.95,
+    )
+    backtest_significance.add_argument(
+        "--min-bootstrap-mean-lower",
+        type=float,
+        default=0.0,
+    )
+    backtest_significance.add_argument("--allow-failed-overfit", action="store_true")
+    backtest_significance.add_argument("--fail-on-breach", action="store_true")
+    backtest_significance.add_argument("--fail-on-blocked-actions", action="store_true")
+    backtest_significance.add_argument("--fail-on-actions", action="store_true")
+
     promote = sub.add_parser("promote-scenario", help="Gate a sweep selection for paper/shadow promotion.")
     promote.add_argument("--selection", required=True)
     promote.add_argument("--out", required=True)
@@ -2691,6 +2771,8 @@ def main(argv: list[str] | None = None) -> int:
     promote.add_argument("--min-markout-mean", type=float, default=None)
     promote.add_argument("--overfit-audit", default=None)
     promote.add_argument("--require-overfit-audit", action="store_true")
+    promote.add_argument("--significance-audit", default=None)
+    promote.add_argument("--require-significance-audit", action="store_true")
     promote.add_argument("--fail-on-breach", action="store_true")
 
     launch = sub.add_parser("launch-bundle", help="Package promoted strategy and staged orders for paper/shadow launch.")
@@ -6097,6 +6179,30 @@ def main(argv: list[str] | None = None) -> int:
                 max_candidate_overfit_rate=args.max_candidate_overfit_rate,
                 min_candidate_oos_positive_rate=args.min_candidate_oos_positive_rate,
             ),
+            significance_config=BacktestSignificanceConfig(
+                bootstrap_samples=args.significance_bootstrap_samples,
+                confidence_level=args.significance_confidence_level,
+                random_seed=args.significance_random_seed,
+                zero_tolerance=args.significance_zero_tolerance,
+                require_overfit_manifest=True,
+            ),
+            significance_thresholds=BacktestSignificanceThresholds(
+                min_observations=args.min_significance_observations,
+                min_nonzero_observations=(
+                    args.min_significance_nonzero_observations
+                ),
+                min_positive_rate=args.min_significance_positive_rate,
+                max_adjusted_sign_pvalue=(
+                    args.max_significance_adjusted_sign_pvalue
+                ),
+                min_bootstrap_probability_positive=(
+                    args.min_significance_bootstrap_probability_positive
+                ),
+                min_bootstrap_mean_lower=(
+                    args.min_significance_bootstrap_mean_lower
+                ),
+                require_overfit_passed=True,
+            ),
             promotion_thresholds=PromotionThresholds(
                 min_pass_rate=args.min_promotion_pass_rate,
                 min_sweeps=args.min_promotion_sweeps,
@@ -6111,6 +6217,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_maker_share=args.min_promotion_maker_share,
                 min_markout_mean=args.min_promotion_markout_mean,
                 require_overfit_audit=True,
+                require_significance_audit=True,
             ),
         )
         print(result.summary.to_string(index=False))
@@ -6155,11 +6262,44 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "audit-backtest-significance":
+        result = write_backtest_significance_audit(
+            args.overfit_audit,
+            output_dir=args.out,
+            config=BacktestSignificanceConfig(
+                bootstrap_samples=args.bootstrap_samples,
+                confidence_level=args.confidence_level,
+                random_seed=args.random_seed,
+                zero_tolerance=args.zero_tolerance,
+                require_overfit_manifest=not args.allow_missing_overfit_manifest,
+            ),
+            thresholds=BacktestSignificanceThresholds(
+                min_observations=args.min_observations,
+                min_nonzero_observations=args.min_nonzero_observations,
+                min_positive_rate=args.min_positive_rate,
+                max_adjusted_sign_pvalue=args.max_adjusted_sign_pvalue,
+                min_bootstrap_probability_positive=(
+                    args.min_bootstrap_probability_positive
+                ),
+                min_bootstrap_mean_lower=args.min_bootstrap_mean_lower,
+                require_overfit_passed=not args.allow_failed_overfit,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and action_count > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "promote-scenario":
         result = write_promotion_report(
             args.selection,
             output_dir=args.out,
             overfit_audit_path=args.overfit_audit,
+            significance_audit_path=args.significance_audit,
             thresholds=PromotionThresholds(
                 min_pass_rate=args.min_pass_rate,
                 min_sweeps=args.min_sweeps,
@@ -6172,6 +6312,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_maker_share=args.min_maker_share,
                 min_markout_mean=args.min_markout_mean,
                 require_overfit_audit=args.require_overfit_audit,
+                require_significance_audit=args.require_significance_audit,
             ),
         )
         print(result.summary.to_string(index=False))

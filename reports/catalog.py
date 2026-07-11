@@ -36,6 +36,7 @@ SUMMARY_FILES = [
     "settlement_order_summary.csv",
     "proof_summary.csv",
     "backtest_overfit_summary.csv",
+    "backtest_significance_summary.csv",
     "proof_refresh_summary.csv",
     "strategy_evidence_summary.csv",
     "strategy_scorecard_summary.csv",

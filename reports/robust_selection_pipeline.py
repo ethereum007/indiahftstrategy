@@ -15,6 +15,12 @@ from reports.backtest_overfit import (
     BacktestOverfitThresholds,
     write_backtest_overfit_audit,
 )
+from reports.backtest_significance import (
+    BacktestSignificanceConfig,
+    BacktestSignificanceReport,
+    BacktestSignificanceThresholds,
+    write_backtest_significance_audit,
+)
 from reports.manifest import (
     file_sha256,
     verify_experiment_manifest,
@@ -30,6 +36,7 @@ STAGE_NEXT_GATES = {
     "sweep_provenance": "pipeline-robust-selection",
     "selection": "compare-sweeps",
     "backtest_overfit": "audit-backtest-overfit",
+    "backtest_significance": "audit-backtest-significance",
     "promotion": "promote-scenario",
 }
 
@@ -59,6 +66,7 @@ class RobustSelectionPipelineReport:
     candidate_config: dict[str, Any]
     selection: SweepComparison
     overfit: BacktestOverfitReport
+    significance: BacktestSignificanceReport
     promotion: PromotionReport
     output_dir: Path | None = None
 
@@ -83,6 +91,8 @@ def write_robust_selection_pipeline(
     selection_max_worst_drawdown: float | None = None,
     overfit_config: BacktestOverfitConfig | None = None,
     overfit_thresholds: BacktestOverfitThresholds | None = None,
+    significance_config: BacktestSignificanceConfig | None = None,
+    significance_thresholds: BacktestSignificanceThresholds | None = None,
     promotion_thresholds: PromotionThresholds | None = None,
 ) -> RobustSelectionPipelineReport:
     paths = [Path(path).resolve() for path in sweep_paths]
@@ -95,6 +105,7 @@ def write_robust_selection_pipeline(
     out.mkdir(parents=True, exist_ok=True)
     selection_dir = out / "01_selection"
     overfit_dir = out / "02_backtest_overfit"
+    significance_dir = out / "02_backtest_significance"
     promotion_dir = out / "03_promotion"
 
     resolved_selection_min_sweeps = (
@@ -106,9 +117,14 @@ def write_robust_selection_pipeline(
     if not overfit_config.require_selection_manifest:
         overfit_config = replace(overfit_config, require_selection_manifest=True)
     overfit_thresholds = overfit_thresholds or BacktestOverfitThresholds()
+    significance_config = significance_config or BacktestSignificanceConfig()
+    significance_thresholds = (
+        significance_thresholds or BacktestSignificanceThresholds()
+    )
     promotion_thresholds = replace(
         promotion_thresholds or PromotionThresholds(),
         require_overfit_audit=True,
+        require_significance_audit=True,
     )
 
     sweep_provenance = _sweep_provenance(paths, labels)
@@ -134,22 +150,36 @@ def write_robust_selection_pipeline(
         config=overfit_config,
         thresholds=overfit_thresholds,
     )
+    significance = write_backtest_significance_audit(
+        overfit_dir,
+        output_dir=significance_dir,
+        config=significance_config,
+        thresholds=significance_thresholds,
+    )
     promotion = write_promotion_report(
         selection_dir,
         output_dir=promotion_dir,
         overfit_audit_path=overfit_dir,
+        significance_audit_path=significance_dir,
         thresholds=promotion_thresholds,
         upstream_integrity_passed=sweep_provenance_passed,
         upstream_integrity_path=sweep_provenance_path,
     )
 
-    stages = _stages(sweep_provenance, selection, overfit, promotion)
+    stages = _stages(
+        sweep_provenance,
+        selection,
+        overfit,
+        significance,
+        promotion,
+    )
     action_queue = _action_queue(stages)
     summary = _summary(
         stages,
         action_queue,
         selection,
         overfit,
+        significance,
         promotion,
         strategy=strategy,
         market=market,
@@ -191,6 +221,8 @@ def write_robust_selection_pipeline(
         },
         "overfit_config": asdict(overfit_config),
         "overfit_thresholds": asdict(overfit_thresholds),
+        "significance_config": asdict(significance_config),
+        "significance_thresholds": asdict(significance_thresholds),
         "promotion_thresholds": asdict(promotion_thresholds),
     }
     write_experiment_manifest(
@@ -206,6 +238,7 @@ def write_robust_selection_pipeline(
             ],
             "selection_manifest": selection_dir / "manifest.json",
             "backtest_overfit_manifest": overfit_dir / "manifest.json",
+            "backtest_significance_manifest": significance_dir / "manifest.json",
             "promotion_manifest": promotion_dir / "manifest.json",
         },
         extra={
@@ -216,6 +249,9 @@ def write_robust_selection_pipeline(
             "probability_overfit": _float(summary.iloc[0].get("probability_overfit")),
             "sweep_provenance_passed": bool(
                 summary.iloc[0]["sweep_provenance_passed"]
+            ),
+            "backtest_significance_passed": bool(
+                summary.iloc[0]["backtest_significance_passed"]
             ),
             "authorizes_submission": False,
         },
@@ -228,6 +264,7 @@ def write_robust_selection_pipeline(
         candidate_config=candidate_config,
         selection=selection,
         overfit=overfit,
+        significance=significance,
         promotion=promotion,
         output_dir=out,
     )
@@ -287,6 +324,7 @@ def _stages(
     sweep_provenance: pd.DataFrame,
     selection: SweepComparison,
     overfit: BacktestOverfitReport,
+    significance: BacktestSignificanceReport,
     promotion: PromotionReport,
 ) -> pd.DataFrame:
     selection_row = (
@@ -295,6 +333,11 @@ def _stages(
         else pd.Series(dtype=object)
     )
     overfit_row = overfit.summary.iloc[0] if not overfit.summary.empty else pd.Series(dtype=object)
+    significance_row = (
+        significance.summary.iloc[0]
+        if not significance.summary.empty
+        else pd.Series(dtype=object)
+    )
     promotion_row = (
         promotion.summary.iloc[0]
         if not promotion.summary.empty
@@ -350,6 +393,19 @@ def _stages(
                 "detail": f"probability_overfit={_format_number(overfit_row.get('probability_overfit'))}",
             },
             {
+                "stage": "backtest_significance",
+                "status": bool(significance.passed),
+                "status_column": "passed",
+                "skipped": False,
+                "output_dir": str(significance.output_dir or ""),
+                "failed_checks": _int(significance_row.get("failed_checks")),
+                "recommendation": str(significance_row.get("recommendation", "")),
+                "detail": (
+                    "adjusted_sign_pvalue="
+                    f"{_format_number(significance_row.get('adjusted_sign_pvalue'))}"
+                ),
+            },
+            {
                 "stage": "promotion",
                 "status": bool(promotion.ready),
                 "status_column": "ready",
@@ -368,6 +424,7 @@ def _summary(
     action_queue: pd.DataFrame,
     selection: SweepComparison,
     overfit: BacktestOverfitReport,
+    significance: BacktestSignificanceReport,
     promotion: PromotionReport,
     *,
     strategy: str,
@@ -378,6 +435,11 @@ def _summary(
     ready = bool(stages["status"].map(_to_bool).all()) if not stages.empty else False
     selection_row = selection.summary.iloc[0] if not selection.summary.empty else pd.Series(dtype=object)
     overfit_row = overfit.summary.iloc[0] if not overfit.summary.empty else pd.Series(dtype=object)
+    significance_row = (
+        significance.summary.iloc[0]
+        if not significance.summary.empty
+        else pd.Series(dtype=object)
+    )
     promotion_row = promotion.summary.iloc[0] if not promotion.summary.empty else pd.Series(dtype=object)
     first_failed = stages.loc[~stages["status"].map(_to_bool)]
     next_gate = READY_NEXT_GATE if ready else STAGE_NEXT_GATES.get(
@@ -422,6 +484,16 @@ def _summary(
                 ),
                 "selection_candidate_oos_positive_rate": _float(
                     overfit_row.get("selection_candidate_oos_positive_rate")
+                ),
+                "backtest_significance_passed": bool(significance.passed),
+                "adjusted_sign_pvalue": _float(
+                    significance_row.get("adjusted_sign_pvalue")
+                ),
+                "bootstrap_mean_lower": _float(
+                    significance_row.get("bootstrap_mean_lower")
+                ),
+                "bootstrap_probability_positive": _float(
+                    significance_row.get("bootstrap_probability_positive")
                 ),
                 "promotion_ready": bool(promotion.ready),
                 "candidate_scenario_key": str(
@@ -496,6 +568,9 @@ def _candidate_config(
         "sweep_paths": [str(path) for path in sweep_paths],
         "selection_path": str(promotion_dir.parent / "01_selection"),
         "backtest_overfit_path": str(promotion_dir.parent / "02_backtest_overfit"),
+        "backtest_significance_path": str(
+            promotion_dir.parent / "02_backtest_significance"
+        ),
         "promotion_path": str(promotion_dir),
         "stages": [
             {
@@ -519,6 +594,10 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
         f"- Current sweep manifests: {int(summary['sweep_manifest_current_count'])}/{int(summary['sweep_count'])}",
         f"- Candidate: `{summary['candidate_scenario_key']}`",
         f"- Probability of backtest overfitting: {_format_number(summary['probability_overfit'])}",
+        f"- Trial-adjusted sign p-value: {_format_number(summary['adjusted_sign_pvalue'])}",
+        f"- Bootstrap mean lower bound: {_format_number(summary['bootstrap_mean_lower'])}",
+        "- Bootstrap P(mean > 0): "
+        f"{_format_number(summary['bootstrap_probability_positive'])}",
         f"- Candidate selection rate: {_format_number(summary['selection_candidate_rate'])}",
         "- Candidate conditional overfit rate: "
         f"{_format_number(summary['selection_candidate_overfit_rate'])}",

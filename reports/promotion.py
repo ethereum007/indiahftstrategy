@@ -50,6 +50,7 @@ class PromotionThresholds:
     min_maker_share: float | None = None
     min_markout_mean: float | None = None
     require_overfit_audit: bool = False
+    require_significance_audit: bool = False
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,8 @@ def evaluate_promotion(
     thresholds: PromotionThresholds | None = None,
     overfit_summary: pd.DataFrame | None = None,
     overfit_selection_matches: bool | None = None,
+    significance_summary: pd.DataFrame | None = None,
+    significance_selection_matches: bool | None = None,
     upstream_integrity_passed: bool | None = None,
 ) -> PromotionReport:
     thresholds = thresholds or PromotionThresholds()
@@ -78,6 +81,9 @@ def evaluate_promotion(
     scores = scenario_scores.copy()
     runs = scenario_runs.copy()
     overfit = pd.DataFrame() if overfit_summary is None else overfit_summary.copy()
+    significance = (
+        pd.DataFrame() if significance_summary is None else significance_summary.copy()
+    )
     _require(scores, ["scenario_key", "selection_passed"], "scenario_scores")
     _require(runs, ["run"], "scenario_runs")
 
@@ -87,6 +93,11 @@ def evaluate_promotion(
             [
                 _check("selection_available", 0, ">=", 1, False, "no scenarios available"),
                 *_overfit_checks(overfit, thresholds, overfit_selection_matches),
+                *_significance_checks(
+                    significance,
+                    thresholds,
+                    significance_selection_matches,
+                ),
                 *_upstream_integrity_checks(upstream_integrity_passed),
             ]
         )
@@ -95,6 +106,8 @@ def evaluate_promotion(
             checks,
             overfit,
             overfit_selection_matches,
+            significance,
+            significance_selection_matches,
             upstream_integrity_passed,
         )
         return PromotionReport(candidate=candidate, checks=checks, summary=summary)
@@ -107,6 +120,8 @@ def evaluate_promotion(
         thresholds,
         overfit,
         overfit_selection_matches,
+        significance,
+        significance_selection_matches,
         upstream_integrity_passed,
     )
     summary = _summary(
@@ -114,6 +129,8 @@ def evaluate_promotion(
         checks,
         overfit,
         overfit_selection_matches,
+        significance,
+        significance_selection_matches,
         upstream_integrity_passed,
     )
     return PromotionReport(candidate=candidate, checks=checks, summary=summary)
@@ -125,6 +142,7 @@ def write_promotion_report(
     output_dir: str | Path,
     thresholds: PromotionThresholds | None = None,
     overfit_audit_path: str | Path | None = None,
+    significance_audit_path: str | Path | None = None,
     upstream_integrity_passed: bool | None = None,
     upstream_integrity_path: str | Path | None = None,
 ) -> PromotionReport:
@@ -139,12 +157,21 @@ def write_promotion_report(
     thresholds = thresholds or PromotionThresholds()
     overfit_summary, overfit_config, overfit_input = _read_overfit_audit(overfit_audit_path)
     overfit_selection_matches = _overfit_selection_matches(selection, overfit_config)
+    significance_summary, significance_config, significance_input = (
+        _read_significance_audit(significance_audit_path)
+    )
+    significance_selection_matches = _audit_selection_matches(
+        selection,
+        significance_config,
+    )
     report = evaluate_promotion(
         pd.read_csv(scores_path),
         pd.read_csv(runs_path),
         thresholds=thresholds,
         overfit_summary=overfit_summary,
         overfit_selection_matches=overfit_selection_matches,
+        significance_summary=significance_summary,
+        significance_selection_matches=significance_selection_matches,
         upstream_integrity_passed=upstream_integrity_passed,
     )
     out = Path(output_dir)
@@ -159,6 +186,8 @@ def write_promotion_report(
                 thresholds,
                 overfit_summary,
                 overfit_selection_matches,
+                significance_summary,
+                significance_selection_matches,
                 upstream_integrity_passed,
                 upstream_integrity_path,
             ),
@@ -178,6 +207,15 @@ def write_promotion_report(
         )
         if overfit_manifest.is_file():
             inputs["backtest_overfit_audit_manifest"] = overfit_manifest
+    if significance_input is not None:
+        inputs["backtest_significance_audit"] = significance_input
+        significance_manifest = (
+            significance_input / "manifest.json"
+            if significance_input.is_dir()
+            else significance_input.parent / "manifest.json"
+        )
+        if significance_manifest.is_file():
+            inputs["backtest_significance_audit_manifest"] = significance_manifest
     if upstream_integrity_path is not None:
         inputs["upstream_integrity"] = Path(upstream_integrity_path)
     write_experiment_manifest(
@@ -212,6 +250,8 @@ def _checks(
     thresholds: PromotionThresholds,
     overfit_summary: pd.DataFrame,
     overfit_selection_matches: bool | None,
+    significance_summary: pd.DataFrame,
+    significance_selection_matches: bool | None,
     upstream_integrity_passed: bool | None,
 ) -> pd.DataFrame:
     checks = [
@@ -270,6 +310,13 @@ def _checks(
             )
         )
     checks.extend(_overfit_checks(overfit_summary, thresholds, overfit_selection_matches))
+    checks.extend(
+        _significance_checks(
+            significance_summary,
+            thresholds,
+            significance_selection_matches,
+        )
+    )
     checks.extend(_upstream_integrity_checks(upstream_integrity_passed))
     return pd.DataFrame(checks)
 
@@ -345,11 +392,67 @@ def _upstream_integrity_checks(
     ]
 
 
+def _significance_checks(
+    significance_summary: pd.DataFrame,
+    thresholds: PromotionThresholds,
+    significance_selection_matches: bool | None,
+) -> list[dict[str, Any]]:
+    provided = not significance_summary.empty
+    rows: list[dict[str, Any]] = []
+    if thresholds.require_significance_audit:
+        rows.append(
+            _check(
+                "significance_audit_provided",
+                provided,
+                "is",
+                True,
+                provided,
+                "backtest significance audit is required before promotion",
+            )
+        )
+    if not provided:
+        return rows
+    summary = significance_summary.iloc[0]
+    passed = _to_bool(summary.get("passed", summary.get("ready", False)))
+    manifest_current = _to_bool(summary.get("_artifact_integrity_current", True))
+    rows.extend(
+        [
+            _check(
+                "significance_audit_passed",
+                passed,
+                "is",
+                True,
+                passed,
+                "backtest significance audit did not pass",
+            ),
+            _check(
+                "significance_selection_matches",
+                bool(significance_selection_matches),
+                "is",
+                True,
+                bool(significance_selection_matches),
+                "backtest significance audit was generated from a different selection artifact",
+            ),
+            _check(
+                "significance_audit_manifest_current",
+                manifest_current,
+                "is",
+                True,
+                manifest_current,
+                "backtest significance artifacts no longer match their manifest",
+            ),
+        ]
+    )
+    return rows
+
+
 def _summary(
     candidate: pd.DataFrame,
     checks: pd.DataFrame,
     overfit_summary: pd.DataFrame,
     overfit_selection_matches: bool | None,
+    significance_summary: pd.DataFrame,
+    significance_selection_matches: bool | None,
     upstream_integrity_passed: bool | None,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
@@ -357,6 +460,11 @@ def _summary(
     key = "" if candidate.empty or "scenario_key" not in candidate.columns else str(candidate.iloc[0]["scenario_key"])
     recommendation = "paper_or_shadow_candidate" if ready else "keep_in_research"
     overfit = overfit_summary.iloc[0] if not overfit_summary.empty else pd.Series(dtype=object)
+    significance = (
+        significance_summary.iloc[0]
+        if not significance_summary.empty
+        else pd.Series(dtype=object)
+    )
     return pd.DataFrame(
         [
             {
@@ -373,6 +481,23 @@ def _summary(
                     overfit.get("_artifact_integrity_current", not overfit_summary.empty)
                 ),
                 "probability_overfit": _float_or_nan(overfit.get("probability_overfit")),
+                "significance_audit_provided": not significance_summary.empty,
+                "significance_audit_passed": _to_bool(significance.get("passed", False)),
+                "significance_selection_matches": bool(significance_selection_matches)
+                if significance_selection_matches is not None
+                else False,
+                "significance_audit_manifest_current": _to_bool(
+                    significance.get(
+                        "_artifact_integrity_current",
+                        not significance_summary.empty,
+                    )
+                ),
+                "adjusted_sign_pvalue": _float_or_nan(
+                    significance.get("adjusted_sign_pvalue")
+                ),
+                "bootstrap_probability_positive": _float_or_nan(
+                    significance.get("bootstrap_probability_positive")
+                ),
                 "upstream_integrity_provided": upstream_integrity_passed is not None,
                 "upstream_integrity_passed": bool(upstream_integrity_passed),
                 "recommendation": recommendation,
@@ -386,10 +511,16 @@ def _candidate_config(
     thresholds: PromotionThresholds,
     overfit_summary: pd.DataFrame,
     overfit_selection_matches: bool | None,
+    significance_summary: pd.DataFrame,
+    significance_selection_matches: bool | None,
     upstream_integrity_passed: bool | None,
     upstream_integrity_path: str | Path | None,
 ) -> dict[str, Any]:
     overfit = _overfit_config_record(overfit_summary, overfit_selection_matches)
+    significance = _significance_config_record(
+        significance_summary,
+        significance_selection_matches,
+    )
     upstream_integrity = {
         "provided": upstream_integrity_passed is not None,
         "passed": bool(upstream_integrity_passed),
@@ -406,6 +537,7 @@ def _candidate_config(
             "metrics": {},
             "thresholds": asdict(thresholds),
             "backtest_overfit": overfit,
+            "backtest_significance": significance,
             "upstream_integrity": upstream_integrity,
             "recommendation": "keep_in_research",
         }
@@ -424,6 +556,7 @@ def _candidate_config(
         "metrics": metrics,
         "thresholds": asdict(thresholds),
         "backtest_overfit": overfit,
+        "backtest_significance": significance,
         "upstream_integrity": upstream_integrity,
         "recommendation": str(report.summary.iloc[0]["recommendation"]),
     }
@@ -466,15 +599,67 @@ def _read_overfit_audit(
     return summary, config, path
 
 
+def _read_significance_audit(
+    raw_path: str | Path | None,
+) -> tuple[pd.DataFrame, dict[str, Any], Path | None]:
+    if raw_path is None:
+        return pd.DataFrame(), {}, None
+    path = Path(raw_path)
+    summary_path = (
+        path / "backtest_significance_summary.csv" if path.is_dir() else path
+    )
+    config_path = (
+        path / "backtest_significance_config.json"
+        if path.is_dir()
+        else path.parent / "backtest_significance_config.json"
+    )
+    if not summary_path.is_file():
+        raise FileNotFoundError(
+            f"backtest_significance_summary.csv not found: {summary_path}"
+        )
+    summary = pd.read_csv(summary_path)
+    if summary.empty:
+        raise ValueError(f"backtest significance summary is empty: {summary_path}")
+    config: dict[str, Any] = {}
+    if config_path.is_file():
+        value = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"backtest significance config must be a JSON object: {config_path}"
+            )
+        config = value
+    manifest_path = summary_path.parent / "manifest.json"
+    summary = summary.copy()
+    summary["_artifact_integrity_current"] = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="backtest_significance_audit",
+        required_artifacts=("backtest_significance_summary.csv",),
+        require_input_fingerprints=True,
+    ).passed
+    summary["_audit_manifest_sha256"] = (
+        file_sha256(manifest_path) if manifest_path.is_file() else ""
+    )
+    return summary, config, path
+
+
 def _overfit_selection_matches(selection: Path, overfit_config: dict[str, Any]) -> bool | None:
-    if not overfit_config:
+    return _audit_selection_matches(selection, overfit_config)
+
+
+def _audit_selection_matches(
+    selection: Path,
+    audit_config: dict[str, Any],
+) -> bool | None:
+    if not audit_config:
         return None
-    source = str(overfit_config.get("selection_path", "")).strip()
+    source = str(audit_config.get("selection_path", "")).strip()
     if not source:
         return False
     if Path(source).resolve() != selection.resolve():
         return False
-    expected_manifest_sha = str(overfit_config.get("selection_manifest_sha256", "")).strip()
+    expected_manifest_sha = str(
+        audit_config.get("selection_manifest_sha256", "")
+    ).strip()
     selection_manifest = selection / "manifest.json"
     return bool(
         expected_manifest_sha
@@ -506,6 +691,41 @@ def _overfit_config_record(
         "scenario_count": _int_or_zero(summary.get("scenario_count", 0)),
         "combination_count": _int_or_zero(summary.get("combination_count", 0)),
         "score_column": str(summary.get("score_column", "")),
+    }
+
+
+def _significance_config_record(
+    significance_summary: pd.DataFrame,
+    significance_selection_matches: bool | None,
+) -> dict[str, Any]:
+    if significance_summary.empty:
+        return {
+            "provided": False,
+            "passed": False,
+            "selection_matches": False,
+            "adjusted_sign_pvalue": None,
+            "bootstrap_probability_positive": None,
+        }
+    summary = significance_summary.iloc[0]
+    return {
+        "provided": True,
+        "passed": _to_bool(summary.get("passed", False)),
+        "selection_matches": bool(significance_selection_matches),
+        "audit_manifest_current": _to_bool(
+            summary.get("_artifact_integrity_current", True)
+        ),
+        "audit_manifest_sha256": str(summary.get("_audit_manifest_sha256", "")),
+        "candidate_scenario": str(summary.get("candidate_scenario", "")),
+        "observation_count": _int_or_zero(summary.get("observation_count", 0)),
+        "adjusted_sign_pvalue": _jsonable(
+            _float_or_nan(summary.get("adjusted_sign_pvalue"))
+        ),
+        "bootstrap_mean_lower": _jsonable(
+            _float_or_nan(summary.get("bootstrap_mean_lower"))
+        ),
+        "bootstrap_probability_positive": _jsonable(
+            _float_or_nan(summary.get("bootstrap_probability_positive"))
+        ),
     }
 
 

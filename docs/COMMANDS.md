@@ -2143,6 +2143,51 @@ This is a parameter-selection risk diagnostic, not a forecast or guarantee of
 future profitability. Use independent chronological sweep periods; repeated
 resamples of the same underlying session are not independent evidence.
 
+## Backtest Significance Audit
+
+Test whether the selected candidate's partition scores remain credibly
+positive after accounting for the number of scenarios searched:
+
+```powershell
+python -m hft_cli audit-backtest-significance `
+  --overfit-audit runs\overfit\leadlag `
+  --out runs\significance\leadlag `
+  --min-observations 6 `
+  --min-nonzero-observations 6 `
+  --min-positive-rate 0.50 `
+  --max-adjusted-sign-pvalue 0.10 `
+  --bootstrap-samples 10000 `
+  --confidence-level 0.95 `
+  --min-bootstrap-probability-positive 0.95 `
+  --min-bootstrap-mean-lower 0 `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The audit reads the selected candidate from a current, passed CSCV overfit
+audit. It applies an exact one-sided sign test to nonzero partition scores,
+multiplies that p-value by the number of searched scenarios (Bonferroni), and
+computes a deterministic bootstrap interval for the mean partition score.
+Defaults require six independent observations, adjusted `p <= 0.10`, at least
+95% bootstrap support for a positive mean, and a nonnegative lower 95% bound.
+
+Outputs:
+
+```text
+backtest_significance_observations.csv
+backtest_significance_bootstrap_quantiles.csv
+backtest_significance_checks.csv
+backtest_significance_summary.csv
+backtest_significance_action_queue.csv
+backtest_significance_config.json
+backtest_significance_runbook.md
+manifest.json
+```
+
+This is conservative evidence against a zero-edge candidate, not proof of
+future profitability. Sweep periods must be genuinely independent; relabeled
+or repeated samples do not create statistical power.
+
 ## Scenario Promotion Gate
 
 Convert a `compare-sweeps` selection folder into a paper/shadow promotion
@@ -2161,6 +2206,8 @@ python -m hft_cli promote-scenario `
   --max-otr 50 `
   --overfit-audit runs\overfit\leadlag `
   --require-overfit-audit `
+  --significance-audit runs\significance\leadlag `
+  --require-significance-audit `
   --fail-on-breach
 ```
 
@@ -2168,6 +2215,9 @@ When an overfit audit is supplied, promotion always requires it to pass. It
 also verifies that the audit's stored selection-manifest SHA matches the
 current selection and that every audit artifact still matches the audit
 manifest. `--require-overfit-audit` additionally blocks a missing audit.
+When significance evidence is supplied, promotion likewise requires a passed,
+current manifest from the same selection. `--require-significance-audit`
+blocks promotion when that proof is missing.
 
 Outputs:
 
@@ -2203,6 +2253,9 @@ python -m hft_cli pipeline-robust-selection `
   --min-candidate-selection-rate 0.25 `
   --max-candidate-overfit-rate 0.25 `
   --min-candidate-oos-positive-rate 0.50 `
+  --max-significance-adjusted-sign-pvalue 0.10 `
+  --min-significance-bootstrap-probability-positive 0.95 `
+  --min-significance-bootstrap-mean-lower 0 `
   --min-promotion-sweeps 6 `
   --fail-on-actions `
   --fail-on-breach
@@ -2213,12 +2266,14 @@ sweep must have a readable experiment manifest that lists the exact consumed
 `sweep_runs.csv`; all of that manifest's artifact hashes and recorded source
 input fingerprints must still be current. The pipeline also requires a current
 selection manifest, binds promotion to the generated audit, and cannot relax
-`require_overfit_audit`. Sweep provenance is carried into the nested promotion
-checks and manifest, so `03_promotion` cannot appear ready when the root
-preflight is blocked. Missing or drifted sweep provenance, fewer than four
-independent periods, incomplete parameter grids, unstable rank-1 candidates,
-selection/audit drift, and promotion threshold breaches all block the root
-candidate. A ready result advances only to broker-neutral
+`require_overfit_audit` or `require_significance_audit`. It automatically runs
+the multiple-testing-aware significance audit after CSCV and binds both proofs
+into promotion. Sweep provenance is carried into the nested promotion checks
+and manifest, so `03_promotion` cannot appear ready when the root preflight is
+blocked. Missing or drifted sweep provenance, fewer than six chronological
+periods, incomplete parameter grids, unstable rank-1 candidates, weak
+statistical evidence, selection/audit drift, and promotion threshold breaches
+all block the root candidate. A ready result advances only to broker-neutral
 `stage-orders`; `authorizes_submission` remains `false` in summary, candidate,
 runbook, and manifest evidence.
 
@@ -2227,6 +2282,7 @@ Outputs:
 ```text
 01_selection\...
 02_backtest_overfit\...
+02_backtest_significance\...
 03_promotion\...
 robust_selection_pipeline_sweep_provenance.csv
 robust_selection_pipeline_stages.csv

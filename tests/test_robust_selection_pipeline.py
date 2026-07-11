@@ -30,6 +30,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
         "sweep_provenance",
         "selection",
         "backtest_overfit",
+        "backtest_significance",
         "promotion",
     }
     assert report.stages["status"].astype(bool).all()
@@ -44,6 +45,8 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert config["source_run_type"] == "robust_selection_pipeline"
     assert config["backtest_overfit"]["passed"]
     assert config["backtest_overfit"]["selection_matches"]
+    assert config["backtest_significance"]["passed"]
+    assert config["backtest_significance"]["selection_matches"]
     assert config["upstream_integrity"]["passed"]
     assert not config["authorizes_submission"]
     assert manifest["run_type"] == "robust_selection_pipeline"
@@ -51,6 +54,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert len(manifest["inputs"]["sweeps"]) == 6
     assert len(manifest["inputs"]["sweep_manifests"]) == 6
     assert manifest["inputs"]["backtest_overfit_manifest"]["kind"] == "file"
+    assert manifest["inputs"]["backtest_significance_manifest"]["kind"] == "file"
     promotion_manifest = json.loads(
         (output / "03_promotion" / "manifest.json").read_text(encoding="utf-8")
     )
@@ -58,6 +62,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     for name in (
         "01_selection/selection_summary.csv",
         "02_backtest_overfit/backtest_overfit_summary.csv",
+        "02_backtest_significance/backtest_significance_summary.csv",
         "03_promotion/promotion_summary.csv",
         "robust_selection_pipeline_sweep_provenance.csv",
         "robust_selection_pipeline_stages.csv",
@@ -105,16 +110,22 @@ def test_robust_selection_pipeline_cli_blocks_partition_memorization(tmp_path):
     assert not bool(summary["ready"])
     assert bool(stages.loc["selection", "status"])
     assert not bool(stages.loc["backtest_overfit", "status"])
+    assert not bool(stages.loc["backtest_significance", "status"])
     assert not bool(stages.loc["promotion", "status"])
     assert float(summary["probability_overfit"]) == 1.0
     assert summary["next_gate"] == "audit-backtest-overfit"
-    assert set(actions["component"]) == {"backtest_overfit", "promotion"}
+    assert set(actions["component"]) == {
+        "backtest_overfit",
+        "backtest_significance",
+        "promotion",
+    }
     failed = set(
         promotion_checks.loc[
             ~promotion_checks["passed"].astype(bool), "check"
         ]
     )
     assert "overfit_audit_passed" in failed
+    assert "significance_audit_passed" in failed
 
 
 def test_robust_selection_pipeline_blocks_underpowered_period_count(tmp_path):
@@ -140,6 +151,7 @@ def test_robust_selection_pipeline_blocks_underpowered_period_count(tmp_path):
     assert report.summary.iloc[0]["next_gate"] == "audit-backtest-overfit"
     assert set(report.action_queue["component"]) == {
         "backtest_overfit",
+        "backtest_significance",
         "promotion",
     }
     assert set(report.action_queue["queue_status"]) == {"blocked"}

@@ -179,6 +179,24 @@ def test_promotion_can_require_backtest_overfit_audit():
     assert not bool(check["passed"])
 
 
+def test_promotion_can_require_backtest_significance_audit():
+    report = evaluate_promotion(
+        selection_scores(),
+        selection_runs(),
+        thresholds=PromotionThresholds(
+            min_sweeps=2,
+            min_median_net_pnl=10.0,
+            require_significance_audit=True,
+        ),
+    )
+
+    assert not report.ready
+    check = report.checks.loc[
+        report.checks["check"] == "significance_audit_provided"
+    ].iloc[0]
+    assert not bool(check["passed"])
+
+
 def test_promotion_accepts_matching_passed_backtest_overfit_audit(tmp_path):
     selection_dir = tmp_path / "selection"
     overfit_dir = tmp_path / "overfit"
@@ -249,6 +267,34 @@ def test_promotion_blocks_failed_or_unrelated_backtest_overfit_audit(tmp_path):
     assert "overfit_audit_manifest_current" in failed
 
 
+def test_promotion_blocks_drifted_backtest_significance_audit(tmp_path):
+    selection_dir = tmp_path / "selection"
+    significance_dir = tmp_path / "significance"
+    output_dir = tmp_path / "promotion"
+    write_selection(selection_dir)
+    write_significance_audit(significance_dir, selection_dir, passed=True)
+    summary_path = significance_dir / "backtest_significance_summary.csv"
+    summary_path.write_text(
+        summary_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    report = write_promotion_report(
+        selection_dir,
+        output_dir=output_dir,
+        significance_audit_path=significance_dir,
+        thresholds=PromotionThresholds(
+            min_sweeps=2,
+            min_median_net_pnl=10.0,
+            require_significance_audit=True,
+        ),
+    )
+
+    assert not report.ready
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert "significance_audit_manifest_current" in failed
+
+
 def write_overfit_audit(path, selection, *, passed):
     path.mkdir(parents=True)
     pd.DataFrame(
@@ -278,6 +324,41 @@ def write_overfit_audit(path, selection, *, passed):
     write_experiment_manifest(
         path,
         run_type="backtest_overfit_audit",
+        inputs={
+            "selection": selection,
+            "selection_manifest": selection / "manifest.json",
+        },
+    )
+
+
+def write_significance_audit(path, selection, *, passed):
+    path.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "candidate_scenario": "lookback=10|threshold=1.0",
+                "observation_count": 6,
+                "adjusted_sign_pvalue": 0.05 if passed else 0.5,
+                "bootstrap_mean_lower": 1.0 if passed else -1.0,
+                "bootstrap_probability_positive": 0.99 if passed else 0.5,
+            }
+        ]
+    ).to_csv(path / "backtest_significance_summary.csv", index=False)
+    (path / "backtest_significance_config.json").write_text(
+        json.dumps(
+            {
+                "selection_path": str(selection.resolve()),
+                "selection_manifest_sha256": file_sha256(selection / "manifest.json"),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        path,
+        run_type="backtest_significance_audit",
         inputs={
             "selection": selection,
             "selection_manifest": selection / "manifest.json",
