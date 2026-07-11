@@ -756,6 +756,90 @@ def _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path):
     )
 
 
+def _write_bundle_linked_provider_imbalance_broker_dispatch_roundtrip(tmp_path):
+    launch_evidence, _ = _write_bundle_linked_provider_imbalance_launch_evidence(
+        tmp_path
+    )
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    route_readiness = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_route_readiness",
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+    scorecard = write_provider_market_data_imbalance_scorecard(
+        launch_evidence.output_dir,
+        tmp_path / "provider_imbalance_scorecard",
+        config=ProviderMarketDataImbalanceScorecardConfig(allow_dirty_git=True),
+    )
+    shadow = _write_provider_imbalance_shadow_comparison(tmp_path, launch_evidence)
+    scaleup = write_provider_market_data_imbalance_scaleup_plan(
+        scorecard.output_dir,
+        shadow,
+        tmp_path / "provider_imbalance_scaleup",
+        route_readiness_dir=route_readiness.output_dir,
+    )
+    runtime_telemetry = write_provider_market_data_imbalance_runtime_telemetry_snapshot(
+        scaleup.output_dir,
+        tmp_path / "provider_imbalance_runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeTelemetryConfig(),
+    )
+    runtime_guard = write_provider_market_data_imbalance_runtime_guard(
+        runtime_telemetry.output_dir,
+        tmp_path / "provider_imbalance_runtime_guard",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeGuardConfig(),
+    )
+    runtime_session = write_provider_market_data_imbalance_runtime_session(
+        runtime_guard.output_dir,
+        tmp_path / "provider_imbalance_runtime_session",
+        as_of_ts_ns=1_000_000,
+        config=ProviderMarketDataImbalanceRuntimeSessionConfig(),
+    )
+    broker_readiness = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness",
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(),
+    )
+    cutover = write_provider_market_data_imbalance_cutover(
+        broker_readiness.output_dir,
+        tmp_path / "provider_imbalance_cutover",
+        config=ProviderMarketDataImbalanceCutoverConfig(),
+    )
+    route_enable = write_provider_market_data_imbalance_route_enable(
+        cutover.output_dir,
+        tmp_path / "provider_imbalance_route_enable",
+        config=ProviderMarketDataImbalanceRouteEnableConfig(),
+    )
+    broker_dispatch = write_provider_market_data_imbalance_broker_dispatch(
+        route_enable.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch",
+        config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
+    )
+    provider_send = write_provider_market_data_imbalance_broker_dispatch_send(
+        broker_dispatch.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_send",
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+    acks_path = _write_provider_imbalance_accepted_ack_file(
+        provider_send,
+        tmp_path / "provider_imbalance_acks.csv",
+    )
+    provider_ack = write_provider_market_data_imbalance_broker_dispatch_ack(
+        provider_send.output_dir,
+        acks_path,
+        tmp_path / "provider_imbalance_broker_dispatch_ack",
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+    )
+    provider_roundtrip = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        tmp_path / "provider_imbalance_broker_dispatch_roundtrip",
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+    )
+    return runtime_session, provider_roundtrip
+
+
 def _write_ready_provider_imbalance_broker_dispatch_roundtrip_with_vendor_batch(tmp_path):
     provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
     _inject_nested_roundtrip_vendor_market_data_batch(provider_ack)
@@ -8007,8 +8091,42 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
         encoding="utf-8"
     )
     checks = report.checks.set_index("check")
-    assert not report.ready
+    assert report.ready
     assert bool(checks.loc["broker_readiness_runnable", "passed"])
+    assert bool(summary["provider_broker_dispatch_roundtrip_wrapper_provided"])
+    assert (
+        summary["provider_broker_dispatch_roundtrip_manifest_run_type"]
+        == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    )
+    assert bool(summary["dispatch_roundtrip_adapter_receipt_proof_ready"])
+    assert bool(
+        summary["dispatch_roundtrip_adapter_receipt_proof_matches_manifest"]
+    )
+    assert bool(
+        summary[
+            "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+        ]
+    )
+    assert summary["dispatch_roundtrip_adapter_receipt_required_count"] == 2
+    assert summary["dispatch_roundtrip_adapter_receipt_valid_count"] == 2
+    assert (
+        summary["dispatch_roundtrip_adapter_receipt_fingerprint_match_count"]
+        == 2
+    )
+    assert summary["dispatch_roundtrip_capture_fingerprint_match_count"] == 2
+    for check in (
+        "provider_broker_dispatch_roundtrip_summary_readable",
+        "provider_broker_dispatch_roundtrip_config_readable",
+        "provider_broker_dispatch_roundtrip_manifest_readable",
+        "provider_broker_dispatch_roundtrip_manifest_type",
+        "provider_broker_dispatch_roundtrip_adapter_receipt_proof_carried",
+        "provider_broker_dispatch_roundtrip_adapter_receipt_proof_matches_manifest",
+        "provider_broker_dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session",
+        "provider_broker_dispatch_roundtrip_adapter_receipts_valid",
+        "provider_broker_dispatch_roundtrip_adapter_receipt_fingerprints_current",
+        "provider_broker_dispatch_roundtrip_capture_fingerprints_current",
+    ):
+        assert bool(checks.loc[check, "passed"])
     assert Path(summary["dispatch_roundtrip_capture_bundle_path"]) == bundle_path
     assert bool(summary["dispatch_roundtrip_capture_bundle_provided"])
     assert bool(summary["dispatch_roundtrip_capture_bundle_ready"])
@@ -8109,6 +8227,16 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert config["dispatch_roundtrip_provenance"]["exchange"] == "NFO"
     assert config["dispatch_roundtrip_provenance"]["source_session"]["close_local"] == "15:30:00"
     assert config["dispatch_roundtrip_provenance"]["metadata_consistent_with_runtime_session"]
+    assert config["dispatch_roundtrip_provenance"]["provider_wrapper_provided"]
+    assert config["dispatch_roundtrip_provenance"]["provider_manifest_run_type"] == (
+        "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    )
+    assert config["dispatch_roundtrip_provenance"]["adapter_receipt_proof"]["ready"]
+    assert config["dispatch_roundtrip_provenance"]["adapter_receipt_proof"]["valid_count"] == 2
+    assert config["dispatch_roundtrip_provenance"]["adapter_receipt_proof_matches_manifest"]
+    assert config["dispatch_roundtrip_provenance"][
+        "adapter_receipt_proof_matches_runtime_session"
+    ]
     assert config["dispatch_roundtrip_provenance"]["provider_capture_command_count"] == 2
     assert config["dispatch_roundtrip_provenance"]["provider_capture_command_providers"] == "arrow_money"
     assert config["dispatch_roundtrip_provenance"]["provider_capture_command_transports"] == "websocket"
@@ -8187,6 +8315,19 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert manifest["inputs"]["dispatch_roundtrip_source_credential_env_template"]["path"] == str(
         source_env_template_path.resolve()
     )
+    assert len(manifest["inputs"]["dispatch_roundtrip_adapter_receipts"]) == 2
+    assert len(manifest["inputs"]["dispatch_roundtrip_provider_captures"]) == 2
+    assert manifest["extra"]["provider_broker_dispatch_roundtrip_wrapper_provided"]
+    assert manifest["extra"]["provider_broker_dispatch_roundtrip_manifest_run_type"] == (
+        "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    )
+    assert manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof"]["ready"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof"]["valid_count"] == 2
+    assert manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof_ready"]
+    assert manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof_matches_manifest"]
+    assert manifest["extra"][
+        "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+    ]
     assert manifest["extra"]["dispatch_roundtrip_capture_provenance_consistent"]
     assert manifest["extra"]["dispatch_roundtrip_capture_bundle_matches_session"]
     assert manifest["extra"]["dispatch_roundtrip_capture_env_template_matches_session"]
@@ -8251,6 +8392,11 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
         "provider_capture_commands_match_runtime_session"
     ]
     assert manifest["extra"]["dispatch_roundtrip"]["adapter_execution_contract"]["provider"] == "arrow_money"
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_receipt_proof"]["ready"]
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_receipt_proof_matches_manifest"]
+    assert manifest["extra"]["dispatch_roundtrip"][
+        "adapter_receipt_proof_matches_runtime_session"
+    ]
     assert manifest["extra"]["dispatch_roundtrip"]["adapter_contract_matches_runtime_session"]
     assert (
         manifest["extra"]["dispatch_roundtrip"]["provider_profile"]["sha256"]
@@ -8263,10 +8409,167 @@ def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_captu
     assert "Dispatch round-trip source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert "- Dispatch round-trip provenance consistent: yes" in runbook
     assert "Dispatch round-trip provider capture commands: 2 (runtime match: yes)" in runbook
+    assert (
+        "Dispatch round-trip adapter receipt proof: ready (2/2 sealed; "
+        "round-trip manifest match: yes; runtime match: yes)" in runbook
+    )
     assert "Dispatch round-trip adapter execution contract: arrow_money / websocket" in runbook
     assert f"Dispatch round-trip provider profile: {summary['provider_profile_sha256']}" in runbook
     assert str(source_env_template_path) in runbook
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
+
+
+def test_provider_market_data_imbalance_broker_readiness_blocks_roundtrip_receipt_proof_drift(
+    tmp_path,
+):
+    runtime_session, provider_roundtrip = (
+        _write_bundle_linked_provider_imbalance_broker_dispatch_roundtrip(tmp_path)
+    )
+    roundtrip_config_path = (
+        provider_roundtrip.output_dir
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+    )
+    roundtrip_config = json.loads(
+        roundtrip_config_path.read_text(encoding="utf-8")
+    )
+    manifest_path = provider_roundtrip.output_dir / "manifest.json"
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    roundtrip_manifest = json.loads(manifest_text)
+    roundtrip_manifest["extra"]["adapter_receipt_proof"]["valid_count"] = 1
+    manifest_path.write_text(
+        json.dumps(roundtrip_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    manifest_drift_report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness_manifest_drift",
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(
+            require_dispatch_roundtrip=True
+        ),
+    )
+
+    manifest_drift_failed = set(
+        manifest_drift_report.checks.loc[
+            ~manifest_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not manifest_drift_report.ready
+    assert manifest_drift_report.broker_readiness is None
+    assert (
+        "provider_broker_dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+        in manifest_drift_failed
+    )
+    assert not bool(
+        manifest_drift_report.summary.iloc[0][
+            "dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+        ]
+    )
+    manifest_action = manifest_drift_report.action_queue.loc[
+        manifest_drift_report.action_queue["check"]
+        == "provider_broker_dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+    ].iloc[0]
+    assert manifest_action["action"] == (
+        "repair_provider_imbalance_broker_dispatch_roundtrip"
+    )
+    assert manifest_action["next_gate"] == (
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    )
+
+    manifest_path.write_text(manifest_text, encoding="utf-8")
+    receipt_path = Path(
+        roundtrip_config["adapter_receipt_proof"]["receipts"][0][
+            "adapter_receipt_path"
+        ]
+    )
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt_path.write_text(receipt_text + "\n", encoding="utf-8")
+
+    receipt_drift_report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness_receipt_drift",
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(
+            require_dispatch_roundtrip=True
+        ),
+    )
+
+    receipt_drift_failed = set(
+        receipt_drift_report.checks.loc[
+            ~receipt_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not receipt_drift_report.ready
+    assert receipt_drift_report.broker_readiness is None
+    assert (
+        "provider_runtime_session_adapter_receipt_fingerprints_current"
+        in receipt_drift_failed
+    )
+    assert (
+        "provider_broker_dispatch_roundtrip_adapter_receipt_fingerprints_current"
+        in receipt_drift_failed
+    )
+    assert (
+        receipt_drift_report.summary.iloc[0][
+            "dispatch_roundtrip_adapter_receipt_fingerprint_match_count"
+        ]
+        == 1
+    )
+    receipt_action = receipt_drift_report.action_queue.loc[
+        receipt_drift_report.action_queue["check"]
+        == "provider_broker_dispatch_roundtrip_adapter_receipt_fingerprints_current"
+    ].iloc[0]
+    assert receipt_action["action"] == (
+        "repair_provider_imbalance_broker_dispatch_roundtrip"
+    )
+    assert receipt_action["next_gate"] == (
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    )
+
+    receipt_path.write_text(receipt_text, encoding="utf-8")
+    capture_path = Path(
+        roundtrip_config["adapter_receipt_proof"]["receipts"][0]["capture_path"]
+    )
+    capture_path.write_bytes(capture_path.read_bytes() + b"\n")
+
+    capture_drift_report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness_capture_drift",
+        dispatch_roundtrip_dir=provider_roundtrip.output_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(
+            require_dispatch_roundtrip=True
+        ),
+    )
+
+    capture_drift_failed = set(
+        capture_drift_report.checks.loc[
+            ~capture_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not capture_drift_report.ready
+    assert capture_drift_report.broker_readiness is None
+    assert "provider_runtime_session_capture_fingerprints_current" in capture_drift_failed
+    assert (
+        "provider_broker_dispatch_roundtrip_capture_fingerprints_current"
+        in capture_drift_failed
+    )
+    assert (
+        capture_drift_report.summary.iloc[0][
+            "dispatch_roundtrip_capture_fingerprint_match_count"
+        ]
+        == 1
+    )
+    capture_action = capture_drift_report.action_queue.loc[
+        capture_drift_report.action_queue["check"]
+        == "provider_broker_dispatch_roundtrip_capture_fingerprints_current"
+    ].iloc[0]
+    assert capture_action["action"] == (
+        "repair_provider_imbalance_broker_dispatch_roundtrip"
+    )
+    assert capture_action["next_gate"] == (
+        "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+    )
 
 
 def test_provider_market_data_imbalance_broker_readiness_carries_roundtrip_synthetic_sidecar_proof(tmp_path):
@@ -9000,13 +9303,13 @@ def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispat
     )
     nested_roundtrip_dir = provider_roundtrip.output_dir / "broker_dispatch_roundtrip"
     failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
-    assert not report.ready
-    assert "broker_readiness_ready" in failed
+    assert report.ready
+    assert not failed
     assert bool(summary.loc[0, "dispatch_roundtrip_provided"])
     assert bool(summary.loc[0, "dispatch_roundtrip_ready"])
-    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-route-readiness"
+    assert summary.loc[0, "next_gate"] == "review-provider-market-data-imbalance-cutover"
     assert summary.loc[0, "next_gate_help_command"] == (
-        "python -m hft_cli review-provider-market-data-imbalance-route-readiness --help"
+        "python -m hft_cli review-provider-market-data-imbalance-cutover --help"
     )
     assert Path(summary.loc[0, "provider_dispatch_roundtrip_dir"]) == provider_roundtrip.output_dir
     assert Path(summary.loc[0, "dispatch_roundtrip_dir"]) == nested_roundtrip_dir
@@ -9017,6 +9320,38 @@ def test_provider_market_data_imbalance_broker_readiness_accepts_provider_dispat
     assert config["broker_inputs"]["dispatch_roundtrip_dir"] == str(nested_roundtrip_dir)
     assert manifest["inputs"]["provider_dispatch_roundtrip"]["path"] == str(provider_roundtrip.output_dir)
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
+
+    direct_report = write_provider_market_data_imbalance_broker_readiness(
+        runtime_session.output_dir,
+        tmp_path / "provider_imbalance_broker_readiness_with_nested_roundtrip",
+        dispatch_roundtrip_dir=nested_roundtrip_dir,
+        config=ProviderMarketDataImbalanceBrokerReadinessConfig(
+            require_dispatch_roundtrip=True
+        ),
+    )
+    direct_summary = direct_report.summary.iloc[0]
+    direct_checks = direct_report.checks.set_index("check")
+    direct_runbook = (
+        tmp_path
+        / "provider_imbalance_broker_readiness_with_nested_roundtrip"
+        / "provider_market_data_imbalance_broker_readiness_runbook.md"
+    ).read_text(encoding="utf-8")
+    assert direct_report.ready
+    assert not bool(
+        direct_summary["provider_broker_dispatch_roundtrip_wrapper_provided"]
+    )
+    assert direct_summary["provider_broker_dispatch_roundtrip_manifest_run_type"] == ""
+    assert Path(direct_summary["dispatch_roundtrip_dir"]) == nested_roundtrip_dir
+    assert bool(direct_checks.loc["broker_readiness_runnable", "passed"])
+    assert bool(
+        direct_checks.loc[
+            "provider_broker_dispatch_roundtrip_manifest_type", "passed"
+        ]
+    )
+    assert (
+        "Dispatch round-trip adapter receipt proof: not applicable "
+        "(nested generic input)" in direct_runbook
+    )
 
 
 def test_provider_market_data_imbalance_broker_readiness_reads_roundtrip_provenance_command_arrays(tmp_path):

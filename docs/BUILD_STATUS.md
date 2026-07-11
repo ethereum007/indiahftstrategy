@@ -2116,7 +2116,15 @@
   if both sides provide conflicting file provenance, exchange/session/live-fetch
   identity, or provider capture-command proof, and keeps all proof roots,
   including the round-trip source credential env-template, in the manifest for
-  audit.
+  audit. For provider wrapper roots it now also reads the final round-trip
+  summary/config/manifest before generic broker review, requires the expected
+  manifest run type plus exact round-trip config/manifest/runtime-session
+  `adapter_receipt_proof` agreement, re-hashes every required receipt and
+  capture, and fingerprints both accepted file sets in the broker-readiness
+  manifest. Proof or byte drift prevents generic broker-readiness from running
+  and routes the final-proof repair back to provider broker-dispatch round-trip
+  review. Direct nested generic round-trip folders remain supported without
+  imposing provider-wrapper-only metadata.
 - Provider-data imbalance cutover now carries that broker-dispatch round-trip
   audit trail forward from provider broker-readiness. The provider cutover
   summary/config/manifest preserve both the provider wrapper root and nested
@@ -2347,16 +2355,16 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1423 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1424 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider broker-dispatch-roundtrip receipt-boundary
-paths pass. Bundle-linked positive provenance and post-ack
-manifest/receipt/capture drift pass together (`2 passed`); the established
-ready-ack compatibility and missing-adapter-contract paths also pass (`2
-passed`). The immediately preceding four broker-dispatch-ack, four
+Latest focused gate: four provider broker-readiness final-roundtrip receipt and
+compatibility paths pass. Bundle-linked ready provenance and post-roundtrip
+manifest/receipt/capture drift both pass; no-roundtrip readiness and combined
+provider-wrapper plus nested-generic compatibility also pass. The immediately
+preceding four broker-dispatch-roundtrip, four broker-dispatch-ack, four
 broker-dispatch-send, four broker-dispatch, four route-enable, four cutover,
-four broker-readiness, four runtime-session, four runtime-guard, four
+four earlier broker-readiness, four runtime-session, four runtime-guard, four
 runtime-telemetry, four scale-up, four scorecard, eight
 launch/launch-evidence, and ten research/evidence receipt-boundary paths remain
 green, as do the complete receipt-aware live-evidence plus research-handoff
@@ -2368,7 +2376,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1423-test collection is fully green.
+1424-test collection is fully green.
 
 ## Next Build Targets
 

@@ -5163,6 +5163,19 @@ broker round-trip synthetic sidecar breach counter, broker-readiness exposes it
 as `dispatch_roundtrip_route_readiness_*` summary/config/manifest fields and
 routes nonzero final dry-run sidecar breaches back to
 `review-provider-market-data-imbalance-route-readiness`.
+When `--dispatch-roundtrip` points to the provider wrapper root,
+broker-readiness also reads its summary, config, and manifest before invoking
+the generic scorer. It requires the provider run type, exact
+`adapter_receipt_proof` agreement between round-trip config and manifest, exact
+agreement with the runtime-session receipt proof, and current SHA-256 values for
+every required receipt and capture. Accepted files are fingerprinted again as
+`dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`; proof or byte drift leaves nested
+generic broker-readiness absent and routes repair to
+`review-provider-market-data-imbalance-broker-dispatch-roundtrip`. Passing the
+nested generic `broker_dispatch_roundtrip` folder directly remains supported;
+provider-wrapper-only receipt checks are inactive and the generic round-trip
+checks remain authoritative on that compatibility path.
 If the final provider round-trip CSV is sparse but its config sidecar carries
 `dispatch_roundtrip_provenance`, broker-readiness hydrates missing or blank
 `dispatch_roundtrip_route_readiness_*` fields from that sidecar while keeping

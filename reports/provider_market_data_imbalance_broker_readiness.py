@@ -152,9 +152,15 @@ def write_provider_market_data_imbalance_broker_readiness(
     resolved_resume_dir = Path(resume_dir) if resume_dir is not None else None
     provider_dispatch_roundtrip_dir = Path(dispatch_roundtrip_dir) if dispatch_roundtrip_dir is not None else None
     resolved_dispatch_roundtrip_dir = _resolve_dispatch_roundtrip_dir(provider_dispatch_roundtrip_dir)
-    provider_roundtrip_summary, provider_roundtrip_config = _read_provider_dispatch_roundtrip_artifacts(
-        provider_dispatch_roundtrip_dir
-    )
+    (
+        provider_roundtrip_summary,
+        provider_roundtrip_config,
+        provider_roundtrip_manifest,
+        provider_roundtrip_wrapper_provided,
+        provider_roundtrip_summary_error,
+        provider_roundtrip_config_error,
+        provider_roundtrip_manifest_error,
+    ) = _read_provider_dispatch_roundtrip_artifacts(provider_dispatch_roundtrip_dir)
     upstream_provider_dispatch_roundtrip_dir, upstream_dispatch_roundtrip_dir = (
         _inferred_upstream_dispatch_roundtrip_dirs(provider_roundtrip_summary, provider_roundtrip_config)
     )
@@ -168,6 +174,13 @@ def write_provider_market_data_imbalance_broker_readiness(
         session_config_error,
         session_manifest,
         session_manifest_error,
+        provider_roundtrip_summary,
+        provider_roundtrip_summary_error,
+        provider_roundtrip_config,
+        provider_roundtrip_config_error,
+        provider_roundtrip_manifest,
+        provider_roundtrip_manifest_error,
+        provider_roundtrip_wrapper_provided,
         generic_runtime_session_dir,
         resolved_order_export_dir,
         resolved_upload_pack_dir,
@@ -208,6 +221,9 @@ def write_provider_market_data_imbalance_broker_readiness(
         session_summary,
         session_config,
         session_manifest,
+        provider_roundtrip_config,
+        provider_roundtrip_manifest,
+        provider_roundtrip_wrapper_provided,
         resolved_schema_audit_dir,
         resolved_order_export_dir,
         resolved_upload_pack_dir,
@@ -225,6 +241,8 @@ def write_provider_market_data_imbalance_broker_readiness(
         session_config,
         session_manifest,
         provider_roundtrip_config,
+        provider_roundtrip_manifest,
+        provider_roundtrip_wrapper_provided,
         broker,
         checks,
         action_queue,
@@ -304,6 +322,13 @@ def write_provider_market_data_imbalance_broker_readiness(
         inputs["adapter_receipts"] = receipt_paths
     if capture_paths:
         inputs["provider_captures"] = capture_paths
+    roundtrip_receipt_paths, roundtrip_capture_paths = _adapter_receipt_proof_paths(
+        _mapping(provider_roundtrip_config.get("adapter_receipt_proof"))
+    )
+    if roundtrip_receipt_paths:
+        inputs["dispatch_roundtrip_adapter_receipts"] = roundtrip_receipt_paths
+    if roundtrip_capture_paths:
+        inputs["dispatch_roundtrip_provider_captures"] = roundtrip_capture_paths
 
     write_experiment_manifest(
         out,
@@ -426,6 +451,44 @@ def write_provider_market_data_imbalance_broker_readiness(
                 summary_row[
                     "dispatch_roundtrip_route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"
                 ]
+            ),
+            "provider_broker_dispatch_roundtrip_wrapper_provided": bool(
+                summary_row["provider_broker_dispatch_roundtrip_wrapper_provided"]
+            ),
+            "provider_broker_dispatch_roundtrip_manifest_run_type": str(
+                summary_row["provider_broker_dispatch_roundtrip_manifest_run_type"]
+            ),
+            "dispatch_roundtrip_adapter_receipt_proof": _mapping(
+                _mapping(payload.get("dispatch_roundtrip_provenance")).get(
+                    "adapter_receipt_proof"
+                )
+            ),
+            "dispatch_roundtrip_adapter_receipt_proof_ready": bool(
+                summary_row["dispatch_roundtrip_adapter_receipt_proof_ready"]
+            ),
+            "dispatch_roundtrip_adapter_receipt_proof_matches_manifest": bool(
+                summary_row[
+                    "dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+                ]
+            ),
+            "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session": bool(
+                summary_row[
+                    "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+                ]
+            ),
+            "dispatch_roundtrip_adapter_receipt_required_count": int(
+                summary_row["dispatch_roundtrip_adapter_receipt_required_count"]
+            ),
+            "dispatch_roundtrip_adapter_receipt_valid_count": int(
+                summary_row["dispatch_roundtrip_adapter_receipt_valid_count"]
+            ),
+            "dispatch_roundtrip_adapter_receipt_fingerprint_match_count": int(
+                summary_row[
+                    "dispatch_roundtrip_adapter_receipt_fingerprint_match_count"
+                ]
+            ),
+            "dispatch_roundtrip_capture_fingerprint_match_count": int(
+                summary_row["dispatch_roundtrip_capture_fingerprint_match_count"]
             ),
             "dispatch_roundtrip_synthetic_sidecar_proof": _mapping(
                 _mapping(payload.get("dispatch_roundtrip_provenance")).get("synthetic_sidecar_proof")
@@ -587,6 +650,24 @@ def write_provider_market_data_imbalance_broker_readiness(
                 summary_row["dispatch_roundtrip_source_live_fetch_contract_session_matches_session"]
             ),
             "dispatch_roundtrip": {
+                "adapter_receipt_proof": _mapping(
+                    _mapping(payload.get("dispatch_roundtrip_provenance")).get(
+                        "adapter_receipt_proof"
+                    )
+                ),
+                "adapter_receipt_proof_ready": bool(
+                    summary_row["dispatch_roundtrip_adapter_receipt_proof_ready"]
+                ),
+                "adapter_receipt_proof_matches_manifest": bool(
+                    summary_row[
+                        "dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+                    ]
+                ),
+                "adapter_receipt_proof_matches_runtime_session": bool(
+                    summary_row[
+                        "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+                    ]
+                ),
                 "exchange": str(summary_row["dispatch_roundtrip_exchange"]),
                 "source_session": _dispatch_roundtrip_source_session_contract_from_summary(summary_row),
                 "market_session": _dispatch_roundtrip_market_session_contract_from_summary(summary_row),
@@ -718,6 +799,13 @@ def _prechecks(
     session_config_error: str,
     session_manifest: dict[str, Any],
     session_manifest_error: str,
+    provider_roundtrip_summary: pd.DataFrame,
+    provider_roundtrip_summary_error: str,
+    provider_roundtrip_config: dict[str, Any],
+    provider_roundtrip_config_error: str,
+    provider_roundtrip_manifest: dict[str, Any],
+    provider_roundtrip_manifest_error: str,
+    provider_roundtrip_wrapper_provided: bool,
     generic_runtime_session_dir: Path | None,
     order_export_dir: str | Path | None,
     upload_pack_dir: str | Path | None,
@@ -734,6 +822,34 @@ def _prechecks(
         and config_receipt_proof == manifest_receipt_proof
     )
     receipt_status = _adapter_receipt_proof_status(config_receipt_proof)
+    roundtrip_bundle_provided = _roundtrip_bool(
+        provider_roundtrip_summary,
+        "capture_bundle_provided",
+    )
+    roundtrip_config_receipt_proof = _mapping(
+        provider_roundtrip_config.get("adapter_receipt_proof")
+    )
+    roundtrip_manifest_receipt_proof = _mapping(
+        _mapping(provider_roundtrip_manifest.get("extra")).get(
+            "adapter_receipt_proof"
+        )
+    )
+    roundtrip_receipt_proofs_match = bool(
+        roundtrip_config_receipt_proof
+        and roundtrip_manifest_receipt_proof
+        and roundtrip_config_receipt_proof == roundtrip_manifest_receipt_proof
+    )
+    roundtrip_receipt_proof_matches_session = bool(
+        roundtrip_config_receipt_proof
+        and config_receipt_proof
+        and roundtrip_config_receipt_proof == config_receipt_proof
+    )
+    roundtrip_receipt_status = _adapter_receipt_proof_status(
+        roundtrip_config_receipt_proof
+    )
+    roundtrip_receipt_gate_active = bool(
+        provider_roundtrip_wrapper_provided and roundtrip_bundle_provided
+    )
     return pd.DataFrame(
         [
             _check(
@@ -835,6 +951,114 @@ def _prechecks(
                 if bundle_provided
                 else True,
                 "provider capture files changed after provider runtime session monitoring",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_summary_readable",
+                provider_roundtrip_summary_error or "ok",
+                "is",
+                "ok",
+                not provider_roundtrip_summary_error
+                if provider_roundtrip_wrapper_provided
+                else True,
+                provider_roundtrip_summary_error
+                or "provider broker-dispatch round-trip summary could not be read",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_config_readable",
+                provider_roundtrip_config_error or "ok",
+                "is",
+                "ok",
+                not provider_roundtrip_config_error
+                if provider_roundtrip_wrapper_provided
+                else True,
+                provider_roundtrip_config_error
+                or "provider broker-dispatch round-trip config could not be read",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_manifest_readable",
+                provider_roundtrip_manifest_error or "ok",
+                "is",
+                "ok",
+                not provider_roundtrip_manifest_error
+                if provider_roundtrip_wrapper_provided
+                else True,
+                provider_roundtrip_manifest_error
+                or "provider broker-dispatch round-trip manifest could not be read",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_manifest_type",
+                _clean(provider_roundtrip_manifest.get("run_type")),
+                "is",
+                "provider_market_data_imbalance_broker_dispatch_roundtrip",
+                _clean(provider_roundtrip_manifest.get("run_type"))
+                == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+                if provider_roundtrip_wrapper_provided
+                else True,
+                "provider broker-dispatch round-trip manifest run_type is not expected",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_adapter_receipt_proof_carried",
+                bool(roundtrip_config_receipt_proof),
+                "is",
+                True,
+                bool(roundtrip_config_receipt_proof)
+                and _truthy(roundtrip_config_receipt_proof.get("ready"))
+                if roundtrip_receipt_gate_active
+                else True,
+                "provider broker-dispatch round-trip is missing ready adapter receipt proof",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_adapter_receipt_proof_matches_manifest",
+                roundtrip_receipt_proofs_match,
+                "is",
+                True,
+                roundtrip_receipt_proofs_match
+                if roundtrip_receipt_gate_active
+                else True,
+                "adapter receipt proof differs between broker-dispatch round-trip config and manifest",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session",
+                roundtrip_receipt_proof_matches_session,
+                "is",
+                True,
+                roundtrip_receipt_proof_matches_session
+                if roundtrip_receipt_gate_active
+                else True,
+                "broker-dispatch round-trip adapter receipt proof differs from runtime session proof",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_adapter_receipts_valid",
+                roundtrip_receipt_status["valid_count"],
+                "==",
+                roundtrip_receipt_status["required_count"],
+                roundtrip_receipt_status["valid_count"]
+                == roundtrip_receipt_status["required_count"]
+                if roundtrip_receipt_gate_active
+                else True,
+                "provider broker-dispatch round-trip did not preserve valid required adapter receipts",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_adapter_receipt_fingerprints_current",
+                roundtrip_receipt_status["receipt_fingerprint_match_count"],
+                "==",
+                roundtrip_receipt_status["required_count"],
+                roundtrip_receipt_status["receipt_fingerprint_match_count"]
+                == roundtrip_receipt_status["required_count"]
+                if roundtrip_receipt_gate_active
+                else True,
+                "adapter receipt files changed after provider broker-dispatch round-trip review",
+            ),
+            _check(
+                "provider_broker_dispatch_roundtrip_capture_fingerprints_current",
+                roundtrip_receipt_status["capture_fingerprint_match_count"],
+                "==",
+                roundtrip_receipt_status["required_count"],
+                roundtrip_receipt_status["capture_fingerprint_match_count"]
+                == roundtrip_receipt_status["required_count"]
+                if roundtrip_receipt_gate_active
+                else True,
+                "provider capture files changed after provider broker-dispatch round-trip review",
             ),
             _check(
                 "nested_runtime_session_summary_exists",
@@ -1414,6 +1638,9 @@ def _summary(
     session_summary: pd.DataFrame,
     session_config: dict[str, Any],
     session_manifest: dict[str, Any],
+    provider_roundtrip_config: dict[str, Any],
+    provider_roundtrip_manifest: dict[str, Any],
+    provider_roundtrip_wrapper_provided: bool,
     schema_audit_dir: Path | None,
     order_export_dir: str | Path | None,
     upload_pack_dir: str | Path | None,
@@ -1431,6 +1658,17 @@ def _summary(
         _mapping(session_manifest.get("extra")).get("adapter_receipt_proof")
     )
     receipt_status = _adapter_receipt_proof_status(config_receipt_proof)
+    roundtrip_config_receipt_proof = _mapping(
+        provider_roundtrip_config.get("adapter_receipt_proof")
+    )
+    roundtrip_manifest_receipt_proof = _mapping(
+        _mapping(provider_roundtrip_manifest.get("extra")).get(
+            "adapter_receipt_proof"
+        )
+    )
+    roundtrip_receipt_status = _adapter_receipt_proof_status(
+        roundtrip_config_receipt_proof
+    )
     return pd.DataFrame(
         [
             {
@@ -1505,6 +1743,41 @@ def _summary(
                 ),
                 "capture_fingerprint_match_count": int(
                     receipt_status["capture_fingerprint_match_count"]
+                ),
+                "provider_broker_dispatch_roundtrip_wrapper_provided": bool(
+                    provider_roundtrip_wrapper_provided
+                ),
+                "provider_broker_dispatch_roundtrip_manifest_run_type": _clean(
+                    provider_roundtrip_manifest.get("run_type")
+                ),
+                "dispatch_roundtrip_adapter_receipt_proof_ready": bool(
+                    roundtrip_receipt_status["ready"]
+                ),
+                "dispatch_roundtrip_adapter_receipt_proof_matches_manifest": bool(
+                    roundtrip_config_receipt_proof
+                    and roundtrip_manifest_receipt_proof
+                    and roundtrip_config_receipt_proof
+                    == roundtrip_manifest_receipt_proof
+                ),
+                "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session": bool(
+                    roundtrip_config_receipt_proof
+                    and config_receipt_proof
+                    and roundtrip_config_receipt_proof == config_receipt_proof
+                ),
+                "dispatch_roundtrip_adapter_receipts_required": _truthy(
+                    roundtrip_config_receipt_proof.get("required")
+                ),
+                "dispatch_roundtrip_adapter_receipt_required_count": int(
+                    roundtrip_receipt_status["required_count"]
+                ),
+                "dispatch_roundtrip_adapter_receipt_valid_count": int(
+                    roundtrip_receipt_status["valid_count"]
+                ),
+                "dispatch_roundtrip_adapter_receipt_fingerprint_match_count": int(
+                    roundtrip_receipt_status["receipt_fingerprint_match_count"]
+                ),
+                "dispatch_roundtrip_capture_fingerprint_match_count": int(
+                    roundtrip_receipt_status["capture_fingerprint_match_count"]
                 ),
                 "source_credential_env_template_path": _first_text(
                     session_summary,
@@ -2348,6 +2621,8 @@ def _config(
     session_config: dict[str, Any],
     session_manifest: dict[str, Any],
     provider_roundtrip_config: dict[str, Any],
+    provider_roundtrip_manifest: dict[str, Any],
+    provider_roundtrip_wrapper_provided: bool,
     broker: BrokerReadinessReport | None,
     checks: pd.DataFrame,
     action_queue: pd.DataFrame,
@@ -2456,6 +2731,40 @@ def _config(
             ),
         },
         "dispatch_roundtrip_provenance": {
+            "provider_wrapper_provided": bool(provider_roundtrip_wrapper_provided),
+            "provider_manifest_run_type": _clean(
+                provider_roundtrip_manifest.get("run_type")
+            ),
+            "adapter_receipt_proof": _mapping(
+                provider_roundtrip_config.get("adapter_receipt_proof")
+            ),
+            "adapter_receipt_proof_ready": bool(
+                summary["dispatch_roundtrip_adapter_receipt_proof_ready"]
+            ),
+            "adapter_receipt_proof_matches_manifest": bool(
+                summary[
+                    "dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+                ]
+            ),
+            "adapter_receipt_proof_matches_runtime_session": bool(
+                summary[
+                    "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+                ]
+            ),
+            "adapter_receipt_required_count": int(
+                summary["dispatch_roundtrip_adapter_receipt_required_count"]
+            ),
+            "adapter_receipt_valid_count": int(
+                summary["dispatch_roundtrip_adapter_receipt_valid_count"]
+            ),
+            "adapter_receipt_fingerprint_match_count": int(
+                summary[
+                    "dispatch_roundtrip_adapter_receipt_fingerprint_match_count"
+                ]
+            ),
+            "capture_fingerprint_match_count": int(
+                summary["dispatch_roundtrip_capture_fingerprint_match_count"]
+            ),
             "exchange": str(summary["dispatch_roundtrip_exchange"]),
             "source_session": _dispatch_roundtrip_source_session_contract_from_summary(summary),
             "market_session": _dispatch_roundtrip_market_session_contract_from_summary(summary),
@@ -2702,6 +3011,21 @@ def _provider_roundtrip_vendor_market_data_batch_config(
 
 
 def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    dispatch_roundtrip_receipt_line = (
+        "- Dispatch round-trip adapter receipt proof: not applicable "
+        "(nested generic input)"
+        if not bool(summary["provider_broker_dispatch_roundtrip_wrapper_provided"])
+        else (
+            "- Dispatch round-trip adapter receipt proof: "
+            f"{'ready' if bool(summary['dispatch_roundtrip_adapter_receipt_proof_ready']) else 'blocked'} "
+            f"({summary['dispatch_roundtrip_adapter_receipt_fingerprint_match_count']}/"
+            f"{summary['dispatch_roundtrip_adapter_receipt_required_count']} sealed; "
+            "round-trip manifest match: "
+            f"{'yes' if bool(summary['dispatch_roundtrip_adapter_receipt_proof_matches_manifest']) else 'no'}; "
+            "runtime match: "
+            f"{'yes' if bool(summary['dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session']) else 'no'})"
+        )
+    )
     lines = [
         "# Provider Market Data Imbalance Broker Readiness",
         "",
@@ -2727,6 +3051,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Provider profile: {summary['provider_profile_sha256'] or 'missing'} (bundle match: {'yes' if bool(summary['provider_profile_matches_bundle']) else 'no'})",
         f"- Provider capture commands: {summary['provider_capture_command_count']} (bundle match: {'yes' if bool(summary['capture_bundle_provider_capture_commands_match_session']) else 'no'})",
         f"- Adapter receipt proof: {'ready' if bool(summary['adapter_receipt_proof_ready']) else 'blocked'} ({summary['adapter_receipt_fingerprint_match_count']}/{summary['adapter_receipt_required_count']} sealed; session manifest match: {'yes' if bool(summary['adapter_receipt_proof_matches_manifest']) else 'no'})",
+        dispatch_roundtrip_receipt_line,
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         f"- Route sidecar breach pairs: {summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
         "- Dispatch round-trip route sidecar breach pairs: "
@@ -2836,6 +3161,8 @@ def _next_gate_for_check(check: str, broker: BrokerReadinessReport | None) -> st
         return "monitor-provider-market-data-imbalance-runtime-session"
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "pipeline-provider-market-data-imbalance-launch"
+    if check.startswith("provider_broker_dispatch_roundtrip"):
+        return "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     if check == "broker_readiness_ready" and broker is not None:
         next_gate = _provider_next_gate(_first_action_value(broker.action_queue, "next_gate"))
         return next_gate or "review-provider-market-data-imbalance-broker-readiness"
@@ -2901,6 +3228,8 @@ def _component_for_check(check: str) -> str:
         return "order_export"
     if check.startswith("upload_pack"):
         return "upload_pack"
+    if check.startswith("provider_broker_dispatch_roundtrip"):
+        return "provider_broker_dispatch_roundtrip"
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
@@ -2925,6 +3254,8 @@ def _action_for_check(check: str) -> str:
         return "repair_provider_imbalance_runtime_session"
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "repair_provider_imbalance_launch_broker_artifacts"
+    if check.startswith("provider_broker_dispatch_roundtrip"):
+        return "repair_provider_imbalance_broker_dispatch_roundtrip"
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
@@ -2947,6 +3278,8 @@ def _recommendation_for_check(check: str) -> str:
         return "rerun_provider_runtime_session_before_broker_readiness"
     if check.startswith("order_export") or check.startswith("upload_pack"):
         return "rebuild_provider_launch_pipeline_broker_artifacts"
+    if check.startswith("provider_broker_dispatch_roundtrip"):
+        return "rerun_provider_broker_dispatch_roundtrip_from_same_runtime_and_live_source_provenance"
     if (
         (check.startswith("dispatch_roundtrip_") and check.endswith("_consistent"))
         or check.startswith("dispatch_roundtrip_adapter_execution_contract")
@@ -2995,12 +3328,42 @@ def _resolve_dispatch_roundtrip_dir(path: Path | None) -> Path | None:
     return nested or path
 
 
-def _read_provider_dispatch_roundtrip_artifacts(path: Path | None) -> tuple[pd.DataFrame, dict[str, Any]]:
+def _read_provider_dispatch_roundtrip_artifacts(
+    path: Path | None,
+) -> tuple[
+    pd.DataFrame,
+    dict[str, Any],
+    dict[str, Any],
+    bool,
+    str,
+    str,
+    str,
+]:
     if path is None:
-        return pd.DataFrame(), {}
-    summary, _ = _read_csv(path / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv")
-    config, _ = _read_json(path / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json")
-    return _with_dispatch_roundtrip_config_fallback(summary, config), config
+        return pd.DataFrame(), {}, {}, False, "", "", ""
+    summary_path = (
+        path
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    config_path = (
+        path
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+    )
+    wrapper_provided = summary_path.exists() or config_path.exists()
+    if not wrapper_provided:
+        return pd.DataFrame(), {}, {}, False, "", "", ""
+    summary, summary_error = _read_csv(summary_path)
+    config, config_error = _read_json(config_path)
+    manifest, manifest_error = _read_json(path / "manifest.json")
+    return (
+        _with_dispatch_roundtrip_config_fallback(summary, config),
+        config,
+        manifest,
+        True,
+        summary_error,
+        config_error,
+        manifest_error,
+    )
 
 
 def _with_dispatch_roundtrip_config_fallback(
