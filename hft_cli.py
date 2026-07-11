@@ -24,6 +24,11 @@ from reports.backtest_overfit import (
     BacktestOverfitThresholds,
     write_backtest_overfit_audit,
 )
+from reports.backtest_holdout import (
+    BacktestHoldoutConfig,
+    BacktestHoldoutThresholds,
+    write_backtest_holdout_audit,
+)
 from reports.backtest_significance import (
     BacktestSignificanceConfig,
     BacktestSignificanceThresholds,
@@ -2677,6 +2682,16 @@ def main(argv: list[str] | None = None) -> int:
         type=float,
         default=0.0,
     )
+    robust_selection.add_argument("--holdout-sweeps", type=int, default=3)
+    robust_selection.add_argument("--min-holdout-coverage-rate", type=float, default=1.0)
+    robust_selection.add_argument("--min-holdout-proof-pass-rate", type=float, default=1.0)
+    robust_selection.add_argument("--min-holdout-mean-score", type=float, default=0.0)
+    robust_selection.add_argument("--min-holdout-median-score", type=float, default=0.0)
+    robust_selection.add_argument("--min-holdout-worst-score", type=float, default=0.0)
+    robust_selection.add_argument("--min-holdout-mean-net-pnl", type=float, default=0.0)
+    robust_selection.add_argument("--min-holdout-worst-net-pnl", type=float, default=0.0)
+    robust_selection.add_argument("--min-holdout-fills-per-sweep", type=float, default=1.0)
+    robust_selection.add_argument("--max-holdout-worst-drawdown", type=float, default=None)
     robust_selection.add_argument("--min-promotion-pass-rate", type=float, default=1.0)
     robust_selection.add_argument("--min-promotion-sweeps", type=int, default=1)
     robust_selection.add_argument("--min-promotion-median-net-pnl", type=float, default=0.0)
@@ -2756,6 +2771,40 @@ def main(argv: list[str] | None = None) -> int:
     backtest_significance.add_argument("--fail-on-blocked-actions", action="store_true")
     backtest_significance.add_argument("--fail-on-actions", action="store_true")
 
+    backtest_holdout = sub.add_parser(
+        "audit-backtest-holdout",
+        help="Evaluate a frozen selection on manifest-bound chronological holdouts.",
+    )
+    backtest_holdout.add_argument("--selection", required=True)
+    backtest_holdout.add_argument("--holdout-sweeps", nargs="+", required=True)
+    backtest_holdout.add_argument("--out", required=True)
+    backtest_holdout.add_argument("--label", action="append", dest="labels")
+    backtest_holdout.add_argument("--group-cols", nargs="+", required=True)
+    backtest_holdout.add_argument("--score-column", default="")
+    backtest_holdout.add_argument("--proof-column", default="proof_passed")
+    backtest_holdout.add_argument(
+        "--allow-missing-selection-manifest",
+        action="store_true",
+    )
+    backtest_holdout.add_argument(
+        "--allow-missing-sweep-manifests",
+        action="store_true",
+    )
+    backtest_holdout.add_argument("--allow-failed-selection", action="store_true")
+    backtest_holdout.add_argument("--min-sweeps", type=int, default=3)
+    backtest_holdout.add_argument("--min-candidate-coverage-rate", type=float, default=1.0)
+    backtest_holdout.add_argument("--min-proof-pass-rate", type=float, default=1.0)
+    backtest_holdout.add_argument("--min-mean-score", type=float, default=0.0)
+    backtest_holdout.add_argument("--min-median-score", type=float, default=0.0)
+    backtest_holdout.add_argument("--min-worst-score", type=float, default=0.0)
+    backtest_holdout.add_argument("--min-mean-net-pnl", type=float, default=0.0)
+    backtest_holdout.add_argument("--min-worst-net-pnl", type=float, default=0.0)
+    backtest_holdout.add_argument("--min-fills-per-sweep", type=float, default=1.0)
+    backtest_holdout.add_argument("--max-worst-drawdown", type=float, default=None)
+    backtest_holdout.add_argument("--fail-on-breach", action="store_true")
+    backtest_holdout.add_argument("--fail-on-blocked-actions", action="store_true")
+    backtest_holdout.add_argument("--fail-on-actions", action="store_true")
+
     promote = sub.add_parser("promote-scenario", help="Gate a sweep selection for paper/shadow promotion.")
     promote.add_argument("--selection", required=True)
     promote.add_argument("--out", required=True)
@@ -2773,6 +2822,8 @@ def main(argv: list[str] | None = None) -> int:
     promote.add_argument("--require-overfit-audit", action="store_true")
     promote.add_argument("--significance-audit", default=None)
     promote.add_argument("--require-significance-audit", action="store_true")
+    promote.add_argument("--holdout-audit", default=None)
+    promote.add_argument("--require-holdout-audit", action="store_true")
     promote.add_argument("--fail-on-breach", action="store_true")
 
     launch = sub.add_parser("launch-bundle", help="Package promoted strategy and staged orders for paper/shadow launch.")
@@ -6203,6 +6254,20 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 require_overfit_passed=True,
             ),
+            holdout_sweeps=args.holdout_sweeps,
+            holdout_thresholds=BacktestHoldoutThresholds(
+                min_sweeps=args.holdout_sweeps,
+                min_candidate_coverage_rate=args.min_holdout_coverage_rate,
+                min_proof_pass_rate=args.min_holdout_proof_pass_rate,
+                min_mean_score=args.min_holdout_mean_score,
+                min_median_score=args.min_holdout_median_score,
+                min_worst_score=args.min_holdout_worst_score,
+                min_mean_net_pnl=args.min_holdout_mean_net_pnl,
+                min_worst_net_pnl=args.min_holdout_worst_net_pnl,
+                min_fills_per_sweep=args.min_holdout_fills_per_sweep,
+                max_worst_drawdown=args.max_holdout_worst_drawdown,
+                require_selection_passed=True,
+            ),
             promotion_thresholds=PromotionThresholds(
                 min_pass_rate=args.min_promotion_pass_rate,
                 min_sweeps=args.min_promotion_sweeps,
@@ -6218,6 +6283,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_markout_mean=args.min_promotion_markout_mean,
                 require_overfit_audit=True,
                 require_significance_audit=True,
+                require_holdout_audit=True,
             ),
         )
         print(result.summary.to_string(index=False))
@@ -6294,12 +6360,51 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "audit-backtest-holdout":
+        result = write_backtest_holdout_audit(
+            args.selection,
+            args.holdout_sweeps,
+            output_dir=args.out,
+            labels=args.labels,
+            config=BacktestHoldoutConfig(
+                group_columns=tuple(args.group_cols),
+                score_column=args.score_column,
+                proof_column=args.proof_column,
+                require_selection_manifest=(
+                    not args.allow_missing_selection_manifest
+                ),
+                require_sweep_manifests=not args.allow_missing_sweep_manifests,
+            ),
+            thresholds=BacktestHoldoutThresholds(
+                min_sweeps=args.min_sweeps,
+                min_candidate_coverage_rate=args.min_candidate_coverage_rate,
+                min_proof_pass_rate=args.min_proof_pass_rate,
+                min_mean_score=args.min_mean_score,
+                min_median_score=args.min_median_score,
+                min_worst_score=args.min_worst_score,
+                min_mean_net_pnl=args.min_mean_net_pnl,
+                min_worst_net_pnl=args.min_worst_net_pnl,
+                min_fills_per_sweep=args.min_fills_per_sweep,
+                max_worst_drawdown=args.max_worst_drawdown,
+                require_selection_passed=not args.allow_failed_selection,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and action_count > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "promote-scenario":
         result = write_promotion_report(
             args.selection,
             output_dir=args.out,
             overfit_audit_path=args.overfit_audit,
             significance_audit_path=args.significance_audit,
+            holdout_audit_path=args.holdout_audit,
             thresholds=PromotionThresholds(
                 min_pass_rate=args.min_pass_rate,
                 min_sweeps=args.min_sweeps,
@@ -6313,6 +6418,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_markout_mean=args.min_markout_mean,
                 require_overfit_audit=args.require_overfit_audit,
                 require_significance_audit=args.require_significance_audit,
+                require_holdout_audit=args.require_holdout_audit,
             ),
         )
         print(result.summary.to_string(index=False))

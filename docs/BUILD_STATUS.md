@@ -51,21 +51,27 @@
   probability. It fails closed on weak or underpowered evidence, a failed CSCV
   audit, candidate mismatch, or any overfit artifact/input drift. Generic
   promotion can require and manifest-bind this proof from the same selection.
+- Selected candidates now have a selection-isolated chronological holdout
+  gate. `audit-backtest-holdout` evaluates only the frozen development winner,
+  rejects development/holdout path overlap, verifies each holdout sweep and
+  source fingerprint, and gates full candidate coverage, proof pass rate,
+  mean/median/worst score, net PnL, fills, and optional drawdown. Promotion
+  binds the candidate identity, selection-manifest SHA, and current holdout
+  manifest. The audit explicitly distinguishes recorded selection isolation
+  from any unverifiable claim that a human never inspected the data.
 - Multi-period parameter research now has a single strict orchestration gate.
-  `pipeline-robust-selection` compares chronological sweep folders, requires
-  full-period selection coverage by default, and verifies each consumed sweep
-  against its generating manifest, including every artifact and recorded input
-  fingerprint. It then runs CSCV plus the candidate significance audit, binds
-  both statistical proofs and the exact selection manifest into promotion, and
-  emits sweep-provenance evidence plus a root action queue, runbook, candidate
-  config, and manifest. It fails closed on
-  missing or drifted sweep provenance, underpowered studies, incomplete grids,
-  memorized parameters, candidate instability, weak corrected significance,
-  downstream artifact drift, or promotion breaches. Sweep integrity is also
-  bound into the nested promotion check/config/manifest, preventing a leaf
-  promotion from appearing ready when root provenance failed. Ready output
-  advances only to broker-neutral order staging and explicitly carries
-  `authorizes_submission=false`.
+  `pipeline-robust-selection` reserves the final three ordered sweeps as
+  holdouts by default, requires full coverage across the earlier development
+  periods, and verifies every sweep against its generating manifest. It then
+  runs CSCV, corrected significance, frozen-candidate holdout, and promotion,
+  binding all proofs and the exact selection manifest into root evidence. The
+  default ready study therefore needs nine periods: six development plus three
+  holdouts. Missing or drifted provenance, development/holdout overlap,
+  underpowered studies, incomplete grids, memorized parameters, instability,
+  weak corrected significance, losing holdouts, downstream drift, or promotion
+  breaches fail closed. Sweep integrity is bound into nested promotion so a
+  leaf cannot appear ready when root provenance failed. Ready output advances
+  only to broker-neutral order staging with `authorizes_submission=false`.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2451,19 +2457,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1465 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1473 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: the multiple-testing-aware significance audit,
-robust-selection pipeline, CSCV backtest-overfit audit, manifest-bound
-promotion, sweep comparison, experiment catalog, and strategy scorecard suites
-pass together (`101 passed`). This covers exact sign-test correction,
-deterministic bootstrap evidence, stable, partition-memorized, and underpowered
-multi-period orchestration; strict audit binding; root manifest/candidate
-lineage; catalog discovery; CLI fail-closed behavior; shared manifest
-verification; missing, edited, and source-drifted sweep provenance;
-path-contained artifact checks; and significance, overfit, and source-selection
-drift paths.
+Latest focused gate: chronological holdout, multiple-testing-aware
+significance, robust-selection, CSCV backtest-overfit, manifest-bound
+promotion, sweep comparison, experiment catalog, manifest, and strategy
+scorecard suites pass together (`109 passed`). This covers development/holdout
+isolation, frozen-candidate evaluation without re-selection, overlap and
+holdout-loss rejection, exact sign-test correction, deterministic bootstrap
+evidence, stable, partition-memorized, and underpowered orchestration; strict
+audit binding; root manifest/candidate lineage; catalog discovery; CLI
+fail-closed behavior; missing, edited, and source-drifted sweep provenance;
+path-contained artifact checks; and holdout, significance, overfit, and
+source-selection drift paths.
 Manifest generation, the existing surface research/launch pipeline, and
 generic launch-bundle compatibility also pass together (`14 passed`).
 The immediately preceding CSCV backtest-overfit audit, manifest-bound
@@ -2498,7 +2505,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1465-test collection is fully green.
+1473-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2507,3 +2514,5 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
+4. Add a manifest-bound study-family ledger so repeated candidate audits across
+   strategies can receive family-level multiple-testing correction.

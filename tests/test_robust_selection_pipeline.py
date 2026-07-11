@@ -31,6 +31,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
         "selection",
         "backtest_overfit",
         "backtest_significance",
+        "backtest_holdout",
         "promotion",
     }
     assert report.stages["status"].astype(bool).all()
@@ -39,7 +40,11 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert float(summary["selection_candidate_rate"]) == 1.0
     assert summary["next_gate"] == "stage-orders"
     assert bool(summary["sweep_provenance_passed"])
-    assert int(summary["sweep_manifest_current_count"]) == 6
+    assert int(summary["sweep_manifest_current_count"]) == 9
+    assert int(summary["development_sweep_count"]) == 6
+    assert int(summary["holdout_sweep_count"]) == 3
+    assert bool(summary["backtest_holdout_passed"])
+    assert float(summary["holdout_candidate_coverage_rate"]) == 1.0
     assert not bool(summary["authorizes_submission"])
     assert config["ready"]
     assert config["source_run_type"] == "robust_selection_pipeline"
@@ -47,22 +52,32 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert config["backtest_overfit"]["selection_matches"]
     assert config["backtest_significance"]["passed"]
     assert config["backtest_significance"]["selection_matches"]
+    assert config["backtest_holdout"]["passed"]
+    assert config["backtest_holdout"]["selection_matches"]
+    assert config["backtest_holdout"]["candidate_matches"]
     assert config["upstream_integrity"]["passed"]
     assert not config["authorizes_submission"]
     assert manifest["run_type"] == "robust_selection_pipeline"
     assert not manifest["extra"]["authorizes_submission"]
-    assert len(manifest["inputs"]["sweeps"]) == 6
-    assert len(manifest["inputs"]["sweep_manifests"]) == 6
+    assert len(manifest["inputs"]["development_sweeps"]) == 6
+    assert len(manifest["inputs"]["holdout_sweeps"]) == 3
+    assert len(manifest["inputs"]["sweep_manifests"]) == 9
     assert manifest["inputs"]["backtest_overfit_manifest"]["kind"] == "file"
     assert manifest["inputs"]["backtest_significance_manifest"]["kind"] == "file"
+    assert manifest["inputs"]["backtest_holdout_manifest"]["kind"] == "file"
+    scenario_runs = pd.read_csv(output / "01_selection" / "scenario_runs.csv")
+    assert scenario_runs["sweep"].nunique() == 6
+    assert set(report.sweep_provenance["study_role"]) == {"development", "holdout"}
     promotion_manifest = json.loads(
         (output / "03_promotion" / "manifest.json").read_text(encoding="utf-8")
     )
     assert promotion_manifest["inputs"]["upstream_integrity"]["kind"] == "file"
+    assert promotion_manifest["inputs"]["backtest_holdout_audit_manifest"]["kind"] == "file"
     for name in (
         "01_selection/selection_summary.csv",
         "02_backtest_overfit/backtest_overfit_summary.csv",
         "02_backtest_significance/backtest_significance_summary.csv",
+        "02_backtest_holdout/backtest_holdout_summary.csv",
         "03_promotion/promotion_summary.csv",
         "robust_selection_pipeline_sweep_provenance.csv",
         "robust_selection_pipeline_stages.csv",
@@ -111,6 +126,7 @@ def test_robust_selection_pipeline_cli_blocks_partition_memorization(tmp_path):
     assert bool(stages.loc["selection", "status"])
     assert not bool(stages.loc["backtest_overfit", "status"])
     assert not bool(stages.loc["backtest_significance", "status"])
+    assert bool(stages.loc["backtest_holdout", "status"])
     assert not bool(stages.loc["promotion", "status"])
     assert float(summary["probability_overfit"]) == 1.0
     assert summary["next_gate"] == "audit-backtest-overfit"
@@ -129,7 +145,7 @@ def test_robust_selection_pipeline_cli_blocks_partition_memorization(tmp_path):
 
 
 def test_robust_selection_pipeline_blocks_underpowered_period_count(tmp_path):
-    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps", periods=3)
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps", periods=6)
     output = tmp_path / "robust_selection"
 
     report = write_robust_selection_pipeline(
@@ -195,7 +211,42 @@ def test_robust_selection_pipeline_blocks_missing_or_drifted_sweep_manifest(tmp_
     ]
 
 
-def _write_stable_sweeps(root, *, periods=6):
+def test_robust_selection_pipeline_blocks_losing_reserved_holdout(tmp_path):
+    sweeps, labels = _write_stable_sweeps(
+        tmp_path / "sweeps",
+        losing_holdout=True,
+    )
+    output = tmp_path / "robust_selection"
+
+    report = write_robust_selection_pipeline(
+        sweeps,
+        output_dir=output,
+        labels=labels,
+        group_cols=["scenario"],
+    )
+
+    stages = report.stages.set_index("stage")
+    failed_holdout = set(
+        report.holdout.checks.loc[~report.holdout.checks["passed"], "check"]
+    )
+    promotion_checks = report.promotion.checks.set_index("check")
+    assert not report.ready
+    assert bool(stages.loc["selection", "status"])
+    assert bool(stages.loc["backtest_overfit", "status"])
+    assert bool(stages.loc["backtest_significance", "status"])
+    assert not bool(stages.loc["backtest_holdout", "status"])
+    assert not bool(stages.loc["promotion", "status"])
+    assert {"worst_score", "worst_net_pnl"}.issubset(failed_holdout)
+    assert report.summary.iloc[0]["next_gate"] == "audit-backtest-holdout"
+    assert set(report.action_queue["component"]) == {
+        "backtest_holdout",
+        "promotion",
+    }
+    assert not bool(promotion_checks.loc["holdout_audit_passed", "passed"])
+    assert not report.candidate_config["backtest_holdout"]["passed"]
+
+
+def _write_stable_sweeps(root, *, periods=9, losing_holdout=False):
     labels = [f"2026-06-{period + 1:02d}" for period in range(periods)]
     paths = []
     for period, label in enumerate(labels):
@@ -204,6 +255,8 @@ def _write_stable_sweeps(root, *, periods=6):
         rows = []
         for scenario, base in (("A", 10.0), ("B", 5.0), ("C", 1.0)):
             score = base + period * 0.1
+            if losing_holdout and period == periods - 1 and scenario == "A":
+                score = -1.0
             rows.append(_sweep_row(scenario, score))
         pd.DataFrame(rows).to_csv(path / "sweep_runs.csv", index=False)
         _write_sweep_manifest(path, label)
@@ -213,15 +266,18 @@ def _write_stable_sweeps(root, *, periods=6):
 
 def _write_memorized_sweeps(root):
     scenarios = [f"S{index}" for index in range(6)]
-    labels = [f"2026-06-{period + 1:02d}" for period in range(6)]
+    labels = [f"2026-06-{period + 1:02d}" for period in range(9)]
     paths = []
     for period, label in enumerate(labels):
         path = root / label
         path.mkdir(parents=True)
-        rows = [
-            _sweep_row(scenario, 10.0 if index == period else -10.0)
-            for index, scenario in enumerate(scenarios)
-        ]
+        rows = []
+        for index, scenario in enumerate(scenarios):
+            if period < 6:
+                score = 10.0 if index == period else -10.0
+            else:
+                score = 5.0 if scenario == "S0" else 1.0
+            rows.append(_sweep_row(scenario, score))
         pd.DataFrame(rows).to_csv(path / "sweep_runs.csv", index=False)
         _write_sweep_manifest(path, label)
         paths.append(path)

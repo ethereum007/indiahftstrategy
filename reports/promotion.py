@@ -51,6 +51,7 @@ class PromotionThresholds:
     min_markout_mean: float | None = None
     require_overfit_audit: bool = False
     require_significance_audit: bool = False
+    require_holdout_audit: bool = False
 
 
 @dataclass(frozen=True)
@@ -74,6 +75,8 @@ def evaluate_promotion(
     overfit_selection_matches: bool | None = None,
     significance_summary: pd.DataFrame | None = None,
     significance_selection_matches: bool | None = None,
+    holdout_summary: pd.DataFrame | None = None,
+    holdout_selection_matches: bool | None = None,
     upstream_integrity_passed: bool | None = None,
 ) -> PromotionReport:
     thresholds = thresholds or PromotionThresholds()
@@ -84,6 +87,7 @@ def evaluate_promotion(
     significance = (
         pd.DataFrame() if significance_summary is None else significance_summary.copy()
     )
+    holdout = pd.DataFrame() if holdout_summary is None else holdout_summary.copy()
     _require(scores, ["scenario_key", "selection_passed"], "scenario_scores")
     _require(runs, ["run"], "scenario_runs")
 
@@ -98,6 +102,12 @@ def evaluate_promotion(
                     thresholds,
                     significance_selection_matches,
                 ),
+                *_holdout_checks(
+                    holdout,
+                    thresholds,
+                    holdout_selection_matches,
+                    expected_candidate="",
+                ),
                 *_upstream_integrity_checks(upstream_integrity_passed),
             ]
         )
@@ -108,6 +118,8 @@ def evaluate_promotion(
             overfit_selection_matches,
             significance,
             significance_selection_matches,
+            holdout,
+            holdout_selection_matches,
             upstream_integrity_passed,
         )
         return PromotionReport(candidate=candidate, checks=checks, summary=summary)
@@ -122,6 +134,8 @@ def evaluate_promotion(
         overfit_selection_matches,
         significance,
         significance_selection_matches,
+        holdout,
+        holdout_selection_matches,
         upstream_integrity_passed,
     )
     summary = _summary(
@@ -131,6 +145,8 @@ def evaluate_promotion(
         overfit_selection_matches,
         significance,
         significance_selection_matches,
+        holdout,
+        holdout_selection_matches,
         upstream_integrity_passed,
     )
     return PromotionReport(candidate=candidate, checks=checks, summary=summary)
@@ -143,6 +159,7 @@ def write_promotion_report(
     thresholds: PromotionThresholds | None = None,
     overfit_audit_path: str | Path | None = None,
     significance_audit_path: str | Path | None = None,
+    holdout_audit_path: str | Path | None = None,
     upstream_integrity_passed: bool | None = None,
     upstream_integrity_path: str | Path | None = None,
 ) -> PromotionReport:
@@ -164,6 +181,13 @@ def write_promotion_report(
         selection,
         significance_config,
     )
+    holdout_summary, holdout_config, holdout_input = _read_holdout_audit(
+        holdout_audit_path
+    )
+    holdout_selection_matches = _audit_selection_matches(
+        selection,
+        holdout_config,
+    )
     report = evaluate_promotion(
         pd.read_csv(scores_path),
         pd.read_csv(runs_path),
@@ -172,6 +196,8 @@ def write_promotion_report(
         overfit_selection_matches=overfit_selection_matches,
         significance_summary=significance_summary,
         significance_selection_matches=significance_selection_matches,
+        holdout_summary=holdout_summary,
+        holdout_selection_matches=holdout_selection_matches,
         upstream_integrity_passed=upstream_integrity_passed,
     )
     out = Path(output_dir)
@@ -188,6 +214,8 @@ def write_promotion_report(
                 overfit_selection_matches,
                 significance_summary,
                 significance_selection_matches,
+                holdout_summary,
+                holdout_selection_matches,
                 upstream_integrity_passed,
                 upstream_integrity_path,
             ),
@@ -216,6 +244,15 @@ def write_promotion_report(
         )
         if significance_manifest.is_file():
             inputs["backtest_significance_audit_manifest"] = significance_manifest
+    if holdout_input is not None:
+        inputs["backtest_holdout_audit"] = holdout_input
+        holdout_manifest = (
+            holdout_input / "manifest.json"
+            if holdout_input.is_dir()
+            else holdout_input.parent / "manifest.json"
+        )
+        if holdout_manifest.is_file():
+            inputs["backtest_holdout_audit_manifest"] = holdout_manifest
     if upstream_integrity_path is not None:
         inputs["upstream_integrity"] = Path(upstream_integrity_path)
     write_experiment_manifest(
@@ -252,6 +289,8 @@ def _checks(
     overfit_selection_matches: bool | None,
     significance_summary: pd.DataFrame,
     significance_selection_matches: bool | None,
+    holdout_summary: pd.DataFrame,
+    holdout_selection_matches: bool | None,
     upstream_integrity_passed: bool | None,
 ) -> pd.DataFrame:
     checks = [
@@ -315,6 +354,14 @@ def _checks(
             significance_summary,
             thresholds,
             significance_selection_matches,
+        )
+    )
+    checks.extend(
+        _holdout_checks(
+            holdout_summary,
+            thresholds,
+            holdout_selection_matches,
+            expected_candidate=str(row.get("scenario_key", "")),
         )
     )
     checks.extend(_upstream_integrity_checks(upstream_integrity_passed))
@@ -446,6 +493,74 @@ def _significance_checks(
     return rows
 
 
+def _holdout_checks(
+    holdout_summary: pd.DataFrame,
+    thresholds: PromotionThresholds,
+    holdout_selection_matches: bool | None,
+    *,
+    expected_candidate: str,
+) -> list[dict[str, Any]]:
+    provided = not holdout_summary.empty
+    rows: list[dict[str, Any]] = []
+    if thresholds.require_holdout_audit:
+        rows.append(
+            _check(
+                "holdout_audit_provided",
+                provided,
+                "is",
+                True,
+                provided,
+                "chronological holdout audit is required before promotion",
+            )
+        )
+    if not provided:
+        return rows
+    summary = holdout_summary.iloc[0]
+    passed = _to_bool(summary.get("passed", summary.get("ready", False)))
+    manifest_current = _to_bool(summary.get("_artifact_integrity_current", True))
+    audited_candidate = str(summary.get("candidate_scenario", ""))
+    candidate_matches = bool(
+        expected_candidate and audited_candidate == expected_candidate
+    )
+    rows.extend(
+        [
+            _check(
+                "holdout_audit_passed",
+                passed,
+                "is",
+                True,
+                passed,
+                "chronological holdout audit did not pass",
+            ),
+            _check(
+                "holdout_selection_matches",
+                bool(holdout_selection_matches),
+                "is",
+                True,
+                bool(holdout_selection_matches),
+                "holdout audit was generated from a different selection artifact",
+            ),
+            _check(
+                "holdout_candidate_matches",
+                candidate_matches,
+                "is",
+                True,
+                candidate_matches,
+                "holdout audit evaluated a different candidate",
+            ),
+            _check(
+                "holdout_audit_manifest_current",
+                manifest_current,
+                "is",
+                True,
+                manifest_current,
+                "holdout artifacts or inputs no longer match their manifest",
+            ),
+        ]
+    )
+    return rows
+
+
 def _summary(
     candidate: pd.DataFrame,
     checks: pd.DataFrame,
@@ -453,6 +568,8 @@ def _summary(
     overfit_selection_matches: bool | None,
     significance_summary: pd.DataFrame,
     significance_selection_matches: bool | None,
+    holdout_summary: pd.DataFrame,
+    holdout_selection_matches: bool | None,
     upstream_integrity_passed: bool | None,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
@@ -464,6 +581,14 @@ def _summary(
         significance_summary.iloc[0]
         if not significance_summary.empty
         else pd.Series(dtype=object)
+    )
+    holdout = (
+        holdout_summary.iloc[0]
+        if not holdout_summary.empty
+        else pd.Series(dtype=object)
+    )
+    holdout_candidate_matches = bool(
+        key and str(holdout.get("candidate_scenario", "")) == key
     )
     return pd.DataFrame(
         [
@@ -498,6 +623,29 @@ def _summary(
                 "bootstrap_probability_positive": _float_or_nan(
                     significance.get("bootstrap_probability_positive")
                 ),
+                "holdout_audit_provided": not holdout_summary.empty,
+                "holdout_audit_passed": _to_bool(holdout.get("passed", False)),
+                "holdout_selection_matches": bool(holdout_selection_matches)
+                if holdout_selection_matches is not None
+                else False,
+                "holdout_candidate_matches": holdout_candidate_matches,
+                "holdout_audit_manifest_current": _to_bool(
+                    holdout.get(
+                        "_artifact_integrity_current",
+                        not holdout_summary.empty,
+                    )
+                ),
+                "holdout_sweep_count": _int_or_zero(
+                    holdout.get("expected_sweeps", 0)
+                ),
+                "holdout_coverage_rate": _float_or_nan(
+                    holdout.get("candidate_coverage_rate")
+                ),
+                "holdout_proof_pass_rate": _float_or_nan(
+                    holdout.get("proof_pass_rate")
+                ),
+                "holdout_mean_score": _float_or_nan(holdout.get("mean_score")),
+                "holdout_worst_score": _float_or_nan(holdout.get("worst_score")),
                 "upstream_integrity_provided": upstream_integrity_passed is not None,
                 "upstream_integrity_passed": bool(upstream_integrity_passed),
                 "recommendation": recommendation,
@@ -513,6 +661,8 @@ def _candidate_config(
     overfit_selection_matches: bool | None,
     significance_summary: pd.DataFrame,
     significance_selection_matches: bool | None,
+    holdout_summary: pd.DataFrame,
+    holdout_selection_matches: bool | None,
     upstream_integrity_passed: bool | None,
     upstream_integrity_path: str | Path | None,
 ) -> dict[str, Any]:
@@ -520,6 +670,15 @@ def _candidate_config(
     significance = _significance_config_record(
         significance_summary,
         significance_selection_matches,
+    )
+    holdout = _holdout_config_record(
+        holdout_summary,
+        holdout_selection_matches,
+        scenario_key=(
+            ""
+            if report.candidate.empty
+            else str(report.candidate.iloc[0].get("scenario_key", ""))
+        ),
     )
     upstream_integrity = {
         "provided": upstream_integrity_passed is not None,
@@ -538,6 +697,7 @@ def _candidate_config(
             "thresholds": asdict(thresholds),
             "backtest_overfit": overfit,
             "backtest_significance": significance,
+            "backtest_holdout": holdout,
             "upstream_integrity": upstream_integrity,
             "recommendation": "keep_in_research",
         }
@@ -557,6 +717,7 @@ def _candidate_config(
         "thresholds": asdict(thresholds),
         "backtest_overfit": overfit,
         "backtest_significance": significance,
+        "backtest_holdout": holdout,
         "upstream_integrity": upstream_integrity,
         "recommendation": str(report.summary.iloc[0]["recommendation"]),
     }
@@ -634,6 +795,47 @@ def _read_significance_audit(
         manifest_path,
         expected_run_type="backtest_significance_audit",
         required_artifacts=("backtest_significance_summary.csv",),
+        require_input_fingerprints=True,
+    ).passed
+    summary["_audit_manifest_sha256"] = (
+        file_sha256(manifest_path) if manifest_path.is_file() else ""
+    )
+    return summary, config, path
+
+
+def _read_holdout_audit(
+    raw_path: str | Path | None,
+) -> tuple[pd.DataFrame, dict[str, Any], Path | None]:
+    if raw_path is None:
+        return pd.DataFrame(), {}, None
+    path = Path(raw_path)
+    summary_path = path / "backtest_holdout_summary.csv" if path.is_dir() else path
+    config_path = (
+        path / "backtest_holdout_config.json"
+        if path.is_dir()
+        else path.parent / "backtest_holdout_config.json"
+    )
+    if not summary_path.is_file():
+        raise FileNotFoundError(
+            f"backtest_holdout_summary.csv not found: {summary_path}"
+        )
+    summary = pd.read_csv(summary_path)
+    if summary.empty:
+        raise ValueError(f"backtest holdout summary is empty: {summary_path}")
+    config: dict[str, Any] = {}
+    if config_path.is_file():
+        value = json.loads(config_path.read_text(encoding="utf-8"))
+        if not isinstance(value, dict):
+            raise ValueError(
+                f"backtest holdout config must be a JSON object: {config_path}"
+            )
+        config = value
+    manifest_path = summary_path.parent / "manifest.json"
+    summary = summary.copy()
+    summary["_artifact_integrity_current"] = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="backtest_holdout_audit",
+        required_artifacts=("backtest_holdout_summary.csv",),
         require_input_fingerprints=True,
     ).passed
     summary["_audit_manifest_sha256"] = (
@@ -726,6 +928,47 @@ def _significance_config_record(
         "bootstrap_probability_positive": _jsonable(
             _float_or_nan(summary.get("bootstrap_probability_positive"))
         ),
+    }
+
+
+def _holdout_config_record(
+    holdout_summary: pd.DataFrame,
+    holdout_selection_matches: bool | None,
+    *,
+    scenario_key: str,
+) -> dict[str, Any]:
+    if holdout_summary.empty:
+        return {
+            "provided": False,
+            "passed": False,
+            "selection_matches": False,
+            "candidate_matches": False,
+            "expected_sweeps": 0,
+        }
+    summary = holdout_summary.iloc[0]
+    candidate = str(summary.get("candidate_scenario", ""))
+    return {
+        "provided": True,
+        "passed": _to_bool(summary.get("passed", False)),
+        "selection_matches": bool(holdout_selection_matches),
+        "candidate_matches": bool(scenario_key and candidate == scenario_key),
+        "audit_manifest_current": _to_bool(
+            summary.get("_artifact_integrity_current", True)
+        ),
+        "audit_manifest_sha256": str(summary.get("_audit_manifest_sha256", "")),
+        "candidate_scenario": candidate,
+        "expected_sweeps": _int_or_zero(summary.get("expected_sweeps", 0)),
+        "candidate_coverage_rate": _jsonable(
+            _float_or_nan(summary.get("candidate_coverage_rate"))
+        ),
+        "proof_pass_rate": _jsonable(
+            _float_or_nan(summary.get("proof_pass_rate"))
+        ),
+        "mean_score": _jsonable(_float_or_nan(summary.get("mean_score"))),
+        "median_score": _jsonable(_float_or_nan(summary.get("median_score"))),
+        "worst_score": _jsonable(_float_or_nan(summary.get("worst_score"))),
+        "mean_net_pnl": _jsonable(_float_or_nan(summary.get("mean_net_pnl"))),
+        "worst_net_pnl": _jsonable(_float_or_nan(summary.get("worst_net_pnl"))),
     }
 
 

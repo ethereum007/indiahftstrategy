@@ -15,18 +15,26 @@ from reports.backtest_overfit import (
     BacktestOverfitThresholds,
     write_backtest_overfit_audit,
 )
+from reports.backtest_holdout import (
+    BacktestHoldoutConfig,
+    BacktestHoldoutReport,
+    BacktestHoldoutThresholds,
+    write_backtest_holdout_audit,
+)
 from reports.backtest_significance import (
     BacktestSignificanceConfig,
     BacktestSignificanceReport,
     BacktestSignificanceThresholds,
     write_backtest_significance_audit,
 )
-from reports.manifest import (
-    file_sha256,
-    verify_experiment_manifest,
-    write_experiment_manifest,
+from reports.manifest import write_experiment_manifest
+from reports.promotion import (
+    SCORE_METRIC_COLUMNS,
+    PromotionReport,
+    PromotionThresholds,
+    write_promotion_report,
 )
-from reports.promotion import PromotionReport, PromotionThresholds, write_promotion_report
+from reports.sweep_provenance import build_sweep_provenance
 from reports.sweeps import SweepComparison, write_sweep_comparison
 
 
@@ -37,6 +45,7 @@ STAGE_NEXT_GATES = {
     "selection": "compare-sweeps",
     "backtest_overfit": "audit-backtest-overfit",
     "backtest_significance": "audit-backtest-significance",
+    "backtest_holdout": "audit-backtest-holdout",
     "promotion": "promote-scenario",
 }
 
@@ -67,6 +76,7 @@ class RobustSelectionPipelineReport:
     selection: SweepComparison
     overfit: BacktestOverfitReport
     significance: BacktestSignificanceReport
+    holdout: BacktestHoldoutReport
     promotion: PromotionReport
     output_dir: Path | None = None
 
@@ -93,6 +103,9 @@ def write_robust_selection_pipeline(
     overfit_thresholds: BacktestOverfitThresholds | None = None,
     significance_config: BacktestSignificanceConfig | None = None,
     significance_thresholds: BacktestSignificanceThresholds | None = None,
+    holdout_sweeps: int = 3,
+    holdout_config: BacktestHoldoutConfig | None = None,
+    holdout_thresholds: BacktestHoldoutThresholds | None = None,
     promotion_thresholds: PromotionThresholds | None = None,
 ) -> RobustSelectionPipelineReport:
     paths = [Path(path).resolve() for path in sweep_paths]
@@ -100,20 +113,30 @@ def write_robust_selection_pipeline(
         raise ValueError("at least one sweep path is required")
     if labels is not None and len(labels) != len(paths):
         raise ValueError("labels must match sweep_paths length")
+    if holdout_sweeps < 1:
+        raise ValueError("holdout_sweeps must be positive")
+    if len(paths) <= holdout_sweeps:
+        raise ValueError("sweep_paths must include development and holdout periods")
+
+    development_paths = paths[:-holdout_sweeps]
+    reserved_paths = paths[-holdout_sweeps:]
+    development_labels = labels[:-holdout_sweeps] if labels is not None else None
+    reserved_labels = labels[-holdout_sweeps:] if labels is not None else None
 
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     selection_dir = out / "01_selection"
     overfit_dir = out / "02_backtest_overfit"
     significance_dir = out / "02_backtest_significance"
+    holdout_dir = out / "02_backtest_holdout"
     promotion_dir = out / "03_promotion"
 
     resolved_selection_min_sweeps = (
-        len(paths) if selection_min_sweeps is None else selection_min_sweeps
+        len(development_paths)
+        if selection_min_sweeps is None
+        else selection_min_sweeps
     )
     overfit_config = overfit_config or BacktestOverfitConfig()
-    if group_cols and not overfit_config.scenario_columns:
-        overfit_config = replace(overfit_config, scenario_columns=tuple(group_cols))
     if not overfit_config.require_selection_manifest:
         overfit_config = replace(overfit_config, require_selection_manifest=True)
     overfit_thresholds = overfit_thresholds or BacktestOverfitThresholds()
@@ -125,9 +148,17 @@ def write_robust_selection_pipeline(
         promotion_thresholds or PromotionThresholds(),
         require_overfit_audit=True,
         require_significance_audit=True,
+        require_holdout_audit=True,
     )
 
-    sweep_provenance = _sweep_provenance(paths, labels)
+    sweep_provenance = build_sweep_provenance(
+        paths,
+        labels,
+        roles=(
+            ["development"] * len(development_paths)
+            + ["holdout"] * len(reserved_paths)
+        ),
+    )
     sweep_provenance_path = out / "robust_selection_pipeline_sweep_provenance.csv"
     sweep_provenance.to_csv(sweep_provenance_path, index=False)
     sweep_provenance_passed = bool(
@@ -135,15 +166,27 @@ def write_robust_selection_pipeline(
     )
 
     selection = write_sweep_comparison(
-        paths,
+        development_paths,
         output_dir=selection_dir,
-        labels=labels,
+        labels=development_labels,
         group_cols=group_cols,
         min_pass_rate=selection_min_pass_rate,
         min_sweeps=resolved_selection_min_sweeps,
         min_median_net_pnl=selection_min_median_net_pnl,
         max_worst_drawdown=selection_max_worst_drawdown,
     )
+    resolved_group_cols = group_cols or [
+        column
+        for column in selection.scenario_scores.columns
+        if column not in SCORE_METRIC_COLUMNS
+    ]
+    if not resolved_group_cols:
+        raise ValueError("unable to resolve scenario group columns")
+    if not overfit_config.scenario_columns:
+        overfit_config = replace(
+            overfit_config,
+            scenario_columns=tuple(resolved_group_cols),
+        )
     overfit = write_backtest_overfit_audit(
         selection_dir,
         output_dir=overfit_dir,
@@ -156,11 +199,36 @@ def write_robust_selection_pipeline(
         config=significance_config,
         thresholds=significance_thresholds,
     )
+    resolved_score_column = str(
+        overfit.config.get("resolved_score_column", overfit_config.score_column)
+    )
+    holdout_config = holdout_config or BacktestHoldoutConfig(
+        group_columns=tuple(resolved_group_cols),
+    )
+    holdout_config = replace(
+        holdout_config,
+        group_columns=tuple(resolved_group_cols),
+        score_column=resolved_score_column,
+        require_selection_manifest=True,
+        require_sweep_manifests=True,
+    )
+    holdout_thresholds = holdout_thresholds or BacktestHoldoutThresholds(
+        min_sweeps=holdout_sweeps
+    )
+    holdout = write_backtest_holdout_audit(
+        selection_dir,
+        reserved_paths,
+        output_dir=holdout_dir,
+        config=holdout_config,
+        labels=reserved_labels,
+        thresholds=holdout_thresholds,
+    )
     promotion = write_promotion_report(
         selection_dir,
         output_dir=promotion_dir,
         overfit_audit_path=overfit_dir,
         significance_audit_path=significance_dir,
+        holdout_audit_path=holdout_dir,
         thresholds=promotion_thresholds,
         upstream_integrity_passed=sweep_provenance_passed,
         upstream_integrity_path=sweep_provenance_path,
@@ -171,6 +239,7 @@ def write_robust_selection_pipeline(
         selection,
         overfit,
         significance,
+        holdout,
         promotion,
     )
     action_queue = _action_queue(stages)
@@ -180,6 +249,7 @@ def write_robust_selection_pipeline(
         selection,
         overfit,
         significance,
+        holdout,
         promotion,
         strategy=strategy,
         market=market,
@@ -190,7 +260,8 @@ def write_robust_selection_pipeline(
         promotion_dir,
         summary.iloc[0],
         stages,
-        paths,
+        development_paths,
+        reserved_paths,
         strategy=strategy,
         market=market,
     )
@@ -223,6 +294,9 @@ def write_robust_selection_pipeline(
         "overfit_thresholds": asdict(overfit_thresholds),
         "significance_config": asdict(significance_config),
         "significance_thresholds": asdict(significance_thresholds),
+        "holdout_sweeps": holdout_sweeps,
+        "holdout_config": asdict(holdout_config),
+        "holdout_thresholds": asdict(holdout_thresholds),
         "promotion_thresholds": asdict(promotion_thresholds),
     }
     write_experiment_manifest(
@@ -230,7 +304,8 @@ def write_robust_selection_pipeline(
         run_type=RUN_TYPE,
         parameters=parameters,
         inputs={
-            "sweeps": paths,
+            "development_sweeps": development_paths,
+            "holdout_sweeps": reserved_paths,
             "sweep_manifests": [
                 Path(path)
                 for path in sweep_provenance["manifest_path"].astype(str)
@@ -239,6 +314,7 @@ def write_robust_selection_pipeline(
             "selection_manifest": selection_dir / "manifest.json",
             "backtest_overfit_manifest": overfit_dir / "manifest.json",
             "backtest_significance_manifest": significance_dir / "manifest.json",
+            "backtest_holdout_manifest": holdout_dir / "manifest.json",
             "promotion_manifest": promotion_dir / "manifest.json",
         },
         extra={
@@ -253,6 +329,9 @@ def write_robust_selection_pipeline(
             "backtest_significance_passed": bool(
                 summary.iloc[0]["backtest_significance_passed"]
             ),
+            "backtest_holdout_passed": bool(
+                summary.iloc[0]["backtest_holdout_passed"]
+            ),
             "authorizes_submission": False,
         },
     )
@@ -265,59 +344,10 @@ def write_robust_selection_pipeline(
         selection=selection,
         overfit=overfit,
         significance=significance,
+        holdout=holdout,
         promotion=promotion,
         output_dir=out,
     )
-
-
-def _sweep_provenance(
-    sweep_paths: list[Path],
-    labels: list[str] | None,
-) -> pd.DataFrame:
-    resolved_labels = labels or [path.stem for path in sweep_paths]
-    rows: list[dict[str, Any]] = []
-    for label, path in zip(resolved_labels, sweep_paths):
-        target = path / "sweep_runs.csv" if path.is_dir() else path
-        manifest_path = path / "manifest.json" if path.is_dir() else path.parent / "manifest.json"
-        try:
-            required_artifact = target.resolve().relative_to(
-                manifest_path.parent.resolve()
-            ).as_posix()
-        except ValueError:
-            required_artifact = f"outside_manifest_root/{target.name}"
-        integrity = verify_experiment_manifest(
-            manifest_path,
-            required_artifacts=(required_artifact,),
-            require_input_fingerprints=True,
-        )
-        rows.append(
-            {
-                "label": label,
-                "sweep_path": str(path),
-                "sweep_runs_path": str(target.resolve()),
-                "manifest_path": str(manifest_path.resolve()),
-                "manifest_exists": integrity.exists,
-                "manifest_readable": integrity.readable,
-                "manifest_sha256": (
-                    file_sha256(manifest_path) if manifest_path.is_file() else ""
-                ),
-                "run_type": integrity.run_type,
-                "artifact_count": integrity.artifact_count,
-                "artifact_matches": integrity.artifact_match_count,
-                "required_artifact_count": integrity.required_artifact_count,
-                "required_artifact_matches": integrity.required_artifact_match_count,
-                "input_fingerprint_count": integrity.input_fingerprint_count,
-                "input_fingerprint_matches": integrity.input_fingerprint_match_count,
-                "passed": integrity.passed,
-                "error": integrity.error,
-                "recommendation": (
-                    "use_manifest_backed_sweep"
-                    if integrity.passed
-                    else "regenerate_sweep_from_current_fingerprinted_market_data"
-                ),
-            }
-        )
-    return pd.DataFrame(rows)
 
 
 def _stages(
@@ -325,6 +355,7 @@ def _stages(
     selection: SweepComparison,
     overfit: BacktestOverfitReport,
     significance: BacktestSignificanceReport,
+    holdout: BacktestHoldoutReport,
     promotion: PromotionReport,
 ) -> pd.DataFrame:
     selection_row = (
@@ -336,6 +367,11 @@ def _stages(
     significance_row = (
         significance.summary.iloc[0]
         if not significance.summary.empty
+        else pd.Series(dtype=object)
+    )
+    holdout_row = (
+        holdout.summary.iloc[0]
+        if not holdout.summary.empty
         else pd.Series(dtype=object)
     )
     promotion_row = (
@@ -406,6 +442,20 @@ def _stages(
                 ),
             },
             {
+                "stage": "backtest_holdout",
+                "status": bool(holdout.passed),
+                "status_column": "passed",
+                "skipped": False,
+                "output_dir": str(holdout.output_dir or ""),
+                "failed_checks": _int(holdout_row.get("failed_checks")),
+                "recommendation": str(holdout_row.get("recommendation", "")),
+                "detail": (
+                    "covered_sweeps="
+                    f"{_int(holdout_row.get('covered_sweeps'))}/"
+                    f"{_int(holdout_row.get('expected_sweeps'))}"
+                ),
+            },
+            {
                 "stage": "promotion",
                 "status": bool(promotion.ready),
                 "status_column": "ready",
@@ -425,6 +475,7 @@ def _summary(
     selection: SweepComparison,
     overfit: BacktestOverfitReport,
     significance: BacktestSignificanceReport,
+    holdout: BacktestHoldoutReport,
     promotion: PromotionReport,
     *,
     strategy: str,
@@ -440,6 +491,11 @@ def _summary(
         if not significance.summary.empty
         else pd.Series(dtype=object)
     )
+    holdout_row = (
+        holdout.summary.iloc[0]
+        if not holdout.summary.empty
+        else pd.Series(dtype=object)
+    )
     promotion_row = promotion.summary.iloc[0] if not promotion.summary.empty else pd.Series(dtype=object)
     first_failed = stages.loc[~stages["status"].map(_to_bool)]
     next_gate = READY_NEXT_GATE if ready else STAGE_NEXT_GATES.get(
@@ -453,6 +509,12 @@ def _summary(
                 "strategy": strategy,
                 "market": market,
                 "sweep_count": sweep_count,
+                "development_sweep_count": int(
+                    sweep_provenance["study_role"].astype(str).eq("development").sum()
+                ),
+                "holdout_sweep_count": int(
+                    sweep_provenance["study_role"].astype(str).eq("holdout").sum()
+                ),
                 "sweep_provenance_passed": bool(
                     not sweep_provenance.empty
                     and sweep_provenance["passed"].astype(bool).all()
@@ -494,6 +556,21 @@ def _summary(
                 ),
                 "bootstrap_probability_positive": _float(
                     significance_row.get("bootstrap_probability_positive")
+                ),
+                "backtest_holdout_passed": bool(holdout.passed),
+                "holdout_candidate_coverage_rate": _float(
+                    holdout_row.get("candidate_coverage_rate")
+                ),
+                "holdout_proof_pass_rate": _float(
+                    holdout_row.get("proof_pass_rate")
+                ),
+                "holdout_mean_score": _float(holdout_row.get("mean_score")),
+                "holdout_worst_score": _float(holdout_row.get("worst_score")),
+                "holdout_mean_net_pnl": _float(
+                    holdout_row.get("mean_net_pnl")
+                ),
+                "holdout_worst_net_pnl": _float(
+                    holdout_row.get("worst_net_pnl")
                 ),
                 "promotion_ready": bool(promotion.ready),
                 "candidate_scenario_key": str(
@@ -545,7 +622,8 @@ def _candidate_config(
     promotion_dir: Path,
     summary: pd.Series,
     stages: pd.DataFrame,
-    sweep_paths: list[Path],
+    development_sweep_paths: list[Path],
+    holdout_sweep_paths: list[Path],
     *,
     strategy: str,
     market: str,
@@ -565,11 +643,15 @@ def _candidate_config(
         "ready": bool(summary["ready"]),
         "sweep_provenance_passed": bool(summary["sweep_provenance_passed"]),
         "next_gate": str(summary["next_gate"]),
-        "sweep_paths": [str(path) for path in sweep_paths],
+        "development_sweep_paths": [str(path) for path in development_sweep_paths],
+        "holdout_sweep_paths": [str(path) for path in holdout_sweep_paths],
         "selection_path": str(promotion_dir.parent / "01_selection"),
         "backtest_overfit_path": str(promotion_dir.parent / "02_backtest_overfit"),
         "backtest_significance_path": str(
             promotion_dir.parent / "02_backtest_significance"
+        ),
+        "backtest_holdout_path": str(
+            promotion_dir.parent / "02_backtest_holdout"
         ),
         "promotion_path": str(promotion_dir),
         "stages": [
@@ -590,7 +672,12 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
         "",
         f"- Status: **{'ready' if bool(summary['ready']) else 'blocked'}**",
         f"- Strategy/market: `{summary['strategy']}` / `{summary['market']}`",
-        f"- Sweep periods: {int(summary['sweep_count'])}",
+        (
+            "- Sweep periods (development/holdout): "
+            f"{int(summary['sweep_count'])} "
+            f"({int(summary['development_sweep_count'])}/"
+            f"{int(summary['holdout_sweep_count'])})"
+        ),
         f"- Current sweep manifests: {int(summary['sweep_manifest_current_count'])}/{int(summary['sweep_count'])}",
         f"- Candidate: `{summary['candidate_scenario_key']}`",
         f"- Probability of backtest overfitting: {_format_number(summary['probability_overfit'])}",
@@ -598,6 +685,12 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
         f"- Bootstrap mean lower bound: {_format_number(summary['bootstrap_mean_lower'])}",
         "- Bootstrap P(mean > 0): "
         f"{_format_number(summary['bootstrap_probability_positive'])}",
+        "- Holdout coverage/proof pass rate: "
+        f"{_format_number(summary['holdout_candidate_coverage_rate'])} / "
+        f"{_format_number(summary['holdout_proof_pass_rate'])}",
+        "- Holdout mean/worst score: "
+        f"{_format_number(summary['holdout_mean_score'])} / "
+        f"{_format_number(summary['holdout_worst_score'])}",
         f"- Candidate selection rate: {_format_number(summary['selection_candidate_rate'])}",
         "- Candidate conditional overfit rate: "
         f"{_format_number(summary['selection_candidate_overfit_rate'])}",

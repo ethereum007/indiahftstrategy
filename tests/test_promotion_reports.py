@@ -197,6 +197,24 @@ def test_promotion_can_require_backtest_significance_audit():
     assert not bool(check["passed"])
 
 
+def test_promotion_can_require_backtest_holdout_audit():
+    report = evaluate_promotion(
+        selection_scores(),
+        selection_runs(),
+        thresholds=PromotionThresholds(
+            min_sweeps=2,
+            min_median_net_pnl=10.0,
+            require_holdout_audit=True,
+        ),
+    )
+
+    assert not report.ready
+    check = report.checks.loc[
+        report.checks["check"] == "holdout_audit_provided"
+    ].iloc[0]
+    assert not bool(check["passed"])
+
+
 def test_promotion_accepts_matching_passed_backtest_overfit_audit(tmp_path):
     selection_dir = tmp_path / "selection"
     overfit_dir = tmp_path / "overfit"
@@ -295,6 +313,53 @@ def test_promotion_blocks_drifted_backtest_significance_audit(tmp_path):
     assert "significance_audit_manifest_current" in failed
 
 
+def test_promotion_accepts_matching_holdout_and_blocks_drift(tmp_path):
+    selection_dir = tmp_path / "selection"
+    holdout_dir = tmp_path / "holdout"
+    output_dir = tmp_path / "promotion"
+    write_selection(selection_dir)
+    write_holdout_audit(holdout_dir, selection_dir, passed=True)
+
+    report = write_promotion_report(
+        selection_dir,
+        output_dir=output_dir,
+        holdout_audit_path=holdout_dir,
+        thresholds=PromotionThresholds(
+            min_sweeps=2,
+            min_median_net_pnl=10.0,
+            require_holdout_audit=True,
+        ),
+    )
+
+    config = json.loads(
+        (output_dir / "candidate_config.json").read_text(encoding="utf-8")
+    )
+    assert report.ready
+    assert config["backtest_holdout"]["passed"]
+    assert config["backtest_holdout"]["selection_matches"]
+    assert config["backtest_holdout"]["candidate_matches"]
+    summary_path = holdout_dir / "backtest_holdout_summary.csv"
+    summary_path.write_text(
+        summary_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    drifted = write_promotion_report(
+        selection_dir,
+        output_dir=tmp_path / "drifted_promotion",
+        holdout_audit_path=holdout_dir,
+        thresholds=PromotionThresholds(
+            min_sweeps=2,
+            min_median_net_pnl=10.0,
+            require_holdout_audit=True,
+        ),
+    )
+
+    failed = set(drifted.checks.loc[~drifted.checks["passed"], "check"])
+    assert not drifted.ready
+    assert "holdout_audit_manifest_current" in failed
+
+
 def write_overfit_audit(path, selection, *, passed):
     path.mkdir(parents=True)
     pd.DataFrame(
@@ -359,6 +424,47 @@ def write_significance_audit(path, selection, *, passed):
     write_experiment_manifest(
         path,
         run_type="backtest_significance_audit",
+        inputs={
+            "selection": selection,
+            "selection_manifest": selection / "manifest.json",
+        },
+    )
+
+
+def write_holdout_audit(path, selection, *, passed):
+    path.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "candidate_scenario": "trigger_ticks=2|order_latency_us=100",
+                "expected_sweeps": 3,
+                "candidate_coverage_rate": 1.0,
+                "proof_pass_rate": 1.0 if passed else 0.0,
+                "mean_score": 8.0 if passed else -1.0,
+                "median_score": 8.0 if passed else -1.0,
+                "worst_score": 7.0 if passed else -2.0,
+                "mean_net_pnl": 9.0 if passed else -1.0,
+                "worst_net_pnl": 7.0 if passed else -2.0,
+            }
+        ]
+    ).to_csv(path / "backtest_holdout_summary.csv", index=False)
+    (path / "backtest_holdout_config.json").write_text(
+        json.dumps(
+            {
+                "selection_path": str(selection.resolve()),
+                "selection_manifest_sha256": file_sha256(
+                    selection / "manifest.json"
+                ),
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        path,
+        run_type="backtest_holdout_audit",
         inputs={
             "selection": selection,
             "selection_manifest": selection / "manifest.json",

@@ -2168,8 +2168,9 @@ The audit reads the selected candidate from a current, passed CSCV overfit
 audit. It applies an exact one-sided sign test to nonzero partition scores,
 multiplies that p-value by the number of searched scenarios (Bonferroni), and
 computes a deterministic bootstrap interval for the mean partition score.
-Defaults require six independent observations, adjusted `p <= 0.10`, at least
-95% bootstrap support for a positive mean, and a nonnegative lower 95% bound.
+Defaults require six disjoint chronological observations, adjusted
+`p <= 0.10`, at least 95% bootstrap support for a positive mean, and a
+nonnegative lower 95% bound.
 
 Outputs:
 
@@ -2185,8 +2186,57 @@ manifest.json
 ```
 
 This is conservative evidence against a zero-edge candidate, not proof of
-future profitability. Sweep periods must be genuinely independent; relabeled
-or repeated samples do not create statistical power.
+future profitability. The diagnostics treat disjoint chronological partition
+scores as exchangeable; dependence, regime change, and execution slippage can
+invalidate inference. Relabeled or repeated samples do not create power.
+
+## Chronological Holdout Audit
+
+Evaluate only the already-selected scenario on later, manifest-backed sweep
+periods that were not consumed by `compare-sweeps`:
+
+```powershell
+python -m hft_cli audit-backtest-holdout `
+  --selection runs\selection\leadlag `
+  --holdout-sweeps `
+    runs\surface_sweep\2026_06_07 `
+    runs\surface_sweep\2026_06_08 `
+    runs\surface_sweep\2026_06_09 `
+  --out runs\holdout\leadlag `
+  --group-cols quote_ttl_ns order_latency_us fill_depth_fraction `
+  --min-sweeps 3 `
+  --min-candidate-coverage-rate 1 `
+  --min-proof-pass-rate 1 `
+  --min-worst-score 0 `
+  --min-worst-net-pnl 0 `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The audit reads the frozen rank-1 scenario and development paths from the
+current selection artifacts. It rejects any overlap between development and
+holdout paths, requires current source-fingerprinted manifests for every
+holdout, and never ranks or substitutes candidates using holdout outcomes.
+Defaults require three distinct holdouts, full candidate coverage, every
+underlying proof to pass, nonnegative mean/median/worst score and net PnL, and
+at least one fill per holdout.
+
+Outputs:
+
+```text
+backtest_holdout_observations.csv
+backtest_holdout_provenance.csv
+backtest_holdout_checks.csv
+backtest_holdout_summary.csv
+backtest_holdout_action_queue.csv
+backtest_holdout_config.json
+backtest_holdout_runbook.md
+manifest.json
+```
+
+Selection isolation proves the holdout files were not inputs to the recorded
+selection. It cannot prove that a human never inspected them. Treat a failed
+holdout as consumed evidence and reserve new future periods for another test.
 
 ## Scenario Promotion Gate
 
@@ -2208,6 +2258,8 @@ python -m hft_cli promote-scenario `
   --require-overfit-audit `
   --significance-audit runs\significance\leadlag `
   --require-significance-audit `
+  --holdout-audit runs\holdout\leadlag `
+  --require-holdout-audit `
   --fail-on-breach
 ```
 
@@ -2217,7 +2269,9 @@ current selection and that every audit artifact still matches the audit
 manifest. `--require-overfit-audit` additionally blocks a missing audit.
 When significance evidence is supplied, promotion likewise requires a passed,
 current manifest from the same selection. `--require-significance-audit`
-blocks promotion when that proof is missing.
+blocks promotion when that proof is missing. Supplied holdout evidence must
+also pass, evaluate the promoted scenario, match the selection-manifest SHA,
+and remain current. `--require-holdout-audit` blocks missing holdout proof.
 
 Outputs:
 
@@ -2244,6 +2298,9 @@ python -m hft_cli pipeline-robust-selection `
     runs\surface_sweep\2026_06_04 `
     runs\surface_sweep\2026_06_05 `
     runs\surface_sweep\2026_06_06 `
+    runs\surface_sweep\2026_06_07 `
+    runs\surface_sweep\2026_06_08 `
+    runs\surface_sweep\2026_06_09 `
   --out runs\robust_selection\surface_mm `
   --group-cols quote_ttl_ns order_latency_us fill_depth_fraction markout_horizon_ns `
   --strategy surface_mm `
@@ -2256,26 +2313,29 @@ python -m hft_cli pipeline-robust-selection `
   --max-significance-adjusted-sign-pvalue 0.10 `
   --min-significance-bootstrap-probability-positive 0.95 `
   --min-significance-bootstrap-mean-lower 0 `
+  --holdout-sweeps 3 `
+  --min-holdout-proof-pass-rate 1 `
+  --min-holdout-worst-score 0 `
+  --min-holdout-worst-net-pnl 0 `
   --min-promotion-sweeps 6 `
   --fail-on-actions `
   --fail-on-breach
 ```
 
-The default selection threshold requires every supplied sweep period. Every
-sweep must have a readable experiment manifest that lists the exact consumed
-`sweep_runs.csv`; all of that manifest's artifact hashes and recorded source
-input fingerprints must still be current. The pipeline also requires a current
-selection manifest, binds promotion to the generated audit, and cannot relax
-`require_overfit_audit` or `require_significance_audit`. It automatically runs
-the multiple-testing-aware significance audit after CSCV and binds both proofs
-into promotion. Sweep provenance is carried into the nested promotion checks
-and manifest, so `03_promotion` cannot appear ready when the root preflight is
-blocked. Missing or drifted sweep provenance, fewer than six chronological
-periods, incomplete parameter grids, unstable rank-1 candidates, weak
-statistical evidence, selection/audit drift, and promotion threshold breaches
-all block the root candidate. A ready result advances only to broker-neutral
-`stage-orders`; `authorizes_submission` remains `false` in summary, candidate,
-runbook, and manifest evidence.
+The final three supplied sweeps are reserved as holdouts by default. Selection,
+CSCV, and significance consume only the earlier development sweeps, and the
+default selection threshold requires every development period. Every sweep
+must have a readable experiment manifest that lists the exact consumed
+`sweep_runs.csv`; all artifact hashes and recorded source-input fingerprints
+must still be current. The pipeline requires current selection, overfit,
+significance, and holdout manifests and cannot relax their promotion
+requirements. Sweep provenance is carried into nested promotion checks, so
+`03_promotion` cannot appear ready when root preflight is blocked. Fewer than
+nine total periods, development/holdout overlap, missing or drifted provenance,
+incomplete grids, unstable candidates, weak corrected significance, losing
+holdouts, selection/audit drift, and promotion breaches block the candidate. A
+ready result advances only to broker-neutral `stage-orders`;
+`authorizes_submission` remains `false` throughout.
 
 Outputs:
 
@@ -2283,6 +2343,7 @@ Outputs:
 01_selection\...
 02_backtest_overfit\...
 02_backtest_significance\...
+02_backtest_holdout\...
 03_promotion\...
 robust_selection_pipeline_sweep_provenance.csv
 robust_selection_pipeline_stages.csv
