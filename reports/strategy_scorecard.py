@@ -72,6 +72,7 @@ RUN_TYPE_NEXT_GATES = {
     ),
     "proof_report": "proof-report",
     "backtest_overfit_audit": "audit-backtest-overfit",
+    "robust_selection_pipeline": "pipeline-robust-selection",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",
     "promotion_report": "promote-scenario",

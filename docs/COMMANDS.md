@@ -2179,6 +2179,58 @@ candidate_config.json
 manifest.json
 ```
 
+## Robust Selection Pipeline
+
+Run multi-period comparison, CSCV overfit audit, and strict promotion as one
+manifest-backed workflow. Supply independent sweep folders in chronological
+order:
+
+```powershell
+python -m hft_cli pipeline-robust-selection `
+  --sweeps `
+    runs\surface_sweep\2026_06_01 `
+    runs\surface_sweep\2026_06_02 `
+    runs\surface_sweep\2026_06_03 `
+    runs\surface_sweep\2026_06_04 `
+    runs\surface_sweep\2026_06_05 `
+    runs\surface_sweep\2026_06_06 `
+  --out runs\robust_selection\surface_mm `
+  --group-cols quote_ttl_ns order_latency_us fill_depth_fraction markout_horizon_ns `
+  --strategy surface_mm `
+  --market india_nse_index_derivatives `
+  --min-selection-pass-rate 1 `
+  --max-probability-overfit 0.25 `
+  --min-candidate-selection-rate 0.25 `
+  --max-candidate-overfit-rate 0.25 `
+  --min-candidate-oos-positive-rate 0.50 `
+  --min-promotion-sweeps 6 `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The default selection threshold requires every supplied sweep period. The
+pipeline always requires a current selection manifest, always binds promotion
+to the generated audit, and cannot relax `require_overfit_audit`. Fewer than
+four independent periods, incomplete parameter grids, unstable rank-1
+candidates, selection/audit drift, and promotion threshold breaches all block
+the root candidate. A ready result advances only to broker-neutral
+`stage-orders`; `authorizes_submission` remains `false` in summary, candidate,
+runbook, and manifest evidence.
+
+Outputs:
+
+```text
+01_selection\...
+02_backtest_overfit\...
+03_promotion\...
+robust_selection_pipeline_stages.csv
+robust_selection_pipeline_summary.csv
+robust_selection_pipeline_action_queue.csv
+robust_selection_pipeline_runbook.md
+candidate_config.json
+manifest.json
+```
+
 ## Launch Bundle
 
 Package a promoted scenario and staged broker-neutral orders into a fail-closed

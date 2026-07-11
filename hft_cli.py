@@ -91,6 +91,7 @@ from reports.parity_order_plan import ParityOrderPlanConfig, write_parity_order_
 from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
+from reports.robust_selection_pipeline import write_robust_selection_pipeline
 from reports.provider_market_data_fetcher import (
     ProviderMarketDataFetcherConfig,
     write_provider_market_data_fetcher_plan,
@@ -2606,6 +2607,49 @@ def main(argv: list[str] | None = None) -> int:
     compare_sweeps.add_argument("--min-median-net-pnl", type=float, default=0.0)
     compare_sweeps.add_argument("--max-worst-drawdown", type=float, default=None)
     compare_sweeps.add_argument("--fail-on-breach", action="store_true")
+
+    robust_selection = sub.add_parser(
+        "pipeline-robust-selection",
+        help="Compare multi-period sweeps, audit selection overfit, and gate promotion.",
+    )
+    robust_selection.add_argument("--sweeps", nargs="+", required=True)
+    robust_selection.add_argument("--out", required=True)
+    robust_selection.add_argument("--label", action="append", dest="labels")
+    robust_selection.add_argument("--group-cols", nargs="+", default=None)
+    robust_selection.add_argument("--strategy", default="generic")
+    robust_selection.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
+    robust_selection.add_argument("--min-selection-pass-rate", type=float, default=1.0)
+    robust_selection.add_argument("--min-selection-sweeps", type=int, default=None)
+    robust_selection.add_argument("--min-selection-median-net-pnl", type=float, default=0.0)
+    robust_selection.add_argument("--max-selection-worst-drawdown", type=float, default=None)
+    robust_selection.add_argument("--score-column", default="")
+    robust_selection.add_argument("--max-partitions", type=int, default=12)
+    robust_selection.add_argument("--min-partitions", type=int, default=4)
+    robust_selection.add_argument("--min-scenarios", type=int, default=3)
+    robust_selection.add_argument("--max-probability-overfit", type=float, default=0.25)
+    robust_selection.add_argument("--min-median-oos-score", type=float, default=0.0)
+    robust_selection.add_argument("--min-oos-positive-rate", type=float, default=0.5)
+    robust_selection.add_argument("--min-median-rank-correlation", type=float, default=0.0)
+    robust_selection.add_argument("--max-median-degradation", type=float, default=None)
+    robust_selection.add_argument("--min-candidate-selection-rate", type=float, default=0.25)
+    robust_selection.add_argument("--max-candidate-overfit-rate", type=float, default=0.25)
+    robust_selection.add_argument("--min-candidate-oos-positive-rate", type=float, default=0.5)
+    robust_selection.add_argument("--min-promotion-pass-rate", type=float, default=1.0)
+    robust_selection.add_argument("--min-promotion-sweeps", type=int, default=1)
+    robust_selection.add_argument("--min-promotion-median-net-pnl", type=float, default=0.0)
+    robust_selection.add_argument("--min-promotion-min-net-pnl", type=float, default=None)
+    robust_selection.add_argument("--max-promotion-worst-drawdown", type=float, default=None)
+    robust_selection.add_argument("--min-promotion-median-fills", type=float, default=1.0)
+    robust_selection.add_argument(
+        "--max-promotion-runs-with-losing-regimes",
+        type=int,
+        default=None,
+    )
+    robust_selection.add_argument("--max-promotion-otr", type=float, default=None)
+    robust_selection.add_argument("--min-promotion-maker-share", type=float, default=None)
+    robust_selection.add_argument("--min-promotion-markout-mean", type=float, default=None)
+    robust_selection.add_argument("--fail-on-breach", action="store_true")
+    robust_selection.add_argument("--fail-on-actions", action="store_true")
 
     backtest_overfit = sub.add_parser(
         "audit-backtest-overfit",
@@ -6024,6 +6068,57 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.has_selection else 0
+    if args.command == "pipeline-robust-selection":
+        result = write_robust_selection_pipeline(
+            args.sweeps,
+            output_dir=args.out,
+            labels=args.labels,
+            group_cols=args.group_cols,
+            strategy=args.strategy,
+            market=args.market,
+            selection_min_pass_rate=args.min_selection_pass_rate,
+            selection_min_sweeps=args.min_selection_sweeps,
+            selection_min_median_net_pnl=args.min_selection_median_net_pnl,
+            selection_max_worst_drawdown=args.max_selection_worst_drawdown,
+            overfit_config=BacktestOverfitConfig(
+                score_column=args.score_column,
+                max_partitions=args.max_partitions,
+                require_selection_manifest=True,
+            ),
+            overfit_thresholds=BacktestOverfitThresholds(
+                min_partitions=args.min_partitions,
+                min_scenarios=args.min_scenarios,
+                max_probability_overfit=args.max_probability_overfit,
+                min_median_oos_score=args.min_median_oos_score,
+                min_oos_positive_rate=args.min_oos_positive_rate,
+                min_median_rank_correlation=args.min_median_rank_correlation,
+                max_median_degradation=args.max_median_degradation,
+                min_candidate_selection_rate=args.min_candidate_selection_rate,
+                max_candidate_overfit_rate=args.max_candidate_overfit_rate,
+                min_candidate_oos_positive_rate=args.min_candidate_oos_positive_rate,
+            ),
+            promotion_thresholds=PromotionThresholds(
+                min_pass_rate=args.min_promotion_pass_rate,
+                min_sweeps=args.min_promotion_sweeps,
+                min_median_net_pnl=args.min_promotion_median_net_pnl,
+                min_min_net_pnl=args.min_promotion_min_net_pnl,
+                max_worst_drawdown=args.max_promotion_worst_drawdown,
+                min_median_fills=args.min_promotion_median_fills,
+                max_runs_with_losing_regimes=(
+                    args.max_promotion_runs_with_losing_regimes
+                ),
+                max_otr=args.max_promotion_otr,
+                min_maker_share=args.min_promotion_maker_share,
+                min_markout_mean=args.min_promotion_markout_mean,
+                require_overfit_audit=True,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_actions and not result.action_queue.empty:
+            return 2
+        return 0
     if args.command == "audit-backtest-overfit":
         result = write_backtest_overfit_audit(
             args.selection,
