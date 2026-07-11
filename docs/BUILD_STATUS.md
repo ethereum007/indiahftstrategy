@@ -2203,7 +2203,15 @@
   manifest inputs/metadata before the non-submitting send packet is prepared.
   It also carries nested `synthetic_sidecar_proof` plus flattened sidecar counts
   from route enable and blocks send packet preparation when synthetic provider
-  folds are missing ready rehearsal sidecar proof.
+  folds are missing ready rehearsal sidecar proof. Broker-dispatch now also
+  revalidates route-enable's final provider-wrapper receipt proof: when
+  required receipts exist it requires exact `dispatch_roundtrip_provenance`
+  agreement with the route-enable manifest and root runtime receipt proof,
+  re-hashes every receipt and capture, and fingerprints both final file sets
+  before generic non-submitting dispatch planning. Proof or byte drift routes
+  repair back to provider route-enable; no-provider-wrapper packets and
+  wrappers without required receipts remain compatible and are marked not
+  applicable in the runbook.
   Broker-dispatch now also hydrates missing or blank route-enable
   `dispatch_roundtrip_*` summary fields from the route-enable
   `dispatch_roundtrip_provenance` config sidecar, while preserving explicit
@@ -2370,19 +2378,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1428 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1430 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider route-enable final-roundtrip receipt and
-compatibility paths pass. Bundle-linked clean route authorization and
-post-cutover manifest/receipt/capture drift pass together (`2 passed`);
+Latest focused gate: four provider broker-dispatch final-roundtrip receipt and
+compatibility paths pass. Bundle-linked clean non-submitting dispatch planning
+and post-route-enable manifest/receipt/capture drift pass together (`2 passed`);
 no-provider-wrapper and provider-wrapper-without-required-receipts
 compatibility also pass together (`2 passed`). The immediately preceding four
-cutover final-roundtrip, four broker-readiness final-roundtrip, four
-broker-dispatch-roundtrip, four broker-dispatch-ack, four broker-dispatch-send,
-four broker-dispatch, four earlier route-enable, four runtime-session
-broker-readiness, four runtime-session, four runtime-guard, four
-runtime-telemetry, four scale-up, four scorecard, eight
+route-enable final-roundtrip, four cutover final-roundtrip, four broker-readiness
+final-roundtrip, four broker-dispatch-roundtrip, four broker-dispatch-ack, four
+broker-dispatch-send, four earlier broker-dispatch, four earlier route-enable,
+four runtime-session broker-readiness, four runtime-session, four runtime-guard,
+four runtime-telemetry, four scale-up, four scorecard, eight
 launch/launch-evidence, and ten research/evidence receipt-boundary paths remain
 green, as do the complete receipt-aware live-evidence plus research-handoff
 suites (`25 passed`). The upstream provider-adapter/live-ingest (`22 passed`),
@@ -2393,7 +2401,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1428-test collection is fully green.
+1430-test collection is fully green.
 
 ## Next Build Targets
 

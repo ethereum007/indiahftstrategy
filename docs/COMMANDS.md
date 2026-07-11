@@ -5418,6 +5418,17 @@ carries the route-enable-retained final round-trip `synthetic_sidecar_proof`
 plus flattened `dispatch_roundtrip_synthetic_*` counters; if synthetic final
 dry-run folds are present without ready rehearsal sidecars, send preparation is
 blocked and routed back to `review-provider-market-data-imbalance-route-enable`.
+When a route-enable packet carries a provider-wrapper final receipt proof with
+required adapter receipts, broker-dispatch also requires exact
+`dispatch_roundtrip_provenance` agreement with the route-enable manifest and
+root runtime receipt proof, re-hashes every final receipt and capture before
+generic dispatch planning, and fingerprints accepted files as
+`dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`. Proof or byte drift leaves nested
+generic `broker_dispatch` absent and routes repair to
+`review-provider-market-data-imbalance-route-enable`. No-provider-wrapper
+packets and provider wrappers without required receipts remain supported and
+are marked not applicable rather than blocked in the runbook.
 When a route-enable CSV is
 sparse but its config sidecar has `dispatch_roundtrip_provenance`,
 broker-dispatch hydrates missing or blank `dispatch_roundtrip_*` fields,
