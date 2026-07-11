@@ -72,15 +72,26 @@
   breaches fail closed. Sweep integrity is bound into nested promotion so a
   leaf cannot appear ready when root provenance failed. Ready output advances
   only to broker-neutral order staging with `authorizes_submission=false`.
+- Research families can now be registered prospectively before outcomes exist.
+  `register-research-family` normalizes and validates a CSV plan containing
+  strategy, market, hypothesis, metric, maximum search breadth, at least six
+  development periods, at least three holdouts, and a future result root for
+  each study. It emits a deterministic registration ID, lock file, runbook, and
+  manifest bound to the original plan. Shared manifest timestamps now retain
+  microsecond UTC precision so post-hoc registrations can fail time ordering.
 - Cross-strategy research now has a declared-family multiple-testing ledger.
   `audit-research-family` verifies each robust-selection root, includes failed
   and non-ready attempts in the family size, and applies Holm-Bonferroni to the
   already scenario-adjusted candidate p-values. Only source-ready candidates
   with passed holdout proof can survive. Duplicate roots, drift, missing
   p-values, authorizing source claims, and an incomplete-family attestation all
-  fail closed. The manifest records the operator's completeness attestation
-  while the runbook makes clear that omitted experiments cannot be detected by
-  software and invalidate the family-wise error-control claim.
+  fail closed. Optional prospective closure additionally requires a current
+  matching registration/lock, exact family labels and result paths, and a
+  registration timestamp earlier than every result manifest. Closure also
+  matches strategy, market, primary metric, maximum scenario breadth, and exact
+  development/holdout counts against each registered row. The audit still
+  records the operator's completeness attestation because omitted experiments
+  cannot be detected by software and invalidate the error-control claim.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2466,20 +2477,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1479 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1486 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: declared research-family, chronological holdout,
-multiple-testing-aware significance, robust-selection, CSCV backtest-overfit,
-manifest-bound promotion, sweep comparison, experiment catalog, manifest, and
-strategy scorecard suites pass together (`115 passed`). This covers Holm
-correction over scenario-adjusted p-values, failed-attempt accounting,
-complete-family attestation, duplicate, drift, and malformed-p-value rejection,
-development/holdout isolation, frozen-candidate evaluation without
-re-selection, holdout-loss rejection, exact sign-test correction,
-deterministic bootstrap evidence, stable, partition-memorized, and
-underpowered orchestration; strict lineage and CLI fail-closed behavior; and
-family, holdout, significance, overfit, and source-selection drift paths.
+Latest focused gate: prospective family registration/closure, declared
+research-family, chronological holdout, multiple-testing-aware significance,
+robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
+comparison, experiment catalog, manifest, and strategy scorecard suites pass
+together (`122 passed`). This covers deterministic plan locking, exact
+family/label/path/contract closure, post-hoc registration and excess-search
+breadth rejection, Holm correction,
+failed-attempt accounting, complete-family attestation, malformed-p-value and
+drift rejection, development/holdout isolation, frozen-candidate evaluation,
+exact sign-test correction, deterministic bootstrap evidence, memorized and
+underpowered orchestration, strict lineage, and CLI fail-closed behavior.
 Manifest generation, the existing surface research/launch pipeline, and
 generic launch-bundle compatibility also pass together (`14 passed`).
 The immediately preceding CSCV backtest-overfit audit, manifest-bound
@@ -2514,7 +2525,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1479-test collection is fully green.
+1486-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2523,6 +2534,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add prospective research-family registration and closure so planned studies
-   are fingerprinted before outcomes are produced, reducing reliance on a
-   retrospective completeness attestation.
+4. Bind an optional prospective registration ID directly into each robust
+   selection root so result manifests prove they were launched from the
+   registered study row, not only matched during family closure.

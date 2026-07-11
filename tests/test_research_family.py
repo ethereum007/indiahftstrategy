@@ -9,6 +9,9 @@ from reports.research_family import (
     ResearchFamilyConfig,
     write_research_family_audit,
 )
+from reports.research_family_registration import (
+    write_research_family_registration,
+)
 
 
 def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
@@ -193,6 +196,135 @@ def test_research_family_blocks_out_of_range_adjusted_pvalue(tmp_path):
     assert pd.isna(invalid["holm_adjusted_pvalue"])
 
 
+def test_research_family_closes_matching_prospective_registration(tmp_path):
+    plan_path = _write_registration_plan(tmp_path, ["leadlag", "imbalance"])
+    registration_dir = tmp_path / "registration"
+    registration = write_research_family_registration(
+        plan_path,
+        output_dir=registration_dir,
+        family_id="prospective_family",
+    )
+    studies = [
+        _write_study(tmp_path, "leadlag", adjusted_pvalue=0.01),
+        _write_study(tmp_path, "imbalance", adjusted_pvalue=0.02),
+    ]
+
+    report = write_research_family_audit(
+        studies,
+        output_dir=tmp_path / "family",
+        registration_path=registration_dir,
+        config=ResearchFamilyConfig(
+            family_id="prospective_family",
+            declaration_complete_attested=True,
+            require_prospective_registration=True,
+        ),
+    )
+
+    summary = report.summary.iloc[0]
+    manifest = json.loads(
+        (tmp_path / "family" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert registration.passed
+    assert report.passed
+    assert bool(summary["prospective_registration_passed"])
+    assert bool(summary["registration_closed"])
+    assert summary["registration_id"] == registration.summary.iloc[0][
+        "registration_id"
+    ]
+    assert report.config["prospective_registration"]["paths_match"]
+    assert report.config["prospective_registration"]["prospective"]
+    assert manifest["inputs"]["research_family_registration"]["kind"] == "directory"
+    assert manifest["extra"]["registration_closed"]
+
+
+def test_research_family_blocks_post_hoc_registration(tmp_path):
+    studies = [
+        _write_study(tmp_path, "leadlag", adjusted_pvalue=0.01),
+        _write_study(tmp_path, "imbalance", adjusted_pvalue=0.02),
+    ]
+    plan_path = _write_registration_plan(tmp_path, ["leadlag", "imbalance"])
+    registration_dir = tmp_path / "registration"
+    write_research_family_registration(
+        plan_path,
+        output_dir=registration_dir,
+        family_id="post_hoc_family",
+    )
+
+    report = write_research_family_audit(
+        studies,
+        output_dir=tmp_path / "family",
+        registration_path=registration_dir,
+        config=ResearchFamilyConfig(
+            family_id="post_hoc_family",
+            declaration_complete_attested=True,
+            require_prospective_registration=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.passed
+    assert "prospective" in failed
+    assert not bool(report.summary.iloc[0]["registration_closed"])
+    assert report.config["selected_candidates"] == []
+
+
+def test_research_family_blocks_when_required_registration_is_missing(tmp_path):
+    studies = [
+        _write_study(tmp_path, "leadlag", adjusted_pvalue=0.01),
+        _write_study(tmp_path, "imbalance", adjusted_pvalue=0.02),
+    ]
+
+    report = write_research_family_audit(
+        studies,
+        output_dir=tmp_path / "family",
+        config=ResearchFamilyConfig(
+            family_id="missing_registration",
+            declaration_complete_attested=True,
+            require_prospective_registration=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.passed
+    assert "prospective_registration_provided" in failed
+    assert not bool(report.summary.iloc[0]["registration_closed"])
+
+
+def test_research_family_blocks_registered_search_breadth_breach(tmp_path):
+    plan_path = _write_registration_plan(tmp_path, ["leadlag", "imbalance"])
+    plan = pd.read_csv(plan_path)
+    plan["max_scenarios"] = 2
+    plan.to_csv(plan_path, index=False)
+    registration_dir = tmp_path / "registration"
+    write_research_family_registration(
+        plan_path,
+        output_dir=registration_dir,
+        family_id="narrow_search_family",
+    )
+    studies = [
+        _write_study(tmp_path, "leadlag", adjusted_pvalue=0.01),
+        _write_study(tmp_path, "imbalance", adjusted_pvalue=0.02),
+    ]
+
+    report = write_research_family_audit(
+        studies,
+        output_dir=tmp_path / "family",
+        registration_path=registration_dir,
+        config=ResearchFamilyConfig(
+            family_id="narrow_search_family",
+            declaration_complete_attested=True,
+            require_prospective_registration=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.passed
+    assert "search_breadth_within_plan" in failed
+    assert not report.config["prospective_registration"][
+        "search_breadth_within_plan"
+    ]
+
+
 def _write_study(
     tmp_path,
     label,
@@ -203,7 +335,9 @@ def _write_study(
 ):
     root = tmp_path / label
     significance_dir = root / "02_backtest_significance"
+    overfit_dir = root / "02_backtest_overfit"
     significance_dir.mkdir(parents=True)
+    overfit_dir.mkdir(parents=True)
     pd.DataFrame(
         [
             {
@@ -221,11 +355,22 @@ def _write_study(
     pd.DataFrame(
         [
             {
+                "passed": True,
+                "score_column": "robust_score",
+                "scenario_count": 3,
+            }
+        ]
+    ).to_csv(overfit_dir / "backtest_overfit_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
                 "ready": ready,
                 "strategy": label,
                 "market": "india_nse_index_derivatives",
                 "candidate_scenario_key": f"scenario={label}",
                 "overfit_scenario_count": 3,
+                "development_sweep_count": 6,
+                "holdout_sweep_count": 3,
                 "adjusted_sign_pvalue": adjusted_pvalue,
                 "backtest_holdout_passed": holdout_passed,
                 "next_gate": "stage-orders" if ready else "keep-in-research",
@@ -246,3 +391,24 @@ def _write_study(
         inputs={"market_data": source},
     )
     return root
+
+
+def _write_registration_plan(tmp_path, labels):
+    plan_path = tmp_path / "family_plan.csv"
+    pd.DataFrame(
+        [
+            {
+                "study_label": label,
+                "strategy": label,
+                "market": "india_nse_index_derivatives",
+                "hypothesis": f"{label} remains positive after costs",
+                "planned_study_path": label,
+                "primary_metric": "robust_score",
+                "max_scenarios": 12,
+                "development_sweeps": 6,
+                "holdout_sweeps": 3,
+            }
+            for label in labels
+        ]
+    ).to_csv(plan_path, index=False)
+    return plan_path

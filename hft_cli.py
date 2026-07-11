@@ -107,6 +107,10 @@ from reports.research_family import (
     ResearchFamilyThresholds,
     write_research_family_audit,
 )
+from reports.research_family_registration import (
+    ResearchFamilyRegistrationThresholds,
+    write_research_family_registration,
+)
 from reports.provider_market_data_fetcher import (
     ProviderMarketDataFetcherConfig,
     write_provider_market_data_fetcher_plan,
@@ -2810,6 +2814,31 @@ def main(argv: list[str] | None = None) -> int:
     backtest_holdout.add_argument("--fail-on-blocked-actions", action="store_true")
     backtest_holdout.add_argument("--fail-on-actions", action="store_true")
 
+    research_family_registration = sub.add_parser(
+        "register-research-family",
+        help="Fingerprint a planned research family before study outcomes exist.",
+    )
+    research_family_registration.add_argument("--plan", required=True)
+    research_family_registration.add_argument("--out", required=True)
+    research_family_registration.add_argument("--family-id", required=True)
+    research_family_registration.add_argument("--min-studies", type=int, default=2)
+    research_family_registration.add_argument(
+        "--min-development-sweeps",
+        type=int,
+        default=6,
+    )
+    research_family_registration.add_argument(
+        "--min-holdout-sweeps",
+        type=int,
+        default=3,
+    )
+    research_family_registration.add_argument("--fail-on-breach", action="store_true")
+    research_family_registration.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    research_family_registration.add_argument("--fail-on-actions", action="store_true")
+
     research_family = sub.add_parser(
         "audit-research-family",
         help="Apply family-wise correction across declared robust candidate studies.",
@@ -2819,6 +2848,11 @@ def main(argv: list[str] | None = None) -> int:
     research_family.add_argument("--family-id", required=True)
     research_family.add_argument("--label", action="append", dest="labels")
     research_family.add_argument("--attest-complete-family", action="store_true")
+    research_family.add_argument("--registration", default=None)
+    research_family.add_argument(
+        "--require-prospective-registration",
+        action="store_true",
+    )
     research_family.add_argument(
         "--allow-missing-study-manifests",
         action="store_true",
@@ -6427,11 +6461,32 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "register-research-family":
+        result = write_research_family_registration(
+            args.plan,
+            output_dir=args.out,
+            family_id=args.family_id,
+            thresholds=ResearchFamilyRegistrationThresholds(
+                min_studies=args.min_studies,
+                min_development_sweeps=args.min_development_sweeps,
+                min_holdout_sweeps=args.min_holdout_sweeps,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and action_count > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "audit-research-family":
         result = write_research_family_audit(
             args.studies,
             output_dir=args.out,
             labels=args.labels,
+            registration_path=args.registration,
             config=ResearchFamilyConfig(
                 family_id=args.family_id,
                 declaration_complete_attested=args.attest_complete_family,
@@ -6440,6 +6495,9 @@ def main(argv: list[str] | None = None) -> int:
                 ),
                 require_source_ready=True,
                 require_holdout_passed=True,
+                require_prospective_registration=(
+                    args.require_prospective_registration
+                ),
             ),
             thresholds=ResearchFamilyThresholds(
                 min_studies=args.min_studies,

@@ -2358,6 +2358,55 @@ When multiple strategies or research questions are tested as one program,
 declare every robust-selection root in the research-family audit below before
 treating any candidate as a family-wise survivor.
 
+## Prospective Research Family Registration
+
+Create a plan CSV before running any studies. Paths are resolved relative to
+the plan file and may point to result folders that do not exist yet:
+
+```csv
+study_label,strategy,market,hypothesis,planned_study_path,primary_metric,max_scenarios,development_sweeps,holdout_sweeps
+leadlag,leadlag,india_nse_index_derivatives,Leader moves predict laggard net of costs,results/leadlag,robust_score,24,6,3
+imbalance,imbalance,india_nse_index_derivatives,Queue imbalance predicts executable edge,results/imbalance,robust_score,36,6,3
+```
+
+Lock and manifest the normalized plan:
+
+```powershell
+python -m hft_cli register-research-family `
+  --plan research\india_index_microstructure_v1.csv `
+  --family-id india_index_microstructure_v1 `
+  --out runs\research_registration\india_index_microstructure_v1 `
+  --min-studies 2 `
+  --min-development-sweeps 6 `
+  --min-holdout-sweeps 3 `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The registration validates unique labels and future result roots, required
+hypotheses and metrics, positive search breadth, and development/holdout period
+counts. Its deterministic registration ID hashes the family ID plus normalized
+plan. `registration.lock.json` and the manifest bind that ID to the original
+plan file. Changing the plan requires a new registration.
+
+Outputs:
+
+```text
+research_family_registration_studies.csv
+research_family_registration_checks.csv
+research_family_registration_summary.csv
+research_family_registration_action_queue.csv
+research_family_registration_config.json
+research_family_registration_runbook.md
+registration.lock.json
+manifest.json
+```
+
+Manifest timestamps now retain microsecond UTC precision so closure can fail
+when registration was generated after a result manifest. Clock ordering is
+supporting evidence, not an external timestamp authority; preserve registration
+and result manifests in version control for stronger auditability.
+
 ## Research Family Audit
 
 Apply Holm-Bonferroni correction across a declared family of robust candidate
@@ -2373,6 +2422,8 @@ python -m hft_cli audit-research-family `
   --label imbalance `
   --label surface_mm `
   --family-id india_index_microstructure_v1 `
+  --registration runs\research_registration\india_index_microstructure_v1 `
+  --require-prospective-registration `
   --attest-complete-family `
   --min-studies 2 `
   --max-holm-adjusted-pvalue 0.10 `
@@ -2386,7 +2437,12 @@ The audit verifies every robust root and source-input fingerprint, then applies
 Holm correction to each study's already scenario-count-adjusted sign-test
 p-value. Non-ready and failed studies remain in the family size but cannot
 become candidates. Surviving rows must also retain passed holdout proof and a
-non-authorizing source root.
+non-authorizing source root. When registration is supplied, closure verifies
+the current registration manifest and lock ID, exact family/label/path match,
+strategy, market, primary metric, actual scenario count within registered
+search breadth, exact development/holdout counts, and that registration
+predates every study manifest. A supplied registration always binds the audit;
+`--require-prospective-registration` also blocks when it is missing.
 
 `--attest-complete-family` is mandatory for a passing report. It records the
 operator's assertion that every attempted study in the defined family is

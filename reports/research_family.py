@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import asdict, dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
+from reports.research_family_registration import registration_id_for_plan
 
 
 RUN_TYPE = "research_family_audit"
@@ -44,6 +46,7 @@ class ResearchFamilyConfig:
     require_study_manifests: bool = True
     require_source_ready: bool = True
     require_holdout_passed: bool = True
+    require_prospective_registration: bool = False
 
 
 @dataclass(frozen=True)
@@ -76,6 +79,7 @@ def evaluate_research_family(
     *,
     config: ResearchFamilyConfig,
     thresholds: ResearchFamilyThresholds | None = None,
+    registration: dict[str, Any] | None = None,
 ) -> ResearchFamilyReport:
     thresholds = thresholds or ResearchFamilyThresholds()
     _validate(config, thresholds)
@@ -123,8 +127,10 @@ def evaluate_research_family(
         (~frame.get("source_authorizes_submission", pd.Series(False, index=frame.index))
          .map(_to_bool)).sum()
     )
+    registration = registration or {}
     checks = pd.DataFrame(
         [
+            *_registration_checks(registration, config),
             {
                 "check": "family_declaration_attested",
                 "actual": bool(config.declaration_complete_attested),
@@ -213,6 +219,14 @@ def evaluate_research_family(
                 "holdout_passed_count": _bool_count(frame, "holdout_passed"),
                 "valid_adjusted_pvalue_count": valid_pvalue_count,
                 "family_candidate_count": family_candidate_count,
+                "registration_provided": bool(registration.get("provided", False)),
+                "prospective_registration_passed": bool(
+                    registration.get("passed", False)
+                ),
+                "registration_id": str(registration.get("registration_id", "")),
+                "registration_closed": bool(
+                    passed and registration.get("passed", False)
+                ),
                 "declaration_complete_attested": bool(
                     config.declaration_complete_attested
                 ),
@@ -247,6 +261,7 @@ def evaluate_research_family(
         "parameters": asdict(config),
         "thresholds": asdict(thresholds),
         "summary": _record(summary.iloc[0]),
+        "prospective_registration": _jsonable(registration),
         "candidate_decisions": [_record(row) for _, row in frame.iterrows()],
         "selected_candidates": (
             [_record(row) for _, row in selected.iterrows()] if passed else []
@@ -268,6 +283,7 @@ def write_research_family_audit(
     config: ResearchFamilyConfig,
     labels: list[str] | None = None,
     thresholds: ResearchFamilyThresholds | None = None,
+    registration_path: str | Path | None = None,
 ) -> ResearchFamilyReport:
     paths = [Path(path).resolve() for path in study_paths]
     if not paths:
@@ -276,10 +292,16 @@ def write_research_family_audit(
         raise ValueError("labels must match study_paths length")
     resolved_labels = labels or [path.stem for path in paths]
     studies = _read_studies(paths, resolved_labels)
+    registration = _read_registration(
+        registration_path,
+        family_id=config.family_id,
+        studies=studies,
+    )
     report = evaluate_research_family(
         studies,
         config=config,
         thresholds=thresholds,
+        registration=registration,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -302,6 +324,10 @@ def write_research_family_audit(
             "declaration_complete_attested": bool(
                 config.declaration_complete_attested
             ),
+            "registration_path": str(registration.get("path", "")),
+            "registration_manifest_sha256": str(
+                registration.get("manifest_sha256", "")
+            ),
         }
     )
     (out / "research_family_config.json").write_text(
@@ -313,6 +339,18 @@ def write_research_family_audit(
         encoding="utf-8",
     )
     manifests = [path / "manifest.json" for path in paths]
+    inputs: dict[str, Any] = {
+        "robust_studies": paths,
+        "robust_study_manifests": [
+            path for path in manifests if path.is_file()
+        ],
+    }
+    if registration.get("provided", False):
+        registration_root = Path(str(registration["path"]))
+        inputs["research_family_registration"] = registration_root
+        registration_manifest = registration_root / "manifest.json"
+        if registration_manifest.is_file():
+            inputs["research_family_registration_manifest"] = registration_manifest
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
@@ -321,12 +359,7 @@ def write_research_family_audit(
             "thresholds": asdict(thresholds or ResearchFamilyThresholds()),
             "labels": resolved_labels,
         },
-        inputs={
-            "robust_studies": paths,
-            "robust_study_manifests": [
-                path for path in manifests if path.is_file()
-            ],
-        },
+        inputs=inputs,
         extra={
             "passed": bool(report.passed),
             "family_id": config.family_id,
@@ -339,6 +372,13 @@ def write_research_family_audit(
             ),
             "family_wise_error_control_claimed": bool(
                 report.summary.iloc[0]["family_wise_error_control_claimed"]
+            ),
+            "prospective_registration_passed": bool(
+                report.summary.iloc[0]["prospective_registration_passed"]
+            ),
+            "registration_id": str(report.summary.iloc[0]["registration_id"]),
+            "registration_closed": bool(
+                report.summary.iloc[0]["registration_closed"]
             ),
             "authorizes_submission": False,
         },
@@ -362,6 +402,7 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
             / "02_backtest_significance"
             / "backtest_significance_summary.csv"
         )
+        overfit_path = path / "02_backtest_overfit" / "backtest_overfit_summary.csv"
         manifest_path = path / "manifest.json"
         if not summary_path.is_file():
             raise FileNotFoundError(
@@ -375,11 +416,15 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
             if significance_path.is_file()
             else pd.DataFrame()
         )
+        overfit = pd.read_csv(overfit_path) if overfit_path.is_file() else pd.DataFrame()
         source = summary.iloc[0]
         evidence = (
             significance.iloc[0]
             if not significance.empty
             else pd.Series(dtype=object)
+        )
+        overfit_evidence = (
+            overfit.iloc[0] if not overfit.empty else pd.Series(dtype=object)
         )
         integrity = verify_experiment_manifest(
             manifest_path,
@@ -387,9 +432,11 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
             required_artifacts=(
                 "robust_selection_pipeline_summary.csv",
                 "02_backtest_significance/backtest_significance_summary.csv",
+                "02_backtest_overfit/backtest_overfit_summary.csv",
             ),
             require_input_fingerprints=True,
         )
+        manifest_payload = _read_json_object(manifest_path)
         rows.append(
             {
                 "study_label": str(label),
@@ -400,6 +447,9 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
                 ),
                 "manifest_current": integrity.passed,
                 "manifest_error": integrity.error,
+                "manifest_generated_at_utc": str(
+                    manifest_payload.get("generated_at_utc", "")
+                ),
                 "source_ready": _to_bool(source.get("ready", False)),
                 "holdout_passed": _to_bool(
                     source.get("backtest_holdout_passed", False)
@@ -409,6 +459,12 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
                 "candidate_scenario": str(
                     source.get("candidate_scenario_key", "")
                 ),
+                "primary_metric": str(overfit_evidence.get("score_column", "")),
+                "scenario_count": _int(source.get("overfit_scenario_count", 0)),
+                "development_sweeps": _int(
+                    source.get("development_sweep_count", 0)
+                ),
+                "holdout_sweeps": _int(source.get("holdout_sweep_count", 0)),
                 "scenario_trial_count": _int(
                     evidence.get(
                         "scenario_trial_count",
@@ -429,6 +485,331 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def _read_registration(
+    raw_path: str | Path | None,
+    *,
+    family_id: str,
+    studies: pd.DataFrame,
+) -> dict[str, Any]:
+    if raw_path is None:
+        return {
+            "provided": False,
+            "passed": False,
+            "path": "",
+            "registration_id": "",
+        }
+    path = Path(raw_path).resolve()
+    root = path if path.is_dir() else path.parent
+    summary_path = root / "research_family_registration_summary.csv"
+    studies_path = root / "research_family_registration_studies.csv"
+    config_path = root / "research_family_registration_config.json"
+    lock_path = root / "registration.lock.json"
+    manifest_path = root / "manifest.json"
+    for required in (summary_path, studies_path, config_path, lock_path):
+        if not required.is_file():
+            raise FileNotFoundError(
+                f"required research family registration artifact not found: {required}"
+            )
+    registration_summary = pd.read_csv(summary_path)
+    registration_studies = pd.read_csv(studies_path)
+    if registration_summary.empty:
+        raise ValueError(f"research family registration summary is empty: {summary_path}")
+    summary = registration_summary.iloc[0]
+    config_payload = _read_json_object(config_path)
+    lock_payload = _read_json_object(lock_path)
+    manifest_payload = _read_json_object(manifest_path)
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="research_family_registration",
+        required_artifacts=(
+            "research_family_registration_summary.csv",
+            "research_family_registration_studies.csv",
+            "research_family_registration_config.json",
+            "registration.lock.json",
+        ),
+        require_input_fingerprints=True,
+    )
+    registered_family = str(summary.get("family_id", ""))
+    family_matches = bool(registered_family and registered_family == family_id)
+    declared_labels = studies["study_label"].astype(str).tolist()
+    registered_labels = registration_studies["study_label"].astype(str).tolist()
+    labels_match = bool(
+        len(declared_labels) == len(registered_labels)
+        and set(declared_labels) == set(registered_labels)
+    )
+    declared_paths = {
+        _canonical_path(value) for value in studies["study_path"].astype(str)
+    }
+    registered_paths = {
+        _canonical_path(value)
+        for value in registration_studies["planned_study_path"].astype(str)
+    }
+    paths_match = bool(
+        len(declared_paths) == len(studies)
+        and len(registered_paths) == len(registration_studies)
+        and declared_paths == registered_paths
+    )
+    contract = _registration_contract_evidence(registration_studies, studies)
+    manifest_extra = manifest_payload.get("extra", {})
+    recomputed_registration_id = registration_id_for_plan(
+        registered_family,
+        registration_studies,
+    )
+    ids = {
+        str(summary.get("registration_id", "")),
+        str(config_payload.get("registration_id", "")),
+        str(lock_payload.get("registration_id", "")),
+        str(manifest_extra.get("registration_id", ""))
+        if isinstance(manifest_extra, dict)
+        else "",
+        recomputed_registration_id,
+    }
+    registration_id_consistent = bool(len(ids) == 1 and "" not in ids)
+    registration_id = next(iter(ids)) if registration_id_consistent else ""
+    registration_time = _parse_datetime(manifest_payload.get("generated_at_utc"))
+    study_times = [
+        _parse_datetime(value)
+        for value in studies["manifest_generated_at_utc"].astype(str)
+    ]
+    prospective = bool(
+        registration_time is not None
+        and study_times
+        and all(
+            study_time is not None and registration_time < study_time
+            for study_time in study_times
+        )
+    )
+    status_values = [
+        _to_bool(summary.get("passed", False)),
+        _to_bool(config_payload.get("passed", False)),
+        _to_bool(lock_payload.get("passed", False)),
+        _to_bool(manifest_extra.get("passed", False))
+        if isinstance(manifest_extra, dict)
+        else False,
+    ]
+    registration_ready = bool(all(status_values))
+    passed = bool(
+        registration_ready
+        and integrity.passed
+        and family_matches
+        and labels_match
+        and paths_match
+        and contract["strategy_market_metric_match"]
+        and contract["search_breadth_within_plan"]
+        and contract["period_counts_match"]
+        and registration_id_consistent
+        and prospective
+    )
+    return {
+        "provided": True,
+        "passed": passed,
+        "path": str(root),
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": (
+            file_sha256(manifest_path) if manifest_path.is_file() else ""
+        ),
+        "manifest_current": bool(integrity.passed),
+        "manifest_error": str(integrity.error),
+        "registration_ready": registration_ready,
+        "family_matches": family_matches,
+        "labels_match": labels_match,
+        "paths_match": paths_match,
+        **contract,
+        "registration_id_consistent": registration_id_consistent,
+        "registration_id": registration_id,
+        "registration_generated_at_utc": str(
+            manifest_payload.get("generated_at_utc", "")
+        ),
+        "prospective": prospective,
+    }
+
+
+def _registration_checks(
+    registration: dict[str, Any],
+    config: ResearchFamilyConfig,
+) -> list[dict[str, Any]]:
+    provided = bool(registration.get("provided", False))
+    rows: list[dict[str, Any]] = []
+    if config.require_prospective_registration:
+        rows.append(
+            _check(
+                "prospective_registration_provided",
+                provided,
+                "is",
+                True,
+                provided,
+                "a prospective family registration is required for closure",
+            )
+        )
+    if not provided:
+        return rows
+    for check, reason in (
+        ("registration_ready", "prospective registration did not pass"),
+        ("manifest_current", "registration artifacts or plan input drifted"),
+        ("family_matches", "registration belongs to a different family"),
+        ("labels_match", "declared study labels differ from the registration"),
+        ("paths_match", "robust-study roots differ from the registered plan"),
+        (
+            "strategy_market_metric_match",
+            "actual strategy, market, or primary metric differs from the plan",
+        ),
+        (
+            "search_breadth_within_plan",
+            "actual scenario count exceeds the registered maximum",
+        ),
+        (
+            "period_counts_match",
+            "actual development or holdout period count differs from the plan",
+        ),
+        (
+            "registration_id_consistent",
+            "registration ID differs across summary, config, lock, or manifest",
+        ),
+        ("prospective", "registration was not created before every study result"),
+    ):
+        passed = bool(registration.get(check, False))
+        rows.append(_check(check, passed, "is", True, passed, reason))
+    return rows
+
+
+def _check(
+    check: str,
+    actual: Any,
+    operator: str,
+    expected: Any,
+    passed: bool,
+    reason: str,
+) -> dict[str, Any]:
+    return {
+        "check": check,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "passed": bool(passed),
+        "reason": "" if passed else reason,
+    }
+
+
+def _canonical_path(value: Any) -> str:
+    return str(Path(str(value)).resolve()).casefold()
+
+
+def _registration_contract_evidence(
+    registration_studies: pd.DataFrame,
+    studies: pd.DataFrame,
+) -> dict[str, bool]:
+    if registration_studies.empty or studies.empty:
+        return {
+            "strategy_market_metric_match": False,
+            "search_breadth_within_plan": False,
+            "period_counts_match": False,
+        }
+    required_registration = {
+        "study_label",
+        "strategy",
+        "market",
+        "primary_metric",
+        "max_scenarios",
+        "development_sweeps",
+        "holdout_sweeps",
+    }
+    required_actual = {
+        "study_label",
+        "strategy",
+        "market",
+        "primary_metric",
+        "scenario_count",
+        "development_sweeps",
+        "holdout_sweeps",
+    }
+    if not required_registration.issubset(registration_studies.columns) or not (
+        required_actual.issubset(studies.columns)
+    ):
+        return {
+            "strategy_market_metric_match": False,
+            "search_breadth_within_plan": False,
+            "period_counts_match": False,
+        }
+    if registration_studies["study_label"].duplicated().any() or studies[
+        "study_label"
+    ].duplicated().any():
+        return {
+            "strategy_market_metric_match": False,
+            "search_breadth_within_plan": False,
+            "period_counts_match": False,
+        }
+    planned = registration_studies[list(required_registration)].copy()
+    actual = studies[list(required_actual)].copy()
+    merged = planned.merge(
+        actual,
+        on="study_label",
+        how="inner",
+        suffixes=("_planned", "_actual"),
+        validate="one_to_one",
+    )
+    complete = bool(len(merged) == len(planned) == len(actual))
+    identity_match = bool(
+        complete
+        and merged["strategy_planned"].astype(str).eq(
+            merged["strategy_actual"].astype(str)
+        ).all()
+        and merged["market_planned"].astype(str).eq(
+            merged["market_actual"].astype(str)
+        ).all()
+        and merged["primary_metric_planned"].astype(str).eq(
+            merged["primary_metric_actual"].astype(str)
+        ).all()
+    )
+    planned_scenarios = pd.to_numeric(merged["max_scenarios"], errors="coerce")
+    actual_scenarios = pd.to_numeric(merged["scenario_count"], errors="coerce")
+    breadth_match = bool(
+        complete
+        and np.isfinite(planned_scenarios).all()
+        and np.isfinite(actual_scenarios).all()
+        and actual_scenarios.gt(0).all()
+        and actual_scenarios.le(planned_scenarios).all()
+    )
+    period_match = bool(
+        complete
+        and pd.to_numeric(
+            merged["development_sweeps_planned"], errors="coerce"
+        ).eq(
+            pd.to_numeric(
+                merged["development_sweeps_actual"], errors="coerce"
+            )
+        ).all()
+        and pd.to_numeric(
+            merged["holdout_sweeps_planned"], errors="coerce"
+        ).eq(
+            pd.to_numeric(merged["holdout_sweeps_actual"], errors="coerce")
+        ).all()
+    )
+    return {
+        "strategy_market_metric_match": identity_match,
+        "search_breadth_within_plan": breadth_match,
+        "period_counts_match": period_match,
+    }
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return value
 
 
 def _holm_adjust(
@@ -519,6 +900,22 @@ def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _recommendation(check: str) -> str:
+    if check == "prospective_registration_provided":
+        return "register_the_family_before_producing_study_outcomes"
+    if check in {
+        "registration_ready",
+        "manifest_current",
+        "registration_id_consistent",
+    }:
+        return "restore_the_original_current_registration_and_lock"
+    if check in {"family_matches", "labels_match", "paths_match"}:
+        return "close_exactly_the_family_labels_and_paths_that_were_registered"
+    if check == "strategy_market_metric_match":
+        return "rerun_each_study_with_its_registered_strategy_market_and_metric"
+    if check in {"search_breadth_within_plan", "period_counts_match"}:
+        return "create_a_new_registration_before_changing_search_or_period_counts"
+    if check == "prospective":
+        return "create_a_new_registration_before_running_a_new_study_family"
     if check == "family_declaration_attested":
         return "declare_every_attempted_study_then_attest_family_completeness"
     if check == "study_count":
@@ -594,6 +991,11 @@ def _runbook(
         "",
         f"- Status: **{'passed' if bool(summary['passed']) else 'blocked'}**",
         f"- Family: `{summary['family_id']}`",
+        "- Prospective registration: "
+        f"`{str(bool(summary['prospective_registration_passed'])).lower()}`",
+        f"- Registration ID: `{summary['registration_id']}`",
+        "- Registration closed: "
+        f"`{str(bool(summary['registration_closed'])).lower()}`",
         "- Complete-family attestation: "
         f"`{str(bool(summary['declaration_complete_attested'])).lower()}`",
         f"- Declared studies: {int(summary['study_count'])}",
