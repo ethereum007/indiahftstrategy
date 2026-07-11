@@ -86,6 +86,14 @@
   each study. It emits a deterministic registration ID, lock file, runbook, and
   manifest bound to the original plan. Shared manifest timestamps now retain
   microsecond UTC precision so post-hoc registrations can fail time ordering.
+- Registered research families now have an immutable launch and closure-
+  coverage matrix. `plan-research-family-launches` consumes prospective JSON
+  sweep/group specifications, verifies every sweep manifest, emits a
+  deterministic argv contract per registered row, and classifies results as
+  completed-ready, completed-blocked, explicitly abandoned, or never launched.
+  Existing roots count only when they bind the exact registration ID, label,
+  and manifest SHA. Abandonments require a unique reason ledger row and an
+  explicit operator attestation; all artifacts remain non-authorizing.
 - Cross-strategy research now has a declared-family multiple-testing ledger.
   `audit-research-family` verifies each robust-selection root, includes failed
   and non-ready attempts in the family size, and applies Holm-Bonferroni to the
@@ -100,7 +108,10 @@
   requires every robust source root to carry a passed binding to its exact
   registered study label and to fingerprint the same registration-manifest SHA
   used for closure. Retrospective path and contract matching alone cannot close
-  a family. The audit still
+  a family. A current launch matrix can now add attested abandoned studies to
+  Holm's denominator at conservative adjusted p-value 1.0 while keeping them
+  ineligible for candidacy. Never-launched rows, omitted completed roots, launch
+  drift, and incomplete coverage block closure. The audit still
   records the operator's completeness attestation because omitted experiments
   cannot be detected by software and invalidate the error-control claim.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
@@ -2488,15 +2499,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1490 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1494 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`126 passed`). This covers deterministic plan locking, direct
-registered-row and registration-manifest source binding, exact
+together (`130 passed`). This covers deterministic plan locking, immutable
+registered-study launch contracts, current sweep and result coverage,
+never-launched blocking, attested reasoned abandonment, conservative abandoned
+study accounting, direct registered-row and registration-manifest source binding, exact
 family/label/path/contract closure, missing registration, post-hoc registration,
 source-ID mismatch, and excess-search-breadth rejection, Holm correction,
 failed-attempt accounting, complete-family attestation, malformed-p-value and
@@ -2537,7 +2550,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1490-test collection is fully green.
+1494-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2546,6 +2559,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Generate a registration-driven study launch matrix with one immutable
-   robust-selection command contract per planned row and closure coverage for
-   never-launched or abandoned registered studies.
+4. Bind each executed robust-selection root to its immutable launch-contract ID
+   in addition to the prospective registration ID, eliminating manual argv
+   execution as an unverifiable boundary.

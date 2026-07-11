@@ -18,6 +18,10 @@ from reports.manifest import (
 from reports.research_family_registration import (
     load_research_family_registration,
 )
+from reports.research_family_launch import (
+    ResearchFamilyLaunchSnapshot,
+    load_research_family_launch_matrix,
+)
 
 
 RUN_TYPE = "research_family_audit"
@@ -49,6 +53,7 @@ class ResearchFamilyConfig:
     require_source_ready: bool = True
     require_holdout_passed: bool = True
     require_prospective_registration: bool = False
+    require_launch_coverage: bool = False
 
 
 @dataclass(frozen=True)
@@ -82,6 +87,7 @@ def evaluate_research_family(
     config: ResearchFamilyConfig,
     thresholds: ResearchFamilyThresholds | None = None,
     registration: dict[str, Any] | None = None,
+    launch_coverage: dict[str, Any] | None = None,
 ) -> ResearchFamilyReport:
     thresholds = thresholds or ResearchFamilyThresholds()
     _validate(config, thresholds)
@@ -96,6 +102,7 @@ def evaluate_research_family(
             "candidate_scenario",
             "within_study_adjusted_pvalue",
             "source_authorizes_submission",
+            "study_disposition",
         ),
     )
     frame = _holm_adjust(
@@ -120,6 +127,13 @@ def evaluate_research_family(
         .ne("")
         .sum()
     )
+    abandoned_count = int(
+        frame["study_disposition"].astype(str).eq("abandoned").sum()
+    )
+    never_launched_count = int(
+        frame["study_disposition"].astype(str).eq("never_launched").sum()
+    )
+    required_candidate_count = study_count - abandoned_count
     adjusted_pvalues = _numeric(frame, "within_study_adjusted_pvalue")
     valid_pvalue_count = int(
         (np.isfinite(adjusted_pvalues) & adjusted_pvalues.between(0.0, 1.0)).sum()
@@ -130,9 +144,11 @@ def evaluate_research_family(
          .map(_to_bool)).sum()
     )
     registration = registration or {}
+    launch_coverage = launch_coverage or {}
     checks = pd.DataFrame(
         [
             *_registration_checks(registration, config),
+            *_launch_coverage_checks(launch_coverage, config, registration),
             {
                 "check": "family_declaration_attested",
                 "actual": bool(config.declaration_complete_attested),
@@ -178,8 +194,8 @@ def evaluate_research_family(
                 "candidate_scenarios",
                 candidate_count,
                 "==",
-                study_count,
-                "one or more studies lack a frozen candidate identity",
+                required_candidate_count,
+                "one or more non-abandoned studies lack a frozen candidate identity",
             ),
             _numeric_check(
                 "valid_adjusted_pvalues",
@@ -219,6 +235,8 @@ def evaluate_research_family(
                 "manifest_current_count": manifest_current_count,
                 "source_ready_count": _bool_count(frame, "source_ready"),
                 "holdout_passed_count": _bool_count(frame, "holdout_passed"),
+                "abandoned_study_count": abandoned_count,
+                "never_launched_study_count": never_launched_count,
                 "valid_adjusted_pvalue_count": valid_pvalue_count,
                 "family_candidate_count": family_candidate_count,
                 "registration_provided": bool(registration.get("provided", False)),
@@ -228,6 +246,12 @@ def evaluate_research_family(
                 "registration_id": str(registration.get("registration_id", "")),
                 "registration_closed": bool(
                     passed and registration.get("passed", False)
+                ),
+                "launch_coverage_provided": bool(
+                    launch_coverage.get("provided", False)
+                ),
+                "launch_coverage_passed": bool(
+                    launch_coverage.get("passed", False)
                 ),
                 "declaration_complete_attested": bool(
                     config.declaration_complete_attested
@@ -264,6 +288,7 @@ def evaluate_research_family(
         "thresholds": asdict(thresholds),
         "summary": _record(summary.iloc[0]),
         "prospective_registration": _jsonable(registration),
+        "launch_coverage": _jsonable(launch_coverage),
         "candidate_decisions": [_record(row) for _, row in frame.iterrows()],
         "selected_candidates": (
             [_record(row) for _, row in selected.iterrows()] if passed else []
@@ -286,14 +311,28 @@ def write_research_family_audit(
     labels: list[str] | None = None,
     thresholds: ResearchFamilyThresholds | None = None,
     registration_path: str | Path | None = None,
+    launch_matrix_path: str | Path | None = None,
 ) -> ResearchFamilyReport:
     paths = [Path(path).resolve() for path in study_paths]
-    if not paths:
-        raise ValueError("at least one robust study path is required")
+    if not paths and launch_matrix_path is None:
+        raise ValueError("at least one robust study path or launch matrix is required")
     if labels is not None and len(labels) != len(paths):
         raise ValueError("labels must match study_paths length")
     resolved_labels = labels or [path.stem for path in paths]
-    studies = _read_studies(paths, resolved_labels)
+    studies = (
+        _read_studies(paths, resolved_labels)
+        if paths
+        else pd.DataFrame()
+    )
+    launch_snapshot = (
+        load_research_family_launch_matrix(launch_matrix_path)
+        if launch_matrix_path is not None
+        else None
+    )
+    studies, launch_coverage = _merge_launch_coverage(
+        studies,
+        launch_snapshot,
+    )
     registration = _read_registration(
         registration_path,
         family_id=config.family_id,
@@ -304,6 +343,7 @@ def write_research_family_audit(
         config=config,
         thresholds=thresholds,
         registration=registration,
+        launch_coverage=launch_coverage,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -318,7 +358,8 @@ def write_research_family_audit(
     payload.update(
         {
             "study_paths": [str(path) for path in paths],
-            "study_labels": resolved_labels,
+            "study_labels": report.studies["study_label"].astype(str).tolist(),
+            "completed_study_labels": resolved_labels,
             "study_manifest_sha256": {
                 str(row.study_label): str(row.manifest_sha256)
                 for row in report.studies.itertuples(index=False)
@@ -329,6 +370,10 @@ def write_research_family_audit(
             "registration_path": str(registration.get("path", "")),
             "registration_manifest_sha256": str(
                 registration.get("manifest_sha256", "")
+            ),
+            "launch_matrix_path": str(launch_coverage.get("path", "")),
+            "launch_matrix_manifest_sha256": str(
+                launch_coverage.get("manifest_sha256", "")
             ),
         }
     )
@@ -353,19 +398,26 @@ def write_research_family_audit(
         registration_manifest = registration_root / "manifest.json"
         if registration_manifest.is_file():
             inputs["research_family_registration_manifest"] = registration_manifest
+    if launch_coverage.get("provided", False):
+        launch_root = Path(str(launch_coverage["path"]))
+        inputs["research_family_launch_matrix"] = launch_root
+        launch_manifest = launch_root / "manifest.json"
+        if launch_manifest.is_file():
+            inputs["research_family_launch_manifest"] = launch_manifest
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
         parameters={
             "config": asdict(config),
             "thresholds": asdict(thresholds or ResearchFamilyThresholds()),
-            "labels": resolved_labels,
+            "labels": report.studies["study_label"].astype(str).tolist(),
+            "completed_labels": resolved_labels,
         },
         inputs=inputs,
         extra={
             "passed": bool(report.passed),
             "family_id": config.family_id,
-            "study_count": len(paths),
+            "study_count": int(len(report.studies)),
             "family_candidate_count": int(
                 report.summary.iloc[0]["family_candidate_count"]
             ),
@@ -381,6 +433,12 @@ def write_research_family_audit(
             "registration_id": str(report.summary.iloc[0]["registration_id"]),
             "registration_closed": bool(
                 report.summary.iloc[0]["registration_closed"]
+            ),
+            "launch_coverage_passed": bool(
+                report.summary.iloc[0]["launch_coverage_passed"]
+            ),
+            "abandoned_study_count": int(
+                report.summary.iloc[0]["abandoned_study_count"]
             ),
             "authorizes_submission": False,
         },
@@ -446,6 +504,8 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
         rows.append(
             {
                 "study_label": str(label),
+                "study_disposition": "completed",
+                "abandonment_reason": "",
                 "study_path": str(path),
                 "manifest_path": str(manifest_path),
                 "manifest_sha256": (
@@ -512,6 +572,186 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
             }
         )
     return pd.DataFrame(rows)
+
+
+def _merge_launch_coverage(
+    studies: pd.DataFrame,
+    snapshot: ResearchFamilyLaunchSnapshot | None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    if snapshot is None:
+        return studies, {
+            "provided": False,
+            "passed": False,
+            "path": "",
+            "manifest_sha256": "",
+        }
+    launches = snapshot.launches.copy()
+    required = {
+        "study_label",
+        "planned_study_path",
+        "strategy",
+        "market",
+        "primary_metric",
+        "development_sweeps",
+        "holdout_sweeps",
+        "study_status",
+        "closure_covered",
+        "registration_id",
+        "registration_manifest_sha256",
+    }
+    columns_present = required.issubset(launches.columns)
+    launch_labels = launches.get("study_label", pd.Series(dtype=str)).astype(str)
+    unique_launch_labels = bool(
+        columns_present and not launch_labels.duplicated().any()
+    )
+    study_labels = (
+        studies.get("study_label", pd.Series(dtype=str)).astype(str)
+        if not studies.empty
+        else pd.Series(dtype=str)
+    )
+    provided_labels_known = bool(set(study_labels).issubset(set(launch_labels)))
+    manifest_input = _manifest_input(
+        snapshot.manifest,
+        "research_family_registration_manifest",
+    )
+    existing = studies.copy()
+    if not existing.empty:
+        path_by_label = launches.set_index("study_label")["planned_study_path"]
+        existing["launch_path_matches"] = existing.apply(
+            lambda row: (
+                str(row["study_label"]) in path_by_label.index
+                and _canonical_path(row["study_path"])
+                == _canonical_path(path_by_label.loc[str(row["study_label"])])
+            ),
+            axis=1,
+        )
+    else:
+        existing["launch_path_matches"] = pd.Series(dtype=bool)
+    synthetic: list[dict[str, Any]] = []
+    existing_labels = set(study_labels)
+    omitted_completed = 0
+    for launch in launches.itertuples(index=False):
+        label = str(launch.study_label)
+        if label in existing_labels:
+            continue
+        status = str(launch.study_status)
+        if status.startswith("completed_"):
+            disposition = "completed_omitted"
+            omitted_completed += 1
+        elif status == "abandoned":
+            disposition = "abandoned"
+        else:
+            disposition = "never_launched"
+        abandoned = disposition == "abandoned"
+        registration_sha = str(launch.registration_manifest_sha256)
+        synthetic.append(
+            {
+                "study_label": label,
+                "study_disposition": disposition,
+                "abandonment_reason": str(
+                    getattr(launch, "abandonment_reason", "")
+                ),
+                "study_path": str(launch.planned_study_path),
+                "manifest_path": str(snapshot.root / "manifest.json"),
+                "manifest_sha256": snapshot.manifest_sha256,
+                "manifest_current": bool(snapshot.manifest_current and abandoned),
+                "manifest_error": "" if abandoned else disposition,
+                "manifest_generated_at_utc": snapshot.generated_at_utc,
+                "source_ready": False,
+                "holdout_passed": False,
+                "strategy": str(launch.strategy),
+                "market": str(launch.market),
+                "candidate_scenario": "",
+                "primary_metric": str(launch.primary_metric),
+                "scenario_count": 0,
+                "development_sweeps": _int(launch.development_sweeps),
+                "holdout_sweeps": _int(launch.holdout_sweeps),
+                "source_registration_provided": abandoned,
+                "source_registration_passed": bool(
+                    abandoned
+                    and snapshot.manifest_current
+                    and snapshot.passed
+                    and snapshot.registration_id
+                ),
+                "source_registration_id": str(launch.registration_id),
+                "source_registered_study_label": label,
+                "source_registration_manifest_summary_sha256": registration_sha,
+                "source_registration_manifest_path": str(
+                    manifest_input.get("path", "")
+                ),
+                "source_registration_manifest_sha256": str(
+                    manifest_input.get("sha256", "")
+                ),
+                "scenario_trial_count": 1,
+                "raw_sign_pvalue": 1.0,
+                "within_study_adjusted_pvalue": 1.0,
+                "source_next_gate": "audit-research-family",
+                "source_authorizes_submission": False,
+                "launch_path_matches": True,
+            }
+        )
+    merged = pd.concat(
+        [existing, pd.DataFrame(synthetic)],
+        ignore_index=True,
+        sort=False,
+    )
+    labels_match = bool(
+        unique_launch_labels
+        and len(merged) == len(launches)
+        and set(merged["study_label"].astype(str)) == set(launch_labels)
+    )
+    paths_match = bool(
+        not merged.empty
+        and merged.get(
+            "launch_path_matches",
+            pd.Series(False, index=merged.index),
+        ).map(_to_bool).all()
+    )
+    uncovered_count = int(
+        (~launches.get(
+            "closure_covered",
+            pd.Series(False, index=launches.index),
+        ).map(_to_bool)).sum()
+    ) if not launches.empty else 0
+    non_authorizing = not _to_bool(snapshot.config.get("authorizes_submission", False))
+    passed = bool(
+        snapshot.passed
+        and snapshot.manifest_current
+        and snapshot.registration_id
+        and columns_present
+        and unique_launch_labels
+        and provided_labels_known
+        and labels_match
+        and paths_match
+        and omitted_completed == 0
+        and uncovered_count == 0
+        and non_authorizing
+    )
+    return merged, {
+        "provided": True,
+        "passed": passed,
+        "path": str(snapshot.root),
+        "manifest_path": str(snapshot.root / "manifest.json"),
+        "manifest_sha256": snapshot.manifest_sha256,
+        "manifest_current": snapshot.manifest_current,
+        "manifest_error": snapshot.manifest_error,
+        "registration_id": snapshot.registration_id,
+        "family_id": str(snapshot.config.get("family_id", "")),
+        "columns_present": columns_present,
+        "unique_launch_labels": unique_launch_labels,
+        "provided_labels_known": provided_labels_known,
+        "labels_match": labels_match,
+        "paths_match": paths_match,
+        "omitted_completed_count": omitted_completed,
+        "uncovered_count": uncovered_count,
+        "abandoned_count": int(
+            merged["study_disposition"].astype(str).eq("abandoned").sum()
+        ),
+        "never_launched_count": int(
+            merged["study_disposition"].astype(str).eq("never_launched").sum()
+        ),
+        "non_authorizing": non_authorizing,
+    }
 
 
 def _read_registration(
@@ -715,6 +955,109 @@ def _registration_checks(
     return rows
 
 
+def _launch_coverage_checks(
+    coverage: dict[str, Any],
+    config: ResearchFamilyConfig,
+    registration: dict[str, Any],
+) -> list[dict[str, Any]]:
+    provided = bool(coverage.get("provided", False))
+    rows: list[dict[str, Any]] = []
+    if config.require_launch_coverage:
+        rows.append(
+            _check(
+                "launch_coverage_provided",
+                provided,
+                "is",
+                True,
+                provided,
+                "a current registered-study launch matrix is required",
+            )
+        )
+    if not provided:
+        return rows
+    family_matches = bool(
+        str(coverage.get("family_id", "")) == config.family_id
+    )
+    registration_matches = bool(
+        not registration.get("provided", False)
+        or str(coverage.get("registration_id", ""))
+        == str(registration.get("registration_id", ""))
+    )
+    rows.extend(
+        [
+            _check(
+                "launch_family_matches",
+                family_matches,
+                "is",
+                True,
+                family_matches,
+                "launch matrix belongs to a different research family",
+            ),
+            _check(
+                "launch_registration_matches",
+                registration_matches,
+                "is",
+                True,
+                registration_matches,
+                "launch matrix and closure use different registration IDs",
+            ),
+        ]
+    )
+    for check, reason in (
+        ("manifest_current", "launch matrix artifacts or inputs drifted"),
+        ("columns_present", "launch matrix is missing closure fields"),
+        ("unique_launch_labels", "launch matrix study labels are duplicated"),
+        (
+            "provided_labels_known",
+            "a supplied robust study is absent from the launch matrix",
+        ),
+        ("labels_match", "launch matrix does not cover the registered family"),
+        ("paths_match", "supplied robust roots differ from launch contracts"),
+        (
+            "non_authorizing",
+            "launch matrix unexpectedly claims broker-submission authority",
+        ),
+    ):
+        passed = bool(coverage.get(check, False))
+        rows.append(
+            _check(
+                f"launch_{check}",
+                passed,
+                "is",
+                True,
+                passed,
+                reason,
+            )
+        )
+    rows.extend(
+        [
+            _numeric_check(
+                "launch_omitted_completed_studies",
+                int(coverage.get("omitted_completed_count", 0)),
+                "==",
+                0,
+                "a completed registered study was omitted from family inputs",
+            ),
+            _numeric_check(
+                "launch_uncovered_studies",
+                int(coverage.get("uncovered_count", 0)),
+                "==",
+                0,
+                "registered studies remain never launched or unaccounted for",
+            ),
+            _check(
+                "launch_coverage_passed",
+                bool(coverage.get("passed", False)),
+                "is",
+                True,
+                bool(coverage.get("passed", False)),
+                "registered-study launch coverage did not pass",
+            ),
+        ]
+    )
+    return rows
+
+
 def _check(
     check: str,
     actual: Any,
@@ -764,6 +1107,7 @@ def _registration_contract_evidence(
         "scenario_count",
         "development_sweeps",
         "holdout_sweeps",
+        "study_disposition",
     }
     if not required_registration.issubset(registration_studies.columns) or not (
         required_actual.issubset(studies.columns)
@@ -805,11 +1149,12 @@ def _registration_contract_evidence(
     )
     planned_scenarios = pd.to_numeric(merged["max_scenarios"], errors="coerce")
     actual_scenarios = pd.to_numeric(merged["scenario_count"], errors="coerce")
+    abandoned = merged["study_disposition"].astype(str).eq("abandoned")
     breadth_match = bool(
         complete
         and np.isfinite(planned_scenarios).all()
         and np.isfinite(actual_scenarios).all()
-        and actual_scenarios.gt(0).all()
+        and (actual_scenarios.gt(0) | abandoned).all()
         and actual_scenarios.le(planned_scenarios).all()
     )
     period_match = bool(
@@ -949,6 +1294,8 @@ def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _recommendation(check: str) -> str:
+    if check.startswith("launch_"):
+        return "repair_launch_coverage_or_include_every_completed_study"
     if check == "prospective_registration_provided":
         return "register_the_family_before_producing_study_outcomes"
     if check in {
@@ -1050,11 +1397,14 @@ def _runbook(
         f"- Registration ID: `{summary['registration_id']}`",
         "- Registration closed: "
         f"`{str(bool(summary['registration_closed'])).lower()}`",
+        "- Launch coverage: "
+        f"`{str(bool(summary['launch_coverage_passed'])).lower()}`",
         "- Complete-family attestation: "
         f"`{str(bool(summary['declaration_complete_attested'])).lower()}`",
         f"- Declared studies: {int(summary['study_count'])}",
         f"- Current manifests: {int(summary['manifest_current_count'])}",
         f"- Source-ready studies: {int(summary['source_ready_count'])}",
+        f"- Attested abandoned studies: {int(summary['abandoned_study_count'])}",
         f"- Family-surviving candidates: {int(summary['family_candidate_count'])}",
         (
             "- Best Holm-adjusted p-value: "
@@ -1079,7 +1429,8 @@ def _runbook(
     ]
     for row in studies.itertuples(index=False):
         lines.append(
-            f"- `{row.study_label}` / `{row.candidate_scenario}`: "
+            f"- `{row.study_label}` ({row.study_disposition}) / "
+            f"`{row.candidate_scenario}`: "
             f"within={_format_number(row.within_study_adjusted_pvalue)}, "
             f"Holm={_format_number(row.holm_adjusted_pvalue)}, "
             f"{'passed' if bool(row.family_passed) else 'blocked'}"

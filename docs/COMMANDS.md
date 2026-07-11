@@ -2426,6 +2426,57 @@ when registration was generated after a result manifest. Clock ordering is
 supporting evidence, not an external timestamp authority; preserve registration
 and result manifests in version control for stronger auditability.
 
+## Registered Research Launch Matrix
+
+To materialize immutable launch contracts, add `sweep_paths_json`,
+`group_cols_json`, and optionally `sweep_labels_json` columns to the
+prospective registration plan. Each value is a JSON string array. These
+columns are preserved in the normalized plan and included in its registration
+ID.
+
+Generate one deterministic `pipeline-robust-selection` argv contract per
+registered row and audit result coverage:
+
+```powershell
+python -m hft_cli plan-research-family-launches `
+  --registration runs\research_registration\india_index_microstructure_v1 `
+  --out runs\research_launches\india_index_microstructure_v1 `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The command verifies the registration, exact sweep and label counts, unique
+scenario-group columns, every sweep manifest, and any existing robust root.
+Existing results count as covered only when their current root manifest binds
+the same registration ID, study label, and registration-manifest SHA. Pending
+rows retain both a machine-readable argv array and display command. Contract
+IDs are deterministic hashes of the registered row and exact launch arguments.
+
+If a registered study cannot be run, provide a reason ledger:
+
+```csv
+study_label,reason
+imbalance,Required historical feed segment was unavailable
+```
+
+Rerun with `--abandonments path\to\abandonments.csv` and
+`--attest-abandonments`. An abandonment without a unique registered label,
+non-empty reason, and explicit attestation remains `never_launched`. This
+evidence never authorizes order submission.
+
+Outputs:
+
+```text
+contracts\*.json
+research_family_launch_matrix.csv
+research_family_launch_checks.csv
+research_family_launch_summary.csv
+research_family_launch_action_queue.csv
+research_family_launch_config.json
+research_family_launch_runbook.md
+manifest.json
+```
+
 ## Research Family Audit
 
 Apply Holm-Bonferroni correction across a declared family of robust candidate
@@ -2443,6 +2494,8 @@ python -m hft_cli audit-research-family `
   --family-id india_index_microstructure_v1 `
   --registration runs\research_registration\india_index_microstructure_v1 `
   --require-prospective-registration `
+  --launch-matrix runs\research_launches\india_index_microstructure_v1 `
+  --require-launch-coverage `
   --attest-complete-family `
   --min-studies 2 `
   --max-holm-adjusted-pvalue 0.10 `
@@ -2465,6 +2518,13 @@ binding to its own registered study label and fingerprint the exact same
 registration-manifest SHA used for closure. A supplied registration always
 binds the audit; `--require-prospective-registration` also blocks when it is
 missing.
+
+When a launch matrix is supplied, it also becomes mandatory evidence. Every
+completed robust root must be explicitly included, never-launched rows block,
+and a current attested abandonment is added to the family at conservative
+adjusted p-value `1.0`. Abandoned rows remain in Holm's family size but can
+never become candidates. `--require-launch-coverage` blocks closure when the
+matrix is missing.
 
 `--attest-complete-family` is mandatory for a passing report. It records the
 operator's assertion that every attempted study in the defined family is

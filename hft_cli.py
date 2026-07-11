@@ -107,6 +107,7 @@ from reports.research_family import (
     ResearchFamilyThresholds,
     write_research_family_audit,
 )
+from reports.research_family_launch import write_research_family_launch_matrix
 from reports.research_family_registration import (
     ResearchFamilyRegistrationThresholds,
     write_research_family_registration,
@@ -2845,6 +2846,24 @@ def main(argv: list[str] | None = None) -> int:
     )
     research_family_registration.add_argument("--fail-on-actions", action="store_true")
 
+    research_family_launch = sub.add_parser(
+        "plan-research-family-launches",
+        help="Build immutable robust-study launch contracts and closure coverage.",
+    )
+    research_family_launch.add_argument("--registration", required=True)
+    research_family_launch.add_argument("--out", required=True)
+    research_family_launch.add_argument("--abandonments", default=None)
+    research_family_launch.add_argument(
+        "--attest-abandonments",
+        action="store_true",
+    )
+    research_family_launch.add_argument("--fail-on-breach", action="store_true")
+    research_family_launch.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    research_family_launch.add_argument("--fail-on-actions", action="store_true")
+
     research_family = sub.add_parser(
         "audit-research-family",
         help="Apply family-wise correction across declared robust candidate studies.",
@@ -2855,8 +2874,13 @@ def main(argv: list[str] | None = None) -> int:
     research_family.add_argument("--label", action="append", dest="labels")
     research_family.add_argument("--attest-complete-family", action="store_true")
     research_family.add_argument("--registration", default=None)
+    research_family.add_argument("--launch-matrix", default=None)
     research_family.add_argument(
         "--require-prospective-registration",
+        action="store_true",
+    )
+    research_family.add_argument(
+        "--require-launch-coverage",
         action="store_true",
     )
     research_family.add_argument(
@@ -6490,12 +6514,29 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "plan-research-family-launches":
+        result = write_research_family_launch_matrix(
+            args.registration,
+            output_dir=args.out,
+            abandonment_path=args.abandonments,
+            attest_abandonments=args.attest_abandonments,
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and action_count > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "audit-research-family":
         result = write_research_family_audit(
             args.studies,
             output_dir=args.out,
             labels=args.labels,
             registration_path=args.registration,
+            launch_matrix_path=args.launch_matrix,
             config=ResearchFamilyConfig(
                 family_id=args.family_id,
                 declaration_complete_attested=args.attest_complete_family,
@@ -6507,6 +6548,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_prospective_registration=(
                     args.require_prospective_registration
                 ),
+                require_launch_coverage=args.require_launch_coverage,
             ),
             thresholds=ResearchFamilyThresholds(
                 min_studies=args.min_studies,
