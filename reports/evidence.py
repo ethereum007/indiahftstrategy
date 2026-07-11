@@ -83,6 +83,10 @@ PROVIDER_IMBALANCE_OPS_LAUNCH_REQUIRED_RUN_TYPES = (
     "provider_market_data_imbalance_broker_dispatch_send",
     "provider_market_data_imbalance_broker_dispatch_ack",
     "provider_market_data_imbalance_broker_dispatch_roundtrip",
+    "provider_market_data_imbalance_broker_rehearsal_certificate",
+)
+PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE = (
+    "provider_market_data_imbalance_broker_rehearsal_certificate"
 )
 PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
 EVIDENCE_PROFILE_RUN_TYPES = {
@@ -470,6 +474,51 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                 "catalog contains provider broker round-trip proof with missing or unreadable synthetic sidecars",
             )
         )
+    if PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE in thresholds.required_run_types:
+        certificate_counts = _provider_broker_rehearsal_certificate_counts(catalog)
+        rows.extend(
+            [
+                _check(
+                    "provider_broker_rehearsal_certificate_live_dryrun",
+                    certificate_counts["provider_broker_rehearsal_certificate_live_dryrun_runs"],
+                    ">=",
+                    thresholds.min_passed_per_type,
+                    certificate_counts["provider_broker_rehearsal_certificate_live_dryrun_runs"]
+                    >= thresholds.min_passed_per_type,
+                    "catalog does not contain enough passed live_dryrun provider broker rehearsal certificates",
+                ),
+                _check(
+                    "provider_broker_rehearsal_certificate_authorizing",
+                    certificate_counts["provider_broker_rehearsal_certificate_authorizing_runs"],
+                    "==",
+                    0,
+                    certificate_counts["provider_broker_rehearsal_certificate_authorizing_runs"] == 0,
+                    "catalog contains a provider broker rehearsal certificate that claims submission authority",
+                ),
+                _check(
+                    "provider_broker_rehearsal_certificate_non_authorizing",
+                    certificate_counts[
+                        "provider_broker_rehearsal_certificate_non_authorizing_runs"
+                    ],
+                    ">=",
+                    thresholds.min_passed_per_type,
+                    certificate_counts[
+                        "provider_broker_rehearsal_certificate_non_authorizing_runs"
+                    ]
+                    >= thresholds.min_passed_per_type,
+                    "catalog does not contain enough explicit non-authorizing provider broker rehearsal certificates",
+                ),
+                _check(
+                    "provider_broker_rehearsal_certificate_hashed",
+                    certificate_counts["provider_broker_rehearsal_certificate_hashed_runs"],
+                    ">=",
+                    thresholds.min_passed_per_type,
+                    certificate_counts["provider_broker_rehearsal_certificate_hashed_runs"]
+                    >= thresholds.min_passed_per_type,
+                    "catalog does not contain enough provider broker rehearsal certificates with SHA-256 identity",
+                ),
+            ]
+        )
     return pd.DataFrame(rows)
 
 
@@ -500,6 +549,7 @@ def _summary(
     )
     resume_route_counts = _broker_roundtrip_resume_route_counts(catalog)
     provider_sidecar_counts = _provider_broker_roundtrip_synthetic_sidecar_counts(catalog)
+    provider_certificate_counts = _provider_broker_rehearsal_certificate_counts(catalog)
     return pd.DataFrame(
         [
             {
@@ -562,6 +612,7 @@ def _summary(
                 "broker_roundtrip_portfolio_concentration_breach_runs": concentration_breach,
                 **resume_route_counts,
                 **provider_sidecar_counts,
+                **provider_certificate_counts,
                 "input_file_count": input_file_count,
                 "input_directory_count": input_directory_count,
                 "input_other_count": input_other_count,
@@ -933,6 +984,62 @@ def _provider_broker_roundtrip_synthetic_sidecar_counts(catalog: pd.DataFrame) -
             "provider_broker_roundtrip_synthetic_sidecar_proof_runs": int(proof_runs.sum()),
             "provider_broker_roundtrip_synthetic_sidecar_ready_runs": int(ready_runs.sum()),
             "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(breach_runs.sum()),
+        }
+    )
+    return keys
+
+
+def _provider_broker_rehearsal_certificate_counts(catalog: pd.DataFrame) -> dict[str, int]:
+    keys = {
+        "provider_broker_rehearsal_certificate_runs": 0,
+        "provider_broker_rehearsal_certificate_passed_runs": 0,
+        "provider_broker_rehearsal_certificate_live_dryrun_runs": 0,
+        "provider_broker_rehearsal_certificate_authorizing_runs": 0,
+        "provider_broker_rehearsal_certificate_non_authorizing_runs": 0,
+        "provider_broker_rehearsal_certificate_hashed_runs": 0,
+    }
+    if catalog.empty or "run_type" not in catalog.columns:
+        return keys
+    frame = catalog.loc[
+        catalog["run_type"].astype(str)
+        == PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE
+    ].copy()
+    if frame.empty:
+        return keys
+    passed = _bool_column(frame, "summary_status")
+    target_modes = (
+        frame["summary_target_mode"].map(_normalize_identity)
+        if "summary_target_mode" in frame.columns
+        else pd.Series("", index=frame.index)
+    )
+    authorization_values = (
+        frame["summary_authorizes_submission"]
+        if "summary_authorizes_submission" in frame.columns
+        else pd.Series(None, index=frame.index, dtype=object)
+    )
+    authorization_present = authorization_values.notna() & authorization_values.astype(str).str.strip().ne("")
+    authorizes_submission = authorization_values.map(_to_bool)
+    certificate_hashes = (
+        frame["summary_certificate_sha256"].fillna("").astype(str).str.strip()
+        if "summary_certificate_sha256" in frame.columns
+        else pd.Series("", index=frame.index)
+    )
+    keys.update(
+        {
+            "provider_broker_rehearsal_certificate_runs": int(len(frame)),
+            "provider_broker_rehearsal_certificate_passed_runs": int(passed.sum()),
+            "provider_broker_rehearsal_certificate_live_dryrun_runs": int(
+                (passed & target_modes.eq("live_dryrun")).sum()
+            ),
+            "provider_broker_rehearsal_certificate_authorizing_runs": int(
+                (passed & authorizes_submission).sum()
+            ),
+            "provider_broker_rehearsal_certificate_non_authorizing_runs": int(
+                (passed & authorization_present & ~authorizes_submission).sum()
+            ),
+            "provider_broker_rehearsal_certificate_hashed_runs": int(
+                (passed & certificate_hashes.str.fullmatch(r"[0-9a-fA-F]{64}")).sum()
+            ),
         }
     )
     return keys

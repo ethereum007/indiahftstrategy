@@ -67,6 +67,9 @@ RUN_TYPE_NEXT_GATES = {
     "provider_market_data_imbalance_broker_dispatch_roundtrip": (
         "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
     ),
+    "provider_market_data_imbalance_broker_rehearsal_certificate": (
+        "certify-provider-market-data-imbalance-broker-rehearsal"
+    ),
     "proof_report": "proof-report",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",
@@ -326,6 +329,24 @@ def _scorecard_row(
         ),
         "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
             _numeric(summary.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_runs": int(
+            _numeric(summary.get("provider_broker_rehearsal_certificate_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_passed_runs": int(
+            _numeric(summary.get("provider_broker_rehearsal_certificate_passed_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_live_dryrun_runs": int(
+            _numeric(summary.get("provider_broker_rehearsal_certificate_live_dryrun_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_authorizing_runs": int(
+            _numeric(summary.get("provider_broker_rehearsal_certificate_authorizing_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_non_authorizing_runs": int(
+            _numeric(summary.get("provider_broker_rehearsal_certificate_non_authorizing_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_hashed_runs": int(
+            _numeric(summary.get("provider_broker_rehearsal_certificate_hashed_runs", 0))
         ),
         "dirty_runs": int(_numeric(summary.get("dirty_runs", 0))),
         "git_commit_count": int(_numeric(summary.get("git_commit_count", 0))),
@@ -666,6 +687,24 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         ),
         "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
             _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_runs": int(
+            _numeric(row.get("provider_broker_rehearsal_certificate_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_passed_runs": int(
+            _numeric(row.get("provider_broker_rehearsal_certificate_passed_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_live_dryrun_runs": int(
+            _numeric(row.get("provider_broker_rehearsal_certificate_live_dryrun_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_authorizing_runs": int(
+            _numeric(row.get("provider_broker_rehearsal_certificate_authorizing_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_non_authorizing_runs": int(
+            _numeric(row.get("provider_broker_rehearsal_certificate_non_authorizing_runs", 0))
+        ),
+        "provider_broker_rehearsal_certificate_hashed_runs": int(
+            _numeric(row.get("provider_broker_rehearsal_certificate_hashed_runs", 0))
         ),
         "recommendation": str(row.get("recommendation", "")),
     }

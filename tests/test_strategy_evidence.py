@@ -528,6 +528,11 @@ def provider_imbalance_ops_launch_catalog_rows(
             "runs/provider_imbalance_broker_dispatch_roundtrip",
             "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
         ),
+        (
+            "provider_market_data_imbalance_broker_rehearsal_certificate",
+            "runs/provider_imbalance_broker_rehearsal_certificate",
+            "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv",
+        ),
     ]
     rows = []
     for index, (run_type, run_dir, summary_file) in enumerate(run_types):
@@ -567,6 +572,11 @@ def provider_imbalance_ops_launch_catalog_rows(
                     route_ready_pairs=2,
                 )
             )
+        if run_type == "provider_market_data_imbalance_broker_rehearsal_certificate":
+            row["summary_target_mode"] = "live_dryrun"
+            row["summary_authorizes_submission"] = False
+            row["summary_digitally_signed"] = False
+            row["summary_certificate_sha256"] = "a" * 64
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -1066,6 +1076,53 @@ def test_provider_imbalance_ops_launch_profile_fails_without_provider_roundtrip(
     assert not review.ready
     assert "required_run_type:provider_market_data_imbalance_broker_dispatch_roundtrip" in failed
     assert review.summary.iloc[0]["evidence_profile"] == "provider_imbalance_ops_launch"
+
+
+def test_provider_imbalance_ops_launch_profile_requires_rehearsal_certificate():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    catalog = catalog.loc[
+        catalog["run_type"]
+        != "provider_market_data_imbalance_broker_rehearsal_certificate"
+    ].copy()
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("provider_imbalance_ops_launch"),
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert (
+        "required_run_type:provider_market_data_imbalance_broker_rehearsal_certificate"
+        in failed
+    )
+
+
+def test_provider_imbalance_ops_launch_profile_rejects_unsafe_rehearsal_certificate():
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    mask = (
+        catalog["run_type"]
+        == "provider_market_data_imbalance_broker_rehearsal_certificate"
+    )
+    catalog.loc[mask, "summary_target_mode"] = "paper"
+    catalog.loc[mask, "summary_authorizes_submission"] = True
+    catalog.loc[mask, "summary_certificate_sha256"] = "not-a-sha256"
+
+    review = evaluate_strategy_evidence(
+        catalog,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types("provider_imbalance_ops_launch"),
+        ),
+    )
+
+    failed = set(review.checks.loc[~review.checks["passed"].astype(bool), "check"])
+    assert not review.ready
+    assert "provider_broker_rehearsal_certificate_live_dryrun" in failed
+    assert "provider_broker_rehearsal_certificate_authorizing" in failed
+    assert "provider_broker_rehearsal_certificate_non_authorizing" in failed
+    assert "provider_broker_rehearsal_certificate_hashed" in failed
 
 
 def test_provider_imbalance_ops_launch_uses_provider_roundtrip_safety_controls():

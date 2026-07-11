@@ -160,12 +160,21 @@ def complete_provider_imbalance_ops_launch_rows(
             "provider_market_data_imbalance_broker_dispatch_roundtrip",
             "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
         ),
+        (
+            "provider_market_data_imbalance_broker_rehearsal_certificate",
+            "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv",
+        ),
     ]
     rows = [
         row(run_type, summary_file, strategy, market=market, minute=10 + index)
         for index, (run_type, summary_file) in enumerate(run_types)
     ]
     for item in rows:
+        if item["run_type"] == "provider_market_data_imbalance_broker_rehearsal_certificate":
+            item["summary_target_mode"] = "live_dryrun"
+            item["summary_authorizes_submission"] = False
+            item["summary_digitally_signed"] = False
+            item["summary_certificate_sha256"] = "a" * 64
         if item["run_type"] != "provider_market_data_imbalance_broker_dispatch_roundtrip":
             continue
         item["summary_dispatch_total_notional"] = 1500.0
@@ -549,11 +558,18 @@ def test_strategy_scorecard_scores_provider_imbalance_ops_launch_profile():
     assert int(score["provider_broker_roundtrip_synthetic_sidecar_readable_count"]) == 2
     assert int(score["provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
     assert int(score["provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+    assert int(score["provider_broker_rehearsal_certificate_live_dryrun_runs"]) == 1
+    assert int(score["provider_broker_rehearsal_certificate_authorizing_runs"]) == 0
+    assert int(score["provider_broker_rehearsal_certificate_non_authorizing_runs"]) == 1
+    assert int(score["provider_broker_rehearsal_certificate_hashed_runs"]) == 1
     assert score["evidence_failed_checks"] == ""
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.config["ready_actions"][0]["profile"] == "provider_imbalance_ops_launch"
     assert report.config["ready_actions"][0]["next_gate"] == "review-route-readiness"
     assert report.config["ready_actions"][0]["provider_broker_roundtrip_synthetic_sidecar_ready_runs"] == 1
+    assert report.config["ready_actions"][0][
+        "provider_broker_rehearsal_certificate_live_dryrun_runs"
+    ] == 1
 
 
 def test_strategy_scorecard_provider_imbalance_ops_launch_blocks_sidecar_breach():

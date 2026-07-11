@@ -28,10 +28,13 @@
 - Strategy evidence and scorecards now include a
   `provider_imbalance_ops_launch` profile that requires the provider-data
   imbalance scorecard, route-readiness, runtime, broker-readiness, cutover,
-  route-enable, dispatch/send/ack, and final round-trip wrappers before
-  live-dry-run review. The scorecard now also propagates provider final
+  route-enable, dispatch/send/ack, final round-trip wrappers, and the
+  non-authorizing broker rehearsal certificate before live-dry-run review. The
+  scorecard now also propagates provider final
   broker round-trip synthetic sidecar proof counts and blocks the provider
-  launch profile when expected sidecars are missing or unreadable.
+  launch profile when expected sidecars are missing or unreadable. It also
+  propagates broker rehearsal certificate passed/live-dry-run/authorizing/hash
+  counts into scorecard actions.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2374,6 +2377,19 @@
   from the round-trip `dispatch_roundtrip_provenance` config sidecar while
   keeping explicit CSV `False`/`0` values authoritative, so sparse final
   round-trip CSVs still carry route-sidecar proof into broker-readiness review.
+- Provider-data imbalance broker rehearsals can now be sealed with
+  `certify-provider-market-data-imbalance-broker-rehearsal`. The certificate
+  independently rechecks strict dispatch/send/ack safety, refuses enabled
+  submission and any acknowledgement anomaly even when upstream thresholds
+  were relaxed, recursively validates reachable manifest artifact/input
+  fingerprints and recorded git provenance, and emits a deterministic cycle id
+  plus certificate SHA-256. Optional sealed-receipt enforcement distinguishes
+  generic dry-run proof from provider receipt/capture proof. Every certificate
+  records `authorizes_submission=false` and `digitally_signed=false`; it is a
+  content-integrity operator review artifact, not signer approval, and cannot
+  enable broker routing. Provider ops-launch evidence requires a passed
+  `live_dryrun` certificate with a 64-character certificate SHA-256 and rejects
+  paper/shadow or authorizing certificate rows.
 - Provider-data imbalance now has a provider route-readiness wrapper before
   scale-up. `review-provider-market-data-imbalance-route-readiness` infers the
   provider launch-evidence strategy review, auto-builds the India
@@ -2404,10 +2420,15 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1436 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1444 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider broker-dispatch-roundtrip final receipt and
+Latest focused gate: the manifest, experiment-catalog, six provider
+broker-rehearsal certificate paths (validity, determinism, recursive drift,
+relaxed submission/count thresholds, receipt assurance, CLI, and catalog), and
+provider evidence/scorecard integration suites pass together (`131 passed`). The
+immediately preceding four provider
+broker-dispatch-roundtrip final receipt and
 compatibility paths pass. Bundle-linked clean rehearsal-loop review and
 post-acknowledgement manifest/receipt/capture drift pass together (`2 passed`);
 no-provider-wrapper and provider-wrapper-without-required-receipts

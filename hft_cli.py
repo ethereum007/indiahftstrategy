@@ -194,6 +194,10 @@ from reports.provider_market_data_imbalance_broker_dispatch_roundtrip import (
     ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
     write_provider_market_data_imbalance_broker_dispatch_roundtrip,
 )
+from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
+    ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
+    write_provider_market_data_imbalance_broker_rehearsal_certificate,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -1939,6 +1943,41 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument("--fail-on-actions", action="store_true")
+
+    provider_market_data_imbalance_broker_rehearsal_certificate = sub.add_parser(
+        "certify-provider-market-data-imbalance-broker-rehearsal",
+        help="Issue a content-addressed, non-submitting certificate for a provider broker rehearsal.",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--provider-broker-dispatch-roundtrip",
+        required=True,
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument("--out", required=True)
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--require-sealed-provider-receipts",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--allow-recorded-dirty-git",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--max-manifests",
+        type=int,
+        default=64,
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
 
     provider_market_data_capture = sub.add_parser(
         "review-provider-market-data-capture",
@@ -5077,6 +5116,29 @@ def main(argv: list[str] | None = None) -> int:
         if action_queue is not None and not action_queue.empty:
             blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
         if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "certify-provider-market-data-imbalance-broker-rehearsal":
+        result = write_provider_market_data_imbalance_broker_rehearsal_certificate(
+            args.provider_broker_dispatch_roundtrip,
+            args.out,
+            config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+                require_clean_recorded_git=not args.allow_recorded_dirty_git,
+                require_sealed_provider_receipts=args.require_sealed_provider_receipts,
+                max_manifest_count=args.max_manifests,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_queue = result.action_queue
+        action_count = 0 if action_queue is None else int(len(action_queue))
+        blocked_actions = 0
+        if action_queue is not None and not action_queue.empty:
+            blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
             return 2
         if args.fail_on_blocked_actions and blocked_actions > 0:
             return 2

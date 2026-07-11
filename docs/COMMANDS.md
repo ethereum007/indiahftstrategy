@@ -296,7 +296,7 @@ python -m hft_cli review-strategy-evidence `
 For the provider-data imbalance wrapper chain, use the provider ops-launch
 profile after the provider scorecard, route-readiness, runtime, broker
 readiness, cutover, route-enable, dispatch-send, acknowledgement, and final
-round-trip wrappers are cataloged:
+round-trip wrappers plus the broker rehearsal certificate are cataloged:
 
 ```powershell
 python -m hft_cli review-strategy-evidence `
@@ -333,7 +333,7 @@ profile expands to `scaleup_plan`, `runtime_telemetry_snapshot`,
 and `live_dryrun`. The `provider_imbalance_ops_launch` profile expands to the
 provider-data imbalance scorecard, route-readiness, scale-up, runtime,
 broker-readiness, cutover, route-enable, dispatch, send, acknowledgement, and
-final round-trip run types; aliases include
+final round-trip and broker-rehearsal-certificate run types; aliases include
 `provider_market_data_imbalance_ops_launch` and
 `provider_imbalance_live_dryrun`. Explicit `--required-run-type` flags still
 override the profile for custom launch reviews.
@@ -356,7 +356,11 @@ concentration breaches.
 The `provider_imbalance_ops_launch` profile inherits those same launch checks
 and also requires at least one final provider broker round-trip with ready
 synthetic sidecar proof, failing when any provider broker round-trip expected
-synthetic sidecars but did not retain readable sidecar evidence.
+synthetic sidecars but did not retain readable sidecar evidence. It also
+requires the non-authorizing broker rehearsal certificate, so a catalog with
+round-trip evidence but no sealed manifest-chain sign-off remains incomplete.
+That certificate must be a passed `live_dryrun` artifact, must retain a
+64-character certificate SHA-256, and must not claim submission authority.
 Use `--allow-non-file-inputs` only for legacy exploratory catalogs, or
 `--require-file-inputs` to apply the same fail-closed provenance rule to a
 custom evidence set.
@@ -380,7 +384,8 @@ counts, broker round-trip portfolio-safe/breach counts, and broker round-trip
 portfolio concentration OK/breach counts, plus broker resume-route ready and
 breach counts when the catalog contains them. Provider ops-launch evidence also
 records provider broker round-trip synthetic sidecar proof, ready, and breach
-counts.
+counts plus broker rehearsal certificate passed, live-dry-run, authorizing,
+and SHA-256-backed counts.
 
 Outputs:
 
@@ -5700,6 +5705,50 @@ action and points to `review-provider-market-data-imbalance-broker-readiness`
 so either the provider wrapper root or its nested `broker_dispatch_roundtrip`
 folder can be supplied through `--dispatch-roundtrip` before any provider
 cutover promotion.
+
+Issue a compact, content-addressed integrity certificate for the completed
+rehearsal:
+
+```powershell
+python -m hft_cli certify-provider-market-data-imbalance-broker-rehearsal `
+  --provider-broker-dispatch-roundtrip runs\provider_market_data_imbalance_broker_dispatch_roundtrip\arrow_ws_nse_2026_06_23 `
+  --out runs\provider_market_data_imbalance_broker_rehearsal_certificate\arrow_ws_nse_2026_06_23 `
+  --require-sealed-provider-receipts `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+Certification re-reads the final provider summary/config/checks, enforces the
+nested dispatch/send/ack invariants with strict zero-anomaly thresholds, and
+rejects enabled submission even when an upstream round-trip was intentionally
+run with a relaxed threshold. It recursively walks reachable manifests,
+re-hashes every recorded artifact and input directory/file fingerprint, checks
+recorded git provenance, and emits a deterministic rehearsal cycle id plus a
+certificate SHA-256. `--require-sealed-provider-receipts` raises the assurance
+level from generic broker dry-run proof to sealed provider receipt proof and
+blocks providers that have not yet produced receipt/capture evidence. Use
+`--allow-recorded-dirty-git` only for development fixtures; operator sign-off
+should retain the default clean-provenance requirement.
+
+Outputs:
+
+```text
+provider_market_data_imbalance_broker_rehearsal_certificate.json
+provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv
+provider_market_data_imbalance_broker_rehearsal_certificate_checks.csv
+provider_market_data_imbalance_broker_rehearsal_certificate_fingerprints.csv
+provider_market_data_imbalance_broker_rehearsal_certificate_manifest_graph.csv
+provider_market_data_imbalance_broker_rehearsal_certificate_action_queue.csv
+provider_market_data_imbalance_broker_rehearsal_certificate_runbook.md
+manifest.json
+```
+
+The certificate is deliberately non-authorizing: both JSON and manifest set
+`authorizes_submission=false` and `digitally_signed=false`. The SHA-256 binds
+the recorded content but is not a broker, compliance, or cryptographic signer
+approval. It proves an offline rehearsal and cannot enable, approve, or submit
+a broker order. Any source, acknowledgement, receipt, manifest, or artifact
+change requires a new certificate.
 
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
