@@ -71,6 +71,7 @@ RUN_TYPE_NEXT_GATES = {
         "certify-provider-market-data-imbalance-broker-rehearsal"
     ),
     "proof_report": "proof-report",
+    "backtest_overfit_audit": "audit-backtest-overfit",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",
     "promotion_report": "promote-scenario",

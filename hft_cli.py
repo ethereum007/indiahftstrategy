@@ -19,6 +19,11 @@ from adapters.vendor_intake import VendorCsvIntakeConfig, write_vendor_csv_intak
 from data.chains import load_option_chain_csv
 from data.diagnostics import chain_diagnostics, tick_diagnostics, write_diagnostics
 from data.loaders import load_tick_csv
+from reports.backtest_overfit import (
+    BacktestOverfitConfig,
+    BacktestOverfitThresholds,
+    write_backtest_overfit_audit,
+)
 from reports.catalog import write_experiment_catalog
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.broker_dispatch_ack import BrokerDispatchAckThresholds, write_broker_dispatch_acknowledgements
@@ -2602,6 +2607,31 @@ def main(argv: list[str] | None = None) -> int:
     compare_sweeps.add_argument("--max-worst-drawdown", type=float, default=None)
     compare_sweeps.add_argument("--fail-on-breach", action="store_true")
 
+    backtest_overfit = sub.add_parser(
+        "audit-backtest-overfit",
+        help="Measure CSCV-style parameter-selection overfit across sweep periods.",
+    )
+    backtest_overfit.add_argument("--selection", required=True)
+    backtest_overfit.add_argument("--out", required=True)
+    backtest_overfit.add_argument("--split-column", default="sweep")
+    backtest_overfit.add_argument("--score-column", default="")
+    backtest_overfit.add_argument("--scenario-columns", nargs="+", default=None)
+    backtest_overfit.add_argument("--max-partitions", type=int, default=12)
+    backtest_overfit.add_argument("--allow-missing-selection-manifest", action="store_true")
+    backtest_overfit.add_argument("--min-partitions", type=int, default=4)
+    backtest_overfit.add_argument("--min-scenarios", type=int, default=3)
+    backtest_overfit.add_argument("--max-probability-overfit", type=float, default=0.25)
+    backtest_overfit.add_argument("--min-median-oos-score", type=float, default=0.0)
+    backtest_overfit.add_argument("--min-oos-positive-rate", type=float, default=0.5)
+    backtest_overfit.add_argument("--min-median-rank-correlation", type=float, default=0.0)
+    backtest_overfit.add_argument("--max-median-degradation", type=float, default=None)
+    backtest_overfit.add_argument("--min-candidate-selection-rate", type=float, default=0.25)
+    backtest_overfit.add_argument("--max-candidate-overfit-rate", type=float, default=0.25)
+    backtest_overfit.add_argument("--min-candidate-oos-positive-rate", type=float, default=0.5)
+    backtest_overfit.add_argument("--fail-on-breach", action="store_true")
+    backtest_overfit.add_argument("--fail-on-blocked-actions", action="store_true")
+    backtest_overfit.add_argument("--fail-on-actions", action="store_true")
+
     promote = sub.add_parser("promote-scenario", help="Gate a sweep selection for paper/shadow promotion.")
     promote.add_argument("--selection", required=True)
     promote.add_argument("--out", required=True)
@@ -2615,6 +2645,8 @@ def main(argv: list[str] | None = None) -> int:
     promote.add_argument("--max-otr", type=float, default=None)
     promote.add_argument("--min-maker-share", type=float, default=None)
     promote.add_argument("--min-markout-mean", type=float, default=None)
+    promote.add_argument("--overfit-audit", default=None)
+    promote.add_argument("--require-overfit-audit", action="store_true")
     promote.add_argument("--fail-on-breach", action="store_true")
 
     launch = sub.add_parser("launch-bundle", help="Package promoted strategy and staged orders for paper/shadow launch.")
@@ -5992,10 +6024,47 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(result.summary.to_string(index=False))
         return 2 if args.fail_on_breach and not result.has_selection else 0
+    if args.command == "audit-backtest-overfit":
+        result = write_backtest_overfit_audit(
+            args.selection,
+            output_dir=args.out,
+            config=BacktestOverfitConfig(
+                split_column=args.split_column,
+                score_column=args.score_column,
+                scenario_columns=tuple(args.scenario_columns or ()),
+                max_partitions=args.max_partitions,
+                require_selection_manifest=not args.allow_missing_selection_manifest,
+            ),
+            thresholds=BacktestOverfitThresholds(
+                min_partitions=args.min_partitions,
+                min_scenarios=args.min_scenarios,
+                max_probability_overfit=args.max_probability_overfit,
+                min_median_oos_score=args.min_median_oos_score,
+                min_oos_positive_rate=args.min_oos_positive_rate,
+                min_median_rank_correlation=args.min_median_rank_correlation,
+                max_median_degradation=args.max_median_degradation,
+                min_candidate_selection_rate=args.min_candidate_selection_rate,
+                max_candidate_overfit_rate=args.max_candidate_overfit_rate,
+                min_candidate_oos_positive_rate=args.min_candidate_oos_positive_rate,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = int(
+            result.action_queue.get("queue_status", []).astype(str).eq("blocked").sum()
+        ) if not result.action_queue.empty else 0
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
     if args.command == "promote-scenario":
         result = write_promotion_report(
             args.selection,
             output_dir=args.out,
+            overfit_audit_path=args.overfit_audit,
             thresholds=PromotionThresholds(
                 min_pass_rate=args.min_pass_rate,
                 min_sweeps=args.min_sweeps,
@@ -6007,6 +6076,7 @@ def main(argv: list[str] | None = None) -> int:
                 max_otr=args.max_otr,
                 min_maker_share=args.min_maker_share,
                 min_markout_mean=args.min_markout_mean,
+                require_overfit_audit=args.require_overfit_audit,
             ),
         )
         print(result.summary.to_string(index=False))

@@ -35,6 +35,15 @@
   launch profile when expected sidecars are missing or unreadable. It also
   propagates broker rehearsal certificate passed/live-dry-run/authorizing/hash
   counts into scorecard actions.
+- Generic sweep selections now have a CSCV-style backtest-overfit audit.
+  `audit-backtest-overfit` forms deterministic chronological partitions,
+  evaluates symmetric in-sample/OOS combinations, reports Probability of
+  Backtest Overfitting, rank stability, selected-scenario degradation and OOS
+  positive rate, fails incomplete scenario grids, and separately gates the
+  rank-1 candidate's selection rate, conditional overfit rate, and conditional
+  OOS positive rate. `promote-scenario` can
+  require this proof and always blocks a supplied audit that failed, came from
+  a different selection-manifest SHA, or drifted from its own manifest.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2420,14 +2429,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1444 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1453 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: the manifest, experiment-catalog, six provider
-broker-rehearsal certificate paths (validity, determinism, recursive drift,
-relaxed submission/count thresholds, receipt assurance, CLI, and catalog), and
-provider evidence/scorecard integration suites pass together (`131 passed`). The
-immediately preceding four provider
+Latest focused gate: the CSCV backtest-overfit audit, manifest-bound promotion,
+sweep comparison, surface-MM pipeline, experiment catalog, and strategy
+scorecard suites pass together (`95 passed`). This covers stable and
+partition-memorized grids, odd-period partitioning, rank-1 candidate stability,
+CLI fail-closed behavior, audit artifact and source-selection drift, and strict
+promotion enforcement. The immediately preceding manifest,
+experiment-catalog, six provider broker-rehearsal certificate paths (validity,
+determinism, recursive drift, relaxed submission/count thresholds, receipt
+assurance, CLI, and catalog), and provider evidence/scorecard integration
+suites pass together (`131 passed`). The immediately preceding four provider
 broker-dispatch-roundtrip final receipt and
 compatibility paths pass. Bundle-linked clean rehearsal-loop review and
 post-acknowledgement manifest/receipt/capture drift pass together (`2 passed`);
@@ -2450,7 +2464,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1436-test collection is fully green.
+1453-test collection is fully green.
 
 ## Next Build Targets
 

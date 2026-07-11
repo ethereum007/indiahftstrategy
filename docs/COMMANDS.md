@@ -2089,6 +2089,60 @@ scenario_scores.csv
 selection_summary.csv
 ```
 
+## Backtest Overfit Audit
+
+Measure whether the scenario selected in one subset of sweep periods retains
+its rank on the complementary periods:
+
+```powershell
+python -m hft_cli audit-backtest-overfit `
+  --selection runs\selection\leadlag `
+  --out runs\overfit\leadlag `
+  --score-column robust_score `
+  --min-partitions 4 `
+  --min-scenarios 3 `
+  --max-probability-overfit 0.25 `
+  --min-median-oos-score 0 `
+  --min-oos-positive-rate 0.50 `
+  --min-median-rank-correlation 0 `
+  --min-candidate-selection-rate 0.25 `
+  --max-candidate-overfit-rate 0.25 `
+  --min-candidate-oos-positive-rate 0.50 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The audit builds an even set of at most 12 chronological partitions from the
+selection's sweep labels, evaluates every symmetric half-in-sample/half-OOS
+combination, selects the best in-sample scenario, and ranks that scenario on
+the complementary partitions. Probability of backtest overfitting (PBO) is the
+fraction of combinations where the in-sample winner lands at or below the OOS
+median. Odd or larger period sets are grouped contiguously without dropping
+periods. Scenarios missing any partition are reported and fail the default
+complete-grid check. The rank-1 scenario from `scenario_scores.csv` must also
+clear candidate-specific selection-frequency, overfit-rate, and OOS-positive
+checks; a stable alternative cannot mask a fragile promotion candidate. The
+selection manifest is required by default.
+
+Outputs:
+
+```text
+backtest_overfit_combinations.csv
+backtest_overfit_scenario_stability.csv
+backtest_overfit_partition_scores.csv
+backtest_overfit_partition_map.csv
+backtest_overfit_checks.csv
+backtest_overfit_summary.csv
+backtest_overfit_action_queue.csv
+backtest_overfit_config.json
+backtest_overfit_runbook.md
+manifest.json
+```
+
+This is a parameter-selection risk diagnostic, not a forecast or guarantee of
+future profitability. Use independent chronological sweep periods; repeated
+resamples of the same underlying session are not independent evidence.
+
 ## Scenario Promotion Gate
 
 Convert a `compare-sweeps` selection folder into a paper/shadow promotion
@@ -2105,8 +2159,15 @@ python -m hft_cli promote-scenario `
   --max-worst-drawdown 5000 `
   --min-median-fills 10 `
   --max-otr 50 `
+  --overfit-audit runs\overfit\leadlag `
+  --require-overfit-audit `
   --fail-on-breach
 ```
+
+When an overfit audit is supplied, promotion always requires it to pass. It
+also verifies that the audit's stored selection-manifest SHA matches the
+current selection and that every audit artifact still matches the audit
+manifest. `--require-overfit-audit` additionally blocks a missing audit.
 
 Outputs:
 
