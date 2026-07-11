@@ -5336,6 +5336,18 @@ and routed back to `review-provider-market-data-imbalance-cutover`. It also
 carries `dispatch_roundtrip_route_readiness_*` sidecar breach proof from
 cutover and routes nonzero final dry-run sidecar breaches back to
 `review-provider-market-data-imbalance-route-readiness`. When a
+cutover packet carries a provider-wrapper final receipt proof with required
+adapter receipts, route-enable also requires exact
+`dispatch_roundtrip_provenance` agreement with the cutover manifest and root
+runtime receipt proof, re-hashes every final receipt and capture before generic
+route authorization, and fingerprints accepted files as
+`dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`. Proof or byte drift leaves nested
+generic route-enable absent and routes repair to
+`review-provider-market-data-imbalance-cutover`. No-provider-wrapper packets
+and provider wrappers without required receipts remain supported and are marked
+not applicable rather than blocked in the runbook.
+When a
 cutover CSV is sparse
 but its config sidecar has
 `dispatch_roundtrip_provenance`, route-enable hydrates missing or blank

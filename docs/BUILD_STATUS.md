@@ -2179,7 +2179,14 @@
   round-trip `synthetic_sidecar_proof` plus flattened
   `dispatch_roundtrip_synthetic_*` counters and blocks broker-dispatch planning
   back to cutover when synthetic final dry-run folds are present without ready
-  rehearsal sidecars.
+  rehearsal sidecars. It now also revalidates cutover's final provider-wrapper
+  receipt proof: when required receipts exist it requires exact
+  `dispatch_roundtrip_provenance` agreement with the cutover manifest and root
+  runtime receipt proof, re-hashes every receipt and capture, and fingerprints
+  both final file sets before generic route authorization. Proof or byte drift
+  routes repair back to provider cutover; no-provider-wrapper packets and
+  wrappers without required receipts remain compatible and are marked not
+  applicable in the runbook.
 - Provider-data imbalance broker-dispatch now preserves the route-enable-carried
   provider broker-dispatch round-trip wrapper and nested generic
   `broker_dispatch_roundtrip` paths, broker-dispatch vendor-market-data batch
@@ -2363,18 +2370,19 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1426 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1428 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: four provider cutover final-roundtrip receipt and
-compatibility paths pass. Bundle-linked clean cutover and post-readiness
-manifest/receipt/capture drift pass together (`2 passed`); no-provider-wrapper
-and provider-wrapper-without-required-receipts compatibility also pass together
-(`2 passed`). The immediately preceding four broker-readiness final-roundtrip,
-four broker-dispatch-roundtrip, four broker-dispatch-ack, four
-broker-dispatch-send, four broker-dispatch, four route-enable, four earlier
-cutover, four runtime-session broker-readiness, four runtime-session, four
-runtime-guard, four runtime-telemetry, four scale-up, four scorecard, eight
+Latest focused gate: four provider route-enable final-roundtrip receipt and
+compatibility paths pass. Bundle-linked clean route authorization and
+post-cutover manifest/receipt/capture drift pass together (`2 passed`);
+no-provider-wrapper and provider-wrapper-without-required-receipts
+compatibility also pass together (`2 passed`). The immediately preceding four
+cutover final-roundtrip, four broker-readiness final-roundtrip, four
+broker-dispatch-roundtrip, four broker-dispatch-ack, four broker-dispatch-send,
+four broker-dispatch, four earlier route-enable, four runtime-session
+broker-readiness, four runtime-session, four runtime-guard, four
+runtime-telemetry, four scale-up, four scorecard, eight
 launch/launch-evidence, and ten research/evidence receipt-boundary paths remain
 green, as do the complete receipt-aware live-evidence plus research-handoff
 suites (`25 passed`). The upstream provider-adapter/live-ingest (`22 passed`),
@@ -2385,7 +2393,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1426-test collection is fully green.
+1428-test collection is fully green.
 
 ## Next Build Targets
 
