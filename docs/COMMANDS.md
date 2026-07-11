@@ -5585,8 +5585,19 @@ sidecars, round-trip review is blocked at that send-packet repair gate. It also
 carries the send-retained final `dispatch_roundtrip_route_readiness_*`
 sidecar breach proof; if nonzero final dry-run route sidecar breaches remain,
 acknowledgement reconciliation routes directly back to
-`review-provider-market-data-imbalance-route-readiness`. When a
-send-packet CSV is sparse but its config sidecar has
+`review-provider-market-data-imbalance-route-readiness`. When a send packet
+carries a provider-wrapper final receipt proof with required adapter receipts,
+acknowledgement reconciliation also requires exact
+`dispatch_roundtrip_provenance` agreement with the send manifest and root
+runtime receipt proof, re-hashes every final receipt and capture before
+accepting broker acknowledgements, and fingerprints accepted files as
+`dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`. Proof or byte drift leaves nested
+generic `broker_dispatch_ack` absent and routes repair to
+`prepare-provider-market-data-imbalance-broker-dispatch-send`.
+No-provider-wrapper packets and provider wrappers without required receipts
+remain supported and are marked not applicable rather than blocked in the
+runbook. When a send-packet CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, acknowledgement hydrates missing or blank
 `dispatch_roundtrip_*` fields, including the round-trip provider profile and
 adapter contract and sidecar counters, from that config while keeping explicit
