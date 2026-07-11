@@ -2637,6 +2637,12 @@ def main(argv: list[str] | None = None) -> int:
     robust_selection.add_argument("--group-cols", nargs="+", default=None)
     robust_selection.add_argument("--strategy", default="generic")
     robust_selection.add_argument("--market", default=INDIA_NSE_INDEX_DERIVATIVES.name)
+    robust_selection.add_argument("--research-registration", default=None)
+    robust_selection.add_argument("--registered-study-label", default=None)
+    robust_selection.add_argument(
+        "--require-research-registration",
+        action="store_true",
+    )
     robust_selection.add_argument("--min-selection-pass-rate", type=float, default=1.0)
     robust_selection.add_argument("--min-selection-sweeps", type=int, default=None)
     robust_selection.add_argument("--min-selection-median-net-pnl", type=float, default=0.0)
@@ -6272,6 +6278,9 @@ def main(argv: list[str] | None = None) -> int:
             group_cols=args.group_cols,
             strategy=args.strategy,
             market=args.market,
+            research_registration_path=args.research_registration,
+            registered_study_label=args.registered_study_label,
+            require_research_registration=args.require_research_registration,
             selection_min_pass_rate=args.min_selection_pass_rate,
             selection_min_sweeps=args.min_selection_sweeps,
             selection_min_median_net_pnl=args.min_selection_median_net_pnl,

@@ -2305,6 +2305,9 @@ python -m hft_cli pipeline-robust-selection `
   --group-cols quote_ttl_ns order_latency_us fill_depth_fraction markout_horizon_ns `
   --strategy surface_mm `
   --market india_nse_index_derivatives `
+  --research-registration runs\research_registration\india_index_microstructure_v1 `
+  --registered-study-label surface_mm `
+  --require-research-registration `
   --min-selection-pass-rate 1 `
   --max-probability-overfit 0.25 `
   --min-candidate-selection-rate 0.25 `
@@ -2337,6 +2340,15 @@ holdouts, selection/audit drift, and promotion breaches block the candidate. A
 ready result advances only to broker-neutral `stage-orders`;
 `authorizes_submission` remains `false` throughout.
 
+When `--research-registration` is supplied, the pipeline loads the current
+registration manifest and exact `--registered-study-label` row. It verifies
+the planned result root, strategy, market, primary metric, scenario ceiling,
+and exact development/holdout counts. The registration ID and manifest SHA are
+written into the root summary, candidate config, and manifest inputs.
+`--require-research-registration` fails closed when either binding argument is
+missing. Registration proof and sweep provenance form one promotion preflight,
+so a mismatched, failed, or drifted registration cannot yield a ready leaf.
+
 Outputs:
 
 ```text
@@ -2346,6 +2358,8 @@ Outputs:
 02_backtest_holdout\...
 03_promotion\...
 robust_selection_pipeline_sweep_provenance.csv
+robust_selection_pipeline_research_registration.csv
+robust_selection_pipeline_preflight.csv
 robust_selection_pipeline_stages.csv
 robust_selection_pipeline_summary.csv
 robust_selection_pipeline_action_queue.csv
@@ -2388,6 +2402,11 @@ hypotheses and metrics, positive search breadth, and development/holdout period
 counts. Its deterministic registration ID hashes the family ID plus normalized
 plan. `registration.lock.json` and the manifest bind that ID to the original
 plan file. Changing the plan requires a new registration.
+
+Run each planned robust study with the registration root, its exact
+`study_label`, and `--require-research-registration`. This creates prospective
+source binding at study time; retrospective path matching alone is not enough
+to close the family.
 
 Outputs:
 
@@ -2441,8 +2460,11 @@ non-authorizing source root. When registration is supplied, closure verifies
 the current registration manifest and lock ID, exact family/label/path match,
 strategy, market, primary metric, actual scenario count within registered
 search breadth, exact development/holdout counts, and that registration
-predates every study manifest. A supplied registration always binds the audit;
-`--require-prospective-registration` also blocks when it is missing.
+predates every study manifest. Every source root must also report a passed
+binding to its own registered study label and fingerprint the exact same
+registration-manifest SHA used for closure. A supplied registration always
+binds the audit; `--require-prospective-registration` also blocks when it is
+missing.
 
 `--attest-complete-family` is mandatory for a passing report. It records the
 operator's assertion that every attempted study in the defined family is

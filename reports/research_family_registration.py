@@ -10,7 +10,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 RUN_TYPE = "research_family_registration"
@@ -69,6 +73,24 @@ class ResearchFamilyRegistrationReport:
     @property
     def ready(self) -> bool:
         return self.passed
+
+
+@dataclass(frozen=True)
+class ResearchFamilyRegistrationSnapshot:
+    root: Path
+    studies: pd.DataFrame
+    summary: dict[str, Any]
+    config: dict[str, Any]
+    lock: dict[str, Any]
+    manifest: dict[str, Any]
+    family_id: str
+    registration_id: str
+    registration_id_consistent: bool
+    ready: bool
+    manifest_current: bool
+    manifest_error: str
+    manifest_sha256: str
+    generated_at_utc: str
 
 
 def evaluate_research_family_registration(
@@ -315,6 +337,88 @@ def write_research_family_registration(
     )
 
 
+def load_research_family_registration(
+    registration_path: str | Path,
+) -> ResearchFamilyRegistrationSnapshot:
+    path = Path(registration_path).resolve()
+    root = path if path.is_dir() else path.parent
+    summary_path = root / "research_family_registration_summary.csv"
+    studies_path = root / "research_family_registration_studies.csv"
+    config_path = root / "research_family_registration_config.json"
+    lock_path = root / "registration.lock.json"
+    manifest_path = root / "manifest.json"
+    for required in (
+        summary_path,
+        studies_path,
+        config_path,
+        lock_path,
+        manifest_path,
+    ):
+        if not required.is_file():
+            raise FileNotFoundError(
+                f"required research family registration artifact not found: {required}"
+            )
+    summary_frame = pd.read_csv(summary_path)
+    if summary_frame.empty:
+        raise ValueError(f"research family registration summary is empty: {summary_path}")
+    studies = pd.read_csv(studies_path)
+    summary = _record(summary_frame.iloc[0])
+    config = _read_json_object(config_path)
+    lock = _read_json_object(lock_path)
+    manifest = _read_json_object(manifest_path)
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=RUN_TYPE,
+        required_artifacts=(
+            "research_family_registration_summary.csv",
+            "research_family_registration_studies.csv",
+            "research_family_registration_config.json",
+            "registration.lock.json",
+        ),
+        require_input_fingerprints=True,
+    )
+    manifest_extra = manifest.get("extra", {})
+    family_id = str(summary.get("family_id", ""))
+    recomputed_id = registration_id_for_plan(family_id, studies)
+    ids = {
+        str(summary.get("registration_id", "")),
+        str(config.get("registration_id", "")),
+        str(lock.get("registration_id", "")),
+        str(manifest_extra.get("registration_id", ""))
+        if isinstance(manifest_extra, dict)
+        else "",
+        recomputed_id,
+    }
+    registration_id_consistent = bool(len(ids) == 1 and "" not in ids)
+    registration_id = next(iter(ids)) if registration_id_consistent else ""
+    statuses = [
+        _to_bool(summary.get("passed", False)),
+        _to_bool(config.get("passed", False)),
+        _to_bool(lock.get("passed", False)),
+        _to_bool(manifest_extra.get("passed", False))
+        if isinstance(manifest_extra, dict)
+        else False,
+    ]
+    return ResearchFamilyRegistrationSnapshot(
+        root=root,
+        studies=studies,
+        summary=summary,
+        config=config,
+        lock=lock,
+        manifest=manifest,
+        family_id=family_id,
+        registration_id=registration_id,
+        registration_id_consistent=registration_id_consistent,
+        ready=bool(all(statuses)),
+        manifest_current=bool(integrity.passed),
+        manifest_error=str(integrity.error),
+        manifest_sha256=(
+            file_sha256(manifest_path) if manifest_path.is_file() else ""
+        ),
+        generated_at_utc=str(manifest.get("generated_at_utc", "")),
+    )
+
+
 def _normalize_plan(plan: pd.DataFrame, root: Path) -> pd.DataFrame:
     missing = [column for column in REQUIRED_COLUMNS if column not in plan.columns]
     if missing:
@@ -545,6 +649,30 @@ def _sum_int(frame: pd.DataFrame, column: str) -> int:
 
 def _record(row: pd.Series) -> dict[str, Any]:
     return {str(key): _jsonable(value) for key, value in row.to_dict().items()}
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return value
+
+
+def _to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {
+            "1",
+            "true",
+            "yes",
+            "y",
+            "ready",
+            "passed",
+        }
+    return bool(value)
 
 
 def _jsonable(value: Any) -> Any:

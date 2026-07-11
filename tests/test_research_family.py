@@ -4,7 +4,7 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.research_family import (
     ResearchFamilyConfig,
     write_research_family_audit,
@@ -205,8 +205,18 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         family_id="prospective_family",
     )
     studies = [
-        _write_study(tmp_path, "leadlag", adjusted_pvalue=0.01),
-        _write_study(tmp_path, "imbalance", adjusted_pvalue=0.02),
+        _write_study(
+            tmp_path,
+            "leadlag",
+            adjusted_pvalue=0.01,
+            registration_dir=registration_dir,
+        ),
+        _write_study(
+            tmp_path,
+            "imbalance",
+            adjusted_pvalue=0.02,
+            registration_dir=registration_dir,
+        ),
     ]
 
     report = write_research_family_audit(
@@ -233,6 +243,12 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     ]
     assert report.config["prospective_registration"]["paths_match"]
     assert report.config["prospective_registration"]["prospective"]
+    assert report.config["prospective_registration"][
+        "source_registration_bindings"
+    ]
+    assert report.config["prospective_registration"][
+        "source_registration_manifest_fingerprints"
+    ]
     assert manifest["inputs"]["research_family_registration"]["kind"] == "directory"
     assert manifest["extra"]["registration_closed"]
 
@@ -302,8 +318,18 @@ def test_research_family_blocks_registered_search_breadth_breach(tmp_path):
         family_id="narrow_search_family",
     )
     studies = [
-        _write_study(tmp_path, "leadlag", adjusted_pvalue=0.01),
-        _write_study(tmp_path, "imbalance", adjusted_pvalue=0.02),
+        _write_study(
+            tmp_path,
+            "leadlag",
+            adjusted_pvalue=0.01,
+            registration_dir=registration_dir,
+        ),
+        _write_study(
+            tmp_path,
+            "imbalance",
+            adjusted_pvalue=0.02,
+            registration_dir=registration_dir,
+        ),
     ]
 
     report = write_research_family_audit(
@@ -325,6 +351,50 @@ def test_research_family_blocks_registered_search_breadth_breach(tmp_path):
     ]
 
 
+def test_research_family_blocks_mismatched_source_registration_binding(tmp_path):
+    plan_path = _write_registration_plan(tmp_path, ["leadlag", "imbalance"])
+    registration_dir = tmp_path / "registration"
+    write_research_family_registration(
+        plan_path,
+        output_dir=registration_dir,
+        family_id="binding_mismatch_family",
+    )
+    studies = [
+        _write_study(
+            tmp_path,
+            "leadlag",
+            adjusted_pvalue=0.01,
+            registration_dir=registration_dir,
+            bound_registration_id="0" * 64,
+        ),
+        _write_study(
+            tmp_path,
+            "imbalance",
+            adjusted_pvalue=0.02,
+            registration_dir=registration_dir,
+        ),
+    ]
+
+    report = write_research_family_audit(
+        studies,
+        output_dir=tmp_path / "family",
+        registration_path=registration_dir,
+        config=ResearchFamilyConfig(
+            family_id="binding_mismatch_family",
+            declaration_complete_attested=True,
+            require_prospective_registration=True,
+        ),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    registration = report.config["prospective_registration"]
+    assert not report.passed
+    assert "source_registration_bindings" in failed
+    assert "source_registration_manifest_fingerprints" not in failed
+    assert int(registration["source_registration_binding_count"]) == 1
+    assert int(registration["source_registration_manifest_match_count"]) == 2
+
+
 def _write_study(
     tmp_path,
     label,
@@ -332,12 +402,28 @@ def _write_study(
     adjusted_pvalue,
     ready=True,
     holdout_passed=True,
+    registration_dir=None,
+    bound_registration_id=None,
 ):
     root = tmp_path / label
     significance_dir = root / "02_backtest_significance"
     overfit_dir = root / "02_backtest_overfit"
     significance_dir.mkdir(parents=True)
     overfit_dir.mkdir(parents=True)
+    registration_id = ""
+    registration_manifest_sha256 = ""
+    if registration_dir is not None:
+        registration_summary = pd.read_csv(
+            registration_dir / "research_family_registration_summary.csv"
+        ).iloc[0]
+        registration_id = str(
+            bound_registration_id
+            if bound_registration_id is not None
+            else registration_summary["registration_id"]
+        )
+        registration_manifest_sha256 = file_sha256(
+            registration_dir / "manifest.json"
+        )
     pd.DataFrame(
         [
             {
@@ -371,6 +457,13 @@ def _write_study(
                 "overfit_scenario_count": 3,
                 "development_sweep_count": 6,
                 "holdout_sweep_count": 3,
+                "research_registration_provided": registration_dir is not None,
+                "research_registration_passed": registration_dir is not None,
+                "research_registration_id": registration_id,
+                "research_registration_manifest_sha256": (
+                    registration_manifest_sha256
+                ),
+                "registered_study_label": label if registration_dir is not None else "",
                 "adjusted_sign_pvalue": adjusted_pvalue,
                 "backtest_holdout_passed": holdout_passed,
                 "next_gate": "stage-orders" if ready else "keep-in-research",
@@ -385,10 +478,16 @@ def _write_study(
         source,
         index=False,
     )
+    inputs = {"market_data": source}
+    if registration_dir is not None:
+        inputs["research_family_registration"] = registration_dir
+        inputs["research_family_registration_manifest"] = (
+            registration_dir / "manifest.json"
+        )
     write_experiment_manifest(
         root,
         run_type="robust_selection_pipeline",
-        inputs={"market_data": source},
+        inputs=inputs,
     )
     return root
 

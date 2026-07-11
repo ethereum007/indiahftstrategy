@@ -4,8 +4,11 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.promotion import PromotionThresholds
+from reports.research_family_registration import (
+    write_research_family_registration,
+)
 from reports.robust_selection_pipeline import write_robust_selection_pipeline
 
 
@@ -27,6 +30,7 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert report.ready
     assert report.action_queue.empty
     assert set(report.stages["stage"]) == {
+        "research_registration",
         "sweep_provenance",
         "selection",
         "backtest_overfit",
@@ -40,6 +44,13 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert float(summary["selection_candidate_rate"]) == 1.0
     assert summary["next_gate"] == "stage-orders"
     assert bool(summary["sweep_provenance_passed"])
+    assert not bool(summary["research_registration_provided"])
+    assert bool(summary["research_registration_passed"])
+    registration_stage = report.stages.set_index("stage").loc[
+        "research_registration"
+    ]
+    assert bool(registration_stage["status"])
+    assert bool(registration_stage["skipped"])
     assert int(summary["sweep_manifest_current_count"]) == 9
     assert int(summary["development_sweep_count"]) == 6
     assert int(summary["holdout_sweep_count"]) == 3
@@ -56,6 +67,8 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert config["backtest_holdout"]["selection_matches"]
     assert config["backtest_holdout"]["candidate_matches"]
     assert config["upstream_integrity"]["passed"]
+    assert not config["pipeline"]["research_registration_provided"]
+    assert config["pipeline"]["research_registration_passed"]
     assert not config["authorizes_submission"]
     assert manifest["run_type"] == "robust_selection_pipeline"
     assert not manifest["extra"]["authorizes_submission"]
@@ -79,6 +92,8 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
         "02_backtest_significance/backtest_significance_summary.csv",
         "02_backtest_holdout/backtest_holdout_summary.csv",
         "03_promotion/promotion_summary.csv",
+        "robust_selection_pipeline_research_registration.csv",
+        "robust_selection_pipeline_preflight.csv",
         "robust_selection_pipeline_sweep_provenance.csv",
         "robust_selection_pipeline_stages.csv",
         "robust_selection_pipeline_summary.csv",
@@ -93,6 +108,129 @@ def test_robust_selection_pipeline_promotes_stable_multi_period_candidate(tmp_pa
     assert pipeline["summary_file"] == "robust_selection_pipeline_summary.csv"
     assert bool(pipeline["summary_status"])
     assert pipeline["summary_strategy"] == "surface_mm"
+
+
+def test_robust_selection_pipeline_binds_registered_study_row(tmp_path):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    output = tmp_path / "robust_selection"
+    registration, registration_dir = _write_pipeline_registration(
+        tmp_path,
+        output,
+    )
+
+    report = write_robust_selection_pipeline(
+        sweeps,
+        output_dir=output,
+        labels=labels,
+        group_cols=["scenario"],
+        strategy="surface_mm",
+        research_registration_path=registration_dir,
+        registered_study_label="surface_mm_study",
+        require_research_registration=True,
+    )
+
+    summary = report.summary.iloc[0]
+    binding = report.research_registration.iloc[0]
+    manifest = json.loads((output / "manifest.json").read_text(encoding="utf-8"))
+    config = json.loads((output / "candidate_config.json").read_text(encoding="utf-8"))
+    registration_id = str(registration.summary.iloc[0]["registration_id"])
+    registration_manifest = registration_dir / "manifest.json"
+    assert report.ready
+    assert bool(binding["passed"])
+    assert bool(binding["contract_matches"])
+    assert binding["registered_study_label"] == "surface_mm_study"
+    assert binding["registration_id"] == registration_id
+    assert bool(summary["research_registration_provided"])
+    assert bool(summary["research_registration_passed"])
+    assert summary["research_registration_id"] == registration_id
+    assert summary["research_registration_manifest_sha256"] == file_sha256(
+        registration_manifest
+    )
+    assert report.preflight["passed"].astype(bool).all()
+    assert config["pipeline"]["research_registration_id"] == registration_id
+    assert config["pipeline"]["registered_study_label"] == "surface_mm_study"
+    assert manifest["inputs"]["research_family_registration"]["kind"] == "directory"
+    assert manifest["inputs"]["research_family_registration_manifest"][
+        "sha256"
+    ] == file_sha256(registration_manifest)
+    assert manifest["extra"]["research_registration_passed"]
+    assert manifest["extra"]["research_registration_manifest_sha256"] == file_sha256(
+        registration_manifest
+    )
+    assert not manifest["extra"]["authorizes_submission"]
+
+
+def test_robust_selection_pipeline_cli_blocks_registered_search_breadth_breach(
+    tmp_path,
+):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    output = tmp_path / "robust_selection"
+    _, registration_dir = _write_pipeline_registration(
+        tmp_path,
+        output,
+        max_scenarios=2,
+    )
+    args = [
+        "pipeline-robust-selection",
+        "--sweeps",
+        *[str(path) for path in sweeps],
+        "--out",
+        str(output),
+        "--group-cols",
+        "scenario",
+        "--strategy",
+        "surface_mm",
+        "--research-registration",
+        str(registration_dir),
+        "--registered-study-label",
+        "surface_mm_study",
+        "--require-research-registration",
+        "--fail-on-breach",
+    ]
+    for label in labels:
+        args.extend(["--label", label])
+
+    status = main(args)
+
+    binding = pd.read_csv(
+        output / "robust_selection_pipeline_research_registration.csv"
+    ).iloc[0]
+    summary = pd.read_csv(output / "robust_selection_pipeline_summary.csv").iloc[0]
+    stages = pd.read_csv(output / "robust_selection_pipeline_stages.csv").set_index(
+        "stage"
+    )
+    assert status == 2
+    assert not bool(binding["passed"])
+    assert not bool(binding["search_breadth_within_plan"])
+    assert "search_breadth_within_plan" in binding["failed_check_names"]
+    assert not bool(summary["ready"])
+    assert summary["next_gate"] == "register-research-family"
+    assert not bool(stages.loc["research_registration", "status"])
+    assert not bool(stages.loc["promotion", "status"])
+
+
+def test_robust_selection_pipeline_blocks_missing_required_registration(tmp_path):
+    sweeps, labels = _write_stable_sweeps(tmp_path / "sweeps")
+    output = tmp_path / "robust_selection"
+
+    report = write_robust_selection_pipeline(
+        sweeps,
+        output_dir=output,
+        labels=labels,
+        group_cols=["scenario"],
+        require_research_registration=True,
+    )
+
+    binding = report.research_registration.iloc[0]
+    assert not report.ready
+    assert not bool(binding["provided"])
+    assert not bool(binding["passed"])
+    assert binding["failed_check_names"] == "registration_provided"
+    assert report.summary.iloc[0]["next_gate"] == "register-research-family"
+    assert set(report.action_queue["component"]) == {
+        "research_registration",
+        "promotion",
+    }
 
 
 def test_robust_selection_pipeline_cli_blocks_partition_memorization(tmp_path):
@@ -244,6 +382,44 @@ def test_robust_selection_pipeline_blocks_losing_reserved_holdout(tmp_path):
     }
     assert not bool(promotion_checks.loc["holdout_audit_passed", "passed"])
     assert not report.candidate_config["backtest_holdout"]["passed"]
+
+
+def _write_pipeline_registration(tmp_path, output, *, max_scenarios=3):
+    plan_path = tmp_path / "research_family_plan.csv"
+    pd.DataFrame(
+        [
+            {
+                "study_label": "surface_mm_study",
+                "strategy": "surface_mm",
+                "market": "india_nse_index_derivatives",
+                "hypothesis": "surface quotes retain edge after costs",
+                "planned_study_path": str(output),
+                "primary_metric": "robust_score",
+                "max_scenarios": max_scenarios,
+                "development_sweeps": 6,
+                "holdout_sweeps": 3,
+            },
+            {
+                "study_label": "future_study",
+                "strategy": "surface_mm",
+                "market": "india_nse_index_derivatives",
+                "hypothesis": "a second declared study will be evaluated later",
+                "planned_study_path": str(output.parent / "future_study"),
+                "primary_metric": "robust_score",
+                "max_scenarios": 3,
+                "development_sweeps": 6,
+                "holdout_sweeps": 3,
+            },
+        ]
+    ).to_csv(plan_path, index=False)
+    registration_dir = tmp_path / "registration"
+    report = write_research_family_registration(
+        plan_path,
+        output_dir=registration_dir,
+        family_id="pipeline_binding_family",
+    )
+    assert report.passed
+    return report, registration_dir
 
 
 def _write_stable_sweeps(root, *, periods=9, losing_holdout=False):

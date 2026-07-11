@@ -15,7 +15,9 @@ from reports.manifest import (
     verify_experiment_manifest,
     write_experiment_manifest,
 )
-from reports.research_family_registration import registration_id_for_plan
+from reports.research_family_registration import (
+    load_research_family_registration,
+)
 
 
 RUN_TYPE = "research_family_audit"
@@ -437,6 +439,10 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
             require_input_fingerprints=True,
         )
         manifest_payload = _read_json_object(manifest_path)
+        registration_manifest_input = _manifest_input(
+            manifest_payload,
+            "research_family_registration_manifest",
+        )
         rows.append(
             {
                 "study_label": str(label),
@@ -465,6 +471,27 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
                     source.get("development_sweep_count", 0)
                 ),
                 "holdout_sweeps": _int(source.get("holdout_sweep_count", 0)),
+                "source_registration_provided": _to_bool(
+                    source.get("research_registration_provided", False)
+                ),
+                "source_registration_passed": _to_bool(
+                    source.get("research_registration_passed", False)
+                ),
+                "source_registration_id": str(
+                    source.get("research_registration_id", "")
+                ),
+                "source_registered_study_label": str(
+                    source.get("registered_study_label", "")
+                ),
+                "source_registration_manifest_summary_sha256": str(
+                    source.get("research_registration_manifest_sha256", "")
+                ),
+                "source_registration_manifest_path": str(
+                    registration_manifest_input.get("path", "")
+                ),
+                "source_registration_manifest_sha256": str(
+                    registration_manifest_input.get("sha256", "")
+                ),
                 "scenario_trial_count": _int(
                     evidence.get(
                         "scenario_trial_count",
@@ -500,38 +527,11 @@ def _read_registration(
             "path": "",
             "registration_id": "",
         }
-    path = Path(raw_path).resolve()
-    root = path if path.is_dir() else path.parent
-    summary_path = root / "research_family_registration_summary.csv"
-    studies_path = root / "research_family_registration_studies.csv"
-    config_path = root / "research_family_registration_config.json"
-    lock_path = root / "registration.lock.json"
+    snapshot = load_research_family_registration(raw_path)
+    root = snapshot.root
     manifest_path = root / "manifest.json"
-    for required in (summary_path, studies_path, config_path, lock_path):
-        if not required.is_file():
-            raise FileNotFoundError(
-                f"required research family registration artifact not found: {required}"
-            )
-    registration_summary = pd.read_csv(summary_path)
-    registration_studies = pd.read_csv(studies_path)
-    if registration_summary.empty:
-        raise ValueError(f"research family registration summary is empty: {summary_path}")
-    summary = registration_summary.iloc[0]
-    config_payload = _read_json_object(config_path)
-    lock_payload = _read_json_object(lock_path)
-    manifest_payload = _read_json_object(manifest_path)
-    integrity = verify_experiment_manifest(
-        manifest_path,
-        expected_run_type="research_family_registration",
-        required_artifacts=(
-            "research_family_registration_summary.csv",
-            "research_family_registration_studies.csv",
-            "research_family_registration_config.json",
-            "registration.lock.json",
-        ),
-        require_input_fingerprints=True,
-    )
-    registered_family = str(summary.get("family_id", ""))
+    registration_studies = snapshot.studies
+    registered_family = snapshot.family_id
     family_matches = bool(registered_family and registered_family == family_id)
     declared_labels = studies["study_label"].astype(str).tolist()
     registered_labels = registration_studies["study_label"].astype(str).tolist()
@@ -552,23 +552,13 @@ def _read_registration(
         and declared_paths == registered_paths
     )
     contract = _registration_contract_evidence(registration_studies, studies)
-    manifest_extra = manifest_payload.get("extra", {})
-    recomputed_registration_id = registration_id_for_plan(
-        registered_family,
-        registration_studies,
+    binding = _source_registration_binding_evidence(
+        studies,
+        registration_id=snapshot.registration_id,
+        registration_manifest_path=manifest_path,
+        registration_manifest_sha256=snapshot.manifest_sha256,
     )
-    ids = {
-        str(summary.get("registration_id", "")),
-        str(config_payload.get("registration_id", "")),
-        str(lock_payload.get("registration_id", "")),
-        str(manifest_extra.get("registration_id", ""))
-        if isinstance(manifest_extra, dict)
-        else "",
-        recomputed_registration_id,
-    }
-    registration_id_consistent = bool(len(ids) == 1 and "" not in ids)
-    registration_id = next(iter(ids)) if registration_id_consistent else ""
-    registration_time = _parse_datetime(manifest_payload.get("generated_at_utc"))
+    registration_time = _parse_datetime(snapshot.generated_at_utc)
     study_times = [
         _parse_datetime(value)
         for value in studies["manifest_generated_at_utc"].astype(str)
@@ -581,25 +571,18 @@ def _read_registration(
             for study_time in study_times
         )
     )
-    status_values = [
-        _to_bool(summary.get("passed", False)),
-        _to_bool(config_payload.get("passed", False)),
-        _to_bool(lock_payload.get("passed", False)),
-        _to_bool(manifest_extra.get("passed", False))
-        if isinstance(manifest_extra, dict)
-        else False,
-    ]
-    registration_ready = bool(all(status_values))
     passed = bool(
-        registration_ready
-        and integrity.passed
+        snapshot.ready
+        and snapshot.manifest_current
         and family_matches
         and labels_match
         and paths_match
         and contract["strategy_market_metric_match"]
         and contract["search_breadth_within_plan"]
         and contract["period_counts_match"]
-        and registration_id_consistent
+        and snapshot.registration_id_consistent
+        and binding["source_registration_bindings"]
+        and binding["source_registration_manifest_fingerprints"]
         and prospective
     )
     return {
@@ -607,22 +590,72 @@ def _read_registration(
         "passed": passed,
         "path": str(root),
         "manifest_path": str(manifest_path),
-        "manifest_sha256": (
-            file_sha256(manifest_path) if manifest_path.is_file() else ""
-        ),
-        "manifest_current": bool(integrity.passed),
-        "manifest_error": str(integrity.error),
-        "registration_ready": registration_ready,
+        "manifest_sha256": snapshot.manifest_sha256,
+        "manifest_current": snapshot.manifest_current,
+        "manifest_error": snapshot.manifest_error,
+        "registration_ready": snapshot.ready,
         "family_matches": family_matches,
         "labels_match": labels_match,
         "paths_match": paths_match,
         **contract,
-        "registration_id_consistent": registration_id_consistent,
-        "registration_id": registration_id,
-        "registration_generated_at_utc": str(
-            manifest_payload.get("generated_at_utc", "")
-        ),
+        **binding,
+        "registration_id_consistent": snapshot.registration_id_consistent,
+        "registration_id": snapshot.registration_id,
+        "registration_generated_at_utc": snapshot.generated_at_utc,
         "prospective": prospective,
+    }
+
+
+def _source_registration_binding_evidence(
+    studies: pd.DataFrame,
+    *,
+    registration_id: str,
+    registration_manifest_path: Path,
+    registration_manifest_sha256: str,
+) -> dict[str, Any]:
+    required = {
+        "study_label",
+        "source_registration_provided",
+        "source_registration_passed",
+        "source_registration_id",
+        "source_registered_study_label",
+        "source_registration_manifest_summary_sha256",
+        "source_registration_manifest_path",
+        "source_registration_manifest_sha256",
+    }
+    if studies.empty or not required.issubset(studies.columns):
+        return {
+            "source_registration_bindings": False,
+            "source_registration_manifest_fingerprints": False,
+            "source_registration_binding_count": 0,
+            "source_registration_manifest_match_count": 0,
+        }
+    binding_mask = (
+        studies["source_registration_provided"].map(_to_bool)
+        & studies["source_registration_passed"].map(_to_bool)
+        & studies["source_registration_id"].astype(str).eq(registration_id)
+        & studies["source_registered_study_label"].astype(str).eq(
+            studies["study_label"].astype(str)
+        )
+    )
+    manifest_mask = (
+        studies["source_registration_manifest_summary_sha256"]
+        .astype(str)
+        .eq(registration_manifest_sha256)
+        & studies["source_registration_manifest_sha256"]
+        .astype(str)
+        .eq(registration_manifest_sha256)
+        & studies["source_registration_manifest_path"]
+        .map(_canonical_path)
+        .eq(_canonical_path(registration_manifest_path))
+    )
+    binding_count = int(binding_mask.sum())
+    manifest_count = int(manifest_mask.sum())
+    return {
+        "source_registration_bindings": bool(binding_mask.all()),
+        "source_registration_manifest_fingerprints": bool(manifest_mask.all()),
+        "source_registration_binding_count": binding_count,
+        "source_registration_manifest_match_count": manifest_count,
     }
 
 
@@ -662,6 +695,14 @@ def _registration_checks(
         (
             "period_counts_match",
             "actual development or holdout period count differs from the plan",
+        ),
+        (
+            "source_registration_bindings",
+            "one or more robust-study roots were not launched from the registered study row",
+        ),
+        (
+            "source_registration_manifest_fingerprints",
+            "one or more robust-study roots fingerprint a different registration manifest",
         ),
         (
             "registration_id_consistent",
@@ -812,6 +853,14 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     return value
 
 
+def _manifest_input(payload: dict[str, Any], name: str) -> dict[str, Any]:
+    inputs = payload.get("inputs", {})
+    if not isinstance(inputs, dict):
+        return {}
+    value = inputs.get(name, {})
+    return value if isinstance(value, dict) else {}
+
+
 def _holm_adjust(
     studies: pd.DataFrame,
     threshold: float,
@@ -914,6 +963,11 @@ def _recommendation(check: str) -> str:
         return "rerun_each_study_with_its_registered_strategy_market_and_metric"
     if check in {"search_breadth_within_plan", "period_counts_match"}:
         return "create_a_new_registration_before_changing_search_or_period_counts"
+    if check in {
+        "source_registration_bindings",
+        "source_registration_manifest_fingerprints",
+    }:
+        return "rerun_each_study_directly_from_its_registered_plan_row"
     if check == "prospective":
         return "create_a_new_registration_before_running_a_new_study_family"
     if check == "family_declaration_attested":

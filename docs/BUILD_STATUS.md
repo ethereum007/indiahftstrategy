@@ -72,6 +72,13 @@
   breaches fail closed. Sweep integrity is bound into nested promotion so a
   leaf cannot appear ready when root provenance failed. Ready output advances
   only to broker-neutral order staging with `authorizes_submission=false`.
+  A supplied prospective research-family registration is now a first-class
+  preflight stage: the exact registered study row must match the result root,
+  strategy, market, primary metric, scenario ceiling, and development/holdout
+  counts. Its registration ID and manifest SHA are preserved in the root
+  summary, candidate config, and manifest. Registration proof and sweep
+  provenance jointly gate nested promotion; exploratory unregistered runs stay
+  compatible unless registration is explicitly required.
 - Research families can now be registered prospectively before outcomes exist.
   `register-research-family` normalizes and validates a CSV plan containing
   strategy, market, hypothesis, metric, maximum search breadth, at least six
@@ -89,7 +96,11 @@
   matching registration/lock, exact family labels and result paths, and a
   registration timestamp earlier than every result manifest. Closure also
   matches strategy, market, primary metric, maximum scenario breadth, and exact
-  development/holdout counts against each registered row. The audit still
+  development/holdout counts against each registered row. It now additionally
+  requires every robust source root to carry a passed binding to its exact
+  registered study label and to fingerprint the same registration-manifest SHA
+  used for closure. Retrospective path and contract matching alone cannot close
+  a family. The audit still
   records the operator's completeness attestation because omitted experiments
   cannot be detected by software and invalidate the error-control claim.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
@@ -2477,16 +2488,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1486 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1490 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`122 passed`). This covers deterministic plan locking, exact
-family/label/path/contract closure, post-hoc registration and excess-search
-breadth rejection, Holm correction,
+together (`126 passed`). This covers deterministic plan locking, direct
+registered-row and registration-manifest source binding, exact
+family/label/path/contract closure, missing registration, post-hoc registration,
+source-ID mismatch, and excess-search-breadth rejection, Holm correction,
 failed-attempt accounting, complete-family attestation, malformed-p-value and
 drift rejection, development/holdout isolation, frozen-candidate evaluation,
 exact sign-test correction, deterministic bootstrap evidence, memorized and
@@ -2525,7 +2537,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1486-test collection is fully green.
+1490-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2534,6 +2546,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind an optional prospective registration ID directly into each robust
-   selection root so result manifests prove they were launched from the
-   registered study row, not only matched during family closure.
+4. Generate a registration-driven study launch matrix with one immutable
+   robust-selection command contract per planned row and closure coverage for
+   never-launched or abandoned registered studies.
