@@ -5248,6 +5248,18 @@ provider profile, adapter proof, or sidecar proof is missing, unsafe, stale,
 unready, or no longer
 matched to runtime-session evidence, cutover blocks route-enable and routes
 back to `review-provider-market-data-imbalance-broker-readiness`.
+When broker-readiness used a provider round-trip wrapper with required adapter
+receipts, cutover additionally requires its `dispatch_roundtrip_provenance`
+receipt proof to match both the broker-readiness manifest copy and the root
+runtime receipt proof exactly. It re-hashes every final round-trip receipt and
+capture before invoking the generic cutover gate and fingerprints accepted
+files as `dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`. Proof or byte drift leaves nested
+generic cutover absent and routes repair to
+`review-provider-market-data-imbalance-broker-readiness`. A provider wrapper
+with no required receipts and a broker-readiness packet with no provider-wrapper
+proof remain supported; the runbook marks the final receipt seal not applicable
+instead of blocked on those compatibility paths.
 When a
 broker-readiness CSV is from an
 older or thinner wrapper but its config sidecar has
