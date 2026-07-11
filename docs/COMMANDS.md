@@ -5673,6 +5673,18 @@ It also carries the ack-retained final `dispatch_roundtrip_route_readiness_*`
 sidecar breach proof; if nonzero final dry-run route sidecar breaches remain,
 broker-readiness feed routes directly back to
 `review-provider-market-data-imbalance-route-readiness`.
+When an acknowledgement packet carries a provider-wrapper final receipt proof
+with required adapter receipts, round-trip review also requires exact
+`dispatch_roundtrip_provenance` agreement with the acknowledgement manifest and
+root runtime receipt proof, re-hashes every final receipt and capture before
+creating the fresh round-trip artifact, and fingerprints accepted files as
+`dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`. Proof or byte drift leaves nested
+generic `broker_dispatch_roundtrip` absent and routes repair to
+`reconcile-provider-market-data-imbalance-broker-dispatch`.
+No-provider-wrapper packets and provider wrappers without required receipts
+remain supported and are marked not applicable rather than blocked in the
+runbook.
 When an acknowledgement CSV is sparse but its config sidecar has
 `dispatch_roundtrip_provenance`, the provider round-trip wrapper hydrates
 missing or blank `dispatch_roundtrip_*` fields, including the round-trip
