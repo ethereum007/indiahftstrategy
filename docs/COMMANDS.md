@@ -2208,12 +2208,17 @@ python -m hft_cli pipeline-robust-selection `
   --fail-on-breach
 ```
 
-The default selection threshold requires every supplied sweep period. The
-pipeline always requires a current selection manifest, always binds promotion
-to the generated audit, and cannot relax `require_overfit_audit`. Fewer than
-four independent periods, incomplete parameter grids, unstable rank-1
-candidates, selection/audit drift, and promotion threshold breaches all block
-the root candidate. A ready result advances only to broker-neutral
+The default selection threshold requires every supplied sweep period. Every
+sweep must have a readable experiment manifest that lists the exact consumed
+`sweep_runs.csv`; all of that manifest's artifact hashes and recorded source
+input fingerprints must still be current. The pipeline also requires a current
+selection manifest, binds promotion to the generated audit, and cannot relax
+`require_overfit_audit`. Sweep provenance is carried into the nested promotion
+checks and manifest, so `03_promotion` cannot appear ready when the root
+preflight is blocked. Missing or drifted sweep provenance, fewer than four
+independent periods, incomplete parameter grids, unstable rank-1 candidates,
+selection/audit drift, and promotion threshold breaches all block the root
+candidate. A ready result advances only to broker-neutral
 `stage-orders`; `authorizes_submission` remains `false` in summary, candidate,
 runbook, and manifest evidence.
 
@@ -2223,6 +2228,7 @@ Outputs:
 01_selection\...
 02_backtest_overfit\...
 03_promotion\...
+robust_selection_pipeline_sweep_provenance.csv
 robust_selection_pipeline_stages.csv
 robust_selection_pipeline_summary.csv
 robust_selection_pipeline_action_queue.csv

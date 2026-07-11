@@ -46,13 +46,17 @@
   a different selection-manifest SHA, or drifted from its own manifest.
 - Multi-period parameter research now has a single strict orchestration gate.
   `pipeline-robust-selection` compares chronological sweep folders, requires
-  full-period selection coverage by default, runs the CSCV audit, binds the
-  exact audit and selection manifests into promotion, and emits a root action
-  queue, runbook, candidate config, and manifest. It fails closed on
-  underpowered studies, incomplete grids, memorized parameters, candidate
-  instability, artifact drift, or promotion breaches. Ready output advances
-  only to broker-neutral order staging and explicitly carries
-  `authorizes_submission=false`.
+  full-period selection coverage by default, and verifies each consumed sweep
+  against its generating manifest, including every artifact and recorded input
+  fingerprint. It then runs the CSCV audit, binds the exact audit and selection
+  manifests into promotion, and emits sweep-provenance evidence plus a root
+  action queue, runbook, candidate config, and manifest. It fails closed on
+  missing or drifted sweep provenance, underpowered studies, incomplete grids,
+  memorized parameters, candidate instability, downstream artifact drift, or
+  promotion breaches. Sweep integrity is also bound into the nested promotion
+  check/config/manifest, preventing a leaf promotion from appearing ready when
+  root provenance failed. Ready output advances only to broker-neutral order
+  staging and explicitly carries `authorizes_submission=false`.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2438,15 +2442,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1456 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1459 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: the robust-selection pipeline, CSCV backtest-overfit
 audit, manifest-bound promotion, sweep comparison, experiment catalog, and
-strategy scorecard suites pass together (`91 passed`). This covers stable,
+strategy scorecard suites pass together (`95 passed`). This covers stable,
 partition-memorized, and underpowered multi-period orchestration; strict audit
 binding; root manifest/candidate lineage; catalog discovery; CLI fail-closed
-behavior; and the existing audit artifact and source-selection drift paths.
+behavior; shared manifest verification; missing, edited, and source-drifted
+sweep provenance; path-contained artifact checks; and the existing audit
+artifact and source-selection drift paths.
 Manifest generation, the existing surface research/launch pipeline, and
 generic launch-bundle compatibility also pass together (`14 passed`).
 The immediately preceding CSCV backtest-overfit audit, manifest-bound
@@ -2481,7 +2487,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1456-test collection is fully green.
+1459-test collection is fully green.
 
 ## Next Build Targets
 

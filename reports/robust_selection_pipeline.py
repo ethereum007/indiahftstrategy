@@ -15,7 +15,11 @@ from reports.backtest_overfit import (
     BacktestOverfitThresholds,
     write_backtest_overfit_audit,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.promotion import PromotionReport, PromotionThresholds, write_promotion_report
 from reports.sweeps import SweepComparison, write_sweep_comparison
 
@@ -23,6 +27,7 @@ from reports.sweeps import SweepComparison, write_sweep_comparison
 RUN_TYPE = "robust_selection_pipeline"
 READY_NEXT_GATE = "stage-orders"
 STAGE_NEXT_GATES = {
+    "sweep_provenance": "pipeline-robust-selection",
     "selection": "compare-sweeps",
     "backtest_overfit": "audit-backtest-overfit",
     "promotion": "promote-scenario",
@@ -47,6 +52,7 @@ ACTION_QUEUE_COLUMNS = [
 
 @dataclass(frozen=True)
 class RobustSelectionPipelineReport:
+    sweep_provenance: pd.DataFrame
     stages: pd.DataFrame
     summary: pd.DataFrame
     action_queue: pd.DataFrame
@@ -105,6 +111,13 @@ def write_robust_selection_pipeline(
         require_overfit_audit=True,
     )
 
+    sweep_provenance = _sweep_provenance(paths, labels)
+    sweep_provenance_path = out / "robust_selection_pipeline_sweep_provenance.csv"
+    sweep_provenance.to_csv(sweep_provenance_path, index=False)
+    sweep_provenance_passed = bool(
+        not sweep_provenance.empty and sweep_provenance["passed"].astype(bool).all()
+    )
+
     selection = write_sweep_comparison(
         paths,
         output_dir=selection_dir,
@@ -126,9 +139,11 @@ def write_robust_selection_pipeline(
         output_dir=promotion_dir,
         overfit_audit_path=overfit_dir,
         thresholds=promotion_thresholds,
+        upstream_integrity_passed=sweep_provenance_passed,
+        upstream_integrity_path=sweep_provenance_path,
     )
 
-    stages = _stages(selection, overfit, promotion)
+    stages = _stages(sweep_provenance, selection, overfit, promotion)
     action_queue = _action_queue(stages)
     summary = _summary(
         stages,
@@ -139,6 +154,7 @@ def write_robust_selection_pipeline(
         strategy=strategy,
         market=market,
         sweep_count=len(paths),
+        sweep_provenance=sweep_provenance,
     )
     candidate_config = _candidate_config(
         promotion_dir,
@@ -166,6 +182,7 @@ def write_robust_selection_pipeline(
         "group_cols": group_cols,
         "strategy": strategy,
         "market": market,
+        "require_sweep_manifests": True,
         "selection": {
             "min_pass_rate": selection_min_pass_rate,
             "min_sweeps": resolved_selection_min_sweeps,
@@ -182,6 +199,11 @@ def write_robust_selection_pipeline(
         parameters=parameters,
         inputs={
             "sweeps": paths,
+            "sweep_manifests": [
+                Path(path)
+                for path in sweep_provenance["manifest_path"].astype(str)
+                if path and Path(path).is_file()
+            ],
             "selection_manifest": selection_dir / "manifest.json",
             "backtest_overfit_manifest": overfit_dir / "manifest.json",
             "promotion_manifest": promotion_dir / "manifest.json",
@@ -192,10 +214,14 @@ def write_robust_selection_pipeline(
             "market": market,
             "candidate_scenario_key": str(summary.iloc[0]["candidate_scenario_key"]),
             "probability_overfit": _float(summary.iloc[0].get("probability_overfit")),
+            "sweep_provenance_passed": bool(
+                summary.iloc[0]["sweep_provenance_passed"]
+            ),
             "authorizes_submission": False,
         },
     )
     return RobustSelectionPipelineReport(
+        sweep_provenance=sweep_provenance,
         stages=stages,
         summary=summary,
         action_queue=action_queue,
@@ -207,7 +233,58 @@ def write_robust_selection_pipeline(
     )
 
 
+def _sweep_provenance(
+    sweep_paths: list[Path],
+    labels: list[str] | None,
+) -> pd.DataFrame:
+    resolved_labels = labels or [path.stem for path in sweep_paths]
+    rows: list[dict[str, Any]] = []
+    for label, path in zip(resolved_labels, sweep_paths):
+        target = path / "sweep_runs.csv" if path.is_dir() else path
+        manifest_path = path / "manifest.json" if path.is_dir() else path.parent / "manifest.json"
+        try:
+            required_artifact = target.resolve().relative_to(
+                manifest_path.parent.resolve()
+            ).as_posix()
+        except ValueError:
+            required_artifact = f"outside_manifest_root/{target.name}"
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            required_artifacts=(required_artifact,),
+            require_input_fingerprints=True,
+        )
+        rows.append(
+            {
+                "label": label,
+                "sweep_path": str(path),
+                "sweep_runs_path": str(target.resolve()),
+                "manifest_path": str(manifest_path.resolve()),
+                "manifest_exists": integrity.exists,
+                "manifest_readable": integrity.readable,
+                "manifest_sha256": (
+                    file_sha256(manifest_path) if manifest_path.is_file() else ""
+                ),
+                "run_type": integrity.run_type,
+                "artifact_count": integrity.artifact_count,
+                "artifact_matches": integrity.artifact_match_count,
+                "required_artifact_count": integrity.required_artifact_count,
+                "required_artifact_matches": integrity.required_artifact_match_count,
+                "input_fingerprint_count": integrity.input_fingerprint_count,
+                "input_fingerprint_matches": integrity.input_fingerprint_match_count,
+                "passed": integrity.passed,
+                "error": integrity.error,
+                "recommendation": (
+                    "use_manifest_backed_sweep"
+                    if integrity.passed
+                    else "regenerate_sweep_from_current_fingerprinted_market_data"
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def _stages(
+    sweep_provenance: pd.DataFrame,
     selection: SweepComparison,
     overfit: BacktestOverfitReport,
     promotion: PromotionReport,
@@ -223,8 +300,31 @@ def _stages(
         if not promotion.summary.empty
         else pd.Series(dtype=object)
     )
+    provenance_passed = bool(
+        not sweep_provenance.empty and sweep_provenance["passed"].astype(bool).all()
+    )
+    provenance_failed = int(
+        (~sweep_provenance["passed"].astype(bool)).sum()
+    ) if not sweep_provenance.empty else 1
     return pd.DataFrame(
         [
+            {
+                "stage": "sweep_provenance",
+                "status": provenance_passed,
+                "status_column": "passed",
+                "skipped": False,
+                "output_dir": "",
+                "failed_checks": provenance_failed,
+                "recommendation": (
+                    "continue_to_selection"
+                    if provenance_passed
+                    else "regenerate_or_restore_manifest_backed_sweep_inputs"
+                ),
+                "detail": (
+                    f"current_sweep_manifests={len(sweep_provenance) - provenance_failed}/"
+                    f"{len(sweep_provenance)}"
+                ),
+            },
             {
                 "stage": "selection",
                 "status": bool(selection.has_selection),
@@ -273,6 +373,7 @@ def _summary(
     strategy: str,
     market: str,
     sweep_count: int,
+    sweep_provenance: pd.DataFrame,
 ) -> pd.DataFrame:
     ready = bool(stages["status"].map(_to_bool).all()) if not stages.empty else False
     selection_row = selection.summary.iloc[0] if not selection.summary.empty else pd.Series(dtype=object)
@@ -290,6 +391,19 @@ def _summary(
                 "strategy": strategy,
                 "market": market,
                 "sweep_count": sweep_count,
+                "sweep_provenance_passed": bool(
+                    not sweep_provenance.empty
+                    and sweep_provenance["passed"].astype(bool).all()
+                ),
+                "sweep_manifest_count": int(
+                    sweep_provenance["manifest_exists"].astype(bool).sum()
+                ),
+                "sweep_manifest_current_count": int(
+                    sweep_provenance["passed"].astype(bool).sum()
+                ),
+                "sweep_manifest_required_artifact_match_count": int(
+                    sweep_provenance["required_artifact_matches"].astype(int).sum()
+                ),
                 "selection_passed": bool(selection.has_selection),
                 "selectable_scenarios": _int(selection_row.get("selectable_scenarios")),
                 "backtest_overfit_passed": bool(overfit.passed),
@@ -377,6 +491,7 @@ def _candidate_config(
     ].astype(str).tolist()
     config["pipeline"] = {
         "ready": bool(summary["ready"]),
+        "sweep_provenance_passed": bool(summary["sweep_provenance_passed"]),
         "next_gate": str(summary["next_gate"]),
         "sweep_paths": [str(path) for path in sweep_paths],
         "selection_path": str(promotion_dir.parent / "01_selection"),
@@ -401,6 +516,7 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
         f"- Status: **{'ready' if bool(summary['ready']) else 'blocked'}**",
         f"- Strategy/market: `{summary['strategy']}` / `{summary['market']}`",
         f"- Sweep periods: {int(summary['sweep_count'])}",
+        f"- Current sweep manifests: {int(summary['sweep_manifest_current_count'])}/{int(summary['sweep_count'])}",
         f"- Candidate: `{summary['candidate_scenario_key']}`",
         f"- Probability of backtest overfitting: {_format_number(summary['probability_overfit'])}",
         f"- Candidate selection rate: {_format_number(summary['selection_candidate_rate'])}",

@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 SCORE_METRIC_COLUMNS = {
@@ -68,6 +71,7 @@ def evaluate_promotion(
     thresholds: PromotionThresholds | None = None,
     overfit_summary: pd.DataFrame | None = None,
     overfit_selection_matches: bool | None = None,
+    upstream_integrity_passed: bool | None = None,
 ) -> PromotionReport:
     thresholds = thresholds or PromotionThresholds()
     _validate_thresholds(thresholds)
@@ -83,9 +87,16 @@ def evaluate_promotion(
             [
                 _check("selection_available", 0, ">=", 1, False, "no scenarios available"),
                 *_overfit_checks(overfit, thresholds, overfit_selection_matches),
+                *_upstream_integrity_checks(upstream_integrity_passed),
             ]
         )
-        summary = _summary(candidate, checks, overfit, overfit_selection_matches)
+        summary = _summary(
+            candidate,
+            checks,
+            overfit,
+            overfit_selection_matches,
+            upstream_integrity_passed,
+        )
         return PromotionReport(candidate=candidate, checks=checks, summary=summary)
 
     row = candidate.iloc[0]
@@ -96,8 +107,15 @@ def evaluate_promotion(
         thresholds,
         overfit,
         overfit_selection_matches,
+        upstream_integrity_passed,
     )
-    summary = _summary(candidate, checks, overfit, overfit_selection_matches)
+    summary = _summary(
+        candidate,
+        checks,
+        overfit,
+        overfit_selection_matches,
+        upstream_integrity_passed,
+    )
     return PromotionReport(candidate=candidate, checks=checks, summary=summary)
 
 
@@ -107,6 +125,8 @@ def write_promotion_report(
     output_dir: str | Path,
     thresholds: PromotionThresholds | None = None,
     overfit_audit_path: str | Path | None = None,
+    upstream_integrity_passed: bool | None = None,
+    upstream_integrity_path: str | Path | None = None,
 ) -> PromotionReport:
     selection = Path(selection_path)
     scores_path = selection / "scenario_scores.csv"
@@ -125,6 +145,7 @@ def write_promotion_report(
         thresholds=thresholds,
         overfit_summary=overfit_summary,
         overfit_selection_matches=overfit_selection_matches,
+        upstream_integrity_passed=upstream_integrity_passed,
     )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -138,6 +159,8 @@ def write_promotion_report(
                 thresholds,
                 overfit_summary,
                 overfit_selection_matches,
+                upstream_integrity_passed,
+                upstream_integrity_path,
             ),
             indent=2,
             sort_keys=True,
@@ -155,10 +178,15 @@ def write_promotion_report(
         )
         if overfit_manifest.is_file():
             inputs["backtest_overfit_audit_manifest"] = overfit_manifest
+    if upstream_integrity_path is not None:
+        inputs["upstream_integrity"] = Path(upstream_integrity_path)
     write_experiment_manifest(
         out,
         run_type="promotion_report",
-        parameters={"thresholds": asdict(thresholds)},
+        parameters={
+            "thresholds": asdict(thresholds),
+            "upstream_integrity_required": upstream_integrity_passed is not None,
+        },
         inputs=inputs,
     )
     return PromotionReport(report.candidate, report.checks, report.summary, out)
@@ -184,6 +212,7 @@ def _checks(
     thresholds: PromotionThresholds,
     overfit_summary: pd.DataFrame,
     overfit_selection_matches: bool | None,
+    upstream_integrity_passed: bool | None,
 ) -> pd.DataFrame:
     checks = [
         _check(
@@ -241,6 +270,7 @@ def _checks(
             )
         )
     checks.extend(_overfit_checks(overfit_summary, thresholds, overfit_selection_matches))
+    checks.extend(_upstream_integrity_checks(upstream_integrity_passed))
     return pd.DataFrame(checks)
 
 
@@ -297,11 +327,30 @@ def _overfit_checks(
     return rows
 
 
+def _upstream_integrity_checks(
+    upstream_integrity_passed: bool | None,
+) -> list[dict[str, Any]]:
+    if upstream_integrity_passed is None:
+        return []
+    passed = bool(upstream_integrity_passed)
+    return [
+        _check(
+            "upstream_integrity_passed",
+            passed,
+            "is",
+            True,
+            passed,
+            "upstream research artifacts did not pass manifest integrity review",
+        )
+    ]
+
+
 def _summary(
     candidate: pd.DataFrame,
     checks: pd.DataFrame,
     overfit_summary: pd.DataFrame,
     overfit_selection_matches: bool | None,
+    upstream_integrity_passed: bool | None,
 ) -> pd.DataFrame:
     ready = bool(checks["passed"].all()) if not checks.empty else False
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 0
@@ -324,6 +373,8 @@ def _summary(
                     overfit.get("_artifact_integrity_current", not overfit_summary.empty)
                 ),
                 "probability_overfit": _float_or_nan(overfit.get("probability_overfit")),
+                "upstream_integrity_provided": upstream_integrity_passed is not None,
+                "upstream_integrity_passed": bool(upstream_integrity_passed),
                 "recommendation": recommendation,
             }
         ]
@@ -335,8 +386,17 @@ def _candidate_config(
     thresholds: PromotionThresholds,
     overfit_summary: pd.DataFrame,
     overfit_selection_matches: bool | None,
+    upstream_integrity_passed: bool | None,
+    upstream_integrity_path: str | Path | None,
 ) -> dict[str, Any]:
     overfit = _overfit_config_record(overfit_summary, overfit_selection_matches)
+    upstream_integrity = {
+        "provided": upstream_integrity_passed is not None,
+        "passed": bool(upstream_integrity_passed),
+        "evidence_path": str(Path(upstream_integrity_path).resolve())
+        if upstream_integrity_path is not None
+        else "",
+    }
     if report.candidate.empty:
         return {
             "schema_version": 1,
@@ -346,6 +406,7 @@ def _candidate_config(
             "metrics": {},
             "thresholds": asdict(thresholds),
             "backtest_overfit": overfit,
+            "upstream_integrity": upstream_integrity,
             "recommendation": "keep_in_research",
         }
     row = report.candidate.iloc[0]
@@ -363,6 +424,7 @@ def _candidate_config(
         "metrics": metrics,
         "thresholds": asdict(thresholds),
         "backtest_overfit": overfit,
+        "upstream_integrity": upstream_integrity,
         "recommendation": str(report.summary.iloc[0]["recommendation"]),
     }
 
@@ -392,10 +454,12 @@ def _read_overfit_audit(
         config = value
     audit_manifest = summary_path.parent / "manifest.json"
     summary = summary.copy()
-    summary["_artifact_integrity_current"] = _audit_manifest_current(
+    summary["_artifact_integrity_current"] = verify_experiment_manifest(
         audit_manifest,
-        summary_path.parent,
-    )
+        expected_run_type="backtest_overfit_audit",
+        required_artifacts=("backtest_overfit_summary.csv",),
+        require_input_fingerprints=True,
+    ).passed
     summary["_audit_manifest_sha256"] = (
         file_sha256(audit_manifest) if audit_manifest.is_file() else ""
     )
@@ -443,73 +507,6 @@ def _overfit_config_record(
         "combination_count": _int_or_zero(summary.get("combination_count", 0)),
         "score_column": str(summary.get("score_column", "")),
     }
-
-
-def _audit_manifest_current(manifest_path: Path, root: Path) -> bool:
-    if not manifest_path.is_file():
-        return False
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, json.JSONDecodeError):
-        return False
-    if not isinstance(manifest, dict) or manifest.get("run_type") != "backtest_overfit_audit":
-        return False
-    artifacts = manifest.get("artifacts")
-    if not isinstance(artifacts, list) or not artifacts:
-        return False
-    for item in artifacts:
-        if not isinstance(item, dict):
-            return False
-        path = root / str(item.get("path", ""))
-        if not path.is_file():
-            return False
-        if int(item.get("size_bytes", -1)) != int(path.stat().st_size):
-            return False
-        if str(item.get("sha256", "")) != file_sha256(path):
-            return False
-    input_fingerprints = list(_manifest_fingerprints(manifest.get("inputs", {})))
-    return bool(input_fingerprints) and all(
-        _manifest_fingerprint_current(fingerprint)
-        for fingerprint in input_fingerprints
-    )
-
-
-def _manifest_fingerprints(value: Any):
-    if isinstance(value, Mapping):
-        fingerprint = dict(value)
-        if fingerprint.get("kind") in {"file", "directory"} and fingerprint.get("path"):
-            yield fingerprint
-            return
-        for item in fingerprint.values():
-            yield from _manifest_fingerprints(item)
-    elif isinstance(value, list):
-        for item in value:
-            yield from _manifest_fingerprints(item)
-
-
-def _manifest_fingerprint_current(fingerprint: dict[str, Any]) -> bool:
-    path = Path(str(fingerprint.get("path", "")))
-    if fingerprint.get("kind") == "file":
-        return bool(
-            path.is_file()
-            and int(fingerprint.get("size_bytes", -1)) == int(path.stat().st_size)
-            and str(fingerprint.get("sha256", "")) == file_sha256(path)
-        )
-    if fingerprint.get("kind") != "directory" or not path.is_dir():
-        return False
-    files = [
-        item
-        for item in sorted(path.rglob("*"))
-        if item.is_file() and item.name != "manifest.json"
-    ]
-    hasher = hashlib.sha256()
-    for item in files:
-        hasher.update(item.relative_to(path).as_posix().encode("utf-8"))
-        hasher.update(file_sha256(item).encode("ascii"))
-    return bool(
-        int(fingerprint.get("file_count", -1)) == len(files)
-        and str(fingerprint.get("tree_sha256", "")) == hasher.hexdigest()
-    )
 
 
 def _parameter_columns(frame: pd.DataFrame) -> list[str]:

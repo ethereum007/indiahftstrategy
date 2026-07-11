@@ -4,7 +4,8 @@ import hashlib
 import json
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,6 +16,25 @@ import pandas as pd
 
 MANIFEST_NAME = "manifest.json"
 FILE_HASH_CHUNK_SIZE = 64 * 1024
+
+
+@dataclass(frozen=True)
+class ManifestIntegrity:
+    manifest_path: Path
+    root: Path
+    exists: bool = False
+    readable: bool = False
+    run_type: str = ""
+    expected_run_type: str = ""
+    run_type_matches: bool = False
+    artifact_count: int = 0
+    artifact_match_count: int = 0
+    required_artifact_count: int = 0
+    required_artifact_match_count: int = 0
+    input_fingerprint_count: int = 0
+    input_fingerprint_match_count: int = 0
+    passed: bool = False
+    error: str = ""
 
 
 def write_experiment_manifest(
@@ -77,6 +97,100 @@ def file_sha256(path: str | Path) -> str:
     return hasher.hexdigest()
 
 
+def verify_experiment_manifest(
+    manifest_path: str | Path,
+    *,
+    expected_run_type: str | None = None,
+    required_artifacts: list[str] | tuple[str, ...] = (),
+    require_input_fingerprints: bool = False,
+) -> ManifestIntegrity:
+    path = Path(manifest_path).resolve()
+    root = path.parent
+    expected = str(expected_run_type or "").strip()
+    required = [_manifest_artifact_name(item) for item in required_artifacts]
+    if not path.is_file():
+        return ManifestIntegrity(
+            manifest_path=path,
+            root=root,
+            expected_run_type=expected,
+            required_artifact_count=len(required),
+            error="manifest_missing",
+        )
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return ManifestIntegrity(
+            manifest_path=path,
+            root=root,
+            exists=True,
+            expected_run_type=expected,
+            required_artifact_count=len(required),
+            error="manifest_unreadable",
+        )
+    if not isinstance(payload, dict):
+        return ManifestIntegrity(
+            manifest_path=path,
+            root=root,
+            exists=True,
+            readable=True,
+            expected_run_type=expected,
+            required_artifact_count=len(required),
+            error="manifest_not_object",
+        )
+
+    run_type = str(payload.get("run_type", "")).strip()
+    run_type_matches = bool(run_type and (not expected or run_type == expected))
+    artifacts_value = payload.get("artifacts", [])
+    artifacts = artifacts_value if isinstance(artifacts_value, list) else []
+    artifact_matches: dict[str, bool] = {}
+    for item in artifacts:
+        name = _manifest_artifact_name(item.get("path", "")) if isinstance(item, dict) else ""
+        artifact_matches[name] = _manifest_artifact_current(item, root)
+    artifact_match_count = sum(artifact_matches.values())
+    required_match_count = sum(bool(artifact_matches.get(name, False)) for name in required)
+
+    fingerprints = list(_manifest_input_fingerprints(payload.get("inputs", {})))
+    input_match_count = sum(_manifest_fingerprint_current(item) for item in fingerprints)
+    artifacts_passed = bool(artifacts) and artifact_match_count == len(artifacts)
+    required_passed = required_match_count == len(required)
+    inputs_passed = input_match_count == len(fingerprints) and (
+        bool(fingerprints) or not require_input_fingerprints
+    )
+    passed = bool(run_type_matches and artifacts_passed and required_passed and inputs_passed)
+    error = ""
+    if not run_type:
+        error = "run_type_missing"
+    elif not run_type_matches:
+        error = "run_type_mismatch"
+    elif not artifacts:
+        error = "artifacts_missing"
+    elif artifact_match_count != len(artifacts):
+        error = "artifact_drift"
+    elif not required_passed:
+        error = "required_artifact_missing_or_drifted"
+    elif input_match_count != len(fingerprints):
+        error = "input_drift"
+    elif require_input_fingerprints and not fingerprints:
+        error = "input_fingerprints_missing"
+    return ManifestIntegrity(
+        manifest_path=path,
+        root=root,
+        exists=True,
+        readable=True,
+        run_type=run_type,
+        expected_run_type=expected,
+        run_type_matches=run_type_matches,
+        artifact_count=len(artifacts),
+        artifact_match_count=artifact_match_count,
+        required_artifact_count=len(required),
+        required_artifact_match_count=required_match_count,
+        input_fingerprint_count=len(fingerprints),
+        input_fingerprint_match_count=input_match_count,
+        passed=passed,
+        error=error,
+    )
+
+
 def _input_fingerprint(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_input_fingerprint(item) for item in value]
@@ -112,6 +226,79 @@ def _path_fingerprint(path: Path) -> dict[str, Any]:
             "tree_sha256": tree_hasher.hexdigest(),
         }
     return {"path": str(resolved), "kind": "other"}
+
+
+def _manifest_artifact_current(value: Any, root: Path) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    raw_path = str(value.get("path", "")).strip()
+    if not raw_path:
+        return False
+    relative = Path(raw_path)
+    if relative.is_absolute():
+        return False
+    resolved_root = root.resolve()
+    candidate = (resolved_root / relative).resolve()
+    try:
+        candidate.relative_to(resolved_root)
+    except ValueError:
+        return False
+    try:
+        return bool(
+            candidate.is_file()
+            and int(value.get("size_bytes", -1)) == int(candidate.stat().st_size)
+            and str(value.get("sha256", "")) == file_sha256(candidate)
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+
+
+def _manifest_artifact_name(value: Any) -> str:
+    name = str(value).replace("\\", "/")
+    while name.startswith("./"):
+        name = name[2:]
+    return name
+
+
+def _manifest_input_fingerprints(value: Any) -> Iterator[dict[str, Any]]:
+    if isinstance(value, Mapping):
+        fingerprint = dict(value)
+        if fingerprint.get("kind") in {"file", "directory"} and fingerprint.get("path"):
+            yield fingerprint
+            return
+        for item in fingerprint.values():
+            yield from _manifest_input_fingerprints(item)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _manifest_input_fingerprints(item)
+
+
+def _manifest_fingerprint_current(fingerprint: dict[str, Any]) -> bool:
+    path = Path(str(fingerprint.get("path", "")))
+    try:
+        if fingerprint.get("kind") == "file":
+            return bool(
+                path.is_file()
+                and int(fingerprint.get("size_bytes", -1)) == int(path.stat().st_size)
+                and str(fingerprint.get("sha256", "")) == file_sha256(path)
+            )
+        if fingerprint.get("kind") != "directory" or not path.is_dir():
+            return False
+        files = [
+            item
+            for item in sorted(path.rglob("*"))
+            if item.is_file() and item.name != MANIFEST_NAME
+        ]
+        hasher = hashlib.sha256()
+        for item in files:
+            hasher.update(item.relative_to(path).as_posix().encode("utf-8"))
+            hasher.update(file_sha256(item).encode("ascii"))
+        return bool(
+            int(fingerprint.get("file_count", -1)) == len(files)
+            and str(fingerprint.get("tree_sha256", "")) == hasher.hexdigest()
+        )
+    except (OSError, TypeError, ValueError):
+        return False
 
 
 def _artifact_fingerprints(output_dir: Path) -> list[dict[str, Any]]:
