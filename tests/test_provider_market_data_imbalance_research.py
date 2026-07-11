@@ -877,6 +877,18 @@ def _write_bundle_linked_provider_imbalance_final_route_enable(tmp_path):
     return route_enable, cutover
 
 
+def _write_bundle_linked_provider_imbalance_final_broker_dispatch(tmp_path):
+    route_enable, _ = _write_bundle_linked_provider_imbalance_final_route_enable(
+        tmp_path
+    )
+    broker_dispatch = write_provider_market_data_imbalance_broker_dispatch(
+        route_enable.output_dir,
+        tmp_path / "provider_imbalance_final_broker_dispatch",
+        config=ProviderMarketDataImbalanceBrokerDispatchConfig(),
+    )
+    return broker_dispatch, route_enable
+
+
 def _write_ready_provider_imbalance_broker_dispatch_roundtrip_with_vendor_batch(tmp_path):
     provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
     _inject_nested_roundtrip_vendor_market_data_batch(provider_ack)
@@ -25142,6 +25154,7 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_capture_bun
     )
 
     summary = report.summary.iloc[0]
+    checks = report.checks.set_index("check")
     config = json.loads(
         (out_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").read_text(encoding="utf-8")
     )
@@ -25333,6 +25346,17 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_capture_bun
     assert "Exchange: NFO" in runbook
     assert "Source session: 09:15:00 - 15:30:00 Asia/Kolkata" in runbook
     assert "Adapter receipt proof: ready (2/2 sealed; broker-dispatch manifest match: yes)" in runbook
+    assert not bool(summary["provider_broker_dispatch_roundtrip_wrapper_provided"])
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_proof_carried",
+            "passed",
+        ]
+    )
+    assert (
+        "Dispatch round-trip adapter receipt proof: not applicable "
+        "(no provider wrapper proof)" in runbook
+    )
     assert "Adapter execution contract: arrow_money / websocket (evidence match: yes)" in runbook
     assert f"Provider profile: {summary['provider_profile_sha256']} (bundle match: yes)" in runbook
     assert "Provider capture commands: 2 (bundle match: yes)" in runbook
@@ -26836,6 +26860,247 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_roundtrip_c
     assert "- Dispatch round-trip source provenance consistent: yes" in runbook
 
 
+def test_provider_market_data_imbalance_broker_dispatch_send_seals_final_roundtrip_receipt_proof(
+    tmp_path,
+):
+    broker_dispatch, _ = (
+        _write_bundle_linked_provider_imbalance_final_broker_dispatch(tmp_path)
+    )
+    out_dir = tmp_path / "provider_imbalance_final_broker_dispatch_send"
+
+    report = write_provider_market_data_imbalance_broker_dispatch_send(
+        broker_dispatch.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    summary = report.summary.iloc[0]
+    checks = report.checks.set_index("check")
+    config = json.loads(
+        (
+            out_dir
+            / "provider_market_data_imbalance_broker_dispatch_send_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (
+        out_dir
+        / "provider_market_data_imbalance_broker_dispatch_send_runbook.md"
+    ).read_text(encoding="utf-8")
+    assert broker_dispatch.ready
+    assert report.ready
+    assert report.broker_dispatch_send is not None
+    assert not bool(summary["submission_enabled"])
+    assert bool(summary["provider_broker_dispatch_roundtrip_wrapper_provided"])
+    assert (
+        summary["provider_broker_dispatch_roundtrip_manifest_run_type"]
+        == "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    )
+    assert bool(summary["dispatch_roundtrip_adapter_receipt_proof_ready"])
+    assert bool(
+        summary["dispatch_roundtrip_adapter_receipt_proof_matches_manifest"]
+    )
+    assert bool(
+        summary[
+            "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+        ]
+    )
+    assert summary["dispatch_roundtrip_adapter_receipt_required_count"] == 2
+    assert summary["dispatch_roundtrip_adapter_receipt_valid_count"] == 2
+    assert (
+        summary["dispatch_roundtrip_adapter_receipt_fingerprint_match_count"]
+        == 2
+    )
+    assert summary["dispatch_roundtrip_capture_fingerprint_match_count"] == 2
+    for check in (
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_proof_carried",
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_proof_matches_manifest",
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_proof_matches_runtime",
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipts_valid",
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_fingerprints_current",
+        "provider_broker_dispatch_dispatch_roundtrip_capture_fingerprints_current",
+    ):
+        assert bool(checks.loc[check, "passed"])
+    provenance = config["dispatch_roundtrip_provenance"]
+    assert provenance["provider_wrapper_provided"]
+    assert provenance["provider_manifest_run_type"] == (
+        "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    )
+    assert provenance["adapter_receipt_proof"]["ready"]
+    assert provenance["adapter_receipt_proof"]["valid_count"] == 2
+    assert provenance["adapter_receipt_proof_matches_manifest"]
+    assert provenance["adapter_receipt_proof_matches_runtime_session"]
+    assert len(manifest["inputs"]["dispatch_roundtrip_adapter_receipts"]) == 2
+    assert len(manifest["inputs"]["dispatch_roundtrip_provider_captures"]) == 2
+    assert manifest["extra"]["provider_broker_dispatch_roundtrip_wrapper_provided"]
+    assert manifest["extra"]["provider_broker_dispatch_roundtrip_manifest_run_type"] == (
+        "provider_market_data_imbalance_broker_dispatch_roundtrip"
+    )
+    assert manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof"]["ready"]
+    assert (
+        manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof"][
+            "valid_count"
+        ]
+        == 2
+    )
+    assert manifest["extra"]["dispatch_roundtrip_adapter_receipt_proof_ready"]
+    assert manifest["extra"][
+        "dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+    ]
+    assert manifest["extra"][
+        "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session"
+    ]
+    assert manifest["extra"]["dispatch_roundtrip"]["adapter_receipt_proof"][
+        "ready"
+    ]
+    assert manifest["extra"]["dispatch_roundtrip"][
+        "adapter_receipt_proof_matches_manifest"
+    ]
+    assert manifest["extra"]["dispatch_roundtrip"][
+        "adapter_receipt_proof_matches_runtime_session"
+    ]
+    assert (
+        "Dispatch round-trip adapter receipt proof: ready (2/2 sealed; "
+        "broker-dispatch manifest match: yes; runtime match: yes)" in runbook
+    )
+
+
+def test_provider_market_data_imbalance_broker_dispatch_send_blocks_final_roundtrip_receipt_proof_drift(
+    tmp_path,
+):
+    broker_dispatch, _ = (
+        _write_bundle_linked_provider_imbalance_final_broker_dispatch(tmp_path)
+    )
+    broker_dispatch_config_path = (
+        broker_dispatch.output_dir
+        / "provider_market_data_imbalance_broker_dispatch_config.json"
+    )
+    broker_dispatch_config = json.loads(
+        broker_dispatch_config_path.read_text(encoding="utf-8")
+    )
+    manifest_path = broker_dispatch.output_dir / "manifest.json"
+    manifest_text = manifest_path.read_text(encoding="utf-8")
+    broker_dispatch_manifest = json.loads(manifest_text)
+    broker_dispatch_manifest["extra"][
+        "dispatch_roundtrip_adapter_receipt_proof"
+    ]["valid_count"] = 1
+    manifest_path.write_text(
+        json.dumps(broker_dispatch_manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    manifest_drift_report = write_provider_market_data_imbalance_broker_dispatch_send(
+        broker_dispatch.output_dir,
+        tmp_path / "provider_imbalance_final_broker_dispatch_send_manifest_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    manifest_drift_failed = set(
+        manifest_drift_report.checks.loc[
+            ~manifest_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    mismatch_check = (
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+    )
+    assert broker_dispatch.ready
+    assert not manifest_drift_report.ready
+    assert manifest_drift_report.broker_dispatch_send is None
+    assert mismatch_check in manifest_drift_failed
+    assert not bool(
+        manifest_drift_report.summary.iloc[0][
+            "dispatch_roundtrip_adapter_receipt_proof_matches_manifest"
+        ]
+    )
+    manifest_action = manifest_drift_report.action_queue.loc[
+        manifest_drift_report.action_queue["check"] == mismatch_check
+    ].iloc[0]
+    assert manifest_action["action"] == "repair_provider_imbalance_broker_dispatch"
+    assert manifest_action["next_gate"] == (
+        "plan-provider-market-data-imbalance-broker-dispatch"
+    )
+
+    manifest_path.write_text(manifest_text, encoding="utf-8")
+    roundtrip_proof = broker_dispatch_config["dispatch_roundtrip_provenance"][
+        "adapter_receipt_proof"
+    ]
+    receipt_path = Path(roundtrip_proof["receipts"][0]["adapter_receipt_path"])
+    receipt_text = receipt_path.read_text(encoding="utf-8")
+    receipt_path.write_text(receipt_text + "\n", encoding="utf-8")
+
+    receipt_drift_report = write_provider_market_data_imbalance_broker_dispatch_send(
+        broker_dispatch.output_dir,
+        tmp_path / "provider_imbalance_final_broker_dispatch_send_receipt_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    receipt_drift_failed = set(
+        receipt_drift_report.checks.loc[
+            ~receipt_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    receipt_check = (
+        "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_fingerprints_current"
+    )
+    assert not receipt_drift_report.ready
+    assert receipt_drift_report.broker_dispatch_send is None
+    assert "provider_broker_dispatch_adapter_receipt_fingerprints_current" in (
+        receipt_drift_failed
+    )
+    assert receipt_check in receipt_drift_failed
+    assert (
+        receipt_drift_report.summary.iloc[0][
+            "dispatch_roundtrip_adapter_receipt_fingerprint_match_count"
+        ]
+        == 1
+    )
+    receipt_action = receipt_drift_report.action_queue.loc[
+        receipt_drift_report.action_queue["check"] == receipt_check
+    ].iloc[0]
+    assert receipt_action["action"] == "repair_provider_imbalance_broker_dispatch"
+    assert receipt_action["next_gate"] == (
+        "plan-provider-market-data-imbalance-broker-dispatch"
+    )
+
+    receipt_path.write_text(receipt_text, encoding="utf-8")
+    capture_path = Path(roundtrip_proof["receipts"][0]["capture_path"])
+    capture_path.write_bytes(capture_path.read_bytes() + b"\n")
+
+    capture_drift_report = write_provider_market_data_imbalance_broker_dispatch_send(
+        broker_dispatch.output_dir,
+        tmp_path / "provider_imbalance_final_broker_dispatch_send_capture_drift",
+        config=ProviderMarketDataImbalanceBrokerDispatchSendConfig(),
+    )
+
+    capture_drift_failed = set(
+        capture_drift_report.checks.loc[
+            ~capture_drift_report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    capture_check = (
+        "provider_broker_dispatch_dispatch_roundtrip_capture_fingerprints_current"
+    )
+    assert not capture_drift_report.ready
+    assert capture_drift_report.broker_dispatch_send is None
+    assert "provider_broker_dispatch_capture_fingerprints_current" in (
+        capture_drift_failed
+    )
+    assert capture_check in capture_drift_failed
+    assert (
+        capture_drift_report.summary.iloc[0][
+            "dispatch_roundtrip_capture_fingerprint_match_count"
+        ]
+        == 1
+    )
+    capture_action = capture_drift_report.action_queue.loc[
+        capture_drift_report.action_queue["check"] == capture_check
+    ].iloc[0]
+    assert capture_action["action"] == "repair_provider_imbalance_broker_dispatch"
+    assert capture_action["next_gate"] == (
+        "plan-provider-market-data-imbalance-broker-dispatch"
+    )
+
+
 def test_provider_market_data_imbalance_broker_dispatch_send_falls_back_to_roundtrip_config_provenance(tmp_path):
     provider_dispatch = _write_ready_provider_imbalance_broker_dispatch(tmp_path)
     bundle_path = tmp_path / "provider_market_data_capture_bundle.json"
@@ -27223,12 +27488,19 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_dispatch_ro
     dispatch_summary["dispatch_roundtrip_provided"] = True
     dispatch_summary["dispatch_roundtrip_ready"] = True
     dispatch_summary["dispatch_roundtrip_failed_checks"] = 0
+    dispatch_summary["provider_broker_dispatch_roundtrip_wrapper_provided"] = True
     dispatch_summary.to_csv(dispatch_summary_path, index=False)
     dispatch_config_path = provider_dispatch.output_dir / "provider_market_data_imbalance_broker_dispatch_config.json"
     dispatch_config = json.loads(dispatch_config_path.read_text(encoding="utf-8"))
     dispatch_config.setdefault("broker_dispatch_inputs", {})
     dispatch_config["broker_dispatch_inputs"]["provider_dispatch_roundtrip_dir"] = str(provider_roundtrip_dir)
     dispatch_config["broker_dispatch_inputs"]["dispatch_roundtrip_dir"] = str(nested_roundtrip_dir)
+    dispatch_config.setdefault("dispatch_roundtrip_provenance", {}).update(
+        {
+            "provider_wrapper_provided": True,
+            "adapter_receipt_proof": {},
+        }
+    )
     dispatch_config_path.write_text(
         json.dumps(dispatch_config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
@@ -27246,6 +27518,11 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_dispatch_ro
         (out_dir / "provider_market_data_imbalance_broker_dispatch_send_config.json").read_text(encoding="utf-8")
     )
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    runbook = (
+        out_dir
+        / "provider_market_data_imbalance_broker_dispatch_send_runbook.md"
+    ).read_text(encoding="utf-8")
+    checks = report.checks.set_index("check")
     assert report.ready
     assert Path(summary.loc[0, "provider_dispatch_roundtrip_dir"]) == provider_roundtrip_dir
     assert Path(summary.loc[0, "dispatch_roundtrip_dir"]) == nested_roundtrip_dir
@@ -27256,6 +27533,17 @@ def test_provider_market_data_imbalance_broker_dispatch_send_carries_dispatch_ro
     assert config["broker_dispatch_send_inputs"]["dispatch_roundtrip_dir"] == str(nested_roundtrip_dir)
     assert manifest["inputs"]["provider_dispatch_roundtrip"]["path"] == str(provider_roundtrip_dir)
     assert manifest["inputs"]["dispatch_roundtrip"]["path"] == str(nested_roundtrip_dir)
+    assert bool(summary.loc[0, "provider_broker_dispatch_roundtrip_wrapper_provided"])
+    assert bool(
+        checks.loc[
+            "provider_broker_dispatch_dispatch_roundtrip_adapter_receipt_proof_carried",
+            "passed",
+        ]
+    )
+    assert (
+        "Dispatch round-trip adapter receipt proof: not applicable "
+        "(provider wrapper has no required adapter receipts)" in runbook
+    )
 
 
 def test_provider_market_data_imbalance_broker_dispatch_send_carries_dispatch_vendor_batch(tmp_path):

@@ -5499,8 +5499,19 @@ also carries the broker-dispatch-retained final round-trip
 `synthetic_sidecar_proof` plus flattened `dispatch_roundtrip_synthetic_*`
 counters; if synthetic final dry-run folds are present without ready rehearsal
 sidecars, acknowledgement reconciliation is blocked at that broker-dispatch
-repair gate. When a broker-dispatch
-CSV is sparse but its config sidecar has `dispatch_roundtrip_provenance`,
+repair gate. When a broker-dispatch packet carries a provider-wrapper final
+receipt proof with required adapter receipts, send preparation also requires
+exact `dispatch_roundtrip_provenance` agreement with the broker-dispatch
+manifest and root runtime receipt proof, re-hashes every final receipt and
+capture before generating request envelopes, and fingerprints accepted files
+as `dispatch_roundtrip_adapter_receipts` and
+`dispatch_roundtrip_provider_captures`. Proof or byte drift leaves nested
+generic `broker_dispatch_send` absent and routes repair to
+`plan-provider-market-data-imbalance-broker-dispatch`. No-provider-wrapper
+packets and provider wrappers without required receipts remain supported and
+are marked not applicable rather than blocked in the runbook.
+When a broker-dispatch CSV is sparse but its config sidecar has
+`dispatch_roundtrip_provenance`,
 broker-dispatch-send hydrates missing or blank `dispatch_roundtrip_*` fields,
 including the round-trip provider profile, adapter contract, and sidecar
 counters, from that config while keeping explicit summary `False` and `0` values
