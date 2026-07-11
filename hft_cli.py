@@ -107,7 +107,10 @@ from reports.research_family import (
     ResearchFamilyThresholds,
     write_research_family_audit,
 )
-from reports.research_family_launch import write_research_family_launch_matrix
+from reports.research_family_launch import (
+    load_research_family_launch_contract,
+    write_research_family_launch_matrix,
+)
 from reports.research_family_registration import (
     ResearchFamilyRegistrationThresholds,
     write_research_family_registration,
@@ -2644,6 +2647,12 @@ def main(argv: list[str] | None = None) -> int:
         "--require-research-registration",
         action="store_true",
     )
+    robust_selection.add_argument("--research-launch-matrix", default=None)
+    robust_selection.add_argument("--research-launch-contract-id", default=None)
+    robust_selection.add_argument(
+        "--require-research-launch-contract",
+        action="store_true",
+    )
     robust_selection.add_argument("--min-selection-pass-rate", type=float, default=1.0)
     robust_selection.add_argument("--min-selection-sweeps", type=int, default=None)
     robust_selection.add_argument("--min-selection-median-net-pnl", type=float, default=0.0)
@@ -2863,6 +2872,13 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     research_family_launch.add_argument("--fail-on-actions", action="store_true")
+
+    run_research_family_study = sub.add_parser(
+        "run-research-family-study",
+        help="Execute one current immutable registered-study launch contract.",
+    )
+    run_research_family_study.add_argument("--launch-matrix", required=True)
+    run_research_family_study.add_argument("--contract-id", required=True)
 
     research_family = sub.add_parser(
         "audit-research-family",
@@ -6305,6 +6321,11 @@ def main(argv: list[str] | None = None) -> int:
             research_registration_path=args.research_registration,
             registered_study_label=args.registered_study_label,
             require_research_registration=args.require_research_registration,
+            research_launch_matrix_path=args.research_launch_matrix,
+            research_launch_contract_id=args.research_launch_contract_id,
+            require_research_launch_contract=(
+                args.require_research_launch_contract
+            ),
             selection_min_pass_rate=args.min_selection_pass_rate,
             selection_min_sweeps=args.min_selection_sweeps,
             selection_min_median_net_pnl=args.min_selection_median_net_pnl,
@@ -6530,6 +6551,22 @@ def main(argv: list[str] | None = None) -> int:
         if args.fail_on_actions and action_count > 0:
             return 2
         return 0
+    if args.command == "run-research-family-study":
+        contract = load_research_family_launch_contract(
+            args.launch_matrix,
+            args.contract_id,
+        )
+        if not contract.ready:
+            print("launch contract is not current and ready")
+            return 2
+        if contract.argv[:4] != [
+            "python",
+            "-m",
+            "hft_cli",
+            "pipeline-robust-selection",
+        ]:
+            raise ValueError("launch contract does not target robust selection")
+        return main(contract.argv[3:])
     if args.command == "audit-research-family":
         result = write_research_family_audit(
             args.studies,

@@ -5,9 +5,16 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.research_family import ResearchFamilyConfig, write_research_family_audit
-from reports.research_family_launch import write_research_family_launch_matrix
+from reports.research_family_launch import (
+    load_research_family_launch_matrix,
+    write_research_family_launch_matrix,
+)
 from reports.research_family_registration import write_research_family_registration
 
 
@@ -30,7 +37,7 @@ def test_research_family_launch_builds_deterministic_pending_contracts(tmp_path)
     assert int(summary["contract_ready_count"]) == 2
     assert int(summary["never_launched_count"]) == 2
     assert int(summary["closure_covered_count"]) == 0
-    assert summary["next_gate"] == "pipeline-robust-selection"
+    assert summary["next_gate"] == "run-research-family-study"
     assert first.launches["contract_valid"].astype(bool).all()
     assert first.launches["sweep_inputs_current"].astype(bool).all()
     assert first.launches["contract_id"].tolist() == second.launches[
@@ -40,6 +47,9 @@ def test_research_family_launch_builds_deterministic_pending_contracts(tmp_path)
         argv = json.loads(row.launch_argv_json)
         assert "--require-research-registration" in argv
         assert "--registered-study-label" in argv
+        assert "--research-launch-matrix" in argv
+        assert "--research-launch-contract-id" in argv
+        assert "--require-research-launch-contract" in argv
         assert "--fail-on-breach" in argv
         assert not bool(row.authorizes_submission)
         contract = json.loads(
@@ -49,16 +59,117 @@ def test_research_family_launch_builds_deterministic_pending_contracts(tmp_path)
         assert not contract["authorizes_submission"]
 
 
+def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    contract = pending.launches.set_index("study_label").loc["leadlag"]
+
+    status = main(
+        [
+            "run-research-family-study",
+            "--launch-matrix",
+            str(launch_dir),
+            "--contract-id",
+            str(contract["contract_id"]),
+        ]
+    )
+
+    result_root = tmp_path / "results" / "leadlag"
+    summary = pd.read_csv(
+        result_root / "robust_selection_pipeline_summary.csv"
+    ).iloc[0]
+    binding = pd.read_csv(
+        result_root / "robust_selection_pipeline_research_launch_contract.csv"
+    ).iloc[0]
+    manifest = json.loads((result_root / "manifest.json").read_text(encoding="utf-8"))
+    assert status == 0
+    assert bool(summary["ready"])
+    assert bool(summary["research_launch_contract_passed"])
+    assert summary["research_launch_contract_id"] == contract["contract_id"]
+    assert bool(binding["passed"])
+    assert bool(binding["sweep_paths_match"])
+    assert bool(binding["group_columns_match"])
+    assert manifest["inputs"]["research_family_launch_contract"]["sha256"] == (
+        file_sha256(Path(str(contract["contract_path"])))
+    )
+    refreshed = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    refreshed_leadlag = refreshed.launches.set_index("study_label").loc[
+        "leadlag"
+    ]
+    root_integrity = verify_experiment_manifest(
+        result_root / "manifest.json",
+        expected_run_type="robust_selection_pipeline",
+        require_input_fingerprints=True,
+    )
+    assert refreshed_leadlag["study_status"] == "completed_ready"
+    assert bool(refreshed_leadlag["result_launch_contract_bound"])
+    assert root_integrity.passed
+    result_summary_path = result_root / "robust_selection_pipeline_summary.csv"
+    result_summary_path.write_text(
+        result_summary_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted_matrix = load_research_family_launch_matrix(launch_dir)
+    assert not drifted_matrix.manifest_current
+    assert drifted_matrix.manifest_error == "input_drift"
+
+
+def test_research_family_launch_blocks_contract_argument_drift(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    contract = pending.launches.set_index("study_label").loc["leadlag"]
+    argv = json.loads(contract["launch_argv_json"])
+    first_sweep = argv.index("--sweeps") + 1
+    argv[first_sweep], argv[first_sweep + 1] = (
+        argv[first_sweep + 1],
+        argv[first_sweep],
+    )
+
+    status = main(argv[3:])
+
+    result_root = tmp_path / "results" / "leadlag"
+    summary = pd.read_csv(
+        result_root / "robust_selection_pipeline_summary.csv"
+    ).iloc[0]
+    binding = pd.read_csv(
+        result_root / "robust_selection_pipeline_research_launch_contract.csv"
+    ).iloc[0]
+    assert status == 2
+    assert not bool(summary["ready"])
+    assert summary["next_gate"] == "plan-research-family-launches"
+    assert not bool(binding["passed"])
+    assert not bool(binding["sweep_paths_match"])
+    assert "sweep_paths_match" in binding["failed_check_names"]
+
+
 def test_research_family_launch_covers_bound_result_and_attested_abandonment(
     tmp_path,
 ):
     registration, registration_dir = _write_registration(tmp_path)
     registration_id = str(registration.summary.iloc[0]["registration_id"])
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=tmp_path / "launches",
+    )
+    leadlag_contract = pending.launches.set_index("study_label").loc["leadlag"]
     _write_bound_result(
         tmp_path / "results" / "leadlag",
         registration_dir=registration_dir,
         registration_id=registration_id,
         study_label="leadlag",
+        launch_contract_id=str(leadlag_contract["contract_id"]),
+        launch_contract_path=Path(str(leadlag_contract["contract_path"])),
     )
     abandonments = tmp_path / "abandonments.csv"
     pd.DataFrame(
@@ -82,6 +193,7 @@ def test_research_family_launch_covers_bound_result_and_attested_abandonment(
     assert rows.loc["leadlag", "study_status"] == "completed_ready"
     assert bool(rows.loc["leadlag", "result_manifest_current"])
     assert bool(rows.loc["leadlag", "result_registration_bound"])
+    assert bool(rows.loc["leadlag", "result_launch_contract_bound"])
     assert rows.loc["imbalance", "study_status"] == "abandoned"
     assert bool(rows.loc["imbalance", "abandonment_valid"])
     assert rows["closure_covered"].astype(bool).all()
@@ -89,6 +201,7 @@ def test_research_family_launch_covers_bound_result_and_attested_abandonment(
     assert summary["next_gate"] == "audit-research-family"
     assert manifest["run_type"] == "research_family_launch_matrix"
     assert manifest["inputs"]["research_family_abandonments"]["kind"] == "file"
+    assert len(manifest["inputs"]["robust_study_manifests"]) == 1
     assert not manifest["extra"]["authorizes_submission"]
     family = write_research_family_audit(
         [tmp_path / "results" / "leadlag"],
@@ -180,11 +293,18 @@ def test_research_family_launch_blocks_result_bound_to_different_registration(
     tmp_path,
 ):
     _, registration_dir = _write_registration(tmp_path)
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=tmp_path / "launches",
+    )
+    leadlag_contract = pending.launches.set_index("study_label").loc["leadlag"]
     _write_bound_result(
         tmp_path / "results" / "leadlag",
         registration_dir=registration_dir,
         registration_id="0" * 64,
         study_label="leadlag",
+        launch_contract_id=str(leadlag_contract["contract_id"]),
+        launch_contract_path=Path(str(leadlag_contract["contract_path"])),
     )
     abandonments = tmp_path / "abandonments.csv"
     pd.DataFrame(
@@ -250,10 +370,15 @@ def _write_sweeps(root):
         pd.DataFrame(
             [
                 {
+                    "run": f"scenario_{scenario}",
                     "scenario": scenario,
                     "robust_score": score,
                     "net_pnl": score,
                     "proof_passed": True,
+                    "max_drawdown": 0.0,
+                    "fills": 10,
+                    "worst_regime_equity_change": score,
+                    "losing_regimes": 0,
                 }
                 for scenario, score in (("A", 10.0), ("B", 5.0), ("C", 1.0))
             ]
@@ -278,6 +403,8 @@ def _write_bound_result(
     registration_dir,
     registration_id,
     study_label,
+    launch_contract_id,
+    launch_contract_path,
 ):
     root.mkdir(parents=True)
     significance_dir = root / "02_backtest_significance"
@@ -285,6 +412,7 @@ def _write_bound_result(
     significance_dir.mkdir()
     overfit_dir.mkdir()
     manifest_sha = file_sha256(registration_dir / "manifest.json")
+    launch_contract_sha = file_sha256(launch_contract_path)
     pd.DataFrame(
         [
             {
@@ -303,6 +431,10 @@ def _write_bound_result(
                 "research_registration_id": registration_id,
                 "research_registration_manifest_sha256": manifest_sha,
                 "registered_study_label": study_label,
+                "research_launch_contract_provided": True,
+                "research_launch_contract_passed": True,
+                "research_launch_contract_id": launch_contract_id,
+                "research_launch_contract_sha256": launch_contract_sha,
                 "authorizes_submission": False,
             }
         ]
@@ -317,6 +449,18 @@ def _write_bound_result(
         ]
     ).to_csv(
         root / "robust_selection_pipeline_research_registration.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "passed": True,
+                "contract_id": launch_contract_id,
+                "contract_sha256": launch_contract_sha,
+            }
+        ]
+    ).to_csv(
+        root / "robust_selection_pipeline_research_launch_contract.csv",
         index=False,
     )
     pd.DataFrame(
@@ -343,5 +487,6 @@ def _write_bound_result(
             "research_family_registration": registration_dir,
             "research_family_registration_manifest": registration_dir
             / "manifest.json",
+            "research_family_launch_contract": launch_contract_path,
         },
     )

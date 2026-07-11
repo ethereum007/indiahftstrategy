@@ -27,7 +27,7 @@ from reports.backtest_significance import (
     BacktestSignificanceThresholds,
     write_backtest_significance_audit,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.promotion import (
     SCORE_METRIC_COLUMNS,
     PromotionReport,
@@ -37,6 +37,7 @@ from reports.promotion import (
 from reports.research_family_registration import (
     load_research_family_registration,
 )
+from reports.research_family_launch import load_research_family_launch_contract
 from reports.sweep_provenance import build_sweep_provenance
 from reports.sweeps import SweepComparison, write_sweep_comparison
 
@@ -44,6 +45,7 @@ from reports.sweeps import SweepComparison, write_sweep_comparison
 RUN_TYPE = "robust_selection_pipeline"
 READY_NEXT_GATE = "stage-orders"
 STAGE_NEXT_GATES = {
+    "research_launch_contract": "plan-research-family-launches",
     "research_registration": "register-research-family",
     "sweep_provenance": "pipeline-robust-selection",
     "selection": "compare-sweeps",
@@ -72,6 +74,7 @@ ACTION_QUEUE_COLUMNS = [
 
 @dataclass(frozen=True)
 class RobustSelectionPipelineReport:
+    research_launch_contract: pd.DataFrame
     research_registration: pd.DataFrame
     preflight: pd.DataFrame
     sweep_provenance: pd.DataFrame
@@ -116,6 +119,9 @@ def write_robust_selection_pipeline(
     research_registration_path: str | Path | None = None,
     registered_study_label: str | None = None,
     require_research_registration: bool = False,
+    research_launch_matrix_path: str | Path | None = None,
+    research_launch_contract_id: str | None = None,
+    require_research_launch_contract: bool = False,
 ) -> RobustSelectionPipelineReport:
     paths = [Path(path).resolve() for path in sweep_paths]
     if not paths:
@@ -236,8 +242,41 @@ def write_robust_selection_pipeline(
         not research_registration.empty
         and research_registration["passed"].map(_to_bool).all()
     )
+    research_launch_contract = _research_launch_contract_binding(
+        research_launch_matrix_path,
+        research_launch_contract_id=research_launch_contract_id,
+        require_contract=require_research_launch_contract,
+        output_dir=out,
+        sweep_paths=paths,
+        labels=labels,
+        group_cols=resolved_group_cols,
+        strategy=strategy,
+        market=market,
+        holdout_sweeps=holdout_sweeps,
+        research_registration=research_registration.iloc[0],
+        registered_study_label=registered_study_label,
+    )
+    research_launch_contract_path_out = (
+        out / "robust_selection_pipeline_research_launch_contract.csv"
+    )
+    research_launch_contract.to_csv(
+        research_launch_contract_path_out,
+        index=False,
+    )
+    research_launch_contract_passed = bool(
+        not research_launch_contract.empty
+        and research_launch_contract["passed"].map(_to_bool).all()
+    )
     preflight = pd.DataFrame(
         [
+            {
+                "component": "research_launch_contract",
+                "passed": research_launch_contract_passed,
+                "evidence_path": str(research_launch_contract_path_out),
+                "detail": str(
+                    research_launch_contract.iloc[0].get("detail", "")
+                ),
+            },
             {
                 "component": "research_registration",
                 "passed": research_registration_passed,
@@ -292,6 +331,7 @@ def write_robust_selection_pipeline(
     )
 
     stages = _stages(
+        research_launch_contract,
         research_registration,
         sweep_provenance,
         selection,
@@ -312,6 +352,7 @@ def write_robust_selection_pipeline(
         strategy=strategy,
         market=market,
         sweep_count=len(paths),
+        research_launch_contract=research_launch_contract,
         research_registration=research_registration,
         sweep_provenance=sweep_provenance,
     )
@@ -350,6 +391,15 @@ def write_robust_selection_pipeline(
         ),
         "registered_study_label": str(registered_study_label or ""),
         "require_research_registration": bool(require_research_registration),
+        "research_launch_matrix_path": (
+            str(Path(research_launch_matrix_path).resolve())
+            if research_launch_matrix_path is not None
+            else ""
+        ),
+        "research_launch_contract_id": str(research_launch_contract_id or ""),
+        "require_research_launch_contract": bool(
+            require_research_launch_contract
+        ),
         "selection": {
             "min_pass_rate": selection_min_pass_rate,
             "min_sweeps": resolved_selection_min_sweeps,
@@ -389,6 +439,12 @@ def write_robust_selection_pipeline(
             inputs["research_family_registration"] = registration_root
         if registration_manifest.is_file():
             inputs["research_family_registration_manifest"] = registration_manifest
+    launch_contract_row = research_launch_contract.iloc[0]
+    launch_contract_path = Path(
+        str(launch_contract_row.get("contract_path", ""))
+    )
+    if launch_contract_path.is_file():
+        inputs["research_family_launch_contract"] = launch_contract_path
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
@@ -418,6 +474,21 @@ def write_robust_selection_pipeline(
             "registered_study_label": str(
                 summary.iloc[0]["registered_study_label"]
             ),
+            "research_launch_contract_provided": bool(
+                summary.iloc[0]["research_launch_contract_provided"]
+            ),
+            "research_launch_contract_passed": bool(
+                summary.iloc[0]["research_launch_contract_passed"]
+            ),
+            "research_launch_contract_id": str(
+                summary.iloc[0]["research_launch_contract_id"]
+            ),
+            "research_launch_contract_sha256": str(
+                summary.iloc[0]["research_launch_contract_sha256"]
+            ),
+            "research_launch_matrix_manifest_sha256": str(
+                summary.iloc[0]["research_launch_matrix_manifest_sha256"]
+            ),
             "backtest_significance_passed": bool(
                 summary.iloc[0]["backtest_significance_passed"]
             ),
@@ -428,6 +499,7 @@ def write_robust_selection_pipeline(
         },
     )
     return RobustSelectionPipelineReport(
+        research_launch_contract=research_launch_contract,
         research_registration=research_registration,
         preflight=preflight,
         sweep_provenance=sweep_provenance,
@@ -442,6 +514,202 @@ def write_robust_selection_pipeline(
         promotion=promotion,
         output_dir=out,
     )
+
+
+def _research_launch_contract_binding(
+    raw_matrix_path: str | Path | None,
+    *,
+    research_launch_contract_id: str | None,
+    require_contract: bool,
+    output_dir: Path,
+    sweep_paths: list[Path],
+    labels: list[str] | None,
+    group_cols: list[str],
+    strategy: str,
+    market: str,
+    holdout_sweeps: int,
+    research_registration: pd.Series,
+    registered_study_label: str | None,
+) -> pd.DataFrame:
+    provided = raw_matrix_path is not None
+    contract_id = str(research_launch_contract_id or "").strip()
+    requested = bool(provided or contract_id or require_contract)
+    base: dict[str, Any] = {
+        "provided": provided,
+        "required": bool(require_contract),
+        "skipped": False,
+        "passed": False,
+        "launch_matrix_path": "",
+        "launch_matrix_manifest_path": "",
+        "launch_matrix_manifest_sha256": "",
+        "launch_matrix_manifest_current": False,
+        "launch_matrix_manifest_error": "",
+        "contract_id": contract_id,
+        "contract_path": "",
+        "contract_sha256": "",
+        "contract_valid": False,
+        "contract_ready": False,
+        "study_label_matches": False,
+        "study_path_matches": False,
+        "strategy_matches": False,
+        "market_matches": False,
+        "sweep_paths_match": False,
+        "sweep_labels_match": False,
+        "group_columns_match": False,
+        "holdout_sweeps_match": False,
+        "registration_id_matches": False,
+        "registration_manifest_matches": False,
+        "failed_checks": 0,
+        "failed_check_names": "",
+        "detail": "",
+        "recommendation": "plan_or_repair_the_registered_launch_contract",
+    }
+    if not provided:
+        passed = not requested
+        base.update(
+            {
+                "skipped": passed,
+                "passed": passed,
+                "failed_checks": 0 if passed else 1,
+                "failed_check_names": "" if passed else "launch_matrix_provided",
+                "detail": (
+                    "optional_launch_contract_not_provided"
+                    if passed
+                    else "launch_matrix_and_contract_id_are_required"
+                ),
+                "recommendation": (
+                    "continue_without_launch_contract"
+                    if passed
+                    else "plan_the_registered_research_family_launches"
+                ),
+            }
+        )
+        return pd.DataFrame([base])
+    matrix_path = Path(raw_matrix_path).resolve()
+    base["launch_matrix_path"] = str(matrix_path)
+    if not contract_id:
+        base.update(
+            {
+                "failed_checks": 1,
+                "failed_check_names": "contract_id_provided",
+                "detail": "research_launch_contract_id_is_required",
+            }
+        )
+        return pd.DataFrame([base])
+    try:
+        contract = load_research_family_launch_contract(matrix_path, contract_id)
+    except (OSError, ValueError, KeyError) as exc:
+        base.update(
+            {
+                "launch_matrix_manifest_error": f"{type(exc).__name__}: {exc}",
+                "failed_checks": 1,
+                "failed_check_names": "launch_contract_loadable",
+                "detail": "launch_contract_artifacts_could_not_be_loaded",
+            }
+        )
+        return pd.DataFrame([base])
+    matrix = contract.matrix
+    row = contract.row
+    core = contract.payload.get("contract_core", {})
+    study = core.get("study", {}) if isinstance(core, dict) else {}
+    planned_sweeps = core.get("sweep_paths", []) if isinstance(core, dict) else []
+    planned_labels = core.get("sweep_labels", []) if isinstance(core, dict) else []
+    planned_groups = core.get("group_cols", []) if isinstance(core, dict) else []
+    actual_label = str(registered_study_label or "").strip()
+    study_label_matches = bool(
+        actual_label
+        and str(row.get("study_label", "")) == actual_label
+        and str(study.get("study_label", "")) == actual_label
+    )
+    study_path_matches = bool(
+        _canonical_path(study.get("planned_study_path", ""))
+        == _canonical_path(output_dir)
+    )
+    strategy_matches = str(study.get("strategy", "")) == strategy
+    market_matches = str(study.get("market", "")) == market
+    sweep_paths_match = bool(
+        isinstance(planned_sweeps, list)
+        and [_canonical_path(value) for value in planned_sweeps]
+        == [_canonical_path(value) for value in sweep_paths]
+    )
+    actual_labels = [str(value) for value in (labels or [])]
+    sweep_labels_match = bool(
+        isinstance(planned_labels, list)
+        and [str(value) for value in planned_labels] == actual_labels
+    )
+    group_columns_match = bool(
+        isinstance(planned_groups, list)
+        and [str(value) for value in planned_groups]
+        == [str(value) for value in group_cols]
+    )
+    holdout_matches = bool(
+        _int(study.get("holdout_sweeps")) == holdout_sweeps
+    )
+    registration_id_matches = bool(
+        _to_bool(research_registration.get("passed", False))
+        and str(core.get("registration_id", ""))
+        == str(research_registration.get("registration_id", ""))
+    )
+    registration_manifest_matches = bool(
+        str(core.get("registration_manifest_sha256", ""))
+        == str(research_registration.get("registration_manifest_sha256", ""))
+    )
+    checks = {
+        "launch_matrix_manifest_current": matrix.manifest_current,
+        "contract_valid": _to_bool(row.get("contract_valid", False)),
+        "contract_ready": _to_bool(row.get("contract_ready", False)),
+        "study_label_matches": study_label_matches,
+        "study_path_matches": study_path_matches,
+        "strategy_matches": strategy_matches,
+        "market_matches": market_matches,
+        "sweep_paths_match": sweep_paths_match,
+        "sweep_labels_match": sweep_labels_match,
+        "group_columns_match": group_columns_match,
+        "holdout_sweeps_match": holdout_matches,
+        "registration_id_matches": registration_id_matches,
+        "registration_manifest_matches": registration_manifest_matches,
+    }
+    failed = [name for name, value in checks.items() if not value]
+    contract_sha256 = file_sha256(contract.contract_path)
+    passed = not failed
+    base.update(
+        {
+            "passed": passed,
+            "launch_matrix_path": str(matrix.root),
+            "launch_matrix_manifest_path": str(matrix.root / "manifest.json"),
+            "launch_matrix_manifest_sha256": matrix.manifest_sha256,
+            "launch_matrix_manifest_current": matrix.manifest_current,
+            "launch_matrix_manifest_error": matrix.manifest_error,
+            "contract_id": contract.contract_id,
+            "contract_path": str(contract.contract_path),
+            "contract_sha256": contract_sha256,
+            "contract_valid": _to_bool(row.get("contract_valid", False)),
+            "contract_ready": _to_bool(row.get("contract_ready", False)),
+            "study_label_matches": study_label_matches,
+            "study_path_matches": study_path_matches,
+            "strategy_matches": strategy_matches,
+            "market_matches": market_matches,
+            "sweep_paths_match": sweep_paths_match,
+            "sweep_labels_match": sweep_labels_match,
+            "group_columns_match": group_columns_match,
+            "holdout_sweeps_match": holdout_matches,
+            "registration_id_matches": registration_id_matches,
+            "registration_manifest_matches": registration_manifest_matches,
+            "failed_checks": len(failed),
+            "failed_check_names": ",".join(failed),
+            "detail": (
+                f"contract_id={contract.contract_id};study={actual_label}"
+                if passed
+                else f"failed_checks={','.join(failed)}"
+            ),
+            "recommendation": (
+                "continue_to_registration_and_sweep_validation"
+                if passed
+                else "plan_or_repair_the_registered_launch_contract"
+            ),
+        }
+    )
+    return pd.DataFrame([base])
 
 
 def _research_registration_binding(
@@ -650,6 +918,7 @@ def _research_registration_binding(
 
 
 def _stages(
+    research_launch_contract: pd.DataFrame,
     research_registration: pd.DataFrame,
     sweep_provenance: pd.DataFrame,
     selection: SweepComparison,
@@ -692,8 +961,32 @@ def _stages(
     )
     registration_passed = _to_bool(registration_row.get("passed", False))
     registration_skipped = _to_bool(registration_row.get("skipped", False))
+    launch_contract_row = (
+        research_launch_contract.iloc[0]
+        if not research_launch_contract.empty
+        else pd.Series(dtype=object)
+    )
+    launch_contract_passed = _to_bool(launch_contract_row.get("passed", False))
+    launch_contract_skipped = _to_bool(launch_contract_row.get("skipped", False))
     return pd.DataFrame(
         [
+            {
+                "stage": "research_launch_contract",
+                "status": launch_contract_passed,
+                "status_column": "passed",
+                "skipped": launch_contract_skipped,
+                "output_dir": str(
+                    launch_contract_row.get("launch_matrix_path", "")
+                ),
+                "failed_checks": 0 if launch_contract_passed else 1,
+                "recommendation": str(
+                    launch_contract_row.get(
+                        "recommendation",
+                        "plan_or_repair_the_registered_launch_contract",
+                    )
+                ),
+                "detail": str(launch_contract_row.get("detail", "")),
+            },
             {
                 "stage": "research_registration",
                 "status": registration_passed,
@@ -805,6 +1098,7 @@ def _summary(
     strategy: str,
     market: str,
     sweep_count: int,
+    research_launch_contract: pd.DataFrame,
     research_registration: pd.DataFrame,
     sweep_provenance: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -827,6 +1121,11 @@ def _summary(
         if not research_registration.empty
         else pd.Series(dtype=object)
     )
+    launch_contract_row = (
+        research_launch_contract.iloc[0]
+        if not research_launch_contract.empty
+        else pd.Series(dtype=object)
+    )
     first_failed = stages.loc[~stages["status"].map(_to_bool)]
     next_gate = READY_NEXT_GATE if ready else STAGE_NEXT_GATES.get(
         str(first_failed.iloc[0]["stage"]) if not first_failed.empty else "",
@@ -844,6 +1143,24 @@ def _summary(
                 ),
                 "holdout_sweep_count": int(
                     sweep_provenance["study_role"].astype(str).eq("holdout").sum()
+                ),
+                "research_launch_contract_provided": _to_bool(
+                    launch_contract_row.get("provided", False)
+                ),
+                "research_launch_contract_required": _to_bool(
+                    launch_contract_row.get("required", False)
+                ),
+                "research_launch_contract_passed": _to_bool(
+                    launch_contract_row.get("passed", False)
+                ),
+                "research_launch_contract_id": str(
+                    launch_contract_row.get("contract_id", "")
+                ),
+                "research_launch_contract_sha256": str(
+                    launch_contract_row.get("contract_sha256", "")
+                ),
+                "research_launch_matrix_manifest_sha256": str(
+                    launch_contract_row.get("launch_matrix_manifest_sha256", "")
                 ),
                 "research_registration_provided": _to_bool(
                     registration_row.get("provided", False)
@@ -989,6 +1306,24 @@ def _candidate_config(
     ].astype(str).tolist()
     config["pipeline"] = {
         "ready": bool(summary["ready"]),
+        "research_launch_contract_provided": bool(
+            summary["research_launch_contract_provided"]
+        ),
+        "research_launch_contract_required": bool(
+            summary["research_launch_contract_required"]
+        ),
+        "research_launch_contract_passed": bool(
+            summary["research_launch_contract_passed"]
+        ),
+        "research_launch_contract_id": str(
+            summary["research_launch_contract_id"]
+        ),
+        "research_launch_contract_sha256": str(
+            summary["research_launch_contract_sha256"]
+        ),
+        "research_launch_matrix_manifest_sha256": str(
+            summary["research_launch_matrix_manifest_sha256"]
+        ),
         "research_registration_provided": bool(
             summary["research_registration_provided"]
         ),
@@ -1034,6 +1369,12 @@ def _runbook(summary: pd.Series, stages: pd.DataFrame, action_queue: pd.DataFram
         "",
         f"- Status: **{'ready' if bool(summary['ready']) else 'blocked'}**",
         f"- Strategy/market: `{summary['strategy']}` / `{summary['market']}`",
+        (
+            "- Research launch contract: "
+            f"{'bound' if bool(summary['research_launch_contract_provided']) else 'not provided'}"
+            f"; passed `{str(bool(summary['research_launch_contract_passed'])).lower()}`"
+        ),
+        f"- Launch contract ID: `{summary['research_launch_contract_id']}`",
         (
             "- Research registration: "
             f"{'bound' if bool(summary['research_registration_provided']) else 'not provided'}"

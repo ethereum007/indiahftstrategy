@@ -2349,6 +2349,15 @@ written into the root summary, candidate config, and manifest inputs.
 missing. Registration proof and sweep provenance form one promotion preflight,
 so a mismatched, failed, or drifted registration cannot yield a ready leaf.
 
+The generated family launcher also supplies `--research-launch-matrix`,
+`--research-launch-contract-id`, and
+`--require-research-launch-contract`. That preflight verifies the current
+matrix artifact, immutable contract-core hash, exact study/output identity,
+ordered sweeps and labels, grouping columns, holdout count, and registration
+fingerprint. The root manifest fingerprints the immutable contract file while
+recording the matrix-manifest SHA observed at launch. A later coverage refresh
+therefore cannot invalidate an otherwise unchanged robust result.
+
 Outputs:
 
 ```text
@@ -2359,6 +2368,7 @@ Outputs:
 03_promotion\...
 robust_selection_pipeline_sweep_provenance.csv
 robust_selection_pipeline_research_registration.csv
+robust_selection_pipeline_research_launch_contract.csv
 robust_selection_pipeline_preflight.csv
 robust_selection_pipeline_stages.csv
 robust_selection_pipeline_summary.csv
@@ -2445,10 +2455,23 @@ python -m hft_cli plan-research-family-launches `
   --fail-on-breach
 ```
 
+Execute a pending contract by ID rather than reconstructing its argv manually:
+
+```powershell
+python -m hft_cli run-research-family-study `
+  --launch-matrix runs\research_launches\india_index_microstructure_v1 `
+  --contract-id CONTRACT_ID_FROM_THE_MATRIX
+```
+
+The executor accepts only a current matrix artifact whose selected row is both
+contract-valid and launch-ready. It then runs the exact stored argv, including
+mandatory registration and launch-contract gates.
+
 The command verifies the registration, exact sweep and label counts, unique
 scenario-group columns, every sweep manifest, and any existing robust root.
 Existing results count as covered only when their current root manifest binds
-the same registration ID, study label, and registration-manifest SHA. Pending
+the same registration ID, study label, registration-manifest SHA, immutable
+contract ID, and contract-file SHA. Pending
 rows retain both a machine-readable argv array and display command. Contract
 IDs are deterministic hashes of the registered row and exact launch arguments.
 

@@ -23,7 +23,7 @@ from reports.research_family_registration import (
 
 RUN_TYPE = "research_family_launch_matrix"
 READY_NEXT_GATE = "audit-research-family"
-LAUNCH_NEXT_GATE = "pipeline-robust-selection"
+LAUNCH_NEXT_GATE = "run-research-family-study"
 REPAIR_NEXT_GATE = "plan-research-family-launches"
 
 LAUNCH_COLUMNS = (
@@ -82,6 +82,17 @@ class ResearchFamilyLaunchSnapshot:
     manifest_sha256: str
     generated_at_utc: str
     registration_id: str
+
+
+@dataclass(frozen=True)
+class ResearchFamilyLaunchContractSnapshot:
+    matrix: ResearchFamilyLaunchSnapshot
+    row: dict[str, Any]
+    payload: dict[str, Any]
+    contract_id: str
+    contract_path: Path
+    argv: list[str]
+    ready: bool
 
 
 def load_research_family_launch_matrix(
@@ -149,6 +160,61 @@ def load_research_family_launch_matrix(
         manifest_sha256=file_sha256(manifest_path),
         generated_at_utc=str(manifest.get("generated_at_utc", "")),
         registration_id=registration_id,
+    )
+
+
+def load_research_family_launch_contract(
+    launch_matrix_path: str | Path,
+    contract_id: str,
+) -> ResearchFamilyLaunchContractSnapshot:
+    matrix = load_research_family_launch_matrix(launch_matrix_path)
+    requested_id = str(contract_id).strip()
+    matches = matrix.launches.loc[
+        matrix.launches.get(
+            "contract_id",
+            pd.Series("", index=matrix.launches.index),
+        )
+        .astype(str)
+        .eq(requested_id)
+    ]
+    if not requested_id or len(matches) != 1:
+        raise ValueError("launch contract ID must match exactly one matrix row")
+    row = _record(matches.iloc[0])
+    contract_path = Path(str(row.get("contract_path", ""))).resolve()
+    contracts_root = (matrix.root / "contracts").resolve()
+    try:
+        contract_path.relative_to(contracts_root)
+    except ValueError as exc:
+        raise ValueError("launch contract path escapes the matrix contracts root") from exc
+    payload = _read_json_object(contract_path)
+    core = payload.get("contract_core", {})
+    if not isinstance(core, dict):
+        raise ValueError("launch contract core is missing")
+    if str(payload.get("contract_id", "")) != requested_id:
+        raise ValueError("launch contract file carries a different contract ID")
+    if _payload_sha256(core) != requested_id:
+        raise ValueError("launch contract core hash does not match its contract ID")
+    argv = payload.get("argv", [])
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise ValueError("launch contract argv must be a string array")
+    row_argv, row_argv_error = _json_string_list(
+        row.get("launch_argv_json"),
+        field="launch_argv_json",
+    )
+    if row_argv_error or row_argv != argv:
+        raise ValueError("launch matrix argv differs from the contract file")
+    return ResearchFamilyLaunchContractSnapshot(
+        matrix=matrix,
+        row=row,
+        payload=payload,
+        contract_id=requested_id,
+        contract_path=contract_path,
+        argv=argv,
+        ready=bool(
+            matrix.manifest_current
+            and _to_bool(row.get("contract_valid", False))
+            and _to_bool(row.get("contract_ready", False))
+        ),
     )
 
 
@@ -225,6 +291,20 @@ def write_research_family_launch_matrix(
     }
     if abandonment_source is not None:
         inputs["research_family_abandonments"] = abandonment_source
+    completed_manifests = [
+        Path(str(path))
+        for path in launches.get(
+            "result_manifest_path",
+            pd.Series(dtype=str),
+        ).astype(str)
+        if path and Path(str(path)).is_file()
+    ]
+    if completed_manifests:
+        inputs["robust_studies"] = sorted(
+            {path.parent.resolve() for path in completed_manifests},
+            key=str,
+        )
+        inputs["robust_study_manifests"] = completed_manifests
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
@@ -315,14 +395,14 @@ def _build_launches(
             and group_cols_valid
             and sweep_labels_valid
         )
-        argv = _launch_argv(
+        base_argv = _launch_argv(
             registration,
             study,
             sweep_paths=sweep_paths,
             group_cols=group_cols,
             sweep_labels=sweep_labels,
         )
-        contract_payload = {
+        contract_core = {
             "schema_version": 1,
             "family_id": registration.family_id,
             "registration_id": registration.registration_id,
@@ -331,20 +411,39 @@ def _build_launches(
             "sweep_paths": [str(path) for path in sweep_paths],
             "group_cols": group_cols,
             "sweep_labels": sweep_labels,
-            "argv": argv,
+            "base_argv": base_argv,
             "contract_valid": contract_valid,
             "authorizes_submission": False,
         }
-        contract_id = _payload_sha256(contract_payload)
-        contract_payload["contract_id"] = contract_id
+        contract_id = _payload_sha256(contract_core)
         contract_path = contract_dir / (
             f"{index + 1:03d}_{_slug(label)}_{contract_id[:12]}.json"
         )
+        argv = [
+            *base_argv,
+            "--research-launch-matrix",
+            str(contract_dir.parent),
+            "--research-launch-contract-id",
+            contract_id,
+            "--require-research-launch-contract",
+        ]
+        contract_payload = {
+            "schema_version": 1,
+            "contract_id": contract_id,
+            "contract_core": contract_core,
+            "argv": argv,
+            "authorizes_submission": False,
+        }
         contract_path.write_text(
             json.dumps(_jsonable(contract_payload), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        result = _result_evidence(registration, study)
+        result = _result_evidence(
+            registration,
+            study,
+            contract_id=contract_id,
+            contract_path=contract_path,
+        )
         abandonment_matches = abandonments.loc[
             abandonments.get(
                 "study_label",
@@ -382,6 +481,7 @@ def _build_launches(
                 result["result_exists"]
                 and result["result_manifest_current"]
                 and result["result_registration_bound"]
+                and result["result_launch_contract_bound"]
                 and not abandonment_conflict
             )
             or abandonment_valid
@@ -441,6 +541,9 @@ def _build_launches(
 def _result_evidence(
     registration: ResearchFamilyRegistrationSnapshot,
     study: pd.Series,
+    *,
+    contract_id: str,
+    contract_path: Path,
 ) -> dict[str, Any]:
     root = Path(str(study.get("planned_study_path", ""))).resolve()
     summary_path = root / "robust_selection_pipeline_summary.csv"
@@ -453,6 +556,7 @@ def _result_evidence(
             "result_manifest_error": "result_summary_missing",
             "result_manifest_path": str(manifest_path),
             "result_registration_bound": False,
+            "result_launch_contract_bound": False,
         }
     summary = pd.read_csv(summary_path)
     source = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -462,6 +566,7 @@ def _result_evidence(
         required_artifacts=(
             "robust_selection_pipeline_summary.csv",
             "robust_selection_pipeline_research_registration.csv",
+            "robust_selection_pipeline_research_launch_contract.csv",
         ),
         require_input_fingerprints=True,
     )
@@ -469,6 +574,10 @@ def _result_evidence(
     registration_input = _manifest_input(
         manifest,
         "research_family_registration_manifest",
+    )
+    contract_input = _manifest_input(
+        manifest,
+        "research_family_launch_contract",
     )
     bound = bool(
         _to_bool(source.get("research_registration_provided", False))
@@ -484,6 +593,17 @@ def _result_evidence(
         and _canonical_path(registration_input.get("path", ""))
         == _canonical_path(registration.root / "manifest.json")
     )
+    contract_sha256 = file_sha256(contract_path) if contract_path.is_file() else ""
+    contract_bound = bool(
+        _to_bool(source.get("research_launch_contract_provided", False))
+        and _to_bool(source.get("research_launch_contract_passed", False))
+        and str(source.get("research_launch_contract_id", "")) == contract_id
+        and str(source.get("research_launch_contract_sha256", ""))
+        == contract_sha256
+        and str(contract_input.get("sha256", "")) == contract_sha256
+        and _canonical_path(contract_input.get("path", ""))
+        == _canonical_path(contract_path)
+    )
     return {
         "result_exists": True,
         "result_ready": _to_bool(source.get("ready", False)),
@@ -491,6 +611,7 @@ def _result_evidence(
         "result_manifest_error": str(integrity.error),
         "result_manifest_path": str(manifest_path),
         "result_registration_bound": bound,
+        "result_launch_contract_bound": contract_bound,
     }
 
 

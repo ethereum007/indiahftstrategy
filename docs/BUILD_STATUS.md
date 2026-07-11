@@ -79,6 +79,12 @@
   summary, candidate config, and manifest. Registration proof and sweep
   provenance jointly gate nested promotion; exploratory unregistered runs stay
   compatible unless registration is explicitly required.
+  Registered executions now add a launch-contract preflight that verifies the
+  current matrix artifact, contract-core hash, exact study/output identity,
+  ordered sweeps and labels, grouping columns, holdout count, and registration
+  fingerprint. The robust root fingerprints the immutable contract file and
+  records the matrix-manifest SHA observed at launch, so refreshing mutable
+  closure coverage does not invalidate the completed result.
 - Research families can now be registered prospectively before outcomes exist.
   `register-research-family` normalizes and validates a CSV plan containing
   strategy, market, hypothesis, metric, maximum search breadth, at least six
@@ -92,7 +98,9 @@
   deterministic argv contract per registered row, and classifies results as
   completed-ready, completed-blocked, explicitly abandoned, or never launched.
   Existing roots count only when they bind the exact registration ID, label,
-  and manifest SHA. Abandonments require a unique reason ledger row and an
+  manifest SHA, launch-contract ID, and contract-file SHA. The
+  `run-research-family-study` executor runs only a current launch-ready row's
+  exact stored argv. Abandonments require a unique reason ledger row and an
   explicit operator attestation; all artifacts remain non-authorizing.
 - Cross-strategy research now has a declared-family multiple-testing ledger.
   `audit-research-family` verifies each robust-selection root, includes failed
@@ -2499,15 +2507,17 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1494 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1496 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`130 passed`). This covers deterministic plan locking, immutable
-registered-study launch contracts, current sweep and result coverage,
+together (`132 passed`). This covers deterministic plan locking, immutable
+registered-study launch contracts, exact contract execution, launch-argument
+drift rejection, mutable coverage refresh without root invalidation, recursive
+post-coverage result-drift detection, current sweep and result coverage,
 never-launched blocking, attested reasoned abandonment, conservative abandoned
 study accounting, direct registered-row and registration-manifest source binding, exact
 family/label/path/contract closure, missing registration, post-hoc registration,
@@ -2550,7 +2560,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1494-test collection is fully green.
+1496-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2559,6 +2569,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind each executed robust-selection root to its immutable launch-contract ID
-   in addition to the prospective registration ID, eliminating manual argv
-   execution as an unverifiable boundary.
+4. Add an execution receipt and resolved semantic-parameter digest to each
+   launch-contract run, proving the stored argv was dispatched intact rather
+   than merely reconstructed with matching core paths.
