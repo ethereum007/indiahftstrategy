@@ -102,6 +102,11 @@ from reports.proof import ProofThresholds, write_proof_report
 from reports.proof_refresh import ProofRefreshThresholds, write_proof_refresh_report
 from reports.promotion import PromotionThresholds, write_promotion_report
 from reports.robust_selection_pipeline import write_robust_selection_pipeline
+from reports.research_family import (
+    ResearchFamilyConfig,
+    ResearchFamilyThresholds,
+    write_research_family_audit,
+)
 from reports.provider_market_data_fetcher import (
     ProviderMarketDataFetcherConfig,
     write_provider_market_data_fetcher_plan,
@@ -2804,6 +2809,30 @@ def main(argv: list[str] | None = None) -> int:
     backtest_holdout.add_argument("--fail-on-breach", action="store_true")
     backtest_holdout.add_argument("--fail-on-blocked-actions", action="store_true")
     backtest_holdout.add_argument("--fail-on-actions", action="store_true")
+
+    research_family = sub.add_parser(
+        "audit-research-family",
+        help="Apply family-wise correction across declared robust candidate studies.",
+    )
+    research_family.add_argument("--studies", nargs="+", required=True)
+    research_family.add_argument("--out", required=True)
+    research_family.add_argument("--family-id", required=True)
+    research_family.add_argument("--label", action="append", dest="labels")
+    research_family.add_argument("--attest-complete-family", action="store_true")
+    research_family.add_argument(
+        "--allow-missing-study-manifests",
+        action="store_true",
+    )
+    research_family.add_argument("--min-studies", type=int, default=2)
+    research_family.add_argument(
+        "--max-holm-adjusted-pvalue",
+        type=float,
+        default=0.1,
+    )
+    research_family.add_argument("--min-family-candidates", type=int, default=1)
+    research_family.add_argument("--fail-on-breach", action="store_true")
+    research_family.add_argument("--fail-on-blocked-actions", action="store_true")
+    research_family.add_argument("--fail-on-actions", action="store_true")
 
     promote = sub.add_parser("promote-scenario", help="Gate a sweep selection for paper/shadow promotion.")
     promote.add_argument("--selection", required=True)
@@ -6387,6 +6416,35 @@ def main(argv: list[str] | None = None) -> int:
                 min_fills_per_sweep=args.min_fills_per_sweep,
                 max_worst_drawdown=args.max_worst_drawdown,
                 require_selection_passed=not args.allow_failed_selection,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        if args.fail_on_breach and not result.passed:
+            return 2
+        if args.fail_on_blocked_actions and action_count > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if args.command == "audit-research-family":
+        result = write_research_family_audit(
+            args.studies,
+            output_dir=args.out,
+            labels=args.labels,
+            config=ResearchFamilyConfig(
+                family_id=args.family_id,
+                declaration_complete_attested=args.attest_complete_family,
+                require_study_manifests=(
+                    not args.allow_missing_study_manifests
+                ),
+                require_source_ready=True,
+                require_holdout_passed=True,
+            ),
+            thresholds=ResearchFamilyThresholds(
+                min_studies=args.min_studies,
+                max_holm_adjusted_pvalue=args.max_holm_adjusted_pvalue,
+                min_family_candidates=args.min_family_candidates,
             ),
         )
         print(result.summary.to_string(index=False))

@@ -74,6 +74,7 @@ RUN_TYPE_NEXT_GATES = {
     "backtest_overfit_audit": "audit-backtest-overfit",
     "backtest_significance_audit": "audit-backtest-significance",
     "backtest_holdout_audit": "audit-backtest-holdout",
+    "research_family_audit": "audit-research-family",
     "robust_selection_pipeline": "pipeline-robust-selection",
     "proof_refresh_gate": "review-proof-refresh",
     "stress_report": "stress-replay",

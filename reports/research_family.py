@@ -1,0 +1,700 @@
+from __future__ import annotations
+
+import json
+import math
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+
+
+RUN_TYPE = "research_family_audit"
+READY_NEXT_GATE = "score-strategy-readiness"
+REPAIR_NEXT_GATE = "audit-research-family"
+
+ACTION_QUEUE_COLUMNS = [
+    "priority",
+    "queue_status",
+    "source",
+    "component",
+    "check",
+    "actual",
+    "operator",
+    "expected",
+    "action",
+    "reason",
+    "recommendation",
+    "next_gate",
+    "next_gate_help_command",
+]
+
+
+@dataclass(frozen=True)
+class ResearchFamilyConfig:
+    family_id: str
+    declaration_complete_attested: bool = False
+    require_study_manifests: bool = True
+    require_source_ready: bool = True
+    require_holdout_passed: bool = True
+
+
+@dataclass(frozen=True)
+class ResearchFamilyThresholds:
+    min_studies: int = 2
+    max_holm_adjusted_pvalue: float = 0.1
+    min_family_candidates: int = 1
+
+
+@dataclass(frozen=True)
+class ResearchFamilyReport:
+    studies: pd.DataFrame
+    checks: pd.DataFrame
+    summary: pd.DataFrame
+    action_queue: pd.DataFrame
+    config: dict[str, Any]
+    output_dir: Path | None = None
+
+    @property
+    def passed(self) -> bool:
+        return bool(self.summary.iloc[0]["passed"]) if not self.summary.empty else False
+
+    @property
+    def ready(self) -> bool:
+        return self.passed
+
+
+def evaluate_research_family(
+    studies: pd.DataFrame,
+    *,
+    config: ResearchFamilyConfig,
+    thresholds: ResearchFamilyThresholds | None = None,
+) -> ResearchFamilyReport:
+    thresholds = thresholds or ResearchFamilyThresholds()
+    _validate(config, thresholds)
+    _require_columns(
+        studies,
+        (
+            "study_label",
+            "study_path",
+            "manifest_current",
+            "source_ready",
+            "holdout_passed",
+            "candidate_scenario",
+            "within_study_adjusted_pvalue",
+            "source_authorizes_submission",
+        ),
+    )
+    frame = _holm_adjust(
+        studies.copy(),
+        thresholds.max_holm_adjusted_pvalue,
+        config=config,
+    )
+    study_count = int(len(frame))
+    unique_path_count = (
+        int(frame["study_path"].astype(str).str.casefold().nunique())
+        if not frame.empty
+        else 0
+    )
+    unique_label_count = (
+        int(frame["study_label"].astype(str).nunique()) if not frame.empty else 0
+    )
+    manifest_current_count = _bool_count(frame, "manifest_current")
+    candidate_count = int(
+        frame.get("candidate_scenario", pd.Series(dtype=str))
+        .astype(str)
+        .str.strip()
+        .ne("")
+        .sum()
+    )
+    adjusted_pvalues = _numeric(frame, "within_study_adjusted_pvalue")
+    valid_pvalue_count = int(
+        (np.isfinite(adjusted_pvalues) & adjusted_pvalues.between(0.0, 1.0)).sum()
+    )
+    family_candidate_count = _bool_count(frame, "family_passed")
+    non_authorizing_count = int(
+        (~frame.get("source_authorizes_submission", pd.Series(False, index=frame.index))
+         .map(_to_bool)).sum()
+    )
+    checks = pd.DataFrame(
+        [
+            {
+                "check": "family_declaration_attested",
+                "actual": bool(config.declaration_complete_attested),
+                "operator": "is",
+                "expected": True,
+                "passed": bool(config.declaration_complete_attested),
+                "reason": (
+                    ""
+                    if config.declaration_complete_attested
+                    else "operator must attest that every attempted study is declared"
+                ),
+            },
+            _numeric_check(
+                "study_count",
+                study_count,
+                ">=",
+                thresholds.min_studies,
+                "not enough declared studies for family-wise correction",
+            ),
+            _numeric_check(
+                "unique_study_paths",
+                unique_path_count,
+                "==",
+                study_count,
+                "the same study root was declared more than once",
+            ),
+            _numeric_check(
+                "unique_study_labels",
+                unique_label_count,
+                "==",
+                study_count,
+                "study labels must be unique",
+            ),
+            _numeric_check(
+                "current_study_manifests",
+                manifest_current_count,
+                "==",
+                study_count,
+                "one or more robust-study artifacts or inputs drifted",
+                allow_failure=not config.require_study_manifests,
+            ),
+            _numeric_check(
+                "candidate_scenarios",
+                candidate_count,
+                "==",
+                study_count,
+                "one or more studies lack a frozen candidate identity",
+            ),
+            _numeric_check(
+                "valid_adjusted_pvalues",
+                valid_pvalue_count,
+                "==",
+                study_count,
+                "one or more studies lack a valid adjusted p-value in [0, 1]",
+            ),
+            _numeric_check(
+                "non_authorizing_sources",
+                non_authorizing_count,
+                "==",
+                study_count,
+                "a source study unexpectedly claims broker-submission authority",
+            ),
+            _numeric_check(
+                "family_candidates",
+                family_candidate_count,
+                ">=",
+                thresholds.min_family_candidates,
+                "no source-ready candidate survives family-wise correction",
+            ),
+        ]
+    )
+    passed = bool(not checks.empty and checks["passed"].astype(bool).all())
+    failed_checks = int((~checks["passed"].astype(bool)).sum())
+    action_queue = _action_queue(checks)
+    selected = frame.loc[frame["family_passed"].map(_to_bool)]
+    best = selected.iloc[0] if not selected.empty else pd.Series(dtype=object)
+    summary = pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "family_id": config.family_id,
+                "study_count": study_count,
+                "unique_study_path_count": unique_path_count,
+                "manifest_current_count": manifest_current_count,
+                "source_ready_count": _bool_count(frame, "source_ready"),
+                "holdout_passed_count": _bool_count(frame, "holdout_passed"),
+                "valid_adjusted_pvalue_count": valid_pvalue_count,
+                "family_candidate_count": family_candidate_count,
+                "declaration_complete_attested": bool(
+                    config.declaration_complete_attested
+                ),
+                "family_wise_error_control_claimed": bool(
+                    passed and config.declaration_complete_attested
+                ),
+                "max_holm_adjusted_pvalue": thresholds.max_holm_adjusted_pvalue,
+                "best_study_label": str(best.get("study_label", "")),
+                "best_candidate_scenario": str(best.get("candidate_scenario", "")),
+                "best_holm_adjusted_pvalue": _float(
+                    best.get("holm_adjusted_pvalue")
+                ),
+                "failed_checks": failed_checks,
+                "action_count": int(len(action_queue)),
+                "blocked_action_count": int(len(action_queue)),
+                "next_gate": READY_NEXT_GATE if passed else REPAIR_NEXT_GATE,
+                "next_gate_help_command": _help_command(
+                    READY_NEXT_GATE if passed else REPAIR_NEXT_GATE
+                ),
+                "recommendation": (
+                    "catalog_family_survivors_for_strategy_readiness"
+                    if passed
+                    else "repair_family_declaration_or_keep_candidates_in_research"
+                ),
+                "authorizes_submission": False,
+            }
+        ]
+    )
+    payload = {
+        "schema_version": 1,
+        "passed": passed,
+        "parameters": asdict(config),
+        "thresholds": asdict(thresholds),
+        "summary": _record(summary.iloc[0]),
+        "candidate_decisions": [_record(row) for _, row in frame.iterrows()],
+        "selected_candidates": (
+            [_record(row) for _, row in selected.iterrows()] if passed else []
+        ),
+    }
+    return ResearchFamilyReport(
+        studies=frame,
+        checks=checks,
+        summary=summary,
+        action_queue=action_queue,
+        config=payload,
+    )
+
+
+def write_research_family_audit(
+    study_paths: list[str | Path],
+    *,
+    output_dir: str | Path,
+    config: ResearchFamilyConfig,
+    labels: list[str] | None = None,
+    thresholds: ResearchFamilyThresholds | None = None,
+) -> ResearchFamilyReport:
+    paths = [Path(path).resolve() for path in study_paths]
+    if not paths:
+        raise ValueError("at least one robust study path is required")
+    if labels is not None and len(labels) != len(paths):
+        raise ValueError("labels must match study_paths length")
+    resolved_labels = labels or [path.stem for path in paths]
+    studies = _read_studies(paths, resolved_labels)
+    report = evaluate_research_family(
+        studies,
+        config=config,
+        thresholds=thresholds,
+    )
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    report.studies.to_csv(out / "research_family_studies.csv", index=False)
+    report.checks.to_csv(out / "research_family_checks.csv", index=False)
+    report.summary.to_csv(out / "research_family_summary.csv", index=False)
+    report.action_queue.to_csv(
+        out / "research_family_action_queue.csv",
+        index=False,
+    )
+    payload = dict(report.config)
+    payload.update(
+        {
+            "study_paths": [str(path) for path in paths],
+            "study_labels": resolved_labels,
+            "study_manifest_sha256": {
+                str(row.study_label): str(row.manifest_sha256)
+                for row in report.studies.itertuples(index=False)
+            },
+            "declaration_complete_attested": bool(
+                config.declaration_complete_attested
+            ),
+        }
+    )
+    (out / "research_family_config.json").write_text(
+        json.dumps(_jsonable(payload), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (out / "research_family_runbook.md").write_text(
+        _runbook(report.summary.iloc[0], report.studies, report.checks),
+        encoding="utf-8",
+    )
+    manifests = [path / "manifest.json" for path in paths]
+    write_experiment_manifest(
+        out,
+        run_type=RUN_TYPE,
+        parameters={
+            "config": asdict(config),
+            "thresholds": asdict(thresholds or ResearchFamilyThresholds()),
+            "labels": resolved_labels,
+        },
+        inputs={
+            "robust_studies": paths,
+            "robust_study_manifests": [
+                path for path in manifests if path.is_file()
+            ],
+        },
+        extra={
+            "passed": bool(report.passed),
+            "family_id": config.family_id,
+            "study_count": len(paths),
+            "family_candidate_count": int(
+                report.summary.iloc[0]["family_candidate_count"]
+            ),
+            "declaration_complete_attested": bool(
+                config.declaration_complete_attested
+            ),
+            "family_wise_error_control_claimed": bool(
+                report.summary.iloc[0]["family_wise_error_control_claimed"]
+            ),
+            "authorizes_submission": False,
+        },
+    )
+    return ResearchFamilyReport(
+        studies=report.studies,
+        checks=report.checks,
+        summary=report.summary,
+        action_queue=report.action_queue,
+        config=payload,
+        output_dir=out,
+    )
+
+
+def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
+    rows: list[dict[str, Any]] = []
+    for path, label in zip(paths, labels):
+        summary_path = path / "robust_selection_pipeline_summary.csv"
+        significance_path = (
+            path
+            / "02_backtest_significance"
+            / "backtest_significance_summary.csv"
+        )
+        manifest_path = path / "manifest.json"
+        if not summary_path.is_file():
+            raise FileNotFoundError(
+                f"robust_selection_pipeline_summary.csv not found: {summary_path}"
+            )
+        summary = pd.read_csv(summary_path)
+        if summary.empty:
+            raise ValueError(f"robust selection summary is empty: {summary_path}")
+        significance = (
+            pd.read_csv(significance_path)
+            if significance_path.is_file()
+            else pd.DataFrame()
+        )
+        source = summary.iloc[0]
+        evidence = (
+            significance.iloc[0]
+            if not significance.empty
+            else pd.Series(dtype=object)
+        )
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="robust_selection_pipeline",
+            required_artifacts=(
+                "robust_selection_pipeline_summary.csv",
+                "02_backtest_significance/backtest_significance_summary.csv",
+            ),
+            require_input_fingerprints=True,
+        )
+        rows.append(
+            {
+                "study_label": str(label),
+                "study_path": str(path),
+                "manifest_path": str(manifest_path),
+                "manifest_sha256": (
+                    file_sha256(manifest_path) if manifest_path.is_file() else ""
+                ),
+                "manifest_current": integrity.passed,
+                "manifest_error": integrity.error,
+                "source_ready": _to_bool(source.get("ready", False)),
+                "holdout_passed": _to_bool(
+                    source.get("backtest_holdout_passed", False)
+                ),
+                "strategy": str(source.get("strategy", "")),
+                "market": str(source.get("market", "")),
+                "candidate_scenario": str(
+                    source.get("candidate_scenario_key", "")
+                ),
+                "scenario_trial_count": _int(
+                    evidence.get(
+                        "scenario_trial_count",
+                        source.get("overfit_scenario_count", 0),
+                    )
+                ),
+                "raw_sign_pvalue": _float(evidence.get("sign_pvalue")),
+                "within_study_adjusted_pvalue": _float(
+                    source.get(
+                        "adjusted_sign_pvalue",
+                        evidence.get("adjusted_sign_pvalue"),
+                    )
+                ),
+                "source_next_gate": str(source.get("next_gate", "")),
+                "source_authorizes_submission": _to_bool(
+                    source.get("authorizes_submission", False)
+                ),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _holm_adjust(
+    studies: pd.DataFrame,
+    threshold: float,
+    *,
+    config: ResearchFamilyConfig,
+) -> pd.DataFrame:
+    frame = studies.copy()
+    if frame.empty:
+        for column in (
+            "family_rank",
+            "holm_factor",
+            "holm_adjusted_pvalue",
+            "source_eligible",
+            "family_passed",
+        ):
+            frame[column] = pd.Series(dtype=float if "pvalue" in column else object)
+        return frame
+    pvalues = _numeric(frame, "within_study_adjusted_pvalue")
+    frame["family_rank"] = 0
+    frame["holm_factor"] = np.nan
+    frame["holm_adjusted_pvalue"] = np.nan
+    valid = np.isfinite(pvalues) & pvalues.between(0.0, 1.0)
+    finite = frame.loc[valid].copy()
+    finite["_pvalue"] = pvalues.loc[finite.index]
+    finite = finite.sort_values(
+        ["_pvalue", "study_label", "study_path"],
+        kind="stable",
+    )
+    running = 0.0
+    family_size = int(len(frame))
+    for rank, (index, row) in enumerate(finite.iterrows(), start=1):
+        factor = family_size - rank + 1
+        running = max(running, min(1.0, float(row["_pvalue"]) * factor))
+        frame.loc[index, "family_rank"] = rank
+        frame.loc[index, "holm_factor"] = factor
+        frame.loc[index, "holm_adjusted_pvalue"] = running
+    source_ready = frame.get("source_ready", False).map(_to_bool)
+    holdout_passed = frame.get("holdout_passed", False).map(_to_bool)
+    manifest_current = frame.get("manifest_current", False).map(_to_bool)
+    non_authorizing = ~frame.get(
+        "source_authorizes_submission",
+        pd.Series(False, index=frame.index),
+    ).map(_to_bool)
+    frame["source_eligible"] = (
+        (source_ready | (not config.require_source_ready))
+        & (holdout_passed | (not config.require_holdout_passed))
+        & (manifest_current | (not config.require_study_manifests))
+        & non_authorizing
+        & frame.get("candidate_scenario", "").astype(str).str.strip().ne("")
+    )
+    frame["family_passed"] = (
+        frame["source_eligible"]
+        & valid
+        & _numeric(frame, "holm_adjusted_pvalue").le(threshold)
+    )
+    return frame.sort_values(
+        ["family_passed", "family_rank", "study_label"],
+        ascending=[False, True, True],
+        kind="stable",
+    ).reset_index(drop=True)
+
+
+def _action_queue(checks: pd.DataFrame) -> pd.DataFrame:
+    failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else checks
+    rows: list[dict[str, Any]] = []
+    for priority, row in enumerate(failed.itertuples(index=False), start=1):
+        recommendation = _recommendation(str(row.check))
+        rows.append(
+            {
+                "priority": priority,
+                "queue_status": "blocked",
+                "source": RUN_TYPE,
+                "component": "study_family",
+                "check": str(row.check),
+                "actual": row.actual,
+                "operator": row.operator,
+                "expected": row.expected,
+                "action": recommendation,
+                "reason": str(row.reason),
+                "recommendation": recommendation,
+                "next_gate": REPAIR_NEXT_GATE,
+                "next_gate_help_command": _help_command(REPAIR_NEXT_GATE),
+            }
+        )
+    return pd.DataFrame(rows, columns=ACTION_QUEUE_COLUMNS)
+
+
+def _recommendation(check: str) -> str:
+    if check == "family_declaration_attested":
+        return "declare_every_attempted_study_then_attest_family_completeness"
+    if check == "study_count":
+        return "declare_all_attempted_studies_before_family_review"
+    if check in {"unique_study_paths", "unique_study_labels"}:
+        return "remove_duplicate_declarations_and_assign_unique_labels"
+    if check == "current_study_manifests":
+        return "regenerate_drifted_robust_studies_from_current_inputs"
+    if check in {"candidate_scenarios", "valid_adjusted_pvalues"}:
+        return "complete_each_robust_study_without_omitting_failed_attempts"
+    if check == "non_authorizing_sources":
+        return "repair_source_evidence_that_claims_submission_authority"
+    return "collect_new_evidence_or_reduce_the_declared_research_family"
+
+
+def _numeric_check(
+    check: str,
+    actual: Any,
+    operator: str,
+    expected: int | float,
+    reason: str,
+    *,
+    allow_failure: bool = False,
+) -> dict[str, Any]:
+    value = _float(actual)
+    expected_value = _float(expected)
+    matched = bool(
+        np.isfinite(value)
+        and np.isfinite(expected_value)
+        and (
+            (operator == ">=" and value >= expected_value)
+            or (operator == "==" and value == expected_value)
+        )
+    )
+    passed = matched or allow_failure
+    return {
+        "check": check,
+        "actual": actual,
+        "operator": operator,
+        "expected": expected,
+        "passed": passed,
+        "reason": "" if passed else reason,
+    }
+
+
+def _validate(
+    config: ResearchFamilyConfig,
+    thresholds: ResearchFamilyThresholds,
+) -> None:
+    if not config.family_id.strip():
+        raise ValueError("family_id must be non-empty")
+    if thresholds.min_studies < 2:
+        raise ValueError("min_studies must be at least 2")
+    if thresholds.min_family_candidates < 1:
+        raise ValueError("min_family_candidates must be positive")
+    if not 0.0 <= thresholds.max_holm_adjusted_pvalue <= 1.0:
+        raise ValueError("max_holm_adjusted_pvalue must be between 0 and 1")
+
+
+def _require_columns(frame: pd.DataFrame, columns: tuple[str, ...]) -> None:
+    missing = [column for column in columns if column not in frame.columns]
+    if missing:
+        raise ValueError(f"research family studies missing columns: {missing}")
+
+
+def _runbook(
+    summary: pd.Series,
+    studies: pd.DataFrame,
+    checks: pd.DataFrame,
+) -> str:
+    lines = [
+        "# Research Family Audit",
+        "",
+        f"- Status: **{'passed' if bool(summary['passed']) else 'blocked'}**",
+        f"- Family: `{summary['family_id']}`",
+        "- Complete-family attestation: "
+        f"`{str(bool(summary['declaration_complete_attested'])).lower()}`",
+        f"- Declared studies: {int(summary['study_count'])}",
+        f"- Current manifests: {int(summary['manifest_current_count'])}",
+        f"- Source-ready studies: {int(summary['source_ready_count'])}",
+        f"- Family-surviving candidates: {int(summary['family_candidate_count'])}",
+        (
+            "- Best Holm-adjusted p-value: "
+            f"{_format_number(summary['best_holm_adjusted_pvalue'])}"
+        ),
+        f"- Next gate: `{summary['next_gate']}`",
+        "- Authorizes submission: `false`",
+        "",
+        (
+            "Holm-Bonferroni is applied to each study's scenario-adjusted "
+            "p-value. Failed and non-ready declared attempts remain in the "
+            "family size; they are never promoted as candidates."
+        ),
+        (
+            "This report cannot detect omitted experiments. Family-wise error "
+            "control is invalid if attempted studies are left out or registered "
+            "only after their outcomes are inspected."
+        ),
+        "",
+        "## Studies",
+        "",
+    ]
+    for row in studies.itertuples(index=False):
+        lines.append(
+            f"- `{row.study_label}` / `{row.candidate_scenario}`: "
+            f"within={_format_number(row.within_study_adjusted_pvalue)}, "
+            f"Holm={_format_number(row.holm_adjusted_pvalue)}, "
+            f"{'passed' if bool(row.family_passed) else 'blocked'}"
+        )
+    failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else checks
+    if not failed.empty:
+        lines.extend(["", "## Blocking Checks", ""])
+        for row in failed.itertuples(index=False):
+            lines.append(f"- `{row.check}`: {row.reason}")
+    return "\n".join(lines) + "\n"
+
+
+def _bool_count(frame: pd.DataFrame, column: str) -> int:
+    if frame.empty or column not in frame.columns:
+        return 0
+    return int(frame[column].map(_to_bool).sum())
+
+
+def _numeric(frame: pd.DataFrame, column: str) -> pd.Series:
+    if column not in frame.columns:
+        return pd.Series(np.nan, index=frame.index, dtype=float)
+    return pd.to_numeric(frame[column], errors="coerce")
+
+
+def _record(row: pd.Series) -> dict[str, Any]:
+    return {str(key): _jsonable(value) for key, value in row.to_dict().items()}
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_jsonable(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    if isinstance(value, np.generic):
+        return value.item()
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    return value
+
+
+def _to_bool(value: Any) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y", "passed", "ready"}
+    return bool(value)
+
+
+def _int(value: Any) -> int:
+    number = _float(value)
+    return int(number) if np.isfinite(number) else 0
+
+
+def _float(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def _format_number(value: Any) -> str:
+    number = _float(value)
+    return "n/a" if not np.isfinite(number) else f"{number:.6f}"
+
+
+def _help_command(gate: str) -> str:
+    return f"python -m hft_cli {gate} --help"

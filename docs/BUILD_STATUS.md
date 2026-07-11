@@ -72,6 +72,15 @@
   breaches fail closed. Sweep integrity is bound into nested promotion so a
   leaf cannot appear ready when root provenance failed. Ready output advances
   only to broker-neutral order staging with `authorizes_submission=false`.
+- Cross-strategy research now has a declared-family multiple-testing ledger.
+  `audit-research-family` verifies each robust-selection root, includes failed
+  and non-ready attempts in the family size, and applies Holm-Bonferroni to the
+  already scenario-adjusted candidate p-values. Only source-ready candidates
+  with passed holdout proof can survive. Duplicate roots, drift, missing
+  p-values, authorizing source claims, and an incomplete-family attestation all
+  fail closed. The manifest records the operator's completeness attestation
+  while the runbook makes clear that omitted experiments cannot be detected by
+  software and invalidate the family-wise error-control claim.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2457,20 +2466,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1473 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1479 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: chronological holdout, multiple-testing-aware
-significance, robust-selection, CSCV backtest-overfit, manifest-bound
-promotion, sweep comparison, experiment catalog, manifest, and strategy
-scorecard suites pass together (`109 passed`). This covers development/holdout
-isolation, frozen-candidate evaluation without re-selection, overlap and
-holdout-loss rejection, exact sign-test correction, deterministic bootstrap
-evidence, stable, partition-memorized, and underpowered orchestration; strict
-audit binding; root manifest/candidate lineage; catalog discovery; CLI
-fail-closed behavior; missing, edited, and source-drifted sweep provenance;
-path-contained artifact checks; and holdout, significance, overfit, and
-source-selection drift paths.
+Latest focused gate: declared research-family, chronological holdout,
+multiple-testing-aware significance, robust-selection, CSCV backtest-overfit,
+manifest-bound promotion, sweep comparison, experiment catalog, manifest, and
+strategy scorecard suites pass together (`115 passed`). This covers Holm
+correction over scenario-adjusted p-values, failed-attempt accounting,
+complete-family attestation, duplicate, drift, and malformed-p-value rejection,
+development/holdout isolation, frozen-candidate evaluation without
+re-selection, holdout-loss rejection, exact sign-test correction,
+deterministic bootstrap evidence, stable, partition-memorized, and
+underpowered orchestration; strict lineage and CLI fail-closed behavior; and
+family, holdout, significance, overfit, and source-selection drift paths.
 Manifest generation, the existing surface research/launch pipeline, and
 generic launch-bundle compatibility also pass together (`14 passed`).
 The immediately preceding CSCV backtest-overfit audit, manifest-bound
@@ -2505,7 +2514,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1473-test collection is fully green.
+1479-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2514,5 +2523,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add a manifest-bound study-family ledger so repeated candidate audits across
-   strategies can receive family-level multiple-testing correction.
+4. Add prospective research-family registration and closure so planned studies
+   are fingerprinted before outcomes are produced, reducing reliance on a
+   retrospective completeness attestation.

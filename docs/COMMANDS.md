@@ -2354,6 +2354,61 @@ candidate_config.json
 manifest.json
 ```
 
+When multiple strategies or research questions are tested as one program,
+declare every robust-selection root in the research-family audit below before
+treating any candidate as a family-wise survivor.
+
+## Research Family Audit
+
+Apply Holm-Bonferroni correction across a declared family of robust candidate
+studies. Include passed, failed, and abandoned completed attempts:
+
+```powershell
+python -m hft_cli audit-research-family `
+  --studies `
+    runs\robust_selection\leadlag `
+    runs\robust_selection\imbalance `
+    runs\robust_selection\surface_mm `
+  --label leadlag `
+  --label imbalance `
+  --label surface_mm `
+  --family-id india_index_microstructure_v1 `
+  --attest-complete-family `
+  --min-studies 2 `
+  --max-holm-adjusted-pvalue 0.10 `
+  --min-family-candidates 1 `
+  --out runs\research_family\india_index_microstructure_v1 `
+  --fail-on-actions `
+  --fail-on-breach
+```
+
+The audit verifies every robust root and source-input fingerprint, then applies
+Holm correction to each study's already scenario-count-adjusted sign-test
+p-value. Non-ready and failed studies remain in the family size but cannot
+become candidates. Surviving rows must also retain passed holdout proof and a
+non-authorizing source root.
+
+`--attest-complete-family` is mandatory for a passing report. It records the
+operator's assertion that every attempted study in the defined family is
+present. Software cannot discover omitted experiments, so the family-wise
+error-control claim is invalid if attempts are excluded or registered only
+after outcomes are inspected.
+
+Outputs:
+
+```text
+research_family_studies.csv
+research_family_checks.csv
+research_family_summary.csv
+research_family_action_queue.csv
+research_family_config.json
+research_family_runbook.md
+manifest.json
+```
+
+A passed family audit advances to `score-strategy-readiness`. It does not
+authorize order submission, capital allocation, or live trading.
+
 ## Launch Bundle
 
 Package a promoted scenario and staged broker-neutral orders into a fail-closed

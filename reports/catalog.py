@@ -38,6 +38,7 @@ SUMMARY_FILES = [
     "backtest_overfit_summary.csv",
     "backtest_significance_summary.csv",
     "backtest_holdout_summary.csv",
+    "research_family_summary.csv",
     "proof_refresh_summary.csv",
     "strategy_evidence_summary.csv",
     "strategy_scorecard_summary.csv",
