@@ -14,6 +14,9 @@ from reports.broker_dispatch_ack import (
     write_broker_dispatch_acknowledgements,
 )
 from reports.manifest import write_experiment_manifest
+from reports.provider_market_data_imbalance_broker_lineage_migration import (
+    provider_broker_lineage_migration_audit_inputs,
+)
 
 
 PROFILE = "imbalance"
@@ -82,6 +85,7 @@ class ProviderMarketDataImbalanceBrokerDispatchAckConfig:
     require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
     require_send_packet: bool = False
+    lineage_migration_audit_dir: str = ""
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
     max_unmatched_acks: int = 0
@@ -300,6 +304,11 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         inputs["dispatch_roundtrip_provider_captures"] = (
             dispatch_roundtrip_capture_paths
         )
+    inputs.update(
+        provider_broker_lineage_migration_audit_inputs(
+            config.lineage_migration_audit_dir
+        )
+    )
 
     write_experiment_manifest(
         out,

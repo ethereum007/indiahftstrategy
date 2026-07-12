@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from hft_cli import main
+from hft_cli import main as _cli_main
 from tests.provider_adapter_capture_support import write_bundle_captures
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
@@ -106,6 +106,41 @@ from reports.provider_market_data_live_session import (
     ProviderMarketDataLiveSessionConfig,
     write_provider_market_data_live_session_plan,
 )
+
+
+def main(argv: list[str]) -> int:
+    """Keep unaudited archive fixtures on the lower-level compatibility API."""
+
+    if "--allow-legacy-send-lineage" in argv:
+        assert argv[0] == (
+            "reconcile-provider-market-data-imbalance-broker-dispatch"
+        )
+        report = write_provider_market_data_imbalance_broker_dispatch_ack(
+            _option_value(argv, "--provider-broker-dispatch-send"),
+            _option_value(argv, "--acks"),
+            _option_value(argv, "--out"),
+            config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(
+                require_send_packet=False,
+            ),
+        )
+        return 2 if "--fail-on-breach" in argv and not report.passed else 0
+    if "--allow-legacy-ack-lineage" in argv:
+        assert argv[0] == (
+            "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
+        )
+        report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+            _option_value(argv, "--provider-broker-dispatch-ack"),
+            _option_value(argv, "--out"),
+            config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+                require_ack_lineage=False,
+            ),
+        )
+        return 2 if "--fail-on-breach" in argv and not report.passed else 0
+    return _cli_main(argv)
+
+
+def _option_value(argv: list[str], option: str) -> str:
+    return argv[argv.index(option) + 1]
 
 
 def _imbalance_ticks(day: str):

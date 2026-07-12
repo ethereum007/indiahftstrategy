@@ -232,6 +232,7 @@ from reports.provider_market_data_imbalance_broker_rehearsal_certificate import 
 )
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
+    verify_provider_broker_lineage_migration_audit,
     write_provider_broker_lineage_migration_audit,
 )
 from reports.provider_market_data_live_ingest import (
@@ -1908,6 +1909,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Allow audited legacy acknowledgement input without send lineage.",
     )
     provider_market_data_imbalance_broker_dispatch_ack.add_argument(
+        "--lineage-migration-audit",
+        default=None,
+        help="Current exact-source migration audit required by the legacy override.",
+    )
+    provider_market_data_imbalance_broker_dispatch_ack.add_argument(
         "--no-use-provider-broker-dispatch-send-inputs",
         action="store_true",
     )
@@ -1989,6 +1995,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Allow an audited legacy acknowledgement without strict lineage.",
     )
     provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--lineage-migration-audit",
+        default=None,
+        help="Current exact-source migration audit required by the legacy override.",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
         "--no-use-provider-broker-dispatch-ack-inputs",
         action="store_true",
     )
@@ -2042,6 +2053,11 @@ def main(argv: list[str] | None = None) -> int:
         dest="require_ack_lineage",
         action="store_false",
         help="Allow an audited legacy rehearsal without strict acknowledgement lineage.",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--lineage-migration-audit",
+        default=None,
+        help="Current exact-source migration audit required by the legacy override.",
     )
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
         "--allow-recorded-dirty-git",
@@ -5514,6 +5530,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0
     if args.command == "reconcile-provider-market-data-imbalance-broker-dispatch":
+        lineage_migration_audit = _validated_provider_legacy_lineage_audit(
+            strict_lineage=args.require_send_packet,
+            audit_dir=args.lineage_migration_audit,
+            source_path=args.provider_broker_dispatch_send,
+            source_role="provider_send",
+            legacy_flag="--allow-legacy-send-lineage",
+        )
         result = write_provider_market_data_imbalance_broker_dispatch_ack(
             args.provider_broker_dispatch_send,
             args.acks,
@@ -5528,6 +5551,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 require_send_packet=args.require_send_packet,
+                lineage_migration_audit_dir=lineage_migration_audit,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,
@@ -5547,6 +5571,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0
     if args.command == "review-provider-market-data-imbalance-broker-dispatch-roundtrip":
+        lineage_migration_audit = _validated_provider_legacy_lineage_audit(
+            strict_lineage=args.require_ack_lineage,
+            audit_dir=args.lineage_migration_audit,
+            source_path=args.provider_broker_dispatch_ack,
+            source_role="provider_ack",
+            legacy_flag="--allow-legacy-ack-lineage",
+        )
         result = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
             args.provider_broker_dispatch_ack,
             args.out,
@@ -5567,6 +5598,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
                 require_ack_lineage=args.require_ack_lineage,
+                lineage_migration_audit_dir=lineage_migration_audit,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,
@@ -5588,6 +5620,13 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         return 0
     if args.command == "certify-provider-market-data-imbalance-broker-rehearsal":
+        lineage_migration_audit = _validated_provider_legacy_lineage_audit(
+            strict_lineage=args.require_ack_lineage,
+            audit_dir=args.lineage_migration_audit,
+            source_path=args.provider_broker_dispatch_roundtrip,
+            source_role="provider_roundtrip",
+            legacy_flag="--allow-legacy-ack-lineage",
+        )
         result = write_provider_market_data_imbalance_broker_rehearsal_certificate(
             args.provider_broker_dispatch_roundtrip,
             args.out,
@@ -5595,6 +5634,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_clean_recorded_git=not args.allow_recorded_dirty_git,
                 require_sealed_provider_receipts=args.require_sealed_provider_receipts,
                 require_ack_lineage=args.require_ack_lineage,
+                lineage_migration_audit_dir=lineage_migration_audit,
                 max_manifest_count=args.max_manifests,
             ),
         )
@@ -7976,6 +8016,38 @@ def _truthy(value: object) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "y", "ready", "passed"}
     return bool(value)
+
+
+def _validated_provider_legacy_lineage_audit(
+    *,
+    strict_lineage: bool,
+    audit_dir: str | None,
+    source_path: str,
+    source_role: str,
+    legacy_flag: str,
+) -> str:
+    if strict_lineage:
+        if audit_dir:
+            raise ValueError(
+                "--lineage-migration-audit is only valid with "
+                f"{legacy_flag}"
+            )
+        return ""
+    if not audit_dir:
+        raise ValueError(
+            f"--lineage-migration-audit is required with {legacy_flag}"
+        )
+    verification = verify_provider_broker_lineage_migration_audit(
+        audit_dir,
+        source_path=source_path,
+        source_role=source_role,
+    )
+    if not verification.ready:
+        raise ValueError(
+            "lineage migration audit rejected legacy source: "
+            f"{verification.error}"
+        )
+    return str(verification.audit_dir)
 
 
 if __name__ == "__main__":

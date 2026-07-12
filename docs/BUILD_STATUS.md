@@ -2681,26 +2681,32 @@
   acknowledgement lineage by default at the CLI boundary. Existing explicit
   `--require-ack-lineage` scripts remain valid; only the conspicuous
   `--allow-legacy-ack-lineage` option relaxes the gate for migration-audited
-  historical proof. The lower-level Python writer retains its compatibility
+  historical proof, and the override now requires
+  `--lineage-migration-audit` for the exact covered round-trip source. The
+  lower-level Python writer retains its compatibility
   default so archived fixture regeneration remains controlled. Default strict
   rejection, explicit legacy acceptance, explicit strict acceptance, and all
   certificate integrity paths pass together (`8 passed`).
 - Provider final round-trip CLI review now also requires complete current
   acknowledgement lineage by default. Explicit `--require-ack-lineage` scripts
   remain valid, while `--allow-legacy-ack-lineage` makes compatibility use
-  visible and auditable. The strict default traverses the real provider
-  acknowledgement into generic dispatch/send/ack proof; focused strict,
+  visible and auditable and now requires `--lineage-migration-audit` for the
+  exact covered acknowledgement source. The strict default traverses the real
+  provider acknowledgement into generic dispatch/send/ack proof; focused strict,
   blocked-ack compatibility, and clean legacy-sidecar cases pass together
   (`3 passed`). Existing multi-scenario legacy fixtures now declare their
   override rather than inheriting a permissive default.
 - Provider acknowledgement CLI reconciliation now requires the complete current
   broker send packet lineage by default. Explicit `--require-send-packet`
   scripts remain valid, while `--allow-legacy-send-lineage` makes archive-only
-  compatibility use visible and auditable. The lower-level Python writer keeps
+  compatibility use visible and auditable and now requires
+  `--lineage-migration-audit` for the exact covered provider-send source. The
+  lower-level Python writer keeps
   its migration-compatible default so historical bundle regeneration remains
   controlled. The real strict provider chain, blocked-send behavior, and both
   clean route-readiness sidecar compatibility paths pass together (`4 passed`);
-  all 15 legacy CLI fixture paths now declare their override explicitly.
+  all 15 unaudited acknowledgement and 14 unaudited round-trip fixture paths now
+  use the lower-level compatibility writers rather than the production CLI.
 - Archived provider broker proofs can now be assessed with
   `audit-provider-market-data-imbalance-broker-lineage-migration` under the
   strict acknowledgement defaults. The read-only audit discovers
@@ -2725,8 +2731,13 @@
   Unrelated and relaxed-threshold audits fail closed. All outputs remain
   explicitly non-authorizing. Strict, legacy-regenerable,
   equivalent-replacement, exact-source verification, policy-mismatch,
-  transitive/post-audit drift, recursive-discovery, collision, catalog, and CLI
-  exit-policy cases pass together (`12 passed`).
+  transitive/post-audit drift, recursive-discovery, collision, catalog, CLI
+  exit-policy, and all three exact-source legacy override gates pass together
+  (`16 passed`). Each accepted CLI override records the audit directory in its
+  writer config and fingerprints the audit directory, audit manifest, and
+  transitive audit dependencies in the generated proof manifest. Missing audit,
+  audit-on-strict-mode, unrelated source, relaxed policy, and later source drift
+  fail closed before the production CLI writer runs.
 
 ## Test Gate
 
@@ -2736,7 +2747,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1573 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1577 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2874,7 +2885,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1573-test collection is fully green.
+1577-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2883,6 +2894,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind each legacy send/ack-lineage CLI override to the new exact-source audit
-   verifier, moving unaudited fixture/archive regeneration to the lower-level
-   Python writers that already preserve compatibility defaults.
+4. Surface accepted lineage-migration audit identity, verification status, and
+   source-coverage status directly in provider acknowledgement, round-trip, and
+   certificate summaries/runbooks for operator and catalog review.

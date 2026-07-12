@@ -18,6 +18,9 @@ from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
     empty_broker_dispatch_ack_lineage,
 )
+from reports.provider_market_data_imbalance_broker_lineage_migration import (
+    provider_broker_lineage_migration_audit_inputs,
+)
 
 
 PROFILE = "imbalance"
@@ -99,6 +102,7 @@ class ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig:
     require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
     require_ack_lineage: bool = False
+    lineage_migration_audit_dir: str = ""
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
     max_unmatched_acks: int = 0
@@ -318,6 +322,11 @@ def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
         inputs["dispatch_roundtrip_provider_captures"] = (
             dispatch_roundtrip_capture_paths
         )
+    inputs.update(
+        provider_broker_lineage_migration_audit_inputs(
+            config.lineage_migration_audit_dir
+        )
+    )
 
     write_experiment_manifest(
         out,

@@ -135,6 +135,26 @@ class ProviderBrokerLineageMigrationAuditVerification:
     matched_inventory: pd.DataFrame
 
 
+def provider_broker_lineage_migration_audit_inputs(
+    audit_dir: str | Path | None,
+) -> dict[str, Any]:
+    if not audit_dir:
+        return {}
+    audit = Path(audit_dir).resolve()
+    manifest = audit / "manifest.json"
+    if not manifest.is_file():
+        raise FileNotFoundError(
+            f"lineage migration audit manifest not found: {manifest}"
+        )
+    return {
+        "lineage_migration_audit": audit,
+        "lineage_migration_audit_manifest": manifest,
+        "lineage_migration_audit_dependencies": manifest_dependency_paths(
+            manifest
+        ),
+    }
+
+
 def verify_provider_broker_lineage_migration_audit(
     audit_dir: str | Path,
     *,
@@ -600,6 +620,7 @@ def _policy_sha256(
         else "require_ack_lineage"
     )
     parameters.pop(strict_field, None)
+    parameters.pop("lineage_migration_audit_dir", None)
     return _canonical_sha256(
         {"bundle_type": bundle_type, "parameters": parameters}
     )

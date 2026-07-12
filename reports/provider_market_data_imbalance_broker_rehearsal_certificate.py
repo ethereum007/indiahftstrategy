@@ -13,6 +13,9 @@ from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
     empty_broker_dispatch_ack_lineage,
 )
+from reports.provider_market_data_imbalance_broker_lineage_migration import (
+    provider_broker_lineage_migration_audit_inputs,
+)
 
 
 RUN_TYPE = "provider_market_data_imbalance_broker_rehearsal_certificate"
@@ -85,6 +88,7 @@ class ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig:
     require_clean_recorded_git: bool = True
     require_sealed_provider_receipts: bool = False
     require_ack_lineage: bool = False
+    lineage_migration_audit_dir: str = ""
     max_manifest_count: int = 64
 
 
@@ -233,15 +237,21 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
         for path in manifest_graph.get("manifest_path", pd.Series(dtype=str)).astype(str).tolist()
         if path
     ]
+    manifest_inputs: dict[str, Any] = {
+        "provider_broker_dispatch_roundtrip": source_root,
+        "provider_broker_dispatch_roundtrip_manifest": source_root / "manifest.json",
+        "manifest_chain": chain_manifest_paths,
+    }
+    manifest_inputs.update(
+        provider_broker_lineage_migration_audit_inputs(
+            config.lineage_migration_audit_dir
+        )
+    )
     write_experiment_manifest(
         out,
         run_type=RUN_TYPE,
         parameters={"config": asdict(config)},
-        inputs={
-            "provider_broker_dispatch_roundtrip": source_root,
-            "provider_broker_dispatch_roundtrip_manifest": source_root / "manifest.json",
-            "manifest_chain": chain_manifest_paths,
-        },
+        inputs=manifest_inputs,
         extra={
             "ready": valid,
             "valid": valid,

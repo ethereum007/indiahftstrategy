@@ -173,24 +173,22 @@ def test_broker_rehearsal_certificate_supports_optional_and_required_receipt_lev
     assert "provider_receipt_proof_ready" in failed
 
 
-def test_broker_rehearsal_certificate_cli(tmp_path):
+def test_broker_rehearsal_certificate_lower_level_archive_compatibility(
+    tmp_path,
+):
     source = _write_roundtrip_fixture(tmp_path, sealed_receipts=True)
     output = tmp_path / "certificate_cli"
 
-    status = main(
-        [
-            "certify-provider-market-data-imbalance-broker-rehearsal",
-            "--provider-broker-dispatch-roundtrip",
-            str(source),
-            "--out",
-            str(output),
-            "--require-sealed-provider-receipts",
-            "--allow-legacy-ack-lineage",
-            "--fail-on-breach",
-        ]
+    report = write_provider_market_data_imbalance_broker_rehearsal_certificate(
+        source,
+        output,
+        config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+            require_sealed_provider_receipts=True,
+            require_ack_lineage=False,
+        ),
     )
 
-    assert status == 0
+    assert report.ready
     summary = pd.read_csv(
         output / "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv"
     ).iloc[0]

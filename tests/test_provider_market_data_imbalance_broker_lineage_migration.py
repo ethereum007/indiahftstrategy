@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
 
+import hft_cli
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
 from reports.manifest import (
@@ -17,6 +19,7 @@ from reports.operational_lineage import (
 )
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
+    provider_broker_lineage_migration_audit_inputs,
     verify_provider_broker_lineage_migration_audit,
     write_provider_broker_lineage_migration_audit,
 )
@@ -192,6 +195,163 @@ def test_lineage_migration_audit_accepts_equivalent_strict_replacements(
         (report.output_dir / "manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["extra"]["strict_replacement_covered_bundles"] == 3
+
+
+@pytest.mark.parametrize(
+    (
+        "command",
+        "source_key",
+        "writer_name",
+        "legacy_flag",
+        "source_option",
+        "extra_args",
+    ),
+    [
+        (
+            "reconcile-provider-market-data-imbalance-broker-dispatch",
+            "provider_send",
+            "write_provider_market_data_imbalance_broker_dispatch_ack",
+            "--allow-legacy-send-lineage",
+            "--provider-broker-dispatch-send",
+            ("--acks", "acks"),
+        ),
+        (
+            "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+            "ack",
+            "write_provider_market_data_imbalance_broker_dispatch_roundtrip",
+            "--allow-legacy-ack-lineage",
+            "--provider-broker-dispatch-ack",
+            (),
+        ),
+        (
+            "certify-provider-market-data-imbalance-broker-rehearsal",
+            "roundtrip",
+            "write_provider_market_data_imbalance_broker_rehearsal_certificate",
+            "--allow-legacy-ack-lineage",
+            "--provider-broker-dispatch-roundtrip",
+            (),
+        ),
+    ],
+)
+def test_legacy_provider_cli_overrides_require_exact_source_audit(
+    tmp_path,
+    monkeypatch,
+    command,
+    source_key,
+    writer_name,
+    legacy_flag,
+    source_option,
+    extra_args,
+):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    audit = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+    )
+    writer_calls = []
+
+    def fake_writer(*args, **kwargs):
+        writer_calls.append((args, kwargs))
+        return SimpleNamespace(
+            summary=pd.DataFrame([{"passed": True, "ready": True}]),
+            action_queue=pd.DataFrame(),
+        )
+
+    monkeypatch.setattr(hft_cli, writer_name, fake_writer)
+    argv = [
+        command,
+        source_option,
+        str(legacy[source_key]),
+        "--out",
+        str(tmp_path / f"{source_key}_cli_output"),
+        legacy_flag,
+    ]
+    if extra_args:
+        option, path_key = extra_args
+        argv.extend([option, str(legacy[path_key])])
+
+    with pytest.raises(
+        ValueError,
+        match="--lineage-migration-audit is required",
+    ):
+        hft_cli.main(argv)
+    with pytest.raises(
+        ValueError,
+        match="only valid with",
+    ):
+        hft_cli.main(
+            [
+                item
+                for item in argv
+                if item != legacy_flag
+            ]
+            + ["--lineage-migration-audit", str(audit.output_dir)]
+        )
+    assert not writer_calls
+
+    status = hft_cli.main(
+        argv + ["--lineage-migration-audit", str(audit.output_dir)]
+    )
+
+    assert status == 0
+    assert len(writer_calls) == 1
+    writer_config = writer_calls[0][1]["config"]
+    assert writer_config.lineage_migration_audit_dir == str(
+        audit.output_dir.resolve()
+    )
+
+
+def test_lineage_migration_audit_inputs_seal_post_audit_drift(tmp_path):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    audit = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+    )
+    output = tmp_path / "audit_consumer"
+    output.mkdir()
+    (output / "proof.txt").write_text("consumer\n", encoding="utf-8")
+    audit_inputs = provider_broker_lineage_migration_audit_inputs(
+        audit.output_dir
+    )
+    manifest = write_experiment_manifest(
+        output,
+        run_type="lineage_migration_audit_consumer_test",
+        inputs=audit_inputs,
+        extra={"authorizes_submission": False},
+    )
+
+    assert {
+        "lineage_migration_audit",
+        "lineage_migration_audit_manifest",
+        "lineage_migration_audit_dependencies",
+    } == set(audit_inputs)
+    assert verify_experiment_manifest(
+        manifest,
+        expected_run_type="lineage_migration_audit_consumer_test",
+        require_input_fingerprints=True,
+    ).passed
+
+    (legacy["provider_send"] / "proof.txt").write_text(
+        "changed after consumer proof\n",
+        encoding="utf-8",
+    )
+    assert not verify_experiment_manifest(
+        manifest,
+        expected_run_type="lineage_migration_audit_consumer_test",
+        require_input_fingerprints=True,
+    ).passed
 
 
 @pytest.mark.parametrize(

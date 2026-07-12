@@ -6341,8 +6341,14 @@ for readable scripts. The exact request/envelope/template/dispatch proof is
 then carried into the nested acknowledgement manifest; missing, stale,
 relabeled, authorizing, or source-detached packets block the provider wrapper
 before final review. `--allow-legacy-send-lineage` is limited to historical
-acknowledgement inputs already classified by the lineage migration audit; new
-reconciliations should retain the strict default.
+acknowledgement inputs already classified by the lineage migration audit and
+must be paired with `--lineage-migration-audit <audit_dir>`. The CLI verifies
+that the sealed audit has 100% coverage, zero blockers, and a
+`covered_by_strict` acknowledgement row for the exact provider-send source
+before creating output. The generated acknowledgement config and manifest then
+retain and fingerprint the audit, its manifest, and its transitive dependencies.
+Supplying an audit on the strict path is rejected; new reconciliations should
+retain the strict default.
 
 Review the provider-specific dispatch/send/ack round-trip proof:
 
@@ -6443,8 +6449,12 @@ remains accepted for readable scripts. The provider summary carries the full
 current. Post-ack artifact drift or a different send source blocks provider
 broker-readiness feed and routes back to provider acknowledgement reconciliation.
 `--allow-legacy-ack-lineage` is limited to historical acknowledgement bundles
-already classified by the lineage migration audit; new reviews should retain
-the strict default.
+already classified by the lineage migration audit and must be paired with
+`--lineage-migration-audit <audit_dir>`. The audit must cover that exact
+provider acknowledgement with a current policy-equivalent strict sibling. The
+generated round-trip config and manifest retain the audit plus its sealed
+dependency graph. Supplying an audit without the legacy override is rejected;
+new reviews should retain the strict default.
 
 Issue a compact, content-addressed integrity certificate for the completed
 rehearsal:
@@ -6478,7 +6488,10 @@ manifest to carry the same complete current acknowledgement-lineage record.
 That record is content-addressed inside the certificate payload and output
 manifest, so acknowledgement relabeling or drift requires certificate reissue.
 `--allow-legacy-ack-lineage` is the deliberate compatibility escape hatch for
-an archived rehearsal already assessed by the lineage migration audit; it must
+an archived rehearsal already assessed by the lineage migration audit. It
+requires `--lineage-migration-audit <audit_dir>`, and the audit must cover the
+exact provider round-trip source before certificate generation. The certificate
+manifest fingerprints that audit and all of its sealed dependencies. It must
 not be used for new broker rehearsals or production-readiness certification.
 
 Outputs:
@@ -6537,8 +6550,8 @@ each audited root manifest, and every recursively discovered source dependency.
 Changing a provider-send proof, acknowledgement file, nested manifest, or other
 upstream input after audit generation therefore invalidates the audit itself.
 The shared `verify_provider_broker_lineage_migration_audit` Python contract is
-the fail-closed gate for later CLI binding: it requires 100% strict-ready
-coverage, zero blocked bundles/actions, all audit checks passing, consistent
+the fail-closed gate used by all three legacy CLI overrides. It requires 100%
+strict-ready coverage, zero blocked bundles/actions, all audit checks passing, consistent
 summary/config/manifest counts, non-authorizing claims, and exactly one
 `covered_by_strict` inventory row for the supplied `provider_send`,
 `provider_ack`, or `provider_roundtrip` source. A current but unrelated audit,
