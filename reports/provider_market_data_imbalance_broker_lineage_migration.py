@@ -81,6 +81,19 @@ ACTION_QUEUE_COLUMNS = (
     "reason",
     "command",
 )
+AUDIT_ARTIFACTS = (
+    "provider_broker_lineage_migration_inventory.csv",
+    "provider_broker_lineage_migration_checks.csv",
+    "provider_broker_lineage_migration_summary.csv",
+    "provider_broker_lineage_migration_action_queue.csv",
+    "provider_broker_lineage_migration_config.json",
+    "provider_broker_lineage_migration_runbook.md",
+)
+LEGACY_SOURCE_ROLES = {
+    "provider_send": ("provider_ack", "source_path"),
+    "provider_ack": ("provider_ack", "bundle_path"),
+    "provider_roundtrip": ("provider_roundtrip", "bundle_path"),
+}
 
 
 @dataclass(frozen=True)
@@ -107,6 +120,215 @@ class ProviderBrokerLineageMigrationReport:
         return bool(self.summary.iloc[0]["ready_for_strict_default"])
 
 
+@dataclass(frozen=True)
+class ProviderBrokerLineageMigrationAuditVerification:
+    audit_dir: Path
+    source_path: Path
+    source_role: str
+    manifest_current: bool
+    policy_ready: bool
+    source_covered: bool
+    source_status: str
+    ready: bool
+    error: str
+    checks: pd.DataFrame
+    matched_inventory: pd.DataFrame
+
+
+def verify_provider_broker_lineage_migration_audit(
+    audit_dir: str | Path,
+    *,
+    source_path: str | Path,
+    source_role: str,
+) -> ProviderBrokerLineageMigrationAuditVerification:
+    role = str(source_role).strip()
+    if role not in LEGACY_SOURCE_ROLES:
+        choices = ", ".join(sorted(LEGACY_SOURCE_ROLES))
+        raise ValueError(f"source_role must be one of: {choices}")
+
+    audit = Path(audit_dir).resolve()
+    source = Path(source_path).resolve()
+    integrity = verify_experiment_manifest(
+        audit / "manifest.json",
+        expected_run_type=RUN_TYPE,
+        required_artifacts=AUDIT_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    inventory = _read_csv(
+        audit / "provider_broker_lineage_migration_inventory.csv"
+    )
+    audit_checks = _read_csv(
+        audit / "provider_broker_lineage_migration_checks.csv"
+    )
+    summary = _read_csv(
+        audit / "provider_broker_lineage_migration_summary.csv"
+    )
+    actions = _read_csv(
+        audit / "provider_broker_lineage_migration_action_queue.csv"
+    )
+    config = _read_json(
+        audit / "provider_broker_lineage_migration_config.json"
+    )
+    manifest = _read_json(audit / "manifest.json")
+    summary_row = (
+        summary.iloc[0] if len(summary) == 1 else pd.Series(dtype=object)
+    )
+    manifest_extra = _mapping(manifest.get("extra"))
+    manifest_inputs = _mapping(manifest.get("inputs"))
+    bundle_type, path_field = LEGACY_SOURCE_ROLES[role]
+    matched = _matched_legacy_inventory(
+        inventory,
+        bundle_type=bundle_type,
+        path_field=path_field,
+        source=source,
+    )
+    source_status = (
+        _text(matched.iloc[0].get("migration_status"))
+        if len(matched) == 1
+        else ""
+    )
+    source_covered = bool(
+        len(matched) == 1
+        and source_status == "covered_by_strict"
+        and _covered_inventory_row_current(matched.iloc[0])
+    )
+    coverage = _float(summary_row.get("strict_ready_coverage"), default=-1.0)
+    policy_ready = bool(
+        len(summary) == 1
+        and _bool(summary_row.get("ready_for_strict_default"))
+        and not _bool(summary_row.get("authorizes_submission"))
+        and coverage == 1.0
+        and _int(summary_row.get("blocked_bundles"), default=-1) == 0
+        and _int(summary_row.get("failed_checks"), default=-1) == 0
+        and _int(summary_row.get("blocked_action_count"), default=-1) == 0
+        and actions.empty
+    )
+    audit_checks_passed = _all_checks_passed(audit_checks)
+    config_matches_summary = _audit_config_matches_summary(
+        config,
+        summary_row,
+    )
+    manifest_matches_summary = _audit_manifest_matches_summary(
+        manifest_extra,
+        summary_row,
+    )
+    manifest_inputs_match = _audit_manifest_inputs_match_summary(
+        manifest_inputs,
+        summary_row,
+    )
+    inventory_matches_summary = _audit_inventory_matches_summary(
+        inventory,
+        summary_row,
+    )
+    non_authorizing = bool(
+        not _bool(config.get("authorizes_submission"))
+        and not _bool(manifest_extra.get("authorizes_submission"))
+    )
+    checks = pd.DataFrame(
+        [
+            _check(
+                "audit_manifest_current",
+                integrity.error or integrity.passed,
+                "is",
+                True,
+                integrity.passed,
+            ),
+            _check(
+                "audit_manifest_seals_manifests",
+                "audited_provider_manifests" in manifest_inputs,
+                "is",
+                True,
+                "audited_provider_manifests" in manifest_inputs,
+            ),
+            _check(
+                "audit_manifest_seals_dependencies",
+                "audited_provider_dependencies" in manifest_inputs,
+                "is",
+                True,
+                "audited_provider_dependencies" in manifest_inputs,
+            ),
+            _check(
+                "audit_schema_current",
+                _int(config.get("schema_version"), default=0),
+                ">=",
+                2,
+                _int(config.get("schema_version"), default=0) >= 2,
+            ),
+            _check(
+                "audit_policy_ready",
+                policy_ready,
+                "is",
+                True,
+                policy_ready,
+            ),
+            _check(
+                "audit_checks_passed",
+                audit_checks_passed,
+                "is",
+                True,
+                audit_checks_passed,
+            ),
+            _check(
+                "audit_config_matches_summary",
+                config_matches_summary,
+                "is",
+                True,
+                config_matches_summary,
+            ),
+            _check(
+                "audit_manifest_matches_summary",
+                manifest_matches_summary,
+                "is",
+                True,
+                manifest_matches_summary,
+            ),
+            _check(
+                "audit_manifest_inputs_match_summary",
+                manifest_inputs_match,
+                "is",
+                True,
+                manifest_inputs_match,
+            ),
+            _check(
+                "audit_inventory_matches_summary",
+                inventory_matches_summary,
+                "is",
+                True,
+                inventory_matches_summary,
+            ),
+            _check(
+                "audit_non_authorizing",
+                non_authorizing,
+                "is",
+                True,
+                non_authorizing,
+            ),
+            _check(
+                "legacy_source_covered",
+                source_covered,
+                "is",
+                True,
+                source_covered,
+            ),
+        ]
+    )
+    ready = bool(checks["passed"].astype(bool).all())
+    failed = checks.loc[~checks["passed"].astype(bool), "check"].astype(str)
+    return ProviderBrokerLineageMigrationAuditVerification(
+        audit_dir=audit,
+        source_path=source,
+        source_role=role,
+        manifest_current=bool(integrity.passed),
+        policy_ready=policy_ready,
+        source_covered=source_covered,
+        source_status=source_status,
+        ready=ready,
+        error="" if ready else ",".join(failed.tolist()),
+        checks=checks,
+        matched_inventory=matched,
+    )
+
+
 def write_provider_broker_lineage_migration_audit(
     roots: list[str | Path] | tuple[str | Path, ...],
     output_dir: str | Path,
@@ -127,6 +349,7 @@ def write_provider_broker_lineage_migration_audit(
         max_bundles=config.max_bundles,
         exclude_root=out,
     )
+    audited_dependencies = _audited_dependency_paths(manifests)
     _validate_output_bundle_location(manifests, out)
     rows = [_inventory_row(path) for path in manifests]
     inventory = pd.DataFrame(rows, columns=INVENTORY_COLUMNS)
@@ -143,6 +366,8 @@ def write_provider_broker_lineage_migration_audit(
         root_count=len(resolved_roots),
         discovery_error_count=len(discovery_errors),
         truncated=truncated,
+        audited_manifest_count=len(manifests),
+        audited_dependency_count=len(audited_dependencies),
     )
     action_queue = _action_queue(inventory)
     summary = _summary_with_actions(summary, action_queue)
@@ -185,6 +410,8 @@ def write_provider_broker_lineage_migration_audit(
         parameters={"config": asdict(config)},
         inputs={
             "audited_provider_bundles": [path.parent for path in manifests],
+            "audited_provider_manifests": manifests,
+            "audited_provider_dependencies": audited_dependencies,
         },
         extra={
             "ready": bool(summary.iloc[0]["ready_for_strict_default"]),
@@ -202,6 +429,12 @@ def write_provider_broker_lineage_migration_audit(
             "blocked_bundles": int(summary.iloc[0]["blocked_bundles"]),
             "strict_ready_coverage": float(
                 summary.iloc[0]["strict_ready_coverage"]
+            ),
+            "audited_manifest_count": int(
+                summary.iloc[0]["audited_manifest_count"]
+            ),
+            "audited_dependency_count": int(
+                summary.iloc[0]["audited_dependency_count"]
             ),
         },
     )
@@ -243,6 +476,15 @@ def _discover_manifests(
             selected.append(manifest_path)
     truncated = len(selected) > max_bundles
     return selected[:max_bundles], errors, truncated
+
+
+def _audited_dependency_paths(manifests: list[Path]) -> list[Path]:
+    dependencies: dict[str, Path] = {}
+    for manifest in manifests:
+        for dependency in manifest_dependency_paths(manifest):
+            resolved = dependency.resolve()
+            dependencies[str(resolved)] = resolved
+    return [dependencies[key] for key in sorted(dependencies)]
 
 
 def _inventory_row(manifest_path: Path) -> dict[str, Any]:
@@ -490,6 +732,9 @@ def _apply_strict_replacement_coverage(
             and dependency_covered
             and _bool(row.get("manifest_current"))
             and _bool(row.get("bundle_passed"))
+            and _bool(row.get("source_path_exists"))
+            and _bool(row.get("source_manifest_current"))
+            and not _text(row.get("source_detail"))
         ):
             out.at[index, "migration_status"] = "covered_by_strict"
             out.at[index, "reason"] = (
@@ -994,6 +1239,8 @@ def _summary(
     root_count: int,
     discovery_error_count: int,
     truncated: bool,
+    audited_manifest_count: int,
+    audited_dependency_count: int,
 ) -> pd.DataFrame:
     bundle_count = len(inventory)
     strict_ready = _status_count(inventory, "strict_ready")
@@ -1011,6 +1258,8 @@ def _summary(
                 "authorizes_submission": False,
                 "root_count": root_count,
                 "bundle_count": bundle_count,
+                "audited_manifest_count": audited_manifest_count,
+                "audited_dependency_count": audited_dependency_count,
                 "provider_ack_bundles": _type_count(inventory, "provider_ack"),
                 "provider_roundtrip_bundles": _type_count(
                     inventory, "provider_roundtrip"
@@ -1096,7 +1345,7 @@ def _config_payload(
     config: ProviderBrokerLineageMigrationConfig,
 ) -> dict[str, Any]:
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "authorizes_submission": False,
         "ready": _bool(summary.get("ready_for_strict_default", False)),
         "roots": [str(root) for root in roots],
@@ -1119,6 +1368,8 @@ def _runbook(
         "",
         f"- Ready for strict defaults: {'yes' if _bool(summary['ready_for_strict_default']) else 'no'}",
         f"- Bundles audited: {int(summary['bundle_count'])}",
+        f"- Audited manifests sealed: {int(summary['audited_manifest_count'])}",
+        f"- Transitive dependencies sealed: {int(summary['audited_dependency_count'])}",
         f"- Strict ready: {int(summary['strict_ready_bundles'])}",
         "- Legacy bundles covered by strict siblings: "
         f"{int(summary['strict_replacement_covered_bundles'])}",
@@ -1161,6 +1412,207 @@ def _runbook(
             if command:
                 lines.append(f"  `{command}`")
     return "\n".join(lines) + "\n"
+
+
+def _matched_legacy_inventory(
+    inventory: pd.DataFrame,
+    *,
+    bundle_type: str,
+    path_field: str,
+    source: Path,
+) -> pd.DataFrame:
+    if inventory.empty or not {
+        "bundle_type",
+        "migration_status",
+        path_field,
+    }.issubset(inventory.columns):
+        return pd.DataFrame(columns=inventory.columns)
+    normalized_paths = inventory[path_field].map(
+        lambda value: str(_path(value) or "")
+    )
+    matched = inventory.loc[
+        (inventory["bundle_type"].astype(str) == bundle_type)
+        & (inventory["migration_status"].astype(str) == "covered_by_strict")
+        & (normalized_paths == str(source))
+    ]
+    return matched.copy().reset_index(drop=True)
+
+
+def _covered_inventory_row_current(row: pd.Series) -> bool:
+    return bool(
+        _text(row.get("strict_replacement_path"))
+        and _bool(row.get("manifest_current"))
+        and _bool(row.get("bundle_passed"))
+        and _bool(row.get("source_path_exists"))
+        and _bool(row.get("source_manifest_current"))
+        and not _text(row.get("source_detail"))
+        and _bool(row.get("strict_replacement_current"))
+        and _bool(row.get("strict_replacement_matches_policy"))
+        and _bool(row.get("strict_replacement_matches_evidence"))
+        and _bool(row.get("strict_replacement_dependency_covered"))
+    )
+
+
+def _all_checks_passed(checks: pd.DataFrame) -> bool:
+    required = {
+        "bundles_discovered",
+        "discovery_errors",
+        "discovery_truncated",
+        "blocked_bundles",
+        "strict_ready_coverage",
+    }
+    if checks.empty or not {"check", "passed"}.issubset(checks.columns):
+        return False
+    return bool(
+        required.issubset(set(checks["check"].astype(str)))
+        and checks["passed"].map(_bool).all()
+    )
+
+
+def _audit_config_matches_summary(
+    config: Mapping[str, Any],
+    summary: pd.Series,
+) -> bool:
+    config_summary = _mapping(config.get("summary"))
+    if summary.empty or not config_summary:
+        return False
+    return bool(
+        _bool(config.get("ready"))
+        == _bool(summary.get("ready_for_strict_default"))
+        and not _bool(config.get("authorizes_submission"))
+        and _summary_counts_match(config_summary, summary)
+    )
+
+
+def _audit_manifest_matches_summary(
+    extra: Mapping[str, Any],
+    summary: pd.Series,
+) -> bool:
+    if summary.empty or not extra:
+        return False
+    return bool(
+        _bool(extra.get("ready"))
+        == _bool(summary.get("ready_for_strict_default"))
+        and not _bool(extra.get("authorizes_submission"))
+        and _summary_counts_match(extra, summary, manifest_extra=True)
+    )
+
+
+def _audit_manifest_inputs_match_summary(
+    inputs: Mapping[str, Any],
+    summary: pd.Series,
+) -> bool:
+    if summary.empty:
+        return False
+    manifest_count = _int(
+        summary.get("audited_manifest_count"),
+        default=-1,
+    )
+    dependency_count = _int(
+        summary.get("audited_dependency_count"),
+        default=-1,
+    )
+    return bool(
+        manifest_count > 0
+        and dependency_count > 0
+        and _input_item_count(inputs.get("audited_provider_bundles"))
+        == manifest_count
+        and _input_item_count(inputs.get("audited_provider_manifests"))
+        == manifest_count
+        and _input_item_count(inputs.get("audited_provider_dependencies"))
+        == dependency_count
+    )
+
+
+def _audit_inventory_matches_summary(
+    inventory: pd.DataFrame,
+    summary: pd.Series,
+) -> bool:
+    required = {
+        "migration_status",
+        "manifest_current",
+        "bundle_passed",
+        "source_manifest_current",
+        "strict_lineage_current",
+    }
+    if inventory.empty or summary.empty or not required.issubset(inventory.columns):
+        return False
+    statuses = inventory["migration_status"].astype(str)
+    strict_rows = inventory.loc[statuses == "strict_ready"]
+    covered_rows = inventory.loc[statuses == "covered_by_strict"]
+    trusted_statuses = statuses.isin(["strict_ready", "covered_by_strict"])
+    strict_current = bool(
+        not strict_rows.empty
+        and strict_rows["manifest_current"].map(_bool).all()
+        and strict_rows["bundle_passed"].map(_bool).all()
+        and strict_rows["source_manifest_current"].map(_bool).all()
+        and strict_rows["strict_lineage_current"].map(_bool).all()
+    )
+    covered_current = bool(
+        covered_rows.empty
+        or all(
+            _covered_inventory_row_current(row)
+            for _, row in covered_rows.iterrows()
+        )
+    )
+    strict_count = int((statuses == "strict_ready").sum())
+    covered_count = int((statuses == "covered_by_strict").sum())
+    bundle_count = len(inventory)
+    coverage = (strict_count + covered_count) / bundle_count
+    return bool(
+        trusted_statuses.all()
+        and strict_current
+        and covered_current
+        and bundle_count
+        == _int(summary.get("bundle_count"), default=-1)
+        and bundle_count
+        == _int(summary.get("audited_manifest_count"), default=-1)
+        and strict_count
+        == _int(summary.get("strict_ready_bundles"), default=-1)
+        and covered_count
+        == _int(
+            summary.get("strict_replacement_covered_bundles"),
+            default=-1,
+        )
+        and _int(summary.get("regenerate_strict_bundles"), default=-1) == 0
+        and _int(summary.get("blocked_bundles"), default=-1) == 0
+        and coverage
+        == _float(summary.get("strict_ready_coverage"), default=-1.0)
+    )
+
+
+def _input_item_count(value: Any) -> int:
+    return len(value) if isinstance(value, list) else 0
+
+
+def _summary_counts_match(
+    record: Mapping[str, Any],
+    summary: pd.Series,
+    *,
+    manifest_extra: bool = False,
+) -> bool:
+    int_fields = [
+        "bundle_count",
+        "strict_ready_bundles",
+        "strict_replacement_covered_bundles",
+        "regenerate_strict_bundles",
+        "blocked_bundles",
+        "audited_manifest_count",
+        "audited_dependency_count",
+    ]
+    if not manifest_extra:
+        int_fields.extend(
+            ["failed_checks", "action_queue_count", "blocked_action_count"]
+        )
+    return bool(
+        all(
+            _int(record.get(field), default=-1)
+            == _int(summary.get(field), default=-2)
+            for field in int_fields
+        )
+        and _float(record.get("strict_ready_coverage"), default=-1.0)
+        == _float(summary.get("strict_ready_coverage"), default=-2.0)
+    )
 
 
 def _status_count(inventory: pd.DataFrame, status: str) -> int:
@@ -1276,6 +1728,24 @@ def _bool(value: Any) -> bool:
     except (TypeError, ValueError):
         pass
     return _text(value).lower() in {"1", "true", "yes", "y", "ready", "pass"}
+
+
+def _int(value: Any, *, default: int) -> int:
+    try:
+        if pd.isna(value):
+            return default
+        return int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+def _float(value: Any, *, default: float) -> float:
+    try:
+        if pd.isna(value):
+            return default
+        return float(value)
+    except (TypeError, ValueError, OverflowError):
+        return default
 
 
 def _jsonable(value: Any) -> Any:

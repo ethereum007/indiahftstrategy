@@ -2068,8 +2068,8 @@ def main(argv: list[str] | None = None) -> int:
     provider_broker_lineage_migration = sub.add_parser(
         "audit-provider-market-data-imbalance-broker-lineage-migration",
         help=(
-            "Audit archived provider broker proofs before enabling strict "
-            "acknowledgement lineage defaults."
+            "Audit archived provider broker proofs for strict-lineage "
+            "migration and legacy-override policy."
         ),
     )
     provider_broker_lineage_migration.add_argument(

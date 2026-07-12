@@ -6,13 +6,18 @@ import pytest
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
     empty_broker_dispatch_ack_lineage,
 )
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
+    verify_provider_broker_lineage_migration_audit,
     write_provider_broker_lineage_migration_audit,
 )
 
@@ -60,6 +65,11 @@ def test_lineage_migration_audit_accepts_strict_archive_and_catalogs_report(
     )
     assert manifest["extra"]["authorizes_submission"] is False
     assert len(manifest["inputs"]["audited_provider_bundles"]) == 3
+    assert len(manifest["inputs"]["audited_provider_manifests"]) == 3
+    assert manifest["inputs"]["audited_provider_dependencies"]
+    assert int(report.summary.iloc[0]["audited_manifest_count"]) == 3
+    assert int(report.summary.iloc[0]["audited_dependency_count"]) > 3
+    assert report.config["schema_version"] == 2
 
     catalog = catalog_experiment_runs([output]).catalog.iloc[0]
     assert catalog["run_type"] == manifest["run_type"]
@@ -182,6 +192,133 @@ def test_lineage_migration_audit_accepts_equivalent_strict_replacements(
         (report.output_dir / "manifest.json").read_text(encoding="utf-8")
     )
     assert manifest["extra"]["strict_replacement_covered_bundles"] == 3
+
+
+@pytest.mark.parametrize(
+    ("source_role", "source_key"),
+    [
+        ("provider_send", "provider_send"),
+        ("provider_ack", "ack"),
+        ("provider_roundtrip", "roundtrip"),
+    ],
+)
+def test_lineage_migration_audit_verifier_requires_exact_covered_source(
+    tmp_path,
+    source_role,
+    source_key,
+):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    report = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+    )
+
+    verified = verify_provider_broker_lineage_migration_audit(
+        report.output_dir,
+        source_path=legacy[source_key],
+        source_role=source_role,
+    )
+    unrelated = verify_provider_broker_lineage_migration_audit(
+        report.output_dir,
+        source_path=tmp_path / "unrelated_source",
+        source_role=source_role,
+    )
+
+    assert verified.ready
+    assert verified.manifest_current
+    assert verified.policy_ready
+    assert verified.source_covered
+    assert verified.source_status == "covered_by_strict"
+    assert len(verified.matched_inventory) == 1
+    assert not unrelated.ready
+    assert not unrelated.source_covered
+    assert "legacy_source_covered" in unrelated.error
+
+
+def test_lineage_migration_audit_manifest_seals_transitive_source_drift(
+    tmp_path,
+):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    report = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+    )
+    manifest_path = report.output_dir / "manifest.json"
+
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_migration_audit"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+
+    (legacy["provider_send"] / "proof.txt").write_text(
+        "changed after migration audit\n",
+        encoding="utf-8",
+    )
+
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_migration_audit"
+        ),
+        require_input_fingerprints=True,
+    )
+    verified = verify_provider_broker_lineage_migration_audit(
+        report.output_dir,
+        source_path=legacy["provider_send"],
+        source_role="provider_send",
+    )
+    assert not integrity.passed
+    assert integrity.error == "input_drift"
+    assert not verified.ready
+    assert not verified.manifest_current
+    assert "audit_manifest_current" in verified.error
+
+
+def test_lineage_migration_audit_verifier_rejects_relaxed_unmigrated_policy(
+    tmp_path,
+):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    report = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+        config=ProviderBrokerLineageMigrationConfig(
+            max_blocked_bundles=0,
+            min_strict_ready_coverage=0.0,
+        ),
+    )
+
+    assert report.ready
+    verified = verify_provider_broker_lineage_migration_audit(
+        report.output_dir,
+        source_path=legacy["provider_send"],
+        source_role="provider_send",
+    )
+    assert not verified.ready
+    assert not verified.policy_ready
+    assert not verified.source_covered
+    assert {"audit_policy_ready", "legacy_source_covered"}.issubset(
+        set(
+            verified.checks.loc[
+                ~verified.checks["passed"].astype(bool),
+                "check",
+            ]
+        )
+    )
 
 
 def test_lineage_migration_audit_rejects_policy_mismatched_replacement(

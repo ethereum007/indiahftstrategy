@@ -2715,10 +2715,18 @@
   identity, and downstream coverage requires its upstream legacy dependency to
   be strict or equivalently covered. Policy-mismatched siblings fail closed and
   regeneration moves to a fresh `_strict_rebuilt*` directory instead of
-  overwriting proof. All outputs remain explicitly non-authorizing. Strict,
-  legacy-regenerable, equivalent-replacement, policy-mismatch, transitive-drift,
-  recursive-discovery, collision, catalog, and CLI exit-policy cases pass
-  together (`7 passed`).
+  overwriting proof. Schema version 2 now seals audited bundle directories,
+  every audited root manifest, and every recursively discovered source
+  dependency into the audit manifest, so post-audit upstream drift invalidates
+  the policy artifact itself. A shared read-only verifier additionally requires
+  actual 100% coverage, zero blockers/actions, cross-artifact count agreement,
+  non-authorizing claims, and exactly one policy-equivalent strict replacement
+  covering the requested provider-send, acknowledgement, or round-trip source.
+  Unrelated and relaxed-threshold audits fail closed. All outputs remain
+  explicitly non-authorizing. Strict, legacy-regenerable,
+  equivalent-replacement, exact-source verification, policy-mismatch,
+  transitive/post-audit drift, recursive-discovery, collision, catalog, and CLI
+  exit-policy cases pass together (`12 passed`).
 
 ## Test Gate
 
@@ -2728,7 +2736,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1568 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1573 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2866,7 +2874,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1568-test collection is fully green.
+1573-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2875,6 +2883,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind production use of legacy send/ack-lineage overrides to a current,
-   100%-covered, zero-blocker migration-audit artifact while retaining explicit
-   fixture-only archive compatibility.
+4. Bind each legacy send/ack-lineage CLI override to the new exact-source audit
+   verifier, moving unaudited fixture/archive regeneration to the lower-level
+   Python writers that already preserve compatibility defaults.

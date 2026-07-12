@@ -6532,6 +6532,18 @@ a scanned archive root, but it cannot be written inside an audited bundle.
 `--no-recursive` limits discovery to manifests supplied directly through
 `--roots`.
 
+Schema version 2 audit manifests separately fingerprint every audited bundle,
+each audited root manifest, and every recursively discovered source dependency.
+Changing a provider-send proof, acknowledgement file, nested manifest, or other
+upstream input after audit generation therefore invalidates the audit itself.
+The shared `verify_provider_broker_lineage_migration_audit` Python contract is
+the fail-closed gate for later CLI binding: it requires 100% strict-ready
+coverage, zero blocked bundles/actions, all audit checks passing, consistent
+summary/config/manifest counts, non-authorizing claims, and exactly one
+`covered_by_strict` inventory row for the supplied `provider_send`,
+`provider_ack`, or `provider_roundtrip` source. A current but unrelated audit,
+a relaxed-threshold audit, or post-audit source drift does not qualify.
+
 Outputs:
 
 ```text
