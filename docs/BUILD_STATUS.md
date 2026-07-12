@@ -2655,6 +2655,18 @@
   acknowledgement row plus ack summary/config/manifest, recursively fingerprinted
   dependencies make later preregistration drift invalidate the ack evidence, and
   acknowledgement artifacts remain explicitly non-authorizing.
+- Final broker round-trip review can now require the complete current
+  `broker_dispatch_ack_reconciliation` via `--require-ack-lineage`. The verifier
+  reconciles every carried send-lineage field across acknowledgement rows,
+  summary, config, and manifest; derives acknowledgement and failed-check counts
+  from source rows; and independently reopens the current send and dispatch
+  bundles. Stale ack artifacts, missing zero-valued fields, freshly re-manifested
+  row disagreement, consistently relabeled send hashes, wrong send sources, and
+  authorizing claims fail closed and route back to acknowledgement reconciliation.
+  Verified ack/send/dispatch/route/runtime/research lineage is retained on every
+  final order plus round-trip summary/config/manifest, recursive dependencies are
+  fingerprinted, output/source overlap is rejected, and the final proof remains
+  explicitly non-authorizing.
 
 ## Test Gate
 
@@ -2664,25 +2676,27 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1550 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1558 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
-route-readiness, route-enable, broker dispatch planning/send/acknowledgement, and
-research-family registration/launch/audit pass together (`385 passed`). It now
+route-readiness, route-enable, broker dispatch planning/send/acknowledgement/final
+round-trip review, and research-family registration/launch/audit pass together
+(`468 passed`). It now
 includes a real prospective-family chain through family audit -> scorecard ->
 portfolio -> controlled scale-up -> runtime telemetry -> runtime guard ->
-runtime session ->
-cutover -> route-enable -> dry-run broker dispatch planning -> non-submitting
-send preparation -> acknowledgement reconciliation, with recursive invalidation
-of all five final manifests after registration-plan drift. Cutover, route-enable,
-dispatch, send, and acknowledgement also
+runtime session -> cutover -> route-enable -> dry-run broker dispatch planning ->
+non-submitting send preparation -> acknowledgement reconciliation -> final
+round-trip review, with recursive invalidation of all six final manifests after
+registration-plan drift. Cutover, route-enable, dispatch, send, acknowledgement,
+and final round-trip review also
 reject stale source fingerprints, freshly re-manifested cross-artifact lineage
 disagreement, authorizing claims, and source/output overlap while preserving
-non-authorizing family identity through each broker-facing order/request/ack row.
+non-authorizing family identity through each broker-facing order/request/ack/final
+proof row.
 The four generic dispatch plan/send/ack/round-trip suites pass together
-(`170 passed`), showing that the richer lineage contracts remain additive
+(`178 passed`), showing that the richer lineage contracts remain additive
 for downstream workflows. The focused runtime-session, halt-response, and
 research-family gate passes together (`29 passed`). It covers source-output
 collision rejection,
@@ -2798,7 +2812,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1550-test collection is fully green.
+1558-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2807,6 +2821,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Carry acknowledgement-verified send/dispatch/route/cutover/runtime/research
-   lineage through final round-trip review before any
-   provider credential or live broker decision is introduced.
+4. Require the same acknowledgement lineage in the provider-specific final
+   round-trip wrapper and rehearsal certificate before any provider credential
+   or live broker decision is introduced.

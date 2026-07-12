@@ -4661,6 +4661,7 @@ python -m hft_cli review-broker-dispatch-roundtrip `
   --out runs\dispatch_roundtrip\leadlag_shadow_live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
+  --require-ack-lineage `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -4694,6 +4695,23 @@ cross-component proof blockers back to `review-broker-dispatch-roundtrip`.
 Use `--fail-on-blocked-actions` when blocked round-trip actions should stop
 automation, or `--fail-on-actions` when any final proof action should stop
 automation.
+
+`--require-ack-lineage` makes the final proof independently verify the complete
+current acknowledgement bundle. It requires a current
+`broker_dispatch_ack_reconciliation` manifest with all required artifacts and
+fingerprinted inputs, reconciles every retained send-lineage field across ack
+rows, summary, config, and manifest, and recomputes acknowledgement plus failed
+check counts from the source rows. The verifier then reopens the ack-linked send
+packet, validates its dispatch source, and confirms it is the same `--send` and
+`--dispatch` pair supplied to final review. Stale artifacts, missing contract
+fields, freshly re-manifested row disagreement, consistently relabeled but
+source-detached hashes, wrong send sources, and authorizing claims route back to
+`reconcile-broker-dispatch`. Verified lineage is carried as
+`broker_dispatch_ack_*` columns on every final order, in the nested
+`broker_dispatch_ack_lineage` config block, and in summary/manifest metadata.
+The final manifest fingerprints all acknowledgement artifacts and recursively
+flattened dependencies, source/output overlap is rejected, and final artifacts
+remain explicitly non-authorizing.
 
 When the provider broker-dispatch-ack wrapper retained validated dispatch
 round-trip capture provenance, the final provider round-trip wrapper carries

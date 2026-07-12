@@ -4,6 +4,7 @@ import pandas as pd
 
 from hft_cli import main
 from reports.broker_dispatch_roundtrip import (
+    BrokerDispatchRoundTripThresholds,
     evaluate_broker_dispatch_roundtrip,
     write_broker_dispatch_roundtrip,
 )
@@ -1217,6 +1218,43 @@ def test_broker_dispatch_roundtrip_passes_complete_dry_run_evidence():
     assert int(report.summary.iloc[0]["route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
     assert report.config["route_broker_route_readiness"]["ops_launch_controls_ready"]
     assert report.config["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
+
+
+def test_broker_dispatch_roundtrip_fails_closed_without_required_ack_lineage():
+    report = evaluate_broker_dispatch_roundtrip(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        send_summary=send_summary(),
+        send_requests=send_requests(),
+        ack_summary=ack_summary(),
+        acknowledgements=acknowledgements(),
+        thresholds=BrokerDispatchRoundTripThresholds(
+            require_ack_lineage=True
+        ),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not report.passed
+    assert {
+        "broker_dispatch_ack_lineage_provided",
+        "broker_dispatch_ack_manifest_current",
+        "broker_dispatch_ack_lineage_contract_consistent",
+        "broker_dispatch_ack_non_authorizing",
+        "broker_dispatch_ack_send_lineage_gate_passed",
+        "broker_dispatch_ack_send_matches_current",
+        "broker_dispatch_ack_expected_send_matches_current",
+        "broker_dispatch_ack_lineage_gate_passed",
+    } <= failed
+    assert set(report.action_queue["component"]) == {
+        "broker_dispatch_ack"
+    }
+    assert set(report.action_queue["next_gate"]) == {
+        "reconcile-broker-dispatch"
+    }
 
 
 def test_broker_dispatch_roundtrip_carries_route_broker_resume_gate():

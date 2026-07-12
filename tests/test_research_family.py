@@ -9,6 +9,10 @@ from reports.broker_dispatch_ack import (
     BrokerDispatchAckThresholds,
     write_broker_dispatch_acknowledgements,
 )
+from reports.broker_dispatch_roundtrip import (
+    BrokerDispatchRoundTripThresholds,
+    write_broker_dispatch_roundtrip,
+)
 from reports.broker_dispatch_send import (
     BrokerDispatchSendThresholds,
     write_broker_dispatch_send_packet,
@@ -750,6 +754,29 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         expected_run_type="broker_dispatch_ack_reconciliation",
         require_input_fingerprints=True,
     ).passed
+    roundtrip = write_broker_dispatch_roundtrip(
+        dispatch_dir=tmp_path / "broker_dispatch",
+        send_dir=tmp_path / "broker_dispatch_send",
+        ack_dir=tmp_path / "broker_dispatch_ack",
+        output_dir=tmp_path / "broker_dispatch_roundtrip",
+        thresholds=BrokerDispatchRoundTripThresholds(
+            target_mode="shadow",
+            require_ack_lineage=True,
+        ),
+    )
+    assert roundtrip.passed
+    assert set(
+        roundtrip.orders[
+            "broker_dispatch_ack_broker_dispatch_send_broker_dispatch_route_"
+            "enable_cutover_runtime_scaleup_research_family_id"
+        ]
+    ) == {"prospective_family"}
+    assert not roundtrip.orders["authorizes_submission"].astype(bool).any()
+    assert verify_experiment_manifest(
+        tmp_path / "broker_dispatch_roundtrip" / "manifest.json",
+        expected_run_type="broker_dispatch_roundtrip",
+        require_input_fingerprints=True,
+    ).passed
 
     relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
     relabeled_telemetry = runtime_telemetry.telemetry.copy()
@@ -850,6 +877,13 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     )
     assert not drifted_ack.passed
     assert drifted_ack.error == "input_drift"
+    drifted_roundtrip = verify_experiment_manifest(
+        tmp_path / "broker_dispatch_roundtrip" / "manifest.json",
+        expected_run_type="broker_dispatch_roundtrip",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_roundtrip.passed
+    assert drifted_roundtrip.error == "input_drift"
     stale_guard = write_runtime_guard_report(
         scaleup_dir=tmp_path / "scaleup",
         telemetry_path=tmp_path / "runtime_telemetry",

@@ -5,15 +5,24 @@ import pandas as pd
 import pytest
 
 from hft_cli import main
+from reports.broker_dispatch_ack import (
+    BrokerDispatchAckThresholds,
+    write_broker_dispatch_acknowledgements,
+)
+from reports.broker_dispatch_roundtrip import (
+    BrokerDispatchRoundTripThresholds,
+    write_broker_dispatch_roundtrip,
+)
 from reports.broker_dispatch_send import (
     evaluate_broker_dispatch_send_packet,
     write_broker_dispatch_send_packet,
 )
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import write_experiment_manifest
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 from reports.operational_lineage import (
     cutover_lineage_fields,
     empty_runtime_session_lineage,
+    load_broker_dispatch_ack_lineage,
     load_broker_dispatch_send_lineage,
     load_cutover_lineage,
     load_route_enable_lineage,
@@ -873,6 +882,57 @@ def _write_rehashed_send_requests(send, requests):
             request_lookup[column]
         )
     expected_acks.to_csv(expected_acks_path, index=False)
+
+
+def _write_verified_ack_chain(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    ack_log = tmp_path / "broker_dispatch_acks.csv"
+    orders = pd.read_csv(dispatch / "broker_dispatch_orders.csv")
+    pd.DataFrame(
+        [
+            {
+                "dispatch_order_id": row.dispatch_order_id,
+                "source_order_id": row.source_order_id,
+                "route_dispatch_roundtrip_batch_id": (
+                    row.route_dispatch_roundtrip_batch_id
+                ),
+                "broker_order_id": f"ACK-{index + 1}",
+                "ack_status": "dry_run_accepted",
+                "ack_ts_ns": 1_000_000 + index,
+            }
+            for index, row in enumerate(orders.itertuples(index=False))
+        ]
+    ).to_csv(ack_log, index=False)
+    ack = tmp_path / "ack"
+    write_broker_dispatch_acknowledgements(
+        dispatch_dir=dispatch,
+        send_dir=send,
+        acks_path=ack_log,
+        output_dir=ack,
+        thresholds=BrokerDispatchAckThresholds(require_send_packet=True),
+    )
+    return dispatch, send, ack
+
+
+def _rewrite_ack_send_lineage_field(ack, column, value):
+    summary_path = ack / "broker_dispatch_ack_summary.csv"
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    config_path = ack / "broker_dispatch_ack_config.json"
+    summary = pd.read_csv(summary_path)
+    acknowledgements_frame = pd.read_csv(acknowledgements_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary[column] = value
+    acknowledgements_frame[column] = value
+    config["broker_dispatch_send_lineage"][column] = value
+    summary.to_csv(summary_path, index=False)
+    acknowledgements_frame.to_csv(acknowledgements_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(ack / "manifest.json", extra_updates={column: value})
 
 
 def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
@@ -1965,6 +2025,267 @@ def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
                 str(send / "ack"),
             ]
         )
+
+
+def test_broker_dispatch_ack_lineage_closes_final_roundtrip(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+    report = write_broker_dispatch_roundtrip(
+        dispatch_dir=dispatch,
+        send_dir=send,
+        ack_dir=ack,
+        output_dir=tmp_path / "roundtrip",
+        thresholds=BrokerDispatchRoundTripThresholds(
+            require_ack_lineage=True
+        ),
+    )
+
+    assert lineage["provided"]
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["non_authorizing"]
+    assert lineage["send_lineage_gate_passed"]
+    assert lineage["send_matches_current"]
+    assert lineage["expected_send_matches_current"]
+    assert lineage["gate_passed"]
+    assert report.passed
+    assert report.orders["broker_dispatch_ack_lineage_gate_passed"].map(
+        bool
+    ).all()
+    assert not report.orders["authorizes_submission"].map(bool).any()
+    assert report.config["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_lineage_gate_passed"
+    ]
+    assert not report.config["authorizes_submission"]
+    assert verify_experiment_manifest(
+        tmp_path / "roundtrip" / "manifest.json",
+        expected_run_type="broker_dispatch_roundtrip",
+        require_input_fingerprints=True,
+    ).passed
+    cli_code = main(
+        [
+            "review-broker-dispatch-roundtrip",
+            "--dispatch",
+            str(dispatch),
+            "--send",
+            str(send),
+            "--ack",
+            str(ack),
+            "--out",
+            str(tmp_path / "roundtrip_cli"),
+            "--require-ack-lineage",
+            "--fail-on-breach",
+        ]
+    )
+    assert cli_code == 0
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_broker_dispatch_roundtrip(
+            dispatch_dir=dispatch,
+            send_dir=send,
+            ack_dir=ack,
+            output_dir=ack / "roundtrip",
+            thresholds=BrokerDispatchRoundTripThresholds(
+                require_ack_lineage=True
+            ),
+        )
+
+
+def test_broker_dispatch_ack_lineage_blocks_row_contract_mismatch(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    acknowledgement_rows = pd.read_csv(acknowledgements_path)
+    acknowledgement_rows.loc[
+        0, "broker_dispatch_send_manifest_sha256"
+    ] = "f" * 64
+    acknowledgement_rows.to_csv(acknowledgements_path, index=False)
+    _refresh_manifest(ack / "manifest.json")
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert lineage["send_matches_current"]
+    assert not lineage["gate_passed"]
+    assert "broker_dispatch_ack_rows_broker_dispatch_send_manifest_sha256_mismatch" in (
+        lineage["contract_error"]
+    )
+
+
+def test_broker_dispatch_ack_lineage_blocks_consistent_send_relabel(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    _rewrite_ack_send_lineage_field(
+        ack,
+        "broker_dispatch_send_manifest_sha256",
+        "f" * 64,
+    )
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["send_lineage_gate_passed"]
+    assert not lineage["send_matches_current"]
+    assert not lineage["expected_send_matches_current"]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_ack_lineage_blocks_authorizing_claim(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    summary_path = ack / "broker_dispatch_ack_summary.csv"
+    acknowledgements_path = ack / "broker_dispatch_acknowledgements.csv"
+    config_path = ack / "broker_dispatch_ack_config.json"
+    summary = pd.read_csv(summary_path)
+    acknowledgement_rows = pd.read_csv(acknowledgements_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary["authorizes_submission"] = True
+    acknowledgement_rows["authorizes_submission"] = True
+    config["authorizes_submission"] = True
+    summary.to_csv(summary_path, index=False)
+    acknowledgement_rows.to_csv(acknowledgements_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(
+        ack / "manifest.json",
+        extra_updates={"authorizes_submission": True},
+    )
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert not lineage["non_authorizing"]
+    assert lineage["send_matches_current"]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_ack_lineage_blocks_stale_ack_artifact(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    summary_path = ack / "broker_dispatch_ack_summary.csv"
+    summary_path.write_text(
+        summary_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert not lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["send_matches_current"]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_ack_lineage_recomputes_ack_counts(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    summary_path = ack / "broker_dispatch_ack_summary.csv"
+    config_path = ack / "broker_dispatch_ack_config.json"
+    summary = pd.read_csv(summary_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary["acked_orders"] = 0
+    config["acked_orders"] = 0
+    summary.to_csv(summary_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(ack / "manifest.json")
+
+    lineage = load_broker_dispatch_ack_lineage(
+        ack / "broker_dispatch_ack_config.json",
+        expected_broker_dispatch_send_config_path=(
+            send / "broker_dispatch_send_config.json"
+        ),
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert "broker_dispatch_ack_summary_acked_orders_mismatch" in lineage[
+        "contract_error"
+    ]
+    assert "broker_dispatch_ack_config_acked_orders_mismatch" in lineage[
+        "contract_error"
+    ]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_roundtrip_blocks_wrong_send_source(tmp_path):
+    dispatch, send, ack = _write_verified_ack_chain(tmp_path)
+    other_send = tmp_path / "other_send"
+    write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=other_send,
+    )
+
+    report = write_broker_dispatch_roundtrip(
+        dispatch_dir=dispatch,
+        send_dir=other_send,
+        ack_dir=ack,
+        output_dir=tmp_path / "roundtrip",
+        thresholds=BrokerDispatchRoundTripThresholds(
+            require_ack_lineage=True
+        ),
+    )
+
+    failed = set(
+        report.checks.loc[
+            ~report.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not report.passed
+    assert {
+        "broker_dispatch_ack_expected_send_matches_current",
+        "broker_dispatch_ack_lineage_gate_passed",
+    } <= failed
+    action = report.action_queue.set_index("check").loc[
+        "broker_dispatch_ack_expected_send_matches_current"
+    ]
+    assert action["component"] == "broker_dispatch_ack"
+    assert action["next_gate"] == "reconcile-broker-dispatch"
 
 
 def test_broker_dispatch_send_lineage_blocks_request_contract_mismatch(tmp_path):
