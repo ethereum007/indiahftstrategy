@@ -4300,7 +4300,23 @@ clean nested route proof from route-enable for live dry-run routing, zero
 nested route-enable dispatch round-trip failed checks, any route-carried shadow
 broker-readiness aggregate and broker-readiness-carried shadow broker proof to
 remain clean and identity-consistent, and order counts within the approved route
-limits. When route-enable retained strategy portfolio allocation, dispatch
+limits. Dispatch planning now also requires a complete, current
+`route_enable_packet` manifest and reconciles every
+cutover/runtime/scale-up/portfolio/scorecard/research-family
+field across the route packet, summary, config, and manifest. Explicit
+`authorizes_submission=false` claims are required in all four route artifacts.
+The carried cutover fields are also compared with the independently reopened
+current cutover bundle, so a consistently re-manifested route-family relabel
+cannot detach dispatch from its source proof.
+The verified state is carried as `route_enable_lineage_*` and
+`route_enable_cutover_*` fields in the dispatch summary, config, manifest, and
+every dry-run dispatch-order row, including the exact prospective-family and
+registration identity. The dispatch manifest fingerprints the full route-enable
+artifact set and recursively flattened route dependencies, so later research or
+operational drift invalidates the plan. Dispatch output may not overlap its
+route-enable or upload source directory.
+
+When route-enable retained strategy portfolio allocation, dispatch
 planning carries the `strategy_portfolio_*` fields into summary/config,
 including concentration counts, top concentration names, and maximum allocation
 weights. It computes `source_order_notional` for each upload row, records

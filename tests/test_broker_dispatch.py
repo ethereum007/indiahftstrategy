@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.broker_dispatch import (
@@ -9,6 +10,13 @@ from reports.broker_dispatch import (
     write_broker_dispatch_plan,
 )
 from reports.catalog import catalog_experiment_runs
+from reports.manifest import file_sha256, verify_experiment_manifest, write_experiment_manifest
+from reports.operational_lineage import (
+    cutover_lineage_fields,
+    empty_runtime_session_lineage,
+    load_cutover_lineage,
+    runtime_session_lineage_fields,
+)
 
 
 def resume_route_proof(
@@ -710,50 +718,160 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
-def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True, route_readiness=True):
-    route = root / "route_enable"
-    upload = root / "upload"
-    route.mkdir(parents=True)
-    upload.mkdir()
-    route_summary(
-        route_ready,
-        dispatch_provided=dispatch,
-        dispatch_ready=dispatch,
-        route_readiness_provided=route_readiness,
-        route_readiness_ready=route_readiness,
-    ).to_csv(
-        route / "route_enable_summary.csv",
-        index=False,
+def cutover_runtime_lineage():
+    state = empty_runtime_session_lineage(required=True)
+    state.update(
+        {
+            "provided": True,
+            "manifest_current": True,
+            "manifest_run_type": "runtime_session_monitor",
+            "manifest_path": "runtime/manifest.json",
+            "manifest_sha256": "a" * 64,
+            "contract_consistent": True,
+            "non_authorizing": True,
+            "scaleup_matches_current": True,
+            "gate_passed": True,
+            "scaleup_research_family_bound": True,
+            "scaleup_research_family_provenance_current": True,
+            "scaleup_research_family_id": "india-leadlag-v1",
+            "scaleup_research_family_registration_id": "RF-INDIA-LEADLAG-1",
+            "scaleup_research_family_manifest_sha256": "b" * 64,
+            "runtime_telemetry_lineage_matches_current": True,
+        }
     )
-    (route / "route_enable_config.json").write_text(
-        json.dumps(
-            route_config(
-                route_ready,
-                dispatch_provided=dispatch,
-                dispatch_ready=dispatch,
-                route_readiness_provided=route_readiness,
-                route_readiness_ready=route_readiness,
-            ),
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    return runtime_session_lineage_fields(state)
+
+
+def refresh_cutover_manifest(cutover):
+    runtime_lineage = cutover_runtime_lineage()
+    inputs = {"cutover_source": cutover.parent / "cutover_source.csv"}
+    broker_config = cutover / "broker_readiness_config.json"
+    if broker_config.is_file():
+        inputs["broker_readiness_config"] = broker_config
+    write_experiment_manifest(
+        cutover,
+        run_type="cutover_gate",
+        inputs=inputs,
+        extra={
+            "ready": True,
+            **runtime_lineage,
+            "authorizes_submission": False,
+        },
     )
-    (route / "manifest.json").write_text(
+
+
+def write_cutover_fixture(root):
+    cutover = root / "cutover"
+    cutover.mkdir(parents=True)
+    runtime_lineage = cutover_runtime_lineage()
+    summary = pd.DataFrame(
+        [{"ready": True, **runtime_lineage, "authorizes_submission": False}]
+    )
+    summary.to_csv(cutover / "cutover_summary.csv", index=False)
+    summary.to_csv(cutover / "cutover_authorization.csv", index=False)
+    pd.DataFrame([{"check": "fixture", "passed": True}]).to_csv(
+        cutover / "cutover_checks.csv", index=False
+    )
+    pd.DataFrame(columns=["priority", "action"]).to_csv(
+        cutover / "cutover_action_queue.csv", index=False
+    )
+    (cutover / "cutover_config.json").write_text(
         json.dumps(
             {
-                "run_type": "route_enable_packet",
-                "inputs": {
-                    "cutover_manifest": {
-                        "path": str(route / "cutover_manifest.json"),
-                    }
-                },
+                "ready": True,
+                "runtime_lineage": runtime_lineage,
+                "authorizes_submission": False,
             },
             indent=2,
         )
         + "\n",
         encoding="utf-8",
     )
+    (cutover / "cutover_runbook.md").write_text("# Cutover Fixture\n", encoding="utf-8")
+    pd.DataFrame([{"source": "fixture"}]).to_csv(root / "cutover_source.csv", index=False)
+    refresh_cutover_manifest(cutover)
+    return cutover
+
+
+def refresh_route_manifest(route, *, lineage_override=None, sync_lineage=True):
+    cutover = route.parent / "cutover"
+    lineage = lineage_override or cutover_lineage_fields(
+        load_cutover_lineage(cutover / "cutover_config.json")
+    )
+    if sync_lineage:
+        summary_path = route / "route_enable_summary.csv"
+        summary = pd.read_csv(summary_path)
+        packet_path = route / "route_enable_packet.csv"
+        packet = pd.read_csv(packet_path)
+        for column, value in lineage.items():
+            summary[column] = value
+            packet[column] = value
+        summary.to_csv(summary_path, index=False)
+        packet.to_csv(packet_path, index=False)
+        config_path = route / "route_enable_config.json"
+        config = json.loads(config_path.read_text(encoding="utf-8"))
+        config["cutover_lineage"] = lineage
+        config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    write_experiment_manifest(
+        route,
+        run_type="route_enable_packet",
+        inputs={
+            "cutover_manifest": cutover / "manifest.json",
+            "route_source": route.parent / "route_source.csv",
+        },
+        extra={
+            "ready": bool(pd.read_csv(route / "route_enable_summary.csv").iloc[0]["ready"]),
+            **lineage,
+            "authorizes_submission": False,
+        },
+    )
+
+
+def write_inputs(root, *, route_ready=True, duplicate=False, dispatch=True, route_readiness=True):
+    cutover = write_cutover_fixture(root)
+    route = root / "route_enable"
+    upload = root / "upload"
+    route.mkdir(parents=True)
+    upload.mkdir()
+    lineage = cutover_lineage_fields(
+        load_cutover_lineage(cutover / "cutover_config.json")
+    )
+    summary = route_summary(
+        route_ready,
+        dispatch_provided=dispatch,
+        dispatch_ready=dispatch,
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    )
+    for column, value in lineage.items():
+        summary[column] = value
+    summary["authorizes_submission"] = False
+    summary.to_csv(route / "route_enable_summary.csv", index=False)
+    config = route_config(
+        route_ready,
+        dispatch_provided=dispatch,
+        dispatch_ready=dispatch,
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    )
+    config["cutover_lineage"] = lineage
+    config["authorizes_submission"] = False
+    (route / "route_enable_config.json").write_text(
+        json.dumps(config, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    packet = summary.copy()
+    packet["route_enabled"] = route_ready
+    packet.to_csv(route / "route_enable_packet.csv", index=False)
+    pd.DataFrame([{"check": "fixture", "passed": route_ready}]).to_csv(
+        route / "route_enable_checks.csv", index=False
+    )
+    pd.DataFrame(columns=["priority", "action"]).to_csv(
+        route / "route_enable_action_queue.csv", index=False
+    )
+    (route / "route_enable_runbook.md").write_text("# Route Enable Fixture\n", encoding="utf-8")
+    pd.DataFrame([{"source": "fixture"}]).to_csv(root / "route_source.csv", index=False)
+    refresh_route_manifest(route)
     upload_orders(duplicate).to_csv(upload / "broker_upload_orders.csv", index=False)
     return route, upload
 
@@ -1839,12 +1957,122 @@ def test_write_broker_dispatch_plan_outputs_artifacts_and_catalog_entry(tmp_path
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_plan"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+    assert bool(summary.loc[0, "route_enable_lineage_gate_passed"])
+    assert summary.loc[0, "route_enable_manifest_sha256"] == file_sha256(route / "manifest.json")
+    assert (
+        summary.loc[0, "route_enable_cutover_runtime_scaleup_research_family_id"]
+        == "india-leadlag-v1"
+    )
+    dispatch_orders = pd.read_csv(out_dir / "broker_dispatch_orders.csv")
+    assert set(dispatch_orders["route_enable_cutover_runtime_scaleup_research_family_id"]) == {
+        "india-leadlag-v1"
+    }
+    assert dispatch_orders["route_enable_lineage_gate_passed"].astype(bool).all()
+    assert not dispatch_orders["authorizes_submission"].astype(bool).any()
+    assert not bool(summary.loc[0, "authorizes_submission"])
+    assert config["route_enable_lineage"]["route_enable_lineage_gate_passed"]
+    assert not config["authorizes_submission"]
+    assert {"route_enable_artifacts", "route_enable_dependencies"} <= set(manifest["inputs"])
+    assert manifest["extra"]["route_enable_lineage_gate_passed"]
+    assert not manifest["extra"]["authorizes_submission"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="broker_dispatch_plan",
+        require_input_fingerprints=True,
+    ).passed
+    (tmp_path / "route_source.csv").write_text("source\nchanged\n", encoding="utf-8")
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="broker_dispatch_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_broker_dispatch_blocks_drifted_route_enable_lineage(tmp_path):
+    route, upload = write_inputs(tmp_path)
+    (tmp_path / "route_source.csv").write_text("source\nchanged\n", encoding="utf-8")
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=tmp_path / "dispatch",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {"route_enable_manifest_current", "route_enable_lineage_gate_passed"} <= failed
+    assert report.action_queue.iloc[0]["next_gate"] == "review-route-enable"
+
+
+def test_broker_dispatch_blocks_remanifested_route_contract_and_authorization_drift(tmp_path):
+    route, upload = write_inputs(tmp_path)
+    packet_path = route / "route_enable_packet.csv"
+    packet = pd.read_csv(packet_path)
+    packet.loc[0, "cutover_runtime_scaleup_research_family_id"] = "relabeled-family"
+    packet.to_csv(packet_path, index=False)
+    config_path = route / "route_enable_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["authorizes_submission"] = True
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    refresh_route_manifest(route, sync_lineage=False)
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=tmp_path / "dispatch",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "route_enable_manifest_current" not in failed
+    assert {
+        "route_enable_lineage_contract_consistent",
+        "route_enable_non_authorizing",
+        "route_enable_lineage_gate_passed",
+    } <= failed
+
+
+def test_broker_dispatch_blocks_consistent_route_relabel_detached_from_cutover(tmp_path):
+    route, upload = write_inputs(tmp_path)
+    config = json.loads((route / "route_enable_config.json").read_text(encoding="utf-8"))
+    detached_lineage = dict(config["cutover_lineage"])
+    detached_lineage["cutover_runtime_scaleup_research_family_id"] = "relabeled-family"
+    refresh_route_manifest(route, lineage_override=detached_lineage)
+
+    report = write_broker_dispatch_plan(
+        route_enable_dir=route,
+        upload_pack_dir=upload,
+        output_dir=tmp_path / "dispatch",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "route_enable_manifest_current" not in failed
+    assert "route_enable_lineage_contract_consistent" not in failed
+    assert "route_enable_non_authorizing" not in failed
+    assert {
+        "route_enable_cutover_matches_current",
+        "route_enable_lineage_gate_passed",
+    } <= failed
+
+
+def test_broker_dispatch_rejects_route_output_collision(tmp_path):
+    route, upload = write_inputs(tmp_path)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_broker_dispatch_plan(
+            route_enable_dir=route,
+            upload_pack_dir=upload,
+            output_dir=route,
+        )
 
 
 def test_cli_broker_dispatch_hydrates_broker_vendor_data_from_route_manifest_chain(tmp_path):
     route, upload = write_inputs(tmp_path)
-    broker_config = route / "broker_readiness_config.json"
-    cutover_manifest = route / "cutover_manifest.json"
+    cutover = tmp_path / "cutover"
+    broker_config = cutover / "broker_readiness_config.json"
     broker_config.write_text(
         json.dumps(
             {
@@ -1866,21 +2094,8 @@ def test_cli_broker_dispatch_hydrates_broker_vendor_data_from_route_manifest_cha
         + "\n",
         encoding="utf-8",
     )
-    cutover_manifest.write_text(
-        json.dumps(
-            {
-                "run_type": "cutover_gate",
-                "inputs": {
-                    "broker_readiness_config": {
-                        "path": str(broker_config),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    refresh_cutover_manifest(cutover)
+    refresh_route_manifest(route)
     out_dir = tmp_path / "dispatch"
 
     code = main(
@@ -1917,8 +2132,8 @@ def test_cli_broker_dispatch_hydrates_broker_vendor_data_from_route_manifest_cha
 
 def test_cli_broker_dispatch_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
     route, upload = write_inputs(tmp_path)
-    broker_config = route / "broker_readiness_config.json"
-    cutover_manifest = route / "cutover_manifest.json"
+    cutover = tmp_path / "cutover"
+    broker_config = cutover / "broker_readiness_config.json"
     broker_config.write_text(
         json.dumps(
             {
@@ -1944,21 +2159,8 @@ def test_cli_broker_dispatch_blocks_failed_broker_vendor_data_readiness_sidecar(
         + "\n",
         encoding="utf-8",
     )
-    cutover_manifest.write_text(
-        json.dumps(
-            {
-                "run_type": "cutover_gate",
-                "inputs": {
-                    "broker_readiness_config": {
-                        "path": str(broker_config),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    refresh_cutover_manifest(cutover)
+    refresh_route_manifest(route)
     out_dir = tmp_path / "dispatch"
 
     code = main(

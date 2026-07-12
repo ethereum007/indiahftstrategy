@@ -2624,6 +2624,15 @@
   packet/summary/config/manifest, and recursively fingerprints cutover
   artifacts and dependencies. `route_enabled=true` is explicitly not submission
   authority. Output/source overlap is rejected at both boundaries.
+- Broker dispatch planning now independently verifies the complete current
+  `route_enable_packet` bundle, including the packet itself, and reconciles the
+  retained cutover/runtime/research contract across packet, summary, config, and
+  manifest, then compares it with the independently reopened current cutover
+  bundle. It rejects stale or consistently re-manifested but source-detached
+  route evidence and any authorizing claim, carries the exact family and
+  manifest lineage onto every dry-run dispatch row plus summary/config/manifest,
+  recursively fingerprints all route artifacts/dependencies, rejects
+  output/source overlap, and remains explicitly non-submitting.
 
 ## Test Gate
 
@@ -2633,20 +2642,24 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1532 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1536 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
-route-readiness, route-enable, and research-family registration/launch/audit
-pass together (`290 passed`). It now includes a real prospective-family chain
-through family audit -> scorecard -> portfolio -> controlled scale-up -> runtime
-telemetry -> runtime guard -> runtime session -> cutover -> route-enable, with
-recursive invalidation of both final manifests after registration-plan drift.
-Cutover and route-enable also reject stale source fingerprints, freshly
-re-manifested cross-artifact lineage disagreement, authorizing claims, and
-source/output overlap while preserving non-authorizing family identity through
-the broker-facing packet. The focused runtime-session, halt-response, and
+route-readiness, route-enable, broker dispatch planning, and research-family
+registration/launch/audit pass together (`334 passed`). It now includes a real
+prospective-family chain through family audit -> scorecard -> portfolio ->
+controlled scale-up -> runtime telemetry -> runtime guard -> runtime session ->
+cutover -> route-enable -> dry-run broker dispatch planning, with recursive
+invalidation of all three final
+manifests after registration-plan drift. Cutover, route-enable, and dispatch also
+reject stale source fingerprints, freshly re-manifested cross-artifact lineage
+disagreement, authorizing claims, and source/output overlap while preserving
+non-authorizing family identity through each broker-facing order row. The four
+generic dispatch plan/send/ack/round-trip suites pass together (`156 passed`),
+showing that the richer dispatch-plan contract remains additive for downstream
+workflows. The focused runtime-session, halt-response, and
 research-family gate passes together (`29 passed`). It covers source-output
 collision rejection,
 non-authorizing lineage passthrough into session and emergency action rows,
@@ -2761,7 +2774,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1532-test collection is fully green.
+1536-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2770,6 +2783,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Carry route-enable's verified cutover/runtime/research lineage through the
-   non-submitting broker dispatch plan/send/ack/round-trip chain before any
+4. Carry the dispatch plan's verified route/cutover/runtime/research lineage
+   through the non-submitting broker send/ack/round-trip chain before any
    provider credential or live broker decision is introduced.

@@ -9,6 +9,12 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    empty_route_enable_lineage,
+    load_route_enable_lineage,
+    route_enable_lineage_fields,
+    route_enable_lineage_manifest_inputs,
+)
 from reports.vendor_market_data import (
     select_vendor_market_data_batch_source,
     vendor_market_data_batch_source_active,
@@ -34,6 +40,9 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+ROUTE_ENABLE_LINEAGE_OUTPUT_COLUMNS = tuple(
+    route_enable_lineage_fields(empty_route_enable_lineage()).keys()
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,7 @@ def evaluate_broker_dispatch_plan(
     route_enable_config: dict[str, Any] | None = None,
     upload_orders: pd.DataFrame,
     upload_file_hash: str = "",
+    route_enable_lineage: dict[str, Any] | None = None,
     thresholds: BrokerDispatchThresholds | None = None,
 ) -> BrokerDispatchReport:
     thresholds = thresholds or BrokerDispatchThresholds()
@@ -75,7 +85,11 @@ def evaluate_broker_dispatch_plan(
     upload_orders = _require_nonempty(upload_orders, "upload_orders")
     route_enable_config = route_enable_config or {}
 
-    route = _route_state(route_enable_summary.iloc[0], route_enable_config)
+    route = _route_state(
+        route_enable_summary.iloc[0],
+        route_enable_config,
+        route_enable_lineage or empty_route_enable_lineage(),
+    )
     dispatch_orders = _dispatch_orders(upload_orders, route, upload_file_hash)
     checks = _checks(route, dispatch_orders, thresholds)
     summary = _summary(route, dispatch_orders, checks, upload_file_hash, thresholds)
@@ -99,6 +113,8 @@ def write_broker_dispatch_plan(
     upload_orders_path: str | Path | None = None,
     thresholds: BrokerDispatchThresholds | None = None,
 ) -> BrokerDispatchReport:
+    thresholds = thresholds or BrokerDispatchThresholds()
+    _validate_thresholds(thresholds)
     route_dir = Path(route_enable_dir)
     upload_dir = Path(upload_pack_dir)
     route_config_path = route_dir / "route_enable_config.json" if route_dir.is_dir() else Path(route_enable_dir)
@@ -110,6 +126,7 @@ def write_broker_dispatch_plan(
         else route_config_path.with_name("route_enable_summary.csv")
     )
     route_manifest_path = _sidecar_path(route_enable_dir, "manifest.json")
+    route_lineage = load_route_enable_lineage(route_config_path)
     route_config = json.loads(route_config_path.read_text(encoding="utf-8"))
     cutover_manifest_path = _manifest_input_path(route_manifest_path, "cutover_manifest")
     broker_readiness_config_path = _manifest_input_path(cutover_manifest_path, "broker_readiness_config")
@@ -125,9 +142,17 @@ def write_broker_dispatch_plan(
         route_enable_config=route_config,
         upload_orders=pd.read_csv(upload_file),
         upload_file_hash=hashlib.sha256(upload_bytes).hexdigest(),
+        route_enable_lineage=route_lineage,
         thresholds=thresholds,
     )
-    out = Path(output_dir)
+    out = Path(output_dir).resolve()
+    _reject_input_output_collision(
+        out,
+        {
+            "route enable": route_config_path,
+            "upload pack": upload_file,
+        },
+    )
     out.mkdir(parents=True, exist_ok=True)
     report.dispatch_orders.to_csv(out / "broker_dispatch_orders.csv", index=False)
     report.checks.to_csv(out / "broker_dispatch_checks.csv", index=False)
@@ -151,11 +176,17 @@ def write_broker_dispatch_plan(
     }
     if route_manifest_path is not None:
         inputs["route_enable_manifest"] = route_manifest_path
+    inputs.update(route_enable_lineage_manifest_inputs(route_lineage))
     write_experiment_manifest(
         out,
         run_type="broker_dispatch_plan",
-        parameters={"thresholds": asdict(thresholds or BrokerDispatchThresholds())},
+        parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
+        extra={
+            "ready": bool(report.ready),
+            **route_enable_lineage_fields(route_lineage),
+            "authorizes_submission": False,
+        },
     )
     return BrokerDispatchReport(
         dispatch_orders=report.dispatch_orders,
@@ -192,6 +223,8 @@ def _dispatch_orders(upload_orders: pd.DataFrame, route: dict[str, Any], upload_
                 "upload_file_hash": upload_file_hash,
                 "route_enable_hash": route["route_enable_hash"],
                 "route_dispatch_roundtrip_batch_id": route["dispatch_roundtrip_batch_id"],
+                **_route_lineage_output_fields(route),
+                "authorizes_submission": False,
                 "order_payload_json": json.dumps(payload, sort_keys=True),
             }
         )
@@ -231,6 +264,67 @@ def _checks(route: dict[str, Any], dispatch_orders: pd.DataFrame, thresholds: Br
             "dispatch requires route-enable dry-run dispatch round-trip proof",
         ),
     ]
+    if route["route_enable_lineage_required"]:
+        checks.extend(
+            [
+                _check(
+                    "route_enable_lineage_provided",
+                    route["route_enable_lineage_provided"],
+                    "is",
+                    True,
+                    bool(route["route_enable_lineage_provided"]),
+                    "route-enable lineage evidence is required but missing",
+                ),
+                _check(
+                    "route_enable_manifest_current",
+                    route["route_enable_manifest_current"],
+                    "is",
+                    True,
+                    bool(route["route_enable_manifest_current"]),
+                    "route-enable manifest is missing, stale, or incomplete",
+                ),
+                _check(
+                    "route_enable_lineage_contract_consistent",
+                    route["route_enable_lineage_contract_consistent"],
+                    "is",
+                    True,
+                    bool(route["route_enable_lineage_contract_consistent"]),
+                    "route-enable packet, summary, config, and manifest lineage disagree",
+                ),
+                _check(
+                    "route_enable_non_authorizing",
+                    route["route_enable_non_authorizing"],
+                    "is",
+                    True,
+                    bool(route["route_enable_non_authorizing"]),
+                    "route-enable lineage contains an authorizing claim",
+                ),
+                _check(
+                    "route_enable_cutover_lineage_gate_passed",
+                    route["route_enable_cutover_lineage_gate_passed"],
+                    "is",
+                    True,
+                    bool(route["route_enable_cutover_lineage_gate_passed"]),
+                    "route-enable did not retain a valid cutover lineage gate",
+                ),
+                _check(
+                    "route_enable_cutover_matches_current",
+                    route["route_enable_cutover_matches_current"],
+                    "is",
+                    True,
+                    bool(route["route_enable_cutover_matches_current"]),
+                    "route-enable cutover lineage does not match the current cutover source",
+                ),
+                _check(
+                    "route_enable_lineage_gate_passed",
+                    route["route_enable_lineage_gate_passed"],
+                    "is",
+                    True,
+                    bool(route["route_enable_lineage_gate_passed"]),
+                    "route-enable operational lineage gate did not pass",
+                ),
+            ]
+        )
     if route_readiness_required:
         checks.append(
             _check(
@@ -1319,6 +1413,8 @@ def _summary(
                     "strategy_portfolio_max_market_allocation_weight"
                 ],
                 "pre_portfolio_max_notional_per_session": route["pre_portfolio_max_notional_per_session"],
+                **_route_lineage_output_fields(route),
+                "authorizes_submission": False,
                 "upload_file_hash": upload_file_hash,
                 "dispatch_batch_id": str(dispatch_orders.iloc[0]["dispatch_batch_id"]) if not dispatch_orders.empty else "",
                 "route_readiness_required": _route_readiness_required(thresholds, route),
@@ -1502,7 +1598,9 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
-    if check in {"route_enabled", "target_mode_matches", "adapter_matches"}:
+    if check in {"route_enabled", "target_mode_matches", "adapter_matches"} or check.startswith(
+        ("route_enable_lineage_", "route_enable_manifest_", "route_enable_non_authorizing")
+    ):
         return "route_enable"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
         return "strategy_portfolio"
@@ -1953,6 +2051,7 @@ def _config(
     next_gate = _first_action_value(action_queue, "next_gate")
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "ready": _to_bool(summary["ready"]),
         "failed_check_count": len(failed_check_records),
         "dispatch_state": str(summary["dispatch_state"]),
@@ -2001,6 +2100,7 @@ def _config(
             "max_market_allocation_weight": float(summary["strategy_portfolio_max_market_allocation_weight"]),
             "pre_portfolio_max_notional_per_session": float(summary["pre_portfolio_max_notional_per_session"]),
         },
+        "route_enable_lineage": _route_lineage_config(summary),
         "upload": {
             "orders": int(route["upload_orders"]),
             "total_notional": float(summary["dispatch_total_notional"]),
@@ -2149,6 +2249,9 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Dispatch total notional: {_object_text(summary_row.get('dispatch_total_notional')).strip()}",
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Route dispatch round-trip ready: {_object_text(summary_row.get('route_dispatch_roundtrip_ready')).strip()}",
+        f"- Route-enable lineage current: {'yes' if _to_bool(summary_row.get('route_enable_lineage_gate_passed')) else 'no'}",
+        f"- Research family: {_object_text(summary_row.get('route_enable_cutover_runtime_scaleup_research_family_id')).strip()}",
+        "- Submission authorization: no",
         f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
         f"- Blocked actions: {_int_value(summary_row.get('blocked_action_count'))}",
         f"- Recommendation: {_object_text(summary_row.get('recommendation')).strip()}",
@@ -2318,7 +2421,22 @@ def _resume_route_readiness_state_fields(
     }
 
 
-def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
+def _route_lineage_output_fields(route: dict[str, Any]) -> dict[str, Any]:
+    return {column: route[column] for column in ROUTE_ENABLE_LINEAGE_OUTPUT_COLUMNS}
+
+
+def _route_lineage_config(summary: pd.Series) -> dict[str, Any]:
+    return {
+        column: _jsonable_check_value(summary[column])
+        for column in ROUTE_ENABLE_LINEAGE_OUTPUT_COLUMNS
+    }
+
+
+def _route_state(
+    row: pd.Series,
+    config: dict[str, Any],
+    lineage: dict[str, Any],
+) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     strategy_portfolio = config.get("strategy_portfolio", {}) or {}
     upload = config.get("upload", {}) or {}
@@ -2362,6 +2480,7 @@ def _route_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
     route_hash = hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
     return {
         "route_enabled": _to_bool(config.get("route_enabled", row.get("ready", False))),
+        **route_enable_lineage_fields(lineage),
         "target_mode": _identity_key(_first_text(row.get("target_mode", ""), config.get("target_mode", ""))),
         "strategy": _strategy_key(_first_text(row.get("strategy", ""), config.get("strategy", ""))),
         "market": _identity_key(_first_text(row.get("market", ""), config.get("market", ""))),
@@ -3430,6 +3549,17 @@ def _sidecar_path(path: str | Path | None, filename: str) -> Path | None:
     else:
         file_path = candidate if candidate.name == filename else candidate.with_name(filename)
     return file_path if file_path.exists() else None
+
+
+def _reject_input_output_collision(
+    output_dir: Path,
+    inputs: dict[str, Path],
+) -> None:
+    for label, value in inputs.items():
+        path = Path(value).resolve()
+        root = path if path.is_dir() else path.parent
+        if output_dir == root or root in output_dir.parents or output_dir in root.parents:
+            raise ValueError(f"broker-dispatch output_dir must not overwrite the {label} source directory")
 
 
 def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:

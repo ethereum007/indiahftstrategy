@@ -31,6 +31,14 @@ CUTOVER_REQUIRED_ARTIFACTS = (
     "cutover_config.json",
     "cutover_runbook.md",
 )
+ROUTE_ENABLE_REQUIRED_ARTIFACTS = (
+    "route_enable_packet.csv",
+    "route_enable_checks.csv",
+    "route_enable_summary.csv",
+    "route_enable_action_queue.csv",
+    "route_enable_config.json",
+    "route_enable_runbook.md",
+)
 
 
 def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
@@ -363,6 +371,180 @@ def cutover_lineage_manifest_inputs(lineage: Mapping[str, Any]) -> dict[str, Any
     return inputs
 
 
+def empty_route_enable_lineage(*, required: bool = False) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "required": required,
+        "provided": False,
+        "manifest_current": not required,
+        "manifest_run_type": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "manifest_missing" if required else "",
+        "contract_consistent": not required,
+        "contract_error": "",
+        "non_authorizing": not required,
+        "cutover_matches_current": not required,
+        "gate_passed": not required,
+        "dependency_count": 0,
+        "dependency_paths": [],
+        "artifact_paths": [],
+    }
+    state.update(
+        {
+            column: _field_default(column)
+            for column in cutover_lineage_fields(empty_cutover_lineage())
+        }
+    )
+    return state
+
+
+def load_route_enable_lineage(route_enable_config_path: str | Path) -> dict[str, Any]:
+    config_path = Path(route_enable_config_path).resolve()
+    root = config_path.parent
+    summary_path = root / "route_enable_summary.csv"
+    packet_path = root / "route_enable_packet.csv"
+    manifest_path = root / "manifest.json"
+    state = empty_route_enable_lineage(required=True)
+    state.update(
+        {
+            "provided": summary_path.is_file(),
+            "manifest_path": str(manifest_path),
+            "artifact_paths": [
+                str(root / name)
+                for name in ROUTE_ENABLE_REQUIRED_ARTIFACTS
+                if (root / name).is_file()
+            ],
+        }
+    )
+
+    summary = _read_csv(summary_path)
+    packet = _read_csv(packet_path)
+    config = _read_json(config_path)
+    manifest = _read_json(manifest_path)
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    route_fields = cutover_lineage_fields(empty_cutover_lineage())
+    state.update(
+        {
+            column: _normalize(row.get(column), column)
+            for column in route_fields
+        }
+    )
+    if manifest_path.is_file():
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="route_enable_packet",
+            required_artifacts=ROUTE_ENABLE_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        dependencies = manifest_dependency_paths(manifest_path)
+        state.update(
+            {
+                "manifest_current": bool(integrity.passed),
+                "manifest_run_type": integrity.run_type,
+                "manifest_sha256": file_sha256(manifest_path),
+                "manifest_error": integrity.error,
+                "dependency_paths": [str(path) for path in dependencies],
+                "dependency_count": len(dependencies),
+            }
+        )
+
+    errors = _route_enable_contract_errors(
+        summary=summary,
+        packet=packet,
+        config=config,
+        manifest=manifest,
+        lineage=state,
+        route_fields=tuple(route_fields),
+    )
+    packet_row = packet.iloc[0] if not packet.empty else pd.Series(dtype=object)
+    extra = _mapping(manifest.get("extra"))
+    non_authorizing = bool(
+        config
+        and "authorizes_submission" in config
+        and not _bool(config.get("authorizes_submission"))
+        and "authorizes_submission" in row.index
+        and not _bool(row.get("authorizes_submission"))
+        and "authorizes_submission" in packet_row.index
+        and not _bool(packet_row.get("authorizes_submission"))
+        and extra
+        and "authorizes_submission" in extra
+        and not _bool(extra.get("authorizes_submission"))
+    )
+    cutover_gate = _bool(state.get("cutover_lineage_gate_passed", False))
+    cutover_matches_current = _route_cutover_matches_current(
+        route_manifest=manifest,
+        route_manifest_path=manifest_path,
+        lineage=state,
+        route_fields=tuple(route_fields),
+    )
+    state["contract_consistent"] = not errors
+    state["contract_error"] = ";".join(sorted(set(errors)))
+    state["non_authorizing"] = non_authorizing
+    state["cutover_matches_current"] = cutover_matches_current
+    state["gate_passed"] = bool(
+        state["provided"]
+        and state["manifest_current"]
+        and state["contract_consistent"]
+        and non_authorizing
+        and cutover_gate
+        and cutover_matches_current
+    )
+    return state
+
+
+def route_enable_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
+    fields = {
+        "route_enable_lineage_required": _bool(lineage.get("required", False)),
+        "route_enable_lineage_provided": _bool(lineage.get("provided", False)),
+        "route_enable_manifest_current": _bool(lineage.get("manifest_current", False)),
+        "route_enable_manifest_run_type": _text(lineage.get("manifest_run_type", "")),
+        "route_enable_manifest_path": _text(lineage.get("manifest_path", "")),
+        "route_enable_manifest_sha256": _text(lineage.get("manifest_sha256", "")),
+        "route_enable_manifest_error": _text(lineage.get("manifest_error", "")),
+        "route_enable_lineage_contract_consistent": _bool(
+            lineage.get("contract_consistent", False)
+        ),
+        "route_enable_lineage_contract_error": _text(
+            lineage.get("contract_error", "")
+        ),
+        "route_enable_non_authorizing": _bool(
+            lineage.get("non_authorizing", False)
+        ),
+        "route_enable_cutover_lineage_gate_passed": _bool(
+            lineage.get("cutover_lineage_gate_passed", False)
+        ),
+        "route_enable_cutover_matches_current": _bool(
+            lineage.get("cutover_matches_current", False)
+        ),
+        "route_enable_lineage_gate_passed": _bool(lineage.get("gate_passed", False)),
+        "route_enable_lineage_dependency_count": int(
+            lineage.get("dependency_count", 0)
+        ),
+    }
+    route_fields = cutover_lineage_fields(empty_cutover_lineage())
+    fields.update(
+        {
+            f"route_enable_{column}": _normalize(lineage.get(column), column)
+            for column in route_fields
+        }
+    )
+    return fields
+
+
+def route_enable_lineage_manifest_inputs(lineage: Mapping[str, Any]) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
+    manifest_path = _existing_path(lineage.get("manifest_path"))
+    if manifest_path is not None:
+        inputs["route_enable_manifest"] = manifest_path
+    artifacts = _existing_paths(lineage.get("artifact_paths"))
+    if artifacts:
+        inputs["route_enable_artifacts"] = artifacts
+    dependencies = _existing_paths(lineage.get("dependency_paths"))
+    if dependencies:
+        inputs["route_enable_dependencies"] = dependencies
+    return inputs
+
+
 def _runtime_session_contract_errors(
     *,
     summary: pd.DataFrame,
@@ -435,6 +617,94 @@ def _cutover_contract_errors(
     if not _same(extra.get("ready"), row.get("ready"), "ready"):
         errors.append("cutover_manifest_ready_mismatch")
     return errors
+
+
+def _route_enable_contract_errors(
+    *,
+    summary: pd.DataFrame,
+    packet: pd.DataFrame,
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+    lineage: Mapping[str, Any],
+    route_fields: tuple[str, ...],
+) -> list[str]:
+    errors: list[str] = []
+    if summary.empty:
+        errors.append("route_enable_summary_missing_or_empty")
+    if packet.empty:
+        errors.append("route_enable_packet_missing_or_empty")
+    if not config:
+        errors.append("route_enable_config_missing_or_invalid")
+    if not manifest:
+        errors.append("route_enable_manifest_missing_or_invalid")
+    if errors:
+        return errors
+
+    row = summary.iloc[0]
+    packet_row = packet.iloc[0]
+    extra = _mapping(manifest.get("extra"))
+    config_lineage = _mapping(config.get("cutover_lineage"))
+    for column in route_fields:
+        expected = lineage[column]
+        if not _same(packet_row.get(column), expected, column):
+            errors.append(f"route_enable_packet_{column}_mismatch")
+        if not _same(config_lineage.get(column), expected, column):
+            errors.append(f"route_enable_config_{column}_mismatch")
+        if not _same(extra.get(column), expected, column):
+            errors.append(f"route_enable_manifest_{column}_mismatch")
+    if not _same(config.get("route_enabled"), row.get("ready"), "ready"):
+        errors.append("route_enable_config_ready_mismatch")
+    if not _same(packet_row.get("route_enabled"), row.get("ready"), "ready"):
+        errors.append("route_enable_packet_ready_mismatch")
+    if not _same(extra.get("ready"), row.get("ready"), "ready"):
+        errors.append("route_enable_manifest_ready_mismatch")
+    return errors
+
+
+def _route_cutover_matches_current(
+    *,
+    route_manifest: Mapping[str, Any],
+    route_manifest_path: Path,
+    lineage: Mapping[str, Any],
+    route_fields: tuple[str, ...],
+) -> bool:
+    cutover_manifest_path = _manifest_input_path(
+        route_manifest,
+        route_manifest_path,
+        "cutover_manifest",
+    )
+    if cutover_manifest_path is None or not cutover_manifest_path.is_file():
+        return False
+    cutover_config_path = cutover_manifest_path.with_name("cutover_config.json")
+    if not cutover_config_path.is_file():
+        return False
+    current = load_cutover_lineage(cutover_config_path)
+    current_fields = cutover_lineage_fields(current)
+    return bool(
+        current.get("gate_passed", False)
+        and all(
+            _same(lineage.get(column), current_fields.get(column), column)
+            for column in route_fields
+        )
+    )
+
+
+def _manifest_input_path(
+    manifest: Mapping[str, Any],
+    manifest_path: Path,
+    input_name: str,
+) -> Path | None:
+    inputs = _mapping(manifest.get("inputs"))
+    value = inputs.get(input_name)
+    if not isinstance(value, Mapping):
+        return None
+    raw_path = _text(value.get("path"))
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    if not path.is_absolute():
+        path = manifest_path.parent / path
+    return path.resolve()
 
 
 def _source_manifest_path(config_path: str | Path) -> Path:

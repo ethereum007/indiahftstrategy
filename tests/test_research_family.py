@@ -4,6 +4,7 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
+from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.manifest import (
     file_sha256,
@@ -655,6 +656,40 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         expected_run_type="route_enable_packet",
         require_input_fingerprints=True,
     ).passed
+    pd.DataFrame(
+        [
+            {
+                "exchange": "NFO",
+                "tradingsymbol": "NIFTY_FUT",
+                "transaction_type": "BUY",
+                "quantity": 1,
+                "order_type": "LIMIT",
+                "product": "MIS",
+                "price": 100.0,
+                "validity": "DAY",
+                "client_order_id": "RF-DISPATCH-1",
+                "tag": "prospective_family",
+            }
+        ]
+    ).to_csv(upload_dir / "broker_upload_orders.csv", index=False)
+    dispatch = write_broker_dispatch_plan(
+        route_enable_dir=tmp_path / "route_enable",
+        upload_pack_dir=upload_dir,
+        output_dir=tmp_path / "broker_dispatch",
+        thresholds=BrokerDispatchThresholds(target_mode="shadow"),
+    )
+    assert dispatch.ready
+    assert set(
+        dispatch.dispatch_orders[
+            "route_enable_cutover_runtime_scaleup_research_family_id"
+        ]
+    ) == {"prospective_family"}
+    assert not dispatch.dispatch_orders["authorizes_submission"].astype(bool).any()
+    assert verify_experiment_manifest(
+        tmp_path / "broker_dispatch" / "manifest.json",
+        expected_run_type="broker_dispatch_plan",
+        require_input_fingerprints=True,
+    ).passed
 
     relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
     relabeled_telemetry = runtime_telemetry.telemetry.copy()
@@ -734,6 +769,13 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     assert drifted_cutover.error == "input_drift"
     assert not drifted_route_enable.passed
     assert drifted_route_enable.error == "input_drift"
+    drifted_dispatch = verify_experiment_manifest(
+        tmp_path / "broker_dispatch" / "manifest.json",
+        expected_run_type="broker_dispatch_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_dispatch.passed
+    assert drifted_dispatch.error == "input_drift"
     stale_guard = write_runtime_guard_report(
         scaleup_dir=tmp_path / "scaleup",
         telemetry_path=tmp_path / "runtime_telemetry",
