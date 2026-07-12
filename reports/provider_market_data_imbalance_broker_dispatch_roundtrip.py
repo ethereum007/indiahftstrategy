@@ -14,11 +14,20 @@ from reports.broker_dispatch_roundtrip import (
     write_broker_dispatch_roundtrip,
 )
 from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    broker_dispatch_ack_lineage_fields,
+    empty_broker_dispatch_ack_lineage,
+)
 
 
 PROFILE = "imbalance"
 RUN_TYPE = "provider_market_data_imbalance_broker_dispatch_roundtrip"
 READY_NEXT_GATE = "review-provider-market-data-imbalance-broker-readiness"
+BROKER_DISPATCH_ACK_LINEAGE_COLUMNS = tuple(
+    broker_dispatch_ack_lineage_fields(
+        empty_broker_dispatch_ack_lineage()
+    ).keys()
+)
 
 ACTION_QUEUE_COLUMNS = [
     "priority",
@@ -89,6 +98,7 @@ class ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig:
     require_all_requests_acked: bool = True
     require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
+    require_ack_lineage: bool = False
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
     max_unmatched_acks: int = 0
@@ -318,8 +328,12 @@ def write_provider_market_data_imbalance_broker_dispatch_roundtrip(
         },
         inputs=inputs,
         extra={
+            "authorizes_submission": False,
             "passed": bool(summary_row["passed"]),
             "broker_dispatch_roundtrip_passed": bool(summary_row["broker_dispatch_roundtrip_passed"]),
+            "broker_dispatch_ack_lineage": _broker_dispatch_ack_lineage_config(
+                summary_row
+            ),
             "profile": PROFILE,
             "strategy": str(summary_row["strategy"]),
             "market": str(summary_row["market"]),
@@ -1636,6 +1650,37 @@ def _checks(
     return pd.DataFrame(rows)
 
 
+def _broker_dispatch_ack_lineage_summary_fields(
+    roundtrip_summary: pd.DataFrame,
+) -> dict[str, Any]:
+    defaults = broker_dispatch_ack_lineage_fields(
+        empty_broker_dispatch_ack_lineage()
+    )
+    if roundtrip_summary.empty:
+        return defaults
+    row = roundtrip_summary.iloc[0]
+    fields: dict[str, Any] = {}
+    for column, default in defaults.items():
+        value = row.get(column, default)
+        if isinstance(default, bool):
+            fields[column] = _truthy(value)
+        elif isinstance(default, int):
+            try:
+                fields[column] = int(float(value))
+            except (TypeError, ValueError):
+                fields[column] = default
+        else:
+            fields[column] = _clean(value)
+    return fields
+
+
+def _broker_dispatch_ack_lineage_config(summary: pd.Series) -> dict[str, Any]:
+    return {
+        column: _jsonable(summary.get(column))
+        for column in BROKER_DISPATCH_ACK_LINEAGE_COLUMNS
+    }
+
+
 def _summary(
     provider_root: Path,
     broker_dispatch_dir: Path | None,
@@ -1685,6 +1730,7 @@ def _summary(
     return pd.DataFrame(
         [
             {
+                "authorizes_submission": False,
                 "passed": passed,
                 "ready": passed,
                 "provider_broker_dispatch_ack_passed": _first_bool(provider_summary, "passed"),
@@ -1695,6 +1741,9 @@ def _summary(
                 "broker_dispatch_dir": _path_text(broker_dispatch_dir),
                 "broker_dispatch_send_dir": _path_text(broker_dispatch_send_dir),
                 "broker_dispatch_ack_dir": _path_text(broker_dispatch_ack_dir),
+                **_broker_dispatch_ack_lineage_summary_fields(
+                    roundtrip_summary
+                ),
                 "exchange": _first_text(provider_summary, "exchange"),
                 "source_session_timezone": _first_text(provider_summary, "source_session_timezone"),
                 "source_session_open_local": _first_text(provider_summary, "source_session_open_local"),
@@ -3129,10 +3178,14 @@ def _config(
     dispatch_roundtrip_adapter_execution_contract = _dispatch_roundtrip_adapter_execution_contract(provider_config)
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "passed": bool(summary["passed"]),
         "ready": bool(summary["ready"]),
         "parameters": asdict(config),
         "broker_dispatch_roundtrip_inputs": _jsonable(broker_dispatch_roundtrip_inputs),
+        "broker_dispatch_ack_lineage": _broker_dispatch_ack_lineage_config(
+            summary
+        ),
         "summary": _series_record(summary),
         "exchange": str(summary["exchange"]),
         "source_session": _source_session_contract_from_summary(summary),
@@ -3629,6 +3682,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Acked orders: {summary['acked_orders']}",
         f"- Missing request acks: {summary['missing_request_acks']}",
         f"- Rejected orders: {summary['rejected_orders']}",
+        "- Acknowledgement lineage: "
+        f"{'current' if bool(summary['broker_dispatch_ack_lineage_gate_passed']) else 'blocked'}",
         f"- Capture bundle: {summary['capture_bundle_path'] or 'not provided'}",
         f"- Capture env template: {summary['capture_env_template_path'] or 'not provided'}",
         f"- Adapter handoff: {summary['adapter_handoff_path'] or 'not provided'}",
@@ -3714,6 +3769,7 @@ def _thresholds(
         require_all_requests_acked=config.require_all_requests_acked,
         require_route_readiness=config.require_route_readiness,
         require_dispatch_roundtrip=config.require_dispatch_roundtrip,
+        require_ack_lineage=config.require_ack_lineage,
         allow_rejections=config.allow_rejections,
         max_duplicate_ack_orders=config.max_duplicate_ack_orders,
         max_unmatched_acks=config.max_unmatched_acks,

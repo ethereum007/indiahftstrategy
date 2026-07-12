@@ -81,6 +81,7 @@ class ProviderMarketDataImbalanceBrokerDispatchAckConfig:
     require_all_acked: bool = True
     require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
+    require_send_packet: bool = False
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
     max_unmatched_acks: int = 0
@@ -130,6 +131,15 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         _inferred_broker_dispatch_dir(provider_summary, provider_config),
         config,
     )
+    resolved_broker_dispatch_send_dir = (
+        _inferred_broker_dispatch_send_dir(
+            provider_root,
+            provider_summary,
+            provider_config,
+        )
+        if config.use_provider_broker_dispatch_send_inputs
+        else None
+    )
     inferred_provider_dispatch_roundtrip_dir, inferred_dispatch_roundtrip_dir = _inferred_dispatch_roundtrip_dirs(
         provider_summary,
         provider_config,
@@ -158,6 +168,11 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         try:
             broker_dispatch_ack = write_broker_dispatch_acknowledgements(
                 dispatch_dir=_path_or_empty(resolved_broker_dispatch_dir),
+                send_dir=(
+                    resolved_broker_dispatch_send_dir
+                    if config.require_send_packet
+                    else None
+                ),
                 acks_path=acks,
                 output_dir=broker_dispatch_ack_dir,
                 thresholds=_thresholds(config),
@@ -171,6 +186,7 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
     summary = _summary(
         provider_root,
         resolved_broker_dispatch_dir,
+        resolved_broker_dispatch_send_dir,
         acks,
         inferred_provider_dispatch_roundtrip_dir,
         inferred_dispatch_roundtrip_dir,
@@ -198,6 +214,7 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         {
             "provider_broker_dispatch_send_dir": provider_root,
             "broker_dispatch_dir": resolved_broker_dispatch_dir,
+            "broker_dispatch_send_dir": resolved_broker_dispatch_send_dir,
             "acks_path": acks,
             "provider_dispatch_roundtrip_dir": inferred_provider_dispatch_roundtrip_dir,
             "dispatch_roundtrip_dir": inferred_dispatch_roundtrip_dir,
@@ -224,6 +241,10 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
     }
     if resolved_broker_dispatch_dir is not None:
         inputs["broker_dispatch"] = Path(resolved_broker_dispatch_dir)
+    if resolved_broker_dispatch_send_dir is not None:
+        inputs["broker_dispatch_send"] = Path(
+            resolved_broker_dispatch_send_dir
+        )
     if inferred_provider_dispatch_roundtrip_dir is not None:
         inputs["provider_dispatch_roundtrip"] = Path(inferred_provider_dispatch_roundtrip_dir)
     if inferred_dispatch_roundtrip_dir is not None:
@@ -289,6 +310,7 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         },
         inputs=inputs,
         extra={
+            "authorizes_submission": False,
             "passed": bool(summary_row["passed"]),
             "broker_dispatch_ack_passed": bool(summary_row["broker_dispatch_ack_passed"]),
             "profile": PROFILE,
@@ -1516,6 +1538,7 @@ def _checks(
 def _summary(
     provider_root: Path,
     broker_dispatch_dir: Path | None,
+    broker_dispatch_send_dir: Path | None,
     acks_path: Path,
     provider_dispatch_roundtrip_dir: Path | None,
     dispatch_roundtrip_dir: Path | None,
@@ -1558,12 +1581,16 @@ def _summary(
     return pd.DataFrame(
         [
             {
+                "authorizes_submission": False,
                 "passed": passed,
                 "ready": passed,
                 "provider_broker_dispatch_send_ready": _first_bool(provider_summary, "ready"),
                 "broker_dispatch_ack_passed": bool(broker_dispatch_ack is not None and broker_dispatch_ack.passed),
                 "provider_broker_dispatch_send_dir": str(provider_root),
                 "broker_dispatch_dir": _path_text(broker_dispatch_dir),
+                "broker_dispatch_send_dir": _path_text(
+                    broker_dispatch_send_dir
+                ),
                 "acks_path": str(acks_path),
                 "exchange": _first_text(provider_summary, "exchange"),
                 "source_session_timezone": _first_text(provider_summary, "source_session_timezone"),
@@ -3017,6 +3044,7 @@ def _config(
     )
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "passed": bool(summary["passed"]),
         "ready": bool(summary["ready"]),
         "parameters": asdict(config),
@@ -3505,6 +3533,7 @@ def _thresholds(config: ProviderMarketDataImbalanceBrokerDispatchAckConfig) -> B
         require_all_acked=config.require_all_acked,
         require_route_readiness=config.require_route_readiness,
         require_dispatch_roundtrip=config.require_dispatch_roundtrip,
+        require_send_packet=config.require_send_packet,
         allow_rejections=config.allow_rejections,
         max_duplicate_ack_orders=config.max_duplicate_ack_orders,
         max_unmatched_acks=config.max_unmatched_acks,
@@ -3623,6 +3652,25 @@ def _recommendation_for_check(check: str) -> str:
     if check.startswith("broker_dispatch_ack"):
         return "rerun_generic_broker_ack_reconciliation_with_clean_ack_file"
     return "repair_provider_broker_dispatch_ack_inputs"
+
+
+def _inferred_broker_dispatch_send_dir(
+    provider_root: Path,
+    provider_summary: pd.DataFrame,
+    provider_config: dict[str, Any],
+) -> Path | None:
+    nested_send = provider_config.get("broker_dispatch_send", {}) or {}
+    return _first_existing_path(
+        _path_from_text(
+            _first_text(provider_summary, "broker_dispatch_send_dir")
+        ),
+        _path_from_text(
+            nested_send.get("output_dir")
+            if isinstance(nested_send, dict)
+            else ""
+        ),
+        provider_root / "broker_dispatch_send",
+    )
 
 
 def _inferred_broker_dispatch_dir(

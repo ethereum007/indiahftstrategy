@@ -2667,6 +2667,16 @@
   final order plus round-trip summary/config/manifest, recursive dependencies are
   fingerprinted, output/source overlap is rejected, and the final proof remains
   explicitly non-authorizing.
+- The provider imbalance broker bridge now threads the same proof through
+  `--require-send-packet` on provider acknowledgement,
+  `--require-ack-lineage` on provider final review, and
+  `--require-ack-lineage` on rehearsal certification. Provider final summary,
+  config, runbook, and manifest retain the complete generic acknowledgement
+  lineage; certification requires exact agreement across provider/nested
+  summaries, config, and both manifests, then content-addresses that record in
+  the non-authorizing certificate. A real strict provider chain, both new CLI
+  flags, post-ack drift rejection, legacy compatibility paths, and certificate
+  mismatch rejection pass together (`12 passed`).
 
 ## Test Gate
 
@@ -2676,7 +2686,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1558 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1560 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2812,7 +2822,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1558-test collection is fully green.
+1560-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2821,6 +2831,5 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Require the same acknowledgement lineage in the provider-specific final
-   round-trip wrapper and rehearsal certificate before any provider credential
-   or live broker decision is introduced.
+4. Add an archived-proof migration audit so strict provider send/ack lineage
+   can become the default without silently rejecting older rehearsal bundles.

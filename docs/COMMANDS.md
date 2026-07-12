@@ -6258,6 +6258,7 @@ python -m hft_cli reconcile-provider-market-data-imbalance-broker-dispatch `
   --provider-broker-dispatch-send runs\provider_market_data_imbalance_broker_dispatch_send\arrow_ws_nse_2026_06_23 `
   --acks logs\arrow_ws_nse_dry_run_acks.csv `
   --out runs\provider_market_data_imbalance_broker_dispatch_ack\arrow_ws_nse_2026_06_23 `
+  --require-send-packet `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -6334,6 +6335,11 @@ acknowledgement proof emits a ready
 `review-provider-market-data-imbalance-broker-dispatch-roundtrip`; missing ack
 files, unready send packets, and rejected/duplicate/unmatched acknowledgements
 fail closed before round-trip proof is trusted.
+`--require-send-packet` also resolves the provider wrapper's nested generic
+`broker_dispatch_send` bundle and activates the complete generic send-lineage
+gate. The exact request/envelope/template/dispatch proof is then carried into
+the nested acknowledgement manifest; missing, stale, relabeled, authorizing, or
+source-detached packets block the provider wrapper before final review.
 
 Review the provider-specific dispatch/send/ack round-trip proof:
 
@@ -6341,6 +6347,7 @@ Review the provider-specific dispatch/send/ack round-trip proof:
 python -m hft_cli review-provider-market-data-imbalance-broker-dispatch-roundtrip `
   --provider-broker-dispatch-ack runs\provider_market_data_imbalance_broker_dispatch_ack\arrow_ws_nse_2026_06_23 `
   --out runs\provider_market_data_imbalance_broker_dispatch_roundtrip\arrow_ws_nse_2026_06_23 `
+  --require-ack-lineage `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -6424,6 +6431,13 @@ action and points to `review-provider-market-data-imbalance-broker-readiness`
 so either the provider wrapper root or its nested `broker_dispatch_roundtrip`
 folder can be supplied through `--dispatch-roundtrip` before any provider
 cutover promotion.
+`--require-ack-lineage` activates the generic final-review lineage gate against
+the exact nested dispatch/send/ack directories inferred from provider
+acknowledgement output. The provider summary carries the full
+`broker_dispatch_ack_*` record, the config and manifest bind it under
+`broker_dispatch_ack_lineage`, and the runbook reports whether the source is
+current. Post-ack artifact drift or a different send source blocks provider
+broker-readiness feed and routes back to provider acknowledgement reconciliation.
 
 Issue a compact, content-addressed integrity certificate for the completed
 rehearsal:
@@ -6433,6 +6447,7 @@ python -m hft_cli certify-provider-market-data-imbalance-broker-rehearsal `
   --provider-broker-dispatch-roundtrip runs\provider_market_data_imbalance_broker_dispatch_roundtrip\arrow_ws_nse_2026_06_23 `
   --out runs\provider_market_data_imbalance_broker_rehearsal_certificate\arrow_ws_nse_2026_06_23 `
   --require-sealed-provider-receipts `
+  --require-ack-lineage `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -6448,6 +6463,11 @@ level from generic broker dry-run proof to sealed provider receipt proof and
 blocks providers that have not yet produced receipt/capture evidence. Use
 `--allow-recorded-dirty-git` only for development fixtures; operator sign-off
 should retain the default clean-provenance requirement.
+`--require-ack-lineage` additionally requires the provider summary, nested
+generic round-trip summary, provider config, provider manifest, and nested
+manifest to carry the same complete current acknowledgement-lineage record.
+That record is content-addressed inside the certificate payload and output
+manifest, so acknowledgement relabeling or drift requires certificate reissue.
 
 Outputs:
 

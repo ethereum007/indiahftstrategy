@@ -9,11 +9,18 @@ from typing import Any, Iterable, Mapping
 import pandas as pd
 
 from reports.manifest import file_sha256, write_experiment_manifest
+from reports.operational_lineage import (
+    broker_dispatch_ack_lineage_fields,
+    empty_broker_dispatch_ack_lineage,
+)
 
 
 RUN_TYPE = "provider_market_data_imbalance_broker_rehearsal_certificate"
 SOURCE_RUN_TYPE = "provider_market_data_imbalance_broker_dispatch_roundtrip"
 NESTED_ROUNDTRIP_RUN_TYPE = "broker_dispatch_roundtrip"
+BROKER_DISPATCH_ACK_LINEAGE_DEFAULTS = broker_dispatch_ack_lineage_fields(
+    empty_broker_dispatch_ack_lineage()
+)
 READY_NEXT_GATE = "review-provider-market-data-imbalance-broker-readiness"
 REPAIR_ROUNDTRIP_GATE = "review-provider-market-data-imbalance-broker-dispatch-roundtrip"
 
@@ -77,6 +84,7 @@ class ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig:
     allowed_target_modes: tuple[str, ...] = SAFE_TARGET_MODES
     require_clean_recorded_git: bool = True
     require_sealed_provider_receipts: bool = False
+    require_ack_lineage: bool = False
     max_manifest_count: int = 64
 
 
@@ -238,6 +246,9 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
             "ready": valid,
             "valid": valid,
             "authorizes_submission": False,
+            "broker_dispatch_ack_lineage": certificate["payload"][
+                "broker_dispatch_ack_lineage"
+            ],
             "digitally_signed": False,
             "cycle_id": certificate["cycle_id"],
             "certificate_sha256": certificate["certificate_sha256"],
@@ -377,6 +388,16 @@ def _certificate_checks(
     )
 
     rows.extend(_identity_checks(source_row, nested_row, source_config, source_manifest))
+    rows.extend(
+        _ack_lineage_checks(
+            source_row=source_row,
+            nested_row=nested_row,
+            source_config=source_config,
+            source_manifest=source_manifest,
+            nested_manifest=nested_manifest,
+            required=config.require_ack_lineage,
+        )
+    )
     rows.extend(_strict_roundtrip_checks(nested_checks, nested_row))
     rows.extend(_acknowledgement_checks(source_row, nested_row))
     rows.extend(_receipt_checks(source_row, config))
@@ -489,6 +510,129 @@ def _identity_checks(
             )
         )
     return rows
+
+
+def _ack_lineage_checks(
+    *,
+    source_row: pd.Series,
+    nested_row: pd.Series,
+    source_config: dict[str, Any],
+    source_manifest: dict[str, Any],
+    nested_manifest: dict[str, Any],
+    required: bool,
+) -> list[dict[str, Any]]:
+    source = _ack_lineage_record(source_row)
+    nested = _ack_lineage_record(nested_row)
+    config = _ack_lineage_record(
+        _mapping(source_config.get("broker_dispatch_ack_lineage"))
+    )
+    source_manifest_record = _ack_lineage_record(
+        _mapping(
+            _mapping(source_manifest.get("extra")).get(
+                "broker_dispatch_ack_lineage"
+            )
+        )
+    )
+    nested_manifest_record = _ack_lineage_record(
+        _mapping(nested_manifest.get("extra"))
+    )
+    required_true_fields = (
+        "broker_dispatch_ack_lineage_required",
+        "broker_dispatch_ack_lineage_provided",
+        "broker_dispatch_ack_manifest_current",
+        "broker_dispatch_ack_lineage_contract_consistent",
+        "broker_dispatch_ack_non_authorizing",
+        "broker_dispatch_ack_send_lineage_gate_passed",
+        "broker_dispatch_ack_send_matches_current",
+        "broker_dispatch_ack_expected_send_matches_current",
+        "broker_dispatch_ack_lineage_gate_passed",
+    )
+    source_current = all(_bool(source.get(field)) for field in required_true_fields)
+    nested_current = all(_bool(nested.get(field)) for field in required_true_fields)
+    manifest_identity_present = bool(
+        _text_value(source.get("broker_dispatch_ack_manifest_path"))
+        and _text_value(source.get("broker_dispatch_ack_manifest_sha256"))
+    )
+    return [
+        _check(
+            "ack_lineage_source_current",
+            source_current,
+            "is",
+            True,
+            "ack_lineage",
+            "provider final roundtrip does not retain current acknowledgement lineage",
+            required=required,
+        ),
+        _check(
+            "ack_lineage_nested_current",
+            nested_current,
+            "is",
+            True,
+            "ack_lineage",
+            "nested broker roundtrip does not retain current acknowledgement lineage",
+            required=required,
+        ),
+        _check(
+            "ack_lineage_manifest_identity_present",
+            manifest_identity_present,
+            "is",
+            True,
+            "ack_lineage",
+            "acknowledgement lineage manifest path or SHA-256 is missing",
+            required=required,
+        ),
+        _check(
+            "ack_lineage_matches_nested_roundtrip",
+            source == nested,
+            "is",
+            True,
+            "ack_lineage",
+            "provider and nested roundtrip acknowledgement lineage differ",
+            required=required,
+        ),
+        _check(
+            "ack_lineage_matches_source_config",
+            source == config,
+            "is",
+            True,
+            "ack_lineage",
+            "provider summary and config acknowledgement lineage differ",
+            required=required,
+        ),
+        _check(
+            "ack_lineage_matches_source_manifest",
+            source == source_manifest_record,
+            "is",
+            True,
+            "ack_lineage",
+            "provider summary and manifest acknowledgement lineage differ",
+            required=required,
+        ),
+        _check(
+            "ack_lineage_matches_nested_manifest",
+            source == nested_manifest_record,
+            "is",
+            True,
+            "ack_lineage",
+            "provider summary and nested manifest acknowledgement lineage differ",
+            required=required,
+        ),
+    ]
+
+
+def _ack_lineage_record(
+    value: pd.Series | Mapping[str, Any],
+) -> dict[str, Any]:
+    record: dict[str, Any] = {}
+    for column, default in BROKER_DISPATCH_ACK_LINEAGE_DEFAULTS.items():
+        raw = value.get(column, default)
+        if isinstance(default, bool):
+            record[column] = _bool(raw)
+        elif isinstance(default, int):
+            record[column] = _integer(raw)
+        else:
+            record[column] = _text_value(raw)
+    return record
 
 
 def _strict_roundtrip_checks(
@@ -973,6 +1117,7 @@ def _certificate_payload(
             "duplicate_ack_orders": _integer(source_row.get("duplicate_ack_orders", 0)),
             "unmatched_acks": _integer(source_row.get("unmatched_acks", 0)),
         },
+        "broker_dispatch_ack_lineage": _ack_lineage_record(source_row),
         "provider_receipts": {
             "required": _bool(
                 source_row.get("dispatch_roundtrip_adapter_receipts_required", False)
@@ -1049,6 +1194,7 @@ def _summary(
     failed = int((~checks["passed"].astype(bool)).sum()) if not checks.empty else 1
     payload = _mapping(certificate.get("payload"))
     receipts = _mapping(payload.get("provider_receipts"))
+    ack_lineage = _mapping(payload.get("broker_dispatch_ack_lineage"))
     return pd.DataFrame(
         [
             {
@@ -1080,6 +1226,18 @@ def _summary(
                 "rejected_orders": _integer(source_row.get("rejected_orders", 0)),
                 "duplicate_ack_orders": _integer(source_row.get("duplicate_ack_orders", 0)),
                 "unmatched_acks": _integer(source_row.get("unmatched_acks", 0)),
+                "broker_dispatch_ack_lineage_required": _bool(
+                    ack_lineage.get("broker_dispatch_ack_lineage_required", False)
+                ),
+                "broker_dispatch_ack_manifest_current": _bool(
+                    ack_lineage.get("broker_dispatch_ack_manifest_current", False)
+                ),
+                "broker_dispatch_ack_manifest_sha256": _text_value(
+                    ack_lineage.get("broker_dispatch_ack_manifest_sha256", "")
+                ),
+                "broker_dispatch_ack_lineage_gate_passed": _bool(
+                    ack_lineage.get("broker_dispatch_ack_lineage_gate_passed", False)
+                ),
                 "provider_receipts_required": _bool(receipts.get("required", False)),
                 "provider_receipt_required_count": _integer(receipts.get("required_count", 0)),
                 "provider_receipt_valid_count": _integer(receipts.get("valid_count", 0)),
@@ -1164,6 +1322,8 @@ def _runbook_markdown(
         "- Digitally signed: **no** (content integrity only)",
         f"- Identity: `{summary['strategy']}` / `{summary['market']}` / `{summary['target_mode']}`",
         f"- Acknowledgements: {int(summary['acked_orders'])}/{int(summary['send_requests'])} accepted",
+        "- Acknowledgement lineage: "
+        f"{'current' if bool(summary['broker_dispatch_ack_lineage_gate_passed']) else 'not required or blocked'}",
         f"- Manifest chain: {int(summary['manifest_count'])} manifests, {int(summary['fingerprint_match_count'])}/{int(summary['fingerprint_count'])} fingerprints current",
         f"- Next gate: `{summary['next_gate']}`",
         f"- Next gate help: `{summary['next_gate_help_command']}`",

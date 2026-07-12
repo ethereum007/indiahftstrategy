@@ -5,7 +5,11 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import write_experiment_manifest
+from reports.manifest import file_sha256, write_experiment_manifest
+from reports.operational_lineage import (
+    broker_dispatch_ack_lineage_fields,
+    empty_broker_dispatch_ack_lineage,
+)
 from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
@@ -193,12 +197,80 @@ def test_broker_rehearsal_certificate_cli(tmp_path):
     assert not bool(summary["authorizes_submission"])
 
 
+def test_broker_rehearsal_certificate_requires_ack_lineage(tmp_path):
+    source = _write_roundtrip_fixture(
+        tmp_path,
+        sealed_receipts=True,
+        ack_lineage=True,
+    )
+    output = tmp_path / "certificate_ack_lineage"
+
+    status = main(
+        [
+            "certify-provider-market-data-imbalance-broker-rehearsal",
+            "--provider-broker-dispatch-roundtrip",
+            str(source),
+            "--out",
+            str(output),
+            "--require-sealed-provider-receipts",
+            "--require-ack-lineage",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert status == 0
+    summary = pd.read_csv(
+        output
+        / "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv"
+    ).iloc[0]
+    certificate = json.loads(
+        (
+            output
+            / "provider_market_data_imbalance_broker_rehearsal_certificate.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert bool(summary["ready"])
+    assert bool(summary["broker_dispatch_ack_lineage_gate_passed"])
+    assert certificate["payload"]["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_lineage_gate_passed"
+    ]
+
+    config_path = (
+        source
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+    )
+    source_config = json.loads(config_path.read_text(encoding="utf-8"))
+    source_config["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_lineage_gate_passed"
+    ] = False
+    config_path.write_text(
+        json.dumps(source_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    drifted = write_provider_market_data_imbalance_broker_rehearsal_certificate(
+        source,
+        tmp_path / "certificate_ack_lineage_drift",
+        config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+            require_sealed_provider_receipts=True,
+            require_ack_lineage=True,
+        ),
+    )
+    failed = set(
+        drifted.checks.loc[
+            ~drifted.checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not drifted.ready
+    assert "ack_lineage_matches_source_config" in failed
+
+
 def _write_roundtrip_fixture(
     tmp_path: Path,
     *,
     sealed_receipts: bool,
     submission_enabled: bool = False,
     relaxed_request_count: bool = False,
+    ack_lineage: bool = False,
 ) -> Path:
     components = tmp_path / "components"
     dispatch = _write_component(components / "dispatch", "broker_dispatch_plan", "dispatch.csv")
@@ -208,6 +280,31 @@ def _write_roundtrip_fixture(
         "broker_dispatch_ack_reconciliation",
         "ack.csv",
     )
+    ack_lineage_fields = broker_dispatch_ack_lineage_fields(
+        empty_broker_dispatch_ack_lineage(required=ack_lineage)
+    )
+    if ack_lineage:
+        ack_lineage_fields.update(
+            {
+                column: True
+                for column, value in ack_lineage_fields.items()
+                if isinstance(value, bool)
+            }
+        )
+        ack_lineage_fields.update(
+            {
+                "broker_dispatch_ack_manifest_run_type": (
+                    "broker_dispatch_ack_reconciliation"
+                ),
+                "broker_dispatch_ack_manifest_path": str(
+                    (ack / "manifest.json").resolve()
+                ),
+                "broker_dispatch_ack_manifest_sha256": file_sha256(
+                    ack / "manifest.json"
+                ),
+                "broker_dispatch_ack_manifest_error": "",
+            }
+        )
 
     source = tmp_path / "provider_roundtrip"
     nested = source / "broker_dispatch_roundtrip"
@@ -229,6 +326,7 @@ def _write_roundtrip_fixture(
         "unmatched_acks": 0,
         "total_failed_component_checks": 0,
         "failed_checks": 0,
+        **ack_lineage_fields,
     }
     pd.DataFrame([nested_summary]).to_csv(
         nested / "broker_dispatch_roundtrip_summary.csv",
@@ -247,7 +345,12 @@ def _write_roundtrip_fixture(
         nested,
         run_type="broker_dispatch_roundtrip",
         inputs={"dispatch": dispatch, "send": send, "ack": ack},
-        extra={"passed": True, "strategy": "microprice_imbalance", "market": "india"},
+        extra={
+            "passed": True,
+            "strategy": "microprice_imbalance",
+            "market": "india",
+            **ack_lineage_fields,
+        },
     )
     _mark_manifest_clean(nested / "manifest.json")
 
@@ -290,6 +393,7 @@ def _write_roundtrip_fixture(
         "dispatch_roundtrip_adapter_receipt_proof_matches_runtime_session": sealed_receipts,
         "dispatch_roundtrip_provider_profile_sha256": "a" * 64,
         "failed_checks": 0,
+        **ack_lineage_fields,
     }
     pd.DataFrame([source_summary]).to_csv(
         source / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
@@ -316,6 +420,7 @@ def _write_roundtrip_fixture(
         "ready": True,
         "summary": source_summary,
         "provider_profile": {"adapter": "arrow_ws", "sha256": "a" * 64},
+        "broker_dispatch_ack_lineage": ack_lineage_fields,
     }
     (source / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json").write_text(
         json.dumps(source_config, indent=2, sort_keys=True) + "\n",
@@ -339,6 +444,7 @@ def _write_roundtrip_fixture(
             "strategy": "microprice_imbalance",
             "market": "india",
             "exchange": "NSE",
+            "broker_dispatch_ack_lineage": ack_lineage_fields,
         },
     )
     _mark_manifest_clean(source / "manifest.json")

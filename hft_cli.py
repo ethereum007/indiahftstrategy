@@ -1889,6 +1889,10 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--require-route-readiness", action="store_true")
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--require-dispatch-roundtrip", action="store_true")
     provider_market_data_imbalance_broker_dispatch_ack.add_argument(
+        "--require-send-packet",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_ack.add_argument(
         "--no-use-provider-broker-dispatch-send-inputs",
         action="store_true",
     )
@@ -1955,6 +1959,10 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+        "--require-ack-lineage",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
         "--no-use-provider-broker-dispatch-ack-inputs",
         action="store_true",
     )
@@ -1992,6 +2000,10 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument("--out", required=True)
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
         "--require-sealed-provider-receipts",
+        action="store_true",
+    )
+    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--require-ack-lineage",
         action="store_true",
     )
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
@@ -5433,6 +5445,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_all_acked=not args.allow_missing_acks,
                 require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                require_send_packet=args.require_send_packet,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,
@@ -5471,6 +5484,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_all_requests_acked=not args.allow_missing_request_acks,
                 require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                require_ack_lineage=args.require_ack_lineage,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,
@@ -5498,6 +5512,7 @@ def main(argv: list[str] | None = None) -> int:
             config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
                 require_clean_recorded_git=not args.allow_recorded_dirty_git,
                 require_sealed_provider_receipts=args.require_sealed_provider_receipts,
+                require_ack_lineage=args.require_ack_lineage,
                 max_manifest_count=args.max_manifests,
             ),
         )

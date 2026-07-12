@@ -78,6 +78,10 @@ from reports.provider_market_data_imbalance_broker_dispatch_roundtrip import (
     ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
     write_provider_market_data_imbalance_broker_dispatch_roundtrip,
 )
+from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
+    ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
+    write_provider_market_data_imbalance_broker_rehearsal_certificate,
+)
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
     write_provider_market_data_live_capture_bundle,
@@ -736,23 +740,38 @@ def _inject_nested_roundtrip_vendor_market_data_batch(provider_ack):
         )
 
 
-def _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path):
+def _write_ready_provider_imbalance_broker_dispatch_ack(
+    tmp_path,
+    *,
+    require_send_packet=False,
+):
     provider_send = _write_ready_provider_imbalance_broker_dispatch_send(tmp_path)
     acks_path = _write_provider_imbalance_accepted_ack_file(provider_send, tmp_path / "provider_imbalance_acks.csv")
     return write_provider_market_data_imbalance_broker_dispatch_ack(
         provider_send.output_dir,
         acks_path,
         tmp_path / "provider_imbalance_broker_dispatch_ack",
-        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(),
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(
+            require_send_packet=require_send_packet
+        ),
     )
 
 
-def _write_ready_provider_imbalance_broker_dispatch_roundtrip(tmp_path):
-    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(tmp_path)
+def _write_ready_provider_imbalance_broker_dispatch_roundtrip(
+    tmp_path,
+    *,
+    require_ack_lineage=False,
+):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(
+        tmp_path,
+        require_send_packet=require_ack_lineage,
+    )
     return write_provider_market_data_imbalance_broker_dispatch_roundtrip(
         provider_ack.output_dir,
         tmp_path / "provider_imbalance_broker_dispatch_roundtrip",
-        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(),
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+            require_ack_lineage=require_ack_lineage
+        ),
     )
 
 
@@ -31313,6 +31332,139 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_ready_
         manifest["extra"]["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
         == 0
     )
+
+
+def test_provider_market_data_imbalance_broker_dispatch_roundtrip_requires_ack_lineage(
+    tmp_path,
+):
+    provider_ack = _write_ready_provider_imbalance_broker_dispatch_ack(
+        tmp_path,
+        require_send_packet=True,
+    )
+    provider_ack_summary = provider_ack.summary.iloc[0]
+    generic_ack_dir = Path(provider_ack_summary["broker_dispatch_ack_dir"])
+    generic_ack_summary = pd.read_csv(
+        generic_ack_dir / "broker_dispatch_ack_summary.csv"
+    )
+    assert bool(
+        generic_ack_summary.loc[
+            0, "broker_dispatch_send_lineage_gate_passed"
+        ]
+    )
+
+    out_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip_strict"
+    report = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        out_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+            require_ack_lineage=True
+        ),
+    )
+
+    summary = pd.read_csv(
+        out_dir
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    config = json.loads(
+        (
+            out_dir
+            / "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+        ).read_text(encoding="utf-8")
+    )
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert report.passed
+    assert bool(summary.loc[0, "broker_dispatch_ack_lineage_gate_passed"])
+    assert not bool(summary.loc[0, "authorizes_submission"])
+    assert config["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_lineage_gate_passed"
+    ]
+    assert not config["authorizes_submission"]
+    assert manifest["extra"]["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_lineage_gate_passed"
+    ]
+    assert manifest["extra"]["authorizes_submission"] is False
+
+    provider_ack_cli_dir = tmp_path / "provider_imbalance_broker_dispatch_ack_cli"
+    ack_cli_code = main(
+        [
+            "reconcile-provider-market-data-imbalance-broker-dispatch",
+            "--provider-broker-dispatch-send",
+            str(provider_ack_summary["provider_broker_dispatch_send_dir"]),
+            "--acks",
+            str(provider_ack_summary["acks_path"]),
+            "--out",
+            str(provider_ack_cli_dir),
+            "--require-send-packet",
+            "--fail-on-breach",
+        ]
+    )
+    assert ack_cli_code == 0
+    roundtrip_cli_dir = (
+        tmp_path / "provider_imbalance_broker_dispatch_roundtrip_cli"
+    )
+    roundtrip_cli_code = main(
+        [
+            "review-provider-market-data-imbalance-broker-dispatch-roundtrip",
+            "--provider-broker-dispatch-ack",
+            str(provider_ack_cli_dir),
+            "--out",
+            str(roundtrip_cli_dir),
+            "--require-ack-lineage",
+            "--fail-on-breach",
+        ]
+    )
+    assert roundtrip_cli_code == 0
+    cli_summary = pd.read_csv(
+        roundtrip_cli_dir
+        / "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+    )
+    assert bool(cli_summary.loc[0, "broker_dispatch_ack_lineage_gate_passed"])
+    certificate = write_provider_market_data_imbalance_broker_rehearsal_certificate(
+        out_dir,
+        tmp_path / "provider_imbalance_broker_rehearsal_certificate_strict",
+        config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+            require_clean_recorded_git=False,
+            require_ack_lineage=True,
+            max_manifest_count=128,
+        ),
+    )
+    assert certificate.ready
+    assert certificate.certificate["payload"]["broker_dispatch_ack_lineage"][
+        "broker_dispatch_ack_lineage_gate_passed"
+    ]
+
+    generic_ack_summary_path = (
+        generic_ack_dir / "broker_dispatch_ack_summary.csv"
+    )
+    generic_ack_summary_path.write_text(
+        generic_ack_summary_path.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted_dir = tmp_path / "provider_imbalance_broker_dispatch_roundtrip_drift"
+    drifted = write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        provider_ack.output_dir,
+        drifted_dir,
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+            require_ack_lineage=True
+        ),
+    )
+    nested_checks = pd.read_csv(
+        drifted_dir
+        / "broker_dispatch_roundtrip"
+        / "broker_dispatch_roundtrip_checks.csv"
+    )
+    failed = set(
+        nested_checks.loc[
+            ~nested_checks["passed"].astype(bool), "check"
+        ]
+    )
+    assert not drifted.passed
+    assert {
+        "broker_dispatch_ack_manifest_current",
+        "broker_dispatch_ack_lineage_gate_passed",
+    } <= failed
 
 
 def test_provider_market_data_imbalance_broker_dispatch_roundtrip_carries_capture_bundle_provenance(tmp_path):
