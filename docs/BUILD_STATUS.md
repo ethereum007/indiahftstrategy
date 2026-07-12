@@ -2685,6 +2685,14 @@
   default so archived fixture regeneration remains controlled. Default strict
   rejection, explicit legacy acceptance, explicit strict acceptance, and all
   certificate integrity paths pass together (`8 passed`).
+- Provider final round-trip CLI review now also requires complete current
+  acknowledgement lineage by default. Explicit `--require-ack-lineage` scripts
+  remain valid, while `--allow-legacy-ack-lineage` makes compatibility use
+  visible and auditable. The strict default traverses the real provider
+  acknowledgement into generic dispatch/send/ack proof; focused strict,
+  blocked-ack compatibility, and clean legacy-sidecar cases pass together
+  (`3 passed`). Existing multi-scenario legacy fixtures now declare their
+  override rather than inheriting a permissive default.
 - Archived provider broker proofs can now be assessed with
   `audit-provider-market-data-imbalance-broker-lineage-migration` before strict
   acknowledgement lineage becomes a default. The read-only audit discovers
@@ -2857,6 +2865,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Promote provider acknowledgement and final-round-trip CLI lineage checks to
-   strict-by-default with explicit legacy overrides, gated by a 100%-covered,
+4. Promote provider acknowledgement CLI send-lineage checks to
+   strict-by-default with an explicit legacy override, gated by a 100%-covered,
    zero-blocker migration audit once retained production provider proofs exist.

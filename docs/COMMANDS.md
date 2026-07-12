@@ -6431,13 +6431,17 @@ action and points to `review-provider-market-data-imbalance-broker-readiness`
 so either the provider wrapper root or its nested `broker_dispatch_roundtrip`
 folder can be supplied through `--dispatch-roundtrip` before any provider
 cutover promotion.
-`--require-ack-lineage` activates the generic final-review lineage gate against
-the exact nested dispatch/send/ack directories inferred from provider
-acknowledgement output. The provider summary carries the full
+Provider final round-trip review now activates the acknowledgement-lineage gate
+by default against the exact nested dispatch/send/ack directories inferred from
+provider acknowledgement output. The explicit `--require-ack-lineage` flag
+remains accepted for readable scripts. The provider summary carries the full
 `broker_dispatch_ack_*` record, the config and manifest bind it under
 `broker_dispatch_ack_lineage`, and the runbook reports whether the source is
 current. Post-ack artifact drift or a different send source blocks provider
 broker-readiness feed and routes back to provider acknowledgement reconciliation.
+`--allow-legacy-ack-lineage` is limited to historical acknowledgement bundles
+already classified by the lineage migration audit; new reviews should retain
+the strict default.
 
 Issue a compact, content-addressed integrity certificate for the completed
 rehearsal:

@@ -10280,6 +10280,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_out),
             "--out",
             str(roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -10386,6 +10387,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_roundtrip_route_enable_out),
             "--out",
             str(roundtrip_route_enable_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -10498,6 +10500,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_second_roundtrip_out),
             "--out",
             str(roundtrip_second_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -10610,6 +10613,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_third_roundtrip_out),
             "--out",
             str(roundtrip_third_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -10722,6 +10726,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_fourth_roundtrip_out),
             "--out",
             str(roundtrip_fourth_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -10834,6 +10839,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_fifth_roundtrip_out),
             "--out",
             str(roundtrip_fifth_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -10946,6 +10952,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_sixth_roundtrip_out),
             "--out",
             str(roundtrip_sixth_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -11058,6 +11065,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_seventh_roundtrip_out),
             "--out",
             str(roundtrip_seventh_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -11170,6 +11178,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_eighth_roundtrip_out),
             "--out",
             str(roundtrip_eighth_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -11282,6 +11291,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_ninth_roundtrip_out),
             "--out",
             str(roundtrip_ninth_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -11394,6 +11404,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_tenth_roundtrip_out),
             "--out",
             str(roundtrip_tenth_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -11506,6 +11517,7 @@ def test_cli_provider_market_data_imbalance_broker_readiness_accepts_clean_round
             str(ack_eleventh_roundtrip_out),
             "--out",
             str(roundtrip_eleventh_roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -31411,7 +31423,6 @@ def test_provider_market_data_imbalance_broker_dispatch_roundtrip_requires_ack_l
             str(provider_ack_cli_dir),
             "--out",
             str(roundtrip_cli_dir),
-            "--require-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -34271,6 +34282,7 @@ def test_cli_provider_market_data_imbalance_broker_dispatch_roundtrip_blocks_unr
             str(ack_dir),
             "--out",
             str(out_dir),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -34461,6 +34473,7 @@ def test_cli_provider_market_data_imbalance_broker_dispatch_roundtrip_accepts_cl
             str(ack_out),
             "--out",
             str(roundtrip_out),
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )

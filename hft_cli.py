@@ -1962,9 +1962,20 @@ def main(argv: list[str] | None = None) -> int:
         "--require-dispatch-roundtrip",
         action="store_true",
     )
-    provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
+    provider_roundtrip_ack_lineage = (
+        provider_market_data_imbalance_broker_dispatch_roundtrip.add_mutually_exclusive_group()
+    )
+    provider_roundtrip_ack_lineage.add_argument(
         "--require-ack-lineage",
         action="store_true",
+        default=True,
+        help="Require complete current acknowledgement lineage (default).",
+    )
+    provider_roundtrip_ack_lineage.add_argument(
+        "--allow-legacy-ack-lineage",
+        dest="require_ack_lineage",
+        action="store_false",
+        help="Allow an audited legacy acknowledgement without strict lineage.",
     )
     provider_market_data_imbalance_broker_dispatch_roundtrip.add_argument(
         "--no-use-provider-broker-dispatch-ack-inputs",
