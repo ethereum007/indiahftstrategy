@@ -6580,6 +6580,52 @@ manifest.json
 Every migration artifact sets `authorizes_submission=false`; the generated
 commands only rebuild offline proof bundles and cannot enable broker routing.
 
+After legacy overrides have produced retained acknowledgement, round-trip, or
+certificate proofs, review the accepted audit usage as an independent aggregate
+policy gate:
+
+```powershell
+python -m hft_cli review-provider-market-data-imbalance-broker-lineage-audit-usage `
+  --roots runs\provider_market_data_imbalance_broker_dispatch_ack `
+          runs\provider_market_data_imbalance_broker_dispatch_roundtrip `
+          runs\provider_market_data_imbalance_broker_rehearsal_certificate `
+  --out runs\provider_broker_lineage_audit_usage\2026_07_12 `
+  --max-unaudited-legacy-bundles 0 `
+  --max-drifted-audit-bundles 0 `
+  --max-strict-with-audit-bundles 0 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The review distinguishes `strict_ready`, `audited_legacy_ready`,
+`unaudited_legacy`, `audited_legacy_drifted`, `proof_manifest_drifted`, and
+`strict_with_audit`. For every accepted legacy proof it requires the summary,
+config or certificate payload, and manifest metadata to contain identical audit
+evidence, then reruns the exact-source migration-audit verifier against the
+current audit, source, and strict replacement. An operationally blocked proof
+can still have current lineage evidence; this report deliberately evaluates the
+lineage retention policy rather than replacing the proof's own readiness gate.
+The defaults permit no unaudited legacy proof, no drift, and no migration audit
+attached to an already-strict proof. `--no-recursive` limits discovery to roots
+that directly contain a target manifest.
+
+Outputs:
+
+```text
+provider_broker_lineage_audit_usage_inventory.csv
+provider_broker_lineage_audit_usage_checks.csv
+provider_broker_lineage_audit_usage_summary.csv
+provider_broker_lineage_audit_usage_action_queue.csv
+provider_broker_lineage_audit_usage_config.json
+provider_broker_lineage_audit_usage_runbook.md
+manifest.json
+```
+
+The aggregate manifest fingerprints every reviewed bundle, proof manifest, and
+recursively manifested dependency. Later provider-source, accepted-audit, or
+strict-replacement drift invalidates the review artifact. The report and all of
+its actions remain non-authorizing.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

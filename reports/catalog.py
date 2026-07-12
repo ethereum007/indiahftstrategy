@@ -98,6 +98,7 @@ SUMMARY_FILES = [
     "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv",
     "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv",
     "provider_broker_lineage_migration_summary.csv",
+    "provider_broker_lineage_audit_usage_summary.csv",
     "halt_response_summary.csv",
     "halt_response_export_summary.csv",
     "halt_execution_summary.csv",

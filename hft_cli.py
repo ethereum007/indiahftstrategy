@@ -235,6 +235,10 @@ from reports.provider_market_data_imbalance_broker_lineage_migration import (
     verify_provider_broker_lineage_migration_audit,
     write_provider_broker_lineage_migration_audit,
 )
+from reports.provider_market_data_imbalance_broker_lineage_audit_usage import (
+    ProviderBrokerLineageAuditUsageConfig,
+    write_provider_broker_lineage_audit_usage_review,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -2122,6 +2126,56 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     provider_broker_lineage_migration.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
+
+    provider_broker_lineage_audit_usage = sub.add_parser(
+        "review-provider-market-data-imbalance-broker-lineage-audit-usage",
+        help=(
+            "Review retained provider proofs for current strict lineage or "
+            "current exact-source legacy migration-audit coverage."
+        ),
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--roots",
+        nargs="+",
+        required=True,
+    )
+    provider_broker_lineage_audit_usage.add_argument("--out", required=True)
+    provider_broker_lineage_audit_usage.add_argument(
+        "--no-recursive",
+        action="store_true",
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--max-bundles",
+        type=int,
+        default=1000,
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--max-unaudited-legacy-bundles",
+        type=int,
+        default=0,
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--max-drifted-audit-bundles",
+        type=int,
+        default=0,
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--max-strict-with-audit-bundles",
+        type=int,
+        default=0,
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_broker_lineage_audit_usage.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_broker_lineage_audit_usage.add_argument(
         "--fail-on-actions",
         action="store_true",
     )
@@ -5663,6 +5717,44 @@ def main(argv: list[str] | None = None) -> int:
                 max_bundles=args.max_bundles,
                 max_blocked_bundles=args.max_blocked_bundles,
                 min_strict_ready_coverage=args.min_strict_ready_coverage,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                (
+                    result.action_queue["queue_status"].astype(str)
+                    == "blocked"
+                ).sum()
+            )
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if (
+        args.command
+        == "review-provider-market-data-imbalance-broker-lineage-audit-usage"
+    ):
+        result = write_provider_broker_lineage_audit_usage_review(
+            args.roots,
+            args.out,
+            config=ProviderBrokerLineageAuditUsageConfig(
+                recursive=not args.no_recursive,
+                max_bundles=args.max_bundles,
+                max_unaudited_legacy_bundles=(
+                    args.max_unaudited_legacy_bundles
+                ),
+                max_drifted_audit_bundles=(
+                    args.max_drifted_audit_bundles
+                ),
+                max_strict_with_audit_bundles=(
+                    args.max_strict_with_audit_bundles
+                ),
             ),
         )
         print(result.summary.to_string(index=False))

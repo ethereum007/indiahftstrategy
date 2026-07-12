@@ -34,6 +34,9 @@ from reports.provider_market_data_imbalance_broker_lineage_migration import (
     verify_provider_broker_lineage_migration_audit,
     write_provider_broker_lineage_migration_audit,
 )
+from reports.provider_market_data_imbalance_broker_lineage_audit_usage import (
+    write_provider_broker_lineage_audit_usage_review,
+)
 from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
@@ -518,6 +521,169 @@ def test_provider_legacy_outputs_surface_lineage_migration_audit(
     assert bool(catalog["summary_lineage_migration_audit_source_covered"])
 
 
+def test_lineage_audit_usage_review_accepts_strict_archive_and_catalogs_report(
+    tmp_path,
+):
+    chain = _write_provider_chain(tmp_path / "strict_archive", strict=True)
+    output = tmp_path / "strict_usage_review"
+
+    report = write_provider_broker_lineage_audit_usage_review(
+        [chain["root"]],
+        output,
+    )
+
+    assert report.ready
+    assert len(report.inventory) == 3
+    assert set(report.inventory["usage_status"]) == {"strict_ready"}
+    assert report.action_queue.empty
+    assert int(report.summary.iloc[0]["strict_ready_bundles"]) == 3
+    assert not bool(report.summary.iloc[0]["authorizes_submission"])
+    assert verify_experiment_manifest(
+        output / "manifest.json",
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_audit_usage_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+    catalog = catalog_experiment_runs([output]).catalog.iloc[0]
+    assert bool(catalog["summary_status"])
+    assert int(catalog["summary_strict_ready_bundles"]) == 3
+
+
+def test_lineage_audit_usage_review_blocks_unaudited_legacy_and_cli_exits(
+    tmp_path,
+):
+    chain = _write_provider_chain(tmp_path / "legacy_archive", strict=False)
+    output = tmp_path / "legacy_usage_review"
+
+    report = write_provider_broker_lineage_audit_usage_review(
+        [chain["root"]],
+        output,
+    )
+
+    assert not report.ready
+    assert set(report.inventory["usage_status"]) == {"unaudited_legacy"}
+    assert int(report.summary.iloc[0]["unaudited_legacy_bundles"]) == 3
+    assert len(report.action_queue) == 3
+    assert set(report.action_queue["queue_status"]) == {"blocked"}
+    assert (
+        main(
+            [
+                "review-provider-market-data-imbalance-broker-lineage-audit-usage",
+                "--roots",
+                str(chain["ack"]),
+                "--out",
+                str(tmp_path / "legacy_usage_cli"),
+                "--no-recursive",
+                "--fail-on-breach",
+            ]
+        )
+        == 2
+    )
+
+
+def test_lineage_audit_usage_review_accepts_current_audited_legacy_proofs(
+    tmp_path,
+):
+    legacy, _, outputs = _write_audited_legacy_provider_outputs(tmp_path)
+    output = tmp_path / "audited_legacy_usage_review"
+
+    report = write_provider_broker_lineage_audit_usage_review(
+        list(outputs.values()),
+        output,
+        config=None,
+    )
+
+    assert report.ready
+    assert len(report.inventory) == 3
+    assert set(report.inventory["usage_status"]) == {
+        "audited_legacy_ready"
+    }
+    assert report.inventory["stored_evidence_consistent"].astype(bool).all()
+    assert report.inventory["current_evidence_matches_stored"].astype(bool).all()
+    assert int(report.summary.iloc[0]["audited_legacy_ready_bundles"]) == 3
+    assert int(report.summary.iloc[0]["dependency_count"]) > 3
+    assert report.action_queue.empty
+    manifest_path = output / "manifest.json"
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_audit_usage_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+
+    (legacy["provider_send"] / "proof.txt").write_text(
+        "changed after aggregate review\n",
+        encoding="utf-8",
+    )
+    assert not verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=(
+            "provider_market_data_imbalance_broker_lineage_audit_usage_review"
+        ),
+        require_input_fingerprints=True,
+    ).passed
+
+
+def test_lineage_audit_usage_review_detects_post_acceptance_drift(tmp_path):
+    legacy, _, outputs = _write_audited_legacy_provider_outputs(tmp_path)
+    (legacy["provider_send"] / "proof.txt").write_text(
+        "changed after accepted legacy proofs\n",
+        encoding="utf-8",
+    )
+
+    report = write_provider_broker_lineage_audit_usage_review(
+        list(outputs.values()),
+        tmp_path / "drifted_usage_review",
+    )
+
+    assert not report.ready
+    assert set(report.inventory["usage_status"]) == {
+        "audited_legacy_drifted"
+    }
+    assert int(report.summary.iloc[0]["drifted_audit_bundles"]) == 3
+    assert len(report.action_queue) == 3
+
+
+def test_lineage_audit_usage_review_detects_stored_evidence_disagreement(
+    tmp_path,
+):
+    _, _, outputs = _write_audited_legacy_provider_outputs(tmp_path)
+    bundle = outputs["ack"]
+    summary_path = (
+        bundle
+        / "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+    )
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "lineage_migration_audit_manifest_sha256"] = "0" * 64
+    summary.to_csv(summary_path, index=False)
+    manifest_path = bundle / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for artifact in manifest["artifacts"]:
+        if artifact["path"] == summary_path.name:
+            artifact["size_bytes"] = summary_path.stat().st_size
+            artifact["sha256"] = file_sha256(summary_path)
+    _write_json(manifest_path, manifest)
+    assert verify_experiment_manifest(
+        manifest_path,
+        expected_run_type=ACK_RUN_TYPE,
+        require_input_fingerprints=True,
+    ).passed
+
+    report = write_provider_broker_lineage_audit_usage_review(
+        [bundle],
+        tmp_path / "inconsistent_usage_review",
+    )
+
+    row = report.inventory.iloc[0]
+    assert not report.ready
+    assert row["usage_status"] == "audited_legacy_drifted"
+    assert not bool(row["stored_evidence_consistent"])
+    assert not bool(row["current_evidence_matches_stored"])
+    assert "disagrees" in row["reason"]
+
+
 @pytest.mark.parametrize(
     ("source_role", "source_key"),
     [
@@ -733,6 +899,54 @@ def test_lineage_migration_cli_exit_policy_and_output_collision(tmp_path):
             [strict["ack"]],
             strict["ack"] / "audit",
         )
+
+
+def _write_audited_legacy_provider_outputs(
+    tmp_path: Path,
+) -> tuple[dict[str, Path], Path, dict[str, Path]]:
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    audit = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+    )
+    outputs = {
+        "ack": tmp_path / "accepted_legacy_ack",
+        "roundtrip": tmp_path / "accepted_legacy_roundtrip",
+        "certificate": tmp_path / "accepted_legacy_certificate",
+    }
+    write_provider_market_data_imbalance_broker_dispatch_ack(
+        legacy["provider_send"],
+        legacy["acks"],
+        outputs["ack"],
+        config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(
+            require_send_packet=False,
+            lineage_migration_audit_dir=str(audit.output_dir),
+        ),
+    )
+    write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+        legacy["ack"],
+        outputs["roundtrip"],
+        config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+            require_ack_lineage=False,
+            lineage_migration_audit_dir=str(audit.output_dir),
+        ),
+    )
+    write_provider_market_data_imbalance_broker_rehearsal_certificate(
+        legacy["roundtrip"],
+        outputs["certificate"],
+        config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+            require_clean_recorded_git=False,
+            require_ack_lineage=False,
+            lineage_migration_audit_dir=str(audit.output_dir),
+        ),
+    )
+    return legacy, audit.output_dir, outputs
 
 
 def _write_provider_chain(

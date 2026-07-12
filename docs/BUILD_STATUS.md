@@ -2748,6 +2748,20 @@
   while all three output manifests seal its recursive dependencies. Strict and
   lower-level archive paths explicitly report `not_provided` without creating a
   false blocker.
+- Retained provider proofs can now be scanned with
+  `review-provider-market-data-imbalance-broker-lineage-audit-usage`. The
+  aggregate policy report separates current strict proof from current audited
+  legacy proof and blocks unaudited legacy, stale proof manifests, accepted
+  audit or strict-replacement drift, migration audits attached to already-strict
+  proof, and summary/config/manifest evidence disagreement. Every accepted audit
+  is reverified for its exact source at scan time. The report writes a
+  catalog-visible inventory, checks, zero-tolerance summary, blocked remediation
+  queue, config, and runbook; remains explicitly non-authorizing; and seals every
+  reviewed bundle, proof manifest, and recursive dependency so later drift also
+  invalidates the aggregate review. Strict archive, unaudited legacy/CLI exit,
+  current audited legacy, post-acceptance drift, aggregate-manifest drift, and
+  re-manifested evidence-disagreement paths pass with the complete lineage
+  migration surface (`24 passed`).
 
 ## Test Gate
 
@@ -2757,7 +2771,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1580 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1585 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2895,7 +2909,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1580-test collection is fully green.
+1585-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2904,6 +2918,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add an aggregate catalog audit-usage report and fail policy that identifies
-   legacy-lineage provider proofs whose accepted audit or strict replacement has
-   drifted since artifact generation.
+4. Integrate the lineage audit-usage gate into proof-refresh planning so stale
+   accepted legacy consumers are regenerated in acknowledgement -> round-trip ->
+   certificate order without overwriting retained evidence.
