@@ -2417,6 +2417,14 @@ def main(argv: list[str] | None = None) -> int:
     strategy_portfolio.add_argument("--max-strategy-weight", type=float, default=None)
     strategy_portfolio.add_argument("--max-market-weight", type=float, default=None)
     strategy_portfolio.add_argument("--allow-unready", action="store_true")
+    strategy_portfolio.add_argument(
+        "--require-scorecard-manifest",
+        action="store_true",
+        help=(
+            "Require a current strategy-scorecard manifest even when the CSV "
+            "does not carry registered research-family proof."
+        ),
+    )
     strategy_portfolio.add_argument("--include-profile", action="append", dest="include_profiles")
     strategy_portfolio.add_argument("--exclude-profile", action="append", dest="exclude_profiles")
     strategy_portfolio.add_argument("--fail-on-breach", action="store_true")
@@ -6073,6 +6081,7 @@ def main(argv: list[str] | None = None) -> int:
                 min_market_count=args.min_market_count,
                 max_strategy_weight=args.max_strategy_weight,
                 max_market_weight=args.max_market_weight,
+                require_scorecard_manifest=args.require_scorecard_manifest,
             ),
         )
         print(result.summary.to_string(index=False))

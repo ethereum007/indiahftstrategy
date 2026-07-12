@@ -530,6 +530,7 @@ python -m hft_cli allocate-strategy-portfolio `
   --max-profile-weight 0.40 `
   --min-strategy-count 2 `
   --max-strategy-weight 0.60 `
+  --require-scorecard-manifest `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -549,6 +550,18 @@ manifest.json
 The allocator is deliberately paper/shadow-only. By default it only allocates
 to scorecard profiles where `ready=true` and `readiness_score >= 1.0`, keeps
 10% unallocated as reserve, and caps any one profile at 40% of capital.
+When the scorecard contains registered research or an enabled research-family
+gate, allocation automatically requires the complete current
+`strategy_scorecard` manifest and a current `research_family_audit` manifest.
+The allocator reconciles the scorecard CSV against its summary, JSON actions,
+manifest claims, family ID, registration ID, surviving candidate, and family
+manifest hash. Missing, stale, semantically detached, mismatched, or
+authorizing proof makes every affected profile ineligible and routes repair to
+`score-strategy-readiness` or `audit-research-family`. This family boundary
+cannot be bypassed with `--allow-unready`.
+Use `--require-scorecard-manifest` to apply the same bundle-integrity gate to
+ops-only or exploratory scorecards that do not automatically require family
+proof. A supplied manifest is always verified even when the flag is omitted.
 Use `--min-strategy-count`, `--min-market-count`, `--max-strategy-weight`,
 and `--max-market-weight` to require strategy/market diversity or cap aggregate
 strategy/market concentration before a paper/shadow portfolio is treated as
@@ -569,6 +582,15 @@ The summary/config mirror `action_queue_count`, `ready_action_count`,
 failed-check, and scheduler-action handoff for review. Use
 `--fail-on-blocked-actions` to stop only when blocked allocation actions remain,
 or `--fail-on-actions` when any portfolio action should stop automation.
+Allocation rows, summary/config, and runbook retain scorecard-manifest status
+and SHA-256 plus research-family ID, registration ID, family path, manifest
+SHA-256, candidate identity, and matched study label. The portfolio manifest
+fingerprints every scorecard artifact, the scorecard manifest, and the family
+root/manifest. It also flattens transitive manifest dependencies, so later
+catalog, family-registration, robust-study, or raw-source drift invalidates the
+portfolio allocation manifest instead of silently preserving an obsolete
+capital plan. All outputs remain non-authorizing and do not enable broker
+submission.
 
 ## Market Profile Report
 

@@ -4,7 +4,11 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 from reports.research_family import (
     ResearchFamilyConfig,
     write_research_family_audit,
@@ -15,6 +19,10 @@ from reports.research_family_registration import (
 from reports.strategy_scorecard import (
     StrategyScorecardThresholds,
     write_strategy_scorecard,
+)
+from reports.strategy_portfolio import (
+    StrategyPortfolioConfig,
+    write_strategy_portfolio_allocations,
 )
 
 
@@ -313,6 +321,25 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     assert bool(score["research_family_gate_passed"])
     assert score["research_family_id"] == "prospective_family"
     assert score["research_family_matched_study_label"] == "leadlag"
+    portfolio = write_strategy_portfolio_allocations(
+        tmp_path / "scorecard",
+        output_dir=tmp_path / "portfolio",
+        config=StrategyPortfolioConfig(max_profile_weight=1.0),
+    )
+    allocation = portfolio.allocations.iloc[0]
+    assert portfolio.ready
+    assert allocation["allocation_weight"] == 0.90
+    assert bool(allocation["scorecard_manifest_current"])
+    assert bool(allocation["scorecard_contract_consistent"])
+    assert bool(allocation["research_family_provenance_current"])
+    assert allocation["research_family_id"] == "prospective_family"
+    assert allocation["research_family_matched_study_label"] == "leadlag"
+    assert not bool(allocation["authorizes_submission"])
+    assert verify_experiment_manifest(
+        tmp_path / "portfolio" / "manifest.json",
+        expected_run_type="strategy_portfolio_allocation",
+        require_input_fingerprints=True,
+    ).passed
 
 
 def test_research_family_blocks_post_hoc_registration(tmp_path):

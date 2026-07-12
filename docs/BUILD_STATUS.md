@@ -2552,6 +2552,22 @@
 - Halt response and halt incident evidence now preserve runtime proof-refresh
   fields from the guard through cancel/flatten packets, response summaries,
   response config, incident timelines, and incident closure summaries.
+- Strategy portfolio allocation now verifies the complete current
+  `strategy_scorecard` bundle whenever its manifest is supplied and
+  automatically requires that bundle for registered/family-bound research.
+  CSV rows are reconciled with the scorecard summary, JSON actions, manifest
+  claims, family ID, registration ID, candidate identity, matched family
+  survivor, and non-authorizing state before any paper/shadow weight is
+  emitted. `--require-scorecard-manifest` extends the same fail-closed boundary
+  to ops-only or exploratory scorecards, while `--allow-unready` cannot bypass
+  family closure.
+- Portfolio allocation rows, summary/config, runbook, and manifest now retain
+  the scorecard manifest hash and carried research-family proof. The portfolio
+  manifest fingerprints all scorecard artifacts plus the family root and
+  family manifest, and flattens transitive manifest inputs from the catalog,
+  registration, robust studies, and source data. Scorecard, family, or nested
+  source drift therefore invalidates the capital plan recursively. This path
+  remains non-authorizing and paper/shadow-only.
 
 ## Test Gate
 
@@ -2561,10 +2577,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1505 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1513 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: prospective family registration/closure, declared
+Latest focused gate: strategy portfolio, strategy scorecard, and research
+family suites pass together (`41 passed`), including a real prospectively
+registered family closure flowing through a current scorecard into a positive
+paper/shadow allocation, plus missing-manifest, stale-artifact,
+fresh-but-semantically-detached contract, family relabeling,
+authorizing-source, strict CLI, output-collision, and post-allocation
+family/nested-input-drift rejection. Scale-up and
+experiment-catalog compatibility pass together (`138 passed`), and the
+provider-data imbalance ready scorecard wrapper path also passes (`1 passed`).
+The immediately preceding focused gate covered prospective family
+registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
@@ -2641,6 +2667,7 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind the current strategy-scorecard manifest and carried research-family
-   proof into strategy portfolio allocation so capital plans cannot consume a
-   stale CSV or lose family-closure provenance after readiness scoring.
+4. Bind the current strategy-portfolio manifest and its carried
+   scorecard/research-family proof into controlled scale-up so session limits
+   cannot consume stale allocation CSVs or lose family-closure provenance
+   after capital planning.
