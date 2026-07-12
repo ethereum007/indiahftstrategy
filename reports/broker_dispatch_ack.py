@@ -8,6 +8,12 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    broker_dispatch_send_lineage_fields,
+    broker_dispatch_send_lineage_manifest_inputs,
+    empty_broker_dispatch_send_lineage,
+    load_broker_dispatch_send_lineage,
+)
 from reports.vendor_market_data import (
     select_vendor_market_data_batch_source,
     vendor_market_data_batch_source_active,
@@ -47,6 +53,9 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+BROKER_DISPATCH_SEND_LINEAGE_OUTPUT_COLUMNS = tuple(
+    broker_dispatch_send_lineage_fields(empty_broker_dispatch_send_lineage()).keys()
+)
 
 
 @dataclass(frozen=True)
@@ -55,6 +64,7 @@ class BrokerDispatchAckThresholds:
     require_all_acked: bool = True
     require_route_readiness: bool = False
     require_dispatch_roundtrip: bool = False
+    require_send_packet: bool = False
     allow_rejections: bool = False
     max_duplicate_ack_orders: int = 0
     max_unmatched_acks: int = 0
@@ -81,6 +91,7 @@ def evaluate_broker_dispatch_acknowledgements(
     dispatch_orders: pd.DataFrame,
     broker_acks: pd.DataFrame,
     dispatch_config: dict[str, Any] | None = None,
+    broker_dispatch_send_lineage: dict[str, Any] | None = None,
     thresholds: BrokerDispatchAckThresholds | None = None,
 ) -> BrokerDispatchAckReport:
     thresholds = thresholds or BrokerDispatchAckThresholds()
@@ -90,7 +101,18 @@ def evaluate_broker_dispatch_acknowledgements(
     dispatch_config = dispatch_config or {}
     broker_acks = _normalize_acks(broker_acks)
     summary_row = _dispatch_summary_state(dispatch_summary.iloc[0], dispatch_config)
+    send_lineage_fields = broker_dispatch_send_lineage_fields(
+        broker_dispatch_send_lineage
+        or empty_broker_dispatch_send_lineage(
+            required=thresholds.require_send_packet
+        )
+    )
+    for column, value in send_lineage_fields.items():
+        summary_row[column] = value
     acknowledgements = _acknowledgements(dispatch_orders, broker_acks)
+    for column, value in send_lineage_fields.items():
+        acknowledgements[column] = value
+    acknowledgements["authorizes_submission"] = False
     unmatched = _unmatched_acks(dispatch_orders, broker_acks)
     checks = _checks(summary_row, acknowledgements, unmatched, thresholds)
     summary = _summary(summary_row, acknowledgements, unmatched, checks, thresholds)
@@ -112,8 +134,11 @@ def write_broker_dispatch_acknowledgements(
     dispatch_dir: str | Path,
     acks_path: str | Path,
     output_dir: str | Path,
+    send_dir: str | Path | None = None,
     thresholds: BrokerDispatchAckThresholds | None = None,
 ) -> BrokerDispatchAckReport:
+    thresholds = thresholds or BrokerDispatchAckThresholds()
+    _validate_thresholds(thresholds)
     dispatch = Path(dispatch_dir)
     acks = Path(acks_path)
     if not acks.exists():
@@ -122,6 +147,21 @@ def write_broker_dispatch_acknowledgements(
     dispatch_summary_path = dispatch / "broker_dispatch_summary.csv"
     dispatch_orders_path = dispatch / "broker_dispatch_orders.csv"
     dispatch_manifest_path = dispatch / "manifest.json"
+    send_lineage = empty_broker_dispatch_send_lineage(
+        required=thresholds.require_send_packet
+    )
+    send_config_path: Path | None = None
+    if send_dir is not None:
+        send_candidate = Path(send_dir)
+        send_config_path = (
+            send_candidate / "broker_dispatch_send_config.json"
+            if send_candidate.name != "broker_dispatch_send_config.json"
+            else send_candidate
+        )
+        send_lineage = load_broker_dispatch_send_lineage(
+            send_config_path,
+            expected_broker_dispatch_config_path=dispatch_config_path,
+        )
     dispatch_config = (
         json.loads(dispatch_config_path.read_text(encoding="utf-8"))
         if dispatch_config_path.exists()
@@ -140,9 +180,20 @@ def write_broker_dispatch_acknowledgements(
         dispatch_orders=_read_required(dispatch_orders_path, "broker_dispatch_orders"),
         broker_acks=pd.read_csv(acks),
         dispatch_config=dispatch_config,
+        broker_dispatch_send_lineage=send_lineage,
         thresholds=thresholds,
     )
-    out = Path(output_dir)
+    out = Path(output_dir).resolve()
+    collision_inputs = {
+        "broker dispatch": dispatch_config_path,
+    }
+    if send_config_path is not None:
+        collision_inputs["broker dispatch send"] = send_config_path
+    _reject_input_output_collision(out, collision_inputs)
+    if acks.resolve().parent == out:
+        raise ValueError(
+            "broker-dispatch-ack output_dir must not overwrite the broker acknowledgements input"
+        )
     out.mkdir(parents=True, exist_ok=True)
     report.acknowledgements.to_csv(out / "broker_dispatch_acknowledgements.csv", index=False)
     report.unmatched_acks.to_csv(out / "broker_dispatch_unmatched_acks.csv", index=False)
@@ -160,17 +211,24 @@ def write_broker_dispatch_acknowledgements(
         _runbook_markdown(report.summary.iloc[0], action_queue),
         encoding="utf-8",
     )
+    inputs: dict[str, Any] = _manifest_inputs(
+        dispatch_summary=dispatch_summary_path,
+        dispatch_orders=dispatch_orders_path,
+        dispatch_config=dispatch_config_path,
+        dispatch_manifest=dispatch_manifest_path,
+        broker_acks=acks,
+    )
+    inputs.update(broker_dispatch_send_lineage_manifest_inputs(send_lineage))
     write_experiment_manifest(
         out,
         run_type="broker_dispatch_ack_reconciliation",
-        parameters={"thresholds": asdict(thresholds or BrokerDispatchAckThresholds())},
-        inputs=_manifest_inputs(
-            dispatch_summary=dispatch_summary_path,
-            dispatch_orders=dispatch_orders_path,
-            dispatch_config=dispatch_config_path,
-            dispatch_manifest=dispatch_manifest_path,
-            broker_acks=acks,
-        ),
+        parameters={"thresholds": asdict(thresholds)},
+        inputs=inputs,
+        extra={
+            "passed": bool(report.passed),
+            **broker_dispatch_send_lineage_fields(send_lineage),
+            "authorizes_submission": False,
+        },
     )
     return BrokerDispatchAckReport(
         report.acknowledgements,
@@ -1212,6 +1270,145 @@ def _checks(
             ),
         ]
     )
+    if _to_bool(
+        dispatch_summary.get("broker_dispatch_send_lineage_required", False)
+    ):
+        send_lineage_checks = [
+            _check(
+                "broker_dispatch_send_lineage_provided",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_lineage_provided", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_lineage_provided", False
+                    )
+                ),
+                "broker-dispatch send lineage evidence is required but missing",
+            ),
+            _check(
+                "broker_dispatch_send_manifest_current",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_manifest_current", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_manifest_current", False
+                    )
+                ),
+                "broker-dispatch send manifest is missing, stale, or incomplete",
+            ),
+            _check(
+                "broker_dispatch_send_lineage_contract_consistent",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_lineage_contract_consistent", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_lineage_contract_consistent", False
+                    )
+                ),
+                "send requests, expected acknowledgements, config, and manifest disagree",
+            ),
+            _check(
+                "broker_dispatch_send_non_authorizing",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_non_authorizing", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_non_authorizing", False
+                    )
+                ),
+                "broker-dispatch send lineage contains an authorizing claim",
+            ),
+            _check(
+                "broker_dispatch_send_broker_dispatch_lineage_gate_passed",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_broker_dispatch_lineage_gate_passed",
+                        False,
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_broker_dispatch_lineage_gate_passed",
+                        False,
+                    )
+                ),
+                "send packet did not retain a valid broker-dispatch lineage gate",
+            ),
+            _check(
+                "broker_dispatch_send_broker_dispatch_matches_current",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_broker_dispatch_matches_current", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_broker_dispatch_matches_current", False
+                    )
+                ),
+                "send packet does not match its current broker-dispatch source",
+            ),
+            _check(
+                "broker_dispatch_send_expected_dispatch_matches_current",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_expected_dispatch_matches_current", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_expected_dispatch_matches_current", False
+                    )
+                ),
+                "send packet source does not match the dispatch being reconciled",
+            ),
+            _check(
+                "broker_dispatch_send_lineage_gate_passed",
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_lineage_gate_passed", False
+                    )
+                ),
+                "is",
+                True,
+                _to_bool(
+                    dispatch_summary.get(
+                        "broker_dispatch_send_lineage_gate_passed", False
+                    )
+                ),
+                "broker-dispatch send operational lineage gate did not pass",
+            ),
+        ]
+        checks = pd.concat(
+            [checks, pd.DataFrame(send_lineage_checks)],
+            ignore_index=True,
+        )
     if route_readiness_active:
         checks = pd.concat(
             [
@@ -2494,6 +2691,8 @@ def _summary(
                 "broker_schema_review_mode": _text(dispatch_summary, "broker_schema_review_mode"),
                 "dispatch_orders": orders,
                 "dispatch_total_notional": _number(dispatch_summary, "dispatch_total_notional", 0.0),
+                **_broker_dispatch_send_lineage_output_fields(dispatch_summary),
+                "authorizes_submission": False,
                 "strategy_portfolio_required": _to_bool(
                     dispatch_summary.get("strategy_portfolio_required", False)
                 ),
@@ -2905,6 +3104,8 @@ def _failed_check_rows(checks: pd.DataFrame) -> pd.DataFrame:
 
 
 def _component(check: str) -> str:
+    if check.startswith("broker_dispatch_send_"):
+        return "broker_dispatch_send"
     if check.startswith("strategy_portfolio_") or "strategy_portfolio" in check:
         return "strategy_portfolio"
     if "vendor_market_data_batch" in check:
@@ -2945,6 +3146,8 @@ def _next_gate(check: str) -> str:
     component = _component(check)
     if component == "broker_dispatch_plan":
         return "plan-broker-dispatch"
+    if component == "broker_dispatch_send":
+        return "prepare-broker-dispatch-send"
     if component == "strategy_portfolio":
         return "review-cutover-gate"
     if component == "resume_gate":
@@ -2966,6 +3169,8 @@ def _action_recommendation(check: str) -> str:
     component = _component(check)
     if component == "broker_dispatch_plan":
         return "repair_or_rebuild_broker_dispatch_plan"
+    if component == "broker_dispatch_send":
+        return "repair_or_rebuild_broker_dispatch_send_packet"
     if component == "strategy_portfolio":
         return "repair_strategy_portfolio_cutover_allocation"
     if component == "resume_gate":
@@ -3181,6 +3386,23 @@ def _resume_route_readiness_config(summary: pd.Series, *, prefix: str) -> dict[s
     }
 
 
+def _broker_dispatch_send_lineage_output_fields(row: pd.Series) -> dict[str, Any]:
+    defaults = broker_dispatch_send_lineage_fields(
+        empty_broker_dispatch_send_lineage()
+    )
+    return {
+        column: row.get(column, default)
+        for column, default in defaults.items()
+    }
+
+
+def _broker_dispatch_send_lineage_config(summary: pd.Series) -> dict[str, Any]:
+    return {
+        column: _jsonable_check_value(summary[column])
+        for column in BROKER_DISPATCH_SEND_LINEAGE_OUTPUT_COLUMNS
+    }
+
+
 def _config(
     summary: pd.Series,
     thresholds: BrokerDispatchAckThresholds,
@@ -3192,6 +3414,7 @@ def _config(
     next_gate = _first_action_value(action_queue, "next_gate")
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "passed": _to_bool(summary["passed"]),
         "failed_check_count": len(failed_check_records),
         "target_mode": _text(summary, "target_mode"),
@@ -3206,6 +3429,9 @@ def _config(
         },
         "dispatch_orders": int(summary["dispatch_orders"]),
         "dispatch_total_notional": float(summary["dispatch_total_notional"]),
+        "broker_dispatch_send_lineage": _broker_dispatch_send_lineage_config(
+            summary
+        ),
         "strategy_portfolio": {
             "required": _to_bool(summary["strategy_portfolio_required"]),
             "provided": _to_bool(summary["strategy_portfolio_provided"]),
@@ -3387,6 +3613,8 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Rejected orders: {_int_value(summary_row.get('rejected_orders'))}",
         f"- Duplicate ack orders: {_int_value(summary_row.get('duplicate_ack_orders'))}",
         f"- Unmatched acknowledgements: {_int_value(summary_row.get('unmatched_acks'))}",
+        "- Broker-dispatch send lineage current: "
+        f"{'yes' if _to_bool(summary_row.get('broker_dispatch_send_lineage_gate_passed')) else 'no'}",
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
         f"- Resume broker route ready: {_object_text(summary_row.get('route_broker_resume_broker_route_readiness_ready')).strip()}",
         f"- Resume incident route ready: {_object_text(summary_row.get('route_broker_resume_incident_broker_route_readiness_ready')).strip()}",
@@ -3574,6 +3802,19 @@ def _read_required(path: str | Path, name: str) -> pd.DataFrame:
     if frame.empty:
         raise ValueError(f"required broker dispatch acknowledgement input is empty: {name}")
     return frame
+
+
+def _reject_input_output_collision(
+    output_dir: Path,
+    inputs: dict[str, Path],
+) -> None:
+    for label, value in inputs.items():
+        path = Path(value).resolve()
+        root = path if path.is_dir() else path.parent
+        if output_dir == root or root in output_dir.parents or output_dir in root.parents:
+            raise ValueError(
+                f"broker-dispatch-ack output_dir must not overwrite the {label} source directory"
+            )
 
 
 def _require_nonempty(frame: pd.DataFrame, name: str) -> pd.DataFrame:

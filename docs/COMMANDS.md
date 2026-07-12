@@ -4517,10 +4517,12 @@ before trusting a dry-run broker bridge:
 ```powershell
 python -m hft_cli reconcile-broker-dispatch `
   --dispatch runs\dispatch\leadlag_shadow_live_dryrun `
+  --send runs\dispatch_send\leadlag_shadow_live_dryrun `
   --acks logs\broker_dispatch_acks.csv `
   --out runs\dispatch_acks\leadlag_shadow_live_dryrun `
   --require-route-readiness `
   --require-dispatch-roundtrip `
+  --require-send-packet `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -4554,6 +4556,24 @@ proof routes to `plan-broker-dispatch`, route-readiness blockers route to
 and allocation blockers route to `review-cutover-gate`. Use
 `--fail-on-blocked-actions` when blocked acknowledgement actions should stop
 automation, or `--fail-on-actions` when any ack action should stop automation.
+
+`--send` activates complete send-packet lineage verification, and
+`--require-send-packet` makes the proof mandatory. A supplied packet must have a
+current `broker_dispatch_send_packet` manifest with every required artifact and
+fingerprinted input. Reconciliation compares the retained dispatch lineage
+across request rows, hashed request envelopes, the expected-ack template,
+summary, config, and manifest, requires explicit non-authorizing and
+submission-disabled claims, independently reopens the current dispatch source,
+and confirms that source is the same `--dispatch` bundle being reconciled.
+Missing or stale packets, cross-artifact disagreement, consistently relabeled
+but source-detached dispatch hashes, and authorizing claims route back to
+`prepare-broker-dispatch-send`. Verified fields are carried as
+`broker_dispatch_send_*` columns on every acknowledgement row, in the flat
+`broker_dispatch_send_lineage` config block, and in ack summary/manifest
+metadata. The ack manifest fingerprints all send artifacts and recursively
+flattened dependencies, so later research or operational drift invalidates the
+ack evidence. Dispatch/send source overlap is rejected and acknowledgement
+outputs remain explicitly non-authorizing.
 
 When the provider broker-dispatch-send wrapper retained validated dispatch
 round-trip capture provenance, acknowledgement reconciliation carries the same

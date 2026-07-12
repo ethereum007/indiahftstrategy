@@ -5,6 +5,10 @@ import pandas as pd
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
+from reports.broker_dispatch_ack import (
+    BrokerDispatchAckThresholds,
+    write_broker_dispatch_acknowledgements,
+)
 from reports.broker_dispatch_send import (
     BrokerDispatchSendThresholds,
     write_broker_dispatch_send_packet,
@@ -711,6 +715,41 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         expected_run_type="broker_dispatch_send_packet",
         require_input_fingerprints=True,
     ).passed
+    ack_path = tmp_path / "broker_dispatch_acks.csv"
+    pd.DataFrame(
+        [
+            {
+                "dispatch_order_id": row.dispatch_order_id,
+                "source_order_id": row.source_order_id,
+                "route_dispatch_roundtrip_batch_id": (
+                    row.route_dispatch_roundtrip_batch_id
+                ),
+                "broker_order_id": f"ACK-{index + 1}",
+                "ack_status": "dry_run_accepted",
+                "ack_ts_ns": 1_000_000 + index,
+            }
+            for index, row in enumerate(dispatch.dispatch_orders.itertuples(index=False))
+        ]
+    ).to_csv(ack_path, index=False)
+    ack = write_broker_dispatch_acknowledgements(
+        dispatch_dir=tmp_path / "broker_dispatch",
+        send_dir=tmp_path / "broker_dispatch_send",
+        acks_path=ack_path,
+        output_dir=tmp_path / "broker_dispatch_ack",
+        thresholds=BrokerDispatchAckThresholds(require_send_packet=True),
+    )
+    assert ack.passed
+    assert set(
+        ack.acknowledgements[
+            "broker_dispatch_send_broker_dispatch_route_enable_cutover_runtime_scaleup_research_family_id"
+        ]
+    ) == {"prospective_family"}
+    assert not ack.acknowledgements["authorizes_submission"].astype(bool).any()
+    assert verify_experiment_manifest(
+        tmp_path / "broker_dispatch_ack" / "manifest.json",
+        expected_run_type="broker_dispatch_ack_reconciliation",
+        require_input_fingerprints=True,
+    ).passed
 
     relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
     relabeled_telemetry = runtime_telemetry.telemetry.copy()
@@ -804,6 +843,13 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     )
     assert not drifted_send.passed
     assert drifted_send.error == "input_drift"
+    drifted_ack = verify_experiment_manifest(
+        tmp_path / "broker_dispatch_ack" / "manifest.json",
+        expected_run_type="broker_dispatch_ack_reconciliation",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_ack.passed
+    assert drifted_ack.error == "input_drift"
     stale_guard = write_runtime_guard_report(
         scaleup_dir=tmp_path / "scaleup",
         telemetry_path=tmp_path / "runtime_telemetry",

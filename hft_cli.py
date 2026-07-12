@@ -3399,6 +3399,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Reconcile broker acknowledgements for a dispatch batch.",
     )
     dispatch_ack.add_argument("--dispatch", required=True)
+    dispatch_ack.add_argument("--send", default=None)
     dispatch_ack.add_argument("--acks", required=True)
     dispatch_ack.add_argument("--out", required=True)
     dispatch_ack.add_argument("--allow-unready-dispatch", action="store_true")
@@ -3406,6 +3407,7 @@ def main(argv: list[str] | None = None) -> int:
     dispatch_ack.add_argument("--allow-rejections", action="store_true")
     dispatch_ack.add_argument("--require-route-readiness", action="store_true")
     dispatch_ack.add_argument("--require-dispatch-roundtrip", action="store_true")
+    dispatch_ack.add_argument("--require-send-packet", action="store_true")
     dispatch_ack.add_argument("--max-duplicate-ack-orders", type=int, default=0)
     dispatch_ack.add_argument("--max-unmatched-acks", type=int, default=0)
     dispatch_ack.add_argument("--fail-on-breach", action="store_true")
@@ -7389,6 +7391,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "reconcile-broker-dispatch":
         result = write_broker_dispatch_acknowledgements(
             dispatch_dir=args.dispatch,
+            send_dir=args.send,
             acks_path=args.acks,
             output_dir=args.out,
             thresholds=BrokerDispatchAckThresholds(
@@ -7396,6 +7399,7 @@ def main(argv: list[str] | None = None) -> int:
                 require_all_acked=not args.allow_missing_acks,
                 require_route_readiness=args.require_route_readiness,
                 require_dispatch_roundtrip=args.require_dispatch_roundtrip,
+                require_send_packet=args.require_send_packet,
                 allow_rejections=args.allow_rejections,
                 max_duplicate_ack_orders=args.max_duplicate_ack_orders,
                 max_unmatched_acks=args.max_unmatched_acks,

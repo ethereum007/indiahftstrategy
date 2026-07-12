@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from pathlib import Path
@@ -46,6 +47,15 @@ BROKER_DISPATCH_REQUIRED_ARTIFACTS = (
     "broker_dispatch_action_queue.csv",
     "broker_dispatch_config.json",
     "broker_dispatch_runbook.md",
+)
+BROKER_DISPATCH_SEND_REQUIRED_ARTIFACTS = (
+    "broker_dispatch_send_requests.csv",
+    "broker_dispatch_expected_acks.csv",
+    "broker_dispatch_send_checks.csv",
+    "broker_dispatch_send_summary.csv",
+    "broker_dispatch_send_action_queue.csv",
+    "broker_dispatch_send_config.json",
+    "broker_dispatch_send_runbook.md",
 )
 
 
@@ -740,6 +750,243 @@ def broker_dispatch_lineage_manifest_inputs(
     return inputs
 
 
+def empty_broker_dispatch_send_lineage(*, required: bool = False) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "required": required,
+        "provided": False,
+        "manifest_current": not required,
+        "manifest_run_type": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "manifest_missing" if required else "",
+        "contract_consistent": not required,
+        "contract_error": "",
+        "non_authorizing": not required,
+        "broker_dispatch_matches_current": not required,
+        "expected_dispatch_matches_current": not required,
+        "gate_passed": not required,
+        "dependency_count": 0,
+        "dependency_paths": [],
+        "artifact_paths": [],
+    }
+    state.update(
+        {
+            column: _field_default(column)
+            for column in broker_dispatch_lineage_fields(
+                empty_broker_dispatch_lineage()
+            )
+        }
+    )
+    return state
+
+
+def load_broker_dispatch_send_lineage(
+    broker_dispatch_send_config_path: str | Path,
+    expected_broker_dispatch_config_path: str | Path | None = None,
+) -> dict[str, Any]:
+    config_path = Path(broker_dispatch_send_config_path).resolve()
+    root = config_path.parent
+    summary_path = root / "broker_dispatch_send_summary.csv"
+    requests_path = root / "broker_dispatch_send_requests.csv"
+    expected_acks_path = root / "broker_dispatch_expected_acks.csv"
+    manifest_path = root / "manifest.json"
+    state = empty_broker_dispatch_send_lineage(required=True)
+    state.update(
+        {
+            "provided": summary_path.is_file(),
+            "manifest_path": str(manifest_path),
+            "artifact_paths": [
+                str(root / name)
+                for name in BROKER_DISPATCH_SEND_REQUIRED_ARTIFACTS
+                if (root / name).is_file()
+            ],
+        }
+    )
+
+    summary = _read_csv(summary_path)
+    requests = _read_csv(requests_path)
+    expected_acks = _read_csv(expected_acks_path)
+    config = _read_json(config_path)
+    manifest = _read_json(manifest_path)
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    dispatch_fields = broker_dispatch_lineage_fields(
+        empty_broker_dispatch_lineage()
+    )
+    state.update(
+        {
+            column: _normalize(row.get(column), column)
+            for column in dispatch_fields
+        }
+    )
+    if manifest_path.is_file():
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="broker_dispatch_send_packet",
+            required_artifacts=BROKER_DISPATCH_SEND_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        dependencies = manifest_dependency_paths(manifest_path)
+        state.update(
+            {
+                "manifest_current": bool(integrity.passed),
+                "manifest_run_type": integrity.run_type,
+                "manifest_sha256": file_sha256(manifest_path),
+                "manifest_error": integrity.error,
+                "dependency_paths": [str(path) for path in dependencies],
+                "dependency_count": len(dependencies),
+            }
+        )
+
+    errors = _broker_dispatch_send_contract_errors(
+        summary=summary,
+        requests=requests,
+        expected_acks=expected_acks,
+        config=config,
+        manifest=manifest,
+        lineage=state,
+        dispatch_fields=tuple(dispatch_fields),
+    )
+    extra = _mapping(manifest.get("extra"))
+    requests_non_authorizing = bool(
+        not requests.empty
+        and "authorizes_submission" in requests.columns
+        and not requests["authorizes_submission"].map(_bool).any()
+        and "submission_enabled" in requests.columns
+        and not requests["submission_enabled"].map(_bool).any()
+        and "dry_run_only" in requests.columns
+        and requests["dry_run_only"].map(_bool).all()
+        and _request_payload_boolean_matches(
+            requests, "authorizes_submission", False
+        )
+        and _request_payload_boolean_matches(requests, "submission_enabled", False)
+        and _request_payload_boolean_matches(requests, "dry_run_only", True)
+    )
+    non_authorizing = bool(
+        config
+        and "authorizes_submission" in config
+        and not _bool(config.get("authorizes_submission"))
+        and "submission_enabled" in config
+        and not _bool(config.get("submission_enabled"))
+        and "authorizes_submission" in row.index
+        and not _bool(row.get("authorizes_submission"))
+        and "submission_enabled" in row.index
+        and not _bool(row.get("submission_enabled"))
+        and _bool(row.get("dry_run_only"))
+        and requests_non_authorizing
+        and extra
+        and "authorizes_submission" in extra
+        and not _bool(extra.get("authorizes_submission"))
+        and "submission_enabled" in extra
+        and not _bool(extra.get("submission_enabled"))
+    )
+    dispatch_gate = _bool(state.get("broker_dispatch_lineage_gate_passed", False))
+    broker_dispatch_matches_current = _send_dispatch_matches_current(
+        send_manifest=manifest,
+        send_manifest_path=manifest_path,
+        lineage=state,
+        dispatch_fields=tuple(dispatch_fields),
+    )
+    expected_dispatch_matches_current = _send_matches_expected_dispatch(
+        lineage=state,
+        expected_broker_dispatch_config_path=expected_broker_dispatch_config_path,
+    )
+    state["contract_consistent"] = not errors
+    state["contract_error"] = ";".join(sorted(set(errors)))
+    state["non_authorizing"] = non_authorizing
+    state["broker_dispatch_matches_current"] = broker_dispatch_matches_current
+    state["expected_dispatch_matches_current"] = expected_dispatch_matches_current
+    state["gate_passed"] = bool(
+        state["provided"]
+        and state["manifest_current"]
+        and state["contract_consistent"]
+        and non_authorizing
+        and dispatch_gate
+        and broker_dispatch_matches_current
+        and expected_dispatch_matches_current
+    )
+    return state
+
+
+def broker_dispatch_send_lineage_fields(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    fields = {
+        "broker_dispatch_send_lineage_required": _bool(
+            lineage.get("required", False)
+        ),
+        "broker_dispatch_send_lineage_provided": _bool(
+            lineage.get("provided", False)
+        ),
+        "broker_dispatch_send_manifest_current": _bool(
+            lineage.get("manifest_current", False)
+        ),
+        "broker_dispatch_send_manifest_run_type": _text(
+            lineage.get("manifest_run_type", "")
+        ),
+        "broker_dispatch_send_manifest_path": _text(
+            lineage.get("manifest_path", "")
+        ),
+        "broker_dispatch_send_manifest_sha256": _text(
+            lineage.get("manifest_sha256", "")
+        ),
+        "broker_dispatch_send_manifest_error": _text(
+            lineage.get("manifest_error", "")
+        ),
+        "broker_dispatch_send_lineage_contract_consistent": _bool(
+            lineage.get("contract_consistent", False)
+        ),
+        "broker_dispatch_send_lineage_contract_error": _text(
+            lineage.get("contract_error", "")
+        ),
+        "broker_dispatch_send_non_authorizing": _bool(
+            lineage.get("non_authorizing", False)
+        ),
+        "broker_dispatch_send_broker_dispatch_lineage_gate_passed": _bool(
+            lineage.get("broker_dispatch_lineage_gate_passed", False)
+        ),
+        "broker_dispatch_send_broker_dispatch_matches_current": _bool(
+            lineage.get("broker_dispatch_matches_current", False)
+        ),
+        "broker_dispatch_send_expected_dispatch_matches_current": _bool(
+            lineage.get("expected_dispatch_matches_current", False)
+        ),
+        "broker_dispatch_send_lineage_gate_passed": _bool(
+            lineage.get("gate_passed", False)
+        ),
+        "broker_dispatch_send_lineage_dependency_count": int(
+            lineage.get("dependency_count", 0)
+        ),
+    }
+    dispatch_fields = broker_dispatch_lineage_fields(
+        empty_broker_dispatch_lineage()
+    )
+    fields.update(
+        {
+            f"broker_dispatch_send_{column}": _normalize(
+                lineage.get(column), column
+            )
+            for column in dispatch_fields
+        }
+    )
+    return fields
+
+
+def broker_dispatch_send_lineage_manifest_inputs(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
+    manifest_path = _existing_path(lineage.get("manifest_path"))
+    if manifest_path is not None:
+        inputs["broker_dispatch_send_manifest"] = manifest_path
+    artifacts = _existing_paths(lineage.get("artifact_paths"))
+    if artifacts:
+        inputs["broker_dispatch_send_artifacts"] = artifacts
+    dependencies = _existing_paths(lineage.get("dependency_paths"))
+    if dependencies:
+        inputs["broker_dispatch_send_dependencies"] = dependencies
+    return inputs
+
+
 def _runtime_session_contract_errors(
     *,
     summary: pd.DataFrame,
@@ -898,18 +1145,142 @@ def _broker_dispatch_contract_errors(
         "adapter",
     ):
         expected = row.get(column)
-        if not _frame_column_matches(orders, column, expected):
+        if not _frame_text_column_matches(orders, column, expected):
             errors.append(f"broker_dispatch_orders_{column}_mismatch")
-        if not _same(config.get(column), expected, column):
+        if not _same_text(config.get(column), expected):
             errors.append(f"broker_dispatch_config_{column}_mismatch")
-    for column in ("ready", "dispatch_state"):
-        if not _same(config.get(column), row.get(column), column):
-            errors.append(f"broker_dispatch_config_{column}_mismatch")
+    if not _same(config.get("ready"), row.get("ready"), "ready"):
+        errors.append("broker_dispatch_config_ready_mismatch")
+    if not _same_text(config.get("dispatch_state"), row.get("dispatch_state")):
+        errors.append("broker_dispatch_config_dispatch_state_mismatch")
     if not _same(extra.get("ready"), row.get("ready"), "ready"):
         errors.append("broker_dispatch_manifest_ready_mismatch")
     if not _frame_column_matches(orders, "dispatch_action", "dry_run_submit"):
         errors.append("broker_dispatch_orders_dispatch_action_mismatch")
     return errors
+
+
+def _broker_dispatch_send_contract_errors(
+    *,
+    summary: pd.DataFrame,
+    requests: pd.DataFrame,
+    expected_acks: pd.DataFrame,
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+    lineage: Mapping[str, Any],
+    dispatch_fields: tuple[str, ...],
+) -> list[str]:
+    errors: list[str] = []
+    if summary.empty:
+        errors.append("broker_dispatch_send_summary_missing_or_empty")
+    if requests.empty:
+        errors.append("broker_dispatch_send_requests_missing_or_empty")
+    if expected_acks.empty:
+        errors.append("broker_dispatch_send_expected_acks_missing_or_empty")
+    if not config:
+        errors.append("broker_dispatch_send_config_missing_or_invalid")
+    if not manifest:
+        errors.append("broker_dispatch_send_manifest_missing_or_invalid")
+    if errors:
+        return errors
+
+    row = summary.iloc[0]
+    extra = _mapping(manifest.get("extra"))
+    config_lineage = _mapping(config.get("broker_dispatch_lineage"))
+    for column in dispatch_fields:
+        expected = lineage[column]
+        if not _frame_column_matches(requests, column, expected):
+            errors.append(f"broker_dispatch_send_requests_{column}_mismatch")
+        if not _request_payload_field_matches(requests, column, expected):
+            errors.append(f"broker_dispatch_send_payload_{column}_mismatch")
+        if not _same(config_lineage.get(column), expected, column):
+            errors.append(f"broker_dispatch_send_config_{column}_mismatch")
+        if not _same(extra.get(column), expected, column):
+            errors.append(f"broker_dispatch_send_manifest_{column}_mismatch")
+
+    for column in (
+        "dispatch_batch_id",
+        "target_mode",
+        "strategy",
+        "market",
+        "scenario_key",
+        "adapter",
+    ):
+        expected = row.get(column)
+        if not _frame_text_column_matches(requests, column, expected):
+            errors.append(f"broker_dispatch_send_requests_{column}_mismatch")
+        if not _same_text(config.get(column), expected):
+            errors.append(f"broker_dispatch_send_config_{column}_mismatch")
+    if not _same(config.get("ready"), row.get("ready"), "ready"):
+        errors.append("broker_dispatch_send_config_ready_mismatch")
+    if not _same_text(config.get("request_state"), row.get("request_state")):
+        errors.append("broker_dispatch_send_config_request_state_mismatch")
+    if not _same(extra.get("ready"), row.get("ready"), "ready"):
+        errors.append("broker_dispatch_send_manifest_ready_mismatch")
+    if _integer(row.get("requests")) != len(requests):
+        errors.append("broker_dispatch_send_summary_request_count_mismatch")
+    if not _send_request_hashes_valid(requests):
+        errors.append("broker_dispatch_send_request_hash_contract_mismatch")
+    if not _expected_ack_template_matches_requests(expected_acks, requests):
+        errors.append("broker_dispatch_send_expected_ack_template_mismatch")
+    return errors
+
+
+def _send_dispatch_matches_current(
+    *,
+    send_manifest: Mapping[str, Any],
+    send_manifest_path: Path,
+    lineage: Mapping[str, Any],
+    dispatch_fields: tuple[str, ...],
+) -> bool:
+    dispatch_manifest_path = _manifest_input_path(
+        send_manifest,
+        send_manifest_path,
+        "broker_dispatch_manifest",
+    ) or _manifest_input_path(
+        send_manifest,
+        send_manifest_path,
+        "dispatch_manifest",
+    )
+    if dispatch_manifest_path is None or not dispatch_manifest_path.is_file():
+        return False
+    dispatch_config_path = dispatch_manifest_path.with_name(
+        "broker_dispatch_config.json"
+    )
+    if not dispatch_config_path.is_file():
+        return False
+    current = load_broker_dispatch_lineage(dispatch_config_path)
+    current_fields = broker_dispatch_lineage_fields(current)
+    return bool(
+        current.get("gate_passed", False)
+        and all(
+            _same(lineage.get(column), current_fields.get(column), column)
+            for column in dispatch_fields
+        )
+    )
+
+
+def _send_matches_expected_dispatch(
+    *,
+    lineage: Mapping[str, Any],
+    expected_broker_dispatch_config_path: str | Path | None,
+) -> bool:
+    if expected_broker_dispatch_config_path is None:
+        return True
+    expected_config_path = Path(expected_broker_dispatch_config_path).resolve()
+    expected_manifest_path = expected_config_path.with_name("manifest.json")
+    if not expected_config_path.is_file() or not expected_manifest_path.is_file():
+        return False
+    return bool(
+        _same_text(
+            lineage.get("broker_dispatch_manifest_path"),
+            str(expected_manifest_path),
+        )
+        and _same_text(
+            lineage.get("broker_dispatch_manifest_sha256"),
+            file_sha256(expected_manifest_path),
+        )
+    )
 
 
 def _dispatch_route_enable_matches_current(
@@ -976,6 +1347,117 @@ def _frame_column_matches(frame: pd.DataFrame, column: str, expected: Any) -> bo
     )
 
 
+def _frame_text_column_matches(
+    frame: pd.DataFrame,
+    column: str,
+    expected: Any,
+) -> bool:
+    return bool(
+        not frame.empty
+        and column in frame.columns
+        and frame[column].map(lambda value: _same_text(value, expected)).all()
+    )
+
+
+def _request_payload_field_matches(
+    requests: pd.DataFrame,
+    column: str,
+    expected: Any,
+) -> bool:
+    payloads = _request_payloads(requests)
+    return bool(
+        len(payloads) == len(requests)
+        and all(_same(payload.get(column), expected, column) for payload in payloads)
+    )
+
+
+def _request_payload_boolean_matches(
+    requests: pd.DataFrame,
+    column: str,
+    expected: bool,
+) -> bool:
+    payloads = _request_payloads(requests)
+    return bool(
+        len(payloads) == len(requests)
+        and all(_bool(payload.get(column)) is expected for payload in payloads)
+    )
+
+
+def _request_payloads(requests: pd.DataFrame) -> list[dict[str, Any]]:
+    if requests.empty or "request_payload_json" not in requests.columns:
+        return []
+    payloads: list[dict[str, Any]] = []
+    for raw in requests["request_payload_json"]:
+        try:
+            value = json.loads(_text(raw))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return []
+        if not isinstance(value, dict):
+            return []
+        payloads.append(value)
+    return payloads
+
+
+def _expected_ack_template_matches_requests(
+    expected_acks: pd.DataFrame,
+    requests: pd.DataFrame,
+) -> bool:
+    columns = (
+        "dispatch_order_id",
+        "source_order_id",
+        "request_id",
+        "idempotency_key",
+        "route_dispatch_roundtrip_batch_id",
+        "adapter",
+        "target_mode",
+    )
+    if any(column not in expected_acks.columns for column in columns):
+        return False
+    if any(column not in requests.columns for column in columns):
+        return False
+    expected_records = sorted(
+        tuple(_text(row.get(column)) for column in columns)
+        for row in expected_acks.to_dict(orient="records")
+    )
+    request_records = sorted(
+        tuple(_text(row.get(column)) for column in columns)
+        for row in requests.to_dict(orient="records")
+    )
+    return expected_records == request_records
+
+
+def _send_request_hashes_valid(requests: pd.DataFrame) -> bool:
+    required_columns = {
+        "request_id",
+        "idempotency_key",
+        "request_payload_hash",
+        "request_payload_json",
+    }
+    if requests.empty or not required_columns.issubset(requests.columns):
+        return False
+    for index, row in enumerate(requests.to_dict(orient="records"), start=1):
+        try:
+            payload = json.loads(_text(row.get("request_payload_json")))
+        except (ValueError, TypeError, json.JSONDecodeError):
+            return False
+        if not isinstance(payload, dict):
+            return False
+        payload_hash = hashlib.sha256(
+            json.dumps(payload, sort_keys=True).encode("utf-8")
+        ).hexdigest()
+        if not _same_text(row.get("request_payload_hash"), payload_hash):
+            return False
+        if not _same_text(
+            row.get("idempotency_key"), f"IDEMP-{payload_hash[:24]}"
+        ):
+            return False
+        if not _same_text(
+            row.get("request_id"), f"BDR-{index:06d}-{payload_hash[:12]}"
+        ):
+            return False
+    return True
+
+
 def _manifest_input_path(
     manifest: Mapping[str, Any],
     manifest_path: Path,
@@ -1022,6 +1504,10 @@ def _normalize(value: Any, column: str) -> Any:
 
 def _same(left: Any, right: Any, column: str) -> bool:
     return _normalize(left, column) == _normalize(right, column)
+
+
+def _same_text(left: Any, right: Any) -> bool:
+    return _text(left) == _text(right)
 
 
 def _read_json(path: Path) -> dict[str, Any]:

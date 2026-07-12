@@ -4,10 +4,12 @@ import pandas as pd
 
 from hft_cli import main
 from reports.broker_dispatch_ack import (
+    BrokerDispatchAckThresholds,
     evaluate_broker_dispatch_acknowledgements,
     write_broker_dispatch_acknowledgements,
 )
 from reports.catalog import catalog_experiment_runs
+from reports.operational_lineage import empty_broker_dispatch_send_lineage
 
 
 def path_tail(value):
@@ -721,6 +723,68 @@ def test_broker_dispatch_ack_accepts_complete_source_id_acks():
     assert int(summary["route_broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"]) == 1
     assert report.config["route_broker_route_readiness"]["ops_launch_controls_ready"]
     assert report.config["route_broker_route_readiness"]["ops_broker_roundtrip_portfolio_concentration_ok_runs"] == 1
+
+
+def test_broker_dispatch_ack_carries_verified_send_lineage():
+    lineage = empty_broker_dispatch_send_lineage(required=True)
+    lineage.update(
+        {
+            "provided": True,
+            "manifest_current": True,
+            "manifest_run_type": "broker_dispatch_send_packet",
+            "manifest_path": "send/manifest.json",
+            "manifest_sha256": "a" * 64,
+            "contract_consistent": True,
+            "non_authorizing": True,
+            "broker_dispatch_lineage_gate_passed": True,
+            "broker_dispatch_matches_current": True,
+            "expected_dispatch_matches_current": True,
+            "gate_passed": True,
+        }
+    )
+
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(by_source=True),
+        broker_dispatch_send_lineage=lineage,
+    )
+
+    assert report.passed
+    assert report.acknowledgements[
+        "broker_dispatch_send_lineage_gate_passed"
+    ].astype(bool).all()
+    assert not report.acknowledgements["authorizes_submission"].astype(bool).any()
+    assert bool(
+        report.summary.iloc[0]["broker_dispatch_send_lineage_gate_passed"]
+    )
+    assert report.config["broker_dispatch_send_lineage"][
+        "broker_dispatch_send_lineage_gate_passed"
+    ]
+    assert not report.config["authorizes_submission"]
+
+
+def test_broker_dispatch_ack_blocks_missing_required_send_lineage():
+    report = evaluate_broker_dispatch_acknowledgements(
+        dispatch_summary=dispatch_summary(),
+        dispatch_orders=dispatch_orders(),
+        broker_acks=ack_rows(by_source=True),
+        thresholds=BrokerDispatchAckThresholds(require_send_packet=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.passed
+    assert {
+        "broker_dispatch_send_lineage_provided",
+        "broker_dispatch_send_manifest_current",
+        "broker_dispatch_send_lineage_contract_consistent",
+        "broker_dispatch_send_non_authorizing",
+        "broker_dispatch_send_broker_dispatch_lineage_gate_passed",
+        "broker_dispatch_send_broker_dispatch_matches_current",
+        "broker_dispatch_send_expected_dispatch_matches_current",
+        "broker_dispatch_send_lineage_gate_passed",
+    } <= failed
+    assert report.config["next_gate"] == "prepare-broker-dispatch-send"
 
 
 def test_broker_dispatch_ack_carries_route_broker_resume_gate():

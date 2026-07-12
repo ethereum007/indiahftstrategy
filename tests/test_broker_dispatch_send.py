@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pandas as pd
@@ -13,6 +14,7 @@ from reports.manifest import write_experiment_manifest
 from reports.operational_lineage import (
     cutover_lineage_fields,
     empty_runtime_session_lineage,
+    load_broker_dispatch_send_lineage,
     load_cutover_lineage,
     load_route_enable_lineage,
     route_enable_lineage_fields,
@@ -821,6 +823,56 @@ def _rewrite_dispatch_lineage_field(dispatch, column, value):
         encoding="utf-8",
     )
     _refresh_manifest(dispatch / "manifest.json", extra_updates={column: value})
+
+
+def _rewrite_send_dispatch_lineage_field(send, column, value):
+    summary_path = send / "broker_dispatch_send_summary.csv"
+    requests_path = send / "broker_dispatch_send_requests.csv"
+    config_path = send / "broker_dispatch_send_config.json"
+    summary = pd.read_csv(summary_path)
+    requests = pd.read_csv(requests_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary[column] = value
+    requests[column] = value
+    requests["request_payload_json"] = requests["request_payload_json"].map(
+        lambda raw: json.dumps(
+            {**json.loads(raw), column: value},
+            sort_keys=True,
+        )
+    )
+    config["broker_dispatch_lineage"][column] = value
+    summary.to_csv(summary_path, index=False)
+    _write_rehashed_send_requests(send, requests)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(send / "manifest.json", extra_updates={column: value})
+
+
+def _write_rehashed_send_requests(send, requests):
+    requests = requests.copy()
+    for index in range(len(requests)):
+        payload_hash = hashlib.sha256(
+            json.dumps(
+                json.loads(requests.loc[index, "request_payload_json"]),
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()
+        requests.loc[index, "request_payload_hash"] = payload_hash
+        requests.loc[index, "idempotency_key"] = f"IDEMP-{payload_hash[:24]}"
+        requests.loc[index, "request_id"] = (
+            f"BDR-{index + 1:06d}-{payload_hash[:12]}"
+        )
+    requests.to_csv(send / "broker_dispatch_send_requests.csv", index=False)
+    expected_acks_path = send / "broker_dispatch_expected_acks.csv"
+    expected_acks = pd.read_csv(expected_acks_path)
+    request_lookup = requests.set_index("dispatch_order_id")
+    for column in ("request_id", "idempotency_key"):
+        expected_acks[column] = expected_acks["dispatch_order_id"].map(
+            request_lookup[column]
+        )
+    expected_acks.to_csv(expected_acks_path, index=False)
 
 
 def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
@@ -1836,6 +1888,231 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_send_packet"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_send_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+
+
+def test_broker_dispatch_send_lineage_verifies_complete_current_packet(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["provided"]
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["non_authorizing"]
+    assert lineage["broker_dispatch_matches_current"]
+    assert lineage["expected_dispatch_matches_current"]
+    assert lineage["gate_passed"]
+
+
+def test_cli_broker_dispatch_ack_requires_verified_send_packet(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    acks_path = tmp_path / "broker_acks.csv"
+    acks = pd.read_csv(send / "broker_dispatch_expected_acks.csv")
+    acks["broker_order_id"] = [f"ACK-{index + 1}" for index in range(len(acks))]
+    acks["ack_status"] = "dry_run_accepted"
+    acks["ack_ts_ns"] = range(1_000_000, 1_000_000 + len(acks))
+    acks.to_csv(acks_path, index=False)
+    out = tmp_path / "dispatch_ack"
+
+    code = main(
+        [
+            "reconcile-broker-dispatch",
+            "--dispatch",
+            str(dispatch),
+            "--send",
+            str(send),
+            "--require-send-packet",
+            "--acks",
+            str(acks_path),
+            "--out",
+            str(out),
+            "--fail-on-breach",
+        ]
+    )
+
+    summary = pd.read_csv(out / "broker_dispatch_ack_summary.csv")
+    config = json.loads(
+        (out / "broker_dispatch_ack_config.json").read_text(encoding="utf-8")
+    )
+    assert code == 0
+    assert bool(summary.loc[0, "passed"])
+    assert bool(summary.loc[0, "broker_dispatch_send_lineage_gate_passed"])
+    assert config["broker_dispatch_send_lineage"][
+        "broker_dispatch_send_lineage_gate_passed"
+    ]
+    assert not config["authorizes_submission"]
+    with pytest.raises(ValueError, match="must not overwrite"):
+        main(
+            [
+                "reconcile-broker-dispatch",
+                "--dispatch",
+                str(dispatch),
+                "--send",
+                str(send),
+                "--require-send-packet",
+                "--acks",
+                str(acks_path),
+                "--out",
+                str(send / "ack"),
+            ]
+        )
+
+
+def test_broker_dispatch_send_lineage_blocks_request_contract_mismatch(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    requests_path = send / "broker_dispatch_send_requests.csv"
+    requests = pd.read_csv(requests_path)
+    requests["broker_dispatch_manifest_sha256"] = "f" * 64
+    requests.to_csv(requests_path, index=False)
+    _refresh_manifest(send / "manifest.json")
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert lineage["broker_dispatch_matches_current"]
+    assert not lineage["gate_passed"]
+    assert "broker_dispatch_send_requests_broker_dispatch_manifest_sha256_mismatch" in (
+        lineage["contract_error"]
+    )
+
+
+def test_broker_dispatch_send_lineage_blocks_payload_hash_mismatch(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    requests_path = send / "broker_dispatch_send_requests.csv"
+    requests = pd.read_csv(requests_path)
+    payload = json.loads(requests.loc[0, "request_payload_json"])
+    payload["order"]["quantity"] = 9_999
+    requests.loc[0, "request_payload_json"] = json.dumps(payload, sort_keys=True)
+    requests.to_csv(requests_path, index=False)
+    _refresh_manifest(send / "manifest.json")
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert "broker_dispatch_send_request_hash_contract_mismatch" in lineage[
+        "contract_error"
+    ]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_send_lineage_blocks_expected_ack_template_mismatch(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    expected_acks_path = send / "broker_dispatch_expected_acks.csv"
+    expected_acks = pd.read_csv(expected_acks_path)
+    expected_acks.loc[0, "request_id"] = "REQ-DETACHED"
+    expected_acks.to_csv(expected_acks_path, index=False)
+    _refresh_manifest(send / "manifest.json")
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert not lineage["contract_consistent"]
+    assert lineage["broker_dispatch_matches_current"]
+    assert not lineage["gate_passed"]
+    assert "broker_dispatch_send_expected_ack_template_mismatch" in lineage[
+        "contract_error"
+    ]
+
+
+def test_broker_dispatch_send_lineage_blocks_consistent_dispatch_relabel(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    _rewrite_send_dispatch_lineage_field(
+        send,
+        "broker_dispatch_manifest_sha256",
+        "f" * 64,
+    )
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert lineage["broker_dispatch_lineage_gate_passed"]
+    assert not lineage["broker_dispatch_matches_current"]
+    assert not lineage["expected_dispatch_matches_current"]
+    assert not lineage["gate_passed"]
+
+
+def test_broker_dispatch_send_lineage_blocks_authorizing_packet(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    send = tmp_path / "dispatch_send"
+    write_broker_dispatch_send_packet(dispatch_dir=dispatch, output_dir=send)
+    summary_path = send / "broker_dispatch_send_summary.csv"
+    requests_path = send / "broker_dispatch_send_requests.csv"
+    config_path = send / "broker_dispatch_send_config.json"
+    summary = pd.read_csv(summary_path)
+    requests = pd.read_csv(requests_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary["authorizes_submission"] = True
+    requests["authorizes_submission"] = True
+    requests["request_payload_json"] = requests["request_payload_json"].map(
+        lambda raw: json.dumps(
+            {**json.loads(raw), "authorizes_submission": True},
+            sort_keys=True,
+        )
+    )
+    config["authorizes_submission"] = True
+    summary.to_csv(summary_path, index=False)
+    _write_rehashed_send_requests(send, requests)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(
+        send / "manifest.json",
+        extra_updates={"authorizes_submission": True},
+    )
+
+    lineage = load_broker_dispatch_send_lineage(
+        send / "broker_dispatch_send_config.json",
+        expected_broker_dispatch_config_path=(
+            dispatch / "broker_dispatch_config.json"
+        ),
+    )
+
+    assert lineage["manifest_current"]
+    assert lineage["contract_consistent"]
+    assert not lineage["non_authorizing"]
+    assert lineage["broker_dispatch_matches_current"]
+    assert not lineage["gate_passed"]
 
 
 def test_broker_dispatch_send_blocks_recursive_route_source_drift(tmp_path):
