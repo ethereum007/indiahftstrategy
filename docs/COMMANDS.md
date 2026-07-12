@@ -6489,6 +6489,46 @@ approval. It proves an offline rehearsal and cannot enable, approve, or submit
 a broker order. Any source, acknowledgement, receipt, manifest, or artifact
 change requires a new certificate.
 
+Before making strict provider acknowledgement lineage the default, audit all
+retained provider acknowledgement, final round-trip, and rehearsal-certificate
+bundles:
+
+```powershell
+python -m hft_cli audit-provider-market-data-imbalance-broker-lineage-migration `
+  --roots runs\provider_market_data_imbalance_broker_dispatch_ack `
+          runs\provider_market_data_imbalance_broker_dispatch_roundtrip `
+          runs\provider_market_data_imbalance_broker_rehearsal_certificate `
+  --out runs\provider_broker_lineage_migration_audit\2026_07_12 `
+  --max-blocked-bundles 0 `
+  --min-strict-ready-coverage 1.0 `
+  --fail-on-blocked-actions `
+  --fail-on-breach
+```
+
+The read-only audit recursively verifies each bundle and its manifested input
+chain, then classifies it as `strict_ready`, `regenerate_strict`, or `blocked`.
+Regeneration commands preserve the archived policy thresholds, target sibling
+`_strict` directories, and are ordered acknowledgement -> round-trip ->
+certificate so downstream commands consume the newly strict dependency. The
+audit output itself is excluded when it lives below a scanned archive root, but
+it cannot be written inside an audited bundle. `--no-recursive` limits discovery
+to manifests supplied directly through `--roots`.
+
+Outputs:
+
+```text
+provider_broker_lineage_migration_inventory.csv
+provider_broker_lineage_migration_checks.csv
+provider_broker_lineage_migration_summary.csv
+provider_broker_lineage_migration_action_queue.csv
+provider_broker_lineage_migration_config.json
+provider_broker_lineage_migration_runbook.md
+manifest.json
+```
+
+Every migration artifact sets `authorizes_submission=false`; the generated
+commands only rebuild offline proof bundles and cannot enable broker routing.
+
 After a credentialed provider client writes a normalized CSV, review that capture
 against the packet before feeding it into the market-data pipeline:
 

@@ -230,6 +230,10 @@ from reports.provider_market_data_imbalance_broker_rehearsal_certificate import 
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
 )
+from reports.provider_market_data_imbalance_broker_lineage_migration import (
+    ProviderBrokerLineageMigrationConfig,
+    write_provider_broker_lineage_migration_audit,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -2024,6 +2028,51 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
+
+    provider_broker_lineage_migration = sub.add_parser(
+        "audit-provider-market-data-imbalance-broker-lineage-migration",
+        help=(
+            "Audit archived provider broker proofs before enabling strict "
+            "acknowledgement lineage defaults."
+        ),
+    )
+    provider_broker_lineage_migration.add_argument(
+        "--roots",
+        nargs="+",
+        required=True,
+    )
+    provider_broker_lineage_migration.add_argument("--out", required=True)
+    provider_broker_lineage_migration.add_argument(
+        "--no-recursive",
+        action="store_true",
+    )
+    provider_broker_lineage_migration.add_argument(
+        "--max-bundles",
+        type=int,
+        default=1000,
+    )
+    provider_broker_lineage_migration.add_argument(
+        "--max-blocked-bundles",
+        type=int,
+        default=0,
+    )
+    provider_broker_lineage_migration.add_argument(
+        "--min-strict-ready-coverage",
+        type=float,
+        default=1.0,
+    )
+    provider_broker_lineage_migration.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_broker_lineage_migration.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_broker_lineage_migration.add_argument(
         "--fail-on-actions",
         action="store_true",
     )
@@ -5522,6 +5571,37 @@ def main(argv: list[str] | None = None) -> int:
         blocked_actions = 0
         if action_queue is not None and not action_queue.empty:
             blocked_actions = int((action_queue["queue_status"].astype(str) == "blocked").sum())
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if (
+        args.command
+        == "audit-provider-market-data-imbalance-broker-lineage-migration"
+    ):
+        result = write_provider_broker_lineage_migration_audit(
+            args.roots,
+            args.out,
+            config=ProviderBrokerLineageMigrationConfig(
+                recursive=not args.no_recursive,
+                max_bundles=args.max_bundles,
+                max_blocked_bundles=args.max_blocked_bundles,
+                min_strict_ready_coverage=args.min_strict_ready_coverage,
+            ),
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                (
+                    result.action_queue["queue_status"].astype(str)
+                    == "blocked"
+                ).sum()
+            )
         if args.fail_on_breach and not result.ready:
             return 2
         if args.fail_on_blocked_actions and blocked_actions > 0:

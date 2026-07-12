@@ -2677,6 +2677,17 @@
   the non-authorizing certificate. A real strict provider chain, both new CLI
   flags, post-ack drift rejection, legacy compatibility paths, and certificate
   mismatch rejection pass together (`12 passed`).
+- Archived provider broker proofs can now be assessed with
+  `audit-provider-market-data-imbalance-broker-lineage-migration` before strict
+  acknowledgement lineage becomes a default. The read-only audit discovers
+  acknowledgement, final round-trip, and certificate bundles across bounded
+  roots; verifies each manifest plus its transitive manifested inputs; and
+  classifies proofs as strict-ready, safely regenerable, or blocked. It writes a
+  catalog-visible summary, inventory, checks, dependency-ordered action queue,
+  exact sibling-`_strict` regeneration commands, and an operator runbook without
+  modifying archived evidence. All outputs remain explicitly non-authorizing.
+  Strict, legacy-regenerable, transitive-drift, recursive-discovery, collision,
+  catalog, and CLI exit-policy cases pass together (`4 passed`).
 
 ## Test Gate
 
@@ -2686,7 +2697,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1560 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1564 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2822,7 +2833,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1560-test collection is fully green.
+1564-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2831,5 +2842,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add an archived-proof migration audit so strict provider send/ack lineage
-   can become the default without silently rejecting older rehearsal bundles.
+4. Run the migration audit across retained provider archives, regenerate the
+   dependency-ordered strict siblings, and promote strict lineage defaults only
+   after the audit reaches 100% current coverage with zero blocked bundles.
