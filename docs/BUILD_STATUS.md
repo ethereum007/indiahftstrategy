@@ -2677,6 +2677,14 @@
   the non-authorizing certificate. A real strict provider chain, both new CLI
   flags, post-ack drift rejection, legacy compatibility paths, and certificate
   mismatch rejection pass together (`12 passed`).
+- Provider rehearsal certification now requires complete current
+  acknowledgement lineage by default at the CLI boundary. Existing explicit
+  `--require-ack-lineage` scripts remain valid; only the conspicuous
+  `--allow-legacy-ack-lineage` option relaxes the gate for migration-audited
+  historical proof. The lower-level Python writer retains its compatibility
+  default so archived fixture regeneration remains controlled. Default strict
+  rejection, explicit legacy acceptance, explicit strict acceptance, and all
+  certificate integrity paths pass together (`8 passed`).
 - Archived provider broker proofs can now be assessed with
   `audit-provider-market-data-imbalance-broker-lineage-migration` before strict
   acknowledgement lineage becomes a default. The read-only audit discovers
@@ -2704,7 +2712,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1567 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1568 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2840,7 +2848,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1567-test collection is fully green.
+1568-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2849,6 +2857,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Promote provider CLI lineage checks to strict-by-default with an explicit
-   legacy override, gated by a 100%-covered, zero-blocker migration audit once
-   retained production provider proofs exist.
+4. Promote provider acknowledgement and final-round-trip CLI lineage checks to
+   strict-by-default with explicit legacy overrides, gated by a 100%-covered,
+   zero-blocker migration audit once retained production provider proofs exist.

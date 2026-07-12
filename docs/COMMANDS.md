@@ -6463,11 +6463,16 @@ level from generic broker dry-run proof to sealed provider receipt proof and
 blocks providers that have not yet produced receipt/capture evidence. Use
 `--allow-recorded-dirty-git` only for development fixtures; operator sign-off
 should retain the default clean-provenance requirement.
-`--require-ack-lineage` additionally requires the provider summary, nested
+Rehearsal certification requires acknowledgement lineage by default. The
+explicit `--require-ack-lineage` shown above remains accepted for readable and
+forward-compatible scripts. The gate requires the provider summary, nested
 generic round-trip summary, provider config, provider manifest, and nested
 manifest to carry the same complete current acknowledgement-lineage record.
 That record is content-addressed inside the certificate payload and output
 manifest, so acknowledgement relabeling or drift requires certificate reissue.
+`--allow-legacy-ack-lineage` is the deliberate compatibility escape hatch for
+an archived rehearsal already assessed by the lineage migration audit; it must
+not be used for new broker rehearsals or production-readiness certification.
 
 Outputs:
 

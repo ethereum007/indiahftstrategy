@@ -185,6 +185,7 @@ def test_broker_rehearsal_certificate_cli(tmp_path):
             "--out",
             str(output),
             "--require-sealed-provider-receipts",
+            "--allow-legacy-ack-lineage",
             "--fail-on-breach",
         ]
     )
@@ -195,6 +196,36 @@ def test_broker_rehearsal_certificate_cli(tmp_path):
     ).iloc[0]
     assert bool(summary["ready"])
     assert not bool(summary["authorizes_submission"])
+
+
+def test_broker_rehearsal_certificate_cli_requires_ack_lineage_by_default(
+    tmp_path,
+):
+    source = _write_roundtrip_fixture(tmp_path, sealed_receipts=True)
+    output = tmp_path / "certificate_cli_strict_default"
+
+    status = main(
+        [
+            "certify-provider-market-data-imbalance-broker-rehearsal",
+            "--provider-broker-dispatch-roundtrip",
+            str(source),
+            "--out",
+            str(output),
+            "--require-sealed-provider-receipts",
+            "--fail-on-breach",
+        ]
+    )
+
+    assert status == 2
+    summary = pd.read_csv(
+        output / "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv"
+    ).iloc[0]
+    checks = pd.read_csv(
+        output / "provider_market_data_imbalance_broker_rehearsal_certificate_checks.csv"
+    )
+    assert not bool(summary["ready"])
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert "ack_lineage_source_current" in failed
 
 
 def test_broker_rehearsal_certificate_requires_ack_lineage(tmp_path):

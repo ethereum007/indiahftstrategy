@@ -2006,9 +2006,20 @@ def main(argv: list[str] | None = None) -> int:
         "--require-sealed-provider-receipts",
         action="store_true",
     )
-    provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
+    certificate_ack_lineage = (
+        provider_market_data_imbalance_broker_rehearsal_certificate.add_mutually_exclusive_group()
+    )
+    certificate_ack_lineage.add_argument(
         "--require-ack-lineage",
         action="store_true",
+        default=True,
+        help="Require complete current acknowledgement lineage (default).",
+    )
+    certificate_ack_lineage.add_argument(
+        "--allow-legacy-ack-lineage",
+        dest="require_ack_lineage",
+        action="store_false",
+        help="Allow an audited legacy rehearsal without strict acknowledgement lineage.",
     )
     provider_market_data_imbalance_broker_rehearsal_certificate.add_argument(
         "--allow-recorded-dirty-git",
