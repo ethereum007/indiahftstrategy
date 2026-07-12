@@ -4,6 +4,7 @@ import pandas as pd
 
 from reports.manifest import (
     file_sha256,
+    manifest_dependency_paths,
     verify_experiment_manifest,
     write_experiment_manifest,
 )
@@ -129,3 +130,32 @@ def test_write_experiment_manifest_excludes_dynamic_artifact_tree(tmp_path):
     assert [item["path"] for item in payload["artifacts"]] == ["summary.csv"]
     attempt.write_text('{"attempt": 2}\n', encoding="utf-8")
     assert verify_experiment_manifest(manifest_path).passed
+
+
+def test_manifest_dependency_paths_flattens_nested_manifests(tmp_path):
+    source = tmp_path / "source.csv"
+    source.write_text("value\n1\n", encoding="utf-8")
+    child = tmp_path / "child"
+    child.mkdir()
+    (child / "summary.csv").write_text("ready\ntrue\n", encoding="utf-8")
+    child_manifest = write_experiment_manifest(
+        child,
+        run_type="child",
+        inputs={"source": source},
+    )
+    parent = tmp_path / "parent"
+    parent.mkdir()
+    (parent / "summary.csv").write_text("ready\ntrue\n", encoding="utf-8")
+    parent_manifest = write_experiment_manifest(
+        parent,
+        run_type="parent",
+        inputs={"child": child, "child_manifest": child_manifest},
+    )
+
+    dependencies = set(manifest_dependency_paths(parent_manifest))
+
+    assert dependencies == {
+        child.resolve(),
+        child_manifest.resolve(),
+        source.resolve(),
+    }

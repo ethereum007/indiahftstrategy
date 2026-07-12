@@ -8,7 +8,39 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    manifest_dependency_paths,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+
+
+STRATEGY_PORTFOLIO_REQUIRED_ARTIFACTS = (
+    "strategy_portfolio_allocations.csv",
+    "strategy_portfolio_checks.csv",
+    "strategy_portfolio_summary.csv",
+    "strategy_portfolio_action_queue.csv",
+    "strategy_portfolio_config.json",
+    "strategy_portfolio_runbook.md",
+)
+STRATEGY_SCORECARD_REQUIRED_ARTIFACTS = (
+    "strategy_scorecard.csv",
+    "strategy_scorecard_gaps.csv",
+    "strategy_scorecard_summary.csv",
+    "strategy_scorecard_action_queue.csv",
+    "strategy_scorecard_next_actions.json",
+    "strategy_scorecard_runbook.md",
+)
+RESEARCH_FAMILY_REQUIRED_ARTIFACTS = (
+    "research_family_studies.csv",
+    "research_family_checks.csv",
+    "research_family_summary.csv",
+    "research_family_action_queue.csv",
+    "research_family_launch_attempt_census.csv",
+    "research_family_config.json",
+    "research_family_runbook.md",
+)
 
 
 LAUNCH_PIPELINE_SUMMARIES: tuple[tuple[str, str], ...] = (
@@ -115,6 +147,41 @@ def evaluate_scaleup_plan(
     broker_readiness_summary: pd.DataFrame | None = None,
     thresholds: ScaleUpThresholds | None = None,
 ) -> ScaleUpPlanReport:
+    return _evaluate_scaleup_plan(
+        evidence_summary=evidence_summary,
+        shadow_comparison_summary=shadow_comparison_summary,
+        launch_summary=launch_summary,
+        order_exposure_summary=order_exposure_summary,
+        proof_refresh_summary=proof_refresh_summary,
+        instrument_metadata_summary=instrument_metadata_summary,
+        data_readiness_summary=data_readiness_summary,
+        data_readiness_comparison_summary=data_readiness_comparison_summary,
+        strategy_portfolio_summary=strategy_portfolio_summary,
+        strategy_portfolio_allocations=strategy_portfolio_allocations,
+        route_readiness_summary=route_readiness_summary,
+        broker_readiness_summary=broker_readiness_summary,
+        thresholds=thresholds,
+        strategy_portfolio_provenance=None,
+    )
+
+
+def _evaluate_scaleup_plan(
+    *,
+    evidence_summary: pd.DataFrame,
+    shadow_comparison_summary: pd.DataFrame,
+    launch_summary: pd.DataFrame,
+    order_exposure_summary: pd.DataFrame | None = None,
+    proof_refresh_summary: pd.DataFrame | None = None,
+    instrument_metadata_summary: pd.DataFrame | None = None,
+    data_readiness_summary: pd.DataFrame | None = None,
+    data_readiness_comparison_summary: pd.DataFrame | None = None,
+    strategy_portfolio_summary: pd.DataFrame | None = None,
+    strategy_portfolio_allocations: pd.DataFrame | None = None,
+    route_readiness_summary: pd.DataFrame | None = None,
+    broker_readiness_summary: pd.DataFrame | None = None,
+    thresholds: ScaleUpThresholds | None = None,
+    strategy_portfolio_provenance: dict[str, Any] | None = None,
+) -> ScaleUpPlanReport:
     thresholds = thresholds or ScaleUpThresholds()
     _validate_thresholds(thresholds)
     _require(evidence_summary, ["ready"], "strategy_evidence_summary")
@@ -138,6 +205,7 @@ def evaluate_scaleup_plan(
         strategy_portfolio_allocations,
         evidence_summary.iloc[0],
         thresholds,
+        provenance=strategy_portfolio_provenance,
     )
 
     rows = {
@@ -263,13 +331,18 @@ def write_scaleup_plan(
         if strategy_portfolio_allocations_path
         else None
     )
+    strategy_portfolio_provenance = _load_strategy_portfolio_provenance(
+        strategy_portfolio_path,
+        strategy_portfolio,
+        strategy_portfolio_allocations,
+    )
     route_readiness = (
         _read_optional_summary(route_readiness_path, "route_readiness_summary.csv")
         if route_readiness_path
         else None
     )
     thresholds = thresholds or ScaleUpThresholds()
-    report = evaluate_scaleup_plan(
+    report = _evaluate_scaleup_plan(
         evidence_summary=evidence,
         shadow_comparison_summary=shadow,
         launch_summary=launch,
@@ -283,6 +356,7 @@ def write_scaleup_plan(
         route_readiness_summary=route_readiness,
         broker_readiness_summary=broker_readiness,
         thresholds=thresholds,
+        strategy_portfolio_provenance=strategy_portfolio_provenance,
     )
     if vendor_market_data_batch_config_path is not None:
         _apply_vendor_market_data_batch_config(
@@ -290,6 +364,15 @@ def write_scaleup_plan(
             json.loads(vendor_market_data_batch_config_path.read_text(encoding="utf-8")),
         )
     out = Path(output_dir)
+    if (
+        strategy_portfolio_provenance.get("manifest_provided", False)
+        and out.resolve()
+        == Path(str(strategy_portfolio_provenance["root"])).resolve()
+    ):
+        raise ValueError(
+            "scale-up output must not overwrite the source strategy "
+            "portfolio bundle"
+        )
     out.mkdir(parents=True, exist_ok=True)
     report.plan.to_csv(out / "scaleup_plan.csv", index=False)
     report.checks.to_csv(out / "scaleup_checks.csv", index=False)
@@ -316,6 +399,28 @@ def write_scaleup_plan(
         inputs["strategy_portfolio"] = strategy_portfolio_path
     if strategy_portfolio_allocations_path is not None:
         inputs["strategy_portfolio_allocations"] = strategy_portfolio_allocations_path
+    if strategy_portfolio_provenance.get("manifest_provided", False):
+        portfolio_root = Path(str(strategy_portfolio_provenance["root"]))
+        inputs["strategy_portfolio_manifest"] = Path(
+            str(strategy_portfolio_provenance["manifest_path"])
+        )
+        for artifact in STRATEGY_PORTFOLIO_REQUIRED_ARTIFACTS:
+            artifact_path = portfolio_root / artifact
+            if artifact_path.is_file() and artifact not in {
+                "strategy_portfolio_summary.csv",
+                "strategy_portfolio_allocations.csv",
+            }:
+                inputs[f"strategy_portfolio_artifact:{artifact}"] = artifact_path
+        dependency_paths = [
+            Path(str(path))
+            for path in strategy_portfolio_provenance.get(
+                "dependency_paths",
+                [],
+            )
+            if str(path).strip()
+        ]
+        if dependency_paths:
+            inputs["strategy_portfolio_dependencies"] = dependency_paths
     if vendor_market_data_batch_config_path is not None:
         inputs["vendor_market_data_batch_config"] = vendor_market_data_batch_config_path
     if route_readiness_path is not None:
@@ -329,6 +434,46 @@ def write_scaleup_plan(
         run_type="scaleup_plan",
         parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
+        extra={
+            "ready": bool(report.ready),
+            "strategy_portfolio_manifest_required": bool(
+                strategy_portfolio_provenance.get(
+                    "manifest_required",
+                    False,
+                )
+            ),
+            "strategy_portfolio_manifest_current": bool(
+                strategy_portfolio_provenance.get(
+                    "manifest_current",
+                    False,
+                )
+            ),
+            "strategy_portfolio_manifest_sha256": str(
+                strategy_portfolio_provenance.get("manifest_sha256", "")
+            ),
+            "research_family_bound": bool(
+                strategy_portfolio_provenance.get(
+                    "research_family_bound",
+                    False,
+                )
+            ),
+            "research_family_id": str(
+                strategy_portfolio_provenance.get("research_family_id", "")
+            ),
+            "research_family_registration_id": str(
+                strategy_portfolio_provenance.get(
+                    "research_family_registration_id",
+                    "",
+                )
+            ),
+            "research_family_manifest_sha256": str(
+                strategy_portfolio_provenance.get(
+                    "research_family_manifest_sha256",
+                    "",
+                )
+            ),
+            "authorizes_submission": False,
+        },
     )
     return ScaleUpPlanReport(report.plan, report.checks, report.summary, report.config, out)
 
@@ -918,6 +1063,103 @@ def _checks(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds) -> pd.Dat
             )
         )
     if _to_bool(strategy_portfolio.get("provided", False)):
+        if _to_bool(strategy_portfolio.get("manifest_required", False)):
+            checks.extend(
+                [
+                    _check(
+                        "strategy_portfolio_manifest_provided",
+                        _to_bool(strategy_portfolio.get("manifest_provided", False)),
+                        "is",
+                        True,
+                        _to_bool(strategy_portfolio.get("manifest_provided", False)),
+                        "strategy portfolio manifest is required but missing",
+                    ),
+                    _check(
+                        "strategy_portfolio_manifest_current",
+                        str(strategy_portfolio.get("manifest_error", ""))
+                        or _to_bool(strategy_portfolio.get("manifest_current", False)),
+                        "is",
+                        True,
+                        _to_bool(strategy_portfolio.get("manifest_current", False)),
+                        "strategy portfolio manifest is stale or invalid",
+                    ),
+                    _check(
+                        "strategy_portfolio_contract_consistent",
+                        str(strategy_portfolio.get("contract_error", ""))
+                        or _to_bool(strategy_portfolio.get("contract_consistent", False)),
+                        "is",
+                        True,
+                        _to_bool(strategy_portfolio.get("contract_consistent", False)),
+                        "strategy portfolio summary, allocations, config, and manifest disagree",
+                    ),
+                    _check(
+                        "strategy_portfolio_non_authorizing",
+                        _to_bool(strategy_portfolio.get("non_authorizing", False)),
+                        "is",
+                        True,
+                        _to_bool(strategy_portfolio.get("non_authorizing", False)),
+                        "strategy portfolio unexpectedly claims submission authority",
+                    ),
+                    _check(
+                        "strategy_portfolio_provenance_gate_passed",
+                        _to_bool(strategy_portfolio.get("provenance_gate_passed", False)),
+                        "is",
+                        True,
+                        _to_bool(strategy_portfolio.get("provenance_gate_passed", False)),
+                        "strategy portfolio provenance is not current and complete",
+                    ),
+                ]
+            )
+        if _to_bool(strategy_portfolio.get("research_family_bound", False)):
+            checks.extend(
+                [
+                    _check(
+                        "strategy_portfolio_scorecard_provenance_current",
+                        bool(
+                            _to_bool(strategy_portfolio.get("scorecard_manifest_current", False))
+                            and _to_bool(
+                                strategy_portfolio.get("scorecard_contract_consistent", False)
+                            )
+                            and _to_bool(
+                                strategy_portfolio.get("scorecard_non_authorizing", False)
+                            )
+                            and _to_bool(
+                                strategy_portfolio.get(
+                                    "scorecard_provenance_gate_passed",
+                                    False,
+                                )
+                            )
+                        ),
+                        "is",
+                        True,
+                        bool(
+                            _to_bool(strategy_portfolio.get("scorecard_manifest_current", False))
+                            and _to_bool(
+                                strategy_portfolio.get("scorecard_provenance_gate_passed", False)
+                            )
+                        ),
+                        "carried strategy scorecard provenance is not current",
+                    ),
+                    _check(
+                        "strategy_portfolio_research_family_provenance_current",
+                        _to_bool(
+                            strategy_portfolio.get(
+                                "research_family_provenance_current",
+                                False,
+                            )
+                        ),
+                        "is",
+                        True,
+                        _to_bool(
+                            strategy_portfolio.get(
+                                "research_family_provenance_current",
+                                False,
+                            )
+                        ),
+                        "carried registered research-family closure is not current",
+                    ),
+                ]
+            )
         portfolio_ready = _to_bool(strategy_portfolio.get("ready", False))
         allocation_available = _to_bool(strategy_portfolio.get("selected_allocation_provided", False))
         allocation_eligible = _to_bool(strategy_portfolio.get("selected_eligible", False))
@@ -1758,6 +2000,72 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "strategy_portfolio_required": thresholds.require_strategy_portfolio,
                 "strategy_portfolio_provided": _to_bool(strategy_portfolio.get("provided", False)),
                 "strategy_portfolio_ready": _to_bool(strategy_portfolio.get("ready", False)),
+                "strategy_portfolio_manifest_required": _to_bool(
+                    strategy_portfolio.get("manifest_required", False)
+                ),
+                "strategy_portfolio_manifest_provided": _to_bool(
+                    strategy_portfolio.get("manifest_provided", False)
+                ),
+                "strategy_portfolio_manifest_current": _to_bool(
+                    strategy_portfolio.get("manifest_current", False)
+                ),
+                "strategy_portfolio_manifest_sha256": str(
+                    strategy_portfolio.get("manifest_sha256", "")
+                ),
+                "strategy_portfolio_manifest_error": str(
+                    strategy_portfolio.get("manifest_error", "")
+                ),
+                "strategy_portfolio_contract_consistent": _to_bool(
+                    strategy_portfolio.get("contract_consistent", False)
+                ),
+                "strategy_portfolio_contract_error": str(
+                    strategy_portfolio.get("contract_error", "")
+                ),
+                "strategy_portfolio_non_authorizing": _to_bool(
+                    strategy_portfolio.get("non_authorizing", False)
+                ),
+                "strategy_portfolio_provenance_gate_passed": _to_bool(
+                    strategy_portfolio.get("provenance_gate_passed", False)
+                ),
+                "strategy_portfolio_dependency_count": int(
+                    _number(strategy_portfolio, "dependency_count", fallback=0.0)
+                ),
+                "strategy_portfolio_scorecard_manifest_required": _to_bool(
+                    strategy_portfolio.get("scorecard_manifest_required", False)
+                ),
+                "strategy_portfolio_scorecard_manifest_current": _to_bool(
+                    strategy_portfolio.get("scorecard_manifest_current", False)
+                ),
+                "strategy_portfolio_scorecard_manifest_sha256": str(
+                    strategy_portfolio.get("scorecard_manifest_sha256", "")
+                ),
+                "strategy_portfolio_scorecard_contract_consistent": _to_bool(
+                    strategy_portfolio.get("scorecard_contract_consistent", False)
+                ),
+                "strategy_portfolio_scorecard_non_authorizing": _to_bool(
+                    strategy_portfolio.get("scorecard_non_authorizing", False)
+                ),
+                "strategy_portfolio_scorecard_provenance_gate_passed": _to_bool(
+                    strategy_portfolio.get("scorecard_provenance_gate_passed", False)
+                ),
+                "strategy_portfolio_research_family_bound": _to_bool(
+                    strategy_portfolio.get("research_family_bound", False)
+                ),
+                "strategy_portfolio_research_family_provenance_current": _to_bool(
+                    strategy_portfolio.get("research_family_provenance_current", False)
+                ),
+                "strategy_portfolio_research_family_id": str(
+                    strategy_portfolio.get("research_family_id", "")
+                ),
+                "strategy_portfolio_research_family_registration_id": str(
+                    strategy_portfolio.get("research_family_registration_id", "")
+                ),
+                "strategy_portfolio_research_family_path": str(
+                    strategy_portfolio.get("research_family_path", "")
+                ),
+                "strategy_portfolio_research_family_manifest_sha256": str(
+                    strategy_portfolio.get("research_family_manifest_sha256", "")
+                ),
                 "strategy_portfolio_deployment_mode": str(strategy_portfolio.get("deployment_mode", "")),
                 "strategy_portfolio_allocation_mode": str(strategy_portfolio.get("allocation_mode", "")),
                 "strategy_portfolio_capital_currency": str(strategy_portfolio.get("capital_currency", "")),
@@ -1816,12 +2124,20 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 "strategy_portfolio_selected_eligible": _to_bool(
                     strategy_portfolio.get("selected_eligible", False)
                 ),
+                "strategy_portfolio_selected_source_eligible": _to_bool(
+                    strategy_portfolio.get("selected_source_eligible", False)
+                ),
                 "strategy_portfolio_selected_allocation_weight": _number(
                     strategy_portfolio,
                     "selected_allocation_weight",
                     fallback=0.0,
                 ),
                 "strategy_portfolio_selected_allocation_notional": portfolio_allocation_notional,
+                "strategy_portfolio_selected_source_allocation_notional": _number(
+                    strategy_portfolio,
+                    "selected_source_allocation_notional",
+                    fallback=0.0,
+                ),
                 "strategy_portfolio_selected_eligibility_reason": str(
                     strategy_portfolio.get("selected_eligibility_reason", "")
                 ),
@@ -2432,6 +2748,7 @@ def _plan(rows: dict[str, pd.Series], thresholds: ScaleUpThresholds, ready: bool
                 else 0,
                 **_broker_vendor_market_data_batch_plan_fields(broker_readiness),
                 **_broker_shadow_broker_plan_fields(broker_readiness),
+                "authorizes_submission": False,
             }
         ]
     )
@@ -2467,6 +2784,78 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_required": _to_bool(plan_row["strategy_portfolio_required"]),
                 "strategy_portfolio_provided": _to_bool(plan_row["strategy_portfolio_provided"]),
                 "strategy_portfolio_ready": _to_bool(plan_row["strategy_portfolio_ready"]),
+                "strategy_portfolio_manifest_required": _to_bool(
+                    plan_row["strategy_portfolio_manifest_required"]
+                ),
+                "strategy_portfolio_manifest_provided": _to_bool(
+                    plan_row["strategy_portfolio_manifest_provided"]
+                ),
+                "strategy_portfolio_manifest_current": _to_bool(
+                    plan_row["strategy_portfolio_manifest_current"]
+                ),
+                "strategy_portfolio_manifest_sha256": str(
+                    plan_row["strategy_portfolio_manifest_sha256"]
+                ),
+                "strategy_portfolio_manifest_error": str(
+                    plan_row["strategy_portfolio_manifest_error"]
+                ),
+                "strategy_portfolio_contract_consistent": _to_bool(
+                    plan_row["strategy_portfolio_contract_consistent"]
+                ),
+                "strategy_portfolio_contract_error": str(
+                    plan_row["strategy_portfolio_contract_error"]
+                ),
+                "strategy_portfolio_non_authorizing": _to_bool(
+                    plan_row["strategy_portfolio_non_authorizing"]
+                ),
+                "strategy_portfolio_provenance_gate_passed": _to_bool(
+                    plan_row["strategy_portfolio_provenance_gate_passed"]
+                ),
+                "strategy_portfolio_dependency_count": int(
+                    plan_row["strategy_portfolio_dependency_count"]
+                ),
+                "strategy_portfolio_scorecard_manifest_required": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_manifest_required"]
+                ),
+                "strategy_portfolio_scorecard_manifest_current": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_manifest_current"]
+                ),
+                "strategy_portfolio_scorecard_manifest_sha256": str(
+                    plan_row["strategy_portfolio_scorecard_manifest_sha256"]
+                ),
+                "strategy_portfolio_scorecard_contract_consistent": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_contract_consistent"]
+                ),
+                "strategy_portfolio_scorecard_non_authorizing": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_non_authorizing"]
+                ),
+                "strategy_portfolio_scorecard_provenance_gate_passed": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_provenance_gate_passed"]
+                ),
+                "strategy_portfolio_research_family_bound": _to_bool(
+                    plan_row["strategy_portfolio_research_family_bound"]
+                ),
+                "strategy_portfolio_research_family_provenance_current": _to_bool(
+                    plan_row[
+                        "strategy_portfolio_research_family_provenance_current"
+                    ]
+                ),
+                "strategy_portfolio_research_family_id": str(
+                    plan_row["strategy_portfolio_research_family_id"]
+                ),
+                "strategy_portfolio_research_family_registration_id": str(
+                    plan_row[
+                        "strategy_portfolio_research_family_registration_id"
+                    ]
+                ),
+                "strategy_portfolio_research_family_path": str(
+                    plan_row["strategy_portfolio_research_family_path"]
+                ),
+                "strategy_portfolio_research_family_manifest_sha256": str(
+                    plan_row[
+                        "strategy_portfolio_research_family_manifest_sha256"
+                    ]
+                ),
                 "strategy_portfolio_deployment_mode": str(plan_row["strategy_portfolio_deployment_mode"]),
                 "strategy_portfolio_allocation_mode": str(plan_row["strategy_portfolio_allocation_mode"]),
                 "strategy_portfolio_capital_currency": str(plan_row["strategy_portfolio_capital_currency"]),
@@ -2507,11 +2896,19 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_selected_eligible": _to_bool(
                     plan_row["strategy_portfolio_selected_eligible"]
                 ),
+                "strategy_portfolio_selected_source_eligible": _to_bool(
+                    plan_row["strategy_portfolio_selected_source_eligible"]
+                ),
                 "strategy_portfolio_selected_allocation_weight": float(
                     plan_row["strategy_portfolio_selected_allocation_weight"]
                 ),
                 "strategy_portfolio_selected_allocation_notional": float(
                     plan_row["strategy_portfolio_selected_allocation_notional"]
+                ),
+                "strategy_portfolio_selected_source_allocation_notional": float(
+                    plan_row[
+                        "strategy_portfolio_selected_source_allocation_notional"
+                    ]
                 ),
                 "strategy_portfolio_selected_eligibility_reason": str(
                     plan_row["strategy_portfolio_selected_eligibility_reason"]
@@ -2519,6 +2916,7 @@ def _summary(plan_row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "strategy_portfolio_notional_cap_applied": _to_bool(
                     plan_row["strategy_portfolio_notional_cap_applied"]
                 ),
+                "authorizes_submission": False,
                 "proof_refresh_ready": _to_bool(plan_row["proof_refresh_ready"]),
                 "proof_refresh_strategy": str(plan_row["proof_refresh_strategy"]),
                 "proof_refresh_market": str(plan_row["proof_refresh_market"]),
@@ -2893,6 +3291,7 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
     return {
         "schema_version": 1,
         "ready": bool(plan_row["ready"]),
+        "authorizes_submission": False,
         "failed_check_count": len(failed_check_records),
         "target_mode": str(plan_row["target_mode"]),
         "strategy": str(plan_row["strategy"]),
@@ -2940,6 +3339,86 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "required": _to_bool(plan_row["strategy_portfolio_required"]),
             "provided": _to_bool(plan_row["strategy_portfolio_provided"]),
             "ready": _to_bool(plan_row["strategy_portfolio_ready"]),
+            "manifest_required": _to_bool(
+                plan_row["strategy_portfolio_manifest_required"]
+            ),
+            "manifest_provided": _to_bool(
+                plan_row["strategy_portfolio_manifest_provided"]
+            ),
+            "manifest_current": _to_bool(
+                plan_row["strategy_portfolio_manifest_current"]
+            ),
+            "manifest_sha256": str(
+                plan_row["strategy_portfolio_manifest_sha256"]
+            ),
+            "manifest_error": str(
+                plan_row["strategy_portfolio_manifest_error"]
+            ),
+            "contract_consistent": _to_bool(
+                plan_row["strategy_portfolio_contract_consistent"]
+            ),
+            "contract_error": str(
+                plan_row["strategy_portfolio_contract_error"]
+            ),
+            "non_authorizing": _to_bool(
+                plan_row["strategy_portfolio_non_authorizing"]
+            ),
+            "provenance_gate_passed": _to_bool(
+                plan_row["strategy_portfolio_provenance_gate_passed"]
+            ),
+            "dependency_count": int(
+                plan_row["strategy_portfolio_dependency_count"]
+            ),
+            "scorecard_provenance": {
+                "manifest_required": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_manifest_required"]
+                ),
+                "manifest_current": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_manifest_current"]
+                ),
+                "manifest_sha256": str(
+                    plan_row["strategy_portfolio_scorecard_manifest_sha256"]
+                ),
+                "contract_consistent": _to_bool(
+                    plan_row[
+                        "strategy_portfolio_scorecard_contract_consistent"
+                    ]
+                ),
+                "non_authorizing": _to_bool(
+                    plan_row["strategy_portfolio_scorecard_non_authorizing"]
+                ),
+                "gate_passed": _to_bool(
+                    plan_row[
+                        "strategy_portfolio_scorecard_provenance_gate_passed"
+                    ]
+                ),
+            },
+            "research_family": {
+                "bound": _to_bool(
+                    plan_row["strategy_portfolio_research_family_bound"]
+                ),
+                "provenance_current": _to_bool(
+                    plan_row[
+                        "strategy_portfolio_research_family_provenance_current"
+                    ]
+                ),
+                "family_id": str(
+                    plan_row["strategy_portfolio_research_family_id"]
+                ),
+                "registration_id": str(
+                    plan_row[
+                        "strategy_portfolio_research_family_registration_id"
+                    ]
+                ),
+                "path": str(
+                    plan_row["strategy_portfolio_research_family_path"]
+                ),
+                "manifest_sha256": str(
+                    plan_row[
+                        "strategy_portfolio_research_family_manifest_sha256"
+                    ]
+                ),
+            },
             "deployment_mode": str(plan_row["strategy_portfolio_deployment_mode"]),
             "allocation_mode": str(plan_row["strategy_portfolio_allocation_mode"]),
             "capital_currency": str(plan_row["strategy_portfolio_capital_currency"]),
@@ -2964,8 +3443,16 @@ def _config(plan_row: pd.Series, checks: pd.DataFrame, thresholds: ScaleUpThresh
             "selected_strategy": str(plan_row["strategy_portfolio_selected_strategy"]),
             "selected_market": str(plan_row["strategy_portfolio_selected_market"]),
             "selected_eligible": _to_bool(plan_row["strategy_portfolio_selected_eligible"]),
+            "selected_source_eligible": _to_bool(
+                plan_row["strategy_portfolio_selected_source_eligible"]
+            ),
             "selected_allocation_weight": float(plan_row["strategy_portfolio_selected_allocation_weight"]),
             "selected_allocation_notional": float(plan_row["strategy_portfolio_selected_allocation_notional"]),
+            "selected_source_allocation_notional": float(
+                plan_row[
+                    "strategy_portfolio_selected_source_allocation_notional"
+                ]
+            ),
             "selected_eligibility_reason": str(plan_row["strategy_portfolio_selected_eligibility_reason"]),
             "notional_cap_applied": _to_bool(plan_row["strategy_portfolio_notional_cap_applied"]),
         },
@@ -4435,20 +4922,687 @@ def _broker_vendor_market_data_batch_config(plan_row: pd.Series) -> dict[str, ob
     }
 
 
+def _load_strategy_portfolio_provenance(
+    summary_path: Path | None,
+    summary: pd.DataFrame | None,
+    allocations: pd.DataFrame | None,
+) -> dict[str, Any]:
+    provided = summary_path is not None
+    evidence: dict[str, Any] = {
+        "manifest_required": provided,
+        "manifest_provided": False,
+        "manifest_current": False,
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "manifest_missing" if provided else "",
+        "contract_consistent": not provided,
+        "contract_error": "",
+        "non_authorizing": True,
+        "gate_passed": not provided,
+        "dependency_paths": [],
+        "root": "",
+        "scorecard_manifest_required": False,
+        "scorecard_manifest_current": False,
+        "scorecard_manifest_sha256": "",
+        "scorecard_contract_consistent": False,
+        "scorecard_non_authorizing": False,
+        "scorecard_provenance_gate_passed": False,
+        "research_family_bound": False,
+        "research_family_provenance_current": False,
+        "research_family_id": "",
+        "research_family_registration_id": "",
+        "research_family_path": "",
+        "research_family_manifest_sha256": "",
+    }
+    if not provided:
+        return evidence
+    candidate = Path(summary_path)
+    root = candidate.parent if candidate.suffix else candidate
+    root = root.resolve()
+    manifest_path = root / "manifest.json"
+    evidence.update(
+        {
+            "root": str(root),
+            "manifest_path": str(manifest_path),
+            "manifest_provided": manifest_path.is_file(),
+        }
+    )
+    summary_frame = summary if summary is not None else pd.DataFrame()
+    allocation_frame = allocations if allocations is not None else pd.DataFrame()
+    summary_row = summary_frame.iloc[0] if not summary_frame.empty else pd.Series(dtype=object)
+    config = _read_json_object(root / "strategy_portfolio_config.json")
+    manifest = _read_json_object(manifest_path)
+    if manifest_path.is_file():
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="strategy_portfolio_allocation",
+            required_artifacts=STRATEGY_PORTFOLIO_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        evidence["manifest_current"] = bool(integrity.passed)
+        evidence["manifest_error"] = str(integrity.error)
+        evidence["manifest_sha256"] = file_sha256(manifest_path)
+        evidence["dependency_paths"] = [
+            str(path) for path in manifest_dependency_paths(manifest_path)
+        ]
+    contract_errors = _strategy_portfolio_contract_errors(
+        summary_frame,
+        allocation_frame,
+        config,
+        manifest,
+        root,
+    )
+    evidence["contract_consistent"] = not contract_errors
+    evidence["contract_error"] = ";".join(contract_errors)
+    extra_value = manifest.get("extra", {})
+    extra = extra_value if isinstance(extra_value, dict) else {}
+    evidence["non_authorizing"] = _strategy_portfolio_non_authorizing(
+        summary_frame,
+        allocation_frame,
+        config,
+        extra,
+    )
+    scorecard_value = config.get("scorecard_provenance", {})
+    scorecard = scorecard_value if isinstance(scorecard_value, dict) else {}
+    evidence.update(
+        {
+            "scorecard_manifest_required": _to_bool(
+                summary_row.get(
+                    "scorecard_manifest_required",
+                    config.get("scorecard_manifest_required", False),
+                )
+            ),
+            "scorecard_manifest_current": _to_bool(
+                summary_row.get(
+                    "scorecard_manifest_current",
+                    config.get("scorecard_manifest_current", False),
+                )
+            ),
+            "scorecard_manifest_sha256": str(
+                summary_row.get(
+                    "scorecard_manifest_sha256",
+                    config.get("scorecard_manifest_sha256", ""),
+                )
+            ),
+            "scorecard_contract_consistent": _to_bool(
+                summary_row.get(
+                    "scorecard_contract_consistent",
+                    scorecard.get("contract_consistent", False),
+                )
+            ),
+            "scorecard_non_authorizing": _to_bool(
+                summary_row.get(
+                    "scorecard_non_authorizing",
+                    scorecard.get("non_authorizing", False),
+                )
+            ),
+            "scorecard_provenance_gate_passed": _to_bool(
+                summary_row.get(
+                    "scorecard_provenance_gate_passed",
+                    scorecard.get("gate_passed", False),
+                )
+            ),
+            "research_family_bound": _to_bool(
+                summary_row.get(
+                    "research_family_bound",
+                    config.get("research_family_bound", False),
+                )
+            ),
+            "research_family_provenance_current": _to_bool(
+                summary_row.get(
+                    "research_family_provenance_current",
+                    config.get("research_family_provenance_current", False),
+                )
+            ),
+            "research_family_id": str(
+                summary_row.get(
+                    "research_family_id",
+                    config.get("research_family_id", ""),
+                )
+            ),
+            "research_family_registration_id": str(
+                summary_row.get(
+                    "research_family_registration_id",
+                    config.get("research_family_registration_id", ""),
+                )
+            ),
+            "research_family_path": str(
+                summary_row.get(
+                    "research_family_path",
+                    config.get("research_family_path", ""),
+                )
+            ),
+            "research_family_manifest_sha256": str(
+                summary_row.get(
+                    "research_family_manifest_sha256",
+                    config.get("research_family_manifest_sha256", ""),
+                )
+            ),
+        }
+    )
+    family_ok = bool(
+        not evidence["research_family_bound"]
+        or evidence["research_family_provenance_current"]
+    )
+    evidence["gate_passed"] = bool(
+        evidence["manifest_provided"]
+        and evidence["manifest_current"]
+        and evidence["contract_consistent"]
+        and evidence["non_authorizing"]
+        and family_ok
+    )
+    return evidence
+
+
+def _strategy_portfolio_contract_errors(
+    summary: pd.DataFrame,
+    allocations: pd.DataFrame,
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+    root: Path,
+) -> list[str]:
+    errors: list[str] = []
+    if summary.empty:
+        return ["portfolio_summary_missing_or_empty"]
+    if allocations.empty:
+        errors.append("portfolio_allocations_missing_or_empty")
+    if not config:
+        errors.append("portfolio_config_missing_or_invalid")
+    summary_row = summary.iloc[0]
+    config_summary_value = config.get("summary", {})
+    config_summary = config_summary_value if isinstance(config_summary_value, dict) else {}
+    extra_value = manifest.get("extra", {})
+    extra = extra_value if isinstance(extra_value, dict) else {}
+    ready = _to_bool(summary_row.get("ready", False))
+    if _to_bool(config.get("ready", False)) != ready:
+        errors.append("portfolio_config_ready_mismatch")
+    if _to_bool(config_summary.get("ready", False)) != ready:
+        errors.append("portfolio_config_summary_ready_mismatch")
+    if _to_bool(extra.get("ready", False)) != ready:
+        errors.append("portfolio_manifest_ready_mismatch")
+    checks = _read_optional_csv(root / "strategy_portfolio_checks.csv")
+    if checks.empty or "passed" not in checks.columns:
+        errors.append("portfolio_checks_missing_or_invalid")
+    elif bool(checks["passed"].map(_to_bool).all()) != ready:
+        errors.append("portfolio_checks_ready_mismatch")
+
+    for field in (
+        "deployment_mode",
+        "allocation_mode",
+        "capital_currency",
+        "total_capital",
+        "allocated_weight",
+        "allocated_notional",
+        "allocated_strategy_count",
+        "allocated_market_count",
+        "scorecard_manifest_required",
+        "scorecard_manifest_current",
+        "scorecard_manifest_sha256",
+        "scorecard_contract_consistent",
+        "scorecard_non_authorizing",
+        "scorecard_provenance_gate_passed",
+        "research_family_bound",
+        "research_family_provenance_current",
+        "research_family_id",
+        "research_family_registration_id",
+        "research_family_path",
+        "research_family_manifest_sha256",
+    ):
+        if field in summary_row.index or field in config_summary:
+            if _comparable(summary_row.get(field, "")) != _comparable(
+                config_summary.get(field, "")
+            ):
+                errors.append(f"portfolio_summary_config_{field}_mismatch")
+    config_allocations_value = config.get("allocations", [])
+    config_allocations = config_allocations_value if isinstance(config_allocations_value, list) else []
+    records = allocations.to_dict(orient="records")
+    if len(config_allocations) != len(records):
+        errors.append("portfolio_allocation_count_mismatch")
+    else:
+        for index, (row, config_row) in enumerate(
+            zip(records, config_allocations, strict=True)
+        ):
+            if not isinstance(config_row, dict):
+                errors.append(f"portfolio_config_allocation_not_object:{index}")
+                continue
+            for field in (
+                "profile",
+                "strategy",
+                "market",
+                "eligible",
+                "allocation_weight",
+                "allocation_notional",
+                "scorecard_manifest_sha256",
+                "research_family_enabled",
+                "research_family_id",
+                "research_family_registration_id",
+                "research_family_manifest_sha256",
+                "research_family_matched_study_label",
+                "authorizes_submission",
+            ):
+                if field in row or field in config_row:
+                    if _comparable(row.get(field, "")) != _comparable(
+                        config_row.get(field, "")
+                    ):
+                        errors.append(f"portfolio_allocation_{field}_mismatch:{index}")
+    positive = int(
+        allocations.get(
+            "allocation_weight",
+            pd.Series(0.0, index=allocations.index),
+        ).map(lambda value: _to_number(value) > 0.0).sum()
+    ) if not allocations.empty else 0
+    if int(_number(config, "allocation_count", fallback=-1.0)) != positive:
+        errors.append("portfolio_positive_allocation_count_mismatch")
+    if _to_bool(summary_row.get("research_family_bound", False)):
+        errors.extend(
+            _strategy_portfolio_family_contract_errors(
+                summary_row,
+                allocations,
+                config,
+                extra,
+            )
+        )
+    if not _strategy_portfolio_non_authorizing(summary, allocations, config, extra):
+        errors.append("portfolio_authorizes_submission")
+    return sorted(set(errors))
+
+
+def _strategy_portfolio_family_contract_errors(
+    summary: pd.Series,
+    allocations: pd.DataFrame,
+    config: dict[str, Any],
+    extra: dict[str, Any],
+) -> list[str]:
+    errors: list[str] = []
+    family_id = str(summary.get("research_family_id", "")).strip()
+    registration_id = str(summary.get("research_family_registration_id", "")).strip()
+    family_sha = str(summary.get("research_family_manifest_sha256", "")).strip()
+    for check, value in (
+        ("summary_family_current", summary.get("research_family_provenance_current", False)),
+        ("summary_scorecard_current", summary.get("scorecard_manifest_current", False)),
+        ("summary_scorecard_contract", summary.get("scorecard_contract_consistent", False)),
+        ("summary_scorecard_non_authorizing", summary.get("scorecard_non_authorizing", False)),
+        ("summary_scorecard_gate", summary.get("scorecard_provenance_gate_passed", False)),
+    ):
+        if not _to_bool(value):
+            errors.append(f"portfolio_{check}_not_true")
+    if not family_id or not registration_id or not family_sha:
+        errors.append("portfolio_family_identity_incomplete")
+    for field, expected in (
+        ("research_family_id", family_id),
+        ("research_family_registration_id", registration_id),
+        ("research_family_manifest_sha256", family_sha),
+    ):
+        if str(config.get(field, "")) != expected:
+            errors.append(f"portfolio_config_{field}_mismatch")
+        if str(extra.get(field, "")) != expected:
+            errors.append(f"portfolio_manifest_{field}_mismatch")
+    if not _to_bool(extra.get("research_family_bound", False)):
+        errors.append("portfolio_manifest_family_not_bound")
+    scorecard_value = config.get("scorecard_provenance", {})
+    scorecard = scorecard_value if isinstance(scorecard_value, dict) else {}
+    if not _to_bool(scorecard.get("gate_passed", False)):
+        errors.append("portfolio_scorecard_provenance_gate_not_passed")
+    errors.extend(
+        _strategy_portfolio_nested_lineage_errors(
+            scorecard,
+            family_id=family_id,
+            registration_id=registration_id,
+            family_manifest_sha256=family_sha,
+        )
+    )
+    family_rows = allocations.loc[
+        allocations.get(
+            "research_family_enabled",
+            pd.Series(False, index=allocations.index),
+        ).map(_to_bool)
+    ] if not allocations.empty else allocations
+    for index, row in family_rows.iterrows():
+        if str(row.get("research_family_id", "")) != family_id:
+            errors.append(f"portfolio_family_row_id_mismatch:{index}")
+        if str(row.get("research_family_registration_id", "")) != registration_id:
+            errors.append(f"portfolio_family_row_registration_mismatch:{index}")
+        if str(row.get("research_family_manifest_sha256", "")) != family_sha:
+            errors.append(f"portfolio_family_row_manifest_mismatch:{index}")
+        if not _to_bool(row.get("research_family_gate_passed", False)):
+            errors.append(f"portfolio_family_row_gate_not_passed:{index}")
+    return errors
+
+
+def _strategy_portfolio_nested_lineage_errors(
+    scorecard: dict[str, Any],
+    *,
+    family_id: str,
+    registration_id: str,
+    family_manifest_sha256: str,
+) -> list[str]:
+    errors: list[str] = []
+    raw_scorecard_manifest = str(scorecard.get("manifest_path", "")).strip()
+    scorecard_manifest = Path(raw_scorecard_manifest) if raw_scorecard_manifest else Path()
+    if not raw_scorecard_manifest or not scorecard_manifest.is_file():
+        errors.append("portfolio_nested_scorecard_manifest_missing")
+    else:
+        scorecard_integrity = verify_experiment_manifest(
+            scorecard_manifest,
+            expected_run_type="strategy_scorecard",
+            required_artifacts=STRATEGY_SCORECARD_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        if not scorecard_integrity.passed:
+            errors.append(
+                "portfolio_nested_scorecard_manifest_not_current:"
+                f"{scorecard_integrity.error}"
+            )
+        if file_sha256(scorecard_manifest) != str(
+            scorecard.get("manifest_sha256", "")
+        ):
+            errors.append("portfolio_nested_scorecard_manifest_sha256_mismatch")
+        scorecard_summary = _read_optional_csv(
+            scorecard_manifest.parent / "strategy_scorecard_summary.csv"
+        )
+        scorecard_config = _read_json_object(
+            scorecard_manifest.parent / "strategy_scorecard_next_actions.json"
+        )
+        scorecard_row = (
+            scorecard_summary.iloc[0]
+            if not scorecard_summary.empty
+            else pd.Series(dtype=object)
+        )
+        for source, row in (
+            ("summary", scorecard_row),
+            ("config", scorecard_config),
+        ):
+            if str(row.get("research_family_id", "")) != family_id:
+                errors.append(
+                    f"portfolio_nested_scorecard_family_id_mismatch:{source}"
+                )
+            if str(row.get("research_family_registration_id", "")) != registration_id:
+                errors.append(
+                    "portfolio_nested_scorecard_registration_id_mismatch:"
+                    f"{source}"
+                )
+            if str(row.get("research_family_manifest_sha256", "")) != family_manifest_sha256:
+                errors.append(
+                    "portfolio_nested_scorecard_family_manifest_mismatch:"
+                    f"{source}"
+                )
+            if _to_bool(row.get("authorizes_submission", False)):
+                errors.append(
+                    f"portfolio_nested_scorecard_authorizes_submission:{source}"
+                )
+        if int(
+            _number(
+                scorecard_row,
+                "research_family_gate_passed_profiles",
+                fallback=0.0,
+            )
+        ) < 1:
+            errors.append("portfolio_nested_scorecard_family_gate_not_passed")
+
+    raw_family_path = str(scorecard.get("research_family_path", "")).strip()
+    family_root = Path(raw_family_path) if raw_family_path else Path()
+    family_manifest = family_root / "manifest.json"
+    if not raw_family_path or not family_manifest.is_file():
+        errors.append("portfolio_nested_research_family_manifest_missing")
+        return errors
+    family_integrity = verify_experiment_manifest(
+        family_manifest,
+        expected_run_type="research_family_audit",
+        required_artifacts=RESEARCH_FAMILY_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    if not family_integrity.passed:
+        errors.append(
+            "portfolio_nested_research_family_manifest_not_current:"
+            f"{family_integrity.error}"
+        )
+    if file_sha256(family_manifest) != family_manifest_sha256:
+        errors.append("portfolio_nested_research_family_manifest_sha256_mismatch")
+    family_summary = _read_optional_csv(
+        family_root / "research_family_summary.csv"
+    )
+    family_config = _read_json_object(
+        family_root / "research_family_config.json"
+    )
+    family_manifest_payload = _read_json_object(family_manifest)
+    family_extra_value = family_manifest_payload.get("extra", {})
+    family_extra = family_extra_value if isinstance(family_extra_value, dict) else {}
+    family_config_summary_value = family_config.get("summary", {})
+    family_config_summary = (
+        family_config_summary_value
+        if isinstance(family_config_summary_value, dict)
+        else {}
+    )
+    family_parameters_value = family_config.get("parameters", {})
+    family_parameters = (
+        family_parameters_value
+        if isinstance(family_parameters_value, dict)
+        else {}
+    )
+    family_row = (
+        family_summary.iloc[0]
+        if not family_summary.empty
+        else pd.Series(dtype=object)
+    )
+    for source, row in (
+        ("summary", family_row),
+        ("config_summary", family_config_summary),
+        ("manifest", family_extra),
+    ):
+        if str(row.get("family_id", "")) != family_id:
+            errors.append(f"portfolio_nested_family_id_mismatch:{source}")
+        if str(row.get("registration_id", "")) != registration_id:
+            errors.append(
+                f"portfolio_nested_family_registration_id_mismatch:{source}"
+            )
+        if _to_bool(row.get("authorizes_submission", False)):
+            errors.append(
+                f"portfolio_nested_family_authorizes_submission:{source}"
+            )
+    if str(family_parameters.get("family_id", "")) != family_id:
+        errors.append("portfolio_nested_family_id_mismatch:config_parameters")
+    for check, value in (
+        ("passed", family_row.get("passed", False)),
+        (
+            "prospective_registration_passed",
+            family_row.get("prospective_registration_passed", False),
+        ),
+        ("registration_closed", family_row.get("registration_closed", False)),
+        (
+            "family_wise_error_control_claimed",
+            family_row.get("family_wise_error_control_claimed", False),
+        ),
+    ):
+        if not _to_bool(value):
+            errors.append(f"portfolio_nested_family_{check}_not_true")
+    for source, row in (
+        ("config_summary", family_config_summary),
+        ("manifest", family_extra),
+    ):
+        for check in (
+            "registration_closed",
+            "family_wise_error_control_claimed",
+        ):
+            if not _to_bool(row.get(check, False)):
+                errors.append(
+                    f"portfolio_nested_family_{check}_not_true:{source}"
+                )
+    if not _to_bool(family_config.get("passed", False)):
+        errors.append("portfolio_nested_family_passed_not_true:config")
+    if not _to_bool(family_extra.get("passed", False)):
+        errors.append("portfolio_nested_family_passed_not_true:manifest")
+    if not _to_bool(
+        family_extra.get("prospective_registration_passed", False)
+    ):
+        errors.append(
+            "portfolio_nested_family_prospective_registration_not_true:manifest"
+        )
+    return errors
+
+
+def _strategy_portfolio_non_authorizing(
+    summary: pd.DataFrame,
+    allocations: pd.DataFrame,
+    config: dict[str, Any],
+    extra: dict[str, Any],
+) -> bool:
+    summary_authorizes = bool(
+        summary.get(
+            "authorizes_submission",
+            pd.Series(False, index=summary.index),
+        ).map(_to_bool).any()
+    ) if not summary.empty else False
+    allocation_authorizes = bool(
+        allocations.get(
+            "authorizes_submission",
+            pd.Series(False, index=allocations.index),
+        ).map(_to_bool).any()
+    ) if not allocations.empty else False
+    return bool(
+        not summary_authorizes
+        and not allocation_authorizes
+        and not _to_bool(config.get("authorizes_submission", False))
+        and not _to_bool(extra.get("authorizes_submission", False))
+    )
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _read_optional_csv(path: Path) -> pd.DataFrame:
+    try:
+        return pd.read_csv(path)
+    except (OSError, ValueError, pd.errors.EmptyDataError, pd.errors.ParserError):
+        return pd.DataFrame()
+
+
+def _comparable(value: Any) -> Any:
+    if isinstance(value, (bool, np.bool_)):
+        return bool(value)
+    if isinstance(value, (int, float, np.number)) and not pd.isna(value):
+        return float(value)
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return "" if value is None else str(value)
+
+
+def _to_number(value: Any) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return 0.0
+    return 0.0 if np.isnan(number) else number
+
+
 def _strategy_portfolio_state(
     summary: pd.DataFrame,
     allocations: pd.DataFrame,
     evidence: pd.Series,
     thresholds: ScaleUpThresholds,
+    *,
+    provenance: dict[str, Any] | None = None,
 ) -> pd.Series:
     expected_strategy = _strategy_key(thresholds.expected_strategy) or _strategy_key(evidence.get("strategy", ""))
     expected_market = _identity_key(thresholds.expected_market) or _identity_key(evidence.get("market", ""))
     summary_row = summary.iloc[0] if summary is not None and not summary.empty else pd.Series(dtype=object)
     selected = _select_strategy_portfolio_allocation(allocations, expected_strategy, expected_market)
+    proof = provenance or {
+        "manifest_required": False,
+        "manifest_provided": False,
+        "manifest_current": False,
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "",
+        "contract_consistent": True,
+        "contract_error": "",
+        "non_authorizing": True,
+        "gate_passed": True,
+        "dependency_paths": [],
+        "scorecard_manifest_required": False,
+        "scorecard_manifest_current": False,
+        "scorecard_manifest_sha256": "",
+        "scorecard_contract_consistent": True,
+        "scorecard_non_authorizing": True,
+        "scorecard_provenance_gate_passed": True,
+        "research_family_bound": False,
+        "research_family_provenance_current": True,
+        "research_family_id": "",
+        "research_family_registration_id": "",
+        "research_family_path": "",
+        "research_family_manifest_sha256": "",
+    }
+    provenance_gate = bool(
+        not _to_bool(proof.get("manifest_required", False))
+        or _to_bool(proof.get("gate_passed", False))
+    )
+    selected_source_eligible = _to_bool(selected.get("eligible", False)) if not selected.empty else False
+    selected_source_notional = (
+        _number(selected, "allocation_notional", fallback=0.0)
+        if not selected.empty
+        else 0.0
+    )
+    selected_eligible = bool(selected_source_eligible and provenance_gate)
+    selected_notional = selected_source_notional if provenance_gate else 0.0
+    selected_reason = str(selected.get("eligibility_reason", "")) if not selected.empty else ""
+    if not provenance_gate and not selected.empty:
+        selected_reason = "strategy_portfolio_provenance_not_current"
     return pd.Series(
         {
             "provided": summary is not None and not summary.empty,
             "ready": _to_bool(summary_row.get("ready", False)) if not summary_row.empty else False,
+            "manifest_required": _to_bool(proof.get("manifest_required", False)),
+            "manifest_provided": _to_bool(proof.get("manifest_provided", False)),
+            "manifest_current": _to_bool(proof.get("manifest_current", False)),
+            "manifest_path": str(proof.get("manifest_path", "")),
+            "manifest_sha256": str(proof.get("manifest_sha256", "")),
+            "manifest_error": str(proof.get("manifest_error", "")),
+            "contract_consistent": _to_bool(proof.get("contract_consistent", False)),
+            "contract_error": str(proof.get("contract_error", "")),
+            "non_authorizing": _to_bool(proof.get("non_authorizing", False)),
+            "provenance_gate_passed": provenance_gate,
+            "dependency_count": len(proof.get("dependency_paths", [])),
+            "scorecard_manifest_required": _to_bool(
+                proof.get("scorecard_manifest_required", False)
+            ),
+            "scorecard_manifest_current": _to_bool(
+                proof.get("scorecard_manifest_current", False)
+            ),
+            "scorecard_manifest_sha256": str(
+                proof.get("scorecard_manifest_sha256", "")
+            ),
+            "scorecard_contract_consistent": _to_bool(
+                proof.get("scorecard_contract_consistent", False)
+            ),
+            "scorecard_non_authorizing": _to_bool(
+                proof.get("scorecard_non_authorizing", False)
+            ),
+            "scorecard_provenance_gate_passed": _to_bool(
+                proof.get("scorecard_provenance_gate_passed", False)
+            ),
+            "research_family_bound": _to_bool(
+                proof.get("research_family_bound", False)
+            ),
+            "research_family_provenance_current": _to_bool(
+                proof.get("research_family_provenance_current", False)
+            ),
+            "research_family_id": str(proof.get("research_family_id", "")),
+            "research_family_registration_id": str(
+                proof.get("research_family_registration_id", "")
+            ),
+            "research_family_path": str(
+                proof.get("research_family_path", "")
+            ),
+            "research_family_manifest_sha256": str(
+                proof.get("research_family_manifest_sha256", "")
+            ),
             "deployment_mode": str(summary_row.get("deployment_mode", "")) if not summary_row.empty else "",
             "allocation_mode": str(summary_row.get("allocation_mode", "")) if not summary_row.empty else "",
             "capital_currency": str(summary_row.get("capital_currency", "")) if not summary_row.empty else "",
@@ -4503,14 +5657,14 @@ def _strategy_portfolio_state(
             "selected_profile": str(selected.get("profile", "")) if not selected.empty else "",
             "selected_strategy": _strategy_key(selected.get("strategy", "")) if not selected.empty else "",
             "selected_market": _identity_key(selected.get("market", "")) if not selected.empty else "",
-            "selected_eligible": _to_bool(selected.get("eligible", False)) if not selected.empty else False,
+            "selected_source_eligible": selected_source_eligible,
+            "selected_eligible": selected_eligible,
             "selected_allocation_weight": _number(selected, "allocation_weight", fallback=0.0)
             if not selected.empty
             else 0.0,
-            "selected_allocation_notional": _number(selected, "allocation_notional", fallback=0.0)
-            if not selected.empty
-            else 0.0,
-            "selected_eligibility_reason": str(selected.get("eligibility_reason", "")) if not selected.empty else "",
+            "selected_source_allocation_notional": selected_source_notional,
+            "selected_allocation_notional": selected_notional,
+            "selected_eligibility_reason": selected_reason,
         }
     )
 

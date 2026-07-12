@@ -3339,6 +3339,22 @@ also carries the portfolio-level strategy/market diversity requirements,
 allocated strategy/market counts, top concentration names, and maximum
 strategy/market allocation weights so later runtime and broker gates can audit
 why the selected allocation was allowed without reopening the portfolio folder.
+Any supplied strategy portfolio must now be a complete current
+`strategy_portfolio_allocation` artifact, even when
+`--require-strategy-portfolio` is omitted. Scale-up verifies the portfolio
+manifest and all required artifacts, reconciles summary/allocation/config
+semantics, rejects submission-authorizing claims, and reopens the carried
+strategy scorecard and research-family manifests to verify their hashes,
+family ID, prospective registration ID, closure, and family-wise error-control
+claim. Missing, stale, detached, relabeled, or authorizing portfolio proof
+blocks scale-up. The source allocation remains visible for audit, but its
+usable notional becomes zero and no portfolio cap is applied.
+`scaleup_summary.csv` and `scaleup_config.json` retain portfolio-manifest,
+scorecard-manifest, and family-closure status and hashes. The scale-up manifest
+fingerprints all portfolio artifacts plus the recursively flattened portfolio,
+scorecard, family, registration, robust-study, and source-data dependencies,
+so later nested drift invalidates the scale-up plan. Scale-up remains
+non-authorizing and cannot enable broker submission.
 If a launch-pipeline broker-readiness summary is thin but its
 `broker_readiness_config.json` retains
 `broker_dispatch_roundtrip_vendor_market_data_batch`, scale-up hydrates the

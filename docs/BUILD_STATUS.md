@@ -2568,6 +2568,20 @@
   registration, robust studies, and source data. Scorecard, family, or nested
   source drift therefore invalidates the capital plan recursively. This path
   remains non-authorizing and paper/shadow-only.
+- Controlled scale-up now requires every supplied strategy portfolio to carry
+  a complete current `strategy_portfolio_allocation` manifest. It reconciles
+  portfolio summary/allocation/config semantics, rejects authorizing claims,
+  and reopens the nested scorecard and research-family artifacts to verify
+  their hashes, family ID, prospective registration ID, closure, and
+  family-wise error-control claim. Failed provenance keeps the source
+  allocation visible but sets its usable notional to zero before limit
+  calculation.
+- Scale-up plan/summary/config now preserve portfolio-manifest,
+  scorecard-manifest, and research-family status, identities, and hashes. The
+  scale-up manifest fingerprints every portfolio artifact and recursively
+  flattened catalog, scorecard, family, registration, robust-study, and source
+  dependency, so later nested drift invalidates the session-limit plan. Scale-up
+  remains non-authorizing.
 
 ## Test Gate
 
@@ -2577,10 +2591,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1513 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1519 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: strategy portfolio, strategy scorecard, and research
+Latest focused gate: manifest, strategy portfolio, strategy scorecard,
+research-family, and controlled scale-up suites pass together (`126 passed`).
+Controlled scale-up passes all `80` of its tests, including
+current portfolio-manifest acceptance; missing manifest, allocation drift,
+fresh-but-detached config, authorizing bundle, output collision, nested family
+relabeling, and post-scale-up registration-source drift rejection. The real
+prospective-family chain now passes family audit -> scorecard -> portfolio ->
+controlled scale-up with recursively current manifests and a non-authorizing
+900,000 INR session cap. Experiment-catalog compatibility also passes
+(`63 passed`). The provider-data imbalance ready scale-up wrapper path passes
+(`1 passed`). The
+immediately preceding strategy portfolio, strategy scorecard, and research
 family suites pass together (`41 passed`), including a real prospectively
 registered family closure flowing through a current scorecard into a positive
 paper/shadow allocation, plus missing-manifest, stale-artifact,
@@ -2667,7 +2692,7 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind the current strategy-portfolio manifest and its carried
-   scorecard/research-family proof into controlled scale-up so session limits
-   cannot consume stale allocation CSVs or lose family-closure provenance
-   after capital planning.
+4. Bind the current scale-up manifest and its carried
+   portfolio/scorecard/research-family proof into runtime telemetry and guard
+   inputs so an operational session cannot consume stale limits or lose
+   family-closure provenance after scale-up planning.

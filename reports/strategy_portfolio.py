@@ -11,6 +11,7 @@ import pandas as pd
 from reports.evidence import _normalize_identity, _normalize_strategy
 from reports.manifest import (
     file_sha256,
+    manifest_dependency_paths,
     verify_experiment_manifest,
     write_experiment_manifest,
 )
@@ -280,7 +281,7 @@ def _load_scorecard_evidence(
         evidence["manifest_error"] = _text(integrity.error)
         evidence["manifest_sha256"] = file_sha256(manifest_path)
         evidence["dependency_paths"] = [
-            str(path) for path in _manifest_dependency_paths(manifest_path)
+            str(path) for path in manifest_dependency_paths(manifest_path)
         ]
         contract_errors = _scorecard_contract_errors(
             normalized,
@@ -947,49 +948,6 @@ def _read_json_object(path: Path) -> dict[str, Any]:
     except (OSError, ValueError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, dict) else {}
-
-
-def _manifest_dependency_paths(manifest_path: Path) -> list[Path]:
-    found: dict[str, Path] = {}
-    seen_manifests: set[Path] = set()
-
-    def visit(path: Path) -> None:
-        resolved_manifest = path.resolve()
-        if resolved_manifest in seen_manifests or not resolved_manifest.is_file():
-            return
-        seen_manifests.add(resolved_manifest)
-        payload = _read_json_object(resolved_manifest)
-        for dependency in _fingerprinted_paths(payload.get("inputs", {})):
-            resolved_dependency = dependency.resolve()
-            found[str(resolved_dependency)] = resolved_dependency
-            nested_manifest = (
-                resolved_dependency
-                if resolved_dependency.is_file()
-                and resolved_dependency.name == "manifest.json"
-                else resolved_dependency / "manifest.json"
-            )
-            if nested_manifest.is_file():
-                resolved_nested = nested_manifest.resolve()
-                found[str(resolved_nested)] = resolved_nested
-                visit(resolved_nested)
-
-    visit(manifest_path)
-    found.pop(str(manifest_path.resolve()), None)
-    return [found[key] for key in sorted(found)]
-
-
-def _fingerprinted_paths(value: Any) -> list[Path]:
-    paths: list[Path] = []
-    if isinstance(value, dict):
-        if value.get("kind") in {"file", "directory"} and value.get("path"):
-            paths.append(Path(str(value["path"])))
-        else:
-            for item in value.values():
-                paths.extend(_fingerprinted_paths(item))
-    elif isinstance(value, list):
-        for item in value:
-            paths.extend(_fingerprinted_paths(item))
-    return paths
 
 
 def _read_first_row(path: Path) -> dict[str, Any]:

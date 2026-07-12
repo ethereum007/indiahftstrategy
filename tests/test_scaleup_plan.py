@@ -1,8 +1,10 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 from reports.scaleup import ScaleUpThresholds, evaluate_scaleup_plan, write_scaleup_plan
 
 
@@ -975,10 +977,72 @@ def write_inputs(
 def write_strategy_portfolio(root, *, ready=True, allocation_notional=1200.0):
     portfolio = root / "strategy_portfolio"
     portfolio.mkdir(parents=True, exist_ok=True)
-    strategy_portfolio_summary(ready).to_csv(portfolio / "strategy_portfolio_summary.csv", index=False)
-    strategy_portfolio_allocations(allocation_notional=allocation_notional).to_csv(
+    summary = strategy_portfolio_summary(ready)
+    allocations = strategy_portfolio_allocations(
+        allocation_notional=allocation_notional
+    )
+    summary.to_csv(portfolio / "strategy_portfolio_summary.csv", index=False)
+    allocations.to_csv(
         portfolio / "strategy_portfolio_allocations.csv",
         index=False,
+    )
+    checks = pd.DataFrame(
+        [
+            {
+                "check": "portfolio_ready",
+                "passed": ready,
+                "value": ready,
+                "operator": "is",
+                "threshold": True,
+                "reason": "" if ready else "portfolio is blocked",
+            }
+        ]
+    )
+    checks.to_csv(portfolio / "strategy_portfolio_checks.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "priority": 1,
+                "queue_status": "ready" if ready else "blocked",
+                "profile": "leadlag",
+            }
+        ]
+    ).to_csv(portfolio / "strategy_portfolio_action_queue.csv", index=False)
+    summary_record = json.loads(summary.to_json(orient="records"))[0]
+    allocation_records = json.loads(allocations.to_json(orient="records"))
+    (portfolio / "strategy_portfolio_config.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "ready": ready,
+                "summary": summary_record,
+                "allocation_count": int(
+                    (allocations["allocation_weight"] > 0.0).sum()
+                ),
+                "allocations": allocation_records,
+                "authorizes_submission": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+    (portfolio / "strategy_portfolio_runbook.md").write_text(
+        "# Strategy Portfolio\n",
+        encoding="utf-8",
+    )
+    source = portfolio / "strategy_scorecard_source.csv"
+    pd.DataFrame([{"profile": "leadlag", "ready": ready}]).to_csv(
+        source,
+        index=False,
+    )
+    write_experiment_manifest(
+        portfolio,
+        run_type="strategy_portfolio_allocation",
+        inputs={"strategy_scorecard": source},
+        extra={
+            "ready": ready,
+            "research_family_bound": False,
+            "authorizes_submission": False,
+        },
     )
     return portfolio
 
@@ -2857,6 +2921,13 @@ def test_write_scaleup_plan_carries_strategy_portfolio_inputs(tmp_path):
     assert report.ready
     assert config["strategy_portfolio"]["required"]
     assert config["strategy_portfolio"]["provided"]
+    assert config["strategy_portfolio"]["manifest_required"]
+    assert config["strategy_portfolio"]["manifest_provided"]
+    assert config["strategy_portfolio"]["manifest_current"]
+    assert config["strategy_portfolio"]["contract_consistent"]
+    assert config["strategy_portfolio"]["non_authorizing"]
+    assert config["strategy_portfolio"]["provenance_gate_passed"]
+    assert config["strategy_portfolio"]["dependency_count"] == 1
     assert config["strategy_portfolio"]["selected_profile"] == "leadlag"
     assert config["strategy_portfolio"]["selected_allocation_notional"] == 1200.0
     assert config["strategy_portfolio"]["notional_cap_applied"]
@@ -2867,6 +2938,180 @@ def test_write_scaleup_plan_carries_strategy_portfolio_inputs(tmp_path):
     assert path_tail(manifest["inputs"]["strategy_portfolio_allocations"]["path"]).endswith(
         "/strategy_portfolio/strategy_portfolio_allocations.csv"
     )
+    assert path_tail(
+        manifest["inputs"]["strategy_portfolio_manifest"]["path"]
+    ).endswith("/strategy_portfolio/manifest.json")
+    assert len(manifest["inputs"]["strategy_portfolio_dependencies"]) == 1
+    assert not config["authorizes_submission"]
+    assert not manifest["extra"]["authorizes_submission"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+    source = portfolio / "strategy_scorecard_source.csv"
+    source.write_text(
+        source.read_text(encoding="utf-8") + "\n",
+        encoding="utf-8",
+    )
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_write_scaleup_blocks_portfolio_without_manifest(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    (portfolio / "manifest.json").unlink()
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(max_scale_multiplier=2.0),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert "strategy_portfolio_manifest_provided" in failed
+    assert "strategy_portfolio_provenance_gate_passed" in failed
+    assert report.plan.loc[0, "strategy_portfolio_selected_source_allocation_notional"] == 1200.0
+    assert report.plan.loc[0, "strategy_portfolio_selected_allocation_notional"] == 0.0
+    assert not bool(report.plan.loc[0, "strategy_portfolio_notional_cap_applied"])
+
+
+def test_write_scaleup_blocks_drifted_portfolio_allocation(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    allocations_path = portfolio / "strategy_portfolio_allocations.csv"
+    allocations = pd.read_csv(allocations_path)
+    allocations.loc[0, "allocation_notional"] = 5000.0
+    allocations.to_csv(allocations_path, index=False)
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert "strategy_portfolio_manifest_current" in failed
+    assert report.config["strategy_portfolio"]["manifest_error"] == "artifact_drift"
+    assert report.config["strategy_portfolio"]["selected_source_allocation_notional"] == 5000.0
+    assert report.config["strategy_portfolio"]["selected_allocation_notional"] == 0.0
+
+
+def test_write_scaleup_blocks_current_but_detached_portfolio_config(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    config_path = portfolio / "strategy_portfolio_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["allocations"][0]["allocation_notional"] = 9999.0
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    write_experiment_manifest(
+        portfolio,
+        run_type="strategy_portfolio_allocation",
+        inputs={
+            "strategy_scorecard": portfolio / "strategy_scorecard_source.csv"
+        },
+        extra={
+            "ready": True,
+            "research_family_bound": False,
+            "authorizes_submission": False,
+        },
+    )
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert bool(report.config["strategy_portfolio"]["manifest_current"])
+    assert not bool(report.config["strategy_portfolio"]["contract_consistent"])
+    assert "strategy_portfolio_contract_consistent" in failed
+    assert "portfolio_allocation_allocation_notional_mismatch:0" in report.config[
+        "strategy_portfolio"
+    ]["contract_error"]
+
+
+def test_write_scaleup_rejects_authorizing_portfolio_bundle(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+    summary_path = portfolio / "strategy_portfolio_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary["authorizes_submission"] = True
+    summary.to_csv(summary_path, index=False)
+    allocations_path = portfolio / "strategy_portfolio_allocations.csv"
+    allocations = pd.read_csv(allocations_path)
+    allocations["authorizes_submission"] = True
+    allocations.to_csv(allocations_path, index=False)
+    config_path = portfolio / "strategy_portfolio_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["authorizes_submission"] = True
+    config["summary"]["authorizes_submission"] = True
+    for row in config["allocations"]:
+        row["authorizes_submission"] = True
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    write_experiment_manifest(
+        portfolio,
+        run_type="strategy_portfolio_allocation",
+        inputs={
+            "strategy_scorecard": portfolio / "strategy_scorecard_source.csv"
+        },
+        extra={
+            "ready": True,
+            "research_family_bound": False,
+            "authorizes_submission": True,
+        },
+    )
+
+    report = write_scaleup_plan(
+        evidence_dir=evidence,
+        shadow_comparison_dir=shadow,
+        launch_dir=launch,
+        strategy_portfolio_dir=portfolio,
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"], "check"])
+    assert not report.ready
+    assert report.config["strategy_portfolio"]["manifest_current"]
+    assert not report.config["strategy_portfolio"]["non_authorizing"]
+    assert "strategy_portfolio_non_authorizing" in failed
+    assert report.config["strategy_portfolio"]["selected_allocation_notional"] == 0.0
+    assert not report.config["authorizes_submission"]
+
+
+def test_write_scaleup_refuses_to_overwrite_portfolio_bundle(tmp_path):
+    evidence, shadow, launch, _ = write_inputs(tmp_path)
+    portfolio = write_strategy_portfolio(tmp_path, allocation_notional=1200.0)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_scaleup_plan(
+            evidence_dir=evidence,
+            shadow_comparison_dir=shadow,
+            launch_dir=launch,
+            strategy_portfolio_dir=portfolio,
+            output_dir=portfolio,
+            thresholds=ScaleUpThresholds(require_strategy_portfolio=True),
+        )
 
 
 def test_scaleup_plan_fails_on_instrument_metadata_gap():

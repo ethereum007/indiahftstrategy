@@ -197,6 +197,44 @@ def verify_experiment_manifest(
     )
 
 
+def manifest_dependency_paths(manifest_path: str | Path) -> list[Path]:
+    """Return all recursively manifested input paths below a manifest."""
+
+    found: dict[str, Path] = {}
+    seen_manifests: set[Path] = set()
+
+    def visit(raw_path: str | Path) -> None:
+        path = Path(raw_path).resolve()
+        if path in seen_manifests or not path.is_file():
+            return
+        seen_manifests.add(path)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, json.JSONDecodeError):
+            return
+        if not isinstance(payload, Mapping):
+            return
+        for fingerprint in _manifest_input_fingerprints(
+            payload.get("inputs", {})
+        ):
+            dependency = Path(str(fingerprint["path"])).resolve()
+            found[str(dependency)] = dependency
+            nested_manifest = (
+                dependency
+                if dependency.is_file() and dependency.name == MANIFEST_NAME
+                else dependency / MANIFEST_NAME
+            )
+            if nested_manifest.is_file():
+                resolved_nested = nested_manifest.resolve()
+                found[str(resolved_nested)] = resolved_nested
+                visit(resolved_nested)
+
+    root_manifest = Path(manifest_path).resolve()
+    visit(root_manifest)
+    found.pop(str(root_manifest), None)
+    return [found[key] for key in sorted(found)]
+
+
 def _input_fingerprint(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_input_fingerprint(item) for item in value]

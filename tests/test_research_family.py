@@ -24,6 +24,7 @@ from reports.strategy_portfolio import (
     StrategyPortfolioConfig,
     write_strategy_portfolio_allocations,
 )
+from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 
 
 def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
@@ -340,6 +341,172 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         expected_run_type="strategy_portfolio_allocation",
         require_input_fingerprints=True,
     ).passed
+    scaleup_evidence = tmp_path / "scaleup_evidence"
+    scaleup_shadow = tmp_path / "scaleup_shadow"
+    scaleup_launch = tmp_path / "scaleup_launch"
+    for path in (scaleup_evidence, scaleup_shadow, scaleup_launch):
+        path.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+            }
+        ]
+    ).to_csv(scaleup_evidence / "strategy_evidence_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "accepted": True,
+                "session_count": 1,
+                "acceptance_rate": 1.0,
+                "median_order_fill_rate": 1.0,
+                "total_failed_component_checks": 0,
+                "total_unmatched_fills": 0,
+                "total_mismatched_orders": 0,
+                "total_overfilled_orders": 0,
+                "scenario_key": "scenario=leadlag",
+            }
+        ]
+    ).to_csv(
+        scaleup_shadow / "shadow_session_comparison_summary.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "mode": "shadow",
+                "adapter": "arrow_money",
+                "scenario_key": "scenario=leadlag",
+                "accepted_orders": 100,
+                "total_notional": 1_000_000.0,
+            }
+        ]
+    ).to_csv(scaleup_launch / "launch_summary.csv", index=False)
+    scaleup = write_scaleup_plan(
+        evidence_dir=scaleup_evidence,
+        shadow_comparison_dir=scaleup_shadow,
+        launch_dir=scaleup_launch,
+        strategy_portfolio_dir=tmp_path / "portfolio",
+        output_dir=tmp_path / "scaleup",
+        thresholds=ScaleUpThresholds(
+            require_strategy_portfolio=True,
+            expected_strategy="lead_lag_taker",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+    scaleup_portfolio = scaleup.config["strategy_portfolio"]
+    assert scaleup.ready
+    assert scaleup.plan.loc[0, "max_notional_per_session"] == 900_000.0
+    assert scaleup_portfolio["manifest_current"]
+    assert scaleup_portfolio["contract_consistent"]
+    assert scaleup_portfolio["provenance_gate_passed"]
+    assert scaleup_portfolio["scorecard_provenance"]["gate_passed"]
+    assert scaleup_portfolio["research_family"]["provenance_current"]
+    assert scaleup_portfolio["research_family"]["family_id"] == (
+        "prospective_family"
+    )
+    assert scaleup_portfolio["research_family"]["registration_id"] == (
+        registration.summary.iloc[0]["registration_id"]
+    )
+    assert not scaleup.config["authorizes_submission"]
+    assert verify_experiment_manifest(
+        tmp_path / "scaleup" / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    ).passed
+    original_plan = plan_path.read_text(encoding="utf-8")
+    plan_path.write_text(
+        original_plan + "\n",
+        encoding="utf-8",
+    )
+    drifted_scaleup = verify_experiment_manifest(
+        tmp_path / "scaleup" / "manifest.json",
+        expected_run_type="scaleup_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_scaleup.passed
+    assert drifted_scaleup.error == "input_drift"
+    plan_path.write_text(original_plan, encoding="utf-8")
+
+    portfolio_summary_path = tmp_path / "portfolio" / "strategy_portfolio_summary.csv"
+    portfolio_summary = pd.read_csv(portfolio_summary_path)
+    portfolio_summary.loc[0, "research_family_id"] = "relabeled_family"
+    portfolio_summary.to_csv(portfolio_summary_path, index=False)
+    portfolio_allocations_path = (
+        tmp_path / "portfolio" / "strategy_portfolio_allocations.csv"
+    )
+    portfolio_allocations = pd.read_csv(portfolio_allocations_path)
+    portfolio_allocations.loc[0, "research_family_id"] = "relabeled_family"
+    portfolio_allocations.to_csv(portfolio_allocations_path, index=False)
+    portfolio_config_path = tmp_path / "portfolio" / "strategy_portfolio_config.json"
+    portfolio_config = json.loads(
+        portfolio_config_path.read_text(encoding="utf-8")
+    )
+    portfolio_config["research_family_id"] = "relabeled_family"
+    portfolio_config["summary"]["research_family_id"] = "relabeled_family"
+    portfolio_config["scorecard_provenance"]["research_family_id"] = (
+        "relabeled_family"
+    )
+    for row in portfolio_config["allocations"]:
+        row["research_family_id"] = "relabeled_family"
+    portfolio_config_path.write_text(
+        json.dumps(portfolio_config),
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        tmp_path / "portfolio",
+        run_type="strategy_portfolio_allocation",
+        inputs={
+            "strategy_scorecard": tmp_path / "scorecard" / "strategy_scorecard.csv",
+            "strategy_scorecard_manifest": tmp_path / "scorecard" / "manifest.json",
+            "research_family_audit": tmp_path / "family",
+            "research_family_manifest": tmp_path / "family" / "manifest.json",
+        },
+        extra={
+            "ready": True,
+            "scorecard_manifest_required": True,
+            "scorecard_manifest_current": True,
+            "scorecard_manifest_sha256": file_sha256(
+                tmp_path / "scorecard" / "manifest.json"
+            ),
+            "research_family_bound": True,
+            "research_family_id": "relabeled_family",
+            "research_family_registration_id": registration.summary.iloc[0][
+                "registration_id"
+            ],
+            "research_family_manifest_sha256": file_sha256(
+                tmp_path / "family" / "manifest.json"
+            ),
+            "authorizes_submission": False,
+        },
+    )
+    assert verify_experiment_manifest(
+        tmp_path / "portfolio" / "manifest.json",
+        expected_run_type="strategy_portfolio_allocation",
+        require_input_fingerprints=True,
+    ).passed
+    relabeled_scaleup = write_scaleup_plan(
+        evidence_dir=scaleup_evidence,
+        shadow_comparison_dir=scaleup_shadow,
+        launch_dir=scaleup_launch,
+        strategy_portfolio_dir=tmp_path / "portfolio",
+        output_dir=tmp_path / "scaleup_relabel",
+        thresholds=ScaleUpThresholds(
+            require_strategy_portfolio=True,
+            expected_strategy="lead_lag_taker",
+            expected_market="india_nse_index_derivatives",
+        ),
+    )
+    assert not relabeled_scaleup.ready
+    relabeled_proof = relabeled_scaleup.config["strategy_portfolio"]
+    assert relabeled_proof["manifest_current"]
+    assert not relabeled_proof["contract_consistent"]
+    assert "portfolio_nested_scorecard_family_id_mismatch:summary" in (
+        relabeled_proof["contract_error"]
+    )
 
 
 def test_research_family_blocks_post_hoc_registration(tmp_path):
