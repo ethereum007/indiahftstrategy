@@ -17,11 +17,26 @@ from reports.operational_lineage import (
     broker_dispatch_ack_lineage_fields,
     empty_broker_dispatch_ack_lineage,
 )
+from reports.provider_market_data_imbalance_broker_dispatch_ack import (
+    ProviderMarketDataImbalanceBrokerDispatchAckConfig,
+    write_provider_market_data_imbalance_broker_dispatch_ack,
+)
+from reports.provider_market_data_imbalance_broker_dispatch_roundtrip import (
+    ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig,
+    write_provider_market_data_imbalance_broker_dispatch_roundtrip,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     ProviderBrokerLineageMigrationConfig,
+    provider_broker_lineage_migration_audit_check,
+    provider_broker_lineage_migration_audit_evidence,
     provider_broker_lineage_migration_audit_inputs,
+    provider_broker_lineage_migration_audit_summary_fields,
     verify_provider_broker_lineage_migration_audit,
     write_provider_broker_lineage_migration_audit,
+)
+from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
+    ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
+    write_provider_market_data_imbalance_broker_rehearsal_certificate,
 )
 
 
@@ -325,6 +340,11 @@ def test_lineage_migration_audit_inputs_seal_post_audit_drift(tmp_path):
     audit_inputs = provider_broker_lineage_migration_audit_inputs(
         audit.output_dir
     )
+    audit_evidence = provider_broker_lineage_migration_audit_evidence(
+        audit.output_dir,
+        source_path=legacy["provider_send"],
+        source_role="provider_send",
+    )
     manifest = write_experiment_manifest(
         output,
         run_type="lineage_migration_audit_consumer_test",
@@ -337,6 +357,17 @@ def test_lineage_migration_audit_inputs_seal_post_audit_drift(tmp_path):
         "lineage_migration_audit_manifest",
         "lineage_migration_audit_dependencies",
     } == set(audit_inputs)
+    assert audit_evidence["ready"]
+    assert audit_evidence["source_covered"]
+    assert audit_evidence["source_status"] == "covered_by_strict"
+    assert audit_evidence["manifest_sha256"]
+    assert audit_evidence["strict_replacement_manifest_sha256"]
+    assert provider_broker_lineage_migration_audit_check(
+        audit_evidence
+    )["passed"]
+    assert provider_broker_lineage_migration_audit_summary_fields(
+        audit_evidence
+    )["lineage_migration_audit_ready"]
     assert verify_experiment_manifest(
         manifest,
         expected_run_type="lineage_migration_audit_consumer_test",
@@ -352,6 +383,139 @@ def test_lineage_migration_audit_inputs_seal_post_audit_drift(tmp_path):
         expected_run_type="lineage_migration_audit_consumer_test",
         require_input_fingerprints=True,
     ).passed
+
+
+@pytest.mark.parametrize("stage", ["ack", "roundtrip", "certificate"])
+def test_provider_legacy_outputs_surface_lineage_migration_audit(
+    tmp_path,
+    stage,
+):
+    legacy = _write_provider_chain(tmp_path / "archive", strict=False)
+    _write_provider_chain(
+        legacy["root"],
+        strict=True,
+        suffix="_strict",
+        shared=legacy,
+    )
+    audit = write_provider_broker_lineage_migration_audit(
+        [legacy["root"]],
+        legacy["root"] / "migration_audit",
+    )
+    output = tmp_path / f"{stage}_legacy_output"
+
+    if stage == "ack":
+        write_provider_market_data_imbalance_broker_dispatch_ack(
+            legacy["provider_send"],
+            legacy["acks"],
+            output,
+            config=ProviderMarketDataImbalanceBrokerDispatchAckConfig(
+                require_send_packet=False,
+                lineage_migration_audit_dir=str(audit.output_dir),
+            ),
+        )
+        summary_name = (
+            "provider_market_data_imbalance_broker_dispatch_ack_summary.csv"
+        )
+        checks_name = (
+            "provider_market_data_imbalance_broker_dispatch_ack_checks.csv"
+        )
+        config_name = (
+            "provider_market_data_imbalance_broker_dispatch_ack_config.json"
+        )
+        runbook_name = (
+            "provider_market_data_imbalance_broker_dispatch_ack_runbook.md"
+        )
+        run_type = ACK_RUN_TYPE
+    elif stage == "roundtrip":
+        write_provider_market_data_imbalance_broker_dispatch_roundtrip(
+            legacy["ack"],
+            output,
+            config=ProviderMarketDataImbalanceBrokerDispatchRoundTripConfig(
+                require_ack_lineage=False,
+                lineage_migration_audit_dir=str(audit.output_dir),
+            ),
+        )
+        summary_name = (
+            "provider_market_data_imbalance_broker_dispatch_roundtrip_summary.csv"
+        )
+        checks_name = (
+            "provider_market_data_imbalance_broker_dispatch_roundtrip_checks.csv"
+        )
+        config_name = (
+            "provider_market_data_imbalance_broker_dispatch_roundtrip_config.json"
+        )
+        runbook_name = (
+            "provider_market_data_imbalance_broker_dispatch_roundtrip_runbook.md"
+        )
+        run_type = ROUNDTRIP_RUN_TYPE
+    else:
+        write_provider_market_data_imbalance_broker_rehearsal_certificate(
+            legacy["roundtrip"],
+            output,
+            config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+                require_clean_recorded_git=False,
+                require_ack_lineage=False,
+                lineage_migration_audit_dir=str(audit.output_dir),
+            ),
+        )
+        summary_name = (
+            "provider_market_data_imbalance_broker_rehearsal_certificate_summary.csv"
+        )
+        checks_name = (
+            "provider_market_data_imbalance_broker_rehearsal_certificate_checks.csv"
+        )
+        config_name = (
+            "provider_market_data_imbalance_broker_rehearsal_certificate.json"
+        )
+        runbook_name = (
+            "provider_market_data_imbalance_broker_rehearsal_certificate_runbook.md"
+        )
+        run_type = CERTIFICATE_RUN_TYPE
+
+    summary = pd.read_csv(output / summary_name).iloc[0]
+    checks = pd.read_csv(output / checks_name)
+    config_payload = json.loads(
+        (output / config_name).read_text(encoding="utf-8")
+    )
+    manifest = json.loads(
+        (output / "manifest.json").read_text(encoding="utf-8")
+    )
+    audit_payload = (
+        config_payload["payload"]["lineage_migration_audit"]
+        if stage == "certificate"
+        else config_payload["lineage_migration_audit"]
+    )
+
+    assert bool(summary["lineage_migration_audit_provided"])
+    assert bool(summary["lineage_migration_audit_ready"])
+    assert bool(summary["lineage_migration_audit_manifest_current"])
+    assert bool(summary["lineage_migration_audit_policy_ready"])
+    assert bool(summary["lineage_migration_audit_source_covered"])
+    assert summary["lineage_migration_audit_source_status"] == (
+        "covered_by_strict"
+    )
+    audit_check = checks.loc[
+        checks["check"] == "lineage_migration_audit_ready"
+    ].iloc[0]
+    assert bool(audit_check["passed"])
+    assert audit_payload["ready"] is True
+    assert manifest["extra"]["lineage_migration_audit"]["ready"] is True
+    assert {
+        "lineage_migration_audit",
+        "lineage_migration_audit_manifest",
+        "lineage_migration_audit_dependencies",
+    }.issubset(manifest["inputs"])
+    assert "Lineage migration audit: ready" in (
+        output / runbook_name
+    ).read_text(encoding="utf-8")
+    assert verify_experiment_manifest(
+        output / "manifest.json",
+        expected_run_type=run_type,
+        require_input_fingerprints=True,
+    ).passed
+    catalog = catalog_experiment_runs([output]).catalog.iloc[0]
+    assert bool(catalog["summary_lineage_migration_audit_ready"])
+    assert bool(catalog["summary_lineage_migration_audit_source_covered"])
 
 
 @pytest.mark.parametrize(
@@ -468,6 +632,11 @@ def test_lineage_migration_audit_verifier_rejects_relaxed_unmigrated_policy(
         source_path=legacy["provider_send"],
         source_role="provider_send",
     )
+    evidence = provider_broker_lineage_migration_audit_evidence(
+        report.output_dir,
+        source_path=legacy["provider_send"],
+        source_role="provider_send",
+    )
     assert not verified.ready
     assert not verified.policy_ready
     assert not verified.source_covered
@@ -479,6 +648,11 @@ def test_lineage_migration_audit_verifier_rejects_relaxed_unmigrated_policy(
             ]
         )
     )
+    assert evidence["provided"]
+    assert not evidence["ready"]
+    assert not provider_broker_lineage_migration_audit_check(evidence)[
+        "passed"
+    ]
 
 
 def test_lineage_migration_audit_rejects_policy_mismatched_replacement(

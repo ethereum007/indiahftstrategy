@@ -15,7 +15,10 @@ from reports.broker_dispatch_ack import (
 )
 from reports.manifest import write_experiment_manifest
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
+    provider_broker_lineage_migration_audit_check,
+    provider_broker_lineage_migration_audit_evidence,
     provider_broker_lineage_migration_audit_inputs,
+    provider_broker_lineage_migration_audit_summary_fields,
 )
 
 
@@ -121,6 +124,13 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
 
     provider_root = Path(provider_broker_dispatch_send_dir)
     acks = Path(acks_path)
+    lineage_migration_audit = (
+        provider_broker_lineage_migration_audit_evidence(
+            config.lineage_migration_audit_dir,
+            source_path=provider_root,
+            source_role="provider_send",
+        )
+    )
     provider_summary, provider_summary_error = _read_csv(
         provider_root / "provider_market_data_imbalance_broker_dispatch_send_summary.csv"
     )
@@ -187,6 +197,19 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         broker_dispatch_ack_error = "provider imbalance broker-dispatch-ack prerequisites are not ready"
 
     checks = _checks(prechecks, broker_dispatch_ack, broker_dispatch_ack_error, provider_summary, provider_config, config)
+    checks = pd.concat(
+        [
+            checks,
+            pd.DataFrame(
+                [
+                    provider_broker_lineage_migration_audit_check(
+                        lineage_migration_audit
+                    )
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
     summary = _summary(
         provider_root,
         resolved_broker_dispatch_dir,
@@ -203,6 +226,11 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
         provider_summary,
         provider_config,
         provider_manifest,
+    )
+    summary = summary.assign(
+        **provider_broker_lineage_migration_audit_summary_fields(
+            lineage_migration_audit
+        )
     )
     action_queue = _action_queue(summary.iloc[0], checks, broker_dispatch_ack)
     summary = _summary_with_actions(summary, action_queue)
@@ -225,6 +253,9 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
             "upstream_provider_dispatch_roundtrip_dir": inferred_upstream_provider_dispatch_roundtrip_dir,
             "upstream_dispatch_roundtrip_dir": inferred_upstream_dispatch_roundtrip_dir,
         },
+    )
+    payload["lineage_migration_audit"] = _jsonable(
+        lineage_migration_audit
     )
 
     checks.to_csv(out / "provider_market_data_imbalance_broker_dispatch_ack_checks.csv", index=False)
@@ -330,6 +361,7 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
             "market_session": _market_session_contract_from_summary(summary_row),
             "provider_profile": _mapping(payload.get("provider_profile")),
             "adapter_receipt_proof": _mapping(payload.get("adapter_receipt_proof")),
+            "lineage_migration_audit": lineage_migration_audit,
             "provider_profile_matches_session": bool(summary_row["provider_profile_matches_session"]),
             "provider_profile_matches_bundle": bool(summary_row["provider_profile_matches_bundle"]),
             "capture_bundle_provided": bool(summary_row["capture_bundle_provided"]),
@@ -3424,6 +3456,18 @@ def _config(
 
 
 def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd.DataFrame) -> str:
+    lineage_audit_line = (
+        "- Lineage migration audit: not provided"
+        if not bool(summary["lineage_migration_audit_provided"])
+        else (
+            "- Lineage migration audit: "
+            f"{'ready' if bool(summary['lineage_migration_audit_ready']) else 'blocked'} "
+            f"({summary['lineage_migration_audit_path']}; source status: "
+            f"{summary['lineage_migration_audit_source_status'] or 'missing'}; "
+            "covered: "
+            f"{'yes' if bool(summary['lineage_migration_audit_source_covered']) else 'no'})"
+        )
+    )
     dispatch_roundtrip_receipt_line = (
         "- Dispatch round-trip adapter receipt proof: not applicable "
         "(no provider wrapper proof)"
@@ -3448,6 +3492,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         "# Provider Market Data Imbalance Broker Dispatch Acknowledgements",
         "",
         f"- Passed: {'yes' if bool(summary['passed']) else 'no'}",
+        lineage_audit_line,
         f"- Provider: {summary['provider']}",
         f"- Market: {summary['market']}",
         f"- Exchange: {summary['exchange'] or 'unspecified'}",

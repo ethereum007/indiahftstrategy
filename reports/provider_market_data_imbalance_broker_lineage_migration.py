@@ -9,6 +9,7 @@ from typing import Any, Mapping
 import pandas as pd
 
 from reports.manifest import (
+    file_sha256,
     manifest_dependency_paths,
     verify_experiment_manifest,
     write_experiment_manifest,
@@ -152,6 +153,128 @@ def provider_broker_lineage_migration_audit_inputs(
         "lineage_migration_audit_dependencies": manifest_dependency_paths(
             manifest
         ),
+    }
+
+
+def provider_broker_lineage_migration_audit_evidence(
+    audit_dir: str | Path | None,
+    *,
+    source_path: str | Path,
+    source_role: str,
+) -> dict[str, Any]:
+    source = Path(source_path).resolve()
+    evidence: dict[str, Any] = {
+        "provided": False,
+        "ready": False,
+        "authorizes_submission": False,
+        "path": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_current": False,
+        "policy_ready": False,
+        "strict_ready_coverage": 0.0,
+        "blocked_bundles": 0,
+        "blocked_action_count": 0,
+        "source_role": str(source_role),
+        "source_path": str(source),
+        "source_covered": False,
+        "source_status": "",
+        "strict_replacement_path": "",
+        "strict_replacement_manifest_path": "",
+        "strict_replacement_manifest_sha256": "",
+        "error": "",
+    }
+    if not audit_dir:
+        return evidence
+
+    audit = Path(audit_dir).resolve()
+    manifest = audit / "manifest.json"
+    verification = verify_provider_broker_lineage_migration_audit(
+        audit,
+        source_path=source,
+        source_role=source_role,
+    )
+    summary = _read_csv(
+        audit / "provider_broker_lineage_migration_summary.csv"
+    )
+    summary_row = (
+        summary.iloc[0] if len(summary) == 1 else pd.Series(dtype=object)
+    )
+    matched_row = (
+        verification.matched_inventory.iloc[0]
+        if len(verification.matched_inventory) == 1
+        else pd.Series(dtype=object)
+    )
+    replacement = _path(matched_row.get("strict_replacement_path"))
+    replacement_manifest = (
+        replacement / "manifest.json" if replacement is not None else None
+    )
+    evidence.update(
+        {
+            "provided": True,
+            "ready": verification.ready,
+            "path": str(audit),
+            "manifest_path": str(manifest),
+            "manifest_sha256": (
+                file_sha256(manifest) if manifest.is_file() else ""
+            ),
+            "manifest_current": verification.manifest_current,
+            "policy_ready": verification.policy_ready,
+            "strict_ready_coverage": _float(
+                summary_row.get("strict_ready_coverage"),
+                default=0.0,
+            ),
+            "blocked_bundles": _int(
+                summary_row.get("blocked_bundles"),
+                default=0,
+            ),
+            "blocked_action_count": _int(
+                summary_row.get("blocked_action_count"),
+                default=0,
+            ),
+            "source_covered": verification.source_covered,
+            "source_status": verification.source_status,
+            "strict_replacement_path": (
+                "" if replacement is None else str(replacement)
+            ),
+            "strict_replacement_manifest_path": (
+                ""
+                if replacement_manifest is None
+                else str(replacement_manifest)
+            ),
+            "strict_replacement_manifest_sha256": (
+                file_sha256(replacement_manifest)
+                if replacement_manifest is not None
+                and replacement_manifest.is_file()
+                else ""
+            ),
+            "error": verification.error,
+        }
+    )
+    return evidence
+
+
+def provider_broker_lineage_migration_audit_check(
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    provided = _bool(evidence.get("provided"))
+    ready = _bool(evidence.get("ready"))
+    return {
+        "check": "lineage_migration_audit_ready",
+        "value": ready if provided else "not_provided",
+        "operator": "is" if provided else "not_required",
+        "threshold": True if provided else "",
+        "passed": bool(not provided or ready),
+        "reason": "" if not provided or ready else _text(evidence.get("error")),
+    }
+
+
+def provider_broker_lineage_migration_audit_summary_fields(
+    evidence: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        f"lineage_migration_audit_{key}": value
+        for key, value in evidence.items()
     }
 
 

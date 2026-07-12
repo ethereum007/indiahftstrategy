@@ -2733,11 +2733,21 @@
   equivalent-replacement, exact-source verification, policy-mismatch,
   transitive/post-audit drift, recursive-discovery, collision, catalog, CLI
   exit-policy, and all three exact-source legacy override gates pass together
-  (`16 passed`). Each accepted CLI override records the audit directory in its
+  (`19 passed`). Each accepted CLI override records the audit directory in its
   writer config and fingerprints the audit directory, audit manifest, and
   transitive audit dependencies in the generated proof manifest. Missing audit,
   audit-on-strict-mode, unrelated source, relaxed policy, and later source drift
   fail closed before the production CLI writer runs.
+- Provider acknowledgement, final round-trip, and rehearsal-certificate writers
+  now emit a common `lineage_migration_audit_ready` check and flattened summary
+  fields for audit path/hash/currentness, hard policy readiness, strict-ready
+  coverage, blocker counts, exact source role/status/coverage, and strict
+  replacement identity. The same evidence appears in runbooks, nested config or
+  certificate payload, and manifest metadata; catalog rows inherit every field
+  automatically. Certificate SHA-256 now content-addresses the audit evidence,
+  while all three output manifests seal its recursive dependencies. Strict and
+  lower-level archive paths explicitly report `not_provided` without creating a
+  false blocker.
 
 ## Test Gate
 
@@ -2747,7 +2757,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1577 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1580 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2885,7 +2895,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1577-test collection is fully green.
+1580-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2894,6 +2904,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Surface accepted lineage-migration audit identity, verification status, and
-   source-coverage status directly in provider acknowledgement, round-trip, and
-   certificate summaries/runbooks for operator and catalog review.
+4. Add an aggregate catalog audit-usage report and fail policy that identifies
+   legacy-lineage provider proofs whose accepted audit or strict replacement has
+   drifted since artifact generation.

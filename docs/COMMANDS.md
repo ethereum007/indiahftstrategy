@@ -6345,8 +6345,12 @@ acknowledgement inputs already classified by the lineage migration audit and
 must be paired with `--lineage-migration-audit <audit_dir>`. The CLI verifies
 that the sealed audit has 100% coverage, zero blockers, and a
 `covered_by_strict` acknowledgement row for the exact provider-send source
-before creating output. The generated acknowledgement config and manifest then
-retain and fingerprint the audit, its manifest, and its transitive dependencies.
+before creating output. The generated acknowledgement adds a
+`lineage_migration_audit_ready` check; exposes audit identity, manifest hash,
+policy/coverage status, exact source status, and strict replacement identity in
+its summary and runbook; and retains the same evidence in config and manifest
+metadata. The catalog automatically exposes those summary fields. The manifest
+also fingerprints the audit, its manifest, and its transitive dependencies.
 Supplying an audit on the strict path is rejected; new reconciliations should
 retain the strict default.
 
@@ -6452,9 +6456,10 @@ broker-readiness feed and routes back to provider acknowledgement reconciliation
 already classified by the lineage migration audit and must be paired with
 `--lineage-migration-audit <audit_dir>`. The audit must cover that exact
 provider acknowledgement with a current policy-equivalent strict sibling. The
-generated round-trip config and manifest retain the audit plus its sealed
-dependency graph. Supplying an audit without the legacy override is rejected;
-new reviews should retain the strict default.
+generated round-trip checks, summary, runbook, config, manifest metadata, and
+catalog row expose the accepted audit and exact source coverage; the manifest
+also retains its sealed dependency graph. Supplying an audit without the legacy
+override is rejected; new reviews should retain the strict default.
 
 Issue a compact, content-addressed integrity certificate for the completed
 rehearsal:
@@ -6491,8 +6496,11 @@ manifest, so acknowledgement relabeling or drift requires certificate reissue.
 an archived rehearsal already assessed by the lineage migration audit. It
 requires `--lineage-migration-audit <audit_dir>`, and the audit must cover the
 exact provider round-trip source before certificate generation. The certificate
-manifest fingerprints that audit and all of its sealed dependencies. It must
-not be used for new broker rehearsals or production-readiness certification.
+checks, summary, runbook, payload, manifest metadata, and catalog row expose
+the accepted audit and exact source coverage. The certificate SHA-256
+content-addresses that payload, while its manifest fingerprints the audit and
+all sealed dependencies. It must not be used for new broker rehearsals or
+production-readiness certification.
 
 Outputs:
 

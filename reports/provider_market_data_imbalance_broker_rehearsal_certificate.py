@@ -14,7 +14,10 @@ from reports.operational_lineage import (
     empty_broker_dispatch_ack_lineage,
 )
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
+    provider_broker_lineage_migration_audit_check,
+    provider_broker_lineage_migration_audit_evidence,
     provider_broker_lineage_migration_audit_inputs,
+    provider_broker_lineage_migration_audit_summary_fields,
 )
 
 
@@ -124,6 +127,13 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
 
     source_root = Path(provider_broker_dispatch_roundtrip_dir).resolve()
     out = Path(output_dir).resolve()
+    lineage_migration_audit = (
+        provider_broker_lineage_migration_audit_evidence(
+            config.lineage_migration_audit_dir,
+            source_path=source_root,
+            source_role="provider_roundtrip",
+        )
+    )
     _validate_output_location(source_root, out)
     out.mkdir(parents=True, exist_ok=True)
 
@@ -174,6 +184,19 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
         graph_truncated=graph_truncated,
         config=config,
     )
+    checks = pd.concat(
+        [
+            checks,
+            pd.DataFrame(
+                [
+                    provider_broker_lineage_migration_audit_check(
+                        lineage_migration_audit
+                    )
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
     valid = bool(not checks.empty and checks["passed"].astype(bool).all())
 
     certificate = _certificate_payload(
@@ -188,6 +211,7 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
         manifest_graph=manifest_graph,
         fingerprint_inventory=fingerprint_inventory,
         config=config,
+        lineage_migration_audit=lineage_migration_audit,
     )
     summary = _summary(
         valid=valid,
@@ -199,6 +223,11 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
         manifest_graph=manifest_graph,
         fingerprint_inventory=fingerprint_inventory,
         certificate=certificate,
+    )
+    summary = summary.assign(
+        **provider_broker_lineage_migration_audit_summary_fields(
+            lineage_migration_audit
+        )
     )
     action_queue = _action_queue(checks)
     summary = _summary_with_actions(summary, action_queue)
@@ -259,6 +288,7 @@ def write_provider_market_data_imbalance_broker_rehearsal_certificate(
             "broker_dispatch_ack_lineage": certificate["payload"][
                 "broker_dispatch_ack_lineage"
             ],
+            "lineage_migration_audit": lineage_migration_audit,
             "digitally_signed": False,
             "cycle_id": certificate["cycle_id"],
             "certificate_sha256": certificate["certificate_sha256"],
@@ -1061,6 +1091,7 @@ def _certificate_payload(
     manifest_graph: pd.DataFrame,
     fingerprint_inventory: pd.DataFrame,
     config: ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
+    lineage_migration_audit: Mapping[str, Any],
 ) -> dict[str, Any]:
     manifest_chain = [
         {
@@ -1128,6 +1159,7 @@ def _certificate_payload(
             "unmatched_acks": _integer(source_row.get("unmatched_acks", 0)),
         },
         "broker_dispatch_ack_lineage": _ack_lineage_record(source_row),
+        "lineage_migration_audit": _jsonable(lineage_migration_audit),
         "provider_receipts": {
             "required": _bool(
                 source_row.get("dispatch_roundtrip_adapter_receipts_required", False)
@@ -1321,6 +1353,18 @@ def _runbook_markdown(
     action_queue: pd.DataFrame,
 ) -> str:
     failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else checks
+    lineage_audit_line = (
+        "- Lineage migration audit: not provided"
+        if not bool(summary["lineage_migration_audit_provided"])
+        else (
+            "- Lineage migration audit: "
+            f"{'ready' if bool(summary['lineage_migration_audit_ready']) else 'blocked'} "
+            f"(`{summary['lineage_migration_audit_path']}`; source status: "
+            f"`{summary['lineage_migration_audit_source_status'] or 'missing'}`; "
+            "covered: "
+            f"{'yes' if bool(summary['lineage_migration_audit_source_covered']) else 'no'})"
+        )
+    )
     lines = [
         "# Provider Market-Data Imbalance Broker Rehearsal Certificate",
         "",
@@ -1334,6 +1378,7 @@ def _runbook_markdown(
         f"- Acknowledgements: {int(summary['acked_orders'])}/{int(summary['send_requests'])} accepted",
         "- Acknowledgement lineage: "
         f"{'current' if bool(summary['broker_dispatch_ack_lineage_gate_passed']) else 'not required or blocked'}",
+        lineage_audit_line,
         f"- Manifest chain: {int(summary['manifest_count'])} manifests, {int(summary['fingerprint_match_count'])}/{int(summary['fingerprint_count'])} fingerprints current",
         f"- Next gate: `{summary['next_gate']}`",
         f"- Next gate help: `{summary['next_gate_help_command']}`",
