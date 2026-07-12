@@ -773,6 +773,21 @@
   settlement, and surface market-making evidence profiles from one experiment
   catalog while filtering shared run types by strategy/market identity and
   emitting explicit missing-evidence gaps.
+- Strategy readiness can now bind a current registered research-family audit
+  with `--research-family` and enforce it with
+  `--require-research-family`. Research profiles automatically require this
+  proof when their catalog contains a passed prospectively registered robust
+  selection, so the requirement cannot be bypassed by omitting the flag. The
+  scorecard verifies the complete family artifact/input manifest, prospective
+  registration closure, family-wise error-control claim, selected-candidate
+  ledger, and non-authorizing status, then requires the exact normalized
+  candidate scenario plus strategy and market to match one family survivor.
+  Missing proof routes to `audit-research-family`; stale, blocked, ambiguous,
+  or candidate-mismatched proof blocks readiness and remains visible in the
+  scorecard, gaps, action queue, JSON handoff, runbook, and manifest. The
+  provider-imbalance scorecard wrapper exposes the same family path/requirement
+  controls, carries family status into its summary, and fingerprints the family
+  root directly so this proof remains usable in the India-first provider lane.
 - Strategy readiness scorecard can also score the file-provenance-gated
   `ops_launch` live-dry-run evidence lane for a named strategy, and fails
   closed on mixed strategy identities when no explicit ops strategy is supplied.
@@ -2546,14 +2561,14 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1502 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1505 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`138 passed`). This covers deterministic plan locking, immutable
+together (`141 passed`). This covers deterministic plan locking, immutable
 registered-study launch contracts, exact contract execution, unique execution
 receipts, hash-chained attempt records, attested latest-attempt retry policy,
 duplicate/completed replay blocking, attempt-ledger tamper rejection, resolved
@@ -2563,6 +2578,11 @@ duplicate/inconsistent recovery rejection, outcome-ledger tamper rejection,
 family-closure attempt/outcome census generation, matrix/ledger count and
 latest-pointer reconciliation, retry-visible interruption history, and explicit
 zero-hypothesis accounting for exact operational retries,
+automatic scorecard detection of registered robust research, current
+family-manifest and registration-closure enforcement, exact surviving-candidate
+strategy/market/scenario binding, missing/blocked/stale/mismatched family-proof
+rejection, post-scorecard family-drift detection, and CLI fail-closed family
+requirements,
 launch-argument and semantic-drift rejection, mutable coverage refresh without
 root invalidation, recursive
 post-coverage result-drift detection, current sweep and result coverage,
@@ -2574,6 +2594,10 @@ failed-attempt accounting, complete-family attestation, malformed-p-value and
 drift rejection, development/holdout isolation, frozen-candidate evaluation,
 exact sign-test correction, deterministic bootstrap evidence, memorized and
 underpowered orchestration, strict lineage, and CLI fail-closed behavior.
+Strategy portfolio and experiment-catalog compatibility also pass together
+(`72 passed`) with the expanded family-bound scorecard outputs.
+The provider-imbalance ready scorecard wrapper compatibility path also passes
+with the new family-proof passthrough (`1 passed`).
 Manifest generation, the existing surface research/launch pipeline, and
 generic launch-bundle compatibility also pass together (`14 passed`).
 The immediately preceding CSCV backtest-overfit audit, manifest-bound
@@ -2608,7 +2632,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1502-test collection is fully green.
+1505-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2617,6 +2641,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind current passed research-family closure into strategy-readiness inputs
-   so a research-derived candidate cannot advance from an individually ready
-   study while its registered family audit is missing, stale, or blocked.
+4. Bind the current strategy-scorecard manifest and carried research-family
+   proof into strategy portfolio allocation so capital plans cannot consume a
+   stale CSV or lose family-closure provenance after readiness scoring.

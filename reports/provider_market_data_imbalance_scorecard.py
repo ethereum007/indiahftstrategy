@@ -22,6 +22,8 @@ class ProviderMarketDataImbalanceScorecardConfig:
     allow_dirty_git: bool = False
     expected_market: str = ""
     require_file_inputs: bool = False
+    research_family_path: str = ""
+    require_research_family: bool = False
 
 
 @dataclass(frozen=True)
@@ -72,11 +74,13 @@ def write_provider_market_data_imbalance_scorecard(
             scorecard = write_strategy_scorecard(
                 catalog_path,
                 output_dir=scorecard_dir,
+                research_family_path=config.research_family_path or None,
                 thresholds=StrategyScorecardThresholds(
                     profiles=(PROFILE,),
                     expected_market=config.expected_market or _first_text(evidence_summary, "market") or None,
                     allow_dirty_git=config.allow_dirty_git,
                     require_file_inputs=config.require_file_inputs,
+                    require_research_family=config.require_research_family,
                 ),
             )
         except (OSError, ValueError, FileNotFoundError, pd.errors.ParserError) as exc:
@@ -133,6 +137,9 @@ def write_provider_market_data_imbalance_scorecard(
         inputs["catalog"] = catalog_path
     if scorecard is not None and scorecard.output_dir is not None:
         inputs["scorecard"] = scorecard.output_dir
+    research_family = Path(config.research_family_path).resolve() if config.research_family_path else None
+    if research_family is not None and research_family.exists():
+        inputs["research_family_audit"] = research_family
     summary_row = summary.iloc[0]
     capture_bundle = _path_from_text(str(summary_row["capture_bundle_path"]))
     if capture_bundle is not None and capture_bundle.exists():
@@ -799,6 +806,50 @@ def _summary(
                 "readiness_score": _first_number(scorecard_summary, "best_readiness_score"),
                 "passed_required_run_types": int(_first_number(scorecard_items, "passed_required_run_types")),
                 "required_run_type_count": int(_first_number(scorecard_items, "required_run_type_count")),
+                "research_family_required": bool(
+                    config.require_research_family
+                    or _first_bool(
+                        scorecard_items,
+                        "research_family_required",
+                    )
+                ),
+                "research_family_path": config.research_family_path,
+                "registered_research_detected": _first_bool(
+                    scorecard_items,
+                    "registered_research_detected",
+                ),
+                "research_family_provided": _first_bool(
+                    scorecard_items,
+                    "research_family_provided",
+                ),
+                "research_family_gate_passed": _first_bool(
+                    scorecard_items,
+                    "research_family_gate_passed",
+                ),
+                "research_family_reason": _first_text(
+                    scorecard_items,
+                    "research_family_reason",
+                ),
+                "research_family_id": _first_text(
+                    scorecard_items,
+                    "research_family_id",
+                ),
+                "research_family_registration_id": _first_text(
+                    scorecard_items,
+                    "research_family_registration_id",
+                ),
+                "research_family_manifest_sha256": _first_text(
+                    scorecard_items,
+                    "research_family_manifest_sha256",
+                ),
+                "research_family_candidate_match": _first_bool(
+                    scorecard_items,
+                    "research_family_candidate_match",
+                ),
+                "research_family_matched_study_label": _first_text(
+                    scorecard_items,
+                    "research_family_matched_study_label",
+                ),
                 "failed_checks": failed,
                 "failed_check_names": ";".join(
                     checks.loc[~checks["passed"].astype(bool), "check"].astype(str).tolist()

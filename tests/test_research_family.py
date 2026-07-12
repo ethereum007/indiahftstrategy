@@ -12,6 +12,10 @@ from reports.research_family import (
 from reports.research_family_registration import (
     write_research_family_registration,
 )
+from reports.strategy_scorecard import (
+    StrategyScorecardThresholds,
+    write_strategy_scorecard,
+)
 
 
 def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
@@ -260,6 +264,55 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     ]
     assert manifest["inputs"]["research_family_registration"]["kind"] == "directory"
     assert manifest["extra"]["registration_closed"]
+
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    required = (
+        ("leadlag_edge_audit", "leadlag_edge_summary.csv"),
+        ("leadlag_replay_walkforward", "leadlag_replay_walkforward_summary.csv"),
+        ("stress_report", "stress_summary.csv"),
+        ("promotion_report", "promotion_summary.csv"),
+        ("leadlag_order_plan", "leadlag_order_summary.csv"),
+        ("leadlag_launch_pipeline", "leadlag_launch_pipeline_summary.csv"),
+    )
+    pd.DataFrame(
+        [
+            {
+                "run_dir": f"runs/leadlag/{run_type}",
+                "run_type": run_type,
+                "generated_at_utc": f"2026-06-10T09:{index + 10:02d}:00Z",
+                "git_commit": "abc123",
+                "git_dirty": False,
+                "summary_status": True,
+                "summary_file": summary_file,
+                "summary_strategy": "leadlag",
+                "summary_market": "india_nse_index_derivatives",
+                "summary_candidate_scenario_key": "scenario=leadlag",
+                "parameters_json": "{}",
+                "input_count": 1,
+                "input_file_count": 1,
+                "input_directory_count": 0,
+                "input_other_count": 0,
+                "input_unfingerprinted_count": 0,
+                "input_hashed_count": 1,
+            }
+            for index, (run_type, summary_file) in enumerate(required)
+        ]
+    ).to_csv(catalog_path, index=False)
+    scorecard = write_strategy_scorecard(
+        catalog_path,
+        output_dir=tmp_path / "scorecard",
+        research_family_path=tmp_path / "family",
+        thresholds=StrategyScorecardThresholds(
+            profiles=("leadlag",),
+            expected_market="india_nse_index_derivatives",
+            require_research_family=True,
+        ),
+    )
+    score = scorecard.scorecard.iloc[0]
+    assert scorecard.ready
+    assert bool(score["research_family_gate_passed"])
+    assert score["research_family_id"] == "prospective_family"
+    assert score["research_family_matched_study_label"] == "leadlag"
 
 
 def test_research_family_blocks_post_hoc_registration(tmp_path):

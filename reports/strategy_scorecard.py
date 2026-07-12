@@ -18,10 +18,23 @@ from reports.evidence import (
     _normalize_strategy,
     _strategy_identity,
 )
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
 
 
 DEFAULT_SCORECARD_PROFILES = ("leadlag", "imbalance", "parity", "settlement", "surface_mm")
+RESEARCH_FAMILY_REQUIRED_ARTIFACTS = (
+    "research_family_studies.csv",
+    "research_family_checks.csv",
+    "research_family_summary.csv",
+    "research_family_action_queue.csv",
+    "research_family_launch_attempt_census.csv",
+    "research_family_config.json",
+    "research_family_runbook.md",
+)
 PROFILE_STRATEGY_HINTS = {
     "leadlag": "lead_lag_taker",
     "imbalance": "imbalance",
@@ -128,6 +141,7 @@ class StrategyScorecardThresholds:
     expected_ops_strategy: str | None = None
     allow_dirty_git: bool = False
     require_file_inputs: bool = False
+    require_research_family: bool = False
 
 
 @dataclass(frozen=True)
@@ -150,9 +164,11 @@ def evaluate_strategy_scorecard(
     catalog: pd.DataFrame,
     *,
     thresholds: StrategyScorecardThresholds | None = None,
+    research_family: dict[str, Any] | None = None,
 ) -> StrategyScorecardReport:
     thresholds = thresholds or StrategyScorecardThresholds()
     _validate_thresholds(thresholds)
+    family = research_family or _empty_research_family_evidence()
     rows: list[dict[str, Any]] = []
     gap_rows: list[dict[str, Any]] = []
     for profile in thresholds.profiles:
@@ -186,8 +202,25 @@ def evaluate_strategy_scorecard(
                 ),
             ),
         )
-        rows.append(_scorecard_row(profile_key, expected_strategy, expected_market, evidence))
+        row = _scorecard_row(profile_key, expected_strategy, expected_market, evidence)
+        family_gate = _research_family_profile_gate(
+            profile_key,
+            row,
+            profile_catalog,
+            required_run_types,
+            family,
+            required=thresholds.require_research_family,
+        )
+        rows.append(_apply_research_family_gate(row, family_gate))
         gap_rows.extend(_gap_rows(profile_key, expected_strategy, expected_market, evidence.evidence))
+        family_gap = _research_family_gap_row(
+            profile_key,
+            expected_strategy,
+            expected_market,
+            family_gate,
+        )
+        if family_gap is not None:
+            gap_rows.append(family_gap)
 
     scorecard = _rank_scorecard(pd.DataFrame(rows))
     gaps = pd.DataFrame(gap_rows)
@@ -208,11 +241,17 @@ def write_strategy_scorecard(
     *,
     output_dir: str | Path,
     thresholds: StrategyScorecardThresholds | None = None,
+    research_family_path: str | Path | None = None,
 ) -> StrategyScorecardReport:
     catalog_file = _catalog_path(catalog_path)
     catalog = pd.read_csv(catalog_file)
     thresholds = thresholds or StrategyScorecardThresholds()
-    report = evaluate_strategy_scorecard(catalog, thresholds=thresholds)
+    research_family = _load_research_family_evidence(research_family_path)
+    report = evaluate_strategy_scorecard(
+        catalog,
+        thresholds=thresholds,
+        research_family=research_family,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.scorecard.to_csv(out / "strategy_scorecard.csv", index=False)
@@ -228,11 +267,48 @@ def write_strategy_scorecard(
         _runbook_markdown(report.config),
         encoding="utf-8",
     )
+    inputs: dict[str, Any] = {"catalog": catalog_file}
+    if research_family.get("provided", False):
+        family_root = Path(str(research_family["path"]))
+        inputs["research_family_audit"] = family_root
+        family_manifest = family_root / "manifest.json"
+        if family_manifest.is_file():
+            inputs["research_family_manifest"] = family_manifest
     write_experiment_manifest(
         out,
         run_type="strategy_scorecard",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={"catalog": catalog_file},
+        inputs=inputs,
+        extra={
+            "ready": bool(report.ready),
+            "research_family_required": bool(
+                thresholds.require_research_family
+            ),
+            "research_family_provided": bool(
+                research_family.get("provided", False)
+            ),
+            "research_family_valid": bool(research_family.get("valid", False)),
+            "research_family_id": str(research_family.get("family_id", "")),
+            "research_family_manifest_sha256": str(
+                research_family.get("manifest_sha256", "")
+            ),
+            "registered_research_profiles": int(
+                report.summary.iloc[0].get("registered_research_profiles", 0)
+            ),
+            "research_family_gate_passed_profiles": int(
+                report.summary.iloc[0].get(
+                    "research_family_gate_passed_profiles",
+                    0,
+                )
+            ),
+            "research_family_gate_blocked_profiles": int(
+                report.summary.iloc[0].get(
+                    "research_family_gate_blocked_profiles",
+                    0,
+                )
+            ),
+            "authorizes_submission": False,
+        },
     )
     return StrategyScorecardReport(
         scorecard=report.scorecard,
@@ -242,6 +318,472 @@ def write_strategy_scorecard(
         action_queue=action_queue,
         output_dir=out,
     )
+
+
+def _empty_research_family_evidence(path: str = "") -> dict[str, Any]:
+    return {
+        "provided": False,
+        "valid": False,
+        "path": path,
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_current": False,
+        "manifest_error": "",
+        "generated_at_utc": "",
+        "family_id": "",
+        "registration_id": "",
+        "passed": False,
+        "prospective_registration_passed": False,
+        "registration_closed": False,
+        "family_wise_error_control_claimed": False,
+        "selection_consistent": False,
+        "non_authorizing": False,
+        "candidates": [],
+        "reason": "research family audit was not provided",
+    }
+
+
+def _load_research_family_evidence(
+    raw_path: str | Path | None,
+) -> dict[str, Any]:
+    if raw_path is None:
+        return _empty_research_family_evidence()
+    candidate = Path(raw_path).resolve()
+    root = (
+        candidate
+        if candidate.is_dir() or not candidate.exists()
+        else candidate.parent
+    )
+    evidence = _empty_research_family_evidence(str(root))
+    evidence["provided"] = True
+    manifest_path = root / "manifest.json"
+    evidence["manifest_path"] = str(manifest_path)
+    integrity = verify_experiment_manifest(
+        manifest_path,
+        expected_run_type="research_family_audit",
+        required_artifacts=RESEARCH_FAMILY_REQUIRED_ARTIFACTS,
+        require_input_fingerprints=True,
+    )
+    evidence["manifest_current"] = bool(integrity.passed)
+    evidence["manifest_error"] = str(integrity.error)
+    evidence["manifest_sha256"] = (
+        file_sha256(manifest_path) if manifest_path.is_file() else ""
+    )
+    manifest = _read_json_object(manifest_path)
+    evidence["generated_at_utc"] = str(manifest.get("generated_at_utc", ""))
+    summary = _read_first_row(root / "research_family_summary.csv")
+    studies = _read_frame(root / "research_family_studies.csv")
+    config = _read_json_object(root / "research_family_config.json")
+
+    family_id = _value_text(summary.get("family_id", ""))
+    registration_id = _value_text(summary.get("registration_id", ""))
+    passed = _to_bool(summary.get("passed", False))
+    prospective = _to_bool(
+        summary.get("prospective_registration_passed", False)
+    )
+    registration_closed = _to_bool(summary.get("registration_closed", False))
+    family_wise = _to_bool(
+        summary.get("family_wise_error_control_claimed", False)
+    )
+    selected = config.get("selected_candidates", [])
+    selected_records = selected if isinstance(selected, list) else []
+    family_passed = (
+        studies.get("family_passed", pd.Series(False, index=studies.index))
+        .map(_to_bool)
+        if not studies.empty
+        else pd.Series(dtype=bool)
+    )
+    surviving = studies.loc[family_passed].copy() if not studies.empty else studies
+    surviving_labels = sorted(
+        surviving.get("study_label", pd.Series(dtype=str)).astype(str).tolist()
+    )
+    selected_labels = sorted(
+        _value_text(item.get("study_label", ""))
+        for item in selected_records
+        if isinstance(item, dict)
+    )
+    selected_by_label = {
+        _value_text(item.get("study_label", "")): item
+        for item in selected_records
+        if isinstance(item, dict) and _value_text(item.get("study_label", ""))
+    }
+    selected_rows_match = bool(
+        surviving_labels
+        and all(
+            label in selected_by_label
+            and _normalize_strategy(
+                _value_text(selected_by_label[label].get("strategy", ""))
+            )
+            == _normalize_strategy(_value_text(row.get("strategy", "")))
+            and _normalize_identity(
+                _value_text(selected_by_label[label].get("market", ""))
+            )
+            == _normalize_identity(_value_text(row.get("market", "")))
+            and _candidate_identity(
+                selected_by_label[label].get("candidate_scenario", "")
+            )
+            == _candidate_identity(row.get("candidate_scenario", ""))
+            and _to_bool(selected_by_label[label].get("family_passed", False))
+            for label, (_, row) in zip(
+                surviving_labels,
+                surviving.sort_values("study_label").iterrows(),
+            )
+        )
+    )
+    selection_consistent = bool(
+        passed
+        and surviving_labels
+        and surviving_labels == selected_labels
+        and selected_rows_match
+        and int(_numeric(summary.get("family_candidate_count", 0)))
+        == len(surviving_labels)
+        and _to_bool(config.get("passed", False))
+    )
+    candidates = [
+        {
+            "study_label": _value_text(row.get("study_label", "")),
+            "strategy": _normalize_strategy(_value_text(row.get("strategy", ""))),
+            "market": _normalize_identity(_value_text(row.get("market", ""))),
+            "candidate_scenario": _value_text(
+                row.get("candidate_scenario", "")
+            ),
+            "candidate_identity": _candidate_identity(
+                row.get("candidate_scenario", "")
+            ),
+            "holm_adjusted_pvalue": float(
+                _numeric(row.get("holm_adjusted_pvalue", 0.0))
+            ),
+        }
+        for _, row in surviving.iterrows()
+    ]
+    manifest_extra = manifest.get("extra", {})
+    extra = manifest_extra if isinstance(manifest_extra, dict) else {}
+    non_authorizing = bool(
+        not _to_bool(summary.get("authorizes_submission", False))
+        and not _to_bool(config.get("authorizes_submission", False))
+        and not _to_bool(extra.get("authorizes_submission", False))
+        and not (
+            studies.get(
+                "source_authorizes_submission",
+                pd.Series(False, index=studies.index),
+            )
+            .map(_to_bool)
+            .any()
+            if not studies.empty
+            else False
+        )
+    )
+    config_parameters = config.get("parameters", {})
+    parameters = config_parameters if isinstance(config_parameters, dict) else {}
+    config_summary_value = config.get("summary", {})
+    config_summary = (
+        config_summary_value if isinstance(config_summary_value, dict) else {}
+    )
+    family_identity_consistent = bool(
+        family_id
+        and family_id == _value_text(parameters.get("family_id", ""))
+        and family_id == _value_text(config_summary.get("family_id", ""))
+        and family_id == _value_text(extra.get("family_id", ""))
+        and registration_id
+        == _value_text(config_summary.get("registration_id", ""))
+        and registration_id == _value_text(extra.get("registration_id", ""))
+        and registration_closed
+        == _to_bool(config_summary.get("registration_closed", False))
+        and registration_closed
+        == _to_bool(extra.get("registration_closed", False))
+    )
+    valid = bool(
+        integrity.passed
+        and passed
+        and prospective
+        and registration_closed
+        and family_wise
+        and registration_id
+        and family_identity_consistent
+        and selection_consistent
+        and non_authorizing
+        and candidates
+    )
+    if not integrity.passed:
+        reason = f"research family manifest is not current: {integrity.error}"
+    elif not passed:
+        reason = "research family audit is blocked"
+    elif not prospective or not registration_closed:
+        reason = "research family prospective registration is not closed"
+    elif not family_wise:
+        reason = "research family does not claim complete family-wise error control"
+    elif not family_identity_consistent or not registration_id:
+        reason = "research family identity or registration binding is invalid"
+    elif not selection_consistent:
+        reason = "research family selected candidates differ from its study ledger"
+    elif not non_authorizing:
+        reason = "research family unexpectedly claims submission authority"
+    elif not candidates:
+        reason = "research family has no surviving candidates"
+    else:
+        reason = ""
+    evidence.update(
+        {
+            "valid": valid,
+            "family_id": family_id,
+            "registration_id": registration_id,
+            "passed": passed,
+            "prospective_registration_passed": prospective,
+            "registration_closed": registration_closed,
+            "family_wise_error_control_claimed": family_wise,
+            "selection_consistent": selection_consistent,
+            "non_authorizing": non_authorizing,
+            "candidates": candidates,
+            "reason": reason,
+        }
+    )
+    return evidence
+
+
+def _research_family_profile_gate(
+    profile: str,
+    scorecard_row: dict[str, Any],
+    catalog: pd.DataFrame,
+    required_run_types: tuple[str, ...],
+    family: dict[str, Any],
+    *,
+    required: bool,
+) -> dict[str, Any]:
+    applicable = not _is_ops_launch_profile(profile)
+    provided = bool(family.get("provided", False))
+    registered_research = _catalog_has_registered_research(catalog)
+    enabled = bool(
+        applicable and (required or provided or registered_research)
+    )
+    strategy = _normalize_strategy(_value_text(scorecard_row.get("strategy", "")))
+    market = _normalize_identity(_value_text(scorecard_row.get("market", "")))
+    candidate_identities = _catalog_candidate_identities(
+        catalog,
+        required_run_types,
+    )
+    candidate_consistent = len(candidate_identities) == 1
+    candidate_identity = (
+        next(iter(candidate_identities)) if candidate_consistent else ""
+    )
+    family_candidates = family.get("candidates", [])
+    candidate_records = (
+        family_candidates if isinstance(family_candidates, list) else []
+    )
+    strategy_market_matches = [
+        item
+        for item in candidate_records
+        if isinstance(item, dict)
+        and _normalize_strategy(_value_text(item.get("strategy", ""))) == strategy
+        and _normalize_identity(_value_text(item.get("market", ""))) == market
+    ]
+    exact_matches = [
+        item
+        for item in strategy_market_matches
+        if _value_text(item.get("candidate_identity", "")) == candidate_identity
+    ]
+    candidate_match = bool(
+        candidate_consistent and candidate_identity and len(exact_matches) == 1
+    )
+    if not enabled:
+        passed = True
+        reason = ""
+    elif not provided:
+        passed = False
+        reason = "a current registered research family audit is required"
+    elif not family.get("valid", False):
+        passed = False
+        reason = _value_text(family.get("reason", ""))
+    elif not candidate_consistent:
+        passed = False
+        reason = (
+            "passed strategy evidence lacks one consistent candidate identity"
+        )
+    elif not strategy_market_matches:
+        passed = False
+        reason = (
+            "research family has no surviving candidate for the scorecard "
+            "strategy and market"
+        )
+    elif not candidate_match:
+        passed = False
+        reason = (
+            "scorecard candidate is not an exact research-family survivor"
+        )
+    else:
+        passed = True
+        reason = ""
+    matched = exact_matches[0] if len(exact_matches) == 1 else {}
+    return {
+        "applicable": applicable,
+        "enabled": enabled,
+        "required": bool((required or registered_research) and applicable),
+        "registered_research_detected": registered_research,
+        "provided": provided,
+        "passed": passed,
+        "reason": reason,
+        "manifest_current": bool(family.get("manifest_current", False)),
+        "family_valid": bool(family.get("valid", False)),
+        "family_id": _value_text(family.get("family_id", "")),
+        "registration_id": _value_text(family.get("registration_id", "")),
+        "family_path": _value_text(family.get("path", "")),
+        "manifest_sha256": _value_text(family.get("manifest_sha256", "")),
+        "registration_closed": bool(family.get("registration_closed", False)),
+        "family_wise_error_control_claimed": bool(
+            family.get("family_wise_error_control_claimed", False)
+        ),
+        "candidate_identity": candidate_identity,
+        "candidate_identity_count": len(candidate_identities),
+        "candidate_consistent": candidate_consistent,
+        "candidate_match": candidate_match,
+        "matched_study_label": _value_text(matched.get("study_label", "")),
+        "matched_holm_adjusted_pvalue": float(
+            _numeric(matched.get("holm_adjusted_pvalue", 0.0))
+        ),
+        "generated_at_utc": _value_text(family.get("generated_at_utc", "")),
+    }
+
+
+def _apply_research_family_gate(
+    row: dict[str, Any],
+    gate: dict[str, Any],
+) -> dict[str, Any]:
+    result = dict(row)
+    enabled = bool(gate.get("enabled", False))
+    gate_passed = bool(gate.get("passed", False))
+    if enabled:
+        required_count = int(_numeric(result.get("required_run_type_count", 0))) + 1
+        passed_count = int(_numeric(result.get("passed_required_run_types", 0)))
+        if gate_passed:
+            passed_count += 1
+        result["required_run_type_count"] = required_count
+        result["passed_required_run_types"] = passed_count
+        result["readiness_score"] = (
+            passed_count / required_count if required_count else 0.0
+        )
+        result["ready"] = bool(result.get("ready", False) and gate_passed)
+        if not gate_passed:
+            target = (
+                "missing_required_run_types"
+                if not gate.get("provided", False)
+                else "blocked_required_run_types"
+            )
+            result[target] = _append_item(
+                result.get(target, ""),
+                "research_family_audit",
+            )
+            result["evidence_failed_checks"] = _append_item(
+                result.get("evidence_failed_checks", ""),
+                "research_family_gate",
+            )
+            if not _value_text(result.get("evidence_first_failed_reason", "")):
+                result["evidence_first_failed_reason"] = _value_text(
+                    gate.get("reason", "")
+                )
+            if not _value_text(result.get("next_required_run_type", "")):
+                result["next_required_run_type"] = "research_family_audit"
+                result["next_gate"] = _next_gate(
+                    _value_text(result.get("profile", "")),
+                    False,
+                    "research_family_audit",
+                )
+                result["next_gate_help_command"] = _next_gate_help_command(
+                    _value_text(result.get("next_gate", ""))
+                )
+            result["recommendation"] = "close_registered_research_family"
+    result.update(
+        {
+            "research_family_applicable": bool(gate.get("applicable", False)),
+            "research_family_enabled": enabled,
+            "research_family_required": bool(gate.get("required", False)),
+            "registered_research_detected": bool(
+                gate.get("registered_research_detected", False)
+            ),
+            "research_family_provided": bool(gate.get("provided", False)),
+            "research_family_gate_passed": gate_passed,
+            "research_family_reason": _value_text(gate.get("reason", "")),
+            "research_family_manifest_current": bool(
+                gate.get("manifest_current", False)
+            ),
+            "research_family_valid": bool(gate.get("family_valid", False)),
+            "research_family_id": _value_text(gate.get("family_id", "")),
+            "research_family_registration_id": _value_text(
+                gate.get("registration_id", "")
+            ),
+            "research_family_path": _value_text(gate.get("family_path", "")),
+            "research_family_manifest_sha256": _value_text(
+                gate.get("manifest_sha256", "")
+            ),
+            "research_family_registration_closed": bool(
+                gate.get("registration_closed", False)
+            ),
+            "research_family_error_control_claimed": bool(
+                gate.get("family_wise_error_control_claimed", False)
+            ),
+            "research_family_candidate_identity": _value_text(
+                gate.get("candidate_identity", "")
+            ),
+            "research_family_candidate_identity_count": int(
+                _numeric(gate.get("candidate_identity_count", 0))
+            ),
+            "research_family_candidate_consistent": bool(
+                gate.get("candidate_consistent", False)
+            ),
+            "research_family_candidate_match": bool(
+                gate.get("candidate_match", False)
+            ),
+            "research_family_matched_study_label": _value_text(
+                gate.get("matched_study_label", "")
+            ),
+            "research_family_matched_holm_adjusted_pvalue": float(
+                _numeric(gate.get("matched_holm_adjusted_pvalue", 0.0))
+            ),
+            "authorizes_submission": False,
+        }
+    )
+    return result
+
+
+def _research_family_gap_row(
+    profile: str,
+    expected_strategy: str,
+    expected_market: str,
+    gate: dict[str, Any],
+) -> dict[str, Any] | None:
+    if not gate.get("enabled", False):
+        return None
+    passed = bool(gate.get("passed", False))
+    provided = bool(gate.get("provided", False))
+    return {
+        "profile": profile,
+        "strategy": expected_strategy,
+        "market": expected_market,
+        "required_run_type": "research_family_audit",
+        "passed": passed,
+        "passed_runs": 1 if passed else 0,
+        "failed_runs": 1 if provided and not passed else 0,
+        "unknown_status_runs": 0,
+        "total_runs": 1 if provided else 0,
+        "latest_status": passed,
+        "latest_generated_at_utc": _value_text(
+            gate.get("generated_at_utc", "")
+        ),
+        "latest_run_dir": _value_text(gate.get("family_path", "")),
+        "next_gate": "" if passed else "audit-research-family",
+        "next_gate_help_command": (
+            ""
+            if passed
+            else _next_gate_help_command("audit-research-family")
+        ),
+        "gap": (
+            ""
+            if passed
+            else (
+                "missing_required_run_type"
+                if not provided
+                else "required_run_type_not_passing"
+            )
+        ),
+    }
 
 
 def _scorecard_row(
@@ -427,6 +969,17 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                     "primary_blocker_strategy": "",
                     "primary_blocker_next_gate": "",
                     "primary_blocker_next_gate_help_command": "",
+                    "research_family_enabled_profiles": 0,
+                    "registered_research_profiles": 0,
+                    "research_family_required_profiles": 0,
+                    "research_family_provided_profiles": 0,
+                    "research_family_gate_passed_profiles": 0,
+                    "research_family_gate_blocked_profiles": 0,
+                    "research_family_id": "",
+                    "research_family_registration_id": "",
+                    "research_family_path": "",
+                    "research_family_manifest_sha256": "",
+                    "authorizes_submission": False,
                     "recommendation": "no_profiles_to_score",
                 }
             ]
@@ -439,6 +992,15 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
     ).iloc[0]
     has_ready = not ready.empty
     primary_blocker = _first_blocked_profile(blocked)
+    family_enabled = scorecard["research_family_enabled"].map(_to_bool)
+    registered_research = scorecard["registered_research_detected"].map(_to_bool)
+    family_required = scorecard["research_family_required"].map(_to_bool)
+    family_provided = scorecard["research_family_provided"].map(_to_bool)
+    family_passed = scorecard["research_family_gate_passed"].map(_to_bool)
+    family_rows = scorecard.loc[family_enabled]
+    family_reference = (
+        family_rows.iloc[0] if not family_rows.empty else pd.Series(dtype=object)
+    )
     return pd.DataFrame(
         [
             {
@@ -469,6 +1031,37 @@ def _summary(scorecard: pd.DataFrame) -> pd.DataFrame:
                 "primary_blocker_next_gate_help_command": _text(primary_blocker.get("next_gate_help_command", ""))
                 if not primary_blocker.empty
                 else "",
+                "research_family_enabled_profiles": int(family_enabled.sum()),
+                "registered_research_profiles": int(registered_research.sum()),
+                "research_family_required_profiles": int(family_required.sum()),
+                "research_family_provided_profiles": int(
+                    (family_enabled & family_provided).sum()
+                ),
+                "research_family_gate_passed_profiles": int(
+                    (family_enabled & family_passed).sum()
+                ),
+                "research_family_gate_blocked_profiles": int(
+                    (family_enabled & ~family_passed).sum()
+                ),
+                "research_family_id": _value_text(
+                    family_reference.get("research_family_id", "")
+                ),
+                "research_family_registration_id": _value_text(
+                    family_reference.get(
+                        "research_family_registration_id",
+                        "",
+                    )
+                ),
+                "research_family_path": _value_text(
+                    family_reference.get("research_family_path", "")
+                ),
+                "research_family_manifest_sha256": _value_text(
+                    family_reference.get(
+                        "research_family_manifest_sha256",
+                        "",
+                    )
+                ),
+                "authorizes_submission": False,
                 "recommendation": _summary_recommendation(str(best["profile"]), has_ready),
             }
         ]
@@ -505,6 +1098,39 @@ def _config(scorecard: pd.DataFrame, gaps: pd.DataFrame, summary: pd.DataFrame) 
         "primary_blocker": _primary_blocker_record(primary_blocker),
         "primary_action_status": _primary_action_status(primary_action),
         "primary_action": primary_action,
+        "research_family_enabled_profiles": int(
+            _numeric(summary_row.get("research_family_enabled_profiles", 0))
+        ),
+        "registered_research_profiles": int(
+            _numeric(summary_row.get("registered_research_profiles", 0))
+        ),
+        "research_family_required_profiles": int(
+            _numeric(summary_row.get("research_family_required_profiles", 0))
+        ),
+        "research_family_provided_profiles": int(
+            _numeric(summary_row.get("research_family_provided_profiles", 0))
+        ),
+        "research_family_gate_passed_profiles": int(
+            _numeric(
+                summary_row.get("research_family_gate_passed_profiles", 0)
+            )
+        ),
+        "research_family_gate_blocked_profiles": int(
+            _numeric(
+                summary_row.get("research_family_gate_blocked_profiles", 0)
+            )
+        ),
+        "research_family_id": str(summary_row.get("research_family_id", "")),
+        "research_family_registration_id": str(
+            summary_row.get("research_family_registration_id", "")
+        ),
+        "research_family_path": str(
+            summary_row.get("research_family_path", "")
+        ),
+        "research_family_manifest_sha256": str(
+            summary_row.get("research_family_manifest_sha256", "")
+        ),
+        "authorizes_submission": False,
         "next_actions": next_actions,
         "ready_actions": ready_actions,
         "blocked_actions": blocked_actions,
@@ -552,8 +1178,16 @@ def _blocked_reason(row: pd.Series) -> str:
     blocked = _split_items(row.get("blocked_required_run_types", ""))
     evidence_failed = _split_items(row.get("evidence_failed_checks", ""))
     if missing:
+        if missing[0] == "research_family_audit":
+            family_reason = _value_text(row.get("research_family_reason", ""))
+            if family_reason:
+                return family_reason
         return f"{profile} profile is missing required run type {missing[0]}"
     if blocked:
+        if blocked[0] == "research_family_audit":
+            family_reason = _value_text(row.get("research_family_reason", ""))
+            if family_reason:
+                return family_reason
         return f"{profile} profile has non-passing required run type {blocked[0]}"
     if evidence_failed:
         return f"{profile} profile failed evidence check {evidence_failed[0]}"
@@ -583,8 +1217,16 @@ def _blocked_action_reason(action: dict[str, Any]) -> str:
     blocked_items = blocked if isinstance(blocked, list) else _split_items(blocked)
     evidence_failed_items = evidence_failed if isinstance(evidence_failed, list) else _split_items(evidence_failed)
     if missing_items:
+        if missing_items[0] == "research_family_audit":
+            family_reason = str(action.get("research_family_reason", ""))
+            if family_reason:
+                return family_reason
         return f"{profile} profile is missing required run type {missing_items[0]}"
     if blocked_items:
+        if blocked_items[0] == "research_family_audit":
+            family_reason = str(action.get("research_family_reason", ""))
+            if family_reason:
+                return family_reason
         return f"{profile} profile has non-passing required run type {blocked_items[0]}"
     if evidence_failed_items:
         return f"{profile} profile failed evidence check {evidence_failed_items[0]}"
@@ -615,6 +1257,16 @@ def _primary_blocker_record(action: dict[str, Any]) -> dict[str, Any]:
         "blocked_required_run_types": action.get("blocked_required_run_types", []),
         "evidence_failed_checks": action.get("evidence_failed_checks", []),
         "evidence_first_failed_reason": str(action.get("evidence_first_failed_reason", "")),
+        "research_family_gate_passed": bool(
+            action.get("research_family_gate_passed", False)
+        ),
+        "research_family_reason": str(
+            action.get("research_family_reason", "")
+        ),
+        "research_family_id": str(action.get("research_family_id", "")),
+        "research_family_matched_study_label": str(
+            action.get("research_family_matched_study_label", "")
+        ),
     }
 
 
@@ -641,6 +1293,48 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         "blocked_required_run_types": _split_items(row.get("blocked_required_run_types", "")),
         "evidence_failed_checks": _split_items(row.get("evidence_failed_checks", "")),
         "evidence_first_failed_reason": str(row.get("evidence_first_failed_reason", "")),
+        "research_family_enabled": bool(
+            row.get("research_family_enabled", False)
+        ),
+        "research_family_required": bool(
+            row.get("research_family_required", False)
+        ),
+        "registered_research_detected": bool(
+            row.get("registered_research_detected", False)
+        ),
+        "research_family_provided": bool(
+            row.get("research_family_provided", False)
+        ),
+        "research_family_gate_passed": bool(
+            row.get("research_family_gate_passed", False)
+        ),
+        "research_family_reason": str(row.get("research_family_reason", "")),
+        "research_family_manifest_current": bool(
+            row.get("research_family_manifest_current", False)
+        ),
+        "research_family_valid": bool(row.get("research_family_valid", False)),
+        "research_family_id": str(row.get("research_family_id", "")),
+        "research_family_registration_id": str(
+            row.get("research_family_registration_id", "")
+        ),
+        "research_family_path": str(row.get("research_family_path", "")),
+        "research_family_manifest_sha256": str(
+            row.get("research_family_manifest_sha256", "")
+        ),
+        "research_family_candidate_identity": str(
+            row.get("research_family_candidate_identity", "")
+        ),
+        "research_family_candidate_match": bool(
+            row.get("research_family_candidate_match", False)
+        ),
+        "research_family_matched_study_label": str(
+            row.get("research_family_matched_study_label", "")
+        ),
+        "research_family_matched_holm_adjusted_pvalue": float(
+            _numeric(
+                row.get("research_family_matched_holm_adjusted_pvalue", 0.0)
+            )
+        ),
         "broker_roundtrip_portfolio_safe_runs": int(
             _numeric(row.get("broker_roundtrip_portfolio_safe_runs", 0))
         ),
@@ -714,6 +1408,7 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
             _numeric(row.get("provider_broker_rehearsal_certificate_hashed_runs", 0))
         ),
         "recommendation": str(row.get("recommendation", "")),
+        "authorizes_submission": False,
     }
 
 
@@ -755,6 +1450,27 @@ def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
                 "blocked_required_run_types": _list_text(action.get("blocked_required_run_types")),
                 "evidence_failed_checks": _list_text(action.get("evidence_failed_checks")),
                 "evidence_first_failed_reason": str(action.get("evidence_first_failed_reason", "")),
+                "research_family_required": bool(
+                    action.get("research_family_required", False)
+                ),
+                "registered_research_detected": bool(
+                    action.get("registered_research_detected", False)
+                ),
+                "research_family_provided": bool(
+                    action.get("research_family_provided", False)
+                ),
+                "research_family_gate_passed": bool(
+                    action.get("research_family_gate_passed", False)
+                ),
+                "research_family_reason": str(
+                    action.get("research_family_reason", "")
+                ),
+                "research_family_id": str(
+                    action.get("research_family_id", "")
+                ),
+                "research_family_matched_study_label": str(
+                    action.get("research_family_matched_study_label", "")
+                ),
                 "recommendation": str(action.get("recommendation", "")),
             }
         )
@@ -776,6 +1492,13 @@ def _action_queue(config: dict[str, Any]) -> pd.DataFrame:
             "blocked_required_run_types",
             "evidence_failed_checks",
             "evidence_first_failed_reason",
+            "research_family_required",
+            "registered_research_detected",
+            "research_family_provided",
+            "research_family_gate_passed",
+            "research_family_reason",
+            "research_family_id",
+            "research_family_matched_study_label",
             "recommendation",
         ],
     )
@@ -796,6 +1519,14 @@ def _runbook_markdown(config: dict[str, Any]) -> str:
         f"- Ready actions: {int(_numeric(config.get('ready_action_count', 0)))}",
         f"- Blocked actions: {int(_numeric(config.get('blocked_action_count', 0)))}",
         f"- Open gaps: {int(_numeric(config.get('gap_count', 0)))}",
+        "- Research-family gated profiles: "
+        f"{int(_numeric(config.get('research_family_enabled_profiles', 0)))}",
+        "- Registered-research profiles: "
+        f"{int(_numeric(config.get('registered_research_profiles', 0)))}",
+        "- Research-family passed profiles: "
+        f"{int(_numeric(config.get('research_family_gate_passed_profiles', 0)))}",
+        f"- Research family: {_code(config.get('research_family_id'))}",
+        "- Authorizes submission: false",
         "",
         "## Ready Actions",
         "",
@@ -817,13 +1548,31 @@ def _actions_table(actions: Any, *, include_gaps: bool) -> str:
     rows = actions if isinstance(actions, list) else []
     if not rows:
         return "_None_"
-    headers = ["Rank", "Profile", "Strategy", "Score", "Next gate", "Help"]
+    headers = [
+        "Rank",
+        "Profile",
+        "Strategy",
+        "Score",
+        "Family gate",
+        "Next gate",
+        "Help",
+    ]
     table_rows = [
         [
             str(int(_numeric(row.get("rank", 0)))),
             _text(row.get("profile")),
             _text(row.get("strategy")),
             _format_score(row.get("readiness_score")),
+            (
+                "passed"
+                if row.get("research_family_enabled")
+                and row.get("research_family_gate_passed")
+                else (
+                    "blocked"
+                    if row.get("research_family_enabled")
+                    else "not required"
+                )
+            ),
             _code(row.get("next_gate")),
             _code(row.get("next_gate_help_command")),
         ]
@@ -1049,6 +1798,158 @@ def _validate_thresholds(thresholds: StrategyScorecardThresholds) -> None:
 
 def _split_items(value: Any) -> list[str]:
     return [item for item in str(value).split(";") if item]
+
+
+def _append_item(value: Any, item: str) -> str:
+    items = _split_items(value)
+    if item not in items:
+        items.append(item)
+    return ";".join(items)
+
+
+def _catalog_candidate_identities(
+    catalog: pd.DataFrame,
+    required_run_types: tuple[str, ...],
+) -> set[str]:
+    if catalog.empty or "run_type" not in catalog.columns:
+        return set()
+    run_types = catalog["run_type"].astype(str)
+    status = (
+        catalog["summary_status"].map(_to_bool)
+        if "summary_status" in catalog.columns
+        else pd.Series(False, index=catalog.index)
+    )
+    passed = catalog.loc[run_types.isin(required_run_types) & status]
+    candidate_columns = (
+        "summary_candidate_scenario_key",
+        "summary_candidate_scenario",
+        "summary_selected_scenario_key",
+        "summary_best_scenario_key",
+        "summary_scenario_key",
+        "scenario_key",
+    )
+    identities: set[str] = set()
+    for _, row in passed.iterrows():
+        value = ""
+        for column in candidate_columns:
+            if column in row.index:
+                value = _value_text(row.get(column, ""))
+                if value:
+                    break
+        identity = _candidate_identity(value)
+        if identity:
+            identities.add(identity)
+    return identities
+
+
+def _catalog_has_registered_research(catalog: pd.DataFrame) -> bool:
+    if catalog.empty or "run_type" not in catalog.columns:
+        return False
+    robust = catalog.loc[
+        catalog["run_type"].astype(str).eq("robust_selection_pipeline")
+    ]
+    if robust.empty:
+        return False
+    status = (
+        robust["summary_status"].map(_to_bool)
+        if "summary_status" in robust.columns
+        else pd.Series(False, index=robust.index)
+    )
+    registration_passed = (
+        robust["summary_research_registration_passed"].map(_to_bool)
+        if "summary_research_registration_passed" in robust.columns
+        else pd.Series(False, index=robust.index)
+    )
+    registration_ids = (
+        robust["summary_research_registration_id"].map(_value_text)
+        if "summary_research_registration_id" in robust.columns
+        else pd.Series("", index=robust.index)
+    )
+    study_labels = (
+        robust["summary_registered_study_label"].map(_value_text)
+        if "summary_registered_study_label" in robust.columns
+        else pd.Series("", index=robust.index)
+    )
+    return bool(
+        (status & registration_passed & registration_ids.ne("") & study_labels.ne(""))
+        .any()
+    )
+
+
+def _candidate_identity(value: Any) -> str:
+    text = _value_text(value).strip()
+    if not text:
+        return ""
+    parsed: dict[str, str] = {}
+    for part in text.split("|"):
+        if "=" not in part:
+            continue
+        key, item = part.split("=", 1)
+        normalized_key = _normalize_identity(key)
+        normalized_value = item.strip().casefold()
+        if (
+            normalized_key
+            and normalized_value
+            and normalized_key not in {"strategy", "market", "profile"}
+        ):
+            parsed[normalized_key] = normalized_value
+    if parsed:
+        return "|".join(
+            f"{key}={parsed[key]}" for key in sorted(parsed)
+        )
+    return text.casefold()
+
+
+def _read_frame(path: Path) -> pd.DataFrame:
+    if not path.is_file():
+        return pd.DataFrame()
+    try:
+        return pd.read_csv(path)
+    except (OSError, ValueError, pd.errors.ParserError, pd.errors.EmptyDataError):
+        return pd.DataFrame()
+
+
+def _read_first_row(path: Path) -> pd.Series:
+    frame = _read_frame(path)
+    return frame.iloc[0] if not frame.empty else pd.Series(dtype=object)
+
+
+def _read_json_object(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _value_text(value: Any) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value)
+
+
+def _to_bool(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        normalized = value.strip().casefold()
+        if normalized in {"1", "true", "yes", "y", "passed", "ready"}:
+            return True
+        if normalized in {"0", "false", "no", "n", "blocked"}:
+            return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(value)
 
 
 def _jsonable_row(row: dict[str, Any]) -> dict[str, Any]:

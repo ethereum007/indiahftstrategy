@@ -1555,6 +1555,11 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_scorecard.add_argument("--allow-dirty-git", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--market", default="")
     provider_market_data_imbalance_scorecard.add_argument("--require-file-inputs", action="store_true")
+    provider_market_data_imbalance_scorecard.add_argument("--research-family", default=None)
+    provider_market_data_imbalance_scorecard.add_argument(
+        "--require-research-family",
+        action="store_true",
+    )
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-breach", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-blocked-actions", action="store_true")
     provider_market_data_imbalance_scorecard.add_argument("--fail-on-actions", action="store_true")
@@ -2390,6 +2395,8 @@ def main(argv: list[str] | None = None) -> int:
     scorecard.add_argument("--ops-strategy", default=None)
     scorecard.add_argument("--allow-dirty-git", action="store_true")
     scorecard.add_argument("--require-file-inputs", action="store_true")
+    scorecard.add_argument("--research-family", default=None)
+    scorecard.add_argument("--require-research-family", action="store_true")
     scorecard.add_argument("--fail-on-breach", action="store_true")
     scorecard.add_argument("--fail-on-blocked-actions", action="store_true")
     scorecard.add_argument("--fail-on-actions", action="store_true")
@@ -5036,6 +5043,8 @@ def main(argv: list[str] | None = None) -> int:
                 allow_dirty_git=args.allow_dirty_git,
                 expected_market=args.market,
                 require_file_inputs=args.require_file_inputs,
+                research_family_path=args.research_family or "",
+                require_research_family=args.require_research_family,
             ),
         )
         print(result.summary.to_string(index=False))
@@ -6024,12 +6033,14 @@ def main(argv: list[str] | None = None) -> int:
         result = write_strategy_scorecard(
             args.catalog,
             output_dir=args.out,
+            research_family_path=args.research_family,
             thresholds=StrategyScorecardThresholds(
                 profiles=tuple(args.profiles) if args.profiles else StrategyScorecardThresholds().profiles,
                 expected_market=args.market,
                 expected_ops_strategy=args.ops_strategy,
                 allow_dirty_git=args.allow_dirty_git,
                 require_file_inputs=args.require_file_inputs,
+                require_research_family=args.require_research_family,
             ),
         )
         print(result.summary.to_string(index=False))

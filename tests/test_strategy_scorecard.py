@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 from reports.strategy_scorecard import (
     StrategyScorecardThresholds,
     evaluate_strategy_scorecard,
@@ -30,6 +31,100 @@ def row(run_type, summary_file, strategy, *, market="india_nse_index_derivatives
         "input_unfingerprinted_count": 0,
         "input_hashed_count": 1,
     }
+
+
+def write_research_family_fixture(
+    root,
+    *,
+    candidate_scenario="strategy=lead_lag_taker|market=india_nse_index_derivatives|scenario=base",
+    passed=True,
+):
+    root.mkdir(parents=True)
+    family_id = "india_research_family_v1"
+    registration_id = "registration-001"
+    study = {
+        "study_label": "leadlag_registered",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "candidate_scenario": candidate_scenario,
+        "family_passed": passed,
+        "holm_adjusted_pvalue": 0.02,
+        "source_authorizes_submission": False,
+    }
+    pd.DataFrame([study]).to_csv(
+        root / "research_family_studies.csv",
+        index=False,
+    )
+    pd.DataFrame(
+        [
+            {
+                "passed": passed,
+                "family_id": family_id,
+                "registration_id": registration_id,
+                "prospective_registration_passed": True,
+                "registration_closed": passed,
+                "family_wise_error_control_claimed": passed,
+                "family_candidate_count": 1 if passed else 0,
+                "authorizes_submission": False,
+            }
+        ]
+    ).to_csv(root / "research_family_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "check": "family_closure",
+                "passed": passed,
+                "reason": "" if passed else "family candidate did not survive",
+            }
+        ]
+    ).to_csv(root / "research_family_checks.csv", index=False)
+    pd.DataFrame(columns=["priority", "queue_status"]).to_csv(
+        root / "research_family_action_queue.csv",
+        index=False,
+    )
+    pd.DataFrame(columns=["attempt_id", "outcome_status"]).to_csv(
+        root / "research_family_launch_attempt_census.csv",
+        index=False,
+    )
+    config = {
+        "schema_version": 1,
+        "passed": passed,
+        "parameters": {"family_id": family_id},
+        "summary": {
+            "passed": passed,
+            "family_id": family_id,
+            "registration_id": registration_id,
+            "registration_closed": passed,
+        },
+        "selected_candidates": [study] if passed else [],
+        "authorizes_submission": False,
+    }
+    (root / "research_family_config.json").write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (root / "research_family_runbook.md").write_text(
+        "# Research Family Audit\n",
+        encoding="utf-8",
+    )
+    source = root.parent / f"{root.name}_registered_plan.csv"
+    pd.DataFrame([{"study_label": "leadlag_registered"}]).to_csv(
+        source,
+        index=False,
+    )
+    write_experiment_manifest(
+        root,
+        run_type="research_family_audit",
+        inputs={"research_family_plan": source},
+        extra={
+            "passed": passed,
+            "family_id": family_id,
+            "registration_id": registration_id,
+            "registration_closed": passed,
+            "authorizes_submission": False,
+        },
+    )
+    return root
 
 
 def complete_leadlag_rows():
@@ -380,6 +475,200 @@ def test_write_strategy_scorecard_outputs_files_and_manifest(tmp_path):
     assert actions_code == 2
 
 
+def test_strategy_scorecard_binds_exact_research_family_survivor(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    family_dir = write_research_family_fixture(tmp_path / "family")
+    out_dir = tmp_path / "scorecard"
+    pd.DataFrame(complete_leadlag_rows()).to_csv(catalog_path, index=False)
+
+    report = write_strategy_scorecard(
+        catalog_path,
+        output_dir=out_dir,
+        research_family_path=family_dir,
+        thresholds=StrategyScorecardThresholds(
+            profiles=("leadlag",),
+            expected_market="india_nse_index_derivatives",
+            require_research_family=True,
+        ),
+    )
+
+    score = report.scorecard.iloc[0]
+    summary = report.summary.iloc[0]
+    manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert report.ready
+    assert bool(score["research_family_required"])
+    assert bool(score["research_family_provided"])
+    assert bool(score["research_family_manifest_current"])
+    assert bool(score["research_family_valid"])
+    assert bool(score["research_family_candidate_match"])
+    assert bool(score["research_family_gate_passed"])
+    assert score["research_family_candidate_identity"] == "scenario=base"
+    assert score["research_family_matched_study_label"] == "leadlag_registered"
+    assert float(score["research_family_matched_holm_adjusted_pvalue"]) == 0.02
+    assert int(score["required_run_type_count"]) == 7
+    assert int(score["passed_required_run_types"]) == 7
+    assert float(score["readiness_score"]) == 1.0
+    assert int(summary["research_family_gate_passed_profiles"]) == 1
+    assert int(summary["research_family_gate_blocked_profiles"]) == 0
+    assert report.config["research_family_id"] == "india_research_family_v1"
+    assert report.config["research_family_gate_passed_profiles"] == 1
+    assert not report.config["authorizes_submission"]
+    assert manifest["inputs"]["research_family_audit"]["kind"] == "directory"
+    assert manifest["inputs"]["research_family_manifest"]["kind"] == "file"
+    assert manifest["extra"]["research_family_valid"]
+    assert not manifest["extra"]["authorizes_submission"]
+    cli_code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(tmp_path / "scorecard_cli"),
+            "--profile",
+            "leadlag",
+            "--market",
+            "india_nse_index_derivatives",
+            "--research-family",
+            str(family_dir),
+            "--require-research-family",
+            "--fail-on-breach",
+        ]
+    )
+    assert cli_code == 0
+    integrity = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="strategy_scorecard",
+        require_input_fingerprints=True,
+    )
+    assert integrity.passed
+    with (family_dir / "research_family_runbook.md").open(
+        "a",
+        encoding="utf-8",
+    ) as handle:
+        handle.write("drifted after scorecard generation\n")
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="strategy_scorecard",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_strategy_scorecard_registered_research_auto_requires_family_cli(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    out_dir = tmp_path / "scorecard"
+    robust = row(
+        "robust_selection_pipeline",
+        "robust_selection_pipeline_summary.csv",
+        "lead_lag_taker",
+        minute=55,
+    )
+    robust["summary_research_registration_passed"] = True
+    robust["summary_research_registration_id"] = "registration-001"
+    robust["summary_registered_study_label"] = "leadlag_registered"
+    pd.DataFrame([*complete_leadlag_rows(), robust]).to_csv(
+        catalog_path,
+        index=False,
+    )
+
+    code = main(
+        [
+            "score-strategy-readiness",
+            "--catalog",
+            str(catalog_path),
+            "--out",
+            str(out_dir),
+            "--profile",
+            "leadlag",
+            "--market",
+            "india_nse_index_derivatives",
+            "--fail-on-breach",
+        ]
+    )
+
+    score = pd.read_csv(out_dir / "strategy_scorecard.csv").iloc[0]
+    summary = pd.read_csv(out_dir / "strategy_scorecard_summary.csv").iloc[0]
+    queue = pd.read_csv(out_dir / "strategy_scorecard_action_queue.csv").iloc[0]
+    assert code == 2
+    assert not bool(score["ready"])
+    assert bool(score["registered_research_detected"])
+    assert bool(score["research_family_required"])
+    assert not bool(score["research_family_provided"])
+    assert not bool(score["research_family_gate_passed"])
+    assert score["next_required_run_type"] == "research_family_audit"
+    assert score["next_gate"] == "audit-research-family"
+    assert "research_family_audit" in score["missing_required_run_types"]
+    assert int(summary["research_family_gate_blocked_profiles"]) == 1
+    assert summary["first_failed_reason"] == (
+        "a current registered research family audit is required"
+    )
+    assert queue["queue_status"] == "blocked"
+    assert queue["next_gate"] == "audit-research-family"
+
+
+def test_strategy_scorecard_blocks_bad_research_family_proofs(tmp_path):
+    catalog_path = tmp_path / "experiment_catalog.csv"
+    pd.DataFrame(complete_leadlag_rows()).to_csv(catalog_path, index=False)
+    thresholds = StrategyScorecardThresholds(
+        profiles=("leadlag",),
+        expected_market="india_nse_index_derivatives",
+        require_research_family=True,
+    )
+
+    blocked_family = write_research_family_fixture(
+        tmp_path / "family_blocked",
+        passed=False,
+    )
+    blocked = write_strategy_scorecard(
+        catalog_path,
+        output_dir=tmp_path / "scorecard_blocked",
+        research_family_path=blocked_family,
+        thresholds=thresholds,
+    )
+    mismatch_family = write_research_family_fixture(
+        tmp_path / "family_mismatch",
+        candidate_scenario="scenario=different",
+    )
+    mismatch = write_strategy_scorecard(
+        catalog_path,
+        output_dir=tmp_path / "scorecard_mismatch",
+        research_family_path=mismatch_family,
+        thresholds=thresholds,
+    )
+    stale_family = write_research_family_fixture(tmp_path / "family_stale")
+    with (stale_family / "research_family_runbook.md").open(
+        "a",
+        encoding="utf-8",
+    ) as handle:
+        handle.write("drifted after closure\n")
+    stale = write_strategy_scorecard(
+        catalog_path,
+        output_dir=tmp_path / "scorecard_stale",
+        research_family_path=stale_family,
+        thresholds=thresholds,
+    )
+
+    blocked_score = blocked.scorecard.iloc[0]
+    mismatch_score = mismatch.scorecard.iloc[0]
+    stale_score = stale.scorecard.iloc[0]
+    assert not blocked.ready
+    assert blocked_score["research_family_reason"] == (
+        "research family audit is blocked"
+    )
+    assert not mismatch.ready
+    assert bool(mismatch_score["research_family_valid"])
+    assert not bool(mismatch_score["research_family_candidate_match"])
+    assert mismatch_score["research_family_reason"] == (
+        "scorecard candidate is not an exact research-family survivor"
+    )
+    assert not stale.ready
+    assert not bool(stale_score["research_family_manifest_current"])
+    assert stale_score["research_family_reason"] == (
+        "research family manifest is not current: artifact_drift"
+    )
+
+
 def test_cli_strategy_scorecard_returns_breach_when_no_profile_is_ready(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "scorecard"
@@ -495,6 +784,7 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
             expected_market="india_nse_index_derivatives",
             expected_ops_strategy="leadlag",
             require_file_inputs=True,
+            require_research_family=True,
         ),
     )
 
@@ -502,6 +792,8 @@ def test_strategy_scorecard_scores_named_ops_launch_strategy_with_file_inputs():
     assert report.ready
     assert score["profile"] == "ops_launch"
     assert score["strategy"] == "lead_lag_taker"
+    assert not bool(score["research_family_applicable"])
+    assert not bool(score["research_family_enabled"])
     assert score["recommendation"] == "ready_for_live_dryrun_route_review"
     assert score["next_gate"] == "review-route-readiness"
     assert score["next_gate_help_command"] == "python -m hft_cli review-route-readiness --help"
