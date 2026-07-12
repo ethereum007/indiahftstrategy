@@ -2633,6 +2633,17 @@
   manifest lineage onto every dry-run dispatch row plus summary/config/manifest,
   recursively fingerprints all route artifacts/dependencies, rejects
   output/source overlap, and remains explicitly non-submitting.
+- Broker dispatch send preparation now independently verifies the complete
+  current `broker_dispatch_plan` bundle and reconciles the retained
+  route/cutover/runtime/research lineage across every dispatch order, summary,
+  config, and manifest. It reopens the current route-enable source rather than
+  trusting the dispatch label, blocks stale inputs, cross-artifact disagreement,
+  consistently relabeled but source-detached route hashes, and any authorizing
+  claim, then carries the exact lineage into every request row and hashed request
+  envelope plus send summary/config/manifest. The send manifest recursively
+  fingerprints all dispatch artifacts/dependencies, output/source overlap is
+  rejected, and both `submission_enabled` and `authorizes_submission` remain
+  false.
 
 ## Test Gate
 
@@ -2642,24 +2653,25 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1536 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1541 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
-route-readiness, route-enable, broker dispatch planning, and research-family
-registration/launch/audit pass together (`334 passed`). It now includes a real
-prospective-family chain through family audit -> scorecard -> portfolio ->
+route-readiness, route-enable, broker dispatch planning/send preparation, and
+research-family registration/launch/audit pass together (`376 passed`). It now
+includes a real prospective-family chain through family audit -> scorecard ->
+portfolio ->
 controlled scale-up -> runtime telemetry -> runtime guard -> runtime session ->
-cutover -> route-enable -> dry-run broker dispatch planning, with recursive
-invalidation of all three final
-manifests after registration-plan drift. Cutover, route-enable, and dispatch also
+cutover -> route-enable -> dry-run broker dispatch planning -> non-submitting
+send preparation, with recursive invalidation of all four final manifests after
+registration-plan drift. Cutover, route-enable, dispatch, and send also
 reject stale source fingerprints, freshly re-manifested cross-artifact lineage
 disagreement, authorizing claims, and source/output overlap while preserving
-non-authorizing family identity through each broker-facing order row. The four
-generic dispatch plan/send/ack/round-trip suites pass together (`156 passed`),
-showing that the richer dispatch-plan contract remains additive for downstream
-workflows. The focused runtime-session, halt-response, and
+non-authorizing family identity through each broker-facing order/request row.
+The four generic dispatch plan/send/ack/round-trip suites pass together
+(`161 passed`), showing that the richer dispatch-plan contract remains additive
+for downstream workflows. The focused runtime-session, halt-response, and
 research-family gate passes together (`29 passed`). It covers source-output
 collision rejection,
 non-authorizing lineage passthrough into session and emergency action rows,
@@ -2774,7 +2786,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1536-test collection is fully green.
+1541-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2783,6 +2795,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Carry the dispatch plan's verified route/cutover/runtime/research lineage
-   through the non-submitting broker send/ack/round-trip chain before any
+4. Carry the sender's verified dispatch/route/cutover/runtime/research lineage
+   through broker acknowledgement and final round-trip review before any
    provider credential or live broker decision is introduced.

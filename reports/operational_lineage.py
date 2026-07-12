@@ -39,6 +39,14 @@ ROUTE_ENABLE_REQUIRED_ARTIFACTS = (
     "route_enable_config.json",
     "route_enable_runbook.md",
 )
+BROKER_DISPATCH_REQUIRED_ARTIFACTS = (
+    "broker_dispatch_orders.csv",
+    "broker_dispatch_checks.csv",
+    "broker_dispatch_summary.csv",
+    "broker_dispatch_action_queue.csv",
+    "broker_dispatch_config.json",
+    "broker_dispatch_runbook.md",
+)
 
 
 def empty_runtime_session_lineage(*, required: bool = False) -> dict[str, Any]:
@@ -545,6 +553,193 @@ def route_enable_lineage_manifest_inputs(lineage: Mapping[str, Any]) -> dict[str
     return inputs
 
 
+def empty_broker_dispatch_lineage(*, required: bool = False) -> dict[str, Any]:
+    state: dict[str, Any] = {
+        "required": required,
+        "provided": False,
+        "manifest_current": not required,
+        "manifest_run_type": "",
+        "manifest_path": "",
+        "manifest_sha256": "",
+        "manifest_error": "manifest_missing" if required else "",
+        "contract_consistent": not required,
+        "contract_error": "",
+        "non_authorizing": not required,
+        "route_enable_matches_current": not required,
+        "gate_passed": not required,
+        "dependency_count": 0,
+        "dependency_paths": [],
+        "artifact_paths": [],
+    }
+    state.update(
+        {
+            column: _field_default(column)
+            for column in route_enable_lineage_fields(empty_route_enable_lineage())
+        }
+    )
+    return state
+
+
+def load_broker_dispatch_lineage(
+    broker_dispatch_config_path: str | Path,
+) -> dict[str, Any]:
+    config_path = Path(broker_dispatch_config_path).resolve()
+    root = config_path.parent
+    summary_path = root / "broker_dispatch_summary.csv"
+    orders_path = root / "broker_dispatch_orders.csv"
+    manifest_path = root / "manifest.json"
+    state = empty_broker_dispatch_lineage(required=True)
+    state.update(
+        {
+            "provided": summary_path.is_file(),
+            "manifest_path": str(manifest_path),
+            "artifact_paths": [
+                str(root / name)
+                for name in BROKER_DISPATCH_REQUIRED_ARTIFACTS
+                if (root / name).is_file()
+            ],
+        }
+    )
+
+    summary = _read_csv(summary_path)
+    orders = _read_csv(orders_path)
+    config = _read_json(config_path)
+    manifest = _read_json(manifest_path)
+    row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    route_fields = route_enable_lineage_fields(empty_route_enable_lineage())
+    state.update(
+        {
+            column: _normalize(row.get(column), column)
+            for column in route_fields
+        }
+    )
+    if manifest_path.is_file():
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="broker_dispatch_plan",
+            required_artifacts=BROKER_DISPATCH_REQUIRED_ARTIFACTS,
+            require_input_fingerprints=True,
+        )
+        dependencies = manifest_dependency_paths(manifest_path)
+        state.update(
+            {
+                "manifest_current": bool(integrity.passed),
+                "manifest_run_type": integrity.run_type,
+                "manifest_sha256": file_sha256(manifest_path),
+                "manifest_error": integrity.error,
+                "dependency_paths": [str(path) for path in dependencies],
+                "dependency_count": len(dependencies),
+            }
+        )
+
+    errors = _broker_dispatch_contract_errors(
+        summary=summary,
+        orders=orders,
+        config=config,
+        manifest=manifest,
+        lineage=state,
+        route_fields=tuple(route_fields),
+    )
+    extra = _mapping(manifest.get("extra"))
+    orders_non_authorizing = bool(
+        not orders.empty
+        and "authorizes_submission" in orders.columns
+        and not orders["authorizes_submission"].map(_bool).any()
+        and "dry_run_only" in orders.columns
+        and orders["dry_run_only"].map(_bool).all()
+    )
+    non_authorizing = bool(
+        config
+        and "authorizes_submission" in config
+        and not _bool(config.get("authorizes_submission"))
+        and _bool(config.get("dry_run_only"))
+        and "authorizes_submission" in row.index
+        and not _bool(row.get("authorizes_submission"))
+        and _bool(row.get("dry_run_only"))
+        and orders_non_authorizing
+        and extra
+        and "authorizes_submission" in extra
+        and not _bool(extra.get("authorizes_submission"))
+    )
+    route_gate = _bool(state.get("route_enable_lineage_gate_passed", False))
+    route_enable_matches_current = _dispatch_route_enable_matches_current(
+        dispatch_manifest=manifest,
+        dispatch_manifest_path=manifest_path,
+        lineage=state,
+        route_fields=tuple(route_fields),
+    )
+    state["contract_consistent"] = not errors
+    state["contract_error"] = ";".join(sorted(set(errors)))
+    state["non_authorizing"] = non_authorizing
+    state["route_enable_matches_current"] = route_enable_matches_current
+    state["gate_passed"] = bool(
+        state["provided"]
+        and state["manifest_current"]
+        and state["contract_consistent"]
+        and non_authorizing
+        and route_gate
+        and route_enable_matches_current
+    )
+    return state
+
+
+def broker_dispatch_lineage_fields(lineage: Mapping[str, Any]) -> dict[str, Any]:
+    fields = {
+        "broker_dispatch_lineage_required": _bool(lineage.get("required", False)),
+        "broker_dispatch_lineage_provided": _bool(lineage.get("provided", False)),
+        "broker_dispatch_manifest_current": _bool(lineage.get("manifest_current", False)),
+        "broker_dispatch_manifest_run_type": _text(lineage.get("manifest_run_type", "")),
+        "broker_dispatch_manifest_path": _text(lineage.get("manifest_path", "")),
+        "broker_dispatch_manifest_sha256": _text(lineage.get("manifest_sha256", "")),
+        "broker_dispatch_manifest_error": _text(lineage.get("manifest_error", "")),
+        "broker_dispatch_lineage_contract_consistent": _bool(
+            lineage.get("contract_consistent", False)
+        ),
+        "broker_dispatch_lineage_contract_error": _text(
+            lineage.get("contract_error", "")
+        ),
+        "broker_dispatch_non_authorizing": _bool(
+            lineage.get("non_authorizing", False)
+        ),
+        "broker_dispatch_route_enable_lineage_gate_passed": _bool(
+            lineage.get("route_enable_lineage_gate_passed", False)
+        ),
+        "broker_dispatch_route_enable_matches_current": _bool(
+            lineage.get("route_enable_matches_current", False)
+        ),
+        "broker_dispatch_lineage_gate_passed": _bool(
+            lineage.get("gate_passed", False)
+        ),
+        "broker_dispatch_lineage_dependency_count": int(
+            lineage.get("dependency_count", 0)
+        ),
+    }
+    route_fields = route_enable_lineage_fields(empty_route_enable_lineage())
+    fields.update(
+        {
+            f"broker_dispatch_{column}": _normalize(lineage.get(column), column)
+            for column in route_fields
+        }
+    )
+    return fields
+
+
+def broker_dispatch_lineage_manifest_inputs(
+    lineage: Mapping[str, Any],
+) -> dict[str, Any]:
+    inputs: dict[str, Any] = {}
+    manifest_path = _existing_path(lineage.get("manifest_path"))
+    if manifest_path is not None:
+        inputs["broker_dispatch_manifest"] = manifest_path
+    artifacts = _existing_paths(lineage.get("artifact_paths"))
+    if artifacts:
+        inputs["broker_dispatch_artifacts"] = artifacts
+    dependencies = _existing_paths(lineage.get("dependency_paths"))
+    if dependencies:
+        inputs["broker_dispatch_dependencies"] = dependencies
+    return inputs
+
+
 def _runtime_session_contract_errors(
     *,
     summary: pd.DataFrame,
@@ -661,6 +856,90 @@ def _route_enable_contract_errors(
     return errors
 
 
+def _broker_dispatch_contract_errors(
+    *,
+    summary: pd.DataFrame,
+    orders: pd.DataFrame,
+    config: dict[str, Any],
+    manifest: dict[str, Any],
+    lineage: Mapping[str, Any],
+    route_fields: tuple[str, ...],
+) -> list[str]:
+    errors: list[str] = []
+    if summary.empty:
+        errors.append("broker_dispatch_summary_missing_or_empty")
+    if orders.empty:
+        errors.append("broker_dispatch_orders_missing_or_empty")
+    if not config:
+        errors.append("broker_dispatch_config_missing_or_invalid")
+    if not manifest:
+        errors.append("broker_dispatch_manifest_missing_or_invalid")
+    if errors:
+        return errors
+
+    row = summary.iloc[0]
+    extra = _mapping(manifest.get("extra"))
+    config_lineage = _mapping(config.get("route_enable_lineage"))
+    for column in route_fields:
+        expected = lineage[column]
+        if not _frame_column_matches(orders, column, expected):
+            errors.append(f"broker_dispatch_orders_{column}_mismatch")
+        if not _same(config_lineage.get(column), expected, column):
+            errors.append(f"broker_dispatch_config_{column}_mismatch")
+        if not _same(extra.get(column), expected, column):
+            errors.append(f"broker_dispatch_manifest_{column}_mismatch")
+
+    for column in (
+        "dispatch_batch_id",
+        "target_mode",
+        "strategy",
+        "market",
+        "scenario_key",
+        "adapter",
+    ):
+        expected = row.get(column)
+        if not _frame_column_matches(orders, column, expected):
+            errors.append(f"broker_dispatch_orders_{column}_mismatch")
+        if not _same(config.get(column), expected, column):
+            errors.append(f"broker_dispatch_config_{column}_mismatch")
+    for column in ("ready", "dispatch_state"):
+        if not _same(config.get(column), row.get(column), column):
+            errors.append(f"broker_dispatch_config_{column}_mismatch")
+    if not _same(extra.get("ready"), row.get("ready"), "ready"):
+        errors.append("broker_dispatch_manifest_ready_mismatch")
+    if not _frame_column_matches(orders, "dispatch_action", "dry_run_submit"):
+        errors.append("broker_dispatch_orders_dispatch_action_mismatch")
+    return errors
+
+
+def _dispatch_route_enable_matches_current(
+    *,
+    dispatch_manifest: Mapping[str, Any],
+    dispatch_manifest_path: Path,
+    lineage: Mapping[str, Any],
+    route_fields: tuple[str, ...],
+) -> bool:
+    route_manifest_path = _manifest_input_path(
+        dispatch_manifest,
+        dispatch_manifest_path,
+        "route_enable_manifest",
+    )
+    if route_manifest_path is None or not route_manifest_path.is_file():
+        return False
+    route_enable_config_path = route_manifest_path.with_name("route_enable_config.json")
+    if not route_enable_config_path.is_file():
+        return False
+    current = load_route_enable_lineage(route_enable_config_path)
+    current_fields = route_enable_lineage_fields(current)
+    return bool(
+        current.get("gate_passed", False)
+        and all(
+            _same(lineage.get(column), current_fields.get(column), column)
+            for column in route_fields
+        )
+    )
+
+
 def _route_cutover_matches_current(
     *,
     route_manifest: Mapping[str, Any],
@@ -686,6 +965,14 @@ def _route_cutover_matches_current(
             _same(lineage.get(column), current_fields.get(column), column)
             for column in route_fields
         )
+    )
+
+
+def _frame_column_matches(frame: pd.DataFrame, column: str, expected: Any) -> bool:
+    return bool(
+        not frame.empty
+        and column in frame.columns
+        and frame[column].map(lambda value: _same(value, expected, column)).all()
     )
 
 

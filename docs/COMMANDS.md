@@ -4431,6 +4431,19 @@ visible before acknowledgement reconciliation consumes the send packet.
 This packet still does not submit orders. It creates adapter-scoped endpoint
 names, dry-run request envelopes, payload hashes, unique idempotency keys, and
 an acknowledgement-log template while forcing `submission_enabled=false`. It
+also requires a complete, current `broker_dispatch_plan` manifest and verifies
+all dispatch artifacts before preparing requests. The sender reconciles the
+route-enable lineage across every dispatch order, summary, config, and manifest,
+requires explicit non-authorizing claims, and independently reopens the current
+route-enable source. This blocks stale dispatch files, freshly re-manifested
+cross-artifact disagreement, and a consistently relabeled dispatch bundle that
+no longer matches its route source. Verified fields are carried as
+`broker_dispatch_*` columns in every request row and hashed request envelope,
+plus a flat `broker_dispatch_lineage` config block and send summary/manifest
+metadata. The send manifest fingerprints the complete dispatch artifact set and
+recursively flattened dependencies; later research or operational drift
+invalidates it. Send output may not overlap the dispatch source, and both
+`submission_enabled=false` and `authorizes_submission=false` are enforced. It
 carries route dispatch round-trip proof into the sender request envelope and
 expected acknowledgement rows, then fails closed if the dispatch plan is not
 ready and armed, target mode does not match, route-readiness proof is missing

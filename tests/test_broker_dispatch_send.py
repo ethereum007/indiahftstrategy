@@ -1,6 +1,7 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.broker_dispatch_send import (
@@ -8,6 +9,15 @@ from reports.broker_dispatch_send import (
     write_broker_dispatch_send_packet,
 )
 from reports.catalog import catalog_experiment_runs
+from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    cutover_lineage_fields,
+    empty_runtime_session_lineage,
+    load_cutover_lineage,
+    load_route_enable_lineage,
+    route_enable_lineage_fields,
+    runtime_session_lineage_fields,
+)
 
 
 def path_tail(value):
@@ -589,45 +599,228 @@ def dirty_vendor_market_data_batch_config():
     return vendor
 
 
-def write_dispatch(tmp_path, *, ready=True, state="armed_dry_run", route_roundtrip=True, route_readiness=True):
+def _write_cutover_source(tmp_path, *, broker_readiness_config=None):
+    root = tmp_path / "cutover"
+    root.mkdir()
+    runtime_lineage = runtime_session_lineage_fields(empty_runtime_session_lineage())
+    runtime_lineage["runtime_lineage_gate_passed"] = True
+    summary = {
+        **runtime_lineage,
+        "ready": True,
+        "authorizes_submission": False,
+    }
+    pd.DataFrame([summary]).to_csv(root / "cutover_summary.csv", index=False)
+    pd.DataFrame(
+        [{"ready": True, "authorizes_submission": False}]
+    ).to_csv(root / "cutover_authorization.csv", index=False)
+    pd.DataFrame([{"check": "fixture", "passed": True}]).to_csv(
+        root / "cutover_checks.csv", index=False
+    )
+    pd.DataFrame(columns=["check"]).to_csv(
+        root / "cutover_action_queue.csv", index=False
+    )
+    (root / "cutover_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "runtime_lineage": runtime_lineage,
+                "authorizes_submission": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "cutover_runbook.md").write_text("# Cutover fixture\n", encoding="utf-8")
+    source = root / "runtime_source.txt"
+    source.write_text("current\n", encoding="utf-8")
+    inputs = {"runtime_source": source}
+    if broker_readiness_config is not None:
+        broker_config_path = root / "broker_readiness_config.json"
+        broker_config_path.write_text(
+            json.dumps(broker_readiness_config, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        inputs["broker_readiness_config"] = broker_config_path
+    write_experiment_manifest(
+        root,
+        run_type="cutover_gate",
+        inputs=inputs,
+        extra={**runtime_lineage, "ready": True, "authorizes_submission": False},
+    )
+    return root
+
+
+def _write_route_source(tmp_path, cutover):
+    root = tmp_path / "route_enable"
+    root.mkdir()
+    cutover_lineage = load_cutover_lineage(cutover / "cutover_config.json")
+    assert cutover_lineage["gate_passed"]
+    lineage_fields = cutover_lineage_fields(cutover_lineage)
+    pd.DataFrame(
+        [{**lineage_fields, "ready": True, "authorizes_submission": False}]
+    ).to_csv(root / "route_enable_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                **lineage_fields,
+                "route_enabled": True,
+                "authorizes_submission": False,
+            }
+        ]
+    ).to_csv(root / "route_enable_packet.csv", index=False)
+    pd.DataFrame([{"check": "fixture", "passed": True}]).to_csv(
+        root / "route_enable_checks.csv", index=False
+    )
+    pd.DataFrame(columns=["check"]).to_csv(
+        root / "route_enable_action_queue.csv", index=False
+    )
+    (root / "route_enable_config.json").write_text(
+        json.dumps(
+            {
+                "route_enabled": True,
+                "cutover_lineage": lineage_fields,
+                "authorizes_submission": False,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (root / "route_enable_runbook.md").write_text(
+        "# Route-enable fixture\n", encoding="utf-8"
+    )
+    write_experiment_manifest(
+        root,
+        run_type="route_enable_packet",
+        inputs={"cutover_manifest": cutover / "manifest.json"},
+        extra={**lineage_fields, "ready": True, "authorizes_submission": False},
+    )
+    return root
+
+
+def _manifest_input_values(value):
+    if isinstance(value, list):
+        return [_manifest_input_values(item) for item in value]
+    if isinstance(value, dict) and value.get("path"):
+        return value["path"]
+    return value
+
+
+def _refresh_manifest(manifest_path, *, extra_updates=None):
+    payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    inputs = {
+        name: _manifest_input_values(value)
+        for name, value in payload.get("inputs", {}).items()
+    }
+    extra = dict(payload.get("extra", {}))
+    extra.update(extra_updates or {})
+    write_experiment_manifest(
+        manifest_path.parent,
+        run_type=payload["run_type"],
+        parameters=payload.get("parameters", {}),
+        inputs=inputs,
+        extra=extra,
+    )
+
+
+def write_dispatch(
+    tmp_path,
+    *,
+    ready=True,
+    state="armed_dry_run",
+    route_roundtrip=True,
+    route_readiness=True,
+    broker_readiness_config=None,
+):
+    cutover = _write_cutover_source(
+        tmp_path,
+        broker_readiness_config=broker_readiness_config,
+    )
+    route = _write_route_source(tmp_path, cutover)
+    route_lineage = load_route_enable_lineage(route / "route_enable_config.json")
+    assert route_lineage["gate_passed"]
+    lineage_fields = route_enable_lineage_fields(route_lineage)
+
     dispatch = tmp_path / "dispatch"
     dispatch.mkdir()
-    dispatch_summary(
+    summary = dispatch_summary(
         ready=ready,
         state=state,
         route_roundtrip_provided=route_roundtrip,
         route_roundtrip_ready=route_roundtrip,
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
-    ).to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
-    dispatch_orders().to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
+    )
+    for column, value in lineage_fields.items():
+        summary[column] = value
+    summary["authorizes_submission"] = False
+    summary.to_csv(dispatch / "broker_dispatch_summary.csv", index=False)
+    orders = dispatch_orders()
+    for column, value in lineage_fields.items():
+        orders[column] = value
+    orders["authorizes_submission"] = False
+    orders.to_csv(dispatch / "broker_dispatch_orders.csv", index=False)
+    config = dispatch_config(
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    )
+    config.update(
+        {
+            "ready": ready,
+            "dispatch_state": state,
+            "dispatch_batch_id": "BDP-1",
+            "target_mode": "live_dryrun",
+            "strategy": "lead_lag_taker",
+            "market": "india_nse_index_derivatives",
+            "scenario_key": "trigger_ticks=2",
+            "adapter": "arrow_money",
+            "dry_run_only": True,
+            "authorizes_submission": False,
+            "route_enable_lineage": lineage_fields,
+        }
+    )
     (dispatch / "broker_dispatch_config.json").write_text(
-        json.dumps(
-            dispatch_config(
-                route_readiness_provided=route_readiness,
-                route_readiness_ready=route_readiness,
-            ),
-            indent=2,
-        )
-        + "\n",
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    (dispatch / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_type": "broker_dispatch_plan",
-                "inputs": {
-                    "route_enable_manifest": {
-                        "path": str(dispatch / "route_enable_manifest.json"),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    pd.DataFrame([{"check": "fixture", "passed": True}]).to_csv(
+        dispatch / "broker_dispatch_checks.csv", index=False
+    )
+    pd.DataFrame(columns=["check"]).to_csv(
+        dispatch / "broker_dispatch_action_queue.csv", index=False
+    )
+    (dispatch / "broker_dispatch_runbook.md").write_text(
+        "# Broker-dispatch fixture\n", encoding="utf-8"
+    )
+    write_experiment_manifest(
+        dispatch,
+        run_type="broker_dispatch_plan",
+        inputs={"route_enable_manifest": route / "manifest.json"},
+        extra={**lineage_fields, "ready": ready, "authorizes_submission": False},
     )
     return dispatch
+
+
+def _rewrite_dispatch_lineage_field(dispatch, column, value):
+    summary_path = dispatch / "broker_dispatch_summary.csv"
+    orders_path = dispatch / "broker_dispatch_orders.csv"
+    config_path = dispatch / "broker_dispatch_config.json"
+    summary = pd.read_csv(summary_path)
+    orders = pd.read_csv(orders_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary[column] = value
+    orders[column] = value
+    config["route_enable_lineage"][column] = value
+    summary.to_csv(summary_path, index=False)
+    orders.to_csv(orders_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(dispatch / "manifest.json", extra_updates={column: value})
 
 
 def test_broker_dispatch_send_packet_prepares_non_submitting_requests():
@@ -1598,6 +1791,7 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert (out_dir / "broker_dispatch_send_runbook.md").exists()
     assert (out_dir / "manifest.json").exists()
     summary = pd.read_csv(out_dir / "broker_dispatch_send_summary.csv")
+    requests = pd.read_csv(out_dir / "broker_dispatch_send_requests.csv")
     action_queue = pd.read_csv(out_dir / "broker_dispatch_send_action_queue.csv")
     config = json.loads((out_dir / "broker_dispatch_send_config.json").read_text(encoding="utf-8"))
     runbook = (out_dir / "broker_dispatch_send_runbook.md").read_text(encoding="utf-8")
@@ -1608,6 +1802,16 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert int(summary.loc[0, "blocked_action_count"]) == 0
     assert config["action_queue_count"] == 0
     assert config["next_actions"] == []
+    assert not config["authorizes_submission"]
+    assert config["broker_dispatch_lineage"]["broker_dispatch_lineage_gate_passed"]
+    assert bool(summary.loc[0, "broker_dispatch_lineage_gate_passed"])
+    assert bool(summary.loc[0, "broker_dispatch_route_enable_matches_current"])
+    assert not bool(summary.loc[0, "authorizes_submission"])
+    assert requests["broker_dispatch_lineage_gate_passed"].astype(bool).all()
+    assert not requests["authorizes_submission"].astype(bool).any()
+    request_payload = json.loads(requests.loc[0, "request_payload_json"])
+    assert request_payload["broker_dispatch_lineage_gate_passed"] is True
+    assert request_payload["authorizes_submission"] is False
     assert runbook.startswith("# Broker Dispatch Send Runbook")
     assert "No broker dispatch send actions." in runbook
     assert "broker_dispatch_send_action_queue.csv" in artifact_paths
@@ -1624,67 +1828,151 @@ def test_write_broker_dispatch_send_packet_outputs_artifacts_and_catalog_entry(t
     assert path_tail(manifest["inputs"]["dispatch_manifest"]["path"]).endswith(
         "/manifest.json"
     )
+    assert "broker_dispatch_artifacts" in manifest["inputs"]
+    assert "broker_dispatch_dependencies" in manifest["inputs"]
+    assert manifest["extra"]["broker_dispatch_lineage_gate_passed"]
+    assert manifest["extra"]["authorizes_submission"] is False
     catalog = catalog_experiment_runs([out_dir])
     assert catalog.catalog.iloc[0]["run_type"] == "broker_dispatch_send_packet"
     assert catalog.catalog.iloc[0]["summary_file"] == "broker_dispatch_send_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
 
 
-def test_cli_broker_dispatch_send_hydrates_broker_vendor_data_from_manifest_chain(tmp_path):
+def test_broker_dispatch_send_blocks_recursive_route_source_drift(tmp_path):
     dispatch = write_dispatch(tmp_path)
-    broker_config = dispatch / "broker_readiness_config.json"
-    cutover_manifest = dispatch / "cutover_manifest.json"
-    route_manifest = dispatch / "route_enable_manifest.json"
-    broker_config.write_text(
-        json.dumps(
-            {
+    (tmp_path / "cutover" / "runtime_source.txt").write_text(
+        "drifted\n", encoding="utf-8"
+    )
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=tmp_path / "dispatch_send",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert bool(summary["broker_dispatch_manifest_current"])
+    assert bool(summary["broker_dispatch_lineage_contract_consistent"])
+    assert not bool(summary["broker_dispatch_route_enable_matches_current"])
+    assert {
+        "broker_dispatch_route_enable_matches_current",
+        "broker_dispatch_lineage_gate_passed",
+    } <= failed
+
+
+def test_broker_dispatch_send_blocks_cross_artifact_lineage_mismatch(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    orders_path = dispatch / "broker_dispatch_orders.csv"
+    orders = pd.read_csv(orders_path)
+    orders["route_enable_manifest_sha256"] = "f" * 64
+    orders.to_csv(orders_path, index=False)
+    _refresh_manifest(dispatch / "manifest.json")
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=tmp_path / "dispatch_send",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert bool(summary["broker_dispatch_manifest_current"])
+    assert not bool(summary["broker_dispatch_lineage_contract_consistent"])
+    assert bool(summary["broker_dispatch_route_enable_matches_current"])
+    assert {
+        "broker_dispatch_lineage_contract_consistent",
+        "broker_dispatch_lineage_gate_passed",
+    } <= failed
+
+
+def test_broker_dispatch_send_blocks_consistent_route_relabel(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    _rewrite_dispatch_lineage_field(
+        dispatch,
+        "route_enable_manifest_sha256",
+        "f" * 64,
+    )
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=tmp_path / "dispatch_send",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary = report.summary.iloc[0]
+    assert not report.ready
+    assert bool(summary["broker_dispatch_manifest_current"])
+    assert bool(summary["broker_dispatch_lineage_contract_consistent"])
+    assert bool(summary["broker_dispatch_route_enable_lineage_gate_passed"])
+    assert not bool(summary["broker_dispatch_route_enable_matches_current"])
+    assert "broker_dispatch_route_enable_matches_current" in failed
+
+
+def test_broker_dispatch_send_blocks_authorizing_dispatch_claim(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+    summary_path = dispatch / "broker_dispatch_summary.csv"
+    orders_path = dispatch / "broker_dispatch_orders.csv"
+    config_path = dispatch / "broker_dispatch_config.json"
+    summary = pd.read_csv(summary_path)
+    orders = pd.read_csv(orders_path)
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    summary["authorizes_submission"] = True
+    orders["authorizes_submission"] = True
+    config["authorizes_submission"] = True
+    summary.to_csv(summary_path, index=False)
+    orders.to_csv(orders_path, index=False)
+    config_path.write_text(
+        json.dumps(config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_manifest(
+        dispatch / "manifest.json",
+        extra_updates={"authorizes_submission": True},
+    )
+
+    report = write_broker_dispatch_send_packet(
+        dispatch_dir=dispatch,
+        output_dir=tmp_path / "dispatch_send",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    summary_row = report.summary.iloc[0]
+    assert not report.ready
+    assert bool(summary_row["broker_dispatch_manifest_current"])
+    assert bool(summary_row["broker_dispatch_lineage_contract_consistent"])
+    assert not bool(summary_row["broker_dispatch_non_authorizing"])
+    assert "broker_dispatch_non_authorizing" in failed
+    assert not report.requests["authorizes_submission"].astype(bool).any()
+
+
+def test_broker_dispatch_send_rejects_source_output_overlap(tmp_path):
+    dispatch = write_dispatch(tmp_path)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_broker_dispatch_send_packet(
+            dispatch_dir=dispatch,
+            output_dir=dispatch / "send",
+        )
+
+
+def test_cli_broker_dispatch_send_hydrates_broker_vendor_data_from_manifest_chain(tmp_path):
+    dispatch = write_dispatch(
+        tmp_path,
+        broker_readiness_config={
+            "ready": True,
+            "adapter": "arrow_money",
+            "dispatch_roundtrip": {
+                "provided": True,
                 "ready": True,
-                "adapter": "arrow_money",
-                "dispatch_roundtrip": {
-                    "provided": True,
-                    "ready": True,
-                    "target_mode": "live_dryrun",
-                    "strategy": "lead_lag_taker",
-                    "market": "india_nse_index_derivatives",
-                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
-                        vendor_market_data_batch_config()
-                    ),
-                },
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                    vendor_market_data_batch_config()
+                ),
             },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    cutover_manifest.write_text(
-        json.dumps(
-            {
-                "run_type": "cutover_gate",
-                "inputs": {
-                    "broker_readiness_config": {
-                        "path": str(broker_config),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    route_manifest.write_text(
-        json.dumps(
-            {
-                "run_type": "route_enable_packet",
-                "inputs": {
-                    "cutover_manifest": {
-                        "path": str(cutover_manifest),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+        },
     )
     out_dir = tmp_path / "dispatch_send"
 
@@ -1722,64 +2010,26 @@ def test_cli_broker_dispatch_send_hydrates_broker_vendor_data_from_manifest_chai
 
 
 def test_cli_broker_dispatch_send_blocks_failed_broker_vendor_data_readiness_sidecar(tmp_path):
-    dispatch = write_dispatch(tmp_path)
-    broker_config = dispatch / "broker_readiness_config.json"
-    cutover_manifest = dispatch / "cutover_manifest.json"
-    route_manifest = dispatch / "route_enable_manifest.json"
-    broker_config.write_text(
-        json.dumps(
-            {
+    dispatch = write_dispatch(
+        tmp_path,
+        broker_readiness_config={
+            "ready": True,
+            "adapter": "arrow_money",
+            "broker_vendor_data_readiness": broker_vendor_data_readiness_config(
+                ready=False,
+                failed_checks=1,
+            ),
+            "dispatch_roundtrip": {
+                "provided": True,
                 "ready": True,
-                "adapter": "arrow_money",
-                "broker_vendor_data_readiness": broker_vendor_data_readiness_config(
-                    ready=False,
-                    failed_checks=1,
+                "target_mode": "live_dryrun",
+                "strategy": "lead_lag_taker",
+                "market": "india_nse_index_derivatives",
+                "broker_dispatch_roundtrip_vendor_market_data_batch": (
+                    vendor_market_data_batch_config()
                 ),
-                "dispatch_roundtrip": {
-                    "provided": True,
-                    "ready": True,
-                    "target_mode": "live_dryrun",
-                    "strategy": "lead_lag_taker",
-                    "market": "india_nse_index_derivatives",
-                    "broker_dispatch_roundtrip_vendor_market_data_batch": (
-                        vendor_market_data_batch_config()
-                    ),
-                },
             },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    cutover_manifest.write_text(
-        json.dumps(
-            {
-                "run_type": "cutover_gate",
-                "inputs": {
-                    "broker_readiness_config": {
-                        "path": str(broker_config),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    route_manifest.write_text(
-        json.dumps(
-            {
-                "run_type": "route_enable_packet",
-                "inputs": {
-                    "cutover_manifest": {
-                        "path": str(cutover_manifest),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+        },
     )
     out_dir = tmp_path / "dispatch_send"
 

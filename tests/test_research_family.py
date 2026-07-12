@@ -5,6 +5,10 @@ import pandas as pd
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
 from reports.broker_dispatch import BrokerDispatchThresholds, write_broker_dispatch_plan
+from reports.broker_dispatch_send import (
+    BrokerDispatchSendThresholds,
+    write_broker_dispatch_send_packet,
+)
 from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.manifest import (
     file_sha256,
@@ -690,6 +694,23 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         expected_run_type="broker_dispatch_plan",
         require_input_fingerprints=True,
     ).passed
+    send = write_broker_dispatch_send_packet(
+        dispatch_dir=tmp_path / "broker_dispatch",
+        output_dir=tmp_path / "broker_dispatch_send",
+        thresholds=BrokerDispatchSendThresholds(target_mode="shadow"),
+    )
+    assert send.ready
+    assert set(
+        send.requests[
+            "broker_dispatch_route_enable_cutover_runtime_scaleup_research_family_id"
+        ]
+    ) == {"prospective_family"}
+    assert not send.requests["authorizes_submission"].astype(bool).any()
+    assert verify_experiment_manifest(
+        tmp_path / "broker_dispatch_send" / "manifest.json",
+        expected_run_type="broker_dispatch_send_packet",
+        require_input_fingerprints=True,
+    ).passed
 
     relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
     relabeled_telemetry = runtime_telemetry.telemetry.copy()
@@ -776,6 +797,13 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     )
     assert not drifted_dispatch.passed
     assert drifted_dispatch.error == "input_drift"
+    drifted_send = verify_experiment_manifest(
+        tmp_path / "broker_dispatch_send" / "manifest.json",
+        expected_run_type="broker_dispatch_send_packet",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_send.passed
+    assert drifted_send.error == "input_drift"
     stale_guard = write_runtime_guard_report(
         scaleup_dir=tmp_path / "scaleup",
         telemetry_path=tmp_path / "runtime_telemetry",
