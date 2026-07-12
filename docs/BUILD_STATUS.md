@@ -151,6 +151,16 @@
   drift, and incomplete coverage block closure. The audit still
   records the operator's completeness attestation because omitted experiments
   cannot be detected by software and invalidate the error-control claim.
+  Family closure now also emits a launch-attempt/outcome census sourced from
+  the strict immutable ledgers. Every dispatch, interruption, finalized or
+  recovered outcome, and attested exact retry remains visible in
+  `research_family_launch_attempt_census.csv` and as per-study aggregate
+  fields. Census closure cross-checks current
+  contract IDs, per-contract and aggregate attempt/outcome counts, latest
+  record pointers, retry evidence, and non-authorizing status against the
+  launch matrix. Operational retries remain bound to the same registered
+  contract and explicitly contribute zero additional hypotheses to Holm's
+  denominator.
 - Lead-lag, imbalance, parity/box, settlement, and surface-MM launch pipeline
   root summaries now retain broker-readiness route-control proof from
   broker-vendor data readiness roots as `broker_readiness_route_readiness_*`
@@ -2550,6 +2560,9 @@ duplicate/completed replay blocking, attempt-ledger tamper rejection, resolved
 semantic-digest binding, hash-chained outcome finalization, exact result-hash
 binding, interruption classification, attested unfinalized-result recovery,
 duplicate/inconsistent recovery rejection, outcome-ledger tamper rejection,
+family-closure attempt/outcome census generation, matrix/ledger count and
+latest-pointer reconciliation, retry-visible interruption history, and explicit
+zero-hypothesis accounting for exact operational retries,
 launch-argument and semantic-drift rejection, mutable coverage refresh without
 root invalidation, recursive
 post-coverage result-drift detection, current sweep and result coverage,
@@ -2604,6 +2617,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add a launch-attempt/outcome census to the research-family audit so every
-   interruption and operational retry remains visible at family closure without
-   treating an exact deterministic retry as a new hypothesis test.
+4. Bind current passed research-family closure into strategy-readiness inputs
+   so a research-derived candidate cannot advance from an individually ready
+   study while its registered family audit is missing, stale, or blocked.

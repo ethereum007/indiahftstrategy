@@ -20,7 +20,9 @@ from reports.research_family_registration import (
 )
 from reports.research_family_launch import (
     ResearchFamilyLaunchSnapshot,
+    load_research_family_launch_attempt_ledger,
     load_research_family_launch_matrix,
+    load_research_family_launch_outcome_ledger,
 )
 
 
@@ -42,6 +44,35 @@ ACTION_QUEUE_COLUMNS = [
     "recommendation",
     "next_gate",
     "next_gate_help_command",
+]
+
+LAUNCH_ATTEMPT_CENSUS_COLUMNS = [
+    "study_label",
+    "strategy",
+    "market",
+    "contract_id",
+    "attempt_id",
+    "attempt_number",
+    "dispatch_id",
+    "generated_at_utc",
+    "is_latest_attempt",
+    "is_operational_retry",
+    "retry_of_attempt_id",
+    "retry_reason",
+    "retry_attested",
+    "outcome_present",
+    "outcome_id",
+    "outcome_status",
+    "exit_status",
+    "execution_completed",
+    "outcome_recovered",
+    "outcome_recovery_reason",
+    "outcome_recovery_attested",
+    "result_root",
+    "result_ready",
+    "result_manifest_sha256",
+    "counts_as_additional_hypothesis",
+    "authorizes_submission",
 ]
 
 
@@ -253,6 +284,46 @@ def evaluate_research_family(
                 "launch_coverage_passed": bool(
                     launch_coverage.get("passed", False)
                 ),
+                "launch_attempt_census_passed": bool(
+                    launch_coverage.get("census_passed", False)
+                ),
+                "launch_attempt_count": int(
+                    launch_coverage.get("census_attempt_count", 0)
+                ),
+                "launch_outcome_count": int(
+                    launch_coverage.get("census_outcome_count", 0)
+                ),
+                "launch_operational_retry_count": int(
+                    launch_coverage.get("census_operational_retry_count", 0)
+                ),
+                "launch_interrupted_attempt_count": int(
+                    launch_coverage.get("census_interrupted_count", 0)
+                ),
+                "launch_recovered_outcome_count": int(
+                    launch_coverage.get("census_recovered_outcome_count", 0)
+                ),
+                "launch_missing_outcome_count": int(
+                    launch_coverage.get("census_missing_outcome_count", 0)
+                ),
+                "launch_completed_unfinalized_count": int(
+                    launch_coverage.get(
+                        "census_completed_unfinalized_count",
+                        0,
+                    )
+                ),
+                "launch_registered_hypothesis_count": int(
+                    launch_coverage.get(
+                        "census_registered_hypothesis_count",
+                        0,
+                    )
+                ),
+                "launch_additional_retry_hypothesis_count": int(
+                    launch_coverage.get(
+                        "census_additional_hypothesis_count",
+                        0,
+                    )
+                ),
+                "operational_retries_count_as_additional_hypotheses": False,
                 "declaration_complete_attested": bool(
                     config.declaration_complete_attested
                 ),
@@ -329,7 +400,7 @@ def write_research_family_audit(
         if launch_matrix_path is not None
         else None
     )
-    studies, launch_coverage = _merge_launch_coverage(
+    studies, launch_coverage, launch_attempt_census = _merge_launch_coverage(
         studies,
         launch_snapshot,
     )
@@ -354,6 +425,10 @@ def write_research_family_audit(
         out / "research_family_action_queue.csv",
         index=False,
     )
+    launch_attempt_census.to_csv(
+        out / "research_family_launch_attempt_census.csv",
+        index=False,
+    )
     payload = dict(report.config)
     payload.update(
         {
@@ -375,6 +450,10 @@ def write_research_family_audit(
             "launch_matrix_manifest_sha256": str(
                 launch_coverage.get("manifest_sha256", "")
             ),
+            "launch_attempt_census_path": str(
+                out / "research_family_launch_attempt_census.csv"
+            ),
+            "operational_retries_count_as_additional_hypotheses": False,
         }
     )
     (out / "research_family_config.json").write_text(
@@ -440,6 +519,30 @@ def write_research_family_audit(
             "abandoned_study_count": int(
                 report.summary.iloc[0]["abandoned_study_count"]
             ),
+            "launch_attempt_count": int(
+                report.summary.iloc[0]["launch_attempt_count"]
+            ),
+            "launch_outcome_count": int(
+                report.summary.iloc[0]["launch_outcome_count"]
+            ),
+            "launch_operational_retry_count": int(
+                report.summary.iloc[0]["launch_operational_retry_count"]
+            ),
+            "launch_interrupted_attempt_count": int(
+                report.summary.iloc[0]["launch_interrupted_attempt_count"]
+            ),
+            "launch_recovered_outcome_count": int(
+                report.summary.iloc[0]["launch_recovered_outcome_count"]
+            ),
+            "launch_missing_outcome_count": int(
+                report.summary.iloc[0]["launch_missing_outcome_count"]
+            ),
+            "launch_additional_retry_hypothesis_count": int(
+                report.summary.iloc[0][
+                    "launch_additional_retry_hypothesis_count"
+                ]
+            ),
+            "operational_retries_count_as_additional_hypotheses": False,
             "authorizes_submission": False,
         },
     )
@@ -577,14 +680,16 @@ def _read_studies(paths: list[Path], labels: list[str]) -> pd.DataFrame:
 def _merge_launch_coverage(
     studies: pd.DataFrame,
     snapshot: ResearchFamilyLaunchSnapshot | None,
-) -> tuple[pd.DataFrame, dict[str, Any]]:
+) -> tuple[pd.DataFrame, dict[str, Any], pd.DataFrame]:
+    census, census_evidence = _build_launch_attempt_census(snapshot)
     if snapshot is None:
-        return studies, {
+        return _project_launch_attempt_census(studies, census), {
             "provided": False,
             "passed": False,
             "path": "",
             "manifest_sha256": "",
-        }
+            **census_evidence,
+        }, census
     launches = snapshot.launches.copy()
     required = {
         "study_label",
@@ -714,6 +819,7 @@ def _merge_launch_coverage(
         ).map(_to_bool)).sum()
     ) if not launches.empty else 0
     non_authorizing = not _to_bool(snapshot.config.get("authorizes_submission", False))
+    merged = _project_launch_attempt_census(merged, census)
     passed = bool(
         snapshot.passed
         and snapshot.manifest_current
@@ -726,6 +832,7 @@ def _merge_launch_coverage(
         and omitted_completed == 0
         and uncovered_count == 0
         and non_authorizing
+        and census_evidence["census_passed"]
     )
     return merged, {
         "provided": True,
@@ -751,7 +858,412 @@ def _merge_launch_coverage(
             merged["study_disposition"].astype(str).eq("never_launched").sum()
         ),
         "non_authorizing": non_authorizing,
+        **census_evidence,
+    }, census
+
+
+def _build_launch_attempt_census(
+    snapshot: ResearchFamilyLaunchSnapshot | None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    empty = pd.DataFrame(columns=LAUNCH_ATTEMPT_CENSUS_COLUMNS)
+    if snapshot is None:
+        return empty, {
+            "census_provided": False,
+            "census_passed": False,
+            "census_attempt_count": 0,
+            "census_outcome_count": 0,
+            "census_operational_retry_count": 0,
+            "census_interrupted_count": 0,
+            "census_recovered_outcome_count": 0,
+            "census_missing_outcome_count": 0,
+            "census_completed_unfinalized_count": 0,
+            "census_registered_hypothesis_count": 0,
+            "census_additional_hypothesis_count": 0,
+        }
+
+    attempt_error = ""
+    try:
+        attempt_ledger = load_research_family_launch_attempt_ledger(
+            snapshot.root
+        )
+    except (OSError, ValueError, KeyError) as exc:
+        attempt_ledger = None
+        attempt_error = f"{type(exc).__name__}: {exc}"
+    outcome_error = ""
+    try:
+        outcome_ledger = load_research_family_launch_outcome_ledger(
+            snapshot.root
+        )
+    except (OSError, ValueError, KeyError) as exc:
+        outcome_ledger = None
+        outcome_error = f"{type(exc).__name__}: {exc}"
+
+    attempt_records = list(attempt_ledger.records) if attempt_ledger else []
+    outcome_records = list(outcome_ledger.records) if outcome_ledger else []
+    launches = snapshot.launches.copy()
+    required_matrix_columns = {
+        "study_label",
+        "strategy",
+        "market",
+        "contract_id",
+        "attempt_count",
+        "outcome_count",
+        "latest_attempt_id",
+        "latest_attempt_number",
+        "latest_outcome_id",
+        "latest_outcome_status",
+        "study_status",
+        "authorizes_submission",
     }
+    matrix_columns_present = required_matrix_columns.issubset(launches.columns)
+    contract_ids = (
+        launches.get("contract_id", pd.Series(dtype=str)).astype(str)
+    )
+    unique_contract_ids = bool(
+        matrix_columns_present
+        and not contract_ids.eq("").any()
+        and not contract_ids.duplicated().any()
+    )
+    launch_by_contract = (
+        {
+            str(row["contract_id"]): row
+            for _, row in launches.iterrows()
+        }
+        if unique_contract_ids
+        else {}
+    )
+    known_contract_ids = set(launch_by_contract)
+
+    attempts_by_contract: dict[str, list[dict[str, Any]]] = {}
+    for record in attempt_records:
+        attempts_by_contract.setdefault(
+            str(record.get("contract_id", "")),
+            [],
+        ).append(record)
+    outcomes_by_contract: dict[str, list[dict[str, Any]]] = {}
+    outcome_by_attempt: dict[str, dict[str, Any]] = {}
+    for record in outcome_records:
+        outcomes_by_contract.setdefault(
+            str(record.get("contract_id", "")),
+            [],
+        ).append(record)
+        outcome_by_attempt[str(record.get("attempt_id", ""))] = record
+
+    rows: list[dict[str, Any]] = []
+    for attempt in attempt_records:
+        contract_id = str(attempt.get("contract_id", ""))
+        launch = launch_by_contract.get(contract_id, pd.Series(dtype=object))
+        attempt_id = str(attempt.get("attempt_id", ""))
+        outcome = outcome_by_attempt.get(attempt_id, {})
+        contract_attempts = attempts_by_contract.get(contract_id, [])
+        latest_attempt_id = (
+            str(contract_attempts[-1].get("attempt_id", ""))
+            if contract_attempts
+            else ""
+        )
+        attempt_number = _int(attempt.get("attempt_number"))
+        authorizes_submission = bool(
+            _to_bool(attempt.get("authorizes_submission", False))
+            or _to_bool(outcome.get("authorizes_submission", False))
+        )
+        rows.append(
+            {
+                "study_label": str(launch.get("study_label", "")),
+                "strategy": str(launch.get("strategy", "")),
+                "market": str(launch.get("market", "")),
+                "contract_id": contract_id,
+                "attempt_id": attempt_id,
+                "attempt_number": attempt_number,
+                "dispatch_id": str(attempt.get("dispatch_id", "")),
+                "generated_at_utc": str(
+                    attempt.get("generated_at_utc", "")
+                ),
+                "is_latest_attempt": bool(attempt_id == latest_attempt_id),
+                "is_operational_retry": bool(attempt_number > 1),
+                "retry_of_attempt_id": str(
+                    attempt.get("retry_of_attempt_id", "")
+                ),
+                "retry_reason": str(attempt.get("retry_reason", "")),
+                "retry_attested": _to_bool(
+                    attempt.get("retry_attested", False)
+                ),
+                "outcome_present": bool(outcome),
+                "outcome_id": str(outcome.get("outcome_id", "")),
+                "outcome_status": str(outcome.get("outcome_status", "")),
+                "exit_status": (
+                    int(outcome.get("exit_status", 0))
+                    if outcome
+                    else np.nan
+                ),
+                "execution_completed": _to_bool(
+                    outcome.get("execution_completed", False)
+                ),
+                "outcome_recovered": _to_bool(
+                    outcome.get("recovered", False)
+                ),
+                "outcome_recovery_reason": str(
+                    outcome.get("recovery_reason", "")
+                ),
+                "outcome_recovery_attested": _to_bool(
+                    outcome.get("recovery_attested", False)
+                ),
+                "result_root": str(attempt.get("result_root", "")),
+                "result_ready": _to_bool(
+                    outcome.get("result_ready", False)
+                ),
+                "result_manifest_sha256": str(
+                    outcome.get("result_manifest_sha256", "")
+                ),
+                "counts_as_additional_hypothesis": False,
+                "authorizes_submission": authorizes_submission,
+            }
+        )
+    census = pd.DataFrame(rows, columns=LAUNCH_ATTEMPT_CENSUS_COLUMNS)
+
+    attempt_contracts_current = bool(
+        unique_contract_ids
+        and all(
+            str(record.get("contract_id", "")) in known_contract_ids
+            for record in attempt_records
+        )
+    )
+    outcome_contracts_current = bool(
+        unique_contract_ids
+        and all(
+            str(record.get("contract_id", "")) in known_contract_ids
+            for record in outcome_records
+        )
+    )
+    per_contract_counts_match = bool(matrix_columns_present)
+    latest_records_match = bool(matrix_columns_present)
+    if matrix_columns_present:
+        for contract_id, launch in launch_by_contract.items():
+            contract_attempts = attempts_by_contract.get(contract_id, [])
+            contract_outcomes = outcomes_by_contract.get(contract_id, [])
+            latest_attempt = contract_attempts[-1] if contract_attempts else {}
+            latest_attempt_id = str(latest_attempt.get("attempt_id", ""))
+            latest_outcome = outcome_by_attempt.get(latest_attempt_id, {})
+            per_contract_counts_match = bool(
+                per_contract_counts_match
+                and _int(launch.get("attempt_count")) == len(contract_attempts)
+                and _int(launch.get("outcome_count")) == len(contract_outcomes)
+            )
+            latest_records_match = bool(
+                latest_records_match
+                and _text(launch.get("latest_attempt_id", ""))
+                == latest_attempt_id
+                and _int(launch.get("latest_attempt_number"))
+                == _int(latest_attempt.get("attempt_number"))
+                and _text(launch.get("latest_outcome_id", ""))
+                == str(latest_outcome.get("outcome_id", ""))
+                and _text(launch.get("latest_outcome_status", ""))
+                == str(latest_outcome.get("outcome_status", ""))
+            )
+    matrix_attempt_count = int(
+        launches.get("attempt_count", pd.Series(dtype=int)).map(_int).sum()
+    )
+    matrix_outcome_count = int(
+        launches.get("outcome_count", pd.Series(dtype=int)).map(_int).sum()
+    )
+    attempt_count_matches = bool(
+        per_contract_counts_match
+        and matrix_attempt_count == len(attempt_records)
+    )
+    outcome_count_matches = bool(
+        per_contract_counts_match
+        and matrix_outcome_count == len(outcome_records)
+    )
+
+    retry_evidence_valid = True
+    for contract_attempts in attempts_by_contract.values():
+        for index, attempt in enumerate(contract_attempts):
+            attempt_number = _int(attempt.get("attempt_number"))
+            retry_of = str(attempt.get("retry_of_attempt_id", ""))
+            retry_reason = str(attempt.get("retry_reason", "")).strip()
+            retry_attested = _to_bool(attempt.get("retry_attested", False))
+            if index == 0:
+                valid = bool(
+                    attempt_number == 1
+                    and not retry_of
+                    and not retry_reason
+                    and not retry_attested
+                )
+            else:
+                valid = bool(
+                    attempt_number == index + 1
+                    and retry_of
+                    == str(contract_attempts[index - 1].get("attempt_id", ""))
+                    and retry_reason
+                    and retry_attested
+                )
+            retry_evidence_valid = bool(retry_evidence_valid and valid)
+
+    non_authorizing = bool(
+        not _to_bool(snapshot.config.get("authorizes_submission", False))
+        and not launches.get(
+            "authorizes_submission",
+            pd.Series(False, index=launches.index),
+        ).map(_to_bool).any()
+        and not any(
+            _to_bool(record.get("authorizes_submission", False))
+            for record in [*attempt_records, *outcome_records]
+        )
+    )
+    operational_retry_count = int(
+        sum(_int(record.get("attempt_number")) > 1 for record in attempt_records)
+    )
+    interrupted_count = int(
+        sum(
+            str(record.get("outcome_status", "")) == "interrupted"
+            for record in outcome_records
+        )
+    )
+    recovered_outcome_count = int(
+        sum(_to_bool(record.get("recovered", False)) for record in outcome_records)
+    )
+    missing_outcome_count = int(
+        sum(
+            str(record.get("attempt_id", "")) not in outcome_by_attempt
+            for record in attempt_records
+        )
+    )
+    completed_unfinalized_count = int(
+        launches.get("study_status", pd.Series(dtype=str))
+        .astype(str)
+        .eq("completed_unfinalized")
+        .sum()
+    )
+    additional_hypothesis_count = 0
+    hypothesis_accounting_valid = bool(
+        additional_hypothesis_count == 0
+        and (
+            census.empty
+            or not census["counts_as_additional_hypothesis"].map(_to_bool).any()
+        )
+    )
+    census_passed = bool(
+        not attempt_error
+        and not outcome_error
+        and matrix_columns_present
+        and unique_contract_ids
+        and attempt_contracts_current
+        and outcome_contracts_current
+        and attempt_count_matches
+        and outcome_count_matches
+        and latest_records_match
+        and retry_evidence_valid
+        and non_authorizing
+        and hypothesis_accounting_valid
+    )
+    return census, {
+        "census_provided": True,
+        "census_passed": census_passed,
+        "census_matrix_columns_present": matrix_columns_present,
+        "census_unique_contract_ids": unique_contract_ids,
+        "census_attempt_ledger_valid": not bool(attempt_error),
+        "census_attempt_ledger_error": attempt_error,
+        "census_attempt_ledger_path": str(
+            attempt_ledger.path
+            if attempt_ledger is not None
+            else snapshot.root / "executions" / "attempts.jsonl"
+        ),
+        "census_attempt_ledger_sha256": (
+            attempt_ledger.sha256 if attempt_ledger is not None else ""
+        ),
+        "census_outcome_ledger_valid": not bool(outcome_error),
+        "census_outcome_ledger_error": outcome_error,
+        "census_outcome_ledger_path": str(
+            outcome_ledger.path
+            if outcome_ledger is not None
+            else snapshot.root / "executions" / "outcomes.jsonl"
+        ),
+        "census_outcome_ledger_sha256": (
+            outcome_ledger.sha256 if outcome_ledger is not None else ""
+        ),
+        "census_attempt_contracts_current": attempt_contracts_current,
+        "census_outcome_contracts_current": outcome_contracts_current,
+        "census_per_contract_counts_match": per_contract_counts_match,
+        "census_attempt_count_matches": attempt_count_matches,
+        "census_outcome_count_matches": outcome_count_matches,
+        "census_latest_records_match": latest_records_match,
+        "census_retry_evidence_valid": retry_evidence_valid,
+        "census_non_authorizing": non_authorizing,
+        "census_hypothesis_accounting_valid": hypothesis_accounting_valid,
+        "census_attempt_count": len(attempt_records),
+        "census_outcome_count": len(outcome_records),
+        "census_operational_retry_count": operational_retry_count,
+        "census_interrupted_count": interrupted_count,
+        "census_recovered_outcome_count": recovered_outcome_count,
+        "census_missing_outcome_count": missing_outcome_count,
+        "census_completed_unfinalized_count": completed_unfinalized_count,
+        "census_registered_hypothesis_count": int(len(launches)),
+        "census_additional_hypothesis_count": additional_hypothesis_count,
+        "census_operational_retries_are_additional_hypotheses": False,
+    }
+
+
+def _project_launch_attempt_census(
+    studies: pd.DataFrame,
+    census: pd.DataFrame,
+) -> pd.DataFrame:
+    frame = studies.copy()
+    defaults: dict[str, Any] = {
+        "launch_attempt_count": 0,
+        "launch_retry_count": 0,
+        "launch_outcome_count": 0,
+        "launch_interrupted_count": 0,
+        "launch_recovered_outcome_count": 0,
+        "launch_missing_outcome_count": 0,
+        "launch_latest_attempt_id": "",
+        "launch_latest_outcome_status": "",
+    }
+    if frame.empty or "study_label" not in frame.columns:
+        for column, default in defaults.items():
+            frame[column] = default
+        return frame
+
+    metrics: dict[str, dict[str, Any]] = {}
+    if not census.empty:
+        for label, history in census.groupby("study_label", sort=False):
+            latest = history.loc[
+                history["is_latest_attempt"].map(_to_bool)
+            ]
+            latest_row = (
+                latest.iloc[-1] if not latest.empty else pd.Series(dtype=object)
+            )
+            metrics[str(label)] = {
+                "launch_attempt_count": int(len(history)),
+                "launch_retry_count": _bool_count(
+                    history,
+                    "is_operational_retry",
+                ),
+                "launch_outcome_count": _bool_count(history, "outcome_present"),
+                "launch_interrupted_count": int(
+                    history["outcome_status"].astype(str).eq("interrupted").sum()
+                ),
+                "launch_recovered_outcome_count": _bool_count(
+                    history,
+                    "outcome_recovered",
+                ),
+                "launch_missing_outcome_count": int(
+                    (~history["outcome_present"].map(_to_bool)).sum()
+                ),
+                "launch_latest_attempt_id": str(
+                    latest_row.get("attempt_id", "")
+                ),
+                "launch_latest_outcome_status": str(
+                    latest_row.get("outcome_status", "")
+                ),
+            }
+    labels = frame["study_label"].astype(str)
+    for column, default in defaults.items():
+        frame[column] = labels.map(
+            lambda label, name=column, fallback=default: metrics.get(
+                label,
+                {},
+            ).get(name, fallback)
+        )
+    return frame
 
 
 def _read_registration(
@@ -1029,6 +1541,63 @@ def _launch_coverage_checks(
                 reason,
             )
         )
+    for check, reason in (
+        (
+            "census_attempt_ledger_valid",
+            "launch attempt ledger is unreadable or its immutable chain drifted",
+        ),
+        (
+            "census_outcome_ledger_valid",
+            "launch outcome ledger is unreadable or its immutable chain drifted",
+        ),
+        (
+            "census_attempt_contracts_current",
+            "one or more launch attempts refer to a non-current contract",
+        ),
+        (
+            "census_outcome_contracts_current",
+            "one or more launch outcomes refer to a non-current contract",
+        ),
+        (
+            "census_per_contract_counts_match",
+            "launch matrix attempt/outcome counts differ from the live ledgers",
+        ),
+        (
+            "census_attempt_count_matches",
+            "launch matrix aggregate attempt count differs from the census",
+        ),
+        (
+            "census_outcome_count_matches",
+            "launch matrix aggregate outcome count differs from the census",
+        ),
+        (
+            "census_latest_records_match",
+            "launch matrix latest attempt/outcome pointers differ from the census",
+        ),
+        (
+            "census_retry_evidence_valid",
+            "an operational retry lacks the latest-attempt binding, reason, or attestation",
+        ),
+        (
+            "census_non_authorizing",
+            "launch operational history unexpectedly claims submission authority",
+        ),
+        (
+            "census_hypothesis_accounting_valid",
+            "an exact operational retry was counted as a new hypothesis",
+        ),
+    ):
+        passed = bool(coverage.get(check, False))
+        rows.append(
+            _check(
+                f"launch_{check}",
+                passed,
+                "is",
+                True,
+                passed,
+                reason,
+            )
+        )
     rows.extend(
         [
             _numeric_check(
@@ -1044,6 +1613,21 @@ def _launch_coverage_checks(
                 "==",
                 0,
                 "registered studies remain never launched or unaccounted for",
+            ),
+            _numeric_check(
+                "launch_additional_retry_hypotheses",
+                int(coverage.get("census_additional_hypothesis_count", 0)),
+                "==",
+                0,
+                "operational retries must not expand the registered Holm family",
+            ),
+            _check(
+                "launch_attempt_census_passed",
+                bool(coverage.get("census_passed", False)),
+                "is",
+                True,
+                bool(coverage.get("census_passed", False)),
+                "launch attempt/outcome census did not pass",
             ),
             _check(
                 "launch_coverage_passed",
@@ -1078,6 +1662,15 @@ def _check(
 
 def _canonical_path(value: Any) -> str:
     return str(Path(str(value)).resolve()).casefold()
+
+
+def _text(value: Any) -> str:
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value)
 
 
 def _registration_contract_evidence(
@@ -1399,9 +1992,23 @@ def _runbook(
         f"`{str(bool(summary['registration_closed'])).lower()}`",
         "- Launch coverage: "
         f"`{str(bool(summary['launch_coverage_passed'])).lower()}`",
+        "- Launch attempt census: "
+        f"`{str(bool(summary['launch_attempt_census_passed'])).lower()}`",
         "- Complete-family attestation: "
         f"`{str(bool(summary['declaration_complete_attested'])).lower()}`",
         f"- Declared studies: {int(summary['study_count'])}",
+        f"- Dispatch attempts: {int(summary['launch_attempt_count'])}",
+        f"- Finalized outcomes: {int(summary['launch_outcome_count'])}",
+        "- Operational retries: "
+        f"{int(summary['launch_operational_retry_count'])}",
+        "- Interrupted attempts: "
+        f"{int(summary['launch_interrupted_attempt_count'])}",
+        "- Recovered outcomes: "
+        f"{int(summary['launch_recovered_outcome_count'])}",
+        "- Attempts missing outcomes: "
+        f"{int(summary['launch_missing_outcome_count'])}",
+        "- Retry-added hypotheses: "
+        f"{int(summary['launch_additional_retry_hypothesis_count'])}",
         f"- Current manifests: {int(summary['manifest_current_count'])}",
         f"- Source-ready studies: {int(summary['source_ready_count'])}",
         f"- Attested abandoned studies: {int(summary['abandoned_study_count'])}",
@@ -1419,6 +2026,11 @@ def _runbook(
             "family size; they are never promoted as candidates."
         ),
         (
+            "The launch-attempt census preserves every interruption, outcome, "
+            "recovery, and attested exact retry. Operational retries reproduce "
+            "the same immutable contract and do not add rows to the Holm family."
+        ),
+        (
             "This report cannot detect omitted experiments. Family-wise error "
             "control is invalid if attempted studies are left out or registered "
             "only after their outcomes are inspected."
@@ -1433,6 +2045,8 @@ def _runbook(
             f"`{row.candidate_scenario}`: "
             f"within={_format_number(row.within_study_adjusted_pvalue)}, "
             f"Holm={_format_number(row.holm_adjusted_pvalue)}, "
+            f"attempts={int(row.launch_attempt_count)}, "
+            f"retries={int(row.launch_retry_count)}, "
             f"{'passed' if bool(row.family_passed) else 'blocked'}"
         )
     failed = checks.loc[~checks["passed"].astype(bool)] if not checks.empty else checks

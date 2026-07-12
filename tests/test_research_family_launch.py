@@ -474,6 +474,64 @@ def test_research_family_launch_requires_attested_latest_incomplete_retry(tmp_pa
     assert int(completed_row["attempt_count"]) == 2
     assert bool(completed_row["result_launch_attempt_bound"])
 
+    abandonments = tmp_path / "abandonments.csv"
+    pd.DataFrame(
+        [{"study_label": "imbalance", "reason": "feed history was unavailable"}]
+    ).to_csv(abandonments, index=False)
+    closed = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+        abandonment_path=abandonments,
+        attest_abandonments=True,
+    )
+    family = write_research_family_audit(
+        [tmp_path / "results" / "leadlag"],
+        labels=["leadlag"],
+        output_dir=tmp_path / "family",
+        registration_path=registration_dir,
+        launch_matrix_path=launch_dir,
+        config=ResearchFamilyConfig(
+            family_id="launch_matrix_family",
+            declaration_complete_attested=True,
+            require_prospective_registration=True,
+            require_launch_coverage=True,
+        ),
+    )
+    census = pd.read_csv(
+        tmp_path / "family" / "research_family_launch_attempt_census.csv"
+    ).sort_values("attempt_number")
+    family_summary = family.summary.iloc[0]
+    family_row = family.studies.set_index("study_label").loc["leadlag"]
+    assert closed.passed
+    assert family.passed
+    assert census["attempt_number"].astype(int).tolist() == [1, 2]
+    assert census["outcome_status"].tolist() == [
+        "interrupted",
+        "completed_ready",
+    ]
+    assert census["is_operational_retry"].astype(bool).tolist() == [False, True]
+    assert not census["counts_as_additional_hypothesis"].astype(bool).any()
+    assert not census["authorizes_submission"].astype(bool).any()
+    assert int(family_summary["study_count"]) == 2
+    assert int(family_summary["launch_attempt_count"]) == 2
+    assert int(family_summary["launch_outcome_count"]) == 2
+    assert int(family_summary["launch_operational_retry_count"]) == 1
+    assert int(family_summary["launch_interrupted_attempt_count"]) == 1
+    assert int(family_summary["launch_additional_retry_hypothesis_count"]) == 0
+    assert not bool(
+        family_summary[
+            "operational_retries_count_as_additional_hypotheses"
+        ]
+    )
+    assert int(family_row["launch_attempt_count"]) == 2
+    assert int(family_row["launch_retry_count"]) == 1
+    assert int(family_row["launch_outcome_count"]) == 2
+    assert int(family_row["launch_interrupted_count"]) == 1
+    assert family_row["launch_latest_attempt_id"] == ledger.records[1][
+        "attempt_id"
+    ]
+    assert family_row["launch_latest_outcome_status"] == "completed_ready"
+
 
 def test_research_family_launch_rejects_tampered_attempt_chain(tmp_path):
     _, registration_dir = _write_registration(tmp_path)
@@ -645,6 +703,20 @@ def test_research_family_launch_covers_bound_result_and_attested_abandonment(
     assert not bool(family_rows.loc["imbalance", "family_passed"])
     assert int(family.summary.iloc[0]["abandoned_study_count"]) == 1
     assert bool(family.summary.iloc[0]["launch_coverage_passed"])
+    census = pd.read_csv(
+        tmp_path / "family" / "research_family_launch_attempt_census.csv"
+    )
+    assert len(census) == 1
+    assert census.iloc[0]["study_label"] == "leadlag"
+    assert census.iloc[0]["outcome_status"] == "completed_ready"
+    assert not bool(census.iloc[0]["is_operational_retry"])
+    assert not bool(census.iloc[0]["counts_as_additional_hypothesis"])
+    assert int(family.summary.iloc[0]["launch_attempt_count"]) == 1
+    assert int(family.summary.iloc[0]["launch_outcome_count"]) == 1
+    assert int(family.summary.iloc[0]["launch_operational_retry_count"]) == 0
+    assert int(
+        family.summary.iloc[0]["launch_additional_retry_hypothesis_count"]
+    ) == 0
     family_cli_status = main(
         [
             "audit-research-family",

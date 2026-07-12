@@ -49,6 +49,14 @@ def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
     assert bool(summary["family_wise_error_control_claimed"])
     assert len(config["selected_candidates"]) == 2
     assert len(config["candidate_decisions"]) == 3
+    assert not config[
+        "operational_retries_count_as_additional_hypotheses"
+    ]
+    assert int(summary["launch_attempt_count"]) == 0
+    assert int(summary["launch_additional_retry_hypothesis_count"]) == 0
+    assert pd.read_csv(
+        output / "research_family_launch_attempt_census.csv"
+    ).empty
     assert manifest["run_type"] == "research_family_audit"
     assert manifest["extra"]["declaration_complete_attested"]
     assert manifest["extra"]["family_wise_error_control_claimed"]
@@ -62,6 +70,7 @@ def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
         "research_family_checks.csv",
         "research_family_summary.csv",
         "research_family_action_queue.csv",
+        "research_family_launch_attempt_census.csv",
         "research_family_config.json",
         "research_family_runbook.md",
         "manifest.json",
