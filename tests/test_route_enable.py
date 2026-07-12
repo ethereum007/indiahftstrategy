@@ -1,9 +1,15 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
+from reports.manifest import file_sha256, verify_experiment_manifest, write_experiment_manifest
+from reports.operational_lineage import (
+    empty_runtime_session_lineage,
+    runtime_session_lineage_fields,
+)
 from reports.route_enable import (
     RouteEnableThresholds,
     evaluate_route_enable_packet,
@@ -746,6 +752,67 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
+def cutover_runtime_lineage():
+    state = empty_runtime_session_lineage(required=True)
+    state.update(
+        {
+            "provided": True,
+            "manifest_current": True,
+            "manifest_run_type": "runtime_session_monitor",
+            "manifest_path": "runtime/manifest.json",
+            "manifest_sha256": "a" * 64,
+            "contract_consistent": True,
+            "non_authorizing": True,
+            "scaleup_matches_current": True,
+            "gate_passed": True,
+            "scaleup_manifest_required": True,
+            "scaleup_manifest_provided": True,
+            "scaleup_manifest_current": True,
+            "scaleup_manifest_run_type": "scaleup_plan",
+            "scaleup_manifest_path": "scaleup/manifest.json",
+            "scaleup_manifest_sha256": "b" * 64,
+            "scaleup_contract_consistent": True,
+            "scaleup_non_authorizing": True,
+            "scaleup_source_ready": True,
+            "scaleup_provenance_gate_passed": True,
+            "scaleup_research_family_bound": True,
+            "scaleup_research_family_provenance_current": True,
+            "scaleup_research_family_id": "india-leadlag-v1",
+            "scaleup_research_family_registration_id": "RF-INDIA-LEADLAG-1",
+            "scaleup_research_family_manifest_sha256": "c" * 64,
+            "runtime_telemetry_scaleup_provenance_carried": True,
+            "runtime_telemetry_scaleup_provenance_gate_passed": True,
+            "runtime_telemetry_scaleup_manifest_sha256": "b" * 64,
+            "runtime_telemetry_scaleup_manifest_matches_current": True,
+            "runtime_telemetry_research_family_bound": True,
+            "runtime_telemetry_research_family_provenance_current": True,
+            "runtime_telemetry_research_family_id": "india-leadlag-v1",
+            "runtime_telemetry_research_family_registration_id": "RF-INDIA-LEADLAG-1",
+            "runtime_telemetry_research_family_manifest_sha256": "c" * 64,
+            "runtime_telemetry_research_family_matches_current": True,
+            "runtime_telemetry_lineage_matches_current": True,
+        }
+    )
+    return runtime_session_lineage_fields(state)
+
+
+def refresh_cutover_manifest(cutover):
+    lineage = cutover_runtime_lineage()
+    write_experiment_manifest(
+        cutover,
+        run_type="cutover_gate",
+        inputs={
+            "broker_readiness_config": cutover / "broker_readiness_config.json",
+            "cutover_source": cutover.parent / "cutover_source.csv",
+        },
+        extra={
+            "ready": bool(pd.read_csv(cutover / "cutover_summary.csv").iloc[0]["ready"]),
+            **lineage,
+            "authorizes_submission": False,
+        },
+    )
+
+
 def write_inputs(
     root,
     *,
@@ -762,44 +829,43 @@ def write_inputs(
     cutover.mkdir(parents=True)
     upload.mkdir()
     export.mkdir()
-    cutover_summary(
+    lineage = cutover_runtime_lineage()
+    summary = cutover_summary(
         ready=cutover_ready,
         dispatch_provided=dispatch,
         dispatch_ready=dispatch,
         route_readiness_provided=route_readiness,
         route_readiness_ready=route_readiness,
-    ).to_csv(
-        cutover / "cutover_summary.csv",
-        index=False,
     )
+    for column, value in lineage.items():
+        summary[column] = value
+    summary["authorizes_submission"] = False
+    summary.to_csv(cutover / "cutover_summary.csv", index=False)
+    config = cutover_config(
+        dispatch_provided=dispatch,
+        dispatch_ready=dispatch,
+        route_readiness_provided=route_readiness,
+        route_readiness_ready=route_readiness,
+    )
+    config["runtime_lineage"] = lineage
+    config["authorizes_submission"] = False
     (cutover / "cutover_config.json").write_text(
-        json.dumps(
-            cutover_config(
-                dispatch_provided=dispatch,
-                dispatch_ready=dispatch,
-                route_readiness_provided=route_readiness,
-                route_readiness_ready=route_readiness,
-            ),
-            indent=2,
-        )
-        + "\n",
+        json.dumps(config, indent=2) + "\n",
         encoding="utf-8",
     )
-    (cutover / "manifest.json").write_text(
-        json.dumps(
-            {
-                "run_type": "cutover_gate",
-                "inputs": {
-                    "broker_readiness_config": {
-                        "path": str(cutover / "broker_readiness_config.json"),
-                    }
-                },
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
+    pd.DataFrame([{"route_enabled": cutover_ready, "authorizes_submission": False}]).to_csv(
+        cutover / "cutover_authorization.csv", index=False
     )
+    pd.DataFrame([{"check": "fixture", "passed": cutover_ready}]).to_csv(
+        cutover / "cutover_checks.csv", index=False
+    )
+    pd.DataFrame(columns=["priority", "action"]).to_csv(
+        cutover / "cutover_action_queue.csv", index=False
+    )
+    (cutover / "cutover_runbook.md").write_text("# Cutover Fixture\n", encoding="utf-8")
+    (cutover / "broker_readiness_config.json").write_text("{}\n", encoding="utf-8")
+    pd.DataFrame([{"source": "fixture"}]).to_csv(root / "cutover_source.csv", index=False)
+    refresh_cutover_manifest(cutover)
     upload_summary(ready=upload_ready, orders=upload_orders).to_csv(upload / "broker_upload_summary.csv", index=False)
     order_export_summary(orders=upload_orders, total_notional=export_notional).to_csv(
         export / "broker_order_summary.csv",
@@ -1974,6 +2040,92 @@ def test_write_route_enable_packet_outputs_artifacts_and_catalog_entry(tmp_path)
     assert catalog.catalog.iloc[0]["run_type"] == "route_enable_packet"
     assert catalog.catalog.iloc[0]["summary_file"] == "route_enable_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+    assert report.summary.iloc[0]["cutover_lineage_gate_passed"]
+    assert report.summary.iloc[0]["cutover_manifest_sha256"] == file_sha256(cutover / "manifest.json")
+    assert (
+        report.summary.iloc[0]["cutover_runtime_scaleup_research_family_id"]
+        == "india-leadlag-v1"
+    )
+    assert not bool(report.packet.iloc[0]["authorizes_submission"])
+    assert not bool(report.summary.iloc[0]["authorizes_submission"])
+    assert report.config["cutover_lineage"]["cutover_lineage_gate_passed"]
+    assert not report.config["authorizes_submission"]
+    assert {"cutover_artifacts", "cutover_dependencies"} <= set(manifest["inputs"])
+    assert manifest["extra"]["cutover_lineage_gate_passed"]
+    assert not manifest["extra"]["authorizes_submission"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    ).passed
+    (tmp_path / "cutover_source.csv").write_text("source\nchanged\n", encoding="utf-8")
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_route_enable_blocks_drifted_cutover_lineage(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path)
+    (tmp_path / "cutover_source.csv").write_text("source\nchanged\n", encoding="utf-8")
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {"cutover_manifest_current", "cutover_lineage_gate_passed"} <= failed
+
+
+def test_route_enable_blocks_remanifested_cutover_contract_and_authorization_drift(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path)
+    summary_path = cutover / "cutover_summary.csv"
+    summary = pd.read_csv(summary_path)
+    summary.loc[0, "runtime_scaleup_research_family_id"] = "relabeled-family"
+    summary.to_csv(summary_path, index=False)
+    config_path = cutover / "cutover_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["authorizes_submission"] = True
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    refresh_cutover_manifest(cutover)
+
+    report = write_route_enable_packet(
+        cutover_dir=cutover,
+        upload_pack_dir=upload,
+        order_export_dir=export,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(require_order_export_ready=True),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "cutover_manifest_current" not in failed
+    assert {
+        "cutover_lineage_contract_consistent",
+        "cutover_non_authorizing",
+        "cutover_lineage_gate_passed",
+    } <= failed
+
+
+def test_route_enable_rejects_cutover_output_collision(tmp_path):
+    cutover, upload, export = write_inputs(tmp_path)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_route_enable_packet(
+            cutover_dir=cutover,
+            upload_pack_dir=upload,
+            order_export_dir=export,
+            output_dir=cutover,
+            thresholds=RouteEnableThresholds(require_order_export_ready=True),
+        )
 
 
 def test_cli_route_enable_hydrates_broker_vendor_data_from_cutover_manifest(tmp_path):
@@ -1999,6 +2151,7 @@ def test_cli_route_enable_hydrates_broker_vendor_data_from_cutover_manifest(tmp_
         + "\n",
         encoding="utf-8",
     )
+    refresh_cutover_manifest(cutover)
     out_dir = tmp_path / "route_enable"
 
     code = main(
@@ -2082,6 +2235,7 @@ def test_cli_route_enable_blocks_failed_broker_vendor_data_readiness_sidecar(tmp
         + "\n",
         encoding="utf-8",
     )
+    refresh_cutover_manifest(cutover)
     out_dir = tmp_path / "route_enable"
 
     code = main(

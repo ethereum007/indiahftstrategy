@@ -8,6 +8,12 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    cutover_lineage_fields,
+    cutover_lineage_manifest_inputs,
+    empty_cutover_lineage,
+    load_cutover_lineage,
+)
 from reports.vendor_market_data import (
     select_vendor_market_data_batch_source,
     vendor_market_data_batch_source_active,
@@ -33,6 +39,9 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+CUTOVER_LINEAGE_OUTPUT_COLUMNS = tuple(
+    cutover_lineage_fields(empty_cutover_lineage()).keys()
+)
 
 
 @dataclass(frozen=True)
@@ -67,6 +76,7 @@ def evaluate_route_enable_packet(
     cutover_config: dict[str, Any] | None = None,
     upload_summary: pd.DataFrame,
     order_export_summary: pd.DataFrame | None = None,
+    cutover_lineage: dict[str, Any] | None = None,
     thresholds: RouteEnableThresholds | None = None,
 ) -> RouteEnableReport:
     thresholds = thresholds or RouteEnableThresholds()
@@ -77,7 +87,11 @@ def evaluate_route_enable_packet(
     cutover_config = cutover_config or {}
 
     state = {
-        "cutover": _cutover_state(cutover_summary.iloc[0], cutover_config),
+        "cutover": _cutover_state(
+            cutover_summary.iloc[0],
+            cutover_config,
+            cutover_lineage or empty_cutover_lineage(),
+        ),
         "upload": _upload_state(upload_summary.iloc[0]),
         "order_export": _order_export_state(order_export_summary),
     }
@@ -103,6 +117,8 @@ def write_route_enable_packet(
     order_export_dir: str | Path | None = None,
     thresholds: RouteEnableThresholds | None = None,
 ) -> RouteEnableReport:
+    thresholds = thresholds or RouteEnableThresholds()
+    _validate_thresholds(thresholds)
     cutover = Path(cutover_dir)
     upload = Path(upload_pack_dir)
     cutover_config_path = cutover / "cutover_config.json" if cutover.is_dir() else Path(cutover_dir)
@@ -126,6 +142,7 @@ def write_route_enable_packet(
         cutover / "cutover_summary.csv" if cutover.is_dir() else cutover_config_path.with_name("cutover_summary.csv")
     )
     cutover_manifest_path = _sidecar_path(cutover_dir, "manifest.json")
+    cutover_lineage = load_cutover_lineage(cutover_config_path)
     cutover_config = json.loads(cutover_config_path.read_text(encoding="utf-8"))
     broker_readiness_config_path = _manifest_input_path(cutover_manifest_path, "broker_readiness_config")
     if broker_readiness_config_path is not None:
@@ -140,9 +157,18 @@ def write_route_enable_packet(
         order_export_summary=(
             _read_optional(order_export_summary_path) if order_export_summary_path is not None else None
         ),
+        cutover_lineage=cutover_lineage,
         thresholds=thresholds,
     )
-    out = Path(output_dir)
+    out = Path(output_dir).resolve()
+    _reject_input_output_collision(
+        out,
+        {
+            "cutover": cutover_config_path,
+            "upload pack": upload_summary_path,
+            "order export": order_export_summary_path,
+        },
+    )
     out.mkdir(parents=True, exist_ok=True)
     report.packet.to_csv(out / "route_enable_packet.csv", index=False)
     report.checks.to_csv(out / "route_enable_checks.csv", index=False)
@@ -170,11 +196,17 @@ def write_route_enable_packet(
         inputs["order_export"] = (
             order_export_summary_path if order_export_summary_path.exists() else Path(order_export_dir)
         )
+    inputs.update(cutover_lineage_manifest_inputs(cutover_lineage))
     write_experiment_manifest(
         out,
         run_type="route_enable_packet",
-        parameters={"thresholds": asdict(thresholds or RouteEnableThresholds())},
+        parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
+        extra={
+            "ready": bool(report.ready),
+            **cutover_lineage_fields(cutover_lineage),
+            "authorizes_submission": False,
+        },
     )
     return RouteEnableReport(
         packet=report.packet,
@@ -234,6 +266,59 @@ def _checks(state: dict[str, dict[str, Any]], thresholds: RouteEnableThresholds)
             "route enable requires cutover with dispatch route proof",
         ),
     ]
+    if cutover["cutover_lineage_required"]:
+        checks.extend(
+            [
+                _check(
+                    "cutover_lineage_provided",
+                    cutover["cutover_lineage_provided"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_lineage_provided"]),
+                    "cutover lineage evidence is required but missing",
+                ),
+                _check(
+                    "cutover_manifest_current",
+                    cutover["cutover_manifest_current"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_manifest_current"]),
+                    "cutover manifest is missing, stale, or incomplete",
+                ),
+                _check(
+                    "cutover_lineage_contract_consistent",
+                    cutover["cutover_lineage_contract_consistent"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_lineage_contract_consistent"]),
+                    "cutover summary, config, and manifest lineage disagree",
+                ),
+                _check(
+                    "cutover_non_authorizing",
+                    cutover["cutover_non_authorizing"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_non_authorizing"]),
+                    "cutover lineage contains an authorizing claim",
+                ),
+                _check(
+                    "cutover_runtime_lineage_gate_passed",
+                    cutover["cutover_runtime_lineage_gate_passed"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_runtime_lineage_gate_passed"]),
+                    "cutover did not retain a valid runtime-session lineage gate",
+                ),
+                _check(
+                    "cutover_lineage_gate_passed",
+                    cutover["cutover_lineage_gate_passed"],
+                    "is",
+                    True,
+                    bool(cutover["cutover_lineage_gate_passed"]),
+                    "cutover operational lineage gate did not pass",
+                ),
+            ]
+        )
     if route_readiness_required:
         checks.append(
             _check(
@@ -1471,6 +1556,8 @@ def _packet(
                     "strategy_portfolio_max_market_allocation_weight"
                 ],
                 "pre_portfolio_max_notional_per_session": cutover["pre_portfolio_max_notional_per_session"],
+                **_cutover_lineage_output_fields(cutover),
+                "authorizes_submission": False,
                 "upload_ready": upload["ready"],
                 "upload_orders": int(upload["orders"]),
                 "upload_output_file": upload["output_file"],
@@ -1887,6 +1974,8 @@ def _summary(packet: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                     packet["strategy_portfolio_max_market_allocation_weight"]
                 ),
                 "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
+                **_cutover_lineage_summary_fields(packet),
+                "authorizes_submission": False,
                 "adapter_schema_status": str(packet["adapter_schema_status"]),
                 "broker_schema_status": str(packet["broker_schema_status"]),
                 "broker_schema_reviewed": _to_bool(packet["broker_schema_reviewed"]),
@@ -2380,6 +2469,7 @@ def _config(
     next_gate = _first_action_value(action_queue, "next_gate")
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "route_enabled": _to_bool(packet["route_enabled"]),
         "route_state": str(packet["route_state"]),
         "failed_check_count": len(failed_check_records),
@@ -2419,6 +2509,7 @@ def _config(
             "max_market_allocation_weight": float(packet["strategy_portfolio_max_market_allocation_weight"]),
             "pre_portfolio_max_notional_per_session": float(packet["pre_portfolio_max_notional_per_session"]),
         },
+        "cutover_lineage": _cutover_lineage_config(packet),
         "upload": {
             "ready": _to_bool(packet["upload_ready"]),
             "orders": int(packet["upload_orders"]),
@@ -2610,6 +2701,9 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Upload orders: {_int_value(summary_row.get('upload_orders'))}",
         f"- Dispatch round-trip ready: {_object_text(summary_row.get('dispatch_roundtrip_ready')).strip()}",
         f"- Route readiness ready: {_object_text(summary_row.get('route_readiness_ready')).strip()}",
+        f"- Cutover lineage current: {'yes' if _to_bool(summary_row.get('cutover_lineage_gate_passed')) else 'no'}",
+        f"- Research family: {_object_text(summary_row.get('cutover_runtime_scaleup_research_family_id')).strip()}",
+        "- Submission authorization: no",
         f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
         f"- Blocked actions: {_int_value(summary_row.get('blocked_action_count'))}",
         f"- Recommendation: {_object_text(summary_row.get('recommendation')).strip()}",
@@ -3092,7 +3186,11 @@ def _resume_route_readiness_state_fields(
     }
 
 
-def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
+def _cutover_state(
+    row: pd.Series,
+    config: dict[str, Any],
+    lineage: dict[str, Any],
+) -> dict[str, Any]:
     limits = config.get("limits", {}) or {}
     proof = config.get("proof_freshness", {}) or {}
     runtime_session = config.get("runtime_session", {}) or {}
@@ -3351,6 +3449,7 @@ def _cutover_state(row: pd.Series, config: dict[str, Any]) -> dict[str, Any]:
                 ),
             )
         ),
+        **cutover_lineage_fields(lineage),
         "proof_refresh_ready": _to_bool(proof.get("ready", row.get("proof_refresh_ready", False))),
         "proof_refresh_strategy": _strategy_key(
             _first_text(proof.get("strategy", ""), row.get("proof_refresh_strategy", ""))
@@ -4244,6 +4343,34 @@ def _route_readiness_required(thresholds: RouteEnableThresholds, cutover: dict[s
 
 def _strategy_portfolio_active(cutover: dict[str, Any]) -> bool:
     return bool(cutover["strategy_portfolio_required"] or cutover["strategy_portfolio_provided"])
+
+
+def _cutover_lineage_output_fields(cutover: dict[str, Any]) -> dict[str, Any]:
+    return {column: cutover[column] for column in CUTOVER_LINEAGE_OUTPUT_COLUMNS}
+
+
+def _cutover_lineage_summary_fields(packet: pd.Series) -> dict[str, Any]:
+    return {column: packet[column] for column in CUTOVER_LINEAGE_OUTPUT_COLUMNS}
+
+
+def _cutover_lineage_config(packet: pd.Series) -> dict[str, Any]:
+    return {
+        column: _jsonable_check_value(packet[column])
+        for column in CUTOVER_LINEAGE_OUTPUT_COLUMNS
+    }
+
+
+def _reject_input_output_collision(
+    output_dir: Path,
+    inputs: dict[str, Path | None],
+) -> None:
+    for label, value in inputs.items():
+        if value is None:
+            continue
+        path = Path(value).resolve()
+        root = path if path.is_dir() else path.parent
+        if output_dir == root or root in output_dir.parents or output_dir in root.parents:
+            raise ValueError(f"route-enable output_dir must not overwrite the {label} source directory")
 
 
 def _route_dispatch_roundtrip_required(thresholds: RouteEnableThresholds, cutover: dict[str, Any]) -> bool:

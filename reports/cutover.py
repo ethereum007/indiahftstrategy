@@ -8,6 +8,12 @@ from typing import Any
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.operational_lineage import (
+    empty_runtime_session_lineage,
+    load_runtime_session_lineage,
+    runtime_session_lineage_fields,
+    runtime_session_lineage_manifest_inputs,
+)
 from reports.vendor_market_data import vendor_market_data_batch_source_active
 
 
@@ -30,6 +36,9 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+RUNTIME_LINEAGE_OUTPUT_COLUMNS = tuple(
+    runtime_session_lineage_fields(empty_runtime_session_lineage()).keys()
+)
 
 
 @dataclass(frozen=True)
@@ -69,6 +78,7 @@ def evaluate_cutover_gate(
     scaleup_checks: pd.DataFrame | None = None,
     broker_readiness_summary: pd.DataFrame | None = None,
     runtime_session_summary: pd.DataFrame | None = None,
+    runtime_session_lineage: dict[str, Any] | None = None,
     operator_review: pd.DataFrame | None = None,
     thresholds: CutoverGateThresholds | None = None,
 ) -> CutoverGateReport:
@@ -83,7 +93,11 @@ def evaluate_cutover_gate(
 
     scaleup = _scaleup_state(scaleup_summary.iloc[0], scaleup_config, scaleup_checks)
     broker = _broker_state(broker_readiness_summary)
-    runtime = _runtime_state(runtime_session_summary, broker)
+    runtime = _runtime_state(
+        runtime_session_summary,
+        broker,
+        runtime_session_lineage or empty_runtime_session_lineage(),
+    )
     operator = _operator_state(operator_review, scaleup)
     checks = _checks(scaleup, broker, runtime, operator, thresholds)
     authorization = _authorization(scaleup, broker, runtime, operator, thresholds, checks)
@@ -136,6 +150,14 @@ def write_cutover_gate_report(
         if runtime_session_dir is not None
         else None
     )
+    runtime_lineage = empty_runtime_session_lineage(
+        required=bool(thresholds.require_runtime_session or runtime_session_dir is not None)
+    )
+    if runtime_session_summary_path is not None and runtime_session_summary_path.is_file():
+        runtime_lineage = load_runtime_session_lineage(
+            runtime_session_summary_path,
+            scaleup_config_path,
+        )
     scaleup_config = json.loads(scaleup_config_path.read_text(encoding="utf-8"))
     if broker_readiness_config_path is not None:
         scaleup_config = _with_broker_readiness_config_vendor_market_data_batch(
@@ -148,10 +170,19 @@ def write_cutover_gate_report(
         scaleup_checks=_read_optional(scaleup_checks_path),
         broker_readiness_summary=_read_required(broker_readiness_summary_path, "broker_readiness"),
         runtime_session_summary=_read_optional(runtime_session_summary_path),
+        runtime_session_lineage=runtime_lineage,
         operator_review=_read_optional(operator_review_path),
         thresholds=thresholds,
     )
-    out = Path(output_dir)
+    out = Path(output_dir).resolve()
+    _reject_input_output_collision(
+        out,
+        {
+            "scale-up": scaleup_config_path,
+            "broker readiness": broker_readiness_summary_path,
+            "runtime session": runtime_session_summary_path,
+        },
+    )
     out.mkdir(parents=True, exist_ok=True)
     report.authorization.to_csv(out / "cutover_authorization.csv", index=False)
     report.checks.to_csv(out / "cutover_checks.csv", index=False)
@@ -178,11 +209,17 @@ def write_cutover_gate_report(
         inputs["runtime_session_summary"] = runtime_session_summary_path
     if operator_review_path is not None:
         inputs["operator_review"] = Path(operator_review_path)
+    inputs.update(runtime_session_lineage_manifest_inputs(runtime_lineage))
     write_experiment_manifest(
         out,
         run_type="cutover_gate",
         parameters={"thresholds": asdict(thresholds)},
         inputs=inputs,
+        extra={
+            "ready": bool(report.ready),
+            **runtime_session_lineage_fields(runtime_lineage),
+            "authorizes_submission": False,
+        },
     )
     return CutoverGateReport(
         authorization=report.authorization,
@@ -386,6 +423,67 @@ def _checks(
                     0.0,
                     float(runtime["strategy_portfolio_selected_allocation_notional"]) > 0.0,
                     "runtime-session strategy portfolio allocation notional must be positive",
+                ),
+            ]
+        )
+    if runtime["runtime_lineage_required"]:
+        checks.extend(
+            [
+                _check(
+                    "runtime_lineage_provided",
+                    runtime["runtime_lineage_provided"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_lineage_provided"]),
+                    "runtime-session lineage evidence is required but missing",
+                ),
+                _check(
+                    "runtime_session_manifest_current",
+                    runtime["runtime_session_manifest_current"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_session_manifest_current"]),
+                    "runtime-session manifest is missing, stale, or incomplete",
+                ),
+                _check(
+                    "runtime_lineage_contract_consistent",
+                    runtime["runtime_lineage_contract_consistent"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_lineage_contract_consistent"]),
+                    "runtime-session summary, config, and manifest lineage disagree",
+                ),
+                _check(
+                    "runtime_lineage_non_authorizing",
+                    runtime["runtime_lineage_non_authorizing"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_lineage_non_authorizing"]),
+                    "runtime-session lineage contains an authorizing claim",
+                ),
+                _check(
+                    "runtime_lineage_scaleup_matches_current",
+                    runtime["runtime_lineage_scaleup_matches_current"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_lineage_scaleup_matches_current"]),
+                    "runtime-session scale-up manifest does not match the current cutover source",
+                ),
+                _check(
+                    "runtime_telemetry_lineage_matches_current",
+                    runtime["runtime_telemetry_lineage_matches_current"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_telemetry_lineage_matches_current"]),
+                    "runtime telemetry lineage no longer matches current research proof",
+                ),
+                _check(
+                    "runtime_lineage_gate_passed",
+                    runtime["runtime_lineage_gate_passed"],
+                    "is",
+                    True,
+                    bool(runtime["runtime_lineage_gate_passed"]),
+                    "runtime-session operational lineage gate did not pass",
                 ),
             ]
         )
@@ -1875,6 +1973,8 @@ def _authorization(
                 "runtime_pre_portfolio_max_notional_per_session": runtime[
                     "pre_portfolio_max_notional_per_session"
                 ],
+                **_runtime_lineage_output_fields(runtime),
+                "authorizes_submission": False,
                 "broker_resume_gate_provided": broker["resume_gate_provided"],
                 "broker_resume_gate_ready": broker["resume_gate_ready"],
                 "broker_resume_strategy": broker["resume_strategy"],
@@ -2439,6 +2539,8 @@ def _summary(authorization: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
                 "runtime_pre_portfolio_max_notional_per_session": float(
                     authorization["runtime_pre_portfolio_max_notional_per_session"]
                 ),
+                **_runtime_lineage_summary_fields(authorization),
+                "authorizes_submission": False,
                 "broker_resume_gate_provided": _to_bool(authorization["broker_resume_gate_provided"]),
                 "broker_resume_gate_ready": _to_bool(authorization["broker_resume_gate_ready"]),
                 "broker_resume_proof_refresh_ready": _to_bool(
@@ -2929,6 +3031,7 @@ def _config(
     next_gate = _first_action_value(action_queue, "next_gate")
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "ready": _to_bool(authorization["ready"]),
         "failed_check_count": len(failed_check_records),
         "target_mode": str(authorization["target_mode"]),
@@ -3186,6 +3289,7 @@ def _config(
                 ),
             },
         },
+        "runtime_lineage": _runtime_lineage_config(authorization),
         "operator_review": {
             "provided": _to_bool(authorization["operator_review_provided"]),
             "approval_required": _to_bool(authorization["operator_approval_required"]),
@@ -3248,6 +3352,9 @@ def _runbook_markdown(summary_row: pd.Series, action_queue: pd.DataFrame) -> str
         f"- Broker readiness ready: {_object_text(summary_row.get('broker_readiness_ready')).strip()}",
         f"- Runtime session ready: {_object_text(summary_row.get('runtime_session_ready')).strip()}",
         f"- Runtime guard action: {_object_text(summary_row.get('runtime_guard_action')).strip()}",
+        f"- Runtime lineage current: {'yes' if _to_bool(summary_row.get('runtime_lineage_gate_passed')) else 'no'}",
+        f"- Research family: {_object_text(summary_row.get('runtime_scaleup_research_family_id')).strip()}",
+        "- Submission authorization: no",
         f"- Operator review provided: {_object_text(summary_row.get('operator_review_provided')).strip()}",
         f"- Failed checks: {_int_value(summary_row.get('failed_check_count'))}",
         f"- Blocked actions: {_int_value(summary_row.get('blocked_action_count'))}",
@@ -4500,7 +4607,12 @@ def _broker_state(summary: pd.DataFrame) -> dict[str, Any]:
     }
 
 
-def _runtime_state(summary: pd.DataFrame, broker: dict[str, Any]) -> dict[str, Any]:
+def _runtime_state(
+    summary: pd.DataFrame,
+    broker: dict[str, Any],
+    lineage: dict[str, Any],
+) -> dict[str, Any]:
+    lineage_fields = runtime_session_lineage_fields(lineage)
     if not summary.empty:
         row = summary.iloc[0]
         return {
@@ -4512,6 +4624,7 @@ def _runtime_state(summary: pd.DataFrame, broker: dict[str, Any]) -> dict[str, A
             "strategy": _strategy_key(row.get("strategy", "")),
             "market": _identity_key(row.get("market", "")),
             **_strategy_portfolio_state(row, "strategy_portfolio"),
+            **lineage_fields,
         }
     return {
         "provided": bool(broker["runtime_session_provided"]),
@@ -4551,7 +4664,39 @@ def _runtime_state(summary: pd.DataFrame, broker: dict[str, Any]) -> dict[str, A
             "strategy_portfolio_max_market_allocation_weight"
         ],
         "pre_portfolio_max_notional_per_session": broker["pre_portfolio_max_notional_per_session"],
+        **lineage_fields,
     }
+
+
+def _runtime_lineage_output_fields(runtime: dict[str, Any]) -> dict[str, Any]:
+    return {column: runtime[column] for column in RUNTIME_LINEAGE_OUTPUT_COLUMNS}
+
+
+def _runtime_lineage_summary_fields(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        column: authorization[column]
+        for column in RUNTIME_LINEAGE_OUTPUT_COLUMNS
+    }
+
+
+def _runtime_lineage_config(authorization: pd.Series) -> dict[str, Any]:
+    return {
+        column: _jsonable_check_value(authorization[column])
+        for column in RUNTIME_LINEAGE_OUTPUT_COLUMNS
+    }
+
+
+def _reject_input_output_collision(
+    output_dir: Path,
+    inputs: dict[str, Path | None],
+) -> None:
+    for label, value in inputs.items():
+        if value is None:
+            continue
+        path = Path(value).resolve()
+        root = path if path.is_dir() else path.parent
+        if output_dir == root or root in output_dir.parents or output_dir in root.parents:
+            raise ValueError(f"cutover output_dir must not overwrite the {label} source directory")
 
 
 def _runtime_strategy_portfolio_active(runtime: dict[str, Any]) -> bool:

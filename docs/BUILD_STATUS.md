@@ -2610,6 +2610,20 @@
   failure remains evidence rather than an emergency-action blocker, so a
   lineage-triggered halt can still produce a ready cancel/flatten packet. Halt
   packets are explicitly non-authorizing and cannot overwrite the guard source.
+- Cutover now requires and independently verifies a complete current
+  `runtime_session_monitor` manifest, reconciles the carried scale-up,
+  portfolio, scorecard, telemetry, and prospective-family contract across the
+  session summary/config/manifest, and compares both carried scale-up hashes to
+  the current cutover source. It fingerprints all session artifacts and
+  recursively flattened dependencies, blocks semantic re-manifesting and
+  authorizing claims, preserves the lineage in every cutover artifact, and
+  remains explicitly non-authorizing.
+- Route-enable repeats the boundary check against a complete current
+  `cutover_gate` manifest, requires the retained runtime and cutover lineage
+  gates, carries the exact family/registration and manifest hashes through its
+  packet/summary/config/manifest, and recursively fingerprints cutover
+  artifacts and dependencies. `route_enabled=true` is explicitly not submission
+  authority. Output/source overlap is rejected at both boundaries.
 
 ## Test Gate
 
@@ -2619,14 +2633,22 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1526 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1532 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
-route-readiness, route-enable, and research-family pass together (`270
-passed`). The focused runtime-session, halt-response, and research-family gate
-passes together (`29 passed`). It covers source-output collision rejection,
+route-readiness, route-enable, and research-family registration/launch/audit
+pass together (`290 passed`). It now includes a real prospective-family chain
+through family audit -> scorecard -> portfolio -> controlled scale-up -> runtime
+telemetry -> runtime guard -> runtime session -> cutover -> route-enable, with
+recursive invalidation of both final manifests after registration-plan drift.
+Cutover and route-enable also reject stale source fingerprints, freshly
+re-manifested cross-artifact lineage disagreement, authorizing claims, and
+source/output overlap while preserving non-authorizing family identity through
+the broker-facing packet. The focused runtime-session, halt-response, and
+research-family gate passes together (`29 passed`). It covers source-output
+collision rejection,
 non-authorizing lineage passthrough into session and emergency action rows,
 recursive session/halt manifest invalidation after registration-plan drift,
 and the deliberate ability to prepare emergency cancel/flatten actions even
@@ -2648,8 +2670,8 @@ session/halt-response manifests, then halts the guard after registration-plan
 drift. Six provider-data imbalance
 telemetry/guard paths also pass, covering ready wrappers, CLI telemetry,
 post-scale-up receipt drift, post-telemetry receipt drift, and route-sidecar
-breach handling. Generic cutover and route-enable compatibility pass together
-(`82 passed`).
+breach handling. Generic cutover and route-enable compatibility now pass
+together (`88 passed`).
 The immediately preceding manifest, strategy portfolio, strategy scorecard,
 research-family, and controlled scale-up suites pass together (`126 passed`).
 Controlled scale-up passes all `80` of its tests, including
@@ -2739,7 +2761,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1526-test collection is fully green.
+1532-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2748,6 +2770,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Require cutover and route-enable to carry and revalidate the runtime
-   session's verified scale-up/portfolio/scorecard/family lineage so the same
-   prospective-family proof remains continuous at the final broker boundary.
+4. Carry route-enable's verified cutover/runtime/research lineage through the
+   non-submitting broker dispatch plan/send/ack/round-trip chain before any
+   provider credential or live broker decision is introduced.

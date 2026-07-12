@@ -4093,6 +4093,19 @@ strategy/market than the scale-up identity. The same handoff preserves
 portfolio concentration context, including minimum distinct strategy/market
 counts, observed allocated strategy/market counts, top concentration names, and
 maximum strategy/market allocation weights.
+Cutover now also requires the resolved runtime-session bundle to have a complete,
+current `runtime_session_monitor` manifest. It reconciles every carried scale-up,
+portfolio, scorecard, runtime-telemetry, and prospective research-family field
+across the session summary, config, and manifest; compares the carried scale-up
+hashes with the current cutover scale-up manifest; and rejects authorizing
+claims. The verified state is preserved as `runtime_lineage_*`,
+`runtime_scaleup_*`, and `runtime_telemetry_*` fields plus the flat
+`runtime_lineage` config block. The cutover manifest fingerprints the complete
+runtime-session artifact set and recursively flattened upstream dependencies,
+so later registration, study, scorecard, portfolio, scale-up, or session drift
+invalidates the cutover packet. Cutover artifacts set
+`authorizes_submission=false`; authorization here is operational evidence, not
+permission to submit an order.
 `--broker-readiness` may point at a broker-readiness folder or a launch-pipeline
 root; cutover resolves nested `06_broker_readiness` and `05_broker_readiness`
 summaries and fingerprints the resolved scale-up summary/config/checks,
@@ -4211,6 +4224,16 @@ and wrapper readiness before revalidating them. `--upload-pack` and
 `04_upload_pack`/`03_export` summaries and fingerprints the resolved cutover
 summary, cutover config, cutover manifest when present, upload summary, and
 optional order export summary in the manifest.
+Route-enable additionally requires a complete, current `cutover_gate` manifest,
+reconciles the cutover-carried runtime lineage across cutover summary, config,
+and manifest, and requires both the runtime-lineage and cutover-lineage gates to
+remain true. The packet, summary, manifest, and flat `cutover_lineage` config
+block preserve the exact cutover, runtime-session, scale-up, portfolio,
+scorecard, and prospective-family hashes and identities. Its manifest
+fingerprints all cutover artifacts and recursively flattened cutover
+dependencies, so upstream research or operational drift invalidates an emitted
+route packet. `route_enabled=true` still does not authorize broker submission:
+all route-enable artifacts explicitly set `authorizes_submission=false`.
 
 ## Broker Dispatch Plan
 

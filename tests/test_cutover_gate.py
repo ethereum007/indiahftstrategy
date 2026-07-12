@@ -1,10 +1,13 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
 from reports.cutover import CutoverGateThresholds, evaluate_cutover_gate, write_cutover_gate_report
+from reports.manifest import file_sha256, verify_experiment_manifest, write_experiment_manifest
+from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 
 
 def scaleup_summary(
@@ -742,6 +745,36 @@ def path_tail(value):
     return str(value).replace("\\", "/")
 
 
+def runtime_lineage(scaleup_manifest_sha256):
+    fields = {}
+    for column in (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS):
+        if column == "scaleup_dependency_count":
+            fields[column] = 1
+        elif column.endswith(("_path", "_sha256", "_error", "_run_type", "_id")):
+            fields[column] = ""
+        else:
+            fields[column] = False
+    fields.update(
+        {
+            "scaleup_manifest_required": True,
+            "scaleup_manifest_provided": True,
+            "scaleup_manifest_current": True,
+            "scaleup_manifest_run_type": "scaleup_plan",
+            "scaleup_manifest_sha256": scaleup_manifest_sha256,
+            "scaleup_contract_consistent": True,
+            "scaleup_non_authorizing": True,
+            "scaleup_source_ready": True,
+            "scaleup_provenance_gate_passed": True,
+            "runtime_telemetry_scaleup_provenance_carried": True,
+            "runtime_telemetry_scaleup_provenance_gate_passed": True,
+            "runtime_telemetry_scaleup_manifest_sha256": scaleup_manifest_sha256,
+            "runtime_telemetry_scaleup_manifest_matches_current": True,
+            "runtime_telemetry_lineage_matches_current": True,
+        }
+    )
+    return fields
+
+
 def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=True):
     scaleup = root / "scaleup"
     broker = root / "broker"
@@ -762,6 +795,18 @@ def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=Tru
         + "\n",
         encoding="utf-8",
     )
+    pd.DataFrame([{"ready": True, "target_mode": target_mode}]).to_csv(
+        scaleup / "scaleup_plan.csv",
+        index=False,
+    )
+    scaleup_source = root / "scaleup_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(scaleup_source, index=False)
+    write_experiment_manifest(
+        scaleup,
+        run_type="scaleup_plan",
+        inputs={"source": scaleup_source},
+        extra={"ready": True, "authorizes_submission": False},
+    )
     broker_readiness_summary(
         target_mode=target_mode,
         dispatch_provided=dispatch,
@@ -779,7 +824,55 @@ def write_inputs(root, *, target_mode="live_dryrun", operator=True, dispatch=Tru
         + "\n",
         encoding="utf-8",
     )
-    runtime_session_summary(target_mode=target_mode).to_csv(runtime / "runtime_session_summary.csv", index=False)
+    lineage = runtime_lineage(file_sha256(scaleup / "manifest.json"))
+    runtime_summary = runtime_session_summary(target_mode=target_mode)
+    for column, value in lineage.items():
+        runtime_summary[column] = value
+    runtime_summary.to_csv(runtime / "runtime_session_summary.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "step": "runtime_guard",
+                "status": "continue",
+                **lineage,
+            }
+        ]
+    ).to_csv(runtime / "runtime_session_steps.csv", index=False)
+    pd.DataFrame(columns=["priority"]).to_csv(
+        runtime / "runtime_session_action_queue.csv",
+        index=False,
+    )
+    runtime_config = {
+        "schema_version": 1,
+        "ready": True,
+        "guard_action": "continue",
+        "authorizes_submission": False,
+        "scaleup_provenance": {
+            column: lineage[column] for column in SCALEUP_PROVENANCE_COLUMNS
+        },
+        "runtime_telemetry_lineage": {
+            column: lineage[column] for column in RUNTIME_LINEAGE_COLUMNS
+        },
+    }
+    (runtime / "runtime_session_config.json").write_text(
+        json.dumps(runtime_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (runtime / "runtime_session_runbook.md").write_text(
+        "# Runtime Session Fixture\n",
+        encoding="utf-8",
+    )
+    write_experiment_manifest(
+        runtime,
+        run_type="runtime_session_monitor",
+        inputs={"scaleup_manifest": scaleup / "manifest.json", "scaleup_source": scaleup_source},
+        extra={
+            "ready": True,
+            "guard_action": "continue",
+            **lineage,
+            "authorizes_submission": False,
+        },
+    )
     review_path = root / "operator_review.csv"
     if operator:
         operator_review().to_csv(review_path, index=False)
@@ -2078,6 +2171,112 @@ def test_write_cutover_gate_outputs_artifacts_and_catalog_entry(tmp_path):
     assert catalog.catalog.iloc[0]["run_type"] == "cutover_gate"
     assert catalog.catalog.iloc[0]["summary_file"] == "cutover_summary.csv"
     assert bool(catalog.catalog.iloc[0]["summary_status"])
+    assert report.summary.iloc[0]["runtime_lineage_gate_passed"]
+    assert report.summary.iloc[0]["runtime_scaleup_manifest_sha256"] == file_sha256(
+        scaleup / "manifest.json"
+    )
+    assert not bool(report.summary.iloc[0]["authorizes_submission"])
+    assert report.config["runtime_lineage"]["runtime_lineage_gate_passed"]
+    assert not report.config["authorizes_submission"]
+    assert {
+        "runtime_session_manifest",
+        "runtime_session_artifacts",
+        "runtime_session_dependencies",
+    } <= set(manifest["inputs"])
+    assert manifest["extra"]["runtime_lineage_gate_passed"]
+    assert not manifest["extra"]["authorizes_submission"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    ).passed
+    (tmp_path / "scaleup_source.csv").write_text("source\nchanged\n", encoding="utf-8")
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_cutover_blocks_drifted_runtime_lineage(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+    (tmp_path / "scaleup_source.csv").write_text("source\nchanged\n", encoding="utf-8")
+
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=tmp_path / "cutover",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert {"runtime_session_manifest_current", "runtime_lineage_gate_passed"} <= failed
+    assert report.action_queue.iloc[0]["next_gate"] == "monitor-runtime-session"
+
+
+def test_cutover_blocks_remanifested_runtime_contract_and_authorization_drift(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+    runtime_summary_path = runtime / "runtime_session_summary.csv"
+    runtime_summary = pd.read_csv(runtime_summary_path)
+    runtime_summary.loc[0, "scaleup_manifest_sha256"] = "d" * 64
+    runtime_summary.to_csv(runtime_summary_path, index=False)
+    runtime_config_path = runtime / "runtime_session_config.json"
+    runtime_config = json.loads(runtime_config_path.read_text(encoding="utf-8"))
+    runtime_config["authorizes_submission"] = True
+    runtime_config_path.write_text(
+        json.dumps(runtime_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    lineage = runtime_lineage(file_sha256(scaleup / "manifest.json"))
+    write_experiment_manifest(
+        runtime,
+        run_type="runtime_session_monitor",
+        inputs={
+            "scaleup_manifest": scaleup / "manifest.json",
+            "scaleup_source": tmp_path / "scaleup_source.csv",
+        },
+        extra={
+            "ready": True,
+            "guard_action": "continue",
+            **lineage,
+            "authorizes_submission": False,
+        },
+    )
+
+    report = write_cutover_gate_report(
+        scaleup_dir=scaleup,
+        broker_readiness_dir=broker,
+        runtime_session_dir=runtime,
+        operator_review_path=review_path,
+        output_dir=tmp_path / "cutover",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert not report.ready
+    assert "runtime_session_manifest_current" not in failed
+    assert {
+        "runtime_lineage_contract_consistent",
+        "runtime_lineage_non_authorizing",
+        "runtime_lineage_scaleup_matches_current",
+        "runtime_lineage_gate_passed",
+    } <= failed
+
+
+def test_cutover_rejects_runtime_output_collision(tmp_path):
+    scaleup, broker, runtime, review_path = write_inputs(tmp_path)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_cutover_gate_report(
+            scaleup_dir=scaleup,
+            broker_readiness_dir=broker,
+            runtime_session_dir=runtime,
+            operator_review_path=review_path,
+            output_dir=runtime,
+        )
 
 
 def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path):
@@ -2087,7 +2286,7 @@ def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path)
     ]
     for family, broker_folder in cases:
         case_dir = tmp_path / family
-        scaleup, _broker, _runtime, review_path = write_inputs(case_dir)
+        scaleup, _broker, runtime, review_path = write_inputs(case_dir)
         pipeline = case_dir / f"{family}_launch_pipeline"
         broker_readiness = pipeline / broker_folder
         out_dir = case_dir / "cutover"
@@ -2105,9 +2304,11 @@ def test_cli_cutover_gate_reads_launch_pipeline_broker_readiness_roots(tmp_path)
                 str(scaleup),
                 "--broker-readiness",
                 str(pipeline),
-                "--operator-review",
-                str(review_path),
-                "--out",
+                    "--operator-review",
+                    str(review_path),
+                    "--runtime-session",
+                    str(runtime),
+                    "--out",
                 str(out_dir),
                 "--fail-on-breach",
             ]

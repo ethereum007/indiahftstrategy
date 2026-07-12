@@ -4,6 +4,7 @@ import pandas as pd
 
 from hft_cli import main
 from reports.catalog import catalog_experiment_runs
+from reports.cutover import CutoverGateThresholds, write_cutover_gate_report
 from reports.manifest import (
     file_sha256,
     verify_experiment_manifest,
@@ -28,6 +29,7 @@ from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.runtime_guard import write_runtime_guard_report
 from reports.runtime_session import write_runtime_session_monitor
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
+from reports.route_enable import RouteEnableThresholds, write_route_enable_packet
 
 
 def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
@@ -562,6 +564,98 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     )
     assert not halt_manifest["extra"]["authorizes_submission"]
 
+    clean_runtime_session = write_runtime_session_monitor(
+        scaleup_dir=tmp_path / "scaleup",
+        output_dir=tmp_path / "runtime_session_clean",
+        snapshot_ts_ns=1_000_000,
+        as_of_ts_ns=1_000_000,
+    )
+    assert clean_runtime_session.ready
+    assert not clean_runtime_session.guard.halted
+
+    broker_readiness_dir = tmp_path / "broker_readiness"
+    broker_readiness_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+                "schema_reviewed": True,
+                "schema_review_mode": "reviewed_vendor_mapping",
+                "recommendation": "eligible_for_shadow_cutover_review",
+            }
+        ]
+    ).to_csv(
+        broker_readiness_dir / "broker_readiness_summary.csv",
+        index=False,
+    )
+    (broker_readiness_dir / "broker_readiness_config.json").write_text(
+        json.dumps(
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "authorizes_submission": False,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    cutover = write_cutover_gate_report(
+        scaleup_dir=tmp_path / "scaleup",
+        broker_readiness_dir=broker_readiness_dir,
+        runtime_session_dir=tmp_path / "runtime_session_clean",
+        output_dir=tmp_path / "cutover",
+        thresholds=CutoverGateThresholds(
+            target_mode="shadow",
+            require_operator_approval=False,
+            require_operator_identity_ack=False,
+            require_operator_limits_ack=False,
+        ),
+    )
+    assert cutover.ready
+    assert cutover.summary.iloc[0]["runtime_scaleup_research_family_id"] == (
+        "prospective_family"
+    )
+    assert not bool(cutover.summary.iloc[0]["authorizes_submission"])
+
+    upload_dir = tmp_path / "upload_pack"
+    upload_dir.mkdir()
+    pd.DataFrame(
+        [
+            {
+                "ready": True,
+                "adapter": "arrow_money",
+                "adapter_schema_status": "placeholder_normalized_pending_vendor_schema",
+                "orders": 1,
+                "target_columns": 16,
+                "lifecycle_orders": 1,
+                "replace_orders": 0,
+                "failed_checks": 0,
+                "output_file": "broker_upload_orders.csv",
+                "mapping_file": "broker_upload_mapping.csv",
+                "recommendation": "shadow_review",
+            }
+        ]
+    ).to_csv(upload_dir / "broker_upload_summary.csv", index=False)
+    route_enable = write_route_enable_packet(
+        cutover_dir=tmp_path / "cutover",
+        upload_pack_dir=upload_dir,
+        output_dir=tmp_path / "route_enable",
+        thresholds=RouteEnableThresholds(target_mode="shadow"),
+    )
+    assert route_enable.ready
+    assert route_enable.summary.iloc[0][
+        "cutover_runtime_scaleup_research_family_id"
+    ] == "prospective_family"
+    assert not bool(route_enable.packet.iloc[0]["authorizes_submission"])
+    assert verify_experiment_manifest(
+        tmp_path / "route_enable" / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    ).passed
+
     relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
     relabeled_telemetry = runtime_telemetry.telemetry.copy()
     relabeled_telemetry.loc[0, "scaleup_research_family_id"] = (
@@ -626,6 +720,20 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     assert drifted_session.error == "input_drift"
     assert not drifted_halt_response.passed
     assert drifted_halt_response.error == "input_drift"
+    drifted_cutover = verify_experiment_manifest(
+        tmp_path / "cutover" / "manifest.json",
+        expected_run_type="cutover_gate",
+        require_input_fingerprints=True,
+    )
+    drifted_route_enable = verify_experiment_manifest(
+        tmp_path / "route_enable" / "manifest.json",
+        expected_run_type="route_enable_packet",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_cutover.passed
+    assert drifted_cutover.error == "input_drift"
+    assert not drifted_route_enable.passed
+    assert drifted_route_enable.error == "input_drift"
     stale_guard = write_runtime_guard_report(
         scaleup_dir=tmp_path / "scaleup",
         telemetry_path=tmp_path / "runtime_telemetry",
