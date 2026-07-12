@@ -98,6 +98,13 @@
   explicit operator attestation; a contract with any completed robust summary
   cannot be replayed. Robust roots fingerprint their immutable attempt record,
   while launch coverage revalidates the complete live chain.
+  The executor now finalizes each returned or exceptional dispatch into a
+  second immutable, hash-chained outcome record. Outcomes distinguish
+  completed-ready, completed-blocked, completed-inconsistent, and interrupted
+  attempts while binding exit status plus exact result summary/manifest hashes.
+  Completed coverage requires the outcome's stored manifest hash to match the
+  current robust root. Missing finalization is reported as completed-unfinalized
+  rather than inferred away or made replayable.
 - Research families can now be registered prospectively before outcomes exist.
   `register-research-family` normalizes and validates a CSV plan containing
   strategy, market, hypothesis, metric, maximum search breadth, at least six
@@ -109,8 +116,9 @@
   coverage matrix. `plan-research-family-launches` consumes prospective JSON
   sweep/group specifications, verifies every sweep manifest, emits a
   deterministic argv contract per registered row, and classifies results as
-  completed-ready, completed-blocked, attempt-incomplete, explicitly abandoned,
-  or never launched.
+  completed-ready, completed-blocked, completed-unfinalized,
+  attempt-incomplete/interrupted/inconsistent, explicitly abandoned, or never
+  launched.
   Existing roots count only when they bind the exact registration ID, label,
   manifest SHA, launch-contract ID, contract-file SHA, execution-receipt ID,
   and hash-chained attempt record. The
@@ -2523,19 +2531,21 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1500 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1501 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`136 passed`). This covers deterministic plan locking, immutable
+together (`137 passed`). This covers deterministic plan locking, immutable
 registered-study launch contracts, exact contract execution, unique execution
 receipts, hash-chained attempt records, attested latest-attempt retry policy,
 duplicate/completed replay blocking, attempt-ledger tamper rejection, resolved
-semantic-digest binding, launch-argument and semantic-drift rejection, mutable
-coverage refresh without root invalidation, recursive
+semantic-digest binding, hash-chained outcome finalization, exact result-hash
+binding, interruption classification, outcome-ledger tamper rejection,
+launch-argument and semantic-drift rejection, mutable coverage refresh without
+root invalidation, recursive
 post-coverage result-drift detection, current sweep and result coverage,
 never-launched blocking, attested reasoned abandonment, conservative abandoned
 study accounting, direct registered-row and registration-manifest source binding, exact
@@ -2579,7 +2589,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1500-test collection is fully green.
+1501-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2588,6 +2598,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add immutable attempt-outcome records that bind executor exit status and the
-   resulting manifest SHA, so completed, blocked, and interrupted attempts are
-   explicit rather than inferred only from current filesystem state.
+4. Add an operator-attested outcome-recovery command for the narrow case where
+   a robust result exists but the executor died before finalization, without
+   permitting the registered study to replay.

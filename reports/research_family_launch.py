@@ -44,6 +44,8 @@ REPAIR_NEXT_GATE = "plan-research-family-launches"
 ATTEMPT_LEDGER_NAME = "attempts.jsonl"
 ATTEMPT_LOCK_NAME = "attempts.lock"
 ATTEMPT_RECORD_DIR = "records"
+OUTCOME_LEDGER_NAME = "outcomes.jsonl"
+OUTCOME_RECORD_DIR = "outcomes"
 
 LAUNCH_COLUMNS = (
     "sweep_paths_json",
@@ -142,6 +144,32 @@ class ResearchFamilyLaunchAttemptLedgerSnapshot:
 
     @property
     def attempt_count(self) -> int:
+        return len(self.records)
+
+
+@dataclass(frozen=True)
+class ResearchFamilyLaunchAttemptOutcome:
+    path: Path
+    payload: dict[str, Any]
+    outcome_id: str
+    attempt_id: str
+    contract_id: str
+    outcome_status: str
+    exit_status: int
+    result_summary_sha256: str
+    result_manifest_sha256: str
+
+
+@dataclass(frozen=True)
+class ResearchFamilyLaunchOutcomeLedgerSnapshot:
+    root: Path
+    path: Path
+    records: tuple[dict[str, Any], ...]
+    sha256: str
+    latest_record_sha256: str
+
+    @property
+    def outcome_count(self) -> int:
         return len(self.records)
 
 
@@ -294,6 +322,7 @@ def write_research_family_launch_execution_receipt(
 
     with _attempt_ledger_lock(receipt_dir):
         ledger = load_research_family_launch_attempt_ledger(contract.matrix.root)
+        load_research_family_launch_outcome_ledger(contract.matrix.root)
         prior_attempts = [
             record
             for record in ledger.records
@@ -635,6 +664,300 @@ def load_research_family_launch_attempt_ledger(
     )
 
 
+def write_research_family_launch_attempt_outcome(
+    receipt: ResearchFamilyLaunchExecutionReceipt,
+    *,
+    exit_status: int,
+    execution_completed: bool,
+    exception_type: str = "",
+) -> ResearchFamilyLaunchAttemptOutcome:
+    matrix_root = Path(
+        str(receipt.payload.get("launch_matrix_path", ""))
+    ).resolve()
+    execution_root = matrix_root / "executions"
+    outcome_dir = execution_root / OUTCOME_RECORD_DIR
+    outcome_dir.mkdir(parents=True, exist_ok=True)
+    outcome_ledger_path = execution_root / OUTCOME_LEDGER_NAME
+    with _attempt_ledger_lock(execution_root):
+        attempt_ledger = load_research_family_launch_attempt_ledger(matrix_root)
+        matching_attempts = [
+            record
+            for record in attempt_ledger.records
+            if str(record.get("attempt_id", "")) == receipt.attempt_id
+        ]
+        if len(matching_attempts) != 1:
+            raise ValueError("launch outcome requires one current attempt record")
+        attempt_record = matching_attempts[0]
+        outcome_ledger = load_research_family_launch_outcome_ledger(matrix_root)
+        if any(
+            str(record.get("attempt_id", "")) == receipt.attempt_id
+            for record in outcome_ledger.records
+        ):
+            raise ValueError("launch attempt already has an immutable outcome")
+
+        result_root = Path(str(receipt.payload.get("result_root", ""))).resolve()
+        summary_path = result_root / "robust_selection_pipeline_summary.csv"
+        manifest_path = result_root / "manifest.json"
+        summary_exists = summary_path.is_file()
+        manifest_exists = manifest_path.is_file()
+        summary_ready = False
+        summary_readable = False
+        if summary_exists:
+            try:
+                summary = pd.read_csv(summary_path)
+                summary_readable = not summary.empty
+                summary_ready = bool(
+                    summary_readable and _to_bool(summary.iloc[0].get("ready", False))
+                )
+            except (OSError, ValueError, pd.errors.ParserError):
+                summary_readable = False
+        integrity = verify_experiment_manifest(
+            manifest_path,
+            expected_run_type="robust_selection_pipeline",
+            required_artifacts=("robust_selection_pipeline_summary.csv",),
+            require_input_fingerprints=True,
+        )
+        resolved_exit_status = int(exit_status)
+        outcome_status = _classify_attempt_outcome(
+            execution_completed=bool(execution_completed),
+            exit_status=resolved_exit_status,
+            summary_exists=summary_exists,
+            summary_readable=summary_readable,
+            manifest_exists=manifest_exists,
+            manifest_current=bool(integrity.passed),
+            result_ready=summary_ready,
+        )
+        generated_at = (
+            datetime.now(timezone.utc)
+            .isoformat(timespec="microseconds")
+            .replace("+00:00", "Z")
+        )
+        outcome_path = outcome_dir / (
+            f"{receipt.contract_id[:12]}_{receipt.dispatch_id}.json"
+        )
+        outcome_core = {
+            "schema_version": 1,
+            "generated_at_utc": generated_at,
+            "attempt_id": receipt.attempt_id,
+            "attempt_number": receipt.attempt_number,
+            "dispatch_id": receipt.dispatch_id,
+            "contract_id": receipt.contract_id,
+            "launch_matrix_path": str(matrix_root),
+            "launch_matrix_manifest_sha256": str(
+                receipt.payload.get("launch_matrix_manifest_sha256", "")
+            ),
+            "receipt_path": str(receipt.path),
+            "receipt_sha256": file_sha256(receipt.path),
+            "attempt_record_path": str(receipt.attempt_record_path),
+            "attempt_record_sha256": receipt.attempt_record_sha256,
+            "outcome_path": str(outcome_path),
+            "outcome_status": outcome_status,
+            "execution_completed": bool(execution_completed),
+            "exit_status": resolved_exit_status,
+            "exception_type": str(exception_type).strip(),
+            "result_root": str(result_root),
+            "result_summary_path": str(summary_path),
+            "result_summary_exists": summary_exists,
+            "result_summary_readable": summary_readable,
+            "result_summary_sha256": (
+                file_sha256(summary_path) if summary_exists else ""
+            ),
+            "result_manifest_path": str(manifest_path),
+            "result_manifest_exists": manifest_exists,
+            "result_manifest_current": bool(integrity.passed),
+            "result_manifest_error": str(integrity.error),
+            "result_manifest_sha256": (
+                file_sha256(manifest_path) if manifest_exists else ""
+            ),
+            "result_ready": summary_ready,
+            "previous_record_sha256": outcome_ledger.latest_record_sha256,
+            "authorizes_submission": False,
+        }
+        outcome = {
+            **outcome_core,
+            "outcome_id": _payload_sha256(outcome_core),
+        }
+        outcome_path.write_text(
+            json.dumps(_jsonable(outcome), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        with outcome_ledger_path.open(
+            "a",
+            encoding="utf-8",
+            newline="\n",
+        ) as handle:
+            handle.write(json.dumps(_jsonable(outcome), sort_keys=True) + "\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        validated = load_research_family_launch_outcome_ledger(matrix_root)
+        if not validated.records or validated.records[-1] != outcome:
+            raise ValueError("launch outcome ledger append could not be verified")
+    return load_research_family_launch_attempt_outcome(outcome_path)
+
+
+def load_research_family_launch_attempt_outcome(
+    outcome_path: str | Path,
+) -> ResearchFamilyLaunchAttemptOutcome:
+    path = Path(outcome_path).resolve()
+    payload = _read_json_object(path)
+    outcome_id = str(payload.get("outcome_id", ""))
+    outcome_core = {
+        key: value for key, value in payload.items() if key != "outcome_id"
+    }
+    if not outcome_id or _payload_sha256(outcome_core) != outcome_id:
+        raise ValueError("launch attempt outcome ID is invalid")
+    matrix_root = Path(str(payload.get("launch_matrix_path", ""))).resolve()
+    outcome_root = (matrix_root / "executions" / OUTCOME_RECORD_DIR).resolve()
+    try:
+        path.relative_to(outcome_root)
+    except ValueError as exc:
+        raise ValueError("launch attempt outcome path escapes outcome root") from exc
+    if _canonical_path(payload.get("outcome_path", "")) != _canonical_path(path):
+        raise ValueError("launch attempt outcome path is invalid")
+    if _to_bool(payload.get("authorizes_submission", True)):
+        raise ValueError("launch attempt outcome authorizes submission")
+    expected_status = _classify_attempt_outcome(
+        execution_completed=_to_bool(payload.get("execution_completed", False)),
+        exit_status=int(payload.get("exit_status", 0)),
+        summary_exists=_to_bool(payload.get("result_summary_exists", False)),
+        summary_readable=_to_bool(payload.get("result_summary_readable", False)),
+        manifest_exists=_to_bool(payload.get("result_manifest_exists", False)),
+        manifest_current=_to_bool(payload.get("result_manifest_current", False)),
+        result_ready=_to_bool(payload.get("result_ready", False)),
+    )
+    outcome_status = str(payload.get("outcome_status", ""))
+    if outcome_status != expected_status:
+        raise ValueError("launch attempt outcome status is inconsistent")
+    summary_sha256 = str(payload.get("result_summary_sha256", ""))
+    manifest_sha256 = str(payload.get("result_manifest_sha256", ""))
+    if summary_sha256 and not _file_matches_sha256(
+        Path(str(payload.get("result_summary_path", ""))),
+        summary_sha256,
+    ):
+        raise ValueError("launch attempt outcome result summary drifted")
+    if manifest_sha256 and not _file_matches_sha256(
+        Path(str(payload.get("result_manifest_path", ""))),
+        manifest_sha256,
+    ):
+        raise ValueError("launch attempt outcome result manifest drifted")
+    return ResearchFamilyLaunchAttemptOutcome(
+        path=path,
+        payload=payload,
+        outcome_id=outcome_id,
+        attempt_id=str(payload.get("attempt_id", "")),
+        contract_id=str(payload.get("contract_id", "")),
+        outcome_status=outcome_status,
+        exit_status=int(payload.get("exit_status", 0)),
+        result_summary_sha256=summary_sha256,
+        result_manifest_sha256=manifest_sha256,
+    )
+
+
+def load_research_family_launch_outcome_ledger(
+    launch_matrix_path: str | Path,
+) -> ResearchFamilyLaunchOutcomeLedgerSnapshot:
+    raw_path = Path(launch_matrix_path).resolve()
+    root = raw_path if raw_path.is_dir() else raw_path.parent
+    execution_root = (root / "executions").resolve()
+    ledger_path = execution_root / OUTCOME_LEDGER_NAME
+    if not ledger_path.is_file():
+        return ResearchFamilyLaunchOutcomeLedgerSnapshot(
+            root=root,
+            path=ledger_path,
+            records=(),
+            sha256="",
+            latest_record_sha256="",
+        )
+    attempt_ledger = load_research_family_launch_attempt_ledger(root)
+    attempts = {
+        str(record.get("attempt_id", "")): record
+        for record in attempt_ledger.records
+    }
+    records: list[dict[str, Any]] = []
+    seen_outcome_ids: set[str] = set()
+    seen_attempt_ids: set[str] = set()
+    previous_record_sha256 = ""
+    for line_number, raw_line in enumerate(
+        ledger_path.read_text(encoding="utf-8").splitlines(),
+        start=1,
+    ):
+        if not raw_line.strip():
+            raise ValueError(f"launch outcome ledger line {line_number} is empty")
+        try:
+            record = json.loads(raw_line)
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                f"launch outcome ledger line {line_number} is invalid JSON"
+            ) from exc
+        if not isinstance(record, dict):
+            raise ValueError(
+                f"launch outcome ledger line {line_number} is not an object"
+            )
+        outcome_id = str(record.get("outcome_id", ""))
+        outcome_core = {
+            key: value for key, value in record.items() if key != "outcome_id"
+        }
+        if not outcome_id or _payload_sha256(outcome_core) != outcome_id:
+            raise ValueError(
+                f"launch outcome ledger line {line_number} digest is invalid"
+            )
+        if str(record.get("previous_record_sha256", "")) != previous_record_sha256:
+            raise ValueError(
+                f"launch outcome ledger line {line_number} breaks the hash chain"
+            )
+        attempt_id = str(record.get("attempt_id", ""))
+        if (
+            outcome_id in seen_outcome_ids
+            or not attempt_id
+            or attempt_id in seen_attempt_ids
+            or attempt_id not in attempts
+        ):
+            raise ValueError(
+                f"launch outcome ledger line {line_number} identity is invalid"
+            )
+        attempt = attempts[attempt_id]
+        outcome_path = Path(str(record.get("outcome_path", ""))).resolve()
+        stored_outcome = _read_json_object(outcome_path)
+        if stored_outcome != record:
+            raise ValueError(
+                f"launch outcome ledger line {line_number} record file differs"
+            )
+        outcome = load_research_family_launch_attempt_outcome(outcome_path)
+        if (
+            outcome.outcome_id != outcome_id
+            or outcome.attempt_id != attempt_id
+            or outcome.contract_id != str(attempt.get("contract_id", ""))
+            or str(record.get("dispatch_id", ""))
+            != str(attempt.get("dispatch_id", ""))
+            or _int(record.get("attempt_number"))
+            != _int(attempt.get("attempt_number"))
+            or _canonical_path(record.get("receipt_path", ""))
+            != _canonical_path(attempt.get("receipt_path", ""))
+            or str(record.get("receipt_sha256", ""))
+            != str(attempt.get("receipt_sha256", ""))
+            or _canonical_path(record.get("attempt_record_path", ""))
+            != _canonical_path(attempt.get("attempt_record_path", ""))
+            or str(record.get("attempt_record_sha256", ""))
+            != str(attempt.get("record_sha256", ""))
+            or _canonical_path(record.get("result_root", ""))
+            != _canonical_path(attempt.get("result_root", ""))
+        ):
+            raise ValueError(
+                f"launch outcome ledger line {line_number} attempt binding is invalid"
+            )
+        records.append(record)
+        seen_outcome_ids.add(outcome_id)
+        seen_attempt_ids.add(attempt_id)
+        previous_record_sha256 = outcome_id
+    return ResearchFamilyLaunchOutcomeLedgerSnapshot(
+        root=root,
+        path=ledger_path,
+        records=tuple(records),
+        sha256=file_sha256(ledger_path),
+        latest_record_sha256=previous_record_sha256,
+    )
+
+
 def write_research_family_launch_matrix(
     registration_path: str | Path,
     *,
@@ -660,6 +983,19 @@ def write_research_family_launch_matrix(
             latest_record_sha256="",
         )
         attempt_ledger_error = f"{type(exc).__name__}: {exc}"
+    outcome_ledger_error = ""
+    try:
+        outcome_ledger = load_research_family_launch_outcome_ledger(out)
+    except (OSError, ValueError, KeyError) as exc:
+        ledger_path = out / "executions" / OUTCOME_LEDGER_NAME
+        outcome_ledger = ResearchFamilyLaunchOutcomeLedgerSnapshot(
+            root=out,
+            path=ledger_path,
+            records=(),
+            sha256=file_sha256(ledger_path) if ledger_path.is_file() else "",
+            latest_record_sha256="",
+        )
+        outcome_ledger_error = f"{type(exc).__name__}: {exc}"
 
     abandonments, abandonment_source = _read_abandonments(abandonment_path)
     plan_path = Path(str(registration.config.get("plan_path", "")))
@@ -672,6 +1008,8 @@ def write_research_family_launch_matrix(
         contract_dir=contract_dir,
         attempt_ledger=attempt_ledger,
         attempt_ledger_error=attempt_ledger_error,
+        outcome_ledger=outcome_ledger,
+        outcome_ledger_error=outcome_ledger_error,
     )
     checks = _checks(
         registration,
@@ -680,6 +1018,8 @@ def write_research_family_launch_matrix(
         attest_abandonments=attest_abandonments,
         attempt_ledger=attempt_ledger,
         attempt_ledger_error=attempt_ledger_error,
+        outcome_ledger=outcome_ledger,
+        outcome_ledger_error=outcome_ledger_error,
     )
     passed = bool(not checks.empty and checks["passed"].map(_to_bool).all())
     action_queue = _action_queue(launches, checks)
@@ -711,6 +1051,10 @@ def write_research_family_launch_matrix(
         "attempt_ledger_sha256_observed": attempt_ledger.sha256,
         "attempt_ledger_record_count": attempt_ledger.attempt_count,
         "attempt_ledger_error": attempt_ledger_error,
+        "outcome_ledger_path": str(outcome_ledger.path),
+        "outcome_ledger_sha256_observed": outcome_ledger.sha256,
+        "outcome_ledger_record_count": outcome_ledger.outcome_count,
+        "outcome_ledger_error": outcome_ledger_error,
         "summary": _record(summary.iloc[0]),
         "launch_contracts": [_record(row) for _, row in launches.iterrows()],
         "authorizes_submission": False,
@@ -751,6 +1095,8 @@ def write_research_family_launch_matrix(
             "artifact_exclude_paths": ["executions"],
             "attempt_ledger_sha256_observed": attempt_ledger.sha256,
             "attempt_ledger_record_count": attempt_ledger.attempt_count,
+            "outcome_ledger_sha256_observed": outcome_ledger.sha256,
+            "outcome_ledger_record_count": outcome_ledger.outcome_count,
         },
         inputs=inputs,
         extra={
@@ -765,6 +1111,10 @@ def write_research_family_launch_matrix(
             ),
             "retry_ready_count": _bool_count(launches, "retry_ready"),
             "attempt_ledger_valid": not bool(attempt_ledger_error),
+            "outcome_count": int(
+                launches.get("outcome_count", pd.Series(dtype=int)).sum()
+            ),
+            "outcome_ledger_valid": not bool(outcome_ledger_error),
             "abandoned_count": int(
                 launches.get("study_status", pd.Series(dtype=str))
                 .astype(str)
@@ -794,6 +1144,8 @@ def _build_launches(
     contract_dir: Path,
     attempt_ledger: ResearchFamilyLaunchAttemptLedgerSnapshot,
     attempt_ledger_error: str,
+    outcome_ledger: ResearchFamilyLaunchOutcomeLedgerSnapshot,
+    outcome_ledger_error: str,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
     for index, study in registration.studies.reset_index(drop=True).iterrows():
@@ -901,6 +1253,7 @@ def _build_launches(
             study,
             contract_id=contract_id,
             contract_path=contract_path,
+            outcome_ledger=outcome_ledger,
         )
         attempts = [
             record
@@ -909,6 +1262,19 @@ def _build_launches(
         ]
         latest_attempt = attempts[-1] if attempts else {}
         attempt_count = len(attempts)
+        outcomes = [
+            record
+            for record in outcome_ledger.records
+            if str(record.get("contract_id", "")) == contract_id
+        ]
+        latest_attempt_id = str(latest_attempt.get("attempt_id", ""))
+        latest_outcomes = [
+            record
+            for record in outcomes
+            if str(record.get("attempt_id", "")) == latest_attempt_id
+        ]
+        latest_outcome = latest_outcomes[0] if len(latest_outcomes) == 1 else {}
+        latest_outcome_status = str(latest_outcome.get("outcome_status", ""))
         abandonment_matches = abandonments.loc[
             abandonments.get(
                 "study_label",
@@ -932,13 +1298,20 @@ def _build_launches(
             not abandonment_matches.empty and result["result_exists"]
         )
         if result["result_exists"]:
-            status = (
-                "completed_ready"
-                if result["result_ready"]
-                else "completed_blocked"
-            )
+            if not result["result_launch_outcome_bound"]:
+                status = "completed_unfinalized"
+            else:
+                status = (
+                    "completed_ready"
+                    if result["result_ready"]
+                    else "completed_blocked"
+                )
         elif abandonment_valid:
             status = "abandoned"
+        elif latest_outcome_status == "interrupted":
+            status = "attempt_interrupted"
+        elif latest_outcome_status == "completed_inconsistent":
+            status = "attempt_inconsistent"
         elif attempt_count:
             status = "attempt_incomplete"
         else:
@@ -951,6 +1324,7 @@ def _build_launches(
                 and result["result_launch_contract_bound"]
                 and result["result_launch_execution_receipt_bound"]
                 and result["result_launch_attempt_bound"]
+                and result["result_launch_outcome_bound"]
                 and not abandonment_conflict
             )
             or abandonment_valid
@@ -964,6 +1338,7 @@ def _build_launches(
             and not result["result_exists"]
             and abandonment_matches.empty
             and not attempt_ledger_error
+            and not outcome_ledger_error
         )
         initial_dispatch_ready = bool(dispatch_prerequisites and not attempts)
         retry_ready = bool(dispatch_prerequisites and attempts)
@@ -1000,6 +1375,8 @@ def _build_launches(
                 "launch_command": subprocess.list2cmdline(argv),
                 "attempt_ledger_valid": not bool(attempt_ledger_error),
                 "attempt_ledger_error": attempt_ledger_error,
+                "outcome_ledger_valid": not bool(outcome_ledger_error),
+                "outcome_ledger_error": outcome_ledger_error,
                 "attempt_count": attempt_count,
                 "latest_attempt_id": str(latest_attempt.get("attempt_id", "")),
                 "latest_attempt_number": _int(
@@ -1013,6 +1390,18 @@ def _build_launches(
                 ),
                 "latest_attempt_retry_of_id": str(
                     latest_attempt.get("retry_of_attempt_id", "")
+                ),
+                "outcome_count": len(outcomes),
+                "latest_outcome_id": str(latest_outcome.get("outcome_id", "")),
+                "latest_outcome_status": latest_outcome_status,
+                "latest_outcome_exit_status": _int(
+                    latest_outcome.get("exit_status")
+                ),
+                "latest_outcome_generated_at_utc": str(
+                    latest_outcome.get("generated_at_utc", "")
+                ),
+                "latest_outcome_result_manifest_sha256": str(
+                    latest_outcome.get("result_manifest_sha256", "")
                 ),
                 **result,
                 "abandonment_declared": bool(len(abandonment_matches) == 1),
@@ -1036,6 +1425,7 @@ def _result_evidence(
     *,
     contract_id: str,
     contract_path: Path,
+    outcome_ledger: ResearchFamilyLaunchOutcomeLedgerSnapshot,
 ) -> dict[str, Any]:
     root = Path(str(study.get("planned_study_path", ""))).resolve()
     summary_path = root / "robust_selection_pipeline_summary.csv"
@@ -1051,6 +1441,7 @@ def _result_evidence(
             "result_launch_contract_bound": False,
             "result_launch_execution_receipt_bound": False,
             "result_launch_attempt_bound": False,
+            "result_launch_outcome_bound": False,
         }
     summary = pd.read_csv(summary_path)
     source = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
@@ -1153,9 +1544,32 @@ def _result_evidence(
         and str(attempt_record_input.get("sha256", ""))
         == file_sha256(receipt.attempt_record_path)
     )
+    result_attempt_id = str(source.get("research_launch_attempt_id", ""))
+    matching_outcomes = [
+        record
+        for record in outcome_ledger.records
+        if str(record.get("attempt_id", "")) == result_attempt_id
+    ]
+    outcome = matching_outcomes[0] if len(matching_outcomes) == 1 else {}
+    result_ready = _to_bool(source.get("ready", False))
+    expected_outcome_status = (
+        "completed_ready" if result_ready else "completed_blocked"
+    )
+    outcome_bound = bool(
+        len(matching_outcomes) == 1
+        and str(outcome.get("contract_id", "")) == contract_id
+        and str(outcome.get("outcome_status", "")) == expected_outcome_status
+        and _to_bool(outcome.get("execution_completed", False))
+        and str(outcome.get("result_summary_sha256", ""))
+        == file_sha256(summary_path)
+        and str(outcome.get("result_manifest_sha256", ""))
+        == file_sha256(manifest_path)
+        and _canonical_path(outcome.get("result_root", ""))
+        == _canonical_path(root)
+    )
     return {
         "result_exists": True,
-        "result_ready": _to_bool(source.get("ready", False)),
+        "result_ready": result_ready,
         "result_manifest_current": bool(integrity.passed),
         "result_manifest_error": str(integrity.error),
         "result_manifest_path": str(manifest_path),
@@ -1163,6 +1577,7 @@ def _result_evidence(
         "result_launch_contract_bound": contract_bound,
         "result_launch_execution_receipt_bound": receipt_bound,
         "result_launch_attempt_bound": attempt_bound,
+        "result_launch_outcome_bound": outcome_bound,
     }
 
 
@@ -1261,6 +1676,8 @@ def _checks(
     attest_abandonments: bool,
     attempt_ledger: ResearchFamilyLaunchAttemptLedgerSnapshot,
     attempt_ledger_error: str,
+    outcome_ledger: ResearchFamilyLaunchOutcomeLedgerSnapshot,
+    outcome_ledger_error: str,
 ) -> pd.DataFrame:
     study_count = int(len(launches))
     registered_labels = set(registration.studies["study_label"].astype(str))
@@ -1282,6 +1699,10 @@ def _checks(
         str(record.get("contract_id", "")) for record in attempt_ledger.records
     }
     attempt_contracts_current = attempt_contract_ids.issubset(current_contract_ids)
+    outcome_contract_ids = {
+        str(record.get("contract_id", "")) for record in outcome_ledger.records
+    }
+    outcome_contracts_current = outcome_contract_ids.issubset(current_contract_ids)
     rows = [
         _check(
             "attempt_ledger_integrity",
@@ -1298,6 +1719,22 @@ def _checks(
             True,
             attempt_contracts_current,
             "attempt ledger contains a contract outside this launch matrix",
+        ),
+        _check(
+            "outcome_ledger_integrity",
+            not bool(outcome_ledger_error),
+            "is",
+            True,
+            not bool(outcome_ledger_error),
+            outcome_ledger_error or "launch outcome ledger is invalid",
+        ),
+        _check(
+            "outcome_contracts_current",
+            outcome_contracts_current,
+            "is",
+            True,
+            outcome_contracts_current,
+            "outcome ledger contains a contract outside this launch matrix",
         ),
         _check(
             "registration_ready",
@@ -1381,7 +1818,12 @@ def _summary(
     repair_required = bool(
         _bool_count(launches, "contract_valid") < len(launches)
         or failed_check_names.intersection(
-            {"attempt_ledger_integrity", "attempt_contracts_current"}
+            {
+                "attempt_ledger_integrity",
+                "attempt_contracts_current",
+                "outcome_ledger_integrity",
+                "outcome_contracts_current",
+            }
         )
     )
     next_gate = (
@@ -1410,10 +1852,22 @@ def _summary(
                 "attempt_count": int(
                     launches.get("attempt_count", pd.Series(dtype=int)).sum()
                 ),
+                "outcome_count": int(
+                    launches.get("outcome_count", pd.Series(dtype=int)).sum()
+                ),
                 "completed_ready_count": int(status.eq("completed_ready").sum()),
                 "completed_blocked_count": int(status.eq("completed_blocked").sum()),
+                "completed_unfinalized_count": int(
+                    status.eq("completed_unfinalized").sum()
+                ),
                 "attempt_incomplete_count": int(
                     status.eq("attempt_incomplete").sum()
+                ),
+                "attempt_interrupted_count": int(
+                    status.eq("attempt_interrupted").sum()
+                ),
+                "attempt_inconsistent_count": int(
+                    status.eq("attempt_inconsistent").sum()
                 ),
                 "abandoned_count": int(status.eq("abandoned").sum()),
                 "never_launched_count": int(status.eq("never_launched").sum()),
@@ -1449,6 +1903,9 @@ def _action_queue(
             continue
         if not bool(launch.attempt_ledger_valid):
             action = "repair_the_hash_chained_launch_attempt_ledger"
+            next_gate = REPAIR_NEXT_GATE
+        elif not bool(launch.outcome_ledger_valid):
+            action = "repair_the_hash_chained_launch_outcome_ledger"
             next_gate = REPAIR_NEXT_GATE
         elif not bool(launch.contract_valid):
             action = "repair_the_registered_launch_spec"
@@ -1592,6 +2049,37 @@ def _payload_sha256(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _classify_attempt_outcome(
+    *,
+    execution_completed: bool,
+    exit_status: int,
+    summary_exists: bool,
+    summary_readable: bool,
+    manifest_exists: bool,
+    manifest_current: bool,
+    result_ready: bool,
+) -> str:
+    if (
+        not execution_completed
+        or not summary_exists
+        or not summary_readable
+        or not manifest_exists
+    ):
+        return "interrupted"
+    if manifest_current and result_ready and exit_status == 0:
+        return "completed_ready"
+    if manifest_current and not result_ready and exit_status != 0:
+        return "completed_blocked"
+    return "completed_inconsistent"
+
+
+def _file_matches_sha256(path: Path, expected_sha256: str) -> bool:
+    try:
+        return bool(path.is_file() and file_sha256(path) == expected_sha256)
+    except OSError:
+        return False
+
+
 @contextmanager
 def _attempt_ledger_lock(execution_root: Path):
     lock_path = execution_root / ATTEMPT_LOCK_NAME
@@ -1693,7 +2181,9 @@ def _runbook(
         f"- Studies: {int(summary['study_count'])}",
         f"- Closure covered: {int(summary['closure_covered_count'])}/{int(summary['study_count'])}",
         f"- Dispatch attempts: {int(summary['attempt_count'])}",
+        f"- Finalized outcomes: {int(summary['outcome_count'])}",
         f"- Incomplete attempts: {int(summary['attempt_incomplete_count'])}",
+        f"- Interrupted attempts: {int(summary['attempt_interrupted_count'])}",
         f"- Never launched: {int(summary['never_launched_count'])}",
         f"- Explicitly abandoned: {int(summary['abandoned_count'])}",
         f"- Next gate: `{summary['next_gate']}`",

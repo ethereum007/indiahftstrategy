@@ -109,6 +109,7 @@ from reports.research_family import (
 )
 from reports.research_family_launch import (
     load_research_family_launch_contract,
+    write_research_family_launch_attempt_outcome,
     write_research_family_launch_execution_receipt,
     write_research_family_launch_matrix,
 )
@@ -6599,7 +6600,34 @@ def main(argv: list[str] | None = None) -> int:
             "--research-launch-execution-receipt",
             str(receipt.path),
         ]
-        return main(dispatch_argv[3:])
+        try:
+            status = main(dispatch_argv[3:])
+        except BaseException as exc:
+            try:
+                write_research_family_launch_attempt_outcome(
+                    receipt,
+                    exit_status=1,
+                    execution_completed=False,
+                    exception_type=type(exc).__name__,
+                )
+            except (OSError, ValueError) as outcome_exc:
+                print(f"launch outcome finalization failed: {outcome_exc}")
+            raise
+        try:
+            outcome = write_research_family_launch_attempt_outcome(
+                receipt,
+                exit_status=status,
+                execution_completed=True,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"launch outcome finalization failed: {exc}")
+            return 2
+        if status == 0 and outcome.outcome_status != "completed_ready":
+            print(
+                "launch outcome is inconsistent with a successful executor status"
+            )
+            return 2
+        return status
     if args.command == "audit-research-family":
         result = write_research_family_audit(
             args.studies,

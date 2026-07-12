@@ -17,6 +17,8 @@ from reports.research_family_launch import (
     load_research_family_launch_contract,
     load_research_family_launch_execution_receipt,
     load_research_family_launch_matrix,
+    load_research_family_launch_outcome_ledger,
+    write_research_family_launch_attempt_outcome,
     write_research_family_launch_execution_receipt,
     write_research_family_launch_matrix,
 )
@@ -124,7 +126,11 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
         "kind"
     ] == "file"
     ledger = load_research_family_launch_attempt_ledger(launch_dir)
+    outcome_ledger = load_research_family_launch_outcome_ledger(launch_dir)
     assert ledger.attempt_count == 1
+    assert outcome_ledger.outcome_count == 1
+    assert outcome_ledger.records[0]["outcome_status"] == "completed_ready"
+    assert int(outcome_ledger.records[0]["exit_status"]) == 0
     assert ledger.records[0]["attempt_id"] == summary["research_launch_attempt_id"]
     duplicate_status = main(
         [
@@ -168,6 +174,8 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     assert bool(refreshed_leadlag["result_launch_contract_bound"])
     assert bool(refreshed_leadlag["result_launch_execution_receipt_bound"])
     assert bool(refreshed_leadlag["result_launch_attempt_bound"])
+    assert bool(refreshed_leadlag["result_launch_outcome_bound"])
+    assert refreshed_leadlag["latest_outcome_status"] == "completed_ready"
     assert root_integrity.passed
     result_summary_path = result_root / "robust_selection_pipeline_summary.csv"
     result_summary_path.write_text(
@@ -177,6 +185,8 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
     drifted_matrix = load_research_family_launch_matrix(launch_dir)
     assert not drifted_matrix.manifest_current
     assert drifted_matrix.manifest_error == "input_drift"
+    with pytest.raises(ValueError, match="result summary drifted"):
+        load_research_family_launch_outcome_ledger(launch_dir)
 
 
 def test_research_family_launch_blocks_contract_argument_drift(tmp_path):
@@ -262,15 +272,24 @@ def test_research_family_launch_requires_attested_latest_incomplete_retry(tmp_pa
     first_receipt = write_research_family_launch_execution_receipt(
         load_research_family_launch_contract(launch_dir, contract_id)
     )
+    interrupted = write_research_family_launch_attempt_outcome(
+        first_receipt,
+        exit_status=1,
+        execution_completed=False,
+        exception_type="RuntimeError",
+    )
 
     refreshed = write_research_family_launch_matrix(
         registration_dir,
         output_dir=launch_dir,
     )
     refreshed_row = refreshed.launches.set_index("study_label").loc["leadlag"]
-    assert refreshed_row["study_status"] == "attempt_incomplete"
+    assert interrupted.outcome_status == "interrupted"
+    assert refreshed_row["study_status"] == "attempt_interrupted"
     assert bool(refreshed_row["retry_ready"])
     assert int(refreshed_row["attempt_count"]) == 1
+    assert int(refreshed_row["outcome_count"]) == 1
+    assert refreshed_row["latest_outcome_status"] == "interrupted"
     assert refreshed_row["latest_attempt_id"] == first_receipt.attempt_id
 
     wrong_retry = main(
@@ -320,11 +339,14 @@ def test_research_family_launch_requires_attested_latest_incomplete_retry(tmp_pa
     )
 
     ledger = load_research_family_launch_attempt_ledger(launch_dir)
+    outcomes = load_research_family_launch_outcome_ledger(launch_dir)
     result_summary = pd.read_csv(
         tmp_path / "results" / "leadlag" / "robust_selection_pipeline_summary.csv"
     ).iloc[0]
     assert retry_status == 0
     assert ledger.attempt_count == 2
+    assert outcomes.outcome_count == 2
+    assert outcomes.records[1]["outcome_status"] == "completed_ready"
     assert ledger.records[1]["retry_of_attempt_id"] == first_receipt.attempt_id
     assert bool(ledger.records[1]["retry_attested"])
     assert int(result_summary["research_launch_attempt_number"]) == 2
@@ -391,6 +413,47 @@ def test_research_family_launch_rejects_tampered_attempt_chain(tmp_path):
     )
     assert status == 2
     assert len(ledger_path.read_text(encoding="utf-8").splitlines()) == 1
+
+
+def test_research_family_launch_rejects_tampered_outcome_chain(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    row = pending.launches.set_index("study_label").loc["leadlag"]
+    receipt = write_research_family_launch_execution_receipt(
+        load_research_family_launch_contract(
+            launch_dir,
+            str(row["contract_id"]),
+        )
+    )
+    write_research_family_launch_attempt_outcome(
+        receipt,
+        exit_status=1,
+        execution_completed=False,
+        exception_type="RuntimeError",
+    )
+    ledger_path = launch_dir / "executions" / "outcomes.jsonl"
+    outcome = json.loads(ledger_path.read_text(encoding="utf-8").strip())
+    outcome["exception_type"] = "TamperedError"
+    ledger_path.write_text(json.dumps(outcome) + "\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="digest is invalid"):
+        load_research_family_launch_outcome_ledger(launch_dir)
+    blocked = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    outcome_check = blocked.checks.set_index("check").loc[
+        "outcome_ledger_integrity"
+    ]
+    assert not blocked.passed
+    assert not bool(outcome_check["passed"])
+    assert blocked.summary.iloc[0]["next_gate"] == (
+        "plan-research-family-launches"
+    )
 
 
 def test_research_family_launch_covers_bound_result_and_attested_abandonment(
@@ -776,4 +839,9 @@ def _write_bound_result(
                 execution_receipt.attempt_record_path
             ),
         },
+    )
+    write_research_family_launch_attempt_outcome(
+        execution_receipt,
+        exit_status=0,
+        execution_completed=True,
     )

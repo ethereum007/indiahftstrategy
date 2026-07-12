@@ -2368,6 +2368,11 @@ The receipt must also resolve to exactly one valid record in the launch
 matrix's hash-chained attempt ledger. The root fingerprints that immutable
 record file rather than the mutable append-only ledger, so later attempts do
 not create false result drift.
+After the nested robust command returns, the executor appends a separate
+immutable outcome record. It binds the attempt/receipt/record hashes, executor
+exit status, completion or exception state, result readiness, and exact robust
+summary/manifest hashes. A successful executor return is accepted only when the
+outcome classifies as `completed_ready`.
 
 Outputs:
 
@@ -2510,6 +2515,14 @@ unattested reason, ledger drift, or any retry after a robust summary exists is
 blocked. Intentional re-research after a completed result requires a new
 prospective registered study and contract.
 
+Normal outcomes are `completed_ready` or `completed_blocked`. A returned result
+whose exit status, readiness, or manifest integrity disagrees is
+`completed_inconsistent`. An exception or dispatch without a readable summary
+and manifest is `interrupted`. The latter can follow the attested retry path;
+once any robust summary exists, replay remains blocked even if outcome
+finalization is missing. Coverage labels that narrow case
+`completed_unfinalized` so it can be reconciled explicitly rather than hidden.
+
 The command verifies the registration, exact sweep and label counts, unique
 scenario-group columns, every sweep manifest, and any existing robust root.
 Existing results count as covered only when their current root manifest binds
@@ -2517,7 +2530,9 @@ the same registration ID, study label, registration-manifest SHA, immutable
 contract ID, contract-file SHA, and execution-receipt ID/SHA. The root must
 also reproduce the receipt's exact semantic digest from its actual runtime
 configuration and bind the same immutable attempt record carried by the current
-hash chain. Pending
+hash chain. A completed root additionally requires one outcome whose stored
+summary/manifest hashes match the current files and whose status agrees with
+root readiness. Pending
 rows retain both a machine-readable argv array and display command. Contract
 IDs are deterministic hashes of the registered row and exact launch arguments.
 
@@ -2540,6 +2555,8 @@ contracts\*.json
 executions\<contract>_<dispatch>.json
 executions\attempts.jsonl
 executions\records\*.json
+executions\outcomes.jsonl
+executions\outcomes\*.json
 research_family_launch_matrix.csv
 research_family_launch_checks.csv
 research_family_launch_summary.csv
