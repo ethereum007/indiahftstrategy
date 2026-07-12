@@ -2582,6 +2582,20 @@
   flattened catalog, scorecard, family, registration, robust-study, and source
   dependency, so later nested drift invalidates the session-limit plan. Scale-up
   remains non-authorizing.
+- Runtime telemetry now requires a complete current `scaleup_plan` manifest at
+  the file boundary. It reconciles scale-up plan/check/summary/config/manifest
+  semantics, ready and failed-check state, identities, limits, and explicit
+  non-authorizing claims, then reopens any supplied portfolio through the
+  existing nested scorecard/research-family verifier. Telemetry carries the
+  scale-up, portfolio, scorecard, and prospective-family identities and hashes,
+  and recursively fingerprints their dependencies in its own manifest.
+- Runtime guard now independently repeats the current scale-up verification
+  before applying session limits and compares telemetry-carried scale-up,
+  portfolio, scorecard, and research-family lineage against that source.
+  Stale inputs, freshly re-manifested but semantically detached limits,
+  authorizing claims, missing lineage, old scale-up snapshots, or family
+  relabeling halt with explicit provenance repair actions. Telemetry and guard
+  outputs cannot overwrite their source proof and remain non-authorizing.
 
 ## Test Gate
 
@@ -2591,10 +2605,25 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1519 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1524 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest focused gate: manifest, strategy portfolio, strategy scorecard,
+Latest affected-surface gate: manifests, strategy scorecard/portfolio,
+research-family, controlled scale-up, generic runtime telemetry/guard/session,
+and experiment catalog pass together (`254 passed`). The generic runtime
+telemetry/guard suites contribute `54 passed`, including missing/stale scale-up
+manifest, semantic re-manifesting, authorizing source, output collision,
+recursive input drift, and telemetry lineage mismatch rejection. The real
+prospective-family chain now passes family audit -> scorecard -> portfolio ->
+controlled scale-up -> runtime telemetry -> runtime guard, carries the exact
+family/registration and portfolio/scorecard/family manifest hashes, halts on a
+relabeled telemetry family, and invalidates telemetry/guard manifests plus
+halts the guard after registration-plan drift. Six provider-data imbalance
+telemetry/guard paths also pass, covering ready wrappers, CLI telemetry,
+post-scale-up receipt drift, post-telemetry receipt drift, and route-sidecar
+breach handling. Generic cutover and route-enable compatibility pass together
+(`82 passed`).
+The immediately preceding manifest, strategy portfolio, strategy scorecard,
 research-family, and controlled scale-up suites pass together (`126 passed`).
 Controlled scale-up passes all `80` of its tests, including
 current portfolio-manifest acceptance; missing manifest, allocation drift,
@@ -2683,7 +2712,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1505-test collection is fully green.
+1524-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2692,7 +2721,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind the current scale-up manifest and its carried
-   portfolio/scorecard/research-family proof into runtime telemetry and guard
-   inputs so an operational session cannot consume stale limits or lose
-   family-closure provenance after scale-up planning.
+4. Bind the runtime guard's verified scale-up/portfolio/scorecard/family
+   lineage into runtime-session, halt-response, and cutover artifacts so the
+   same prospective-family proof remains continuous through route enablement.

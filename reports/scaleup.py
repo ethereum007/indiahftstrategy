@@ -331,7 +331,7 @@ def write_scaleup_plan(
         if strategy_portfolio_allocations_path
         else None
     )
-    strategy_portfolio_provenance = _load_strategy_portfolio_provenance(
+    strategy_portfolio_provenance = load_strategy_portfolio_provenance(
         strategy_portfolio_path,
         strategy_portfolio,
         strategy_portfolio_allocations,
@@ -4922,7 +4922,7 @@ def _broker_vendor_market_data_batch_config(plan_row: pd.Series) -> dict[str, ob
     }
 
 
-def _load_strategy_portfolio_provenance(
+def load_strategy_portfolio_provenance(
     summary_path: Path | None,
     summary: pd.DataFrame | None,
     allocations: pd.DataFrame | None,
@@ -5018,7 +5018,7 @@ def _load_strategy_portfolio_provenance(
                     config.get("scorecard_manifest_current", False),
                 )
             ),
-            "scorecard_manifest_sha256": str(
+            "scorecard_manifest_sha256": _text(
                 summary_row.get(
                     "scorecard_manifest_sha256",
                     config.get("scorecard_manifest_sha256", ""),
@@ -5054,25 +5054,25 @@ def _load_strategy_portfolio_provenance(
                     config.get("research_family_provenance_current", False),
                 )
             ),
-            "research_family_id": str(
+            "research_family_id": _text(
                 summary_row.get(
                     "research_family_id",
                     config.get("research_family_id", ""),
                 )
             ),
-            "research_family_registration_id": str(
+            "research_family_registration_id": _text(
                 summary_row.get(
                     "research_family_registration_id",
                     config.get("research_family_registration_id", ""),
                 )
             ),
-            "research_family_path": str(
+            "research_family_path": _text(
                 summary_row.get(
                     "research_family_path",
                     config.get("research_family_path", ""),
                 )
             ),
-            "research_family_manifest_sha256": str(
+            "research_family_manifest_sha256": _text(
                 summary_row.get(
                     "research_family_manifest_sha256",
                     config.get("research_family_manifest_sha256", ""),

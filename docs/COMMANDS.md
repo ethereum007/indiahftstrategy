@@ -3475,6 +3475,15 @@ upload-pack summaries from that folder. Upload-pack summaries carry
 `runtime_telemetry_sources.csv` records the resolved CSV path for each supplied
 source, and `manifest.json` fingerprints those resolved files for audit
 traceability.
+File-based telemetry now requires `--scaleup` to resolve to a complete current
+`scaleup_plan` bundle, not a standalone `scaleup_config.json`. It verifies the
+plan, checks, summary, config, manifest run type, artifact hashes, and every
+recursive scale-up input before accepting session limits. It also reconciles
+ready state, failed-check count, identity, limits, and explicit
+`authorizes_submission=false` claims across those artifacts. A config that was
+edited and freshly re-manifested without matching summary/plan semantics still
+fails closed. The telemetry output must be separate from the source scale-up
+directory so it cannot overwrite the proof it consumes.
 Telemetry carries the scale-up `strategy` and `market` identities from
 `scaleup_config.json`; missing identity fails closed before guard evaluation.
 When scale-up required proof-refresh evidence, telemetry also carries
@@ -3496,6 +3505,17 @@ the portfolio cap was applied. These telemetry fields now also include
 portfolio-level strategy/market diversity requirements, allocated
 strategy/market counts, top concentration names, and maximum aggregate
 strategy/market allocation weights.
+Telemetry now additionally carries the current scale-up manifest SHA-256,
+contract and non-authorizing status, recursively verified dependency count,
+portfolio-manifest SHA-256, scorecard-manifest SHA-256, and registered
+research-family ID, registration ID, and manifest SHA-256. When portfolio
+evidence is present, telemetry reopens the portfolio source named by the
+scale-up manifest and re-runs its nested scorecard/family verifier rather than
+trusting copied `*_current` flags. The telemetry manifest fingerprints the
+scale-up manifest, all required scale-up artifacts, and its flattened
+dependencies, so later portfolio, scorecard, registration, robust-study, or
+raw-source drift invalidates the snapshot. Telemetry outputs remain explicitly
+non-authorizing.
 Position snapshots can provide total Greek columns such as `net_delta` and
 `net_vega`, or unit columns such as `unit_delta` and `unit_vega` with
 `net_qty`/`position`/`qty`; telemetry emits `abs_net_delta` and `abs_net_vega`
@@ -3525,7 +3545,9 @@ python -m hft_cli monitor-scaleup-guard `
 ```
 
 `--telemetry` accepts either the telemetry output folder or the
-`runtime_telemetry.csv` file directly.
+`runtime_telemetry.csv` file directly. For a portfolio- or family-bound
+scale-up, a direct CSV must carry the provenance fields emitted by
+`build-runtime-telemetry`; a hand-written row without that lineage halts.
 
 Telemetry CSV columns:
 
@@ -3554,6 +3576,16 @@ appears as an explicit `strategy_portfolio_session_notional` check in
 portfolio concentration fields carried by telemetry, so a halt packet or
 runtime session can explain the paper/shadow allocation context without
 reopening the scale-up folder.
+Before applying any limit, the guard independently re-verifies the current
+scale-up manifest, artifact contract, recursive inputs, and non-authorizing
+status. It then compares the scale-up manifest hash and, when applicable, the
+portfolio, scorecard, and research-family hashes/identities carried by
+telemetry against the current source. A snapshot built from an older scale-up,
+a relabeled family, or drifted upstream research proof therefore produces a
+halt and a `plan-scaleup` repair action instead of consuming stale limits.
+Guard summary/config and manifest retain this lineage and remain explicitly
+non-authorizing. Guard output must not overwrite either the scale-up or
+telemetry input directory.
 
 Outputs:
 

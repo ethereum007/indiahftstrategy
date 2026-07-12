@@ -9,6 +9,13 @@ import numpy as np
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.scaleup_runtime_provenance import (
+    empty_scaleup_runtime_provenance,
+    load_scaleup_runtime_provenance,
+    scaleup_runtime_fields,
+    scaleup_runtime_manifest_extra,
+    scaleup_runtime_manifest_inputs,
+)
 
 
 ACTION_QUEUE_COLUMNS = [
@@ -25,6 +32,27 @@ ACTION_QUEUE_COLUMNS = [
     "reason",
     "recommendation",
 ]
+
+SCALEUP_PROVENANCE_COLUMNS = tuple(
+    scaleup_runtime_fields(empty_scaleup_runtime_provenance()).keys()
+)
+RUNTIME_LINEAGE_COLUMNS = (
+    "runtime_telemetry_scaleup_provenance_carried",
+    "runtime_telemetry_scaleup_provenance_gate_passed",
+    "runtime_telemetry_scaleup_manifest_sha256",
+    "runtime_telemetry_scaleup_manifest_matches_current",
+    "runtime_telemetry_strategy_portfolio_manifest_sha256",
+    "runtime_telemetry_strategy_portfolio_matches_current",
+    "runtime_telemetry_scorecard_manifest_sha256",
+    "runtime_telemetry_scorecard_matches_current",
+    "runtime_telemetry_research_family_bound",
+    "runtime_telemetry_research_family_provenance_current",
+    "runtime_telemetry_research_family_id",
+    "runtime_telemetry_research_family_registration_id",
+    "runtime_telemetry_research_family_manifest_sha256",
+    "runtime_telemetry_research_family_matches_current",
+    "runtime_telemetry_lineage_matches_current",
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +78,23 @@ def evaluate_runtime_guard(
     as_of_ts_ns: int | float | None = None,
     max_telemetry_age_ns: int | float | None = None,
 ) -> RuntimeGuardReport:
+    return _evaluate_runtime_guard(
+        scaleup_config,
+        telemetry,
+        as_of_ts_ns=as_of_ts_ns,
+        max_telemetry_age_ns=max_telemetry_age_ns,
+        scaleup_provenance=empty_scaleup_runtime_provenance(),
+    )
+
+
+def _evaluate_runtime_guard(
+    scaleup_config: dict[str, Any],
+    telemetry: pd.DataFrame,
+    *,
+    as_of_ts_ns: int | float | None = None,
+    max_telemetry_age_ns: int | float | None = None,
+    scaleup_provenance: dict[str, Any],
+) -> RuntimeGuardReport:
     if telemetry.empty:
         raise ValueError("runtime telemetry is empty")
     metrics = _metrics(
@@ -57,6 +102,7 @@ def evaluate_runtime_guard(
         telemetry,
         as_of_ts_ns=as_of_ts_ns,
         max_telemetry_age_ns=max_telemetry_age_ns,
+        scaleup_provenance=scaleup_provenance,
     )
     checks = _checks(metrics.iloc[0], scaleup_config)
     action_queue = _action_queue(metrics.iloc[0], checks)
@@ -78,13 +124,22 @@ def write_runtime_guard_report(
     if not telemetry_file.exists():
         raise FileNotFoundError(f"runtime telemetry file not found: {telemetry_file}")
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
-    report = evaluate_runtime_guard(
+    scaleup_provenance = load_scaleup_runtime_provenance(
+        scaleup_file,
+        scaleup_config=scaleup_config,
+    )
+    out = Path(output_dir)
+    if out.resolve() == scaleup_file.parent.resolve():
+        raise ValueError("runtime guard output must not overwrite the scale-up bundle")
+    if out.resolve() == telemetry_file.parent.resolve():
+        raise ValueError("runtime guard output must not overwrite runtime telemetry inputs")
+    report = _evaluate_runtime_guard(
         scaleup_config,
         pd.read_csv(telemetry_file),
         as_of_ts_ns=as_of_ts_ns,
         max_telemetry_age_ns=max_telemetry_age_ns,
+        scaleup_provenance=scaleup_provenance,
     )
-    out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.metrics.to_csv(out / "runtime_guard_metrics.csv", index=False)
     report.checks.to_csv(out / "runtime_guard_checks.csv", index=False)
@@ -108,7 +163,21 @@ def write_runtime_guard_report(
             "as_of_ts_ns": as_of_ts_ns,
             "max_telemetry_age_ns": max_telemetry_age_ns,
         },
-        inputs={"scaleup": scaleup_file, "telemetry": telemetry_file},
+        inputs={
+            "scaleup": scaleup_file,
+            "telemetry": telemetry_file,
+            **scaleup_runtime_manifest_inputs(scaleup_provenance),
+            **_telemetry_manifest_inputs(telemetry_file),
+        },
+        extra={
+            "guard_action": str(report.summary.iloc[0]["guard_action"]),
+            "halted": bool(report.halted),
+            **scaleup_runtime_manifest_extra(scaleup_provenance),
+            "runtime_telemetry_lineage_matches_current": bool(
+                report.summary.iloc[0]["runtime_telemetry_lineage_matches_current"]
+            ),
+            "authorizes_submission": False,
+        },
     )
     return RuntimeGuardReport(report.metrics, report.checks, report.summary, out, guard_config, action_queue)
 
@@ -119,6 +188,7 @@ def _metrics(
     *,
     as_of_ts_ns: int | float | None,
     max_telemetry_age_ns: int | float | None,
+    scaleup_provenance: dict[str, Any],
 ) -> pd.DataFrame:
     latest = telemetry.iloc[-1]
     limits = scaleup_config.get("limits", {}) or {}
@@ -147,6 +217,8 @@ def _metrics(
     return pd.DataFrame(
         [
             {
+                **scaleup_runtime_fields(scaleup_provenance),
+                **_runtime_lineage_fields(latest, scaleup_provenance),
                 "scaleup_ready": bool(scaleup_config.get("ready", False)),
                 "target_mode": str(scaleup_config.get("target_mode", "")),
                 "strategy": _strategy_key(_value(latest, "strategy", "")),
@@ -610,6 +682,60 @@ def _checks(row: pd.Series, scaleup_config: dict[str, Any]) -> pd.DataFrame:
         _threshold_check("mismatched_orders", row["mismatched_orders"], "<=", row["max_total_mismatched_orders"]),
         _threshold_check("overfilled_orders", row["overfilled_orders"], "<=", row["max_total_overfilled_orders"]),
     ]
+    if _to_bool(row.get("scaleup_manifest_required", False)):
+        for name, reason in (
+            ("scaleup_manifest_provided", "scale-up manifest is missing"),
+            ("scaleup_manifest_current", "scale-up artifacts or recursive inputs have drifted"),
+            ("scaleup_contract_consistent", "scale-up config, summary, checks, plan, and manifest disagree"),
+            ("scaleup_non_authorizing", "scale-up proof contains a submission-authorizing claim"),
+            ("scaleup_source_ready", "scale-up plan is not ready"),
+            ("scaleup_provenance_gate_passed", "scale-up provenance gate did not pass"),
+        ):
+            passed = _to_bool(row.get(name, False))
+            checks.append(_check(name, passed, "is", True, passed, reason))
+        lineage_required = _to_bool(
+            row.get("scaleup_strategy_portfolio_required", False)
+        ) or _to_bool(
+            row.get("scaleup_strategy_portfolio_provided", False)
+        ) or _to_bool(row.get("scaleup_research_family_bound", False))
+        lineage_carried = _to_bool(
+            row.get("runtime_telemetry_scaleup_provenance_carried", False)
+        )
+        if lineage_required or lineage_carried:
+            for name, reason in (
+                (
+                    "runtime_telemetry_scaleup_provenance_carried",
+                    "runtime telemetry did not carry scale-up provenance",
+                ),
+                (
+                    "runtime_telemetry_scaleup_provenance_gate_passed",
+                    "runtime telemetry scale-up provenance gate did not pass",
+                ),
+                (
+                    "runtime_telemetry_scaleup_manifest_matches_current",
+                    "runtime telemetry was built from a different scale-up manifest",
+                ),
+                (
+                    "runtime_telemetry_lineage_matches_current",
+                    "runtime telemetry portfolio, scorecard, or family lineage differs from current scale-up",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(_check(name, passed, "is", True, passed, reason))
+        if _to_bool(row.get("scaleup_research_family_bound", False)):
+            family_matches = _to_bool(
+                row.get("runtime_telemetry_research_family_matches_current", False)
+            )
+            checks.append(
+                _check(
+                    "runtime_telemetry_research_family_matches_current",
+                    family_matches,
+                    "is",
+                    True,
+                    family_matches,
+                    "runtime telemetry lost or changed registered research-family closure proof",
+                )
+            )
     scaleup_portfolio_active = bool(row["scaleup_strategy_portfolio_required"]) or bool(
         row["scaleup_strategy_portfolio_provided"]
     )
@@ -1250,6 +1376,11 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
             {
                 "guard_action": "halt" if halted else "continue",
                 "halted": halted,
+                "authorizes_submission": False,
+                **{
+                    column: row[column]
+                    for column in (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS)
+                },
                 "failed_checks": failed,
                 "failed_check_count": failed,
                 "failed_check_names": ";".join(failed_names),
@@ -1418,6 +1549,14 @@ def _action_queue(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
 
 def _component(row: pd.Series) -> str:
     check = _check_name(row)
+    if check.startswith("scaleup_manifest") or check.startswith("scaleup_contract") or check.startswith(
+        "scaleup_non_authorizing"
+    ) or check.startswith("scaleup_provenance") or check.startswith("scaleup_source") or check.startswith(
+        "runtime_telemetry_scaleup"
+    ) or check.startswith("runtime_telemetry_lineage"):
+        return "scaleup_provenance"
+    if check.startswith("runtime_telemetry_research_family"):
+        return "research_family_provenance"
     if check in {"scaleup_ready", "manual_halt"}:
         return "scaleup_plan"
     if check in {"strategy_matches", "market_matches"}:
@@ -1456,6 +1595,12 @@ def _component(row: pd.Series) -> str:
 
 def _next_gate(row: pd.Series) -> str:
     check = _check_name(row)
+    if check.startswith("scaleup_manifest") or check.startswith("scaleup_contract") or check.startswith(
+        "scaleup_non_authorizing"
+    ) or check.startswith("scaleup_provenance") or check.startswith("scaleup_source") or check.startswith(
+        "runtime_telemetry_scaleup"
+    ) or check.startswith("runtime_telemetry_lineage"):
+        return "plan-scaleup"
     if check == "scaleup_ready":
         return "plan-scaleup"
     if check.startswith("runtime_proof_refresh"):
@@ -1469,6 +1614,14 @@ def _next_gate(row: pd.Series) -> str:
 
 def _action_recommendation(row: pd.Series, metrics_row: pd.Series) -> str:
     check = _check_name(row)
+    if check.startswith("scaleup_manifest") or check.startswith("scaleup_contract") or check.startswith(
+        "scaleup_non_authorizing"
+    ) or check.startswith("scaleup_provenance") or check.startswith("scaleup_source") or check.startswith(
+        "runtime_telemetry_scaleup"
+    ) or check.startswith("runtime_telemetry_lineage"):
+        return "rebuild_current_non_authorizing_scaleup_provenance_before_routing"
+    if check.startswith("runtime_telemetry_research_family"):
+        return "rebuild_runtime_telemetry_from_current_registered_family_scaleup"
     if check == "scaleup_ready":
         return "repair_scaleup_plan_before_runtime_routing"
     if check == "manual_halt":
@@ -1489,6 +1642,7 @@ def _action_recommendation(row: pd.Series, metrics_row: pd.Series) -> str:
 def _config(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any]:
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "guard_action": _clean(summary_row.get("guard_action")),
         "halted": _to_bool(summary_row.get("halted")),
         "strategy": _clean(summary_row.get("strategy")),
@@ -1517,6 +1671,14 @@ def _config(summary_row: pd.Series, action_queue: pd.DataFrame) -> dict[str, Any
         "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
         "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+        "scaleup_provenance": {
+            column: _jsonable_value(summary_row.get(column))
+            for column in SCALEUP_PROVENANCE_COLUMNS
+        },
+        "runtime_telemetry_lineage": {
+            column: _jsonable_value(summary_row.get(column))
+            for column in RUNTIME_LINEAGE_COLUMNS
+        },
         "broker_route_readiness": {
             "required": _to_bool(summary_row.get("broker_route_readiness_required")),
             "provided": _to_bool(summary_row.get("broker_route_readiness_provided")),
@@ -1644,6 +1806,125 @@ def _scaleup_config_path(path: str | Path) -> Path:
     if not candidate.exists():
         raise FileNotFoundError(f"scale-up config not found: {candidate}")
     return candidate
+
+
+def _runtime_lineage_fields(
+    latest: pd.Series,
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    current_scaleup_sha = _clean(provenance.get("manifest_sha256"))
+    telemetry_scaleup_sha = _clean(_value(latest, "scaleup_manifest_sha256", ""))
+    carried = bool(
+        "scaleup_manifest_required" in latest.index
+        and _bool_value(latest, "scaleup_manifest_required")
+        and telemetry_scaleup_sha
+    )
+    scaleup_matches = bool(
+        carried
+        and current_scaleup_sha
+        and telemetry_scaleup_sha == current_scaleup_sha
+    )
+
+    current_portfolio_sha = _clean(
+        provenance.get("strategy_portfolio_manifest_sha256")
+    )
+    telemetry_portfolio_sha = _clean(
+        _value(latest, "scaleup_strategy_portfolio_manifest_sha256", "")
+    )
+    portfolio_matches = bool(
+        not current_portfolio_sha
+        or telemetry_portfolio_sha == current_portfolio_sha
+    )
+    current_scorecard_sha = _clean(provenance.get("scorecard_manifest_sha256"))
+    telemetry_scorecard_sha = _clean(
+        _value(latest, "scaleup_scorecard_manifest_sha256", "")
+    )
+    scorecard_matches = bool(
+        not current_scorecard_sha
+        or telemetry_scorecard_sha == current_scorecard_sha
+    )
+
+    family_bound = _to_bool(provenance.get("research_family_bound", False))
+    telemetry_family_bound = _bool_value(
+        latest,
+        "scaleup_research_family_bound",
+        fallback=False,
+    )
+    telemetry_family_current = _bool_value(
+        latest,
+        "scaleup_research_family_provenance_current",
+        fallback=False,
+    )
+    telemetry_family_id = _clean(
+        _value(latest, "scaleup_research_family_id", "")
+    )
+    telemetry_registration_id = _clean(
+        _value(latest, "scaleup_research_family_registration_id", "")
+    )
+    telemetry_family_sha = _clean(
+        _value(latest, "scaleup_research_family_manifest_sha256", "")
+    )
+    family_matches = bool(
+        not family_bound
+        or (
+            telemetry_family_bound
+            and telemetry_family_current
+            and telemetry_family_id == _clean(provenance.get("research_family_id"))
+            and telemetry_registration_id
+            == _clean(provenance.get("research_family_registration_id"))
+            and telemetry_family_sha
+            == _clean(provenance.get("research_family_manifest_sha256"))
+        )
+    )
+    telemetry_gate = _bool_value(
+        latest,
+        "scaleup_provenance_gate_passed",
+        fallback=False,
+    )
+    lineage_matches = bool(
+        scaleup_matches
+        and portfolio_matches
+        and scorecard_matches
+        and family_matches
+    )
+    return {
+        "runtime_telemetry_scaleup_provenance_carried": carried,
+        "runtime_telemetry_scaleup_provenance_gate_passed": telemetry_gate,
+        "runtime_telemetry_scaleup_manifest_sha256": telemetry_scaleup_sha,
+        "runtime_telemetry_scaleup_manifest_matches_current": scaleup_matches,
+        "runtime_telemetry_strategy_portfolio_manifest_sha256": telemetry_portfolio_sha,
+        "runtime_telemetry_strategy_portfolio_matches_current": portfolio_matches,
+        "runtime_telemetry_scorecard_manifest_sha256": telemetry_scorecard_sha,
+        "runtime_telemetry_scorecard_matches_current": scorecard_matches,
+        "runtime_telemetry_research_family_bound": telemetry_family_bound,
+        "runtime_telemetry_research_family_provenance_current": telemetry_family_current,
+        "runtime_telemetry_research_family_id": telemetry_family_id,
+        "runtime_telemetry_research_family_registration_id": telemetry_registration_id,
+        "runtime_telemetry_research_family_manifest_sha256": telemetry_family_sha,
+        "runtime_telemetry_research_family_matches_current": family_matches,
+        "runtime_telemetry_lineage_matches_current": lineage_matches,
+    }
+
+
+def _telemetry_manifest_inputs(telemetry_file: Path) -> dict[str, Any]:
+    root = telemetry_file.parent
+    manifest_path = root / "manifest.json"
+    if telemetry_file.name != "runtime_telemetry.csv" or not manifest_path.is_file():
+        return {}
+    artifacts = [
+        root / name
+        for name in (
+            "runtime_telemetry.csv",
+            "runtime_telemetry_sources.csv",
+            "runtime_telemetry_checks.csv",
+            "runtime_telemetry_summary.csv",
+        )
+        if (root / name).is_file()
+    ]
+    inputs: dict[str, Any] = {"runtime_telemetry_manifest": manifest_path}
+    if artifacts:
+        inputs["runtime_telemetry_artifacts"] = artifacts
+    return inputs
 
 
 def _telemetry_path(path: str | Path) -> Path:

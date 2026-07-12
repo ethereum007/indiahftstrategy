@@ -9,6 +9,13 @@ import numpy as np
 import pandas as pd
 
 from reports.manifest import write_experiment_manifest
+from reports.scaleup_runtime_provenance import (
+    empty_scaleup_runtime_provenance,
+    load_scaleup_runtime_provenance,
+    scaleup_runtime_fields,
+    scaleup_runtime_manifest_extra,
+    scaleup_runtime_manifest_inputs,
+)
 
 
 GUARD_COLUMNS = [
@@ -28,6 +35,37 @@ GUARD_COLUMNS = [
     "mismatched_orders",
     "overfilled_orders",
     "worst_adverse_slippage",
+]
+
+SCALEUP_PROVENANCE_COLUMNS = [
+    "scaleup_manifest_required",
+    "scaleup_manifest_provided",
+    "scaleup_manifest_current",
+    "scaleup_manifest_run_type",
+    "scaleup_manifest_path",
+    "scaleup_manifest_sha256",
+    "scaleup_manifest_error",
+    "scaleup_contract_consistent",
+    "scaleup_contract_error",
+    "scaleup_non_authorizing",
+    "scaleup_source_ready",
+    "scaleup_provenance_gate_passed",
+    "scaleup_dependency_count",
+    "scaleup_strategy_portfolio_required",
+    "scaleup_strategy_portfolio_provided",
+    "scaleup_strategy_portfolio_manifest_required",
+    "scaleup_strategy_portfolio_manifest_current",
+    "scaleup_strategy_portfolio_manifest_sha256",
+    "scaleup_strategy_portfolio_provenance_gate_passed",
+    "scaleup_scorecard_manifest_required",
+    "scaleup_scorecard_manifest_current",
+    "scaleup_scorecard_manifest_sha256",
+    "scaleup_scorecard_provenance_gate_passed",
+    "scaleup_research_family_bound",
+    "scaleup_research_family_provenance_current",
+    "scaleup_research_family_id",
+    "scaleup_research_family_registration_id",
+    "scaleup_research_family_manifest_sha256",
 ]
 
 
@@ -58,6 +96,37 @@ def evaluate_runtime_telemetry(
     snapshot_ts_ns: int | float | None = None,
     source_paths: dict[str, str | Path | None] | None = None,
 ) -> RuntimeTelemetryReport:
+    return _evaluate_runtime_telemetry(
+        scaleup_config,
+        export_summary=export_summary,
+        upload_summary=upload_summary,
+        reconciliation_summary=reconciliation_summary,
+        reconciliation_checks=reconciliation_checks,
+        instrument_metadata_summary=instrument_metadata_summary,
+        pnl_snapshot=pnl_snapshot,
+        open_orders=open_orders,
+        positions=positions,
+        snapshot_ts_ns=snapshot_ts_ns,
+        source_paths=source_paths,
+        scaleup_provenance=empty_scaleup_runtime_provenance(),
+    )
+
+
+def _evaluate_runtime_telemetry(
+    scaleup_config: dict[str, Any],
+    *,
+    export_summary: pd.DataFrame | None = None,
+    upload_summary: pd.DataFrame | None = None,
+    reconciliation_summary: pd.DataFrame | None = None,
+    reconciliation_checks: pd.DataFrame | None = None,
+    instrument_metadata_summary: pd.DataFrame | None = None,
+    pnl_snapshot: pd.DataFrame | None = None,
+    open_orders: pd.DataFrame | None = None,
+    positions: pd.DataFrame | None = None,
+    snapshot_ts_ns: int | float | None = None,
+    source_paths: dict[str, str | Path | None] | None = None,
+    scaleup_provenance: dict[str, Any],
+) -> RuntimeTelemetryReport:
     export_summary = _optional_frame(export_summary)
     upload_summary = _optional_frame(upload_summary)
     reconciliation_summary = _optional_frame(reconciliation_summary)
@@ -78,6 +147,7 @@ def evaluate_runtime_telemetry(
         open_orders=open_orders,
         positions=positions,
         snapshot_ts_ns=snapshot_ts_ns,
+        scaleup_provenance=scaleup_provenance,
     )
     sources = _sources(
         source_paths=source_paths,
@@ -110,6 +180,13 @@ def write_runtime_telemetry_snapshot(
 ) -> RuntimeTelemetryReport:
     scaleup_file = _scaleup_config_path(scaleup_dir)
     scaleup_config = json.loads(scaleup_file.read_text(encoding="utf-8"))
+    scaleup_provenance = load_scaleup_runtime_provenance(
+        scaleup_file,
+        scaleup_config=scaleup_config,
+    )
+    out = Path(output_dir)
+    if out.resolve() == scaleup_file.parent.resolve():
+        raise ValueError("runtime telemetry output must not overwrite the scale-up bundle")
     export_summary, export_summary_path = _read_optional_summary_with_path(
         export_dir,
         "broker_order_summary.csv",
@@ -146,7 +223,7 @@ def write_runtime_telemetry_snapshot(
         "positions": Path(positions_path) if positions_path is not None else None,
     }
 
-    report = evaluate_runtime_telemetry(
+    report = _evaluate_runtime_telemetry(
         scaleup_config,
         export_summary=export_summary,
         upload_summary=upload_summary,
@@ -158,14 +235,15 @@ def write_runtime_telemetry_snapshot(
         positions=positions,
         snapshot_ts_ns=snapshot_ts_ns,
         source_paths=source_paths,
+        scaleup_provenance=scaleup_provenance,
     )
-    out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.telemetry.to_csv(out / "runtime_telemetry.csv", index=False)
     report.sources.to_csv(out / "runtime_telemetry_sources.csv", index=False)
     report.checks.to_csv(out / "runtime_telemetry_checks.csv", index=False)
     report.summary.to_csv(out / "runtime_telemetry_summary.csv", index=False)
     manifest_inputs: dict[str, Any] = {"scaleup": scaleup_file}
+    manifest_inputs.update(scaleup_runtime_manifest_inputs(scaleup_provenance))
     for name, value in {
         "export": export_summary_path,
         "upload_pack": upload_summary_path,
@@ -183,6 +261,11 @@ def write_runtime_telemetry_snapshot(
         run_type="runtime_telemetry_snapshot",
         parameters={"snapshot_ts_ns": snapshot_ts_ns},
         inputs=manifest_inputs,
+        extra={
+            "ready": bool(report.ready),
+            **scaleup_runtime_manifest_extra(scaleup_provenance),
+            "authorizes_submission": False,
+        },
     )
     return RuntimeTelemetryReport(report.telemetry, report.sources, report.checks, report.summary, out)
 
@@ -199,6 +282,7 @@ def _telemetry(
     open_orders: pd.DataFrame,
     positions: pd.DataFrame,
     snapshot_ts_ns: int | float | None,
+    scaleup_provenance: dict[str, Any],
 ) -> pd.DataFrame:
     export = _first_row(export_summary)
     upload = _first_row(upload_summary)
@@ -236,6 +320,7 @@ def _telemetry(
     upload_failed = _first_number(_number(upload, "failed_checks"), 0.0)
     total_failed = _first_number(_number(export, "failed_checks"), 0.0) + upload_failed + _failed_checks(reconciliation_checks)
     row = {
+        **scaleup_runtime_fields(scaleup_provenance),
         "snapshot_ts_ns": _first_number(snapshot_ts_ns, _number(pnl, "ts_ns"), _number(pnl, "timestamp_ns"), np.nan),
         "target_mode": str(scaleup_config.get("target_mode", "")),
         "strategy": _strategy_key(_scaleup_identity(scaleup_config, "strategy")),
@@ -422,6 +507,70 @@ def _checks(row: pd.Series) -> pd.DataFrame:
         _check("scenario_key_present", row["scenario_key"], "not_empty", True, bool(str(row["scenario_key"]).strip()), "scenario_key is missing"),
         _check("adapter_present", row["adapter"], "not_empty", True, bool(str(row["adapter"]).strip()), "adapter is missing"),
     ]
+    if _to_bool(row.get("scaleup_manifest_required", False)):
+        for name, reason in (
+            ("scaleup_manifest_provided", "scale-up manifest is missing"),
+            ("scaleup_manifest_current", "scale-up artifacts or recursive inputs have drifted"),
+            ("scaleup_contract_consistent", "scale-up config, summary, checks, plan, and manifest disagree"),
+            ("scaleup_non_authorizing", "scale-up proof contains a submission-authorizing claim"),
+            ("scaleup_source_ready", "scale-up plan is not ready"),
+            ("scaleup_provenance_gate_passed", "scale-up provenance gate did not pass"),
+        ):
+            passed = _to_bool(row.get(name, False))
+            checks.append(_check(name, passed, "is", True, passed, reason))
+        portfolio_active = _to_bool(
+            row.get("scaleup_strategy_portfolio_required", False)
+        ) or _to_bool(row.get("scaleup_strategy_portfolio_provided", False))
+        if portfolio_active:
+            for name, reason in (
+                (
+                    "scaleup_strategy_portfolio_manifest_current",
+                    "scale-up portfolio manifest is not current",
+                ),
+                (
+                    "scaleup_strategy_portfolio_provenance_gate_passed",
+                    "scale-up portfolio provenance gate did not pass",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(_check(name, passed, "is", True, passed, reason))
+        if _to_bool(row.get("scaleup_scorecard_manifest_required", False)):
+            for name, reason in (
+                (
+                    "scaleup_scorecard_manifest_current",
+                    "scale-up scorecard manifest is not current",
+                ),
+                (
+                    "scaleup_scorecard_provenance_gate_passed",
+                    "scale-up scorecard provenance gate did not pass",
+                ),
+            ):
+                passed = _to_bool(row.get(name, False))
+                checks.append(_check(name, passed, "is", True, passed, reason))
+        if _to_bool(row.get("scaleup_research_family_bound", False)):
+            family_current = _to_bool(
+                row.get("scaleup_research_family_provenance_current", False)
+            )
+            checks.extend(
+                [
+                    _check(
+                        "scaleup_research_family_provenance_current",
+                        family_current,
+                        "is",
+                        True,
+                        family_current,
+                        "registered research-family proof is not current",
+                    ),
+                    _check(
+                        "scaleup_research_family_identity_present",
+                        _family_identity(row),
+                        "complete",
+                        True,
+                        bool(_family_identity(row)),
+                        "registered research-family identity or manifest hash is missing",
+                    ),
+                ]
+            )
     for column in GUARD_COLUMNS:
         value = row[column]
         present = not pd.isna(value) and (not isinstance(value, str) or bool(value.strip()))
@@ -814,6 +963,8 @@ def _summary(row: pd.Series, checks: pd.DataFrame) -> pd.DataFrame:
         [
             {
                 "ready": ready,
+                "authorizes_submission": False,
+                **{column: row[column] for column in SCALEUP_PROVENANCE_COLUMNS},
                 "target_mode": row["target_mode"],
                 "strategy": row["strategy"],
                 "market": row["market"],
@@ -922,6 +1073,15 @@ def _scaleup_config_path(path: str | Path) -> Path:
     if not candidate.exists():
         raise FileNotFoundError(f"scale-up config not found: {candidate}")
     return candidate
+
+
+def _family_identity(row: pd.Series) -> str:
+    values = (
+        str(row.get("scaleup_research_family_id", "")).strip(),
+        str(row.get("scaleup_research_family_registration_id", "")).strip(),
+        str(row.get("scaleup_research_family_manifest_sha256", "")).strip(),
+    )
+    return ":".join(values) if all(values) else ""
 
 
 def _read_optional_summary(

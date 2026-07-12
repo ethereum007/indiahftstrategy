@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.manifest import file_sha256, write_experiment_manifest
 from reports.runtime_session import write_runtime_session_monitor
 
 
@@ -134,9 +135,211 @@ def scaleup_config(
 
 def write_scaleup_dir(path, config=None):
     path.mkdir()
+    payload = json.loads(json.dumps(config or scaleup_config()))
+    payload["authorizes_submission"] = False
+    payload["failed_check_count"] = 0
+    portfolio = payload.get("strategy_portfolio", {}) or {}
+    portfolio_inputs = {}
+    if portfolio.get("required") or portfolio.get("provided"):
+        portfolio_dir = path.parent / f"{path.name}_portfolio"
+        portfolio_dir.mkdir()
+        allocation = {
+            "profile": portfolio["selected_profile"],
+            "strategy": portfolio["selected_strategy"],
+            "market": portfolio["selected_market"],
+            "eligible": True,
+            "allocation_weight": portfolio["selected_allocation_weight"],
+            "allocation_notional": portfolio["selected_allocation_notional"],
+            "scorecard_manifest_sha256": "",
+            "research_family_enabled": False,
+            "research_family_id": "",
+            "research_family_registration_id": "",
+            "research_family_manifest_sha256": "",
+            "research_family_matched_study_label": "",
+            "authorizes_submission": False,
+        }
+        portfolio_summary = {
+            "ready": True,
+            "deployment_mode": portfolio["deployment_mode"],
+            "allocation_mode": portfolio["allocation_mode"],
+            "capital_currency": portfolio["capital_currency"],
+            "total_capital": 1_000_000.0,
+            "allocated_weight": portfolio["selected_allocation_weight"],
+            "allocated_notional": portfolio["selected_allocation_notional"],
+            "allocated_strategy_count": portfolio["allocated_strategy_count"],
+            "allocated_market_count": portfolio["allocated_market_count"],
+            "scorecard_manifest_required": False,
+            "scorecard_manifest_current": False,
+            "scorecard_manifest_sha256": "",
+            "scorecard_contract_consistent": True,
+            "scorecard_non_authorizing": True,
+            "scorecard_provenance_gate_passed": True,
+            "research_family_bound": False,
+            "research_family_provenance_current": False,
+            "research_family_id": "",
+            "research_family_registration_id": "",
+            "research_family_path": "",
+            "research_family_manifest_sha256": "",
+            "authorizes_submission": False,
+        }
+        pd.DataFrame([allocation]).to_csv(
+            portfolio_dir / "strategy_portfolio_allocations.csv",
+            index=False,
+        )
+        pd.DataFrame(
+            [{"check": "portfolio_ready", "passed": True, "reason": ""}]
+        ).to_csv(portfolio_dir / "strategy_portfolio_checks.csv", index=False)
+        pd.DataFrame([portfolio_summary]).to_csv(
+            portfolio_dir / "strategy_portfolio_summary.csv",
+            index=False,
+        )
+        pd.DataFrame(columns=["priority"]).to_csv(
+            portfolio_dir / "strategy_portfolio_action_queue.csv",
+            index=False,
+        )
+        portfolio_config = {
+            "schema_version": 1,
+            "ready": True,
+            "authorizes_submission": False,
+            "summary": portfolio_summary,
+            "allocations": [allocation],
+            "allocation_count": 1,
+            "scorecard_provenance": {
+                "manifest_required": False,
+                "manifest_current": False,
+                "manifest_sha256": "",
+                "contract_consistent": True,
+                "non_authorizing": True,
+                "gate_passed": True,
+            },
+            "scorecard_manifest_required": False,
+            "scorecard_manifest_current": False,
+            "scorecard_manifest_sha256": "",
+            "research_family_bound": False,
+            "research_family_provenance_current": False,
+            "research_family_id": "",
+            "research_family_registration_id": "",
+            "research_family_path": "",
+            "research_family_manifest_sha256": "",
+        }
+        (portfolio_dir / "strategy_portfolio_config.json").write_text(
+            json.dumps(portfolio_config, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        (portfolio_dir / "strategy_portfolio_runbook.md").write_text(
+            "# Strategy Portfolio Fixture\n",
+            encoding="utf-8",
+        )
+        portfolio_source = path.parent / f"{path.name}_portfolio_source.csv"
+        pd.DataFrame([{"source": "fixture"}]).to_csv(portfolio_source, index=False)
+        write_experiment_manifest(
+            portfolio_dir,
+            run_type="strategy_portfolio_allocation",
+            inputs={"scorecard": portfolio_source},
+            extra={
+                "ready": True,
+                "research_family_bound": False,
+                "authorizes_submission": False,
+            },
+        )
+        portfolio.update(
+            {
+                "manifest_required": True,
+                "manifest_provided": True,
+                "manifest_current": True,
+                "manifest_sha256": file_sha256(portfolio_dir / "manifest.json"),
+                "manifest_error": "",
+                "contract_consistent": True,
+                "contract_error": "",
+                "non_authorizing": True,
+                "provenance_gate_passed": True,
+                "dependency_count": 1,
+                "scorecard_provenance": portfolio_config["scorecard_provenance"],
+                "research_family": {
+                    "bound": False,
+                    "provenance_current": False,
+                    "family_id": "",
+                    "registration_id": "",
+                    "path": "",
+                    "manifest_sha256": "",
+                },
+            }
+        )
+        payload["strategy_portfolio"] = portfolio
+        portfolio_inputs = {
+            "strategy_portfolio": portfolio_dir / "strategy_portfolio_summary.csv",
+            "strategy_portfolio_allocations": portfolio_dir / "strategy_portfolio_allocations.csv",
+            "strategy_portfolio_manifest": portfolio_dir / "manifest.json",
+        }
     (path / "scaleup_config.json").write_text(
-        json.dumps(config or scaleup_config(), indent=2) + "\n",
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+    )
+    limits = payload["limits"]
+    row = {
+        "ready": True,
+        "authorizes_submission": False,
+        "target_mode": payload["target_mode"],
+        "strategy": payload["strategy"],
+        "market": payload["market"],
+        "scenario_key": payload["scenario_key"],
+        "adapter": payload["adapter"],
+        "max_orders_per_session": limits["max_orders_per_session"],
+        "max_notional_per_session": limits["max_notional_per_session"],
+        "pre_portfolio_max_notional_per_session": limits.get(
+            "pre_portfolio_max_notional_per_session",
+            limits["max_notional_per_session"],
+        ),
+    }
+    if portfolio:
+        row.update(
+            {
+                "strategy_portfolio_required": portfolio.get("required", False),
+                "strategy_portfolio_provided": portfolio.get("provided", False),
+                "strategy_portfolio_manifest_required": portfolio.get("manifest_required", False),
+                "strategy_portfolio_manifest_provided": portfolio.get("manifest_provided", False),
+                "strategy_portfolio_manifest_current": portfolio.get("manifest_current", False),
+                "strategy_portfolio_manifest_sha256": portfolio.get("manifest_sha256", ""),
+                "strategy_portfolio_contract_consistent": portfolio.get("contract_consistent", False),
+                "strategy_portfolio_non_authorizing": portfolio.get("non_authorizing", False),
+                "strategy_portfolio_provenance_gate_passed": portfolio.get("provenance_gate_passed", False),
+                "strategy_portfolio_scorecard_manifest_required": portfolio.get("scorecard_provenance", {}).get("manifest_required", False),
+                "strategy_portfolio_scorecard_manifest_current": portfolio.get("scorecard_provenance", {}).get("manifest_current", False),
+                "strategy_portfolio_scorecard_manifest_sha256": portfolio.get("scorecard_provenance", {}).get("manifest_sha256", ""),
+                "strategy_portfolio_scorecard_contract_consistent": portfolio.get("scorecard_provenance", {}).get("contract_consistent", False),
+                "strategy_portfolio_scorecard_non_authorizing": portfolio.get("scorecard_provenance", {}).get("non_authorizing", False),
+                "strategy_portfolio_scorecard_provenance_gate_passed": portfolio.get("scorecard_provenance", {}).get("gate_passed", False),
+                "strategy_portfolio_research_family_bound": False,
+                "strategy_portfolio_research_family_provenance_current": False,
+                "strategy_portfolio_research_family_id": "",
+                "strategy_portfolio_research_family_registration_id": "",
+                "strategy_portfolio_research_family_manifest_sha256": "",
+            }
+        )
+    pd.DataFrame([row]).to_csv(path / "scaleup_summary.csv", index=False)
+    pd.DataFrame([row]).to_csv(path / "scaleup_plan.csv", index=False)
+    pd.DataFrame([{"check": "scaleup_ready", "passed": True, "reason": ""}]).to_csv(
+        path / "scaleup_checks.csv",
+        index=False,
+    )
+    source = path.parent / f"{path.name}_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
+    manifest_extra = {
+        "ready": True,
+        "strategy_portfolio_manifest_required": portfolio.get("manifest_required", False),
+        "strategy_portfolio_manifest_current": portfolio.get("manifest_current", False),
+        "strategy_portfolio_manifest_sha256": portfolio.get("manifest_sha256", ""),
+        "research_family_bound": False,
+        "research_family_id": "",
+        "research_family_registration_id": "",
+        "research_family_manifest_sha256": "",
+        "authorizes_submission": False,
+    }
+    write_experiment_manifest(
+        path,
+        run_type="scaleup_plan",
+        inputs={"source": source, **portfolio_inputs},
+        extra=manifest_extra,
     )
 
 

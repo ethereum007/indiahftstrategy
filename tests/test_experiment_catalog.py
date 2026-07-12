@@ -2341,6 +2341,39 @@ def test_experiment_catalog_promotes_runtime_guard_action_queue(tmp_path):
         + "\n",
         encoding="utf-8",
     )
+    scaleup_config_path = scaleup / "scaleup_config.json"
+    scaleup_config = json.loads(scaleup_config_path.read_text(encoding="utf-8"))
+    scaleup_config["authorizes_submission"] = False
+    scaleup_config["failed_check_count"] = 0
+    scaleup_config_path.write_text(
+        json.dumps(scaleup_config, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    scaleup_row = {
+        "ready": True,
+        "authorizes_submission": False,
+        "target_mode": "shadow",
+        "strategy": "lead_lag_taker",
+        "market": "india_nse_index_derivatives",
+        "scenario_key": "trigger_ticks=2",
+        "adapter": "arrow_money",
+        "max_orders_per_session": 10,
+        "max_notional_per_session": 100_000.0,
+        "pre_portfolio_max_notional_per_session": 100_000.0,
+    }
+    pd.DataFrame([scaleup_row]).to_csv(scaleup / "scaleup_summary.csv", index=False)
+    pd.DataFrame([scaleup_row]).to_csv(scaleup / "scaleup_plan.csv", index=False)
+    pd.DataFrame(
+        [{"check": "scaleup_ready", "passed": True, "reason": ""}]
+    ).to_csv(scaleup / "scaleup_checks.csv", index=False)
+    scaleup_source = root / "scaleup_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(scaleup_source, index=False)
+    write_experiment_manifest(
+        scaleup,
+        run_type="scaleup_plan",
+        inputs={"source": scaleup_source},
+        extra={"ready": True, "authorizes_submission": False},
+    )
     pd.DataFrame(
         [
             {

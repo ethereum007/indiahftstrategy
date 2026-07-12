@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.manifest import write_experiment_manifest
 from reports.runtime_guard import evaluate_runtime_guard, write_runtime_guard_report
 
 
@@ -126,6 +127,54 @@ def scaleup_config(
         config["limits"]["max_notional_per_session"] = 1200.0
     config.update(overrides)
     return config
+
+
+def write_scaleup_bundle(root, config):
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.loads(json.dumps(config))
+    ready = bool(payload.get("ready", False))
+    payload["authorizes_submission"] = False
+    payload["failed_check_count"] = 0 if ready else 1
+    limits = payload.get("limits", {}) or {}
+    core = {
+        "ready": ready,
+        "authorizes_submission": False,
+        "target_mode": payload.get("target_mode", ""),
+        "strategy": payload.get("strategy", ""),
+        "market": payload.get("market", ""),
+        "scenario_key": payload.get("scenario_key", ""),
+        "adapter": payload.get("adapter", ""),
+        "max_orders_per_session": limits.get("max_orders_per_session", 0),
+        "max_notional_per_session": limits.get("max_notional_per_session", 0.0),
+        "pre_portfolio_max_notional_per_session": limits.get(
+            "pre_portfolio_max_notional_per_session",
+            limits.get("max_notional_per_session", 0.0),
+        ),
+    }
+    (root / "scaleup_config.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([core]).to_csv(root / "scaleup_summary.csv", index=False)
+    pd.DataFrame([core]).to_csv(root / "scaleup_plan.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "check": "scaleup_ready",
+                "passed": ready,
+                "reason": "" if ready else "blocked",
+            }
+        ]
+    ).to_csv(root / "scaleup_checks.csv", index=False)
+    source = root.parent / f"{root.name}_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        root,
+        run_type="scaleup_plan",
+        inputs={"source": source},
+        extra={"ready": ready, "authorizes_submission": False},
+    )
+    return payload
 
 
 def instrument_metadata_config():
@@ -623,7 +672,7 @@ def test_write_runtime_guard_outputs_artifacts(tmp_path):
     out_dir = tmp_path / "guard"
     telemetry_path = tmp_path / "telemetry.csv"
     scaleup_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     telemetry().to_csv(telemetry_path, index=False)
 
     report = write_runtime_guard_report(
@@ -653,6 +702,51 @@ def test_write_runtime_guard_outputs_artifacts(tmp_path):
     assert any(path.endswith("runtime_guard_action_queue.csv") for path in artifact_paths)
     assert any(path.endswith("runtime_guard_config.json") for path in artifact_paths)
     assert any(path.endswith("runtime_guard_runbook.md") for path in artifact_paths)
+    assert manifest["extra"]["scaleup_provenance_gate_passed"]
+    assert not manifest["extra"]["authorizes_submission"]
+    assert not saved_config["authorizes_submission"]
+
+
+def test_runtime_guard_halts_when_scaleup_inputs_drift_after_telemetry(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    telemetry_dir = tmp_path / "telemetry"
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
+    telemetry().to_csv(telemetry_dir.with_suffix(".csv"), index=False)
+    source = tmp_path / "scaleup_source.csv"
+    source.write_text(source.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    report = write_runtime_guard_report(
+        scaleup_dir=scaleup_dir,
+        telemetry_path=telemetry_dir.with_suffix(".csv"),
+        output_dir=tmp_path / "guard_drifted",
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    assert report.halted
+    assert {
+        "scaleup_manifest_current",
+        "scaleup_provenance_gate_passed",
+    } <= failed
+
+
+def test_runtime_guard_rejects_scaleup_or_telemetry_output_collision(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    telemetry_dir = tmp_path / "telemetry"
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
+    telemetry_dir.mkdir()
+    telemetry().to_csv(telemetry_dir / "runtime_telemetry.csv", index=False)
+
+    for output_dir in (scaleup_dir, telemetry_dir):
+        try:
+            write_runtime_guard_report(
+                scaleup_dir=scaleup_dir,
+                telemetry_path=telemetry_dir,
+                output_dir=output_dir,
+            )
+        except ValueError as exc:
+            assert "must not overwrite" in str(exc)
+        else:
+            raise AssertionError("runtime guard output collision was not rejected")
 
 
 def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
@@ -660,7 +754,7 @@ def test_cli_runtime_guard_can_fail_on_halt(tmp_path):
     out_dir = tmp_path / "guard"
     telemetry_path = tmp_path / "telemetry.csv"
     scaleup_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     telemetry(orders_sent=12).to_csv(telemetry_path, index=False)
 
     code = main(
@@ -694,7 +788,7 @@ def test_cli_runtime_guard_can_fail_on_actions(tmp_path):
     out_dir = tmp_path / "guard"
     telemetry_path = tmp_path / "telemetry.csv"
     scaleup_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     telemetry(orders_sent=12).to_csv(telemetry_path, index=False)
 
     code = main(
@@ -722,7 +816,7 @@ def test_cli_runtime_guard_reads_runtime_telemetry_output_dir(tmp_path):
     out_dir = tmp_path / "guard"
     scaleup_dir.mkdir()
     telemetry_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     telemetry().to_csv(telemetry_dir / "runtime_telemetry.csv", index=False)
 
     code = main(
@@ -748,7 +842,7 @@ def test_cli_runtime_guard_can_fail_on_stale_telemetry(tmp_path):
     out_dir = tmp_path / "guard"
     telemetry_path = tmp_path / "telemetry.csv"
     scaleup_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     telemetry(snapshot_ts_ns=1_000).to_csv(telemetry_path, index=False)
 
     code = main(

@@ -3,6 +3,7 @@ import json
 import pandas as pd
 
 from hft_cli import main
+from reports.manifest import write_experiment_manifest
 from reports.runtime_telemetry import evaluate_runtime_telemetry, write_runtime_telemetry_snapshot
 
 
@@ -132,6 +133,54 @@ def scaleup_config(
         }
         config["limits"]["pre_portfolio_max_notional_per_session"] = 3000.0
     return config
+
+
+def write_scaleup_bundle(root, config):
+    root.mkdir(parents=True, exist_ok=True)
+    payload = json.loads(json.dumps(config))
+    ready = bool(payload.get("ready", False))
+    payload["authorizes_submission"] = False
+    payload["failed_check_count"] = 0 if ready else 1
+    limits = payload.get("limits", {}) or {}
+    core = {
+        "ready": ready,
+        "authorizes_submission": False,
+        "target_mode": payload.get("target_mode", ""),
+        "strategy": payload.get("strategy", ""),
+        "market": payload.get("market", ""),
+        "scenario_key": payload.get("scenario_key", ""),
+        "adapter": payload.get("adapter", ""),
+        "max_orders_per_session": limits.get("max_orders_per_session", 0),
+        "max_notional_per_session": limits.get("max_notional_per_session", 0.0),
+        "pre_portfolio_max_notional_per_session": limits.get(
+            "pre_portfolio_max_notional_per_session",
+            limits.get("max_notional_per_session", 0.0),
+        ),
+    }
+    (root / "scaleup_config.json").write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    pd.DataFrame([core]).to_csv(root / "scaleup_summary.csv", index=False)
+    pd.DataFrame([core]).to_csv(root / "scaleup_plan.csv", index=False)
+    pd.DataFrame(
+        [
+            {
+                "check": "scaleup_ready",
+                "passed": ready,
+                "reason": "" if ready else "blocked",
+            }
+        ]
+    ).to_csv(root / "scaleup_checks.csv", index=False)
+    source = root.parent / f"{root.name}_source.csv"
+    pd.DataFrame([{"source": "fixture"}]).to_csv(source, index=False)
+    write_experiment_manifest(
+        root,
+        run_type="scaleup_plan",
+        inputs={"source": source},
+        extra={"ready": ready, "authorizes_submission": False},
+    )
+    return payload
 
 
 def export_summary():
@@ -627,7 +676,7 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     upload_dir.mkdir()
     reconciliation_dir.mkdir()
     instrument_metadata_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
     reconciliation_summary().to_csv(reconciliation_dir / "reconciliation_summary.csv", index=False)
@@ -663,6 +712,129 @@ def test_write_runtime_telemetry_snapshot_outputs_artifacts(tmp_path):
     assert path_tail(upload_source).endswith("/upload/broker_upload_summary.csv")
     assert path_tail(manifest["inputs"]["export"]["path"]).endswith("/export/broker_order_summary.csv")
     assert path_tail(manifest["inputs"]["upload_pack"]["path"]).endswith("/upload/broker_upload_summary.csv")
+    assert manifest["extra"]["scaleup_provenance_gate_passed"]
+    assert not manifest["extra"]["authorizes_submission"]
+
+
+def test_runtime_telemetry_blocks_missing_or_drifted_scaleup_manifest(tmp_path):
+    missing = tmp_path / "missing_scaleup"
+    missing.mkdir()
+    (missing / "scaleup_config.json").write_text(
+        json.dumps(scaleup_config(), indent=2) + "\n",
+        encoding="utf-8",
+    )
+    missing_report = write_runtime_telemetry_snapshot(
+        scaleup_dir=missing,
+        output_dir=tmp_path / "missing_telemetry",
+    )
+    missing_failed = set(
+        missing_report.checks.loc[
+            ~missing_report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not missing_report.ready
+    assert {
+        "scaleup_manifest_provided",
+        "scaleup_manifest_current",
+        "scaleup_provenance_gate_passed",
+    } <= missing_failed
+
+    current = tmp_path / "current_scaleup"
+    write_scaleup_bundle(current, scaleup_config())
+    config_path = current / "scaleup_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["limits"]["max_notional_per_session"] = 1.0
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    drifted_report = write_runtime_telemetry_snapshot(
+        scaleup_dir=current,
+        output_dir=tmp_path / "drifted_telemetry",
+    )
+    drifted_failed = set(
+        drifted_report.checks.loc[
+            ~drifted_report.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not drifted_report.ready
+    assert "scaleup_manifest_current" in drifted_failed
+
+
+def test_runtime_telemetry_blocks_semantically_detached_or_authorizing_scaleup(tmp_path):
+    scaleup = tmp_path / "scaleup"
+    write_scaleup_bundle(scaleup, scaleup_config())
+    config_path = scaleup / "scaleup_config.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    config["limits"]["max_notional_per_session"] = 1.0
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    source = scaleup.parent / f"{scaleup.name}_source.csv"
+    write_experiment_manifest(
+        scaleup,
+        run_type="scaleup_plan",
+        inputs={"source": source},
+        extra={"ready": True, "authorizes_submission": False},
+    )
+    detached = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup,
+        output_dir=tmp_path / "detached_telemetry",
+    )
+    detached_failed = set(
+        detached.checks.loc[~detached.checks["passed"].astype(bool), "check"]
+    )
+    assert not detached.ready
+    assert "scaleup_contract_consistent" in detached_failed
+
+    config["authorizes_submission"] = True
+    config_path.write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
+    summary_path = scaleup / "scaleup_summary.csv"
+    plan_path = scaleup / "scaleup_plan.csv"
+    summary = pd.read_csv(summary_path)
+    plan = pd.read_csv(plan_path)
+    summary.loc[0, "authorizes_submission"] = True
+    plan.loc[0, "authorizes_submission"] = True
+    summary.loc[0, "max_notional_per_session"] = 1.0
+    plan.loc[0, "max_notional_per_session"] = 1.0
+    summary.to_csv(summary_path, index=False)
+    plan.to_csv(plan_path, index=False)
+    write_experiment_manifest(
+        scaleup,
+        run_type="scaleup_plan",
+        inputs={"source": source},
+        extra={"ready": True, "authorizes_submission": True},
+    )
+    authorizing = write_runtime_telemetry_snapshot(
+        scaleup_dir=scaleup,
+        output_dir=tmp_path / "authorizing_telemetry",
+    )
+    authorizing_failed = set(
+        authorizing.checks.loc[
+            ~authorizing.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not authorizing.ready
+    assert "scaleup_non_authorizing" in authorizing_failed
+    output_manifest = json.loads(
+        (tmp_path / "authorizing_telemetry" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert not output_manifest["extra"]["authorizes_submission"]
+
+
+def test_runtime_telemetry_rejects_scaleup_output_collision(tmp_path):
+    scaleup = tmp_path / "scaleup"
+    write_scaleup_bundle(scaleup, scaleup_config())
+
+    try:
+        write_runtime_telemetry_snapshot(
+            scaleup_dir=scaleup,
+            output_dir=scaleup,
+        )
+    except ValueError as exc:
+        assert "must not overwrite" in str(exc)
+    else:
+        raise AssertionError("scale-up output collision was not rejected")
 
 
 def test_cli_runtime_telemetry_reads_settlement_pipeline_export(tmp_path):
@@ -672,7 +844,7 @@ def test_cli_runtime_telemetry_reads_settlement_pipeline_export(tmp_path):
     out_dir = tmp_path / "telemetry"
     scaleup_dir.mkdir()
     export_dir.mkdir(parents=True)
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
 
     code = main(
@@ -708,7 +880,7 @@ def test_cli_runtime_telemetry_reads_surface_pipeline_export(tmp_path):
     scaleup_dir.mkdir()
     export_dir.mkdir(parents=True)
     upload_dir.mkdir(parents=True)
-    (scaleup_dir / "scaleup_config.json").write_text(json.dumps(scaleup_config(), indent=2) + "\n", encoding="utf-8")
+    write_scaleup_bundle(scaleup_dir, scaleup_config())
     export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
     upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
 
@@ -759,10 +931,7 @@ def test_cli_runtime_telemetry_records_strategy_pipeline_source_paths(tmp_path):
         scaleup_dir.mkdir(parents=True)
         export_dir.mkdir(parents=True)
         upload_dir.mkdir(parents=True)
-        (scaleup_dir / "scaleup_config.json").write_text(
-            json.dumps(scaleup_config(strategy=strategy), indent=2) + "\n",
-            encoding="utf-8",
-        )
+        write_scaleup_bundle(scaleup_dir, scaleup_config(strategy=strategy))
         export_summary().to_csv(export_dir / "broker_order_summary.csv", index=False)
         upload_summary().to_csv(upload_dir / "broker_upload_summary.csv", index=False)
 
@@ -806,9 +975,9 @@ def test_cli_runtime_telemetry_can_fail_on_missing_identity(tmp_path):
     scaleup_dir = tmp_path / "scaleup"
     out_dir = tmp_path / "telemetry"
     scaleup_dir.mkdir()
-    (scaleup_dir / "scaleup_config.json").write_text(
-        json.dumps(scaleup_config(scenario_key="", adapter="", strategy="", market=""), indent=2) + "\n",
-        encoding="utf-8",
+    write_scaleup_bundle(
+        scaleup_dir,
+        scaleup_config(scenario_key="", adapter="", strategy="", market=""),
     )
 
     code = main(

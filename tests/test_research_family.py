@@ -25,6 +25,8 @@ from reports.strategy_portfolio import (
     write_strategy_portfolio_allocations,
 )
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
+from reports.runtime_guard import write_runtime_guard_report
+from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 
 
 def test_research_family_applies_holm_to_scenario_adjusted_studies(tmp_path):
@@ -417,6 +419,81 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
         expected_run_type="scaleup_plan",
         require_input_fingerprints=True,
     ).passed
+    runtime_telemetry = write_runtime_telemetry_snapshot(
+        scaleup_dir=tmp_path / "scaleup",
+        output_dir=tmp_path / "runtime_telemetry",
+        snapshot_ts_ns=1_000_000,
+    )
+    telemetry_summary = runtime_telemetry.summary.iloc[0]
+    assert runtime_telemetry.ready
+    assert bool(telemetry_summary["scaleup_provenance_gate_passed"])
+    assert telemetry_summary["scaleup_strategy_portfolio_manifest_sha256"] == (
+        file_sha256(tmp_path / "portfolio" / "manifest.json")
+    )
+    assert telemetry_summary["scaleup_scorecard_manifest_sha256"] == (
+        file_sha256(tmp_path / "scorecard" / "manifest.json")
+    )
+    assert telemetry_summary["scaleup_research_family_id"] == (
+        "prospective_family"
+    )
+    assert telemetry_summary["scaleup_research_family_registration_id"] == (
+        registration.summary.iloc[0]["registration_id"]
+    )
+    assert telemetry_summary["scaleup_research_family_manifest_sha256"] == (
+        file_sha256(tmp_path / "family" / "manifest.json")
+    )
+    telemetry_manifest = json.loads(
+        (tmp_path / "runtime_telemetry" / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert not telemetry_manifest["extra"]["authorizes_submission"]
+    assert telemetry_manifest["extra"]["research_family_id"] == (
+        "prospective_family"
+    )
+
+    runtime_guard = write_runtime_guard_report(
+        scaleup_dir=tmp_path / "scaleup",
+        telemetry_path=tmp_path / "runtime_telemetry",
+        output_dir=tmp_path / "runtime_guard",
+        as_of_ts_ns=1_000_000,
+    )
+    guard_summary = runtime_guard.summary.iloc[0]
+    assert not runtime_guard.halted
+    assert guard_summary["guard_action"] == "continue"
+    assert bool(guard_summary["runtime_telemetry_lineage_matches_current"])
+    assert bool(
+        guard_summary["runtime_telemetry_research_family_matches_current"]
+    )
+    assert runtime_guard.config["scaleup_provenance"][
+        "scaleup_research_family_id"
+    ] == "prospective_family"
+    assert not runtime_guard.config["authorizes_submission"]
+
+    relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
+    relabeled_telemetry = runtime_telemetry.telemetry.copy()
+    relabeled_telemetry.loc[0, "scaleup_research_family_id"] = (
+        "relabeled_family"
+    )
+    relabeled_telemetry.to_csv(relabeled_telemetry_path, index=False)
+    relabeled_guard = write_runtime_guard_report(
+        scaleup_dir=tmp_path / "scaleup",
+        telemetry_path=relabeled_telemetry_path,
+        output_dir=tmp_path / "runtime_guard_relabel",
+        as_of_ts_ns=1_000_000,
+    )
+    relabeled_failed = set(
+        relabeled_guard.checks.loc[
+            ~relabeled_guard.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert relabeled_guard.halted
+    assert {
+        "runtime_telemetry_lineage_matches_current",
+        "runtime_telemetry_research_family_matches_current",
+    } <= relabeled_failed
+
     original_plan = plan_path.read_text(encoding="utf-8")
     plan_path.write_text(
         original_plan + "\n",
@@ -429,6 +506,37 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     )
     assert not drifted_scaleup.passed
     assert drifted_scaleup.error == "input_drift"
+    drifted_telemetry = verify_experiment_manifest(
+        tmp_path / "runtime_telemetry" / "manifest.json",
+        expected_run_type="runtime_telemetry_snapshot",
+        require_input_fingerprints=True,
+    )
+    drifted_guard = verify_experiment_manifest(
+        tmp_path / "runtime_guard" / "manifest.json",
+        expected_run_type="runtime_guard",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_telemetry.passed
+    assert drifted_telemetry.error == "input_drift"
+    assert not drifted_guard.passed
+    assert drifted_guard.error == "input_drift"
+    stale_guard = write_runtime_guard_report(
+        scaleup_dir=tmp_path / "scaleup",
+        telemetry_path=tmp_path / "runtime_telemetry",
+        output_dir=tmp_path / "runtime_guard_stale",
+        as_of_ts_ns=1_000_000,
+    )
+    stale_failed = set(
+        stale_guard.checks.loc[
+            ~stale_guard.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert stale_guard.halted
+    assert {
+        "scaleup_manifest_current",
+        "scaleup_provenance_gate_passed",
+    } <= stale_failed
     plan_path.write_text(original_plan, encoding="utf-8")
 
     portfolio_summary_path = tmp_path / "portfolio" / "strategy_portfolio_summary.csv"
