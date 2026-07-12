@@ -6506,13 +6506,19 @@ python -m hft_cli audit-provider-market-data-imbalance-broker-lineage-migration 
 ```
 
 The read-only audit recursively verifies each bundle and its manifested input
-chain, then classifies it as `strict_ready`, `regenerate_strict`, or `blocked`.
-Regeneration commands preserve the archived policy thresholds, target sibling
-`_strict` directories, and are ordered acknowledgement -> round-trip ->
-certificate so downstream commands consume the newly strict dependency. The
-audit output itself is excluded when it lives below a scanned archive root, but
-it cannot be written inside an audited bundle. `--no-recursive` limits discovery
-to manifests supplied directly through `--roots`.
+chain, then classifies it as `strict_ready`, `covered_by_strict`,
+`regenerate_strict`, or `blocked`. A legacy bundle is only
+`covered_by_strict` when its exact `_strict` sibling is current and passed, its
+non-lineage policy fingerprint is unchanged, its normalized source-evidence
+identity matches, and the upstream legacy dependency is itself strict or
+covered. A similarly named but policy-mismatched replacement does not count.
+Regeneration commands preserve the archived policy thresholds, target new
+sibling directories without overwriting existing proof, and are ordered
+acknowledgement -> round-trip -> certificate so downstream commands consume the
+newly strict dependency. The audit output itself is excluded when it lives below
+a scanned archive root, but it cannot be written inside an audited bundle.
+`--no-recursive` limits discovery to manifests supplied directly through
+`--roots`.
 
 Outputs:
 

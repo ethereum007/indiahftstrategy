@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -59,6 +60,13 @@ INVENTORY_COLUMNS = (
     "source_path_exists",
     "source_manifest_current",
     "source_detail",
+    "policy_sha256",
+    "evidence_identity_sha256",
+    "strict_replacement_path",
+    "strict_replacement_current",
+    "strict_replacement_matches_policy",
+    "strict_replacement_matches_evidence",
+    "strict_replacement_dependency_covered",
     "migration_status",
     "reason",
     "recommended_command",
@@ -122,6 +130,7 @@ def write_provider_broker_lineage_migration_audit(
     _validate_output_bundle_location(manifests, out)
     rows = [_inventory_row(path) for path in manifests]
     inventory = pd.DataFrame(rows, columns=INVENTORY_COLUMNS)
+    inventory = _apply_strict_replacement_coverage(inventory)
     checks = _checks(
         inventory,
         discovery_errors=discovery_errors,
@@ -187,6 +196,9 @@ def write_provider_broker_lineage_migration_audit(
             "regenerate_strict_bundles": int(
                 summary.iloc[0]["regenerate_strict_bundles"]
             ),
+            "strict_replacement_covered_bundles": int(
+                summary.iloc[0]["strict_replacement_covered_bundles"]
+            ),
             "blocked_bundles": int(summary.iloc[0]["blocked_bundles"]),
             "strict_ready_coverage": float(
                 summary.iloc[0]["strict_ready_coverage"]
@@ -241,19 +253,20 @@ def _inventory_row(manifest_path: Path) -> dict[str, Any]:
     summary = _read_csv(bundle / str(target["summary"]))
     config = _read_json(bundle / str(target["config"]))
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    bundle_type = str(target["bundle_type"])
     integrity = verify_experiment_manifest(
         manifest_path,
         expected_run_type=run_type,
         require_input_fingerprints=True,
     )
-    strict = _strict_record(str(target["bundle_type"]), row, config)
-    source = _source_status(str(target["bundle_type"]), row, config)
-    bundle_passed = _bundle_passed(str(target["bundle_type"]), row)
+    strict = _strict_record(bundle_type, row, config)
+    source = _source_status(bundle_type, row, config)
+    bundle_passed = _bundle_passed(bundle_type, row)
     strict_required = _bool(
         strict.get("broker_dispatch_ack_lineage_required", False)
     )
     strict_current = _strict_lineage_current(strict)
-    if integrity.passed and bundle_passed and strict_current:
+    if integrity.passed and bundle_passed and strict_current and source["ready"]:
         status = "strict_ready"
         reason = "bundle already satisfies strict acknowledgement lineage"
     elif source["ready"]:
@@ -266,7 +279,7 @@ def _inventory_row(manifest_path: Path) -> dict[str, Any]:
         ""
         if status == "strict_ready"
         else _regeneration_command(
-            str(target["bundle_type"]),
+            bundle_type,
             bundle,
             row,
             config,
@@ -292,6 +305,15 @@ def _inventory_row(manifest_path: Path) -> dict[str, Any]:
         "source_path_exists": source["exists"],
         "source_manifest_current": source["manifest_current"],
         "source_detail": source["detail"],
+        "policy_sha256": _policy_sha256(bundle_type, config, bundle),
+        "evidence_identity_sha256": _evidence_identity_sha256(
+            bundle_type, row, config
+        ),
+        "strict_replacement_path": "",
+        "strict_replacement_current": False,
+        "strict_replacement_matches_policy": False,
+        "strict_replacement_matches_evidence": False,
+        "strict_replacement_dependency_covered": False,
         "migration_status": status,
         "reason": reason,
         "recommended_command": command,
@@ -321,6 +343,177 @@ def _strict_lineage_current(strict: Mapping[str, Any]) -> bool:
         and _text(strict.get("broker_dispatch_ack_manifest_sha256"))
         and all(_bool(strict.get(field, False)) for field in STRICT_FIELDS)
     )
+
+
+def _policy_sha256(
+    bundle_type: str,
+    config: Mapping[str, Any],
+    bundle: Path,
+) -> str:
+    parameters = _migration_parameters(config, bundle)
+    parameters = dict(parameters)
+    strict_field = (
+        "require_send_packet"
+        if bundle_type == "provider_ack"
+        else "require_ack_lineage"
+    )
+    parameters.pop(strict_field, None)
+    return _canonical_sha256(
+        {"bundle_type": bundle_type, "parameters": parameters}
+    )
+
+
+def _evidence_identity_sha256(
+    bundle_type: str,
+    summary: pd.Series,
+    config: Mapping[str, Any],
+) -> str:
+    if bundle_type == "provider_ack":
+        identity = {
+            "provider_send": _identity_path(
+                summary.get("provider_broker_dispatch_send_dir")
+            ),
+            "broker_dispatch": _identity_path(summary.get("broker_dispatch_dir")),
+            "broker_send": _identity_path(
+                summary.get("broker_dispatch_send_dir")
+            ),
+            "acks": _identity_path(summary.get("acks_path")),
+        }
+    elif bundle_type == "provider_roundtrip":
+        identity = {
+            "provider_ack": _identity_path(
+                summary.get("provider_broker_dispatch_ack_dir"),
+                strip_strict=True,
+            ),
+            "broker_dispatch": _identity_path(summary.get("broker_dispatch_dir")),
+            "broker_send": _identity_path(
+                summary.get("broker_dispatch_send_dir")
+            ),
+            "broker_ack": _identity_path(summary.get("broker_dispatch_ack_dir")),
+        }
+    else:
+        payload = _mapping(config.get("payload"))
+        source_payload = _mapping(payload.get("source"))
+        source = _text(summary.get("source_roundtrip_dir")) or _text(
+            source_payload.get("path")
+        )
+        identity = {
+            "provider_roundtrip": _identity_path(
+                source,
+                strip_strict=True,
+            )
+        }
+    return _canonical_sha256(
+        {"bundle_type": bundle_type, "evidence": identity}
+    )
+
+
+def _identity_path(value: Any, *, strip_strict: bool = False) -> str:
+    path = _path(value)
+    if path is None:
+        return ""
+    if strip_strict and path.name.endswith("_strict"):
+        path = path.with_name(path.name[: -len("_strict")])
+    return str(path)
+
+
+def _canonical_sha256(value: Any) -> str:
+    payload = json.dumps(
+        _jsonable(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _apply_strict_replacement_coverage(
+    inventory: pd.DataFrame,
+) -> pd.DataFrame:
+    if inventory.empty:
+        return inventory
+    out = inventory.copy()
+    path_to_index = {
+        str(Path(str(row["bundle_path"])).resolve()): index
+        for index, row in out.iterrows()
+    }
+    ordered = out.assign(
+        _bundle_order=out["bundle_type"].map(
+            {
+                "provider_ack": 1,
+                "provider_roundtrip": 2,
+                "rehearsal_certificate": 3,
+            }
+        )
+    ).sort_values(["_bundle_order", "bundle_path"], kind="stable")
+    for index, row in ordered.iterrows():
+        if _text(row.get("migration_status")) == "strict_ready":
+            continue
+        bundle = Path(str(row["bundle_path"])).resolve()
+        replacement = bundle.parent / f"{bundle.name}_strict"
+        out.at[index, "strict_replacement_path"] = str(replacement)
+        replacement_index = path_to_index.get(str(replacement))
+        if replacement_index is None:
+            continue
+        replacement_row = out.loc[replacement_index]
+        replacement_current = bool(
+            _text(replacement_row.get("migration_status")) == "strict_ready"
+            and _bool(replacement_row.get("manifest_current"))
+            and _bool(replacement_row.get("bundle_passed"))
+            and _bool(replacement_row.get("strict_lineage_current"))
+        )
+        policy_matches = bool(
+            _text(row.get("policy_sha256"))
+            and _text(row.get("policy_sha256"))
+            == _text(replacement_row.get("policy_sha256"))
+        )
+        evidence_matches = bool(
+            _text(row.get("evidence_identity_sha256"))
+            and _text(row.get("evidence_identity_sha256"))
+            == _text(replacement_row.get("evidence_identity_sha256"))
+        )
+        dependency_covered = _replacement_dependency_covered(
+            row,
+            out,
+            path_to_index,
+        )
+        out.at[index, "strict_replacement_current"] = replacement_current
+        out.at[index, "strict_replacement_matches_policy"] = policy_matches
+        out.at[index, "strict_replacement_matches_evidence"] = evidence_matches
+        out.at[
+            index, "strict_replacement_dependency_covered"
+        ] = dependency_covered
+        if bool(
+            replacement_current
+            and policy_matches
+            and evidence_matches
+            and dependency_covered
+            and _bool(row.get("manifest_current"))
+            and _bool(row.get("bundle_passed"))
+        ):
+            out.at[index, "migration_status"] = "covered_by_strict"
+            out.at[index, "reason"] = (
+                "current policy-equivalent strict sibling covers legacy bundle"
+            )
+            out.at[index, "recommended_command"] = ""
+    return out
+
+
+def _replacement_dependency_covered(
+    row: pd.Series,
+    inventory: pd.DataFrame,
+    path_to_index: Mapping[str, Any],
+) -> bool:
+    if _text(row.get("bundle_type")) == "provider_ack":
+        return True
+    source = _path(row.get("source_path"))
+    if source is None:
+        return False
+    source_index = path_to_index.get(str(source))
+    if source_index is None:
+        return False
+    source_status = _text(inventory.loc[source_index].get("migration_status"))
+    return source_status in {"strict_ready", "covered_by_strict"}
 
 
 def _source_status(
@@ -454,7 +647,7 @@ def _regeneration_command(
     row: pd.Series,
     config: Mapping[str, Any],
 ) -> str:
-    output = bundle.parent / f"{bundle.name}_strict"
+    output = _strict_output_path(bundle)
     parameters = _migration_parameters(config, bundle)
     if bundle_type == "provider_ack":
         provider_send = _text(row.get("provider_broker_dispatch_send_dir", ""))
@@ -612,7 +805,85 @@ def _strict_dependency_path(source: Path | None, run_type: str) -> str:
         return ""
     if _bundle_has_strict_lineage(source, run_type):
         return str(source)
-    return str(source.parent / f"{source.name}_strict")
+    replacement = source.parent / f"{source.name}_strict"
+    if _strict_replacement_covers_path(source, replacement, run_type):
+        return str(replacement)
+    return str(_strict_output_path(source))
+
+
+def _strict_output_path(bundle: Path) -> Path:
+    candidate = bundle.parent / f"{bundle.name}_strict"
+    if not candidate.exists():
+        return candidate
+    rebuilt = bundle.parent / f"{bundle.name}_strict_rebuilt"
+    if not rebuilt.exists():
+        return rebuilt
+    index = 2
+    while True:
+        numbered = bundle.parent / f"{bundle.name}_strict_rebuilt_{index}"
+        if not numbered.exists():
+            return numbered
+        index += 1
+
+
+def _strict_replacement_covers_path(
+    source: Path,
+    replacement: Path,
+    run_type: str,
+) -> bool:
+    target = TARGETS.get(run_type)
+    if target is None or not source.is_dir() or not replacement.is_dir():
+        return False
+    source_integrity = verify_experiment_manifest(
+        source / "manifest.json",
+        expected_run_type=run_type,
+        require_input_fingerprints=True,
+    )
+    replacement_integrity = verify_experiment_manifest(
+        replacement / "manifest.json",
+        expected_run_type=run_type,
+        require_input_fingerprints=True,
+    )
+    if not source_integrity.passed or not replacement_integrity.passed:
+        return False
+    source_summary = _read_csv(source / str(target["summary"]))
+    replacement_summary = _read_csv(replacement / str(target["summary"]))
+    source_config = _read_json(source / str(target["config"]))
+    replacement_config = _read_json(replacement / str(target["config"]))
+    source_row = (
+        source_summary.iloc[0]
+        if not source_summary.empty
+        else pd.Series(dtype=object)
+    )
+    replacement_row = (
+        replacement_summary.iloc[0]
+        if not replacement_summary.empty
+        else pd.Series(dtype=object)
+    )
+    bundle_type = str(target["bundle_type"])
+    source_status = _source_status(bundle_type, source_row, source_config)
+    replacement_source_status = _source_status(
+        bundle_type,
+        replacement_row,
+        replacement_config,
+    )
+    return bool(
+        _bundle_passed(bundle_type, source_row)
+        and _bundle_passed(bundle_type, replacement_row)
+        and source_status["ready"]
+        and replacement_source_status["ready"]
+        and _strict_lineage_current(
+            _strict_record(bundle_type, replacement_row, replacement_config)
+        )
+        and _policy_sha256(bundle_type, source_config, source)
+        == _policy_sha256(bundle_type, replacement_config, replacement)
+        and _evidence_identity_sha256(bundle_type, source_row, source_config)
+        == _evidence_identity_sha256(
+            bundle_type,
+            replacement_row,
+            replacement_config,
+        )
+    )
 
 
 def _bundle_has_strict_lineage(source: Path, run_type: str) -> bool:
@@ -629,8 +900,10 @@ def _bundle_has_strict_lineage(source: Path, run_type: str) -> bool:
     summary = _read_csv(source / str(target["summary"]))
     config = _read_json(source / str(target["config"]))
     row = summary.iloc[0] if not summary.empty else pd.Series(dtype=object)
+    source_status = _source_status(str(target["bundle_type"]), row, config)
     return bool(
         _bundle_passed(str(target["bundle_type"]), row)
+        and source_status["ready"]
         and _strict_lineage_current(
             _strict_record(str(target["bundle_type"]), row, config)
         )
@@ -683,7 +956,8 @@ def _checks(
     bundle_count = len(inventory)
     blocked = _status_count(inventory, "blocked")
     strict_ready = _status_count(inventory, "strict_ready")
-    coverage = strict_ready / bundle_count if bundle_count else 0.0
+    covered = _status_count(inventory, "covered_by_strict")
+    coverage = (strict_ready + covered) / bundle_count if bundle_count else 0.0
     return pd.DataFrame(
         [
             _check("bundles_discovered", bundle_count, ">", 0, bundle_count > 0),
@@ -723,9 +997,10 @@ def _summary(
 ) -> pd.DataFrame:
     bundle_count = len(inventory)
     strict_ready = _status_count(inventory, "strict_ready")
+    covered = _status_count(inventory, "covered_by_strict")
     regenerate = _status_count(inventory, "regenerate_strict")
     blocked = _status_count(inventory, "blocked")
-    coverage = strict_ready / bundle_count if bundle_count else 0.0
+    coverage = (strict_ready + covered) / bundle_count if bundle_count else 0.0
     failed_checks = int((~checks["passed"].astype(bool)).sum())
     ready = bool(bundle_count and failed_checks == 0)
     return pd.DataFrame(
@@ -744,6 +1019,7 @@ def _summary(
                     inventory, "rehearsal_certificate"
                 ),
                 "strict_ready_bundles": strict_ready,
+                "strict_replacement_covered_bundles": covered,
                 "regenerate_strict_bundles": regenerate,
                 "blocked_bundles": blocked,
                 "strict_ready_coverage": coverage,
@@ -764,7 +1040,9 @@ def _action_queue(inventory: pd.DataFrame) -> pd.DataFrame:
     if inventory.empty:
         return pd.DataFrame(columns=ACTION_QUEUE_COLUMNS)
     pending = inventory.loc[
-        inventory["migration_status"] != "strict_ready"
+        ~inventory["migration_status"].isin(
+            ["strict_ready", "covered_by_strict"]
+        )
     ].copy()
     pending["bundle_order"] = pending["bundle_type"].map(
         {"provider_ack": 1, "provider_roundtrip": 2, "rehearsal_certificate": 3}
@@ -842,12 +1120,15 @@ def _runbook(
         f"- Ready for strict defaults: {'yes' if _bool(summary['ready_for_strict_default']) else 'no'}",
         f"- Bundles audited: {int(summary['bundle_count'])}",
         f"- Strict ready: {int(summary['strict_ready_bundles'])}",
+        "- Legacy bundles covered by strict siblings: "
+        f"{int(summary['strict_replacement_covered_bundles'])}",
         f"- Regenerate strict: {int(summary['regenerate_strict_bundles'])}",
         f"- Blocked: {int(summary['blocked_bundles'])}",
         f"- Strict-ready coverage: {float(summary['strict_ready_coverage']):.2%}",
         "- Authorizes broker submission: no",
         "",
-        "This audit is read-only. Regeneration commands always target a sibling `_strict` directory.",
+        "This audit is read-only. Regeneration commands target a new sibling "
+        "`_strict` directory and never overwrite existing proof.",
         "",
         "## Inventory",
         "",

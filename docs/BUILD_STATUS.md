@@ -2685,9 +2685,16 @@
   classifies proofs as strict-ready, safely regenerable, or blocked. It writes a
   catalog-visible summary, inventory, checks, dependency-ordered action queue,
   exact sibling-`_strict` regeneration commands, and an operator runbook without
-  modifying archived evidence. All outputs remain explicitly non-authorizing.
-  Strict, legacy-regenerable, transitive-drift, recursive-discovery, collision,
-  catalog, and CLI exit-policy cases pass together (`4 passed`).
+  modifying archived evidence. Re-audits can now converge without deleting
+  legacy proof: a legacy bundle is covered only by a current exact strict
+  sibling with the same non-lineage policy and normalized source-evidence
+  identity, and downstream coverage requires its upstream legacy dependency to
+  be strict or equivalently covered. Policy-mismatched siblings fail closed and
+  regeneration moves to a fresh `_strict_rebuilt*` directory instead of
+  overwriting proof. All outputs remain explicitly non-authorizing. Strict,
+  legacy-regenerable, equivalent-replacement, policy-mismatch, transitive-drift,
+  recursive-discovery, collision, catalog, and CLI exit-policy cases pass
+  together (`7 passed`).
 
 ## Test Gate
 
@@ -2697,7 +2704,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1564 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1567 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
@@ -2833,7 +2840,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1564-test collection is fully green.
+1567-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2842,6 +2849,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Run the migration audit across retained provider archives, regenerate the
-   dependency-ordered strict siblings, and promote strict lineage defaults only
-   after the audit reaches 100% current coverage with zero blocked bundles.
+4. Promote provider CLI lineage checks to strict-by-default with an explicit
+   legacy override, gated by a 100%-covered, zero-blocker migration audit once
+   retained production provider proofs exist.
