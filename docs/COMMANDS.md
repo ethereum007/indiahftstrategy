@@ -6258,7 +6258,6 @@ python -m hft_cli reconcile-provider-market-data-imbalance-broker-dispatch `
   --provider-broker-dispatch-send runs\provider_market_data_imbalance_broker_dispatch_send\arrow_ws_nse_2026_06_23 `
   --acks logs\arrow_ws_nse_dry_run_acks.csv `
   --out runs\provider_market_data_imbalance_broker_dispatch_ack\arrow_ws_nse_2026_06_23 `
-  --require-send-packet `
   --fail-on-blocked-actions `
   --fail-on-breach
 ```
@@ -6335,11 +6334,15 @@ acknowledgement proof emits a ready
 `review-provider-market-data-imbalance-broker-dispatch-roundtrip`; missing ack
 files, unready send packets, and rejected/duplicate/unmatched acknowledgements
 fail closed before round-trip proof is trusted.
-`--require-send-packet` also resolves the provider wrapper's nested generic
+Provider acknowledgement reconciliation resolves the wrapper's nested generic
 `broker_dispatch_send` bundle and activates the complete generic send-lineage
-gate. The exact request/envelope/template/dispatch proof is then carried into
-the nested acknowledgement manifest; missing, stale, relabeled, authorizing, or
-source-detached packets block the provider wrapper before final review.
+gate by default. The explicit `--require-send-packet` option remains accepted
+for readable scripts. The exact request/envelope/template/dispatch proof is
+then carried into the nested acknowledgement manifest; missing, stale,
+relabeled, authorizing, or source-detached packets block the provider wrapper
+before final review. `--allow-legacy-send-lineage` is limited to historical
+acknowledgement inputs already classified by the lineage migration audit; new
+reconciliations should retain the strict default.
 
 Review the provider-specific dispatch/send/ack round-trip proof:
 
@@ -6498,7 +6501,7 @@ approval. It proves an offline rehearsal and cannot enable, approve, or submit
 a broker order. Any source, acknowledgement, receipt, manifest, or artifact
 change requires a new certificate.
 
-Before making strict provider acknowledgement lineage the default, audit all
+Before using a legacy lineage override under the strict CLI defaults, audit all
 retained provider acknowledgement, final round-trip, and rehearsal-certificate
 bundles:
 

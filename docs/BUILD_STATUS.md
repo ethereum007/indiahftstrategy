@@ -2693,9 +2693,17 @@
   blocked-ack compatibility, and clean legacy-sidecar cases pass together
   (`3 passed`). Existing multi-scenario legacy fixtures now declare their
   override rather than inheriting a permissive default.
+- Provider acknowledgement CLI reconciliation now requires the complete current
+  broker send packet lineage by default. Explicit `--require-send-packet`
+  scripts remain valid, while `--allow-legacy-send-lineage` makes archive-only
+  compatibility use visible and auditable. The lower-level Python writer keeps
+  its migration-compatible default so historical bundle regeneration remains
+  controlled. The real strict provider chain, blocked-send behavior, and both
+  clean route-readiness sidecar compatibility paths pass together (`4 passed`);
+  all 15 legacy CLI fixture paths now declare their override explicitly.
 - Archived provider broker proofs can now be assessed with
-  `audit-provider-market-data-imbalance-broker-lineage-migration` before strict
-  acknowledgement lineage becomes a default. The read-only audit discovers
+  `audit-provider-market-data-imbalance-broker-lineage-migration` under the
+  strict acknowledgement defaults. The read-only audit discovers
   acknowledgement, final round-trip, and certificate bundles across bounded
   roots; verifies each manifest plus its transitive manifested inputs; and
   classifies proofs as strict-ready, safely regenerable, or blocked. It writes a
@@ -2852,7 +2860,9 @@ suites (`25 passed`). The upstream provider-adapter/live-ingest (`22 passed`),
 provider live rehearsal (`5 passed`), core engine/strategy semantics (`39
 passed`), launch pipelines (`45 passed`), and provider
 source/fetch/client/live-contract gates (`54 passed`) also remain green. A
-combined 14-case provider-imbalance wrapper run previously exceeded the
+focused provider acknowledgement strict-default run covering the real lineage
+chain, blocked send, and both clean compatibility sidecars passes (`4 passed`).
+A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
@@ -2865,6 +2875,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Promote provider acknowledgement CLI send-lineage checks to
-   strict-by-default with an explicit legacy override, gated by a 100%-covered,
-   zero-blocker migration audit once retained production provider proofs exist.
+4. Bind production use of legacy send/ack-lineage overrides to a current,
+   100%-covered, zero-blocker migration-audit artifact while retaining explicit
+   fixture-only archive compatibility.

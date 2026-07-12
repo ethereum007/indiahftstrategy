@@ -1892,9 +1892,20 @@ def main(argv: list[str] | None = None) -> int:
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--allow-rejections", action="store_true")
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--require-route-readiness", action="store_true")
     provider_market_data_imbalance_broker_dispatch_ack.add_argument("--require-dispatch-roundtrip", action="store_true")
-    provider_market_data_imbalance_broker_dispatch_ack.add_argument(
+    provider_ack_send_lineage = (
+        provider_market_data_imbalance_broker_dispatch_ack.add_mutually_exclusive_group()
+    )
+    provider_ack_send_lineage.add_argument(
         "--require-send-packet",
         action="store_true",
+        default=True,
+        help="Require the complete current broker send packet (default).",
+    )
+    provider_ack_send_lineage.add_argument(
+        "--allow-legacy-send-lineage",
+        dest="require_send_packet",
+        action="store_false",
+        help="Allow audited legacy acknowledgement input without send lineage.",
     )
     provider_market_data_imbalance_broker_dispatch_ack.add_argument(
         "--no-use-provider-broker-dispatch-send-inputs",
