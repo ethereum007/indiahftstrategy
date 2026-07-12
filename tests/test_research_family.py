@@ -26,6 +26,7 @@ from reports.strategy_portfolio import (
 )
 from reports.scaleup import ScaleUpThresholds, write_scaleup_plan
 from reports.runtime_guard import write_runtime_guard_report
+from reports.runtime_session import write_runtime_session_monitor
 from reports.runtime_telemetry import write_runtime_telemetry_snapshot
 
 
@@ -397,6 +398,7 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
             require_strategy_portfolio=True,
             expected_strategy="lead_lag_taker",
             expected_market="india_nse_index_derivatives",
+            max_open_order_count=1,
         ),
     )
     scaleup_portfolio = scaleup.config["strategy_portfolio"]
@@ -470,6 +472,96 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     ] == "prospective_family"
     assert not runtime_guard.config["authorizes_submission"]
 
+    open_orders_path = tmp_path / "runtime_open_orders.csv"
+    pd.DataFrame(
+        [
+            {
+                "client_order_id": "STG-1",
+                "broker_order_id": "ARW-1",
+                "instrument_id": "NIFTY_FUT",
+                "side": 1,
+                "qty": 1,
+                "filled_qty": 0,
+                "limit_price": 100.0,
+                "created_ts_ns": 1_000_000,
+                "status": "OPEN",
+            },
+            {
+                "client_order_id": "STG-2",
+                "broker_order_id": "ARW-2",
+                "instrument_id": "BANKNIFTY_FUT",
+                "side": -1,
+                "qty": 1,
+                "filled_qty": 0,
+                "limit_price": 100.0,
+                "created_ts_ns": 1_000_000,
+                "status": "OPEN",
+            },
+        ]
+    ).to_csv(open_orders_path, index=False)
+    runtime_session = write_runtime_session_monitor(
+        scaleup_dir=tmp_path / "scaleup",
+        output_dir=tmp_path / "runtime_session",
+        open_orders_path=open_orders_path,
+        snapshot_ts_ns=1_000_000,
+        as_of_ts_ns=1_000_000,
+    )
+    session_summary = runtime_session.summary.iloc[0]
+    session_manifest = json.loads(
+        (tmp_path / "runtime_session" / "manifest.json").read_text(encoding="utf-8")
+    )
+    halt_response = runtime_session.halt_response
+    assert not runtime_session.ready
+    assert runtime_session.guard.halted
+    assert halt_response is not None
+    assert halt_response.ready
+    assert session_summary["scaleup_manifest_sha256"] == file_sha256(
+        tmp_path / "scaleup" / "manifest.json"
+    )
+    assert session_summary["scaleup_strategy_portfolio_manifest_sha256"] == file_sha256(
+        tmp_path / "portfolio" / "manifest.json"
+    )
+    assert session_summary["scaleup_scorecard_manifest_sha256"] == file_sha256(
+        tmp_path / "scorecard" / "manifest.json"
+    )
+    assert session_summary["scaleup_research_family_id"] == "prospective_family"
+    assert session_summary["scaleup_research_family_registration_id"] == (
+        registration.summary.iloc[0]["registration_id"]
+    )
+    assert session_summary["scaleup_research_family_manifest_sha256"] == file_sha256(
+        tmp_path / "family" / "manifest.json"
+    )
+    assert bool(session_summary["runtime_telemetry_lineage_matches_current"])
+    assert set(runtime_session.steps["scaleup_research_family_id"]) == {
+        "prospective_family"
+    }
+    assert set(runtime_session.steps["scaleup_research_family_manifest_sha256"]) == {
+        file_sha256(tmp_path / "family" / "manifest.json")
+    }
+    halt_summary = halt_response.summary.iloc[0]
+    assert halt_summary["scaleup_research_family_id"] == "prospective_family"
+    assert bool(halt_summary["runtime_telemetry_lineage_matches_current"])
+    assert halt_response.cancel_orders.iloc[0]["scaleup_research_family_id"] == (
+        "prospective_family"
+    )
+    assert not halt_response.config["authorizes_submission"]
+    assert session_manifest["extra"]["scaleup_research_family_id"] == (
+        "prospective_family"
+    )
+    assert not session_manifest["extra"]["authorizes_submission"]
+    halt_manifest = json.loads(
+        (
+            tmp_path
+            / "runtime_session"
+            / "03_halt_response"
+            / "manifest.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert halt_manifest["extra"]["scaleup_research_family_id"] == (
+        "prospective_family"
+    )
+    assert not halt_manifest["extra"]["authorizes_submission"]
+
     relabeled_telemetry_path = tmp_path / "relabeled_runtime_telemetry.csv"
     relabeled_telemetry = runtime_telemetry.telemetry.copy()
     relabeled_telemetry.loc[0, "scaleup_research_family_id"] = (
@@ -520,6 +612,20 @@ def test_research_family_closes_matching_prospective_registration(tmp_path):
     assert drifted_telemetry.error == "input_drift"
     assert not drifted_guard.passed
     assert drifted_guard.error == "input_drift"
+    drifted_session = verify_experiment_manifest(
+        tmp_path / "runtime_session" / "manifest.json",
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    )
+    drifted_halt_response = verify_experiment_manifest(
+        tmp_path / "runtime_session" / "03_halt_response" / "manifest.json",
+        expected_run_type="halt_response_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted_session.passed
+    assert drifted_session.error == "input_drift"
+    assert not drifted_halt_response.passed
+    assert drifted_halt_response.error == "input_drift"
     stale_guard = write_runtime_guard_report(
         scaleup_dir=tmp_path / "scaleup",
         telemetry_path=tmp_path / "runtime_telemetry",

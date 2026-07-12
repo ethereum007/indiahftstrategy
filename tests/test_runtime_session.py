@@ -1,9 +1,10 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
-from reports.manifest import file_sha256, write_experiment_manifest
+from reports.manifest import file_sha256, verify_experiment_manifest, write_experiment_manifest
 from reports.runtime_session import write_runtime_session_monitor
 
 
@@ -423,6 +424,14 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
     assert report.action_queue is not None
     assert report.action_queue.empty
     assert report.config is not None
+    scaleup_manifest_sha256 = file_sha256(scaleup_dir / "manifest.json")
+    assert report.summary.loc[0, "scaleup_manifest_sha256"] == scaleup_manifest_sha256
+    assert bool(report.summary.loc[0, "scaleup_provenance_gate_passed"])
+    assert bool(report.summary.loc[0, "runtime_telemetry_lineage_matches_current"])
+    assert set(report.steps["scaleup_manifest_sha256"]) == {scaleup_manifest_sha256}
+    assert not report.config["authorizes_submission"]
+    assert report.config["scaleup_provenance"]["scaleup_manifest_sha256"] == scaleup_manifest_sha256
+    assert report.config["runtime_telemetry_lineage"]["runtime_telemetry_lineage_matches_current"]
     assert report.config["action_queue_count"] == 0
     assert report.config["next_actions"] == []
     assert report.steps["step"].tolist() == ["telemetry", "runtime_guard"]
@@ -440,6 +449,10 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
         "guard_checks",
         "guard_summary",
         "guard_manifest",
+        "scaleup_manifest",
+        "scaleup_dependencies",
+        "telemetry_dependencies",
+        "guard_dependencies",
     } <= set(manifest["inputs"])
     assert path_tail(manifest["inputs"]["scaleup"]["path"]).endswith("/scaleup/scaleup_config.json")
     assert path_tail(manifest["inputs"]["telemetry"]["path"]).endswith(
@@ -449,6 +462,14 @@ def test_runtime_session_monitor_continues_when_guard_passes(tmp_path):
         "/session/02_guard/runtime_guard_summary.csv"
     )
     assert "halt_response_summary" not in manifest["inputs"]
+    assert manifest["extra"]["scaleup_manifest_sha256"] == scaleup_manifest_sha256
+    assert manifest["extra"]["runtime_telemetry_lineage_matches_current"]
+    assert not manifest["extra"]["authorizes_submission"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="runtime_session_monitor",
+        require_input_fingerprints=True,
+    ).passed
     artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
     assert any(path.endswith("runtime_session_action_queue.csv") for path in artifact_paths)
     assert any(path.endswith("runtime_session_config.json") for path in artifact_paths)
@@ -576,6 +597,15 @@ def test_runtime_session_monitor_carries_strategy_portfolio_allocation(tmp_path)
     assert set(report.steps["strategy_portfolio_selected_allocation_notional"]) == {1200.0}
     assert set(report.steps["strategy_portfolio_allocated_strategy_count"]) == {2}
     assert set(report.steps["strategy_portfolio_top_strategy_by_weight"]) == {"surface_mm"}
+    portfolio_manifest_sha256 = file_sha256(tmp_path / "scaleup_portfolio" / "manifest.json")
+    assert summary["scaleup_strategy_portfolio_manifest_sha256"] == portfolio_manifest_sha256
+    assert bool(summary["runtime_telemetry_strategy_portfolio_matches_current"])
+    assert set(report.steps["scaleup_strategy_portfolio_manifest_sha256"]) == {
+        portfolio_manifest_sha256
+    }
+    assert report.config["scaleup_provenance"]["scaleup_strategy_portfolio_manifest_sha256"] == (
+        portfolio_manifest_sha256
+    )
 
 
 def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path):
@@ -605,8 +635,13 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     summary = pd.read_csv(out_dir / "runtime_session_summary.csv")
     steps = pd.read_csv(out_dir / "runtime_session_steps.csv")
     response = pd.read_csv(out_dir / "03_halt_response" / "halt_response_summary.csv")
+    cancel_orders = pd.read_csv(out_dir / "03_halt_response" / "halt_cancel_orders.csv")
+    flatten_orders = pd.read_csv(out_dir / "03_halt_response" / "halt_flatten_orders.csv")
     queue = pd.read_csv(out_dir / "runtime_session_action_queue.csv")
     config = json.loads((out_dir / "runtime_session_config.json").read_text(encoding="utf-8"))
+    halt_config = json.loads(
+        (out_dir / "03_halt_response" / "halt_response_config.json").read_text(encoding="utf-8")
+    )
     assert code == 2
     assert not bool(summary.loc[0, "ready"])
     assert bool(summary.loc[0, "halt_response_created"])
@@ -632,6 +667,16 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
     assert summary.loc[0, "recommendation"] == "stop_routing_and_execute_halt_response"
     assert steps["step"].tolist() == ["telemetry", "runtime_guard", "halt_response"]
     assert response.loc[0, "recommendation"] == "submit_cancel_and_flatten"
+    scaleup_manifest_sha256 = file_sha256(scaleup_dir / "manifest.json")
+    assert summary.loc[0, "scaleup_manifest_sha256"] == scaleup_manifest_sha256
+    assert response.loc[0, "scaleup_manifest_sha256"] == scaleup_manifest_sha256
+    assert set(steps["scaleup_manifest_sha256"]) == {scaleup_manifest_sha256}
+    assert set(cancel_orders["scaleup_manifest_sha256"]) == {scaleup_manifest_sha256}
+    assert set(flatten_orders["scaleup_manifest_sha256"]) == {scaleup_manifest_sha256}
+    assert not config["authorizes_submission"]
+    assert not halt_config["authorizes_submission"]
+    assert config["runtime_telemetry_lineage"]["runtime_telemetry_lineage_matches_current"]
+    assert halt_config["runtime_telemetry_lineage"]["runtime_telemetry_lineage_matches_current"]
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
     assert {
         "open_orders",
@@ -644,13 +689,32 @@ def test_cli_runtime_session_monitor_builds_halt_response_on_guard_halt(tmp_path
         "halt_response_runbook",
         "halt_response_config",
         "halt_response_manifest",
+        "halt_response_dependencies",
     } <= set(manifest["inputs"])
     assert path_tail(manifest["inputs"]["open_orders"]["path"]).endswith("/open_orders.csv")
     assert path_tail(manifest["inputs"]["positions"]["path"]).endswith("/positions.csv")
     assert path_tail(manifest["inputs"]["halt_response_summary"]["path"]).endswith(
         "/session/03_halt_response/halt_response_summary.csv"
     )
+    halt_manifest = json.loads(
+        (out_dir / "03_halt_response" / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert halt_manifest["extra"]["scaleup_manifest_sha256"] == scaleup_manifest_sha256
+    assert not halt_manifest["extra"]["authorizes_submission"]
     assert "guard_halted" in (out_dir / "runtime_session_runbook.md").read_text(encoding="utf-8")
+
+
+def test_runtime_session_rejects_scaleup_output_collision(tmp_path):
+    scaleup_dir = tmp_path / "scaleup"
+    write_scaleup_dir(scaleup_dir)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_runtime_session_monitor(
+            scaleup_dir=scaleup_dir,
+            output_dir=scaleup_dir,
+            snapshot_ts_ns=1_000,
+            as_of_ts_ns=1_500,
+        )
 
 
 def test_cli_runtime_session_monitor_can_fail_on_actions(tmp_path):

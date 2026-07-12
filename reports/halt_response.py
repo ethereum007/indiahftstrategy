@@ -8,7 +8,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import manifest_dependency_paths, write_experiment_manifest
+from reports.runtime_guard import RUNTIME_LINEAGE_COLUMNS, SCALEUP_PROVENANCE_COLUMNS
 
 
 PROOF_REFRESH_COLUMNS = [
@@ -37,6 +38,10 @@ BROKER_ROUTE_READINESS_COLUMNS = [
     "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs",
     "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs",
 ]
+RUNTIME_PROVENANCE_COLUMNS = [
+    *SCALEUP_PROVENANCE_COLUMNS,
+    *RUNTIME_LINEAGE_COLUMNS,
+]
 
 CANCEL_COLUMNS = [
     "action_id",
@@ -45,6 +50,7 @@ CANCEL_COLUMNS = [
     "market",
     *PROOF_REFRESH_COLUMNS,
     *BROKER_ROUTE_READINESS_COLUMNS,
+    *RUNTIME_PROVENANCE_COLUMNS,
     "client_order_id",
     "broker_order_id",
     "instrument_id",
@@ -63,6 +69,7 @@ FLATTEN_COLUMNS = [
     "market",
     *PROOF_REFRESH_COLUMNS,
     *BROKER_ROUTE_READINESS_COLUMNS,
+    *RUNTIME_PROVENANCE_COLUMNS,
     "instrument_id",
     "side",
     "side_text",
@@ -164,8 +171,15 @@ def evaluate_halt_response(
         "review_actions": _actions_with_status(action_queue, "review"),
         "guard_failed_checks": guard_context["failed_check_names"],
         "guard_failed_check_reasons": guard_context["failed_check_reasons"],
+        "authorizes_submission": False,
         "proof_freshness": _proof_freshness_config(guard_context),
         "broker_route_readiness": _broker_route_readiness_config(guard_context),
+        "scaleup_provenance": {
+            column: guard_context[column] for column in SCALEUP_PROVENANCE_COLUMNS
+        },
+        "runtime_telemetry_lineage": {
+            column: guard_context[column] for column in RUNTIME_LINEAGE_COLUMNS
+        },
     }
     return HaltResponseReport(
         cancel_orders=cancel_orders,
@@ -186,8 +200,13 @@ def write_halt_response_plan(
     config: HaltResponseConfig | None = None,
 ) -> HaltResponseReport:
     guard = Path(guard_dir)
+    guard_root = guard if guard.is_dir() else guard.parent
+    out = Path(output_dir).resolve()
+    if out == guard_root.resolve():
+        raise ValueError("halt response output_dir must not overwrite the runtime guard source directory")
     guard_summary_path = guard / "runtime_guard_summary.csv" if guard.is_dir() else guard
     guard_checks_path = guard / "runtime_guard_checks.csv" if guard.is_dir() else None
+    guard_manifest_path = guard_root / "manifest.json"
     guard_summary = _read_required(guard_summary_path)
     guard_checks = pd.read_csv(guard_checks_path) if guard_checks_path and guard_checks_path.exists() else None
     open_orders = _read_optional(open_orders_path)
@@ -201,7 +220,6 @@ def write_halt_response_plan(
         positions=positions,
         config=config,
     )
-    out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     report.cancel_orders.to_csv(out / "halt_cancel_orders.csv", index=False)
     report.flatten_orders.to_csv(out / "halt_flatten_orders.csv", index=False)
@@ -224,9 +242,17 @@ def write_halt_response_plan(
         inputs=_manifest_inputs(
             guard_summary_path=guard_summary_path,
             guard_checks_path=guard_checks_path,
+            guard_root=guard_root,
+            guard_manifest_path=guard_manifest_path,
             open_orders_path=open_orders_path,
             positions_path=positions_path,
         ),
+        extra={
+            "ready": bool(report.ready),
+            "guard_action": _clean(report.summary.iloc[0].get("guard_action")),
+            **_runtime_provenance_summary_fields(report.summary.iloc[0].to_dict()),
+            "authorizes_submission": False,
+        },
     )
     return HaltResponseReport(
         report.cancel_orders,
@@ -243,12 +269,26 @@ def _manifest_inputs(
     *,
     guard_summary_path: Path,
     guard_checks_path: Path | None,
+    guard_root: Path,
+    guard_manifest_path: Path,
     open_orders_path: str | Path | None,
     positions_path: str | Path | None,
 ) -> dict[str, Any]:
     inputs: dict[str, Any] = {"guard_summary": guard_summary_path}
     if guard_checks_path is not None and guard_checks_path.exists():
         inputs["guard_checks"] = guard_checks_path
+    for name, path in {
+        "guard_manifest": guard_manifest_path,
+        "guard_metrics": guard_root / "runtime_guard_metrics.csv",
+        "guard_action_queue": guard_root / "runtime_guard_action_queue.csv",
+        "guard_config": guard_root / "runtime_guard_config.json",
+        "guard_runbook": guard_root / "runtime_guard_runbook.md",
+    }.items():
+        if path.exists():
+            inputs[name] = path
+    guard_dependencies = manifest_dependency_paths(guard_manifest_path)
+    if guard_dependencies:
+        inputs["guard_dependencies"] = guard_dependencies
     if open_orders_path is not None:
         inputs["open_orders"] = Path(open_orders_path)
     if positions_path is not None:
@@ -274,6 +314,7 @@ def _cancel_actions(open_orders: pd.DataFrame, guard_context: dict[str, object])
     active["market"] = guard_context["market"]
     _assign_proof_refresh_columns(active, guard_context)
     _assign_broker_route_readiness_columns(active, guard_context)
+    _assign_runtime_provenance_columns(active, guard_context)
     active["reason"] = "guard_halt_open_order"
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
@@ -304,6 +345,7 @@ def _flatten_actions(
     active["market"] = guard_context["market"]
     _assign_proof_refresh_columns(active, guard_context)
     _assign_broker_route_readiness_columns(active, guard_context)
+    _assign_runtime_provenance_columns(active, guard_context)
     active["guard_failed_check_names"] = guard_context["failed_check_names_text"]
     active["guard_first_failed_reason"] = guard_context["first_failed_reason"]
     active["action"] = "flatten_position"
@@ -426,6 +468,8 @@ def _summary(
                 "guard_failed_check_reasons": guard_context["failed_check_reasons_text"],
                 **_proof_refresh_summary_fields(guard_context),
                 **_broker_route_readiness_summary_fields(guard_context),
+                **_runtime_provenance_summary_fields(guard_context),
+                "authorizes_submission": False,
                 "scenario_key": str(guard_row.get("scenario_key", "")),
                 "adapter": str(guard_row.get("adapter", "")),
                 "recommendation": recommendation,
@@ -527,6 +571,10 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Scenario: {_clean(summary.get('scenario_key'))}",
         f"- Adapter: {_clean(summary.get('adapter'))}",
         f"- Guard action: {_clean(summary.get('guard_action'))}",
+        f"- Scale-up provenance current: {'yes' if _to_bool(summary.get('scaleup_provenance_gate_passed')) else 'no'}",
+        f"- Runtime lineage current: {'yes' if _to_bool(summary.get('runtime_telemetry_lineage_matches_current')) else 'no'}",
+        f"- Research family: {_clean(summary.get('scaleup_research_family_id'))}",
+        "- Submission authorization: no",
         f"- Guard failed checks: {_clean(summary.get('guard_failed_check_names'))}",
         f"- Cancel orders: {_int_value(summary.get('cancel_orders'))}",
         f"- Flatten orders: {_int_value(summary.get('flatten_orders'))}",
@@ -756,6 +804,7 @@ def _guard_halt_context(guard_row: pd.Series, guard_checks: pd.DataFrame) -> dic
         "failed_check_reasons_text": ";".join(reasons),
         **_proof_refresh_context(guard_row),
         **_broker_route_readiness_context(guard_row),
+        **_runtime_provenance_context(guard_row),
     }
 
 
@@ -870,6 +919,45 @@ def _proof_refresh_summary_fields(guard_context: dict[str, object]) -> dict[str,
 
 def _broker_route_readiness_summary_fields(guard_context: dict[str, object]) -> dict[str, object]:
     return {column: guard_context[column] for column in BROKER_ROUTE_READINESS_COLUMNS}
+
+
+def _runtime_provenance_context(guard_row: pd.Series) -> dict[str, object]:
+    return {
+        column: _runtime_provenance_value(guard_row.get(column), column)
+        for column in RUNTIME_PROVENANCE_COLUMNS
+    }
+
+
+def _runtime_provenance_value(value: object, column: str) -> object:
+    default = _runtime_provenance_default(column)
+    normalized = _jsonable(value)
+    if normalized is None:
+        return default
+    if isinstance(default, bool):
+        return _to_bool(normalized)
+    if isinstance(default, int):
+        return _int_value(normalized)
+    return _clean(normalized)
+
+
+def _runtime_provenance_default(column: str) -> object:
+    if column == "scaleup_dependency_count":
+        return 0
+    if column.endswith(("_path", "_sha256", "_error", "_run_type", "_id")):
+        return ""
+    return False
+
+
+def _assign_runtime_provenance_columns(frame: pd.DataFrame, guard_context: dict[str, object]) -> None:
+    for column in RUNTIME_PROVENANCE_COLUMNS:
+        frame[column] = guard_context[column]
+
+
+def _runtime_provenance_summary_fields(guard_context: dict[str, object]) -> dict[str, object]:
+    return {
+        column: guard_context.get(column, _runtime_provenance_default(column))
+        for column in RUNTIME_PROVENANCE_COLUMNS
+    }
 
 
 def _proof_freshness_config(guard_context: dict[str, object]) -> dict[str, object]:

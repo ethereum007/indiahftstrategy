@@ -1,9 +1,11 @@
 import json
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.halt_response import evaluate_halt_response, write_halt_response_plan
+from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 
 
 def path_tail(value):
@@ -40,6 +42,34 @@ def guard_summary(action="halt"):
                 "broker_route_readiness_ops_broker_roundtrip_portfolio_breach_runs": 0,
                 "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_ok_runs": 1,
                 "broker_route_readiness_ops_broker_roundtrip_portfolio_concentration_breach_runs": 0,
+                "scaleup_manifest_required": True,
+                "scaleup_manifest_provided": True,
+                "scaleup_manifest_current": False,
+                "scaleup_manifest_run_type": "scaleup_plan",
+                "scaleup_manifest_path": "/research/scaleup/manifest.json",
+                "scaleup_manifest_sha256": "scaleup-manifest-hash",
+                "scaleup_manifest_error": "input_drift",
+                "scaleup_contract_consistent": True,
+                "scaleup_non_authorizing": True,
+                "scaleup_source_ready": True,
+                "scaleup_provenance_gate_passed": False,
+                "scaleup_dependency_count": 7,
+                "scaleup_research_family_bound": True,
+                "scaleup_research_family_provenance_current": False,
+                "scaleup_research_family_id": "prospective_family",
+                "scaleup_research_family_registration_id": "registration-1",
+                "scaleup_research_family_manifest_sha256": "family-manifest-hash",
+                "runtime_telemetry_scaleup_provenance_carried": True,
+                "runtime_telemetry_scaleup_provenance_gate_passed": True,
+                "runtime_telemetry_scaleup_manifest_sha256": "scaleup-manifest-hash",
+                "runtime_telemetry_scaleup_manifest_matches_current": True,
+                "runtime_telemetry_research_family_bound": True,
+                "runtime_telemetry_research_family_provenance_current": True,
+                "runtime_telemetry_research_family_id": "prospective_family",
+                "runtime_telemetry_research_family_registration_id": "registration-1",
+                "runtime_telemetry_research_family_manifest_sha256": "family-manifest-hash",
+                "runtime_telemetry_research_family_matches_current": False,
+                "runtime_telemetry_lineage_matches_current": False,
                 "scenario_key": "trigger_ticks=2",
                 "adapter": "arrow_money",
                 "recommendation": "stop_routing_and_investigate" if action == "halt" else "continue_with_controls",
@@ -118,6 +148,10 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert bool(report.cancel_orders.iloc[0]["broker_route_readiness_ready"])
     assert int(report.cancel_orders.iloc[0]["broker_route_readiness_gap_pairs"]) == 0
     assert bool(report.cancel_orders.iloc[0]["broker_route_readiness_ops_launch_controls_ready"])
+    assert report.cancel_orders.iloc[0]["scaleup_manifest_sha256"] == "scaleup-manifest-hash"
+    assert report.cancel_orders.iloc[0]["scaleup_research_family_id"] == "prospective_family"
+    assert not bool(report.cancel_orders.iloc[0]["scaleup_provenance_gate_passed"])
+    assert not bool(report.cancel_orders.iloc[0]["runtime_telemetry_lineage_matches_current"])
     assert report.cancel_orders.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.cancel_orders.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
     assert report.flatten_orders["side_text"].tolist() == ["SELL", "BUY"]
@@ -134,6 +168,10 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.flatten_orders["broker_route_readiness_ops_broker_roundtrip_portfolio_safe_runs"].tolist() == [
         1,
         1,
+    ]
+    assert report.flatten_orders["scaleup_research_family_manifest_sha256"].tolist() == [
+        "family-manifest-hash",
+        "family-manifest-hash",
     ]
     assert report.flatten_orders["price"].tolist() == [11.2, 9.1]
     assert report.flatten_orders["guard_failed_check_names"].tolist() == ["orders_sent", "orders_sent"]
@@ -162,6 +200,9 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     )
     assert report.summary.iloc[0]["guard_failed_check_names"] == "orders_sent"
     assert report.summary.iloc[0]["guard_first_failed_reason"].startswith("orders_sent:")
+    assert report.summary.iloc[0]["scaleup_research_family_id"] == "prospective_family"
+    assert not bool(report.summary.iloc[0]["runtime_telemetry_lineage_matches_current"])
+    assert not bool(report.summary.iloc[0]["authorizes_submission"])
     assert int(report.summary.iloc[0]["failed_check_count"]) == 0
     assert report.summary.iloc[0]["failed_check_names"] == ""
     assert report.summary.iloc[0]["primary_blocker_check"] == ""
@@ -182,6 +223,13 @@ def test_halt_response_builds_cancel_and_flatten_actions():
     assert report.config["blocked_actions"] == []
     assert report.config["strategy"] == "lead_lag_taker"
     assert report.config["market"] == "india_nse_index_derivatives"
+    assert not report.config["authorizes_submission"]
+    assert report.config["scaleup_provenance"]["scaleup_manifest_sha256"] == "scaleup-manifest-hash"
+    assert not report.config["scaleup_provenance"]["scaleup_provenance_gate_passed"]
+    assert report.config["runtime_telemetry_lineage"]["runtime_telemetry_research_family_id"] == (
+        "prospective_family"
+    )
+    assert not report.config["runtime_telemetry_lineage"]["runtime_telemetry_lineage_matches_current"]
     assert report.config["proof_freshness"] == {
         "required": True,
         "provided": True,
@@ -234,6 +282,14 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     guard_dir.mkdir()
     guard_summary().to_csv(guard_dir / "runtime_guard_summary.csv", index=False)
     guard_checks().to_csv(guard_dir / "runtime_guard_checks.csv", index=False)
+    guard_source = tmp_path / "guard_source.csv"
+    pd.DataFrame([{"source": "scaleup"}]).to_csv(guard_source, index=False)
+    write_experiment_manifest(
+        guard_dir,
+        run_type="runtime_guard",
+        inputs={"scaleup_dependency": guard_source},
+        extra={"authorizes_submission": False},
+    )
     open_orders().to_csv(open_orders_path, index=False)
     positions().to_csv(positions_path, index=False)
 
@@ -261,6 +317,8 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     assert saved_config["next_actions"] == []
     assert saved_config["proof_freshness"]["strategy"] == "lead_lag_taker"
     assert saved_config["proof_freshness"]["ready"]
+    assert not saved_config["authorizes_submission"]
+    assert saved_config["scaleup_provenance"]["scaleup_manifest_sha256"] == "scaleup-manifest-hash"
     saved_summary = pd.read_csv(out_dir / "halt_response_summary.csv")
     assert saved_summary.loc[0, "guard_failed_check_names"] == "orders_sent"
     assert saved_summary.loc[0, "proof_refresh_strategy"] == "lead_lag_taker"
@@ -269,8 +327,18 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     assert (out_dir / "halt_response_runbook.md").read_text(encoding="utf-8").startswith(
         "# Halt Response Runbook"
     )
+    runbook = (out_dir / "halt_response_runbook.md").read_text(encoding="utf-8")
+    assert "Research family: prospective_family" in runbook
+    assert "Submission authorization: no" in runbook
     manifest = json.loads((out_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert {"guard_summary", "guard_checks", "open_orders", "positions"} <= set(manifest["inputs"])
+    assert {
+        "guard_summary",
+        "guard_checks",
+        "guard_manifest",
+        "guard_dependencies",
+        "open_orders",
+        "positions",
+    } <= set(manifest["inputs"])
     assert path_tail(manifest["inputs"]["guard_summary"]["path"]).endswith(
         "/guard/runtime_guard_summary.csv"
     )
@@ -282,6 +350,30 @@ def test_write_halt_response_plan_outputs_artifacts(tmp_path):
     artifact_paths = {path_tail(item["path"]) for item in manifest["artifacts"]}
     assert any(path.endswith("halt_response_action_queue.csv") for path in artifact_paths)
     assert any(path.endswith("halt_response_runbook.md") for path in artifact_paths)
+    assert manifest["extra"]["scaleup_research_family_id"] == "prospective_family"
+    assert not manifest["extra"]["authorizes_submission"]
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="halt_response_plan",
+        require_input_fingerprints=True,
+    ).passed
+    guard_source.write_text("source\nchanged\n", encoding="utf-8")
+    drifted = verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="halt_response_plan",
+        require_input_fingerprints=True,
+    )
+    assert not drifted.passed
+    assert drifted.error == "input_drift"
+
+
+def test_halt_response_rejects_guard_output_collision(tmp_path):
+    guard_dir = tmp_path / "guard"
+    guard_dir.mkdir()
+    guard_summary().to_csv(guard_dir / "runtime_guard_summary.csv", index=False)
+
+    with pytest.raises(ValueError, match="must not overwrite"):
+        write_halt_response_plan(guard_dir=guard_dir, output_dir=guard_dir)
 
 
 def test_cli_halt_response_can_fail_on_missing_flatten_price(tmp_path):

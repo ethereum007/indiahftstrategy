@@ -2596,6 +2596,20 @@
   authorizing claims, missing lineage, old scale-up snapshots, or family
   relabeling halt with explicit provenance repair actions. Telemetry and guard
   outputs cannot overwrite their source proof and remain non-authorizing.
+- Runtime session monitoring now carries that verified scale-up, portfolio,
+  scorecard, and prospective-family lineage through every step, its summary,
+  config, runbook, and manifest. The session manifest fingerprints the current
+  scale-up manifest and recursively flattens the scale-up, telemetry, guard,
+  and optional halt-response dependencies, so later registration, study, or
+  raw-source drift invalidates the operational packet. Session artifacts remain
+  non-authorizing and cannot overwrite the scale-up source.
+- Halt-response summary/config/runbook plus every cancel and flatten row now
+  preserve the same lineage and telemetry comparison state. The response
+  manifest binds the complete guard bundle and recursively flattened guard
+  dependencies, and later upstream research drift invalidates it. Provenance
+  failure remains evidence rather than an emergency-action blocker, so a
+  lineage-triggered halt can still produce a ready cancel/flatten packet. Halt
+  packets are explicitly non-authorizing and cannot overwrite the guard source.
 
 ## Test Gate
 
@@ -2605,20 +2619,33 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1524 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1526 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
-Latest affected-surface gate: manifests, strategy scorecard/portfolio,
-research-family, controlled scale-up, generic runtime telemetry/guard/session,
-and experiment catalog pass together (`254 passed`). The generic runtime
+Latest operational affected-surface gate: controlled scale-up, generic runtime
+telemetry/guard/session, halt response/export/execution/incident, cutover,
+route-readiness, route-enable, and research-family pass together (`270
+passed`). The focused runtime-session, halt-response, and research-family gate
+passes together (`29 passed`). It covers source-output collision rejection,
+non-authorizing lineage passthrough into session and emergency action rows,
+recursive session/halt manifest invalidation after registration-plan drift,
+and the deliberate ability to prepare emergency cancel/flatten actions even
+when provenance itself is stale. Three provider-data imbalance runtime-session
+integration paths also pass, covering the ready wrapper, capture-bundle
+provenance, and post-guard adapter-receipt drift. The preceding affected-surface
+gate for manifests, strategy scorecard/portfolio, research-family, controlled
+scale-up, generic runtime telemetry/guard/session, and experiment catalog
+passed together (`254 passed`). The generic runtime
 telemetry/guard suites contribute `54 passed`, including missing/stale scale-up
 manifest, semantic re-manifesting, authorizing source, output collision,
 recursive input drift, and telemetry lineage mismatch rejection. The real
 prospective-family chain now passes family audit -> scorecard -> portfolio ->
-controlled scale-up -> runtime telemetry -> runtime guard, carries the exact
+controlled scale-up -> runtime telemetry -> runtime guard -> runtime session ->
+halt response, carries the exact
 family/registration and portfolio/scorecard/family manifest hashes, halts on a
 relabeled telemetry family, and invalidates telemetry/guard manifests plus
-halts the guard after registration-plan drift. Six provider-data imbalance
+session/halt-response manifests, then halts the guard after registration-plan
+drift. Six provider-data imbalance
 telemetry/guard paths also pass, covering ready wrappers, CLI telemetry,
 post-scale-up receipt drift, post-telemetry receipt drift, and route-sidecar
 breach handling. Generic cutover and route-enable compatibility pass together
@@ -2712,7 +2739,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1524-test collection is fully green.
+1526-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2721,6 +2748,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Bind the runtime guard's verified scale-up/portfolio/scorecard/family
-   lineage into runtime-session, halt-response, and cutover artifacts so the
-   same prospective-family proof remains continuous through route enablement.
+4. Require cutover and route-enable to carry and revalidate the runtime
+   session's verified scale-up/portfolio/scorecard/family lineage so the same
+   prospective-family proof remains continuous at the final broker boundary.

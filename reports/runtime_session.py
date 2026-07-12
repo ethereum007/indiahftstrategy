@@ -8,8 +8,13 @@ from typing import Any
 import pandas as pd
 
 from reports.halt_response import HaltResponseConfig, HaltResponseReport, write_halt_response_plan
-from reports.manifest import write_experiment_manifest
-from reports.runtime_guard import RuntimeGuardReport, write_runtime_guard_report
+from reports.manifest import manifest_dependency_paths, write_experiment_manifest
+from reports.runtime_guard import (
+    RUNTIME_LINEAGE_COLUMNS,
+    SCALEUP_PROVENANCE_COLUMNS,
+    RuntimeGuardReport,
+    write_runtime_guard_report,
+)
 from reports.runtime_telemetry import RuntimeTelemetryReport, write_runtime_telemetry_snapshot
 
 
@@ -62,7 +67,10 @@ def write_runtime_session_monitor(
     plan_halt_response: bool = True,
     halt_response_config: HaltResponseConfig | None = None,
 ) -> RuntimeSessionMonitorReport:
-    out = Path(output_dir)
+    out = Path(output_dir).resolve()
+    scaleup_config_path = _scaleup_config_path(scaleup_dir).resolve()
+    if out == scaleup_config_path.parent:
+        raise ValueError("runtime session output_dir must not overwrite the scale-up source directory")
     out.mkdir(parents=True, exist_ok=True)
 
     telemetry_dir = out / "01_telemetry"
@@ -137,6 +145,12 @@ def write_runtime_session_monitor(
             open_orders_path=open_orders_path,
             positions_path=positions_path,
         ),
+        extra={
+            "ready": bool(summary.iloc[0]["ready"]),
+            "guard_action": _clean(summary.iloc[0].get("guard_action")),
+            **_lineage_fields(summary.iloc[0]),
+            "authorizes_submission": False,
+        },
     )
     return RuntimeSessionMonitorReport(
         telemetry=telemetry,
@@ -164,8 +178,10 @@ def _session_manifest_inputs(
     open_orders_path: str | Path | None,
     positions_path: str | Path | None,
 ) -> dict[str, Any]:
+    scaleup_config_path = _scaleup_config_path(scaleup_dir)
+    scaleup_manifest_path = scaleup_config_path.parent / "manifest.json"
     inputs: dict[str, Any] = {
-        "scaleup": _scaleup_config_path(scaleup_dir),
+        "scaleup": scaleup_config_path,
     }
     for name, path in {
         "export": _optional_summary_path(
@@ -196,6 +212,7 @@ def _session_manifest_inputs(
         "guard_checks": guard_dir / "runtime_guard_checks.csv",
         "guard_summary": guard_dir / "runtime_guard_summary.csv",
         "guard_manifest": guard_dir / "manifest.json",
+        "scaleup_manifest": scaleup_manifest_path,
     }.items():
         _add_existing_input(inputs, name, path)
 
@@ -211,6 +228,18 @@ def _session_manifest_inputs(
             "halt_response_manifest": halt_response_dir / "manifest.json",
         }.items():
             _add_existing_input(inputs, name, path)
+
+    manifests = {
+        "scaleup_dependencies": scaleup_manifest_path,
+        "telemetry_dependencies": telemetry_dir / "manifest.json",
+        "guard_dependencies": guard_dir / "manifest.json",
+    }
+    if halt_response_dir is not None:
+        manifests["halt_response_dependencies"] = halt_response_dir / "manifest.json"
+    for name, manifest_path in manifests.items():
+        dependencies = manifest_dependency_paths(manifest_path)
+        if dependencies:
+            inputs[name] = dependencies
     return inputs
 
 
@@ -289,6 +318,7 @@ def _steps(
             "broker_resume_proof_refresh_market": _text(telemetry_row, "broker_resume_proof_refresh_market"),
             **_broker_route_readiness_fields(telemetry_row),
             **_portfolio_fields(telemetry_row),
+            **_lineage_fields(telemetry_row),
             "recommendation": str(telemetry_row.get("recommendation", "")),
         },
         {
@@ -342,6 +372,7 @@ def _steps(
             ),
             **_broker_route_readiness_fields(guard_row, telemetry_row),
             **_portfolio_fields(guard_row, telemetry_row),
+            **_lineage_fields(guard_row, telemetry_row),
             "recommendation": str(guard_row.get("recommendation", "")),
         },
     ]
@@ -399,6 +430,7 @@ def _steps(
                 ),
                 **_broker_route_readiness_fields(guard_row, telemetry_row),
                 **_portfolio_fields(guard_row, telemetry_row),
+                **_lineage_fields(response_row, guard_row),
                 "recommendation": str(response_row.get("recommendation", "")),
             }
         )
@@ -455,6 +487,7 @@ def _steps(
                 ),
                 **_broker_route_readiness_fields(guard_row, telemetry_row),
                 **_portfolio_fields(guard_row, telemetry_row),
+                **_lineage_fields(guard_row, telemetry_row),
                 "recommendation": "manual_halt_response_required" if not plan_halt_response else "not_created",
             }
         )
@@ -540,6 +573,7 @@ def _summary(
                 ),
                 **_broker_route_readiness_fields(guard_row, telemetry_row),
                 **_portfolio_fields(guard_row, telemetry_row),
+                **_lineage_fields(guard_row, telemetry_row),
                 "telemetry_ready": bool(telemetry.ready),
                 "halt_response_created": halt_response is not None,
                 "halt_response_ready": response_ready,
@@ -659,8 +693,10 @@ def _config(
     action_queue: pd.DataFrame,
     plan_halt_response: bool,
 ) -> dict[str, Any]:
+    lineage = _lineage_fields(summary_row)
     return {
         "schema_version": 1,
+        "authorizes_submission": False,
         "ready": _to_bool(summary_row.get("ready")),
         "halted": _to_bool(summary_row.get("halted")),
         "guard_action": _clean(summary_row.get("guard_action")),
@@ -693,6 +729,12 @@ def _config(
         "ready_actions": _action_records(_actions_with_status(action_queue, "ready")),
         "blocked_actions": _action_records(_actions_with_status(action_queue, "blocked")),
         "review_actions": _action_records(_actions_with_status(action_queue, "review")),
+        "scaleup_provenance": {
+            column: lineage[column] for column in SCALEUP_PROVENANCE_COLUMNS
+        },
+        "runtime_telemetry_lineage": {
+            column: lineage[column] for column in RUNTIME_LINEAGE_COLUMNS
+        },
         "broker_route_readiness": {
             "required": _to_bool(summary_row.get("broker_route_readiness_required")),
             "provided": _to_bool(summary_row.get("broker_route_readiness_provided")),
@@ -741,6 +783,10 @@ def _runbook_markdown(summary: pd.Series, action_queue: pd.DataFrame) -> str:
         f"- Scenario: {_clean(summary.get('scenario_key'))}",
         f"- Adapter: {_clean(summary.get('adapter'))}",
         f"- Guard action: {_clean(summary.get('guard_action'))}",
+        f"- Scale-up provenance current: {'yes' if _to_bool(summary.get('scaleup_provenance_gate_passed')) else 'no'}",
+        f"- Runtime lineage current: {'yes' if _to_bool(summary.get('runtime_telemetry_lineage_matches_current')) else 'no'}",
+        f"- Research family: {_clean(summary.get('scaleup_research_family_id'))}",
+        "- Submission authorization: no",
         f"- Guard failed checks: {_clean(summary.get('guard_failed_check_names'))}",
         f"- Halt response created: {_clean(summary.get('halt_response_created'))}",
         f"- Halt response ready: {_clean(summary.get('halt_response_ready'))}",
@@ -902,6 +948,28 @@ def _identity_bool(primary: pd.Series, fallback: pd.Series, column: str) -> bool
     if column in primary and not pd.isna(primary.get(column)):
         return _to_bool(primary.get(column))
     return _bool_text(fallback, column)
+
+
+def _lineage_fields(primary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:
+    fallback = primary if fallback is None else fallback
+    return {
+        column: _identity_value(primary, fallback, column)
+        for column in (*SCALEUP_PROVENANCE_COLUMNS, *RUNTIME_LINEAGE_COLUMNS)
+    }
+
+
+def _identity_value(primary: pd.Series, fallback: pd.Series, column: str) -> object:
+    for row in (primary, fallback):
+        if column not in row:
+            continue
+        value = _jsonable_value(row.get(column))
+        if value is not None:
+            return value
+    if column == "scaleup_dependency_count":
+        return 0
+    if column.endswith(("_path", "_sha256", "_error", "_run_type", "_id")):
+        return ""
+    return False
 
 
 def _portfolio_fields(primary: pd.Series, fallback: pd.Series | None = None) -> dict[str, object]:

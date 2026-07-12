@@ -3665,6 +3665,13 @@ selected strategy/market, eligibility, allocation weight/notional, pre-cap
 notional, and whether the portfolio cap constrained session notional, plus the
 carried strategy/market concentration counts and maximum aggregate allocation
 weights.
+The session steps, summary, config, runbook, and manifest now also carry the
+guard-verified scale-up manifest SHA-256, portfolio and scorecard manifest
+SHA-256 values, prospective research-family and registration IDs, family
+manifest SHA-256, and telemetry-to-current-lineage comparisons. Config JSON
+groups these under `scaleup_provenance` and `runtime_telemetry_lineage`, and
+both config and manifest explicitly record `authorizes_submission=false`.
+The session output directory cannot be the scale-up source directory.
 `runtime_session_summary.csv` and `runtime_session_config.json` also expose
 `failed_check_count`, `failed_check_names`, `first_failed_reason`,
 `primary_blocker_*`, `action_queue_count`, `ready_action_count`,
@@ -3676,10 +3683,12 @@ weights.
 `export-halt-response`. Use `--fail-on-actions` to fail on any queued runtime
 action, or `--fail-on-blocked-actions` to fail only when runtime-session
 actions are blocked.
-The top-level `manifest.json` fingerprints the resolved scale-up config,
-runtime source snapshots, telemetry artifacts, guard artifacts, child
-manifests, and halt-response artifacts when a halt packet is created, so the
-session report can prove the exact runtime chain that fed the go/no-go outcome.
+The top-level `manifest.json` fingerprints the resolved scale-up config and
+manifest, runtime source snapshots, telemetry artifacts, guard artifacts,
+child manifests, and halt-response artifacts when a halt packet is created.
+It also flattens the scale-up, telemetry, guard, and optional halt-response
+manifest dependencies, so later portfolio, scorecard, family, registration,
+study, or raw-source drift invalidates the session packet.
 
 ## Halt Response Plan
 
@@ -3733,13 +3742,25 @@ same halt artifacts also retain `broker_route_readiness_*` route-ready,
 gap-pair, launch-control, portfolio-safe, and concentration-safe fields so
 emergency cancel/flatten packets remain auditable to the route controls that
 were active when routing stopped.
+They additionally retain the guard-verified scale-up, portfolio, scorecard,
+and prospective-family lineage plus the telemetry lineage-comparison fields.
+`halt_response_config.json` groups the same values under
+`scaleup_provenance` and `runtime_telemetry_lineage`; config, summary, and
+manifest all record `authorizes_submission=false`. A stale provenance state is
+preserved as evidence but deliberately does not block emergency cancel or
+flatten readiness: a provenance failure may itself be the reason the guard
+halted. `halt_response_runbook.md` surfaces the provenance currentness,
+research-family ID, and non-authorizing state for human review.
 `halt_response_action_queue.csv` and `halt_response_runbook.md` route non-halt
 guard states and missing executable flatten prices back to the next CLI gate
 before a scheduler trusts the cancel/flatten packet. Add `--fail-on-actions` to
 fail on any queued response-plan action, or `--fail-on-blocked-actions` to fail
 only when the queue contains blocked actions.
-The manifest fingerprints the resolved runtime guard summary/check files plus
-the open-order and position snapshots used to create the cancel/flatten packet.
+The manifest fingerprints the resolved runtime guard bundle, guard manifest,
+recursively flattened guard dependencies, and the open-order and position
+snapshots used to create the cancel/flatten packet. Later research-source drift
+therefore invalidates the packet. The halt-response output directory cannot
+overwrite the runtime-guard source directory.
 
 ## Halt Response Export
 
