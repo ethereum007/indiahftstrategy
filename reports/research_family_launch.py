@@ -158,6 +158,8 @@ class ResearchFamilyLaunchAttemptOutcome:
     exit_status: int
     result_summary_sha256: str
     result_manifest_sha256: str
+    recovered: bool
+    recovery_reason: str
 
 
 @dataclass(frozen=True)
@@ -670,6 +672,9 @@ def write_research_family_launch_attempt_outcome(
     exit_status: int,
     execution_completed: bool,
     exception_type: str = "",
+    recovered: bool = False,
+    recovery_reason: str = "",
+    recovery_attested: bool = False,
 ) -> ResearchFamilyLaunchAttemptOutcome:
     matrix_root = Path(
         str(receipt.payload.get("launch_matrix_path", ""))
@@ -688,6 +693,24 @@ def write_research_family_launch_attempt_outcome(
         if len(matching_attempts) != 1:
             raise ValueError("launch outcome requires one current attempt record")
         attempt_record = matching_attempts[0]
+        contract_attempts = [
+            record
+            for record in attempt_ledger.records
+            if str(record.get("contract_id", "")) == receipt.contract_id
+        ]
+        reason = str(recovery_reason).strip()
+        if recovered:
+            if not contract_attempts or (
+                str(contract_attempts[-1].get("attempt_id", ""))
+                != receipt.attempt_id
+            ):
+                raise ValueError("outcome recovery requires the latest contract attempt")
+            if not reason:
+                raise ValueError("outcome recovery requires a non-empty reason")
+            if not recovery_attested:
+                raise ValueError("outcome recovery requires operator attestation")
+        elif reason or recovery_attested:
+            raise ValueError("normal outcome finalization cannot carry recovery claims")
         outcome_ledger = load_research_family_launch_outcome_ledger(matrix_root)
         if any(
             str(record.get("attempt_id", "")) == receipt.attempt_id
@@ -727,6 +750,34 @@ def write_research_family_launch_attempt_outcome(
             manifest_current=bool(integrity.passed),
             result_ready=summary_ready,
         )
+        if recovered:
+            summary_row = (
+                summary.iloc[0]
+                if summary_exists and summary_readable
+                else pd.Series(dtype=object)
+            )
+            recovery_binding_valid = bool(
+                execution_completed
+                and not str(exception_type).strip()
+                and integrity.passed
+                and str(summary_row.get("research_launch_attempt_id", ""))
+                == receipt.attempt_id
+                and str(
+                    summary_row.get(
+                        "research_launch_execution_receipt_id",
+                        "",
+                    )
+                )
+                == receipt.receipt_id
+                and str(summary_row.get("research_launch_contract_id", ""))
+                == receipt.contract_id
+                and outcome_status
+                in {"completed_ready", "completed_blocked"}
+            )
+            if not recovery_binding_valid:
+                raise ValueError(
+                    "outcome recovery does not match a current completed result"
+                )
         generated_at = (
             datetime.now(timezone.utc)
             .isoformat(timespec="microseconds")
@@ -755,6 +806,9 @@ def write_research_family_launch_attempt_outcome(
             "execution_completed": bool(execution_completed),
             "exit_status": resolved_exit_status,
             "exception_type": str(exception_type).strip(),
+            "recovered": bool(recovered),
+            "recovery_reason": reason,
+            "recovery_attested": bool(recovery_attested),
             "result_root": str(result_root),
             "result_summary_path": str(summary_path),
             "result_summary_exists": summary_exists,
@@ -795,6 +849,43 @@ def write_research_family_launch_attempt_outcome(
     return load_research_family_launch_attempt_outcome(outcome_path)
 
 
+def recover_research_family_launch_attempt_outcome(
+    launch_matrix_path: str | Path,
+    attempt_id: str,
+    *,
+    exit_status: int,
+    recovery_reason: str,
+    attest_recovery: bool,
+) -> ResearchFamilyLaunchAttemptOutcome:
+    requested_attempt_id = str(attempt_id).strip()
+    if not requested_attempt_id:
+        raise ValueError("outcome recovery requires an attempt ID")
+    matrix = load_research_family_launch_matrix(launch_matrix_path)
+    if not matrix.manifest_current:
+        raise ValueError("outcome recovery requires a current launch matrix")
+    attempt_ledger = load_research_family_launch_attempt_ledger(
+        matrix.root
+    )
+    matches = [
+        record
+        for record in attempt_ledger.records
+        if str(record.get("attempt_id", "")) == requested_attempt_id
+    ]
+    if len(matches) != 1:
+        raise ValueError("outcome recovery attempt ID must match exactly once")
+    receipt = load_research_family_launch_execution_receipt(
+        Path(str(matches[0].get("receipt_path", "")))
+    )
+    return write_research_family_launch_attempt_outcome(
+        receipt,
+        exit_status=exit_status,
+        execution_completed=True,
+        recovered=True,
+        recovery_reason=recovery_reason,
+        recovery_attested=attest_recovery,
+    )
+
+
 def load_research_family_launch_attempt_outcome(
     outcome_path: str | Path,
 ) -> ResearchFamilyLaunchAttemptOutcome:
@@ -816,6 +907,13 @@ def load_research_family_launch_attempt_outcome(
         raise ValueError("launch attempt outcome path is invalid")
     if _to_bool(payload.get("authorizes_submission", True)):
         raise ValueError("launch attempt outcome authorizes submission")
+    recovered = _to_bool(payload.get("recovered", False))
+    recovery_reason = str(payload.get("recovery_reason", "")).strip()
+    recovery_attested = _to_bool(payload.get("recovery_attested", False))
+    if recovered and (not recovery_reason or not recovery_attested):
+        raise ValueError("recovered launch outcome lacks attested recovery evidence")
+    if not recovered and (recovery_reason or recovery_attested):
+        raise ValueError("normal launch outcome carries recovery evidence")
     expected_status = _classify_attempt_outcome(
         execution_completed=_to_bool(payload.get("execution_completed", False)),
         exit_status=int(payload.get("exit_status", 0)),
@@ -828,6 +926,11 @@ def load_research_family_launch_attempt_outcome(
     outcome_status = str(payload.get("outcome_status", ""))
     if outcome_status != expected_status:
         raise ValueError("launch attempt outcome status is inconsistent")
+    if recovered and outcome_status not in {
+        "completed_ready",
+        "completed_blocked",
+    }:
+        raise ValueError("recovered launch outcome is not completed")
     summary_sha256 = str(payload.get("result_summary_sha256", ""))
     manifest_sha256 = str(payload.get("result_manifest_sha256", ""))
     if summary_sha256 and not _file_matches_sha256(
@@ -850,6 +953,8 @@ def load_research_family_launch_attempt_outcome(
         exit_status=int(payload.get("exit_status", 0)),
         result_summary_sha256=summary_sha256,
         result_manifest_sha256=manifest_sha256,
+        recovered=recovered,
+        recovery_reason=recovery_reason,
     )
 
 
@@ -1400,6 +1505,12 @@ def _build_launches(
                 "latest_outcome_generated_at_utc": str(
                     latest_outcome.get("generated_at_utc", "")
                 ),
+                "latest_outcome_recovered": _to_bool(
+                    latest_outcome.get("recovered", False)
+                ),
+                "latest_outcome_recovery_reason": str(
+                    latest_outcome.get("recovery_reason", "")
+                ),
                 "latest_outcome_result_manifest_sha256": str(
                     latest_outcome.get("result_manifest_sha256", "")
                 ),
@@ -1855,6 +1966,10 @@ def _summary(
                 "outcome_count": int(
                     launches.get("outcome_count", pd.Series(dtype=int)).sum()
                 ),
+                "recovered_outcome_count": _bool_count(
+                    launches,
+                    "latest_outcome_recovered",
+                ),
                 "completed_ready_count": int(status.eq("completed_ready").sum()),
                 "completed_blocked_count": int(status.eq("completed_blocked").sum()),
                 "completed_unfinalized_count": int(
@@ -2182,6 +2297,7 @@ def _runbook(
         f"- Closure covered: {int(summary['closure_covered_count'])}/{int(summary['study_count'])}",
         f"- Dispatch attempts: {int(summary['attempt_count'])}",
         f"- Finalized outcomes: {int(summary['outcome_count'])}",
+        f"- Recovered outcomes: {int(summary['recovered_outcome_count'])}",
         f"- Incomplete attempts: {int(summary['attempt_incomplete_count'])}",
         f"- Interrupted attempts: {int(summary['attempt_interrupted_count'])}",
         f"- Never launched: {int(summary['never_launched_count'])}",

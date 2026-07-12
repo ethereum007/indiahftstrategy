@@ -109,6 +109,7 @@ from reports.research_family import (
 )
 from reports.research_family_launch import (
     load_research_family_launch_contract,
+    recover_research_family_launch_attempt_outcome,
     write_research_family_launch_attempt_outcome,
     write_research_family_launch_execution_receipt,
     write_research_family_launch_matrix,
@@ -2892,6 +2893,23 @@ def main(argv: list[str] | None = None) -> int:
     run_research_family_study.add_argument("--retry-of-attempt-id", default=None)
     run_research_family_study.add_argument("--retry-reason", default=None)
     run_research_family_study.add_argument("--attest-retry", action="store_true")
+
+    recover_research_family_outcome = sub.add_parser(
+        "recover-research-family-study-outcome",
+        help="Attest and finalize an unfinalized result-bearing launch attempt.",
+    )
+    recover_research_family_outcome.add_argument("--launch-matrix", required=True)
+    recover_research_family_outcome.add_argument("--attempt-id", required=True)
+    recover_research_family_outcome.add_argument(
+        "--exit-status",
+        type=int,
+        required=True,
+    )
+    recover_research_family_outcome.add_argument("--recovery-reason", required=True)
+    recover_research_family_outcome.add_argument(
+        "--attest-recovery",
+        action="store_true",
+    )
 
     research_family = sub.add_parser(
         "audit-research-family",
@@ -6628,6 +6646,23 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         return status
+    if args.command == "recover-research-family-study-outcome":
+        try:
+            outcome = recover_research_family_launch_attempt_outcome(
+                args.launch_matrix,
+                args.attempt_id,
+                exit_status=args.exit_status,
+                recovery_reason=args.recovery_reason,
+                attest_recovery=args.attest_recovery,
+            )
+        except (OSError, ValueError) as exc:
+            print(f"launch outcome recovery blocked: {exc}")
+            return 2
+        print(
+            f"recovered outcome {outcome.outcome_id} "
+            f"as {outcome.outcome_status}"
+        )
+        return 0
     if args.command == "audit-research-family":
         result = write_research_family_audit(
             args.studies,

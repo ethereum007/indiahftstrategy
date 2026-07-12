@@ -189,6 +189,115 @@ def test_research_family_launch_executes_and_binds_exact_contract(tmp_path):
         load_research_family_launch_outcome_ledger(launch_dir)
 
 
+def test_research_family_launch_recovers_unfinalized_completed_result(tmp_path):
+    _, registration_dir = _write_registration(tmp_path)
+    launch_dir = tmp_path / "launches"
+    pending = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    row = pending.launches.set_index("study_label").loc["leadlag"]
+    contract = load_research_family_launch_contract(
+        launch_dir,
+        str(row["contract_id"]),
+    )
+    receipt = write_research_family_launch_execution_receipt(contract)
+    direct_status = main(
+        [
+            *contract.argv,
+            "--research-launch-execution-receipt",
+            str(receipt.path),
+        ][3:]
+    )
+    unfinalized = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    unfinalized_row = unfinalized.launches.set_index("study_label").loc[
+        "leadlag"
+    ]
+    assert direct_status == 0
+    assert unfinalized_row["study_status"] == "completed_unfinalized"
+    assert not bool(unfinalized_row["result_launch_outcome_bound"])
+
+    missing_attestation = main(
+        [
+            "recover-research-family-study-outcome",
+            "--launch-matrix",
+            str(launch_dir),
+            "--attempt-id",
+            receipt.attempt_id,
+            "--exit-status",
+            "0",
+            "--recovery-reason",
+            "executor stopped after writing the result manifest",
+        ]
+    )
+    inconsistent_status = main(
+        [
+            "recover-research-family-study-outcome",
+            "--launch-matrix",
+            str(launch_dir),
+            "--attempt-id",
+            receipt.attempt_id,
+            "--exit-status",
+            "2",
+            "--recovery-reason",
+            "executor stopped after writing the result manifest",
+            "--attest-recovery",
+        ]
+    )
+    assert missing_attestation == 2
+    assert inconsistent_status == 2
+    assert load_research_family_launch_outcome_ledger(launch_dir).outcome_count == 0
+
+    recovered_status = main(
+        [
+            "recover-research-family-study-outcome",
+            "--launch-matrix",
+            str(launch_dir),
+            "--attempt-id",
+            receipt.attempt_id,
+            "--exit-status",
+            "0",
+            "--recovery-reason",
+            "executor stopped after writing the result manifest",
+            "--attest-recovery",
+        ]
+    )
+    outcomes = load_research_family_launch_outcome_ledger(launch_dir)
+    assert recovered_status == 0
+    assert outcomes.outcome_count == 1
+    assert bool(outcomes.records[0]["recovered"])
+    assert outcomes.records[0]["outcome_status"] == "completed_ready"
+    assert outcomes.records[0]["recovery_reason"]
+
+    completed = write_research_family_launch_matrix(
+        registration_dir,
+        output_dir=launch_dir,
+    )
+    completed_row = completed.launches.set_index("study_label").loc["leadlag"]
+    assert completed_row["study_status"] == "completed_ready"
+    assert bool(completed_row["result_launch_outcome_bound"])
+    assert bool(completed_row["latest_outcome_recovered"])
+    duplicate_recovery = main(
+        [
+            "recover-research-family-study-outcome",
+            "--launch-matrix",
+            str(launch_dir),
+            "--attempt-id",
+            receipt.attempt_id,
+            "--exit-status",
+            "0",
+            "--recovery-reason",
+            "duplicate recovery",
+            "--attest-recovery",
+        ]
+    )
+    assert duplicate_recovery == 2
+    assert load_research_family_launch_outcome_ledger(launch_dir).outcome_count == 1
+
+
 def test_research_family_launch_blocks_contract_argument_drift(tmp_path):
     _, registration_dir = _write_registration(tmp_path)
     launch_dir = tmp_path / "launches"

@@ -105,6 +105,11 @@
   Completed coverage requires the outcome's stored manifest hash to match the
   current robust root. Missing finalization is reported as completed-unfinalized
   rather than inferred away or made replayable.
+  `recover-research-family-study-outcome` closes that narrow crash window
+  without dispatching research again. Recovery requires the latest attempt ID,
+  a current result bound to the same receipt/contract, an exit status consistent
+  with root readiness, a non-empty reason, and explicit operator attestation.
+  The recovered claim is preserved inside the ordinary immutable outcome chain.
 - Research families can now be registered prospectively before outcomes exist.
   `register-research-family` normalizes and validates a CSV plan containing
   strategy, market, hypothesis, metric, maximum search breadth, at least six
@@ -2531,19 +2536,20 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1501 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1502 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest focused gate: prospective family registration/closure, declared
 research-family, chronological holdout, multiple-testing-aware significance,
 robust-selection, CSCV backtest-overfit, manifest-bound promotion, sweep
 comparison, experiment catalog, manifest, and strategy scorecard suites pass
-together (`137 passed`). This covers deterministic plan locking, immutable
+together (`138 passed`). This covers deterministic plan locking, immutable
 registered-study launch contracts, exact contract execution, unique execution
 receipts, hash-chained attempt records, attested latest-attempt retry policy,
 duplicate/completed replay blocking, attempt-ledger tamper rejection, resolved
 semantic-digest binding, hash-chained outcome finalization, exact result-hash
-binding, interruption classification, outcome-ledger tamper rejection,
+binding, interruption classification, attested unfinalized-result recovery,
+duplicate/inconsistent recovery rejection, outcome-ledger tamper rejection,
 launch-argument and semantic-drift rejection, mutable coverage refresh without
 root invalidation, recursive
 post-coverage result-drift detection, current sweep and result coverage,
@@ -2589,7 +2595,7 @@ combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1501-test collection is fully green.
+1502-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2598,6 +2604,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add an operator-attested outcome-recovery command for the narrow case where
-   a robust result exists but the executor died before finalization, without
-   permitting the registered study to replay.
+4. Add a launch-attempt/outcome census to the research-family audit so every
+   interruption and operational retry remains visible at family closure without
+   treating an exact deterministic retry as a new hypothesis test.

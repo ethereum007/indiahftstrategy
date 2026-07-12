@@ -2523,6 +2523,26 @@ once any robust summary exists, replay remains blocked even if outcome
 finalization is missing. Coverage labels that narrow case
 `completed_unfinalized` so it can be reconciled explicitly rather than hidden.
 
+Recover a result-bearing attempt only when the executor stopped after writing
+the robust result but before appending its outcome:
+
+```powershell
+python -m hft_cli recover-research-family-study-outcome `
+  --launch-matrix runs\research_launches\india_index_microstructure_v1 `
+  --attempt-id LATEST_ATTEMPT_ID `
+  --exit-status 0 `
+  --recovery-reason "executor stopped after writing the result manifest" `
+  --attest-recovery
+```
+
+Recovery never invokes the stored launch argv. It accepts only the latest
+attempt for that contract, requires a current manifest-bound root whose summary
+names the same attempt, receipt, and contract, and requires exit status `0` for
+a ready root or nonzero for a blocked root. Missing attestation, an empty
+reason, stale files, mismatched identity/readiness, an older attempt, or an
+existing outcome all fail closed. The resulting outcome carries
+`recovered=true`, the attested reason, and the same non-authorizing claim.
+
 The command verifies the registration, exact sweep and label counts, unique
 scenario-group columns, every sweep manifest, and any existing robust root.
 Existing results count as covered only when their current root manifest binds
