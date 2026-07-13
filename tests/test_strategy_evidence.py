@@ -1,6 +1,8 @@
 import json
+from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from hft_cli import main
 from reports.evidence import (
@@ -11,6 +13,11 @@ from reports.evidence import (
     evidence_profile_run_types,
     evaluate_strategy_evidence,
     write_strategy_evidence_review,
+)
+from reports.manifest import (
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
 )
 
 
@@ -599,6 +606,12 @@ def provider_imbalance_ops_launch_catalog_rows(
             row[
                 "provider_active_lineage_chain_audit_manifest_sha256"
             ] = "c" * 64
+            row[
+                "provider_active_lineage_chain_audit_contract_sha256"
+            ] = "d" * 64
+            row[
+                "provider_active_lineage_chain_audit_certificate_manifest_sha256"
+            ] = "e" * 64
             row[
                 "provider_active_lineage_chain_audit_selection_bound"
             ] = True
@@ -1621,6 +1634,189 @@ def test_write_strategy_evidence_review_outputs_files_and_manifest(tmp_path):
     assert (out_dir / "manifest.json").exists()
 
 
+@pytest.mark.parametrize("drift_target", ["audit", "certificate"])
+def test_write_provider_strategy_evidence_seals_catalog_and_retained_proofs(
+    tmp_path,
+    monkeypatch,
+    drift_target,
+):
+    proof_root = tmp_path / "proofs"
+    proof_root.mkdir()
+    certificate_source = proof_root / "certificate_source.csv"
+    certificate_source.write_text("source\nready\n", encoding="utf-8")
+    certificate_dir = proof_root / "certificate"
+    certificate_dir.mkdir()
+    certificate_artifact = certificate_dir / "certificate.csv"
+    certificate_artifact.write_text("ready\ntrue\n", encoding="utf-8")
+    write_experiment_manifest(
+        certificate_dir,
+        run_type="provider_market_data_imbalance_broker_rehearsal_certificate",
+        inputs={"source": certificate_source},
+    )
+
+    audit_dir = proof_root / "active_lineage_chain_audit"
+    audit_dir.mkdir()
+    audit_artifact = audit_dir / "audit.csv"
+    audit_artifact.write_text("ready\ntrue\n", encoding="utf-8")
+    write_experiment_manifest(
+        audit_dir,
+        run_type="provider_market_data_imbalance_active_lineage_chain_audit",
+        inputs={
+            "certificate": certificate_dir,
+            "certificate_manifest": certificate_dir / "manifest.json",
+        },
+    )
+
+    chain_digest = "b" * 64
+    contract_sha256 = "d" * 64
+
+    def verify_chain(path):
+        selected_audit = path.resolve()
+        audit_integrity = verify_experiment_manifest(
+            selected_audit / "manifest.json",
+            expected_run_type=(
+                "provider_market_data_imbalance_active_lineage_chain_audit"
+            ),
+            require_input_fingerprints=True,
+        )
+        certificate_integrity = verify_experiment_manifest(
+            certificate_dir / "manifest.json",
+            expected_run_type=(
+                "provider_market_data_imbalance_broker_rehearsal_certificate"
+            ),
+            require_input_fingerprints=True,
+        )
+        ready = bool(audit_integrity.passed and certificate_integrity.passed)
+        return SimpleNamespace(
+            ready=ready,
+            error="" if ready else audit_integrity.error or certificate_integrity.error,
+            audit_dir=selected_audit,
+            certificate_dir=certificate_dir.resolve(),
+            certificate_manifest_sha256=file_sha256(
+                certificate_dir / "manifest.json"
+            ),
+            chain_digest_sha256=chain_digest,
+            provider_lineage_selection_contract={"sha256": contract_sha256},
+        )
+
+    monkeypatch.setattr(
+        "reports.evidence.verify_provider_market_data_imbalance_active_lineage_chain_audit",
+        verify_chain,
+    )
+
+    catalog_dir = tmp_path / "catalog"
+    catalog_dir.mkdir()
+    catalog_path = catalog_dir / "experiment_catalog.csv"
+    catalog = provider_imbalance_ops_launch_catalog_rows()
+    certificate_mask = catalog["run_type"].eq(
+        "provider_market_data_imbalance_broker_rehearsal_certificate"
+    )
+    catalog.loc[certificate_mask, "run_dir"] = str(certificate_dir.resolve())
+    catalog.loc[
+        certificate_mask,
+        "provider_active_lineage_chain_audit_dir",
+    ] = str(audit_dir.resolve())
+    catalog.loc[
+        certificate_mask,
+        "provider_active_lineage_chain_audit_manifest_sha256",
+    ] = file_sha256(audit_dir / "manifest.json")
+    catalog.loc[
+        certificate_mask,
+        "provider_active_lineage_chain_audit_certificate_manifest_sha256",
+    ] = file_sha256(certificate_dir / "manifest.json")
+    catalog.loc[
+        certificate_mask,
+        "provider_active_lineage_chain_audit_chain_digest_sha256",
+    ] = chain_digest
+    catalog.loc[
+        certificate_mask,
+        "provider_active_lineage_chain_audit_contract_sha256",
+    ] = contract_sha256
+    catalog.to_csv(catalog_path, index=False)
+    write_experiment_manifest(
+        catalog_dir,
+        run_type="experiment_catalog",
+        inputs={
+            "audit": audit_dir,
+            "audit_manifest": audit_dir / "manifest.json",
+            "certificate": certificate_dir,
+            "certificate_manifest": certificate_dir / "manifest.json",
+        },
+    )
+
+    out_dir = tmp_path / "evidence"
+    review = write_strategy_evidence_review(
+        catalog_path,
+        output_dir=out_dir,
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types(
+                "provider_imbalance_ops_launch"
+            ),
+            require_provider_lineage_selection=True,
+        ),
+    )
+
+    manifest = json.loads(
+        (out_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    assert review.ready
+    assert bool(
+        review.summary.iloc[0][
+            "provider_retained_proofs_directly_fingerprinted"
+        ]
+    )
+    assert int(
+        review.summary.iloc[0]["provider_retained_proof_direct_input_count"]
+    ) == 4
+    assert {
+        "catalog",
+        "source_catalog_manifest",
+        "selected_provider_active_lineage_chain_audit",
+        "selected_provider_active_lineage_chain_audit_manifest",
+        "selected_provider_broker_rehearsal_certificate",
+        "selected_provider_broker_rehearsal_certificate_manifest",
+    } == set(manifest["inputs"])
+    assert verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="strategy_evidence_review",
+        require_input_fingerprints=True,
+    ).passed
+
+    drifted_artifact = (
+        audit_artifact if drift_target == "audit" else certificate_artifact
+    )
+    drifted_artifact.write_text("ready\nfalse\n", encoding="utf-8")
+    assert not verify_experiment_manifest(
+        out_dir / "manifest.json",
+        expected_run_type="strategy_evidence_review",
+        require_input_fingerprints=True,
+    ).passed
+
+    replay = write_strategy_evidence_review(
+        catalog_path,
+        output_dir=tmp_path / f"evidence_after_{drift_target}_drift",
+        thresholds=EvidenceThresholds(
+            required_run_types=evidence_profile_run_types(
+                "provider_imbalance_ops_launch"
+            ),
+            require_provider_lineage_selection=True,
+        ),
+    )
+    failed = set(
+        replay.checks.loc[
+            ~replay.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not replay.ready
+    assert "source_catalog_manifest_current" in failed
+    assert "selected_provider_active_lineage_chain_audit_current" in failed
+    if drift_target == "certificate":
+        assert (
+            "selected_provider_broker_rehearsal_certificate_current" in failed
+        )
+
+
 def test_cli_strategy_evidence_can_fail_on_breach(tmp_path):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "evidence"
@@ -1815,7 +2011,9 @@ def test_cli_strategy_evidence_ops_launch_profile(tmp_path):
     assert int(summary.loc[0, "broker_roundtrip_resume_route_breach_runs"]) == 0
 
 
-def test_cli_strategy_evidence_provider_ops_launch_profile(tmp_path):
+def test_cli_strategy_evidence_provider_ops_launch_rejects_flat_catalog_replay(
+    tmp_path,
+):
     catalog_path = tmp_path / "experiment_catalog.csv"
     out_dir = tmp_path / "provider_ops_launch_evidence"
     provider_imbalance_ops_launch_catalog_rows().to_csv(catalog_path, index=False)
@@ -1843,10 +2041,12 @@ def test_cli_strategy_evidence_provider_ops_launch_profile(tmp_path):
     lineage_selection = pd.read_csv(
         out_dir / "strategy_evidence_provider_lineage_selection.csv"
     )
+    checks = pd.read_csv(out_dir / "strategy_evidence_checks.csv")
     summary = pd.read_csv(out_dir / "strategy_evidence_summary.csv")
-    assert code == 0
+    failed = set(checks.loc[~checks["passed"].astype(bool), "check"])
+    assert code == 2
     assert set(items["required_run_type"]) == set(EVIDENCE_PROFILE_RUN_TYPES["provider_imbalance_ops_launch"])
-    assert bool(summary.loc[0, "ready"])
+    assert not bool(summary.loc[0, "ready"])
     assert summary.loc[0, "evidence_profile"] == "provider_imbalance_ops_launch"
     assert bool(summary.loc[0, "require_file_inputs"])
     assert bool(summary.loc[0, "require_no_blocked_placeholder_schema"])
@@ -1865,6 +2065,15 @@ def test_cli_strategy_evidence_provider_ops_launch_profile(tmp_path):
     assert lineage_selection["selected"].astype(bool).all()
     assert int(summary.loc[0, "provider_lineage_selected_pair_count"]) == 3
     assert len(summary.loc[0, "provider_lineage_selection_contract_sha256"]) == 64
+    assert bool(summary.loc[0, "source_catalog_manifest_required"])
+    assert not bool(summary.loc[0, "source_catalog_manifest_current"])
+    assert {
+        "source_catalog_manifest_current",
+        "selected_provider_active_lineage_chain_audit_current",
+        "selected_provider_broker_rehearsal_certificate_current",
+        "provider_retained_proof_catalog_binding_current",
+        "provider_retained_proof_contract_binding_current",
+    } <= failed
 
 
 def test_cli_strategy_evidence_provider_lineage_audit_override_is_non_candidate(

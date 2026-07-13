@@ -7,8 +7,12 @@ import pytest
 
 from hft_cli import main as _cli_main
 from tests.provider_adapter_capture_support import write_bundle_captures
-from reports.catalog import catalog_experiment_runs
-from reports.evidence import EvidenceThresholds, evaluate_strategy_evidence
+from reports.catalog import catalog_experiment_runs, write_experiment_catalog
+from reports.evidence import (
+    EvidenceThresholds,
+    evaluate_strategy_evidence,
+    write_strategy_evidence_review,
+)
 from reports.manifest import verify_experiment_manifest
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
@@ -32584,6 +32588,67 @@ def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_de
         "selected_provider_active_lineage_chain_audit_chain_digest_sha256"
     ] == report.summary.loc[0, "chain_digest_sha256"]
 
+    catalog_report = write_experiment_catalog(
+        [certificate.output_dir],
+        output_dir=tmp_path / "provider_imbalance_chain_catalog",
+        provider_broker_active_lineage_index=active_index_path,
+        provider_active_lineage_chain_audits=[report.output_dir],
+    )
+    final_evidence = write_strategy_evidence_review(
+        catalog_report.output_dir,
+        output_dir=tmp_path / "provider_imbalance_chain_final_evidence",
+        thresholds=EvidenceThresholds(
+            required_run_types=(
+                "provider_market_data_imbalance_broker_rehearsal_certificate",
+            ),
+            allow_dirty_git=True,
+            require_provider_lineage_selection=True,
+        ),
+    )
+    final_evidence_manifest = json.loads(
+        (final_evidence.output_dir / "manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    final_failed = set(
+        final_evidence.checks.loc[
+            ~final_evidence.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not final_evidence.ready
+    assert final_failed == {
+        "provider_broker_rehearsal_certificate_live_dryrun"
+    }
+    assert bool(
+        final_evidence.summary.iloc[0][
+            "source_catalog_manifest_current"
+        ]
+    )
+    assert bool(
+        final_evidence.summary.iloc[0][
+            "provider_retained_proof_catalog_binding_current"
+        ]
+    )
+    assert bool(
+        final_evidence.summary.iloc[0][
+            "provider_retained_proof_contract_binding_current"
+        ]
+    )
+    assert {
+        "catalog",
+        "source_catalog_manifest",
+        "selected_provider_active_lineage_chain_audit",
+        "selected_provider_active_lineage_chain_audit_manifest",
+        "selected_provider_broker_rehearsal_certificate",
+        "selected_provider_broker_rehearsal_certificate_manifest",
+    } == set(final_evidence_manifest["inputs"])
+    assert verify_experiment_manifest(
+        final_evidence.output_dir / "manifest.json",
+        expected_run_type="strategy_evidence_review",
+        require_input_fingerprints=True,
+    ).passed
+
     cli_out = tmp_path / "provider_imbalance_active_lineage_chain_audit_cli"
     assert (
         main(
@@ -32617,6 +32682,28 @@ def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_de
     )
     assert not drifted_verification.ready
     assert not drifted_verification.manifest_current
+    replayed_evidence = write_strategy_evidence_review(
+        catalog_report.output_dir,
+        output_dir=tmp_path / "provider_imbalance_chain_replayed_evidence",
+        thresholds=EvidenceThresholds(
+            required_run_types=(
+                "provider_market_data_imbalance_broker_rehearsal_certificate",
+            ),
+            allow_dirty_git=True,
+            require_provider_lineage_selection=True,
+        ),
+    )
+    replay_failed = set(
+        replayed_evidence.checks.loc[
+            ~replayed_evidence.checks["passed"].astype(bool),
+            "check",
+        ]
+    )
+    assert not replayed_evidence.ready
+    assert "selected_provider_active_lineage_chain_audit_current" in (
+        replay_failed
+    )
+    assert "provider_retained_proof_catalog_binding_current" in replay_failed
     with pytest.raises(ValueError, match="chain audit is not trusted"):
         catalog_experiment_runs(
             [certificate.output_dir],

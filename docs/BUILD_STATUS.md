@@ -2945,6 +2945,22 @@
   catalog, and manifest suites pass together across focused runs (`127
   passed`), with the certificate catalog namespace regression covered
   separately (`1 passed`).
+- Final file-backed provider strategy evidence now closes stale-catalog replay.
+  Before a rehearsal certificate can remain selected, the writer verifies the
+  source `experiment_catalog` manifest and all of its artifacts/inputs,
+  independently reopens the selected 13-stage chain audit, verifies the
+  selected certificate manifest and recursive inputs, and requires exact
+  catalog agreement on both proof directories, both manifest hashes, the chain
+  digest, and the active-lineage contract SHA. The resulting evidence manifest
+  directly fingerprints the catalog CSV/manifest, selected audit
+  directory/manifest, and selected certificate directory/manifest. A flat CSV
+  replay is therefore non-ready, direct audit or certificate drift invalidates
+  the completed evidence manifest, and rebuilding from a stale catalog after
+  deep upstream chain drift fails the semantic audit check. The pure in-memory
+  evaluator and explicit audit-only provider mode remain non-authorizing and
+  backward compatible. Strategy-evidence, shared-manifest, and experiment-
+  catalog suites pass together (`127 passed`); the real 13-stage clean/deep-
+  drift path passes separately (`1 passed`).
 
 ## Test Gate
 
@@ -2954,7 +2970,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1625 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1627 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -3128,15 +3144,16 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1625-test collection is fully green.
+1627-test collection is fully green.
 
 ## Next Build Targets
 
-1. Add data adapters for the first real vendor export once files are available.
-2. Replace placeholder Arrow.money/iRage column maps once real export schemas
+1. Add a read-side verifier for completed strategy-evidence roots that reopens
+   the source catalog plus selected provider audit/certificate proofs, then use
+   it at the first downstream release-review boundary so recursive chain drift
+   after evidence generation cannot be mistaken for a current decision.
+2. Add data adapters for the first real vendor export once files are available.
+3. Replace placeholder Arrow.money/iRage column maps once real export schemas
    are available.
-3. Replace the built-in upload review templates with broker-signed
+4. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Make final strategy-evidence output verify the source catalog manifest and
-   fingerprint its selected provider chain audit and rehearsal certificate
-   directly, closing stale-catalog replay after either retained proof drifts.

@@ -10,7 +10,15 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from reports.manifest import write_experiment_manifest
+from reports.manifest import (
+    MANIFEST_NAME,
+    file_sha256,
+    verify_experiment_manifest,
+    write_experiment_manifest,
+)
+from reports.provider_market_data_imbalance_active_lineage_chain import (
+    verify_provider_market_data_imbalance_active_lineage_chain_audit,
+)
 
 
 DEFAULT_REQUIRED_RUN_TYPES = ("proof_report", "stress_report", "promotion_report")
@@ -200,6 +208,14 @@ class StrategyEvidenceReview:
         return bool(self.summary.iloc[0]["ready"])
 
 
+@dataclass(frozen=True)
+class _ProviderRetainedProofVerification:
+    required: bool
+    checks: pd.DataFrame
+    summary_fields: dict[str, Any]
+    manifest_inputs: dict[str, Any]
+
+
 def evaluate_strategy_evidence(
     catalog: pd.DataFrame,
     *,
@@ -230,6 +246,15 @@ def write_strategy_evidence_review(
     catalog = pd.read_csv(catalog_file)
     thresholds = thresholds or EvidenceThresholds()
     review = evaluate_strategy_evidence(catalog, thresholds=thresholds)
+    retained_proofs = _verify_provider_retained_proofs(
+        catalog_file,
+        review,
+        thresholds,
+    )
+    review = _apply_provider_retained_proof_verification(
+        review,
+        retained_proofs,
+    )
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     review.evidence.to_csv(out / "strategy_evidence_items.csv", index=False)
@@ -240,7 +265,16 @@ def write_strategy_evidence_review(
         out,
         run_type="strategy_evidence_review",
         parameters={"thresholds": asdict(thresholds)},
-        inputs={"catalog": catalog_file},
+        inputs={
+            "catalog": catalog_file,
+            **retained_proofs.manifest_inputs,
+        },
+        extra={
+            "source_catalog_manifest_required": retained_proofs.required,
+            "provider_retained_proof_verification": (
+                retained_proofs.summary_fields
+            ),
+        },
     )
     return StrategyEvidenceReview(
         evidence=review.evidence,
@@ -249,6 +283,370 @@ def write_strategy_evidence_review(
         provider_lineage_selection=review.provider_lineage_selection,
         output_dir=out,
     )
+
+
+def _verify_provider_retained_proofs(
+    catalog_file: Path,
+    review: StrategyEvidenceReview,
+    thresholds: EvidenceThresholds,
+) -> _ProviderRetainedProofVerification:
+    required = bool(
+        _provider_lineage_selection_policy(thresholds) == "required"
+        and PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE
+        in thresholds.required_run_types
+    )
+    catalog_manifest = catalog_file.parent / MANIFEST_NAME
+    summary_fields: dict[str, Any] = {
+        "source_catalog_manifest_required": required,
+        "source_catalog_manifest_path": (
+            str(catalog_manifest.resolve()) if required else ""
+        ),
+        "source_catalog_manifest_current": False,
+        "source_catalog_manifest_sha256": "",
+        "selected_provider_active_lineage_chain_audit_current": False,
+        "selected_provider_active_lineage_chain_audit_dir": "",
+        "selected_provider_active_lineage_chain_audit_manifest_sha256": "",
+        "selected_provider_active_lineage_chain_audit_chain_digest_sha256": "",
+        "selected_provider_broker_rehearsal_certificate_current": False,
+        "selected_provider_broker_rehearsal_certificate_dir": "",
+        "selected_provider_broker_rehearsal_certificate_manifest_sha256": "",
+        "provider_retained_proof_catalog_binding_current": False,
+        "provider_retained_proof_contract_binding_current": False,
+        "provider_retained_proof_direct_input_count": 0,
+        "provider_retained_proofs_directly_fingerprinted": False,
+    }
+    if not required:
+        return _ProviderRetainedProofVerification(
+            required=False,
+            checks=pd.DataFrame(columns=[
+                "check",
+                "value",
+                "operator",
+                "threshold",
+                "passed",
+                "reason",
+            ]),
+            summary_fields=summary_fields,
+            manifest_inputs={},
+        )
+
+    manifest_inputs: dict[str, Any] = {}
+    if catalog_manifest.is_file():
+        manifest_inputs["source_catalog_manifest"] = catalog_manifest
+    catalog_integrity = verify_experiment_manifest(
+        catalog_manifest,
+        expected_run_type="experiment_catalog",
+        required_artifacts=(catalog_file.name,),
+        require_input_fingerprints=True,
+    )
+    summary_fields["source_catalog_manifest_current"] = bool(
+        catalog_integrity.passed
+    )
+    summary_fields["source_catalog_manifest_sha256"] = _current_file_sha256(
+        catalog_manifest
+    )
+
+    certificate_rows = review.evidence.loc[
+        review.evidence["required_run_type"].astype(str).eq(
+            PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE
+        )
+    ]
+    certificate_item = (
+        certificate_rows.iloc[0]
+        if len(certificate_rows) == 1
+        else pd.Series(dtype=object)
+    )
+    certificate_dir = _catalog_reference_path(
+        _row_text(certificate_item, "selected_run_dir"),
+        catalog_file,
+    )
+    audit_dir = _catalog_reference_path(
+        _row_text(
+            certificate_item,
+            "selected_provider_active_lineage_chain_audit_dir",
+        ),
+        catalog_file,
+    )
+    certificate_manifest = (
+        certificate_dir / MANIFEST_NAME if certificate_dir is not None else None
+    )
+    audit_manifest = audit_dir / MANIFEST_NAME if audit_dir is not None else None
+    if audit_dir is not None and audit_dir.is_dir():
+        manifest_inputs["selected_provider_active_lineage_chain_audit"] = (
+            audit_dir
+        )
+    if audit_manifest is not None and audit_manifest.is_file():
+        manifest_inputs[
+            "selected_provider_active_lineage_chain_audit_manifest"
+        ] = audit_manifest
+    if certificate_dir is not None and certificate_dir.is_dir():
+        manifest_inputs[
+            "selected_provider_broker_rehearsal_certificate"
+        ] = certificate_dir
+    if certificate_manifest is not None and certificate_manifest.is_file():
+        manifest_inputs[
+            "selected_provider_broker_rehearsal_certificate_manifest"
+        ] = certificate_manifest
+
+    certificate_integrity = verify_experiment_manifest(
+        certificate_manifest
+        or catalog_file.parent / "missing_certificate" / MANIFEST_NAME,
+        expected_run_type=PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE,
+        require_input_fingerprints=True,
+    )
+    audit_verification = None
+    audit_error = "active_lineage_chain_audit_not_selected"
+    if audit_dir is not None and audit_dir.is_dir():
+        try:
+            audit_verification = (
+                verify_provider_market_data_imbalance_active_lineage_chain_audit(
+                    audit_dir
+                )
+            )
+            audit_error = audit_verification.error
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            audit_error = f"active_lineage_chain_audit_unreadable:{exc}"
+
+    actual_audit_manifest_sha256 = _current_file_sha256(audit_manifest)
+    actual_certificate_manifest_sha256 = _current_file_sha256(
+        certificate_manifest
+    )
+    expected_audit_manifest_sha256 = _row_text(
+        certificate_item,
+        "selected_provider_active_lineage_chain_audit_manifest_sha256",
+    ).lower()
+    expected_certificate_manifest_sha256 = _row_text(
+        certificate_item,
+        "selected_provider_active_lineage_chain_audit_certificate_manifest_sha256",
+    ).lower()
+    expected_chain_digest_sha256 = _row_text(
+        certificate_item,
+        "selected_provider_active_lineage_chain_audit_chain_digest_sha256",
+    ).lower()
+    expected_contract_sha256 = _row_text(
+        certificate_item,
+        "selected_provider_active_lineage_chain_audit_contract_sha256",
+    ).lower()
+    verification_ready = bool(
+        audit_verification is not None and audit_verification.ready
+    )
+    verification_certificate_dir = (
+        audit_verification.certificate_dir
+        if audit_verification is not None
+        else None
+    )
+    verification_certificate_sha256 = (
+        audit_verification.certificate_manifest_sha256.lower()
+        if audit_verification is not None
+        else ""
+    )
+    verification_chain_digest_sha256 = (
+        audit_verification.chain_digest_sha256.lower()
+        if audit_verification is not None
+        else ""
+    )
+    verification_contract_sha256 = (
+        str(
+            audit_verification.provider_lineage_selection_contract.get(
+                "sha256",
+                "",
+            )
+        ).lower()
+        if audit_verification is not None
+        else ""
+    )
+    proof_paths_bound = bool(
+        audit_verification is not None
+        and audit_dir is not None
+        and audit_verification.audit_dir == audit_dir
+        and certificate_dir is not None
+        and verification_certificate_dir == certificate_dir
+    )
+    catalog_binding_current = bool(
+        verification_ready
+        and proof_paths_bound
+        and _row_text(
+            certificate_item,
+            "selected_provider_active_lineage_chain_audit_status",
+        ).strip().lower()
+        == "covered_current"
+        and _to_bool(
+            certificate_item.get(
+                "selected_provider_active_lineage_chain_audit_selection_bound",
+                False,
+            )
+        )
+        and _valid_sha256(expected_audit_manifest_sha256)
+        and expected_audit_manifest_sha256
+        == actual_audit_manifest_sha256
+        and _valid_sha256(expected_certificate_manifest_sha256)
+        and expected_certificate_manifest_sha256
+        == actual_certificate_manifest_sha256
+        == verification_certificate_sha256
+        and _valid_sha256(expected_chain_digest_sha256)
+        and expected_chain_digest_sha256
+        == verification_chain_digest_sha256
+    )
+    contract_binding_current = bool(
+        verification_ready
+        and _valid_sha256(expected_contract_sha256)
+        and expected_contract_sha256 == verification_contract_sha256
+    )
+
+    summary_fields.update(
+        {
+            "selected_provider_active_lineage_chain_audit_current": (
+                verification_ready
+            ),
+            "selected_provider_active_lineage_chain_audit_dir": (
+                str(audit_dir) if audit_dir is not None else ""
+            ),
+            "selected_provider_active_lineage_chain_audit_manifest_sha256": (
+                actual_audit_manifest_sha256
+            ),
+            "selected_provider_active_lineage_chain_audit_chain_digest_sha256": (
+                verification_chain_digest_sha256
+            ),
+            "selected_provider_broker_rehearsal_certificate_current": bool(
+                certificate_integrity.passed
+            ),
+            "selected_provider_broker_rehearsal_certificate_dir": (
+                str(certificate_dir) if certificate_dir is not None else ""
+            ),
+            "selected_provider_broker_rehearsal_certificate_manifest_sha256": (
+                actual_certificate_manifest_sha256
+            ),
+            "provider_retained_proof_catalog_binding_current": (
+                catalog_binding_current
+            ),
+            "provider_retained_proof_contract_binding_current": (
+                contract_binding_current
+            ),
+            "provider_retained_proof_direct_input_count": sum(
+                key.startswith("selected_provider_")
+                for key in manifest_inputs
+            ),
+            "provider_retained_proofs_directly_fingerprinted": bool(
+                len(manifest_inputs) == 5
+            ),
+        }
+    )
+    checks = pd.DataFrame(
+        [
+            _check(
+                "source_catalog_manifest_current",
+                "current" if catalog_integrity.passed else catalog_integrity.error,
+                "is",
+                "current",
+                bool(catalog_integrity.passed),
+                "source experiment catalog manifest is missing, stale, or detached from its inputs",
+            ),
+            _check(
+                "selected_provider_active_lineage_chain_audit_current",
+                "current" if verification_ready else audit_error,
+                "is",
+                "current",
+                verification_ready,
+                "selected provider active-lineage chain audit is missing, stale, or semantically inconsistent",
+            ),
+            _check(
+                "selected_provider_broker_rehearsal_certificate_current",
+                (
+                    "current"
+                    if certificate_integrity.passed
+                    else certificate_integrity.error
+                ),
+                "is",
+                "current",
+                bool(certificate_integrity.passed),
+                "selected provider broker rehearsal certificate manifest or inputs are stale",
+            ),
+            _check(
+                "provider_retained_proof_catalog_binding_current",
+                "bound" if catalog_binding_current else "detached",
+                "is",
+                "bound",
+                catalog_binding_current,
+                "catalog-selected provider audit and certificate do not match the reopened retained proofs",
+            ),
+            _check(
+                "provider_retained_proof_contract_binding_current",
+                (
+                    verification_contract_sha256
+                    if verification_contract_sha256
+                    else "missing"
+                ),
+                "==",
+                expected_contract_sha256 or "catalog_contract_sha256",
+                contract_binding_current,
+                "catalog-selected provider audit contract does not match the reopened chain audit",
+            ),
+        ]
+    )
+    return _ProviderRetainedProofVerification(
+        required=True,
+        checks=checks,
+        summary_fields=summary_fields,
+        manifest_inputs=manifest_inputs,
+    )
+
+
+def _apply_provider_retained_proof_verification(
+    review: StrategyEvidenceReview,
+    verification: _ProviderRetainedProofVerification,
+) -> StrategyEvidenceReview:
+    checks = review.checks.copy()
+    if not verification.checks.empty:
+        checks = pd.concat([checks, verification.checks], ignore_index=True)
+    summary = review.summary.copy()
+    for key, value in verification.summary_fields.items():
+        summary[key] = value
+    if verification.required and not summary.empty:
+        ready = bool(not checks.empty and checks["passed"].astype(bool).all())
+        profile = str(summary.iloc[0].get("evidence_profile", "custom"))
+        policy = str(
+            summary.iloc[0].get(
+                "provider_lineage_selection_policy",
+                "not_applicable",
+            )
+        )
+        summary.loc[:, "ready"] = ready
+        summary.loc[:, "failed_checks"] = int(
+            (~checks["passed"].astype(bool)).sum()
+        )
+        summary.loc[:, "recommendation"] = _recommendation(
+            profile,
+            ready,
+            provider_lineage_policy=policy,
+        )
+    return StrategyEvidenceReview(
+        evidence=review.evidence,
+        checks=checks,
+        summary=summary,
+        provider_lineage_selection=review.provider_lineage_selection,
+    )
+
+
+def _catalog_reference_path(
+    value: str,
+    catalog_file: Path,
+) -> Path | None:
+    text = str(value).strip()
+    if not text:
+        return None
+    path = Path(text)
+    if not path.is_absolute():
+        path = catalog_file.parent / path
+    return path.resolve()
+
+
+def _current_file_sha256(path: Path | None) -> str:
+    if path is None or not path.is_file():
+        return ""
+    try:
+        return file_sha256(path).lower()
+    except OSError:
+        return ""
 
 
 def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThresholds) -> dict[str, Any]:
@@ -292,6 +690,9 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
             "selected_provider_active_lineage_chain_audit_dir": "",
             "selected_provider_active_lineage_chain_audit_chain_digest_sha256": "",
             "selected_provider_active_lineage_chain_audit_manifest_sha256": "",
+            "selected_provider_active_lineage_chain_audit_contract_sha256": "",
+            "selected_provider_active_lineage_chain_audit_certificate_manifest_sha256": "",
+            "selected_provider_active_lineage_chain_audit_selection_bound": False,
             "passed": False,
         }
     matched["summary_status_bool"] = matched["summary_status"].map(_to_optional_bool)
@@ -357,6 +758,20 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
         "selected_provider_active_lineage_chain_audit_manifest_sha256": _row_text(
             selected,
             "provider_active_lineage_chain_audit_manifest_sha256",
+        ),
+        "selected_provider_active_lineage_chain_audit_contract_sha256": _row_text(
+            selected,
+            "provider_active_lineage_chain_audit_contract_sha256",
+        ),
+        "selected_provider_active_lineage_chain_audit_certificate_manifest_sha256": _row_text(
+            selected,
+            "provider_active_lineage_chain_audit_certificate_manifest_sha256",
+        ),
+        "selected_provider_active_lineage_chain_audit_selection_bound": _to_bool(
+            selected.get(
+                "provider_active_lineage_chain_audit_selection_bound",
+                False,
+            )
         ),
         "passed": bool(candidate_passed_runs >= thresholds.min_passed_per_type),
     }
@@ -897,6 +1312,8 @@ def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
         "provider_active_lineage_chain_audit_dir",
         "provider_active_lineage_chain_audit_chain_digest_sha256",
         "provider_active_lineage_chain_audit_manifest_sha256",
+        "provider_active_lineage_chain_audit_contract_sha256",
+        "provider_active_lineage_chain_audit_certificate_manifest_sha256",
         "provider_active_lineage_chain_audit_selection_bound",
     ]:
         if column not in frame.columns:
