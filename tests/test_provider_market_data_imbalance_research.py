@@ -557,6 +557,37 @@ def _write_ready_ops_launch_evidence(
                     3 if evidence_profile == "provider_imbalance_ops_launch" else 0
                 ),
                 "provider_lineage_selection_blocked_runs": 0,
+                "provider_lineage_selected_run_count": (
+                    3 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_lineage_selected_pair_count": (
+                    3 if evidence_profile == "provider_imbalance_ops_launch" else 0
+                ),
+                "provider_lineage_selected_pair_ids": (
+                    ";".join(("1" * 64, "2" * 64, "3" * 64))
+                    if evidence_profile == "provider_imbalance_ops_launch"
+                    else ""
+                ),
+                "provider_lineage_selected_run_dirs": (
+                    "runs/provider_ack;runs/provider_roundtrip;runs/provider_certificate"
+                    if evidence_profile == "provider_imbalance_ops_launch"
+                    else ""
+                ),
+                "provider_lineage_selection_contract_version": (
+                    "provider_active_lineage_selection/v1"
+                    if evidence_profile == "provider_imbalance_ops_launch"
+                    else ""
+                ),
+                "provider_lineage_selection_contract_sha256": (
+                    "a" * 64
+                    if evidence_profile == "provider_imbalance_ops_launch"
+                    else ""
+                ),
+                "provider_lineage_selection_artifact": (
+                    "strategy_evidence_provider_lineage_selection.csv"
+                    if evidence_profile == "provider_imbalance_ops_launch"
+                    else ""
+                ),
             }
         ]
     ).to_csv(out_dir / "strategy_evidence_summary.csv", index=False)
@@ -3827,13 +3858,52 @@ def test_provider_market_data_imbalance_route_readiness_accepts_ready_ops_eviden
     assert summary.loc[0, "market"] == "india_nse_index_derivatives"
     assert int(summary.loc[0, "route_ready_pairs"]) == 1
     assert int(summary.loc[0, "gap_pairs"]) == 0
+    assert int(summary.loc[0, "provider_lineage_selected_pair_count"]) == 3
+    assert summary.loc[0, "provider_lineage_selection_contract_sha256"] == "a" * 64
+    assert route_summary.loc[
+        0, "ops_provider_lineage_selection_contract_sha256"
+    ] == "a" * 64
     assert summary.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
     assert action_queue.loc[0, "queue_status"] == "ready"
     assert action_queue.loc[0, "next_gate"] == "plan-provider-market-data-imbalance-scaleup"
     assert bool(route_summary.loc[0, "ready"])
     assert manifest["run_type"] == "provider_market_data_imbalance_route_readiness"
+    assert manifest["extra"]["provider_lineage_selection_contract_sha256"] == "a" * 64
     assert "strategy_evidence" in manifest["inputs"]
     assert "ops_evidence_1" in manifest["inputs"]
+
+
+def test_provider_market_data_imbalance_route_readiness_blocks_unsealed_lineage_contract(
+    tmp_path,
+):
+    launch_evidence = _write_ready_provider_imbalance_launch_evidence(tmp_path)
+    ops_evidence = _write_ready_ops_launch_evidence(tmp_path)
+    ops_summary_path = ops_evidence / "strategy_evidence_summary.csv"
+    ops_summary = pd.read_csv(ops_summary_path)
+    ops_summary.loc[0, "provider_lineage_selection_contract_sha256"] = ""
+    ops_summary.to_csv(ops_summary_path, index=False)
+    out_dir = tmp_path / "provider_imbalance_route_readiness_unsealed_lineage"
+
+    report = write_provider_market_data_imbalance_route_readiness(
+        launch_evidence.output_dir,
+        out_dir,
+        ops_evidence_dirs=(ops_evidence,),
+        config=ProviderMarketDataImbalanceRouteReadinessConfig(),
+    )
+
+    failed = set(report.checks.loc[~report.checks["passed"].astype(bool), "check"])
+    route_pairs = pd.read_csv(out_dir / "route_readiness" / "route_readiness_pairs.csv")
+    summary = pd.read_csv(
+        out_dir / "provider_market_data_imbalance_route_readiness_summary.csv"
+    )
+    assert not report.ready
+    assert "route_readiness_ready" in failed
+    assert "provider_lineage_selection_contract_carried" in failed
+    assert "provider_lineage_selection_contract_sha256" in route_pairs.loc[
+        0, "ops_launch_control_failures"
+    ]
+    assert not bool(summary.loc[0, "route_readiness_ready"])
+    assert pd.isna(summary.loc[0, "provider_lineage_selection_contract_sha256"])
 
 
 def test_provider_market_data_imbalance_route_readiness_blocks_sidecar_breach(tmp_path):

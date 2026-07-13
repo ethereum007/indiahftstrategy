@@ -897,6 +897,27 @@ def _scorecard_row(
         "provider_lineage_selection_blocked_runs": int(
             _numeric(summary.get("provider_lineage_selection_blocked_runs", 0))
         ),
+        "provider_lineage_selected_run_count": int(
+            _numeric(summary.get("provider_lineage_selected_run_count", 0))
+        ),
+        "provider_lineage_selected_pair_count": int(
+            _numeric(summary.get("provider_lineage_selected_pair_count", 0))
+        ),
+        "provider_lineage_selected_pair_ids": str(
+            summary.get("provider_lineage_selected_pair_ids", "")
+        ),
+        "provider_lineage_selected_run_dirs": str(
+            summary.get("provider_lineage_selected_run_dirs", "")
+        ),
+        "provider_lineage_selection_contract_version": str(
+            summary.get("provider_lineage_selection_contract_version", "")
+        ),
+        "provider_lineage_selection_contract_sha256": str(
+            summary.get("provider_lineage_selection_contract_sha256", "")
+        ),
+        "provider_lineage_selection_artifact": str(
+            summary.get("provider_lineage_selection_artifact", "")
+        ),
         "provider_broker_rehearsal_certificate_runs": int(
             _numeric(summary.get("provider_broker_rehearsal_certificate_runs", 0))
         ),
@@ -1406,6 +1427,27 @@ def _action(row: dict[str, Any]) -> dict[str, Any]:
         ),
         "provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
             _numeric(row.get("provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
+        ),
+        "provider_lineage_selected_run_count": int(
+            _numeric(row.get("provider_lineage_selected_run_count", 0))
+        ),
+        "provider_lineage_selected_pair_count": int(
+            _numeric(row.get("provider_lineage_selected_pair_count", 0))
+        ),
+        "provider_lineage_selected_pair_ids": str(
+            row.get("provider_lineage_selected_pair_ids", "")
+        ),
+        "provider_lineage_selected_run_dirs": str(
+            row.get("provider_lineage_selected_run_dirs", "")
+        ),
+        "provider_lineage_selection_contract_version": str(
+            row.get("provider_lineage_selection_contract_version", "")
+        ),
+        "provider_lineage_selection_contract_sha256": str(
+            row.get("provider_lineage_selection_contract_sha256", "")
+        ),
+        "provider_lineage_selection_artifact": str(
+            row.get("provider_lineage_selection_artifact", "")
         ),
         "provider_broker_rehearsal_certificate_runs": int(
             _numeric(row.get("provider_broker_rehearsal_certificate_runs", 0))

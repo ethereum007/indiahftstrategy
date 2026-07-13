@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -93,6 +95,26 @@ PROVIDER_ACTIVE_LINEAGE_RUN_TYPES = (
     "provider_market_data_imbalance_broker_dispatch_roundtrip",
     PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE,
 )
+PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES = {
+    "provider_market_data_imbalance_broker_dispatch_ack": "provider_ack",
+    "provider_market_data_imbalance_broker_dispatch_roundtrip": "provider_roundtrip",
+    PROVIDER_BROKER_REHEARSAL_CERTIFICATE_RUN_TYPE: "rehearsal_certificate",
+}
+PROVIDER_LINEAGE_SELECTION_ARTIFACT = "strategy_evidence_provider_lineage_selection.csv"
+PROVIDER_LINEAGE_SELECTION_CONTRACT_VERSION = "provider_active_lineage_selection/v1"
+PROVIDER_LINEAGE_SELECTION_COLUMNS = (
+    "priority",
+    "required_run_type",
+    "bundle_type",
+    "lineage_pair_id",
+    "selected_run_dir",
+    "counterpart_path",
+    "selected_role",
+    "selection_status",
+    "selected_generated_at_utc",
+    "selected_git_commit",
+    "selected",
+)
 PLACEHOLDER_SCHEMA_STATUS = "placeholder_normalized_pending_vendor_schema"
 EVIDENCE_PROFILE_RUN_TYPES = {
     "default": DEFAULT_REQUIRED_RUN_TYPES,
@@ -168,6 +190,7 @@ class StrategyEvidenceReview:
     evidence: pd.DataFrame
     checks: pd.DataFrame
     summary: pd.DataFrame
+    provider_lineage_selection: pd.DataFrame
     output_dir: Path | None = None
 
     @property
@@ -186,9 +209,15 @@ def evaluate_strategy_evidence(
     _validate_thresholds(thresholds)
     frame = _normalize_catalog(catalog)
     evidence = pd.DataFrame([_evidence_row(frame, run_type, thresholds) for run_type in thresholds.required_run_types])
-    checks = _checks(frame, evidence, thresholds)
-    summary = _summary(frame, evidence, checks, thresholds)
-    return StrategyEvidenceReview(evidence=evidence, checks=checks, summary=summary)
+    provider_lineage_selection = _provider_lineage_selection(evidence, thresholds)
+    checks = _checks(frame, evidence, provider_lineage_selection, thresholds)
+    summary = _summary(frame, evidence, provider_lineage_selection, checks, thresholds)
+    return StrategyEvidenceReview(
+        evidence=evidence,
+        checks=checks,
+        summary=summary,
+        provider_lineage_selection=provider_lineage_selection,
+    )
 
 
 def write_strategy_evidence_review(
@@ -206,17 +235,28 @@ def write_strategy_evidence_review(
     review.evidence.to_csv(out / "strategy_evidence_items.csv", index=False)
     review.checks.to_csv(out / "strategy_evidence_checks.csv", index=False)
     review.summary.to_csv(out / "strategy_evidence_summary.csv", index=False)
+    review.provider_lineage_selection.to_csv(out / PROVIDER_LINEAGE_SELECTION_ARTIFACT, index=False)
     write_experiment_manifest(
         out,
         run_type="strategy_evidence_review",
         parameters={"thresholds": asdict(thresholds)},
         inputs={"catalog": catalog_file},
     )
-    return StrategyEvidenceReview(review.evidence, review.checks, review.summary, out)
+    return StrategyEvidenceReview(
+        evidence=review.evidence,
+        checks=review.checks,
+        summary=review.summary,
+        provider_lineage_selection=review.provider_lineage_selection,
+        output_dir=out,
+    )
 
 
 def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThresholds) -> dict[str, Any]:
     matched = catalog.loc[catalog["run_type"].astype(str) == run_type].copy()
+    provider_lineage_selection_required = bool(
+        _provider_lineage_selection_policy(thresholds) == "required"
+        and run_type in _required_provider_lineage_run_types(thresholds)
+    )
     if matched.empty:
         return {
             "required_run_type": run_type,
@@ -228,13 +268,38 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
             "latest_status": False,
             "latest_generated_at_utc": "",
             "latest_git_commit": "",
+            "latest_strategy": "",
+            "latest_market": "",
+            "latest_input_count": 0,
+            "latest_input_file_count": 0,
+            "latest_input_directory_count": 0,
+            "latest_input_other_count": 0,
+            "latest_input_unfingerprinted_count": 0,
+            "candidate_passed_runs": 0,
+            "selected_run_dir": "",
+            "selected_generated_at_utc": "",
+            "selected_git_commit": "",
+            "selected_strategy": "",
+            "selected_market": "",
+            "provider_lineage_selection_required": provider_lineage_selection_required,
+            "provider_lineage_selected": False,
+            "selected_provider_lineage_bundle_type": "",
+            "selected_provider_lineage_pair_id": "",
+            "selected_provider_lineage_role": "",
+            "selected_provider_lineage_selection_status": "",
+            "selected_provider_lineage_counterpart_path": "",
             "passed": False,
         }
     matched["summary_status_bool"] = matched["summary_status"].map(_to_optional_bool)
     latest = _latest_row(matched)
     passed = matched.loc[matched["summary_status_bool"] == True]  # noqa: E712
-    identity = _latest_row(passed) if not passed.empty else latest
+    candidates = passed
+    if provider_lineage_selection_required:
+        candidates = passed.loc[_provider_lineage_selectable_mask(passed)].copy()
+    selected = _latest_row(candidates) if not candidates.empty else pd.Series(dtype=object)
+    identity = selected if not selected.empty else latest
     passed_runs = int((matched["summary_status_bool"] == True).sum())  # noqa: E712 - pandas scalar comparison
+    candidate_passed_runs = int(len(candidates))
     failed_runs = int((matched["summary_status_bool"] == False).sum())  # noqa: E712
     unknown_runs = int(matched["summary_status_bool"].isna().sum())
     return {
@@ -254,15 +319,39 @@ def _evidence_row(catalog: pd.DataFrame, run_type: str, thresholds: EvidenceThre
         "latest_input_directory_count": int(_numeric(latest.get("input_directory_count", 0))),
         "latest_input_other_count": int(_numeric(latest.get("input_other_count", 0))),
         "latest_input_unfingerprinted_count": int(_numeric(latest.get("input_unfingerprinted_count", 0))),
-        "passed": bool(passed_runs >= thresholds.min_passed_per_type),
+        "candidate_passed_runs": candidate_passed_runs,
+        "selected_run_dir": _row_text(selected, "run_dir"),
+        "selected_generated_at_utc": _row_text(selected, "generated_at_utc"),
+        "selected_git_commit": _row_text(selected, "git_commit"),
+        "selected_strategy": _strategy_identity(selected),
+        "selected_market": _market_identity(selected),
+        "provider_lineage_selection_required": provider_lineage_selection_required,
+        "provider_lineage_selected": bool(provider_lineage_selection_required and not selected.empty),
+        "selected_provider_lineage_bundle_type": _row_text(selected, "provider_lineage_bundle_type"),
+        "selected_provider_lineage_pair_id": _row_text(selected, "provider_lineage_pair_id"),
+        "selected_provider_lineage_role": _row_text(selected, "provider_lineage_role"),
+        "selected_provider_lineage_selection_status": _row_text(
+            selected,
+            "provider_lineage_selection_status",
+        ),
+        "selected_provider_lineage_counterpart_path": _row_text(
+            selected,
+            "provider_lineage_counterpart_path",
+        ),
+        "passed": bool(candidate_passed_runs >= thresholds.min_passed_per_type),
     }
 
 
-def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceThresholds) -> pd.DataFrame:
+def _checks(
+    catalog: pd.DataFrame,
+    evidence: pd.DataFrame,
+    provider_lineage_selection: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> pd.DataFrame:
     rows = [
         _check(
             f"required_run_type:{row.required_run_type}",
-            int(row.passed_runs),
+            int(row.candidate_passed_runs),
             ">=",
             thresholds.min_passed_per_type,
             bool(row.passed),
@@ -495,6 +584,58 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
                     f"{run_type} does not have enough passed active-lineage selectable proofs",
                 )
             )
+        for selection in provider_lineage_selection.to_dict(orient="records"):
+            run_type = str(selection["required_run_type"])
+            expected_bundle_type = PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES[run_type]
+            identity_ready = bool(
+                selection["selected"]
+                and selection["bundle_type"] == expected_bundle_type
+                and _valid_sha256(selection["lineage_pair_id"])
+                and selection["selected_role"] == "active_strict"
+                and selection["selection_status"] == "selectable"
+                and selection["selected_run_dir"]
+                and selection["counterpart_path"]
+            )
+            rows.append(
+                _check(
+                    f"provider_lineage_identity:{run_type}",
+                    selection["lineage_pair_id"],
+                    "is",
+                    "active_strict_sha256_pair",
+                    identity_ready,
+                    f"{run_type} selected proof does not carry complete active-strict lineage identity",
+                )
+            )
+        required_count = len(_required_provider_lineage_run_types(thresholds))
+        selected_pair_ids = {
+            str(value).lower()
+            for value in provider_lineage_selection["lineage_pair_id"].tolist()
+            if _valid_sha256(value)
+        }
+        contract_sha256 = _provider_lineage_selection_contract_sha256(
+            provider_lineage_selection,
+            thresholds,
+        )
+        rows.extend(
+            [
+                _check(
+                    "provider_lineage_unique_pair_ids",
+                    len(selected_pair_ids),
+                    "==",
+                    required_count,
+                    len(selected_pair_ids) == required_count,
+                    "selected provider lineage stages do not have distinct SHA-256 pair IDs",
+                ),
+                _check(
+                    "provider_lineage_selection_contract",
+                    contract_sha256,
+                    "is",
+                    "sha256",
+                    _valid_sha256(contract_sha256),
+                    "selected provider lineage roster could not be sealed as a complete contract",
+                ),
+            ]
+        )
     elif lineage_policy == "audit_only":
         rows.append(
             _check(
@@ -557,6 +698,7 @@ def _checks(catalog: pd.DataFrame, evidence: pd.DataFrame, thresholds: EvidenceT
 def _summary(
     catalog: pd.DataFrame,
     evidence: pd.DataFrame,
+    provider_lineage_selection: pd.DataFrame,
     checks: pd.DataFrame,
     thresholds: EvidenceThresholds,
 ) -> pd.DataFrame:
@@ -584,6 +726,18 @@ def _summary(
     provider_certificate_counts = _provider_broker_rehearsal_certificate_counts(catalog)
     provider_lineage_counts = _provider_lineage_selection_counts(catalog, thresholds)
     provider_lineage_policy = _provider_lineage_selection_policy(thresholds)
+    provider_lineage_contract_sha256 = _provider_lineage_selection_contract_sha256(
+        provider_lineage_selection,
+        thresholds,
+    )
+    selected_lineage = provider_lineage_selection.loc[
+        provider_lineage_selection["selected"].astype(bool)
+    ]
+    selected_pair_ids = [
+        str(value).lower()
+        for value in selected_lineage["lineage_pair_id"].tolist()
+        if _valid_sha256(value)
+    ]
     return pd.DataFrame(
         [
             {
@@ -644,6 +798,19 @@ def _summary(
                 "require_provider_lineage_selection": provider_lineage_policy == "required",
                 "provider_lineage_selection_policy": provider_lineage_policy,
                 "provider_lineage_selection_audit_only": provider_lineage_policy == "audit_only",
+                "provider_lineage_selected_run_count": int(len(selected_lineage)),
+                "provider_lineage_selected_pair_count": int(len(set(selected_pair_ids))),
+                "provider_lineage_selected_pair_ids": ";".join(selected_pair_ids),
+                "provider_lineage_selected_run_dirs": ";".join(
+                    selected_lineage["selected_run_dir"].astype(str).tolist()
+                ),
+                "provider_lineage_selection_contract_version": (
+                    PROVIDER_LINEAGE_SELECTION_CONTRACT_VERSION
+                    if provider_lineage_contract_sha256
+                    else ""
+                ),
+                "provider_lineage_selection_contract_sha256": provider_lineage_contract_sha256,
+                "provider_lineage_selection_artifact": PROVIDER_LINEAGE_SELECTION_ARTIFACT,
                 "placeholder_schema_active_runs": placeholder_active,
                 "placeholder_schema_blocked_runs": placeholder_blocked,
                 "broker_roundtrip_portfolio_safe_runs": roundtrip_safe,
@@ -702,6 +869,10 @@ def _normalize_catalog(catalog: pd.DataFrame) -> pd.DataFrame:
         "input_hashed_count",
         "provider_lineage_selection_status",
         "provider_lineage_selection_eligible",
+        "provider_lineage_bundle_type",
+        "provider_lineage_pair_id",
+        "provider_lineage_role",
+        "provider_lineage_counterpart_path",
     ]:
         if column not in frame.columns:
             frame[column] = False if column == "provider_lineage_selection_eligible" else np.nan
@@ -815,10 +986,128 @@ def _provider_lineage_selection_counts(
     }
 
 
+def _provider_lineage_selection(
+    evidence: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> pd.DataFrame:
+    policy = _provider_lineage_selection_policy(thresholds)
+    rows: list[dict[str, Any]] = []
+    for priority, run_type in enumerate(
+        _required_provider_lineage_run_types(thresholds),
+        start=1,
+    ):
+        matched = evidence.loc[
+            evidence["required_run_type"].astype(str).eq(run_type)
+        ]
+        item = matched.iloc[0] if not matched.empty else pd.Series(dtype=object)
+        selected = bool(
+            policy == "required"
+            and not item.empty
+            and _to_bool(item.get("provider_lineage_selected", False))
+        )
+        rows.append(
+            {
+                "priority": priority,
+                "required_run_type": run_type,
+                "bundle_type": _row_text(
+                    item,
+                    "selected_provider_lineage_bundle_type",
+                ),
+                "lineage_pair_id": _row_text(
+                    item,
+                    "selected_provider_lineage_pair_id",
+                ).lower(),
+                "selected_run_dir": _row_text(item, "selected_run_dir"),
+                "counterpart_path": _row_text(
+                    item,
+                    "selected_provider_lineage_counterpart_path",
+                ),
+                "selected_role": _row_text(
+                    item,
+                    "selected_provider_lineage_role",
+                ).strip().lower(),
+                "selection_status": _row_text(
+                    item,
+                    "selected_provider_lineage_selection_status",
+                ).strip().lower(),
+                "selected_generated_at_utc": _row_text(
+                    item,
+                    "selected_generated_at_utc",
+                ),
+                "selected_git_commit": _row_text(item, "selected_git_commit"),
+                "selected": selected,
+            }
+        )
+    return pd.DataFrame(rows, columns=PROVIDER_LINEAGE_SELECTION_COLUMNS)
+
+
+def _provider_lineage_selection_contract_sha256(
+    selection: pd.DataFrame,
+    thresholds: EvidenceThresholds,
+) -> str:
+    required_count = len(_required_provider_lineage_run_types(thresholds))
+    if (
+        _provider_lineage_selection_policy(thresholds) != "required"
+        or required_count == 0
+        or len(selection) != required_count
+        or not selection["selected"].astype(bool).all()
+    ):
+        return ""
+    records: list[dict[str, Any]] = []
+    pair_ids: set[str] = set()
+    for row in selection.sort_values("priority").to_dict(orient="records"):
+        run_type = str(row["required_run_type"])
+        pair_id = str(row["lineage_pair_id"]).lower()
+        if (
+            row["bundle_type"] != PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES[run_type]
+            or not _valid_sha256(pair_id)
+            or row["selected_role"] != "active_strict"
+            or row["selection_status"] != "selectable"
+            or not row["selected_run_dir"]
+            or not row["counterpart_path"]
+        ):
+            return ""
+        pair_ids.add(pair_id)
+        records.append(
+            {
+                "priority": int(row["priority"]),
+                "required_run_type": run_type,
+                "bundle_type": str(row["bundle_type"]),
+                "lineage_pair_id": pair_id,
+                "selected_run_dir": str(row["selected_run_dir"]),
+                "counterpart_path": str(row["counterpart_path"]),
+                "selected_role": str(row["selected_role"]),
+                "selection_status": str(row["selection_status"]),
+                "selected_generated_at_utc": str(row["selected_generated_at_utc"]),
+                "selected_git_commit": str(row["selected_git_commit"]),
+            }
+        )
+    if len(pair_ids) != required_count:
+        return ""
+    payload = {
+        "contract_version": PROVIDER_LINEAGE_SELECTION_CONTRACT_VERSION,
+        "selections": records,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _valid_sha256(value: Any) -> bool:
+    if value is None:
+        return False
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        pass
+    return bool(re.fullmatch(r"[0-9a-fA-F]{64}", str(value)))
+
+
 def _latest_row(frame: pd.DataFrame) -> pd.Series:
     work = frame.copy()
     work["_generated_sort"] = work["generated_at_utc"].astype(str)
-    return work.sort_values("_generated_sort").iloc[-1]
+    work["_run_dir_sort"] = work["run_dir"].astype(str)
+    return work.sort_values(["_generated_sort", "_run_dir_sort"], kind="mergesort").iloc[-1]
 
 
 def _passed_required_commits(catalog: pd.DataFrame, evidence: pd.DataFrame) -> set[str]:
@@ -827,12 +1116,29 @@ def _passed_required_commits(catalog: pd.DataFrame, evidence: pd.DataFrame) -> s
 
 
 def _passed_required_rows(catalog: pd.DataFrame, evidence: pd.DataFrame) -> pd.DataFrame:
-    required = set(evidence.loc[evidence["passed"].astype(bool), "required_run_type"].astype(str))
-    if not required:
+    passed_evidence = evidence.loc[evidence["passed"].astype(bool)].copy()
+    if passed_evidence.empty:
         return catalog.iloc[0:0].copy()
+    provider_selected = passed_evidence.loc[
+        passed_evidence["provider_lineage_selection_required"].astype(bool)
+        & passed_evidence["provider_lineage_selected"].astype(bool)
+    ]
+    selected_run_dirs = set(provider_selected["selected_run_dir"].astype(str))
+    required = set(
+        passed_evidence.loc[
+            ~passed_evidence["provider_lineage_selection_required"].astype(bool),
+            "required_run_type",
+        ].astype(str)
+    )
     work = catalog.copy()
     work["summary_status_bool"] = work["summary_status"].map(_to_optional_bool)
-    return work.loc[work["run_type"].astype(str).isin(required) & (work["summary_status_bool"] == True)].copy()  # noqa: E712
+    return work.loc[
+        (
+            work["run_type"].astype(str).isin(required)
+            | work["run_dir"].astype(str).isin(selected_run_dirs)
+        )
+        & (work["summary_status_bool"] == True)  # noqa: E712
+    ].copy()
 
 
 def _identity_values(frame: pd.DataFrame, extractor: Any) -> set[str]:

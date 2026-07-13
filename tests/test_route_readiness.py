@@ -7,6 +7,17 @@ from reports.market_portability import MarketPortabilityReportConfig, build_mark
 from reports.route_readiness import build_route_readiness_review, write_route_readiness_review
 
 
+PROVIDER_LINEAGE_PAIR_IDS = ";".join(("1" * 64, "2" * 64, "3" * 64))
+PROVIDER_LINEAGE_RUN_DIRS = ";".join(
+    (
+        "runs/provider_ack",
+        "runs/provider_roundtrip",
+        "runs/provider_rehearsal_certificate",
+    )
+)
+PROVIDER_LINEAGE_CONTRACT_SHA256 = "a" * 64
+
+
 def evidence_summary(
     *,
     profile: str,
@@ -93,6 +104,19 @@ def evidence_summary(
                 "provider_lineage_covered_run_type_count": 3,
                 "provider_lineage_selectable_runs": 3,
                 "provider_lineage_selection_blocked_runs": 0,
+                "provider_lineage_selected_run_count": 3,
+                "provider_lineage_selected_pair_count": 3,
+                "provider_lineage_selected_pair_ids": PROVIDER_LINEAGE_PAIR_IDS,
+                "provider_lineage_selected_run_dirs": PROVIDER_LINEAGE_RUN_DIRS,
+                "provider_lineage_selection_contract_version": (
+                    "provider_active_lineage_selection/v1"
+                ),
+                "provider_lineage_selection_contract_sha256": (
+                    PROVIDER_LINEAGE_CONTRACT_SHA256
+                ),
+                "provider_lineage_selection_artifact": (
+                    "strategy_evidence_provider_lineage_selection.csv"
+                ),
             }
         )
     return pd.DataFrame(
@@ -188,7 +212,23 @@ def test_route_readiness_passes_provider_ops_evidence_with_sidecar_proof():
     assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_readable_count"]) == 2
     assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
     assert int(row["ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs"]) == 0
+    assert int(row["ops_provider_lineage_selected_pair_count"]) == 3
+    assert row["ops_provider_lineage_selected_pair_ids"] == PROVIDER_LINEAGE_PAIR_IDS
+    assert (
+        row["ops_provider_lineage_selection_contract_sha256"]
+        == PROVIDER_LINEAGE_CONTRACT_SHA256
+    )
+    assert (
+        review.summary.iloc[0]["ops_provider_lineage_selection_contract_sha256"]
+        == PROVIDER_LINEAGE_CONTRACT_SHA256
+    )
     assert review.config["ready_actions"][0]["ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"] == 1
+    assert (
+        review.config["ready_actions"][0][
+            "ops_provider_lineage_selection_contract_sha256"
+        ]
+        == PROVIDER_LINEAGE_CONTRACT_SHA256
+    )
     assert review.action_queue is not None
     assert int(review.action_queue.loc[0, "ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs"]) == 1
 
@@ -247,9 +287,35 @@ def test_route_readiness_blocks_provider_ops_evidence_without_lineage_contract()
         "provider_lineage_required_run_type_count",
         "provider_lineage_covered_run_type_count",
         "provider_lineage_selectable_runs",
+        "provider_lineage_selected_run_count",
+        "provider_lineage_selected_pair_count",
+        "provider_lineage_selected_pair_ids",
+        "provider_lineage_selection_contract_sha256",
     }.issubset(failures)
     assert review.config["ready_action_count"] == 0
     assert review.config["blocked_action_count"] == 1
+
+
+def test_route_readiness_blocks_provider_ops_evidence_with_unsealed_lineage_roster():
+    ops_evidence = evidence_summary(
+        profile="provider_imbalance_ops_launch",
+        require_file_inputs=True,
+    )
+    ops_evidence.loc[0, "provider_lineage_selection_contract_sha256"] = ""
+
+    review = build_route_readiness_review(
+        provider_ops_portability_config(),
+        strategy_evidence_summaries=evidence_summary(profile="imbalance"),
+        ops_evidence_summaries=ops_evidence,
+    )
+
+    row = review.pairs.iloc[0]
+    failures = set(str(row["ops_launch_control_failures"]).split(";"))
+    assert not review.ready
+    assert not bool(row["route_ready"])
+    assert row["status"] == "ops_launch_controls_not_gated"
+    assert "provider_lineage_selection_contract_sha256" in failures
+    assert row["ops_provider_lineage_selection_contract_sha256"] == ""
 
 
 def test_route_readiness_blocks_ops_evidence_without_file_input_gate():

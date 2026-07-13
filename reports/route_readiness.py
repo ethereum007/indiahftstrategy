@@ -24,6 +24,7 @@ _EVIDENCE_BOOL_COLUMNS = {
     "fail_on_broker_roundtrip_resume_route_breach",
     "require_provider_broker_roundtrip_synthetic_sidecar_ready",
     "fail_on_provider_broker_roundtrip_synthetic_sidecar_breach",
+    "require_provider_lineage_selection",
 }
 _EVIDENCE_COUNT_COLUMNS = {
     "placeholder_schema_blocked_runs",
@@ -45,6 +46,12 @@ _EVIDENCE_COUNT_COLUMNS = {
     "provider_broker_roundtrip_synthetic_sidecar_proof_runs",
     "provider_broker_roundtrip_synthetic_sidecar_ready_runs",
     "provider_broker_roundtrip_synthetic_sidecar_breach_runs",
+    "provider_lineage_required_run_type_count",
+    "provider_lineage_covered_run_type_count",
+    "provider_lineage_selectable_runs",
+    "provider_lineage_selection_blocked_runs",
+    "provider_lineage_selected_run_count",
+    "provider_lineage_selected_pair_count",
     "input_directory_count",
     "input_other_count",
     "input_unfingerprinted_count",
@@ -324,6 +331,41 @@ def _pair_row(
         )
         if ops_match.row
         else 0,
+        "ops_provider_lineage_selected_run_count": int(
+            _number(ops_match.row.get("provider_lineage_selected_run_count", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_provider_lineage_selected_pair_count": int(
+            _number(ops_match.row.get("provider_lineage_selected_pair_count", 0))
+        )
+        if ops_match.row
+        else 0,
+        "ops_provider_lineage_selected_pair_ids": _text(
+            ops_match.row.get("provider_lineage_selected_pair_ids", "")
+        )
+        if ops_match.row
+        else "",
+        "ops_provider_lineage_selected_run_dirs": _text(
+            ops_match.row.get("provider_lineage_selected_run_dirs", "")
+        )
+        if ops_match.row
+        else "",
+        "ops_provider_lineage_selection_contract_version": _text(
+            ops_match.row.get("provider_lineage_selection_contract_version", "")
+        )
+        if ops_match.row
+        else "",
+        "ops_provider_lineage_selection_contract_sha256": _text(
+            ops_match.row.get("provider_lineage_selection_contract_sha256", "")
+        ).lower()
+        if ops_match.row
+        else "",
+        "ops_provider_lineage_selection_artifact": _text(
+            ops_match.row.get("provider_lineage_selection_artifact", "")
+        )
+        if ops_match.row
+        else "",
         "route_ready": bool(route_ready),
         "status": status,
         "blocker": "" if route_ready else _blocker(pair, status),
@@ -536,6 +578,18 @@ def _ops_launch_control_failures(row: dict[str, Any]) -> list[str]:
         covered_types = int(
             _number(row.get("provider_lineage_covered_run_type_count", 0))
         )
+        selected_run_count = int(
+            _number(row.get("provider_lineage_selected_run_count", 0))
+        )
+        selected_pair_count = int(
+            _number(row.get("provider_lineage_selected_pair_count", 0))
+        )
+        selected_pair_ids = _semicolon_values(
+            row.get("provider_lineage_selected_pair_ids", "")
+        )
+        selection_contract = _text(
+            row.get("provider_lineage_selection_contract_sha256", "")
+        )
         checks.extend(
             [
                 (
@@ -564,6 +618,25 @@ def _ops_launch_control_failures(row: dict[str, Any]) -> list[str]:
                         _number(row.get("provider_lineage_selectable_runs", 0))
                     )
                     >= required_types,
+                ),
+                (
+                    "provider_lineage_selected_run_count",
+                    required_types > 0 and selected_run_count >= required_types,
+                ),
+                (
+                    "provider_lineage_selected_pair_count",
+                    required_types > 0 and selected_pair_count == required_types,
+                ),
+                (
+                    "provider_lineage_selected_pair_ids",
+                    required_types > 0
+                    and len(selected_pair_ids) == required_types
+                    and len(set(selected_pair_ids)) == required_types
+                    and all(_valid_sha256(value) for value in selected_pair_ids),
+                ),
+                (
+                    "provider_lineage_selection_contract_sha256",
+                    _valid_sha256(selection_contract),
                 ),
             ]
         )
@@ -653,6 +726,13 @@ def _summary(
                     "ops_broker_roundtrip_resume_route_portfolio_breach_pairs": 0,
                     "ops_broker_roundtrip_resume_route_concentration_breach_pairs": 0,
                     "ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": 0,
+                    "ops_provider_lineage_selected_run_count": 0,
+                    "ops_provider_lineage_selected_pair_count": 0,
+                    "ops_provider_lineage_selected_pair_ids": "",
+                    "ops_provider_lineage_selected_run_dirs": "",
+                    "ops_provider_lineage_selection_contract_version": "",
+                    "ops_provider_lineage_selection_contract_sha256": "",
+                    "ops_provider_lineage_selection_artifact": "",
                     "require_ops_file_inputs": bool(require_ops_file_inputs),
                     "ready_action_count": 0,
                     "blocked_action_count": 0,
@@ -670,6 +750,7 @@ def _summary(
     strategies = sorted(set(identity_pairs["strategy"].astype(str))) if "strategy" in identity_pairs else []
     markets = sorted(set(identity_pairs["market"].astype(str))) if "market" in identity_pairs else []
     next_gate = _primary_next_gate(pairs, gaps, ready=ready)
+    lineage_row = identity_pairs.iloc[0] if not identity_pairs.empty else pd.Series(dtype=object)
     return pd.DataFrame(
         [
             {
@@ -735,6 +816,27 @@ def _summary(
                 )
                 if "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs" in pairs
                 else 0,
+                "ops_provider_lineage_selected_run_count": int(
+                    _number(lineage_row.get("ops_provider_lineage_selected_run_count", 0))
+                ),
+                "ops_provider_lineage_selected_pair_count": int(
+                    _number(lineage_row.get("ops_provider_lineage_selected_pair_count", 0))
+                ),
+                "ops_provider_lineage_selected_pair_ids": _text(
+                    lineage_row.get("ops_provider_lineage_selected_pair_ids", "")
+                ),
+                "ops_provider_lineage_selected_run_dirs": _text(
+                    lineage_row.get("ops_provider_lineage_selected_run_dirs", "")
+                ),
+                "ops_provider_lineage_selection_contract_version": _text(
+                    lineage_row.get("ops_provider_lineage_selection_contract_version", "")
+                ),
+                "ops_provider_lineage_selection_contract_sha256": _text(
+                    lineage_row.get("ops_provider_lineage_selection_contract_sha256", "")
+                ),
+                "ops_provider_lineage_selection_artifact": _text(
+                    lineage_row.get("ops_provider_lineage_selection_artifact", "")
+                ),
                 "require_ops_file_inputs": bool(require_ops_file_inputs),
                 "ready_action_count": route_ready,
                 "blocked_action_count": int((~pairs["route_ready"].astype(bool)).sum()),
@@ -851,6 +953,13 @@ def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
         "ops_provider_broker_roundtrip_synthetic_sidecar_proof_runs",
         "ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs",
         "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs",
+        "ops_provider_lineage_selected_run_count",
+        "ops_provider_lineage_selected_pair_count",
+        "ops_provider_lineage_selected_pair_ids",
+        "ops_provider_lineage_selected_run_dirs",
+        "ops_provider_lineage_selection_contract_version",
+        "ops_provider_lineage_selection_contract_sha256",
+        "ops_provider_lineage_selection_artifact",
         "route_ready",
         "status",
         "blocker",
@@ -938,6 +1047,27 @@ def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
                     "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs": int(
                         _number(row.get("ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs", 0))
                     ),
+                    "ops_provider_lineage_selected_run_count": int(
+                        _number(row.get("ops_provider_lineage_selected_run_count", 0))
+                    ),
+                    "ops_provider_lineage_selected_pair_count": int(
+                        _number(row.get("ops_provider_lineage_selected_pair_count", 0))
+                    ),
+                    "ops_provider_lineage_selected_pair_ids": _text(
+                        row.get("ops_provider_lineage_selected_pair_ids", "")
+                    ),
+                    "ops_provider_lineage_selected_run_dirs": _text(
+                        row.get("ops_provider_lineage_selected_run_dirs", "")
+                    ),
+                    "ops_provider_lineage_selection_contract_version": _text(
+                        row.get("ops_provider_lineage_selection_contract_version", "")
+                    ),
+                    "ops_provider_lineage_selection_contract_sha256": _text(
+                        row.get("ops_provider_lineage_selection_contract_sha256", "")
+                    ),
+                    "ops_provider_lineage_selection_artifact": _text(
+                        row.get("ops_provider_lineage_selection_artifact", "")
+                    ),
                     "recommendation": _route_action_recommendation(row),
                 }
             )
@@ -978,6 +1108,13 @@ def _action_queue(pairs: pd.DataFrame) -> pd.DataFrame:
             "ops_provider_broker_roundtrip_synthetic_sidecar_proof_runs",
             "ops_provider_broker_roundtrip_synthetic_sidecar_ready_runs",
             "ops_provider_broker_roundtrip_synthetic_sidecar_breach_runs",
+            "ops_provider_lineage_selected_run_count",
+            "ops_provider_lineage_selected_pair_count",
+            "ops_provider_lineage_selected_pair_ids",
+            "ops_provider_lineage_selected_run_dirs",
+            "ops_provider_lineage_selection_contract_version",
+            "ops_provider_lineage_selection_contract_sha256",
+            "ops_provider_lineage_selection_artifact",
             "recommendation",
         ],
     )
@@ -1154,6 +1291,19 @@ def _normalize_evidence_frame(frame: pd.DataFrame | None) -> pd.DataFrame:
         "provider_broker_roundtrip_synthetic_sidecar_proof_runs",
         "provider_broker_roundtrip_synthetic_sidecar_ready_runs",
         "provider_broker_roundtrip_synthetic_sidecar_breach_runs",
+        "require_provider_lineage_selection",
+        "provider_lineage_selection_policy",
+        "provider_lineage_required_run_type_count",
+        "provider_lineage_covered_run_type_count",
+        "provider_lineage_selectable_runs",
+        "provider_lineage_selection_blocked_runs",
+        "provider_lineage_selected_run_count",
+        "provider_lineage_selected_pair_count",
+        "provider_lineage_selected_pair_ids",
+        "provider_lineage_selected_run_dirs",
+        "provider_lineage_selection_contract_version",
+        "provider_lineage_selection_contract_sha256",
+        "provider_lineage_selection_artifact",
         "input_directory_count",
         "input_other_count",
         "input_unfingerprinted_count",
@@ -1210,6 +1360,21 @@ def _text(value: Any) -> str:
     except (TypeError, ValueError):
         pass
     return str(value)
+
+
+def _semicolon_values(value: Any) -> list[str]:
+    return [
+        item.strip().lower()
+        for item in _text(value).split(";")
+        if item.strip()
+    ]
+
+
+def _valid_sha256(value: Any) -> bool:
+    candidate = _text(value).strip().lower()
+    return len(candidate) == 64 and all(
+        character in "0123456789abcdef" for character in candidate
+    )
 
 
 def _number(value: Any) -> int:

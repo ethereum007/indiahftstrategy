@@ -3,7 +3,10 @@ import json
 import pandas as pd
 
 from hft_cli import main
-from reports.evidence import PROVIDER_ACTIVE_LINEAGE_RUN_TYPES
+from reports.evidence import (
+    PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES,
+    PROVIDER_ACTIVE_LINEAGE_RUN_TYPES,
+)
 from reports.manifest import verify_experiment_manifest, write_experiment_manifest
 from reports.strategy_scorecard import (
     StrategyScorecardThresholds,
@@ -267,8 +270,17 @@ def complete_provider_imbalance_ops_launch_rows(
     ]
     for item in rows:
         if item["run_type"] in PROVIDER_ACTIVE_LINEAGE_RUN_TYPES:
+            lineage_number = PROVIDER_ACTIVE_LINEAGE_RUN_TYPES.index(item["run_type"]) + 1
             item["provider_lineage_selection_status"] = "selectable"
             item["provider_lineage_selection_eligible"] = True
+            item["provider_lineage_bundle_type"] = PROVIDER_ACTIVE_LINEAGE_BUNDLE_TYPES[
+                item["run_type"]
+            ]
+            item["provider_lineage_pair_id"] = str(lineage_number) * 64
+            item["provider_lineage_role"] = "active_strict"
+            item["provider_lineage_counterpart_path"] = (
+                f"{item['run_dir']}_retained"
+            )
         if item["run_type"] == "provider_market_data_imbalance_broker_rehearsal_certificate":
             item["summary_target_mode"] = "live_dryrun"
             item["summary_authorizes_submission"] = False
@@ -864,11 +876,19 @@ def test_strategy_scorecard_scores_provider_imbalance_ops_launch_profile():
     assert int(score["provider_lineage_covered_run_type_count"]) == 3
     assert int(score["provider_lineage_selectable_runs"]) == 3
     assert int(score["provider_lineage_selection_blocked_runs"]) == 0
+    assert int(score["provider_lineage_selected_run_count"]) == 3
+    assert int(score["provider_lineage_selected_pair_count"]) == 3
+    assert len(score["provider_lineage_selection_contract_sha256"]) == 64
     assert score["evidence_failed_checks"] == ""
     assert report.summary.loc[0, "recommendation"] == "promote_ready_route_to_live_dryrun_review"
     assert report.config["ready_actions"][0]["profile"] == "provider_imbalance_ops_launch"
     assert report.config["ready_actions"][0]["next_gate"] == "review-route-readiness"
     assert report.config["ready_actions"][0]["provider_broker_roundtrip_synthetic_sidecar_ready_runs"] == 1
+    assert len(
+        report.config["ready_actions"][0][
+            "provider_lineage_selection_contract_sha256"
+        ]
+    ) == 64
     assert report.config["ready_actions"][0][
         "provider_broker_rehearsal_certificate_live_dryrun_runs"
     ] == 1

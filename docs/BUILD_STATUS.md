@@ -2814,6 +2814,21 @@
   non-ready `audit_only` review and cannot authorize a route. Direct evidence,
   CLI, scorecard, generic route-readiness, and real provider wrapper paths pass
   together (`87 passed`).
+- Provider launch selection now resolves one deterministic active-strict proof
+  per acknowledgement, final round-trip, and rehearsal-certificate stage even
+  when newer retained archives coexist. Strategy evidence writes the exact
+  three-stage roster to
+  `strategy_evidence_provider_lineage_selection.csv`, distinguishes raw latest
+  rows from selected rows, and seals bundle type, pair ID, selected/counterpart
+  paths, role, status, timestamp, and commit in a canonical SHA-256 selection
+  contract. Missing, malformed, or duplicate pair IDs fail closed. The
+  strategy scorecard, generic route pair/summary/action/config artifacts, and
+  provider route summary/config/runbook/manifest carry that contract and its
+  ordered pair IDs; both route layers reject old or unsealed evidence. The
+  focused evidence, scorecard, and generic route suites pass together (`82
+  passed`), and the complete provider route-wrapper suite, including CLI,
+  missing-evidence, stale-sidecar, and deliberately unsealed contract paths,
+  passes (`8 passed`).
 
 ## Test Gate
 
@@ -2823,7 +2838,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1603 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1606 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -2966,7 +2981,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1597-test collection is fully green.
+1606-test collection is fully green.
 
 ## Next Build Targets
 
@@ -2975,6 +2990,6 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Carry selected active-lineage pair IDs into provider route-readiness and
-   broker-dispatch handoffs so operators can trace the exact active proof chain
-   without reopening the source catalog.
+4. Carry the sealed provider active-lineage selection contract through scale-up,
+   runtime telemetry/guard/session, and every broker-dispatch handoff so the
+   exact proof chain remains traceable at the final send/acknowledgement boundary.

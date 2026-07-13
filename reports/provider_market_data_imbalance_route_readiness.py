@@ -217,6 +217,9 @@ def write_provider_market_data_imbalance_route_readiness(
         extra={
             "ready": bool(summary.iloc[0]["ready"]),
             "route_readiness_ready": bool(summary.iloc[0]["route_readiness_ready"]),
+            "provider_lineage_selection_contract_sha256": str(
+                summary.iloc[0]["provider_lineage_selection_contract_sha256"]
+            ),
             "profile": PROFILE,
             "strategy": str(summary.iloc[0]["strategy"]),
             "market": str(summary.iloc[0]["market"]),
@@ -336,6 +339,16 @@ def _checks(
     rows = prechecks.to_dict(orient="records")
     route_summary = route_readiness.summary if route_readiness is not None else pd.DataFrame()
     route_ready = bool(route_readiness.ready) if route_readiness is not None else False
+    lineage_contract = _first_text(
+        route_summary,
+        "ops_provider_lineage_selection_contract_sha256",
+    )
+    lineage_pair_ids = _semicolon_values(
+        _first_text(route_summary, "ops_provider_lineage_selected_pair_ids")
+    )
+    lineage_pair_count = int(
+        _first_number(route_summary, "ops_provider_lineage_selected_pair_count")
+    )
     rows.extend(
         [
             _check(
@@ -375,6 +388,18 @@ def _checks(
                     == _identity_key(_first_text(launch_evidence_summary, "market"))
                 ),
                 "route readiness market identity does not match provider launch evidence",
+            ),
+            _check(
+                "provider_lineage_selection_contract_carried",
+                lineage_contract,
+                "is",
+                "three_stage_sha256_contract",
+                _valid_sha256(lineage_contract)
+                and lineage_pair_count == 3
+                and len(lineage_pair_ids) == 3
+                and len(set(lineage_pair_ids)) == 3
+                and all(_valid_sha256(value) for value in lineage_pair_ids),
+                "route readiness did not carry a complete three-stage provider lineage selection contract",
             ),
         ]
     )
@@ -425,6 +450,32 @@ def _summary(
                 "ops_evidence_ready_pairs": int(_first_number(route_summary, "ops_evidence_ready_pairs")),
                 "ops_launch_controls_blocked_pairs": int(
                     _first_number(route_summary, "ops_launch_controls_blocked_pairs")
+                ),
+                "provider_lineage_selected_run_count": int(
+                    _first_number(route_summary, "ops_provider_lineage_selected_run_count")
+                ),
+                "provider_lineage_selected_pair_count": int(
+                    _first_number(route_summary, "ops_provider_lineage_selected_pair_count")
+                ),
+                "provider_lineage_selected_pair_ids": _first_text(
+                    route_summary,
+                    "ops_provider_lineage_selected_pair_ids",
+                ),
+                "provider_lineage_selected_run_dirs": _first_text(
+                    route_summary,
+                    "ops_provider_lineage_selected_run_dirs",
+                ),
+                "provider_lineage_selection_contract_version": _first_text(
+                    route_summary,
+                    "ops_provider_lineage_selection_contract_version",
+                ),
+                "provider_lineage_selection_contract_sha256": _first_text(
+                    route_summary,
+                    "ops_provider_lineage_selection_contract_sha256",
+                ),
+                "provider_lineage_selection_artifact": _first_text(
+                    route_summary,
+                    "ops_provider_lineage_selection_artifact",
                 ),
                 "require_ops_file_inputs": _first_bool(route_summary, "require_ops_file_inputs"),
                 "failed_checks": failed,
@@ -633,6 +684,8 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Market: {summary['market']}",
         f"- Strategy: {summary['strategy']}",
         f"- Route readiness dir: {summary['route_readiness_dir']}",
+        f"- Provider lineage contract: `{summary['provider_lineage_selection_contract_sha256']}`",
+        f"- Selected lineage pair IDs: `{summary['provider_lineage_selected_pair_ids']}`",
         f"- Next gate: `{summary['next_gate']}`",
         "",
         "## Checks",
@@ -828,6 +881,21 @@ def _text(value: object, fallback: str = "") -> str:
         pass
     text = str(value).strip()
     return text if text else fallback
+
+
+def _semicolon_values(value: object) -> list[str]:
+    return [
+        item.strip().lower()
+        for item in _text(value).split(";")
+        if item.strip()
+    ]
+
+
+def _valid_sha256(value: object) -> bool:
+    candidate = _text(value).lower()
+    return len(candidate) == 64 and all(
+        character in "0123456789abcdef" for character in candidate
+    )
 
 
 def _truthy(value: object) -> bool:
