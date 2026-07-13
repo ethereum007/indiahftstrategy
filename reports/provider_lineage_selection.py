@@ -18,13 +18,30 @@ _SUMMARY_FIELDS = {
     "artifact": "route_readiness_ops_provider_lineage_selection_artifact",
 }
 
+_ROUTE_READINESS_SUMMARY_FIELDS = {
+    "version": "provider_lineage_selection_contract_version",
+    "sha256": "provider_lineage_selection_contract_sha256",
+    "selected_run_count": "provider_lineage_selected_run_count",
+    "selected_pair_count": "provider_lineage_selected_pair_count",
+    "selected_pair_ids": "provider_lineage_selected_pair_ids",
+    "selected_run_dirs": "provider_lineage_selected_run_dirs",
+    "artifact": "provider_lineage_selection_artifact",
+}
+
 
 def provider_lineage_selection_contract_from_summary(
     value: pd.DataFrame | pd.Series | Mapping[str, Any] | None,
 ) -> dict[str, Any]:
     record = _record(value)
     return normalize_provider_lineage_selection_contract(
-        {key: record.get(field, "") for key, field in _SUMMARY_FIELDS.items()}
+        {
+            key: _first_present(
+                record,
+                field,
+                _ROUTE_READINESS_SUMMARY_FIELDS[key],
+            )
+            for key, field in _SUMMARY_FIELDS.items()
+        }
     )
 
 
@@ -108,6 +125,20 @@ def _record(
 
 def _mapping(value: object) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _first_present(record: Mapping[str, Any], *fields: str) -> Any:
+    for field in fields:
+        value = record.get(field, "")
+        try:
+            if pd.isna(value):
+                continue
+        except (TypeError, ValueError):
+            pass
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return ""
 
 
 def _semicolon_values(value: object) -> list[str]:

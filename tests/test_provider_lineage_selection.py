@@ -56,6 +56,23 @@ def test_provider_lineage_selection_contract_normalizes_artifact_surfaces():
     assert provider_lineage_selection_contract_from_manifest(manifest) == contract
 
 
+def test_provider_lineage_selection_contract_normalizes_route_readiness_origin_fields():
+    contract = _contract()
+    summary = pd.Series(
+        {
+            "provider_lineage_selection_contract_version": contract["version"],
+            "provider_lineage_selection_contract_sha256": contract["sha256"],
+            "provider_lineage_selected_run_count": contract["selected_run_count"],
+            "provider_lineage_selected_pair_count": contract["selected_pair_count"],
+            "provider_lineage_selected_pair_ids": contract["selected_pair_ids"],
+            "provider_lineage_selected_run_dirs": contract["selected_run_dirs"],
+            "provider_lineage_selection_artifact": contract["artifact"],
+        }
+    )
+
+    assert provider_lineage_selection_contract_from_summary(summary) == contract
+
+
 def test_provider_lineage_selection_contract_rejects_malformed_roster():
     contract = _contract()
     invalid_contracts = []

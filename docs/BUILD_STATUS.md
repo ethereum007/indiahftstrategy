@@ -2907,6 +2907,25 @@
   rejection pass together (`2 passed`), all legacy certificate safety and
   archive paths remain green (`8 passed`), and the shared validator suite passes
   (`3 passed`).
+- Provider active-lineage chain auditing is now available through
+  `audit-provider-market-data-imbalance-active-lineage-chain`. Starting from one
+  rehearsal certificate, the bounded audit walks the complete recursive
+  manifest graph and requires exactly one ordered provider boundary for route
+  readiness, scale-up, telemetry, guard, session, broker readiness, cutover,
+  route enable, dispatch, send, acknowledgement, final review, and
+  certification. Every stage must be ready, non-authorizing, manifest-current,
+  directly bound to its immediate predecessor, internally consistent across
+  summary/config/manifest contract copies, and equal to the route-readiness
+  canonical contract. Route readiness now emits the full normalized contract in
+  config and manifest as well as its original flattened summary fields. The
+  audit also verifies the certificate payload hash and cycle ID, emits a
+  deterministic 13-stage chain digest plus chain/manifest/check/action artifacts
+  and an operator runbook, and fingerprints every recursive dependency in its
+  own non-authorizing manifest. The real strict chain passes all `13` stages and
+  `65` recursive manifests through the API and CLI, then a valid-looking
+  runtime-guard contract edit fails closed through both paths (`1 passed`). The
+  shared contract, legacy certificate, and manifest suites remain green (`17
+  passed`).
 
 ## Test Gate
 
@@ -2916,7 +2935,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1622 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1624 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -2946,6 +2965,10 @@ passed`). Rehearsal certification now independently reopens the final review,
 requires exact summary/config/manifest contract agreement, and binds the
 normalized seal into its hashed evidence; the strict ready and contract-drift
 paths pass (`2 passed`) alongside all legacy certificate paths (`8 passed`).
+The operator chain audit now closes all 13 provider boundaries from route
+readiness through certification, independently verifies 65 recursive manifests
+in the real strict fixture, and rejects intermediate runtime-guard contract drift
+through both the Python and CLI surfaces (`1 passed`).
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
@@ -3082,7 +3105,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
-1622-test collection is fully green.
+1624-test collection is fully green.
 
 ## Next Build Targets
 
@@ -3091,7 +3114,7 @@ the last completed full-suite green baseline rather than claiming the current
    are available.
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
-4. Add one operator-facing active-lineage audit over the complete route
-   readiness -> runtime -> broker readiness -> cutover -> route enable ->
-   dispatch -> send -> acknowledgement -> final review -> certificate chain,
-   verifying exact contract equality and recursive manifest currency end to end.
+4. Require a current passing active-lineage chain audit when the experiment
+   catalog or final broker-readiness evidence selects a provider rehearsal
+   certificate, so stale or detached certificates cannot become the operator's
+   latest retained proof.

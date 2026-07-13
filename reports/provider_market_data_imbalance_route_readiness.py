@@ -13,6 +13,9 @@ from reports.market_portability import (
     MarketPortabilityReportConfig,
     write_market_portability_report,
 )
+from reports.provider_lineage_selection import (
+    provider_lineage_selection_contract_from_summary,
+)
 from reports.route_readiness import RouteReadinessReview, write_route_readiness_review
 
 
@@ -184,6 +187,8 @@ def write_provider_market_data_imbalance_route_readiness(
         action_queue,
         config,
     )
+    lineage_contract = provider_lineage_selection_contract_from_summary(summary)
+    payload["provider_lineage_selection_contract"] = lineage_contract
 
     checks.to_csv(out / "provider_market_data_imbalance_route_readiness_checks.csv", index=False)
     summary.to_csv(out / "provider_market_data_imbalance_route_readiness_summary.csv", index=False)
@@ -217,6 +222,7 @@ def write_provider_market_data_imbalance_route_readiness(
         extra={
             "ready": bool(summary.iloc[0]["ready"]),
             "route_readiness_ready": bool(summary.iloc[0]["route_readiness_ready"]),
+            "provider_lineage_selection_contract": lineage_contract,
             "provider_lineage_selection_contract_sha256": str(
                 summary.iloc[0]["provider_lineage_selection_contract_sha256"]
             ),

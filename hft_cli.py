@@ -245,6 +245,10 @@ from reports.provider_market_data_imbalance_broker_lineage_refresh_convergence i
 from reports.provider_market_data_imbalance_broker_active_lineage import (
     write_provider_broker_active_lineage_index,
 )
+from reports.provider_market_data_imbalance_active_lineage_chain import (
+    ProviderMarketDataImbalanceActiveLineageChainConfig,
+    write_provider_market_data_imbalance_active_lineage_chain_audit,
+)
 from reports.provider_market_data_live_ingest import (
     ProviderMarketDataLiveIngestConfig,
     write_provider_market_data_live_session_ingest,
@@ -2244,6 +2248,33 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
     )
     provider_broker_active_lineage.add_argument(
+        "--fail-on-actions",
+        action="store_true",
+    )
+
+    provider_active_lineage_chain = sub.add_parser(
+        "audit-provider-market-data-imbalance-active-lineage-chain",
+        help=(
+            "Audit one provider rehearsal certificate across the complete "
+            "route-readiness-to-certificate active-lineage chain."
+        ),
+    )
+    provider_active_lineage_chain.add_argument("--certificate", required=True)
+    provider_active_lineage_chain.add_argument("--out", required=True)
+    provider_active_lineage_chain.add_argument(
+        "--max-manifests",
+        type=int,
+        default=256,
+    )
+    provider_active_lineage_chain.add_argument(
+        "--fail-on-breach",
+        action="store_true",
+    )
+    provider_active_lineage_chain.add_argument(
+        "--fail-on-blocked-actions",
+        action="store_true",
+    )
+    provider_active_lineage_chain.add_argument(
         "--fail-on-actions",
         action="store_true",
     )
@@ -5899,6 +5930,34 @@ def main(argv: list[str] | None = None) -> int:
         result = write_provider_broker_active_lineage_index(
             args.convergence,
             args.out,
+        )
+        print(result.summary.to_string(index=False))
+        action_count = int(len(result.action_queue))
+        blocked_actions = 0
+        if not result.action_queue.empty:
+            blocked_actions = int(
+                result.action_queue["queue_status"]
+                .astype(str)
+                .eq("blocked")
+                .sum()
+            )
+        if args.fail_on_breach and not result.ready:
+            return 2
+        if args.fail_on_blocked_actions and blocked_actions > 0:
+            return 2
+        if args.fail_on_actions and action_count > 0:
+            return 2
+        return 0
+    if (
+        args.command
+        == "audit-provider-market-data-imbalance-active-lineage-chain"
+    ):
+        result = write_provider_market_data_imbalance_active_lineage_chain_audit(
+            args.certificate,
+            args.out,
+            config=ProviderMarketDataImbalanceActiveLineageChainConfig(
+                max_manifest_count=args.max_manifests,
+            ),
         )
         print(result.summary.to_string(index=False))
         action_count = int(len(result.action_queue))

@@ -6,6 +6,7 @@ import pandas as pd
 
 from hft_cli import main as _cli_main
 from tests.provider_adapter_capture_support import write_bundle_captures
+from reports.manifest import verify_experiment_manifest
 from reports.market_data_fetch import MarketDataFetchConfig, write_market_data_fetch_plan
 from reports.market_data_source import MarketDataSourceConfig, write_market_data_source_plan
 from reports.provider_market_data_client import write_provider_market_data_client_plan
@@ -81,6 +82,12 @@ from reports.provider_market_data_imbalance_broker_dispatch_roundtrip import (
 from reports.provider_market_data_imbalance_broker_rehearsal_certificate import (
     ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig,
     write_provider_market_data_imbalance_broker_rehearsal_certificate,
+)
+from reports.provider_market_data_imbalance_active_lineage_chain import (
+    CHAIN_ARTIFACTS,
+    RUN_TYPE as ACTIVE_LINEAGE_CHAIN_RUN_TYPE,
+    ProviderMarketDataImbalanceActiveLineageChainConfig,
+    write_provider_market_data_imbalance_active_lineage_chain_audit,
 )
 from reports.provider_market_data_live_bundle import (
     ProviderMarketDataLiveCaptureBundleConfig,
@@ -32398,6 +32405,128 @@ def test_provider_market_data_imbalance_broker_rehearsal_certificate_blocks_roun
     assert (
         lineage_action["next_gate"]
         == "review-provider-market-data-imbalance-route-readiness"
+    )
+
+
+def test_provider_market_data_imbalance_active_lineage_chain_audit_closes_and_detects_drift(
+    tmp_path,
+):
+    provider_roundtrip = _write_ready_provider_imbalance_broker_dispatch_roundtrip(
+        tmp_path,
+        require_ack_lineage=True,
+    )
+    certificate = write_provider_market_data_imbalance_broker_rehearsal_certificate(
+        provider_roundtrip.output_dir,
+        tmp_path / "provider_imbalance_active_lineage_chain_certificate",
+        config=ProviderMarketDataImbalanceBrokerRehearsalCertificateConfig(
+            require_clean_recorded_git=False,
+            require_ack_lineage=True,
+            max_manifest_count=128,
+        ),
+    )
+    report = write_provider_market_data_imbalance_active_lineage_chain_audit(
+        certificate.output_dir,
+        tmp_path / "provider_imbalance_active_lineage_chain_audit",
+        config=ProviderMarketDataImbalanceActiveLineageChainConfig(
+            max_manifest_count=256
+        ),
+    )
+
+    expected_contract = _provider_lineage_selection_contract()
+    expected_stages = [
+        "route_readiness",
+        "scaleup",
+        "runtime_telemetry",
+        "runtime_guard",
+        "runtime_session",
+        "broker_readiness",
+        "cutover",
+        "route_enable",
+        "broker_dispatch",
+        "broker_dispatch_send",
+        "broker_dispatch_ack",
+        "broker_dispatch_roundtrip",
+        "rehearsal_certificate",
+    ]
+    output_manifest = json.loads(
+        (report.output_dir / "manifest.json").read_text(encoding="utf-8")
+    )
+    runbook = (
+        report.output_dir
+        / "provider_market_data_imbalance_active_lineage_chain_runbook.md"
+    ).read_text(encoding="utf-8")
+    assert report.ready
+    assert report.chain["stage"].tolist() == expected_stages
+    assert report.chain["passed"].astype(bool).all()
+    assert report.manifest_inventory["current"].astype(bool).all()
+    assert report.config["provider_lineage_selection_contract"] == expected_contract
+    assert (
+        output_manifest["extra"]["provider_lineage_selection_contract"]
+        == expected_contract
+    )
+    assert len(report.summary.loc[0, "chain_digest_sha256"]) == 64
+    assert expected_contract["sha256"] in runbook
+    assert verify_experiment_manifest(
+        report.output_dir / "manifest.json",
+        expected_run_type=ACTIVE_LINEAGE_CHAIN_RUN_TYPE,
+        required_artifacts=CHAIN_ARTIFACTS,
+        require_input_fingerprints=True,
+    ).passed
+
+    cli_out = tmp_path / "provider_imbalance_active_lineage_chain_audit_cli"
+    assert (
+        main(
+            [
+                "audit-provider-market-data-imbalance-active-lineage-chain",
+                "--certificate",
+                str(certificate.output_dir),
+                "--out",
+                str(cli_out),
+                "--max-manifests",
+                "256",
+                "--fail-on-breach",
+            ]
+        )
+        == 0
+    )
+
+    guard_config_path = Path(
+        report.chain.set_index("stage").loc["runtime_guard", "config_path"]
+    )
+    _mutate_json(
+        guard_config_path,
+        lambda payload: payload["provider_lineage_selection_contract"].update(
+            {"sha256": "c" * 64}
+        ),
+    )
+    drifted = write_provider_market_data_imbalance_active_lineage_chain_audit(
+        certificate.output_dir,
+        tmp_path / "provider_imbalance_active_lineage_chain_audit_drifted",
+        config=ProviderMarketDataImbalanceActiveLineageChainConfig(
+            max_manifest_count=256
+        ),
+    )
+
+    guard_row = drifted.chain.set_index("stage").loc["runtime_guard"]
+    assert not drifted.ready
+    assert not bool(guard_row["manifest_current"])
+    assert not bool(guard_row["contract_surfaces_match"])
+    assert not bool(guard_row["canonical_contract_match"])
+    assert "runtime_guard" in set(drifted.action_queue["stage"])
+    assert (
+        main(
+            [
+                "audit-provider-market-data-imbalance-active-lineage-chain",
+                "--certificate",
+                str(certificate.output_dir),
+                "--out",
+                str(tmp_path / "provider_imbalance_active_lineage_chain_cli_drifted"),
+                "--max-manifests",
+                "256",
+                "--fail-on-breach",
+            ]
+        )
+        == 2
     )
 
 
