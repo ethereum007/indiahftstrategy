@@ -2872,6 +2872,18 @@
   cross-artifact drift, sidecar-breach, and unready paths pass (`4 passed`),
   the sealed send output passes downstream acknowledgement reconciliation (`1
   passed`), and the shared validator suite remains green (`3 passed`).
+- Provider broker acknowledgement reconciliation now preserves and enforces
+  the same active-lineage contract before accepted or rejected responses can
+  contribute to a round-trip proof. The acknowledgement wrapper validates the
+  source send summary, config, and manifest copies exactly, carries the
+  normalized contract through summary, config, runbook, and manifest outputs,
+  remains non-authorizing, and keeps the existing lineage-migration audit
+  independent. Incomplete or edited proof routes back to provider
+  route-readiness review even when every synthetic acknowledgement is accepted.
+  Focused ready, cross-artifact drift, sidecar-breach, and unready paths pass
+  (`4 passed`); the sealed acknowledgement passes downstream final round-trip
+  review (`1 passed`), and the shared validator suite remains green (`3
+  passed`).
 
 ## Test Gate
 
@@ -2881,7 +2893,7 @@ Run from repo root:
 pytest
 ```
 
-Current collected suite: 1619 tests. Last completed full-suite baseline: 1110
+Current collected suite: 1620 tests. Last completed full-suite baseline: 1110
 passing tests; the suite has grown materially since that baseline.
 
 Latest active-lineage downstream affected-surface gate: strategy evidence,
@@ -2903,7 +2915,9 @@ the next two boundaries; focused ready, cross-artifact drift, sidecar-breach,
 and route-less/unready paths pass (`8 passed`). The downstream non-submitting
 send boundary now preserves and verifies the contract too; focused ready,
 cross-artifact drift, sidecar-breach, and unready paths pass (`4 passed`). The
-downstream acknowledgement path also passes (`1 passed`).
+acknowledgement boundary now preserves and verifies the contract too; focused
+ready, cross-artifact drift, sidecar-breach, and unready paths pass (`4
+passed`). The downstream final round-trip review also passes (`1 passed`).
 
 Latest operational affected-surface gate: controlled scale-up, generic runtime
 telemetry/guard/session, halt response/export/execution/incident, cutover,
@@ -3040,7 +3054,7 @@ A combined 14-case provider-imbalance wrapper run previously exceeded the
 25-minute local timeout without returning a result, and the full-suite run
 exceeded the 20-minute timeout on the G-drive workspace. Therefore 1110 remains
 the last completed full-suite green baseline rather than claiming the current
- 1619-test collection is fully green.
+ 1620-test collection is fully green.
 
 ## Next Build Targets
 
@@ -3050,6 +3064,6 @@ the last completed full-suite green baseline rather than claiming the current
 3. Replace the built-in upload review templates with broker-signed
    Arrow.money/iRage order schemas once sample files are available.
 4. Carry the sealed provider active-lineage selection contract beyond
-   non-submitting send preparation through acknowledgement, final round-trip
-   review, and rehearsal certificate so the exact proof chain remains
-   traceable at every remaining broker-facing boundary.
+   acknowledgement through final round-trip review and rehearsal certificate
+   so the exact proof chain remains traceable at every remaining broker-facing
+   boundary.

@@ -14,6 +14,13 @@ from reports.broker_dispatch_ack import (
     write_broker_dispatch_acknowledgements,
 )
 from reports.manifest import write_experiment_manifest
+from reports.provider_lineage_selection import (
+    provider_lineage_selection_contract_from_config,
+    provider_lineage_selection_contract_from_manifest,
+    provider_lineage_selection_contract_from_summary,
+    provider_lineage_selection_contract_valid,
+    provider_lineage_selection_contracts_match,
+)
 from reports.provider_market_data_imbalance_broker_lineage_migration import (
     provider_broker_lineage_migration_audit_check,
     provider_broker_lineage_migration_audit_evidence,
@@ -196,7 +203,15 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
     else:
         broker_dispatch_ack_error = "provider imbalance broker-dispatch-ack prerequisites are not ready"
 
-    checks = _checks(prechecks, broker_dispatch_ack, broker_dispatch_ack_error, provider_summary, provider_config, config)
+    checks = _checks(
+        prechecks,
+        broker_dispatch_ack,
+        broker_dispatch_ack_error,
+        provider_summary,
+        provider_config,
+        provider_manifest,
+        config,
+    )
     checks = pd.concat(
         [
             checks,
@@ -464,6 +479,9 @@ def write_provider_market_data_imbalance_broker_dispatch_ack(
             ),
             "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs": int(
                 summary_row["route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs"]
+            ),
+            "provider_lineage_selection_contract": provider_lineage_selection_contract_from_summary(
+                summary_row
             ),
             "provider_broker_dispatch_roundtrip_wrapper_provided": bool(
                 summary_row["provider_broker_dispatch_roundtrip_wrapper_provided"]
@@ -1134,6 +1152,7 @@ def _checks(
     broker_dispatch_ack_error: str,
     provider_summary: pd.DataFrame,
     provider_config: dict[str, Any],
+    provider_manifest: dict[str, Any],
     config: ProviderMarketDataImbalanceBrokerDispatchAckConfig,
 ) -> pd.DataFrame:
     rows = prechecks.to_dict(orient="records")
@@ -1232,6 +1251,22 @@ def _checks(
         _first_bool(provider_summary, "route_readiness_provided")
         or _first_bool(provider_summary, "route_readiness_ops_launch_controls_present")
         or route_sidecar_breach_pairs > 0
+    )
+    route_lineage_contract = provider_lineage_selection_contract_from_summary(
+        provider_summary
+    )
+    route_lineage_contract_sha256 = str(route_lineage_contract["sha256"])
+    route_lineage_gate_active = bool(
+        route_sidecar_gate_active
+        or any(bool(value) for value in route_lineage_contract.values())
+    )
+    route_lineage_contract_ready = provider_lineage_selection_contract_valid(
+        route_lineage_contract
+    )
+    route_lineage_contract_matches_artifacts = provider_lineage_selection_contracts_match(
+        route_lineage_contract,
+        provider_lineage_selection_contract_from_config(provider_config),
+        provider_lineage_selection_contract_from_manifest(provider_manifest),
     )
     rows.append(
         _check(
@@ -1348,6 +1383,26 @@ def _checks(
                 "provider imbalance broker-dispatch-send carries breached route-readiness "
                 "broker round-trip synthetic sidecar proof"
             ),
+        )
+    )
+    rows.append(
+        _check(
+            "provider_broker_dispatch_send_route_readiness_provider_lineage_selection_contract",
+            route_lineage_contract_sha256,
+            "is",
+            "three_stage_sha256_contract",
+            route_lineage_contract_ready if route_lineage_gate_active else True,
+            "provider broker-dispatch-send does not carry a complete active-lineage selection contract",
+        )
+    )
+    rows.append(
+        _check(
+            "provider_broker_dispatch_send_route_readiness_provider_lineage_selection_contract_matches_artifacts",
+            "match" if route_lineage_contract_matches_artifacts else "mismatch",
+            "is",
+            "match",
+            route_lineage_contract_matches_artifacts if route_lineage_gate_active else True,
+            "provider broker-dispatch-send lineage selection contract differs across summary, config, and manifest",
         )
     )
     dispatch_summary = _with_dispatch_roundtrip_config_fallback(provider_summary, provider_config)
@@ -1919,6 +1974,38 @@ def _summary(
                         provider_summary,
                         "route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs",
                     )
+                ),
+                "route_readiness_ops_provider_lineage_selected_run_count": int(
+                    _first_number(
+                        provider_summary,
+                        "route_readiness_ops_provider_lineage_selected_run_count",
+                    )
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_count": int(
+                    _first_number(
+                        provider_summary,
+                        "route_readiness_ops_provider_lineage_selected_pair_count",
+                    )
+                ),
+                "route_readiness_ops_provider_lineage_selected_pair_ids": _first_text(
+                    provider_summary,
+                    "route_readiness_ops_provider_lineage_selected_pair_ids",
+                ),
+                "route_readiness_ops_provider_lineage_selected_run_dirs": _first_text(
+                    provider_summary,
+                    "route_readiness_ops_provider_lineage_selected_run_dirs",
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_version": _first_text(
+                    provider_summary,
+                    "route_readiness_ops_provider_lineage_selection_contract_version",
+                ),
+                "route_readiness_ops_provider_lineage_selection_contract_sha256": _first_text(
+                    provider_summary,
+                    "route_readiness_ops_provider_lineage_selection_contract_sha256",
+                ),
+                "route_readiness_ops_provider_lineage_selection_artifact": _first_text(
+                    provider_summary,
+                    "route_readiness_ops_provider_lineage_selection_artifact",
                 ),
                 "dispatch_roundtrip_synthetic_dataset_count": int(
                     _first_number(provider_summary, "dispatch_roundtrip_synthetic_dataset_count")
@@ -3103,6 +3190,9 @@ def _config(
             provider_config.get("adapter_receipt_proof")
         ),
         "synthetic_sidecar_proof": _mapping(provider_config.get("synthetic_sidecar_proof")),
+        "provider_lineage_selection_contract": provider_lineage_selection_contract_from_summary(
+            summary
+        ),
         "capture_bundle": {
             "capture_bundle_path": str(summary["capture_bundle_path"]),
             "capture_bundle_provided": bool(summary["capture_bundle_provided"]),
@@ -3524,6 +3614,7 @@ def _runbook_markdown(summary: pd.Series, checks: pd.DataFrame, action_queue: pd
         f"- Synthetic sidecar proof: {'yes' if bool(summary['synthetic_sidecar_proof_ready']) else 'no'} ({summary['synthetic_sidecar_count']}/{summary['synthetic_dataset_count']})",
         "- Route sidecar breach pairs: "
         f"{summary['route_readiness_ops_provider_broker_roundtrip_synthetic_sidecar_breach_pairs']}",
+        f"- Provider lineage contract: `{summary['route_readiness_ops_provider_lineage_selection_contract_sha256']}`",
         "- Dispatch round-trip synthetic sidecar proof: "
         f"{'yes' if bool(summary['dispatch_roundtrip_synthetic_sidecar_proof_ready']) else 'no'} "
         f"({summary['dispatch_roundtrip_synthetic_sidecar_count']}/"
@@ -3612,6 +3703,8 @@ def _blocked_next_gate(checks: pd.DataFrame, broker_dispatch_ack: BrokerDispatch
 
 
 def _next_gate_for_check(check: str, broker_dispatch_ack: BrokerDispatchAckReport | None) -> str:
+    if check.startswith("provider_broker_dispatch_send_route_readiness_provider_lineage"):
+        return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
         return "review-provider-market-data-imbalance-route-readiness"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
@@ -3663,6 +3756,8 @@ def _help_command_for_gate(next_gate: str) -> str:
 
 
 def _component_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_send_route_readiness_provider_lineage"):
+        return "provider_route_readiness"
     if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
         return "provider_route_readiness"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
@@ -3679,6 +3774,8 @@ def _component_for_check(check: str) -> str:
 
 
 def _action_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_send_route_readiness_provider_lineage"):
+        return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
         return "review_provider_imbalance_route_readiness"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
@@ -3693,6 +3790,8 @@ def _action_for_check(check: str) -> str:
 
 
 def _recommendation_for_check(check: str) -> str:
+    if check.startswith("provider_broker_dispatch_send_route_readiness_provider_lineage"):
+        return "review_provider_lineage_selection_contract_before_broker_dispatch_ack"
     if check.startswith("provider_broker_dispatch_send_dispatch_roundtrip_route_readiness_provider_sidecar"):
         return "review_provider_roundtrip_route_readiness_sidecar_proof_before_broker_dispatch_ack"
     if check.startswith("provider_broker_dispatch_send_route_readiness_provider_sidecar"):
